@@ -1385,14 +1385,29 @@ async def dispatch_order(
                         detail="Le bureau Noest sélectionné est invalide ou n'a pas été trouvé dans l'adresse. Veuillez modifier la commande pour choisir un bureau relais Noest valide."
                     )
 
+            from app.services.noest_mapping import find_best_commune_match, map_wilaya_name_to_id
+            
+            customer_wilaya_raw = order.customer_wilaya
+            if isinstance(customer_wilaya_raw, str) and not customer_wilaya_raw.isdigit():
+                wilaya_id_val = map_wilaya_name_to_id(customer_wilaya_raw)
+            elif customer_wilaya_raw:
+                wilaya_id_val = int(customer_wilaya_raw)
+            else:
+                wilaya_id_val = 16
+                
+            customer_commune_raw = order.customer_commune or ""
+            best_commune = await find_best_commune_match(db, partner.store_id, wilaya_id_val, customer_commune_raw)
+            if not best_commune:
+                best_commune = customer_commune_raw or "Chef-lieu"
+
             body = {
                 "user_guid":  guid,
                 "reference":  ref,
                 "client":     order.customer_name or "",
                 "phone":      order.customer_phone or "",
                 "adresse":    order.customer_address or "",
-                "wilaya_id":  _get_wilaya_id(order.customer_wilaya),
-                "commune":    _clean_commune(order.customer_commune, order.customer_wilaya),
+                "wilaya_id":  wilaya_id_val,
+                "commune":    best_commune,
                 "montant":    order.total or 0,
                 "produit":    product_details_str,
                 "type_id":    1,
