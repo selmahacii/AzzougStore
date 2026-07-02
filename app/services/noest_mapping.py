@@ -183,6 +183,8 @@ EXPLICIT_MAPPING = {
     (44, "hassania"): "El Hassania",
     # Naâma
     (45, "el biodh"): "El Biod",
+    # Custom
+    (16, "centre sacre coeur"): "Alger Centre",
 }
 
 async def find_best_commune_match(db: Session, store_id: str, wilaya_id: int, commune_name: str) -> Optional[str]:
