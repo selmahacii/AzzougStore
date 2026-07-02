@@ -188,21 +188,21 @@ async def create_parcel(
 
     ref = payload.get("reference") or (order.order_number if order else str(uuid.uuid4())[:8])
 
-    def _clean_commune_name(commune_val: str | None, wilaya_name: str | None) -> str:
-        if not commune_val: 
-            return str(wilaya_name) if wilaya_name else "Chef-lieu"
-        if "·" in commune_val:
-            commune_val = commune_val.split("·")[-1].strip()
-        import re
-        commune_val = re.sub(r"\s+", " ", commune_val).strip()
-        if wilaya_name:
-            w_clean = wilaya_name.strip()
-            if commune_val.lower().startswith(w_clean.lower() + " ") and len(commune_val) > len(w_clean) + 1:
-                commune_val = commune_val[len(w_clean) + 1:].strip()
-        return commune_val
+    from app.services.noest_mapping import find_best_commune_match, map_wilaya_name_to_id
 
     customer_commune_raw = payload.get("commune") or (order.customer_commune if order else "")
     customer_wilaya_raw = payload.get("wilaya_id") or (order.customer_wilaya if order else None)
+
+    if isinstance(customer_wilaya_raw, str) and not customer_wilaya_raw.isdigit():
+        wilaya_id_val = map_wilaya_name_to_id(customer_wilaya_raw)
+    elif customer_wilaya_raw:
+        wilaya_id_val = int(customer_wilaya_raw)
+    else:
+        wilaya_id_val = 16
+
+    best_commune = await find_best_commune_match(db, store_id, wilaya_id_val, customer_commune_raw)
+    if not best_commune:
+        best_commune = customer_commune_raw or "Chef-lieu"
 
     body: dict = {
         "user_guid":  guid,
@@ -210,8 +210,8 @@ async def create_parcel(
         "client":     payload.get("recipient_name") or (order.customer_name if order else ""),
         "phone":      payload.get("phone") or (order.customer_phone if order else ""),
         "adresse":    payload.get("address") or (order.customer_address if order else ""),
-        "wilaya_id":  customer_wilaya_raw,
-        "commune":    _clean_commune_name(customer_commune_raw, customer_wilaya_raw if isinstance(customer_wilaya_raw, str) else None),
+        "wilaya_id":  wilaya_id_val,
+        "commune":    best_commune,
         "montant":    payload.get("price") or (order.total if order else 0),
         "produit":    payload.get("product_list") or "Colis e-commerce",
         "remarque":   order.notes if order and order.notes else "",
