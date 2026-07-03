@@ -12,7 +12,7 @@ from app.api.v1 import (
     promotions, finance, audit, stock, pos, delivery, warehouses,
     reviews, chat, suppliers, purchases, returns, expenses, marketing,
     partners, delivery_partners, upload, landing_pages, api_keys,
-    meta_ads, upsell, purchase_vouchers,
+    meta_ads, upsell, purchase_vouchers, locations,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -324,6 +324,7 @@ include_v1(delivery_partners.router, "delivery-partners", ["🚚 Carriers Livrai
 include_v1(upload.router,         "upload",         ["📸 Upload Fichiers"])
 include_v1(landing_pages.router,  "landing-pages",  ["🚀 Landing Pages"])
 include_v1(api_keys.router,       "api-keys",       ["🔑 Clés API"])
+include_v1(locations.router,      "locations",      ["🌍 Locations"])
 
 # ─── Carrier Proxies (outside /api/v1 — own prefix) ─────────────────────────
 app.include_router(yalidine_carrier.router, prefix="/api/yalidine", tags=["🚀 Yalidine"])
