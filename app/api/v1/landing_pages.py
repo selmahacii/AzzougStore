@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
 
+from sqlalchemy import func
+
 from app.api import deps
 from app.db.session import get_db
 from app.models.landing_page import LandingPage
@@ -34,7 +36,7 @@ def _slugify(text: str) -> str:
     return s[:60]
 
 
-def _serialize(lp: LandingPage, product: Optional[Product] = None) -> dict:
+def _serialize(lp: LandingPage, product: Optional[Product] = None, orders_override: Optional[int] = None) -> dict:
     p = lp.product or product
     return {
         "id":            lp.id,
@@ -44,7 +46,7 @@ def _serialize(lp: LandingPage, product: Optional[Product] = None) -> dict:
         "mode":          lp.mode,
         "is_active":     lp.is_active,
         "views":         lp.views,
-        "orders":        lp.orders,
+        "orders":        orders_override if orders_override is not None else (lp.orders or 0),
         "headline":      lp.headline,
         "subtitle":      lp.subtitle,
         "badge_text":    lp.badge_text,
@@ -118,7 +120,44 @@ def list_landing_pages(
 
     pages = q.order_by(LandingPage.created_at.desc()).all()
     logger.info(f"[LP] Found {len(pages)} landing pages for store_id={store_id!r}")
-    return {"success": True, "data": [_serialize(lp) for lp in pages]}
+
+    # Compute live order counts per LP slug to fix stale counters
+    from app.models.order import Order, OrderItem
+    lp_slugs = [lp.slug for lp in pages]
+    lp_product_ids = [lp.product_id for lp in pages if lp.product_id]
+
+    # Build a map: (lp.id) -> live order count
+    # Strategy: orders with source='landing_page' + matching product_id for product LPs
+    live_counts: dict = {}
+    if lp_product_ids:
+        rows = (
+            db.query(OrderItem.product_id, func.count(func.distinct(Order.id)))
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(
+                Order.store_id == store_id,
+                Order.source == "landing_page",
+                Order.is_deleted == False,
+                OrderItem.product_id.in_(lp_product_ids),
+            )
+            .group_by(OrderItem.product_id)
+            .all()
+        )
+        product_order_counts = {row[0]: row[1] for row in rows}
+        for lp in pages:
+            if lp.product_id and lp.product_id in product_order_counts:
+                live_counts[lp.id] = product_order_counts[lp.product_id]
+
+    # Also sync the stored counter for future accuracy
+    for lp in pages:
+        live = live_counts.get(lp.id)
+        if live is not None and live != (lp.orders or 0):
+            lp.orders = live
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {"success": True, "data": [_serialize(lp, orders_override=live_counts.get(lp.id)) for lp in pages]}
 
 
 # ─── Public: get by slug (storefront) ─────────────────────────────────────────
