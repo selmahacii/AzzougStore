@@ -519,8 +519,28 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             ]
 
     now = datetime.now()
+
+    # ── Never persist simulated/test data in production ──────────
+    if is_simulated:
+        mock_names = ["Campagne Hiver - Algérie (USD)", "Promo Printemps (EUR)", "Fidélisation Clients (DZD)"]
+        deleted = db.query(MetaAdsCampaign).filter(
+            MetaAdsCampaign.store_id == store_id,
+            MetaAdsCampaign.campaign_id.like("camp_mock_%"),
+        ).delete(synchronize_session=False)
+        db.query(Expense).filter(
+            Expense.store_id == store_id,
+            Expense.label.in_([f"Meta Ads: {n}" for n in mock_names]),
+        ).delete(synchronize_session=False)
+        db.commit()
+        logger.warning(f"[Meta Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, {deleted} campagne(s) de test nettoyée(s).")
+        return {
+            "success": False,
+            "simulated": True,
+            "message": "Connexion Meta invalide ou API inaccessible — aucune donnée synchronisée. Vérifiez le token et l'ID du compte publicitaire.",
+        }
+
     created_campaigns = []
-    
+
     for c in campaigns_data:
         camp_id = c.get("campaign_id")
         camp_name = c.get("campaign_name", "Sans nom")

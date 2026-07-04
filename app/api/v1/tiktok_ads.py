@@ -213,6 +213,21 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             campaigns_data = _simulated_campaigns(store_id)
 
     now = datetime.now()
+
+    # ── Never persist simulated/test data in production ──────────
+    if is_simulated:
+        deleted = db.query(TikTokAdsCampaign).filter(
+            TikTokAdsCampaign.store_id == store_id,
+            TikTokAdsCampaign.campaign_id.like("tt_mock_%"),
+        ).delete(synchronize_session=False)
+        db.commit()
+        logger.warning(f"[TikTok Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, {deleted} campagne(s) de test nettoyée(s).")
+        return {
+            "success": False,
+            "simulated": True,
+            "message": "Connexion TikTok invalide ou API inaccessible — aucune donnée synchronisée. Vérifiez l'Access Token et l'Advertiser ID.",
+        }
+
     synced = 0
     for c in campaigns_data:
         camp_id = c.get("campaign_id")
