@@ -12,7 +12,7 @@ from app.api.v1 import (
     promotions, finance, audit, stock, pos, delivery, warehouses,
     reviews, chat, suppliers, purchases, returns, expenses, marketing,
     partners, delivery_partners, upload, landing_pages, api_keys,
-    meta_ads, upsell, purchase_vouchers, locations, tiktok_ads,
+    meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -320,6 +320,7 @@ include_v1(chat.router, "chat", ["💬 Chat IA"])
 include_v1(marketing.router, "marketing", ["📣 Marketing"])
 include_v1(meta_ads.router, "meta-ads", ["📣 Meta Ads & ROAS"])
 include_v1(tiktok_ads.router, "tiktok-ads", ["🎵 TikTok Ads & ROAS"])
+include_v1(payroll.router, "payroll", ["💵 Paie Mensuelle"])
 include_v1(partners.router, "partners", ["🔗 Partenaires API"])
 include_v1(delivery_partners.router, "delivery-partners", ["🚚 Carriers Livraison"])
 include_v1(upload.router,         "upload",         ["📸 Upload Fichiers"])
