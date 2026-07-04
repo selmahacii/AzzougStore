@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 import time
+import threading
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -34,18 +36,21 @@ logger = logging.getLogger("app.rate_limit")
 # ─── Redis Connection Pool ────────────────────────────────────────────────────
 
 _redis_client: Optional[redis.Redis] = None
+_redis_unavailable = False  # Set to True after first failed connect to suppress repeated warnings
 
 
 def _get_redis() -> Optional[redis.Redis]:
     """Return a shared Redis client, or None if unavailable."""
-    global _redis_client
+    global _redis_client, _redis_unavailable
     if _redis_client is not None:
         return _redis_client
+    if _redis_unavailable:
+        return None
     try:
         client = redis.Redis(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
-            db=2,  # Dedicated DB for rate limiting (0=Celery, 1=old, 2=rate)
+            db=2,
             decode_responses=True,
             socket_connect_timeout=1,
             socket_timeout=1,
@@ -56,7 +61,8 @@ def _get_redis() -> Optional[redis.Redis]:
         logger.info("Rate limiter connected to Redis at %s:%d/db2", settings.REDIS_HOST, settings.REDIS_PORT)
         return client
     except Exception as exc:
-        logger.warning("Redis unavailable for rate limiting: %s. Fallback active.", exc)
+        logger.warning("Redis unavailable for rate limiting: %s. Using in-memory fallback.", exc)
+        _redis_unavailable = True
         return None
 
 
@@ -98,6 +104,36 @@ class RateLimitResult:
     remaining: int
     reset_at: int         # Unix timestamp
     retry_after: int = 0  # seconds
+
+
+# ─── In-Memory Fallback Rate Limiter ─────────────────────────────────────────
+# Used when Redis is unavailable. Thread-safe sliding window per key.
+
+_mem_lock = threading.Lock()
+_mem_windows: dict[str, deque] = defaultdict(deque)
+
+
+def _mem_sliding_window_check(key: str, limit: int, window_seconds: int) -> RateLimitResult:
+    now = time.time()
+    cutoff = now - window_seconds
+    with _mem_lock:
+        dq = _mem_windows[key]
+        while dq and dq[0] <= cutoff:
+            dq.popleft()
+        count = len(dq)
+        allowed = count < limit
+        if allowed:
+            dq.append(now)
+            count += 1
+    remaining = max(0, limit - count)
+    reset_at = int(now) + window_seconds
+    return RateLimitResult(
+        allowed=allowed,
+        limit=limit,
+        remaining=remaining,
+        reset_at=reset_at,
+        retry_after=window_seconds if not allowed else 0,
+    )
 
 
 def _sliding_window_check(
@@ -159,10 +195,8 @@ def check_rate_limit(
     """
     client = _get_redis()
     if client is None:
-        # Fail-open in development, fail-closed in production
-        if settings.ENVIRONMENT == "production":
-            return RateLimitResult(allowed=False, limit=limit, remaining=0, reset_at=int(time.time()) + window_seconds, retry_after=window_seconds)
-        return RateLimitResult(allowed=True, limit=limit, remaining=limit, reset_at=int(time.time()) + window_seconds)
+        # No Redis: use in-memory sliding window (works for single-instance deployments like HF Spaces)
+        return _mem_sliding_window_check(key, limit, window_seconds)
 
     return _sliding_window_check(client, key, limit, window_seconds)
 
@@ -227,9 +261,6 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client = _get_redis()
-        if client is None and settings.ENVIRONMENT != "production":
-            # Redis down in dev → pass through
-            return await call_next(request)
 
         # Extract identifiers
         ip = (
