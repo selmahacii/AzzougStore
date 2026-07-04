@@ -1,3 +1,4 @@
+import difflib
 import logging
 import re
 import unicodedata
@@ -152,10 +153,17 @@ EXPLICIT_MAPPING = {
     (43, "amira arres"): "Amira Arras",
     # Oran
     (31, "el ancor"): "El Ancar",
-    # Alger
+    # Alger — legacy frontend spellings (old orders) + ONS names vs Noest names
     (16, "bologhine ibnou ziri"): "Bologhine Ibn Ziri",
+    (16, "bologhine"): "Bologhine Ibn Ziri",
     (16, "mohamed belouzdad"): "Belouizdad",
     (16, "khraissia"): "Khraicia",
+    (16, "sehaoula"): "Saoula",
+    (16, "maalma"): "Mahelma",
+    (16, "douira"): "Douera",
+    (16, "bir touta"): "Birtouta",
+    (16, "herraoua"): "Heraoua",
+    (16, "h raoua"): "Heraoua",
     # Tizi Ouzou
     (15, "aghribs"): "Aghrib",
     (15, "iboudrarene"): "Iboudraren",
@@ -203,15 +211,16 @@ async def find_best_commune_match(db: Session, store_id: str, wilaya_id: int, co
         return normalize_string(commune_name)
 
     norm_input = normalize_string(commune_name)
-    
-    # 0. Check explicit mapping table first
-    if (wilaya_id, norm_input) in EXPLICIT_MAPPING:
-        matched_override = EXPLICIT_MAPPING[(wilaya_id, norm_input)]
+
+    # 0. Check explicit mapping table first. If the override isn't present in the
+    #    live Noest list, fall through to the generic matching steps instead of
+    #    returning a name Noest would reject.
+    override = EXPLICIT_MAPPING.get((wilaya_id, norm_input))
+    if override:
         for c in noest_communes:
-            if c.lower() == matched_override.lower():
+            if c.lower() == override.lower():
                 return c
-        return matched_override
-    
+
     # 1. Exact normalized match
     for c in noest_communes:
         if normalize_string(c) == norm_input:
@@ -223,4 +232,12 @@ async def find_best_commune_match(db: Session, store_id: str, wilaya_id: int, co
         if norm_input in norm_c or norm_c in norm_input:
             return c
 
-    return None
+    # 3. Fuzzy fallback for spelling variants (Khraissia/Khraicia, Douira/Douera...)
+    normalized_map = {normalize_string(c): c for c in noest_communes}
+    close = difflib.get_close_matches(norm_input, list(normalized_map.keys()), n=1, cutoff=0.8)
+    if close:
+        logger.info("Fuzzy commune match: '%s' -> '%s'", commune_name, normalized_map[close[0]])
+        return normalized_map[close[0]]
+
+    # 4. Last resort: trust the override even if not seen in the fetched list
+    return override
