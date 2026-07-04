@@ -1,3 +1,4 @@
+import time as _time
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -14,6 +15,11 @@ from app.schemas.store import Store as StoreSchema, StoreCreate, StoreUpdate
 from app.worker import sync_store_inventory
 
 router = APIRouter()
+
+# Micro-cache for the guest storefront store list (default params only).
+# Guests all see the same data; 10s TTL keeps admin changes near-real-time.
+_guest_stores_cache: dict = {"data": None, "at": 0.0}
+_GUEST_STORES_TTL = 10.0
 
 
 STORE_TEMPLATES = {
@@ -92,8 +98,14 @@ def read_stores(
     Retrieve stores with real-time counts for orders, products, employees.
     Filtered by the current user's access scope. Guests see active stores.
     """
+    is_guest_default = current_user is None and skip == 0 and limit == 100 and not search
+    if is_guest_default:
+        cached = _guest_stores_cache["data"]
+        if cached is not None and _time.monotonic() - _guest_stores_cache["at"] < _GUEST_STORES_TTL:
+            return cached
+
     query = db.query(Store).filter(Store.is_deleted == False)
-    
+
     if current_user:
         if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
             if current_user.role == "MANAGER" and current_user.employee_store_id:
@@ -114,7 +126,41 @@ def read_stores(
             (Store.slug.ilike(f"%{search}%"))
         )
     stores = query.offset(skip).limit(limit).all()
-    return [_enrich_store_with_counts(db, s) for s in stores]
+    if not stores:
+        return []
+
+    # Batched counts: 3 grouped queries instead of 3 per store (N+1)
+    store_ids = [s.id for s in stores]
+    orders_by_store = dict(
+        db.query(Order.store_id, func.count(Order.id))
+        .filter(Order.store_id.in_(store_ids), Order.is_deleted == False)
+        .group_by(Order.store_id).all()
+    )
+    products_by_store = dict(
+        db.query(Product.store_id, func.count(Product.id))
+        .filter(Product.store_id.in_(store_ids), Product.is_active == True)
+        .group_by(Product.store_id).all()
+    )
+    employees_by_store = dict(
+        db.query(User.employee_store_id, func.count(User.id))
+        .filter(User.employee_store_id.in_(store_ids), User.is_active == True)
+        .group_by(User.employee_store_id).all()
+    )
+
+    result = []
+    for s in stores:
+        store_dict = {c.name: getattr(s, c.name) for c in s.__table__.columns}
+        store_dict["_count"] = {
+            "orders": orders_by_store.get(s.id, 0),
+            "products": products_by_store.get(s.id, 0),
+            "employees": employees_by_store.get(s.id, 0),
+        }
+        result.append(store_dict)
+
+    if is_guest_default:
+        _guest_stores_cache["data"] = result
+        _guest_stores_cache["at"] = _time.monotonic()
+    return result
 
 
 @router.post("/", response_model=dict)

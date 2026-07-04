@@ -152,17 +152,31 @@ def list_campaigns(
         orders_count = len(camp_orders)
         
         roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
-        
+        raw_spend = camp.raw_spend if camp.raw_spend is not None else camp.spend
+
         global_spend += camp.spend
         global_revenue += revenue
         global_orders_count += orders_count
+
+        # Micro-metrics (converted DZD + raw ad-account currency)
+        ctr = round(camp.clicks / camp.impressions * 100, 3) if camp.impressions > 0 else 0.0
+        cpc = round(camp.spend / camp.clicks, 2) if camp.clicks > 0 else 0.0
+        cpc_raw = round(raw_spend / camp.clicks, 4) if camp.clicks > 0 else 0.0
+        cpm = round(camp.spend / camp.impressions * 1000, 2) if camp.impressions > 0 else 0.0
+        cpm_raw = round(raw_spend / camp.impressions * 1000, 4) if camp.impressions > 0 else 0.0
+        frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
+        cost_per_order = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
+        cost_per_order_raw = round(raw_spend / orders_count, 4) if orders_count > 0 else 0.0
+        conversion_rate = round(orders_count / camp.clicks * 100, 3) if camp.clicks > 0 else 0.0
+        aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
+        profit = round(revenue - camp.spend, 2)
 
         data.append({
             "id": camp.id,
             "campaign_id": camp.campaign_id,
             "campaign_name": camp.campaign_name,
             "spend": camp.spend,
-            "raw_spend": camp.raw_spend if camp.raw_spend is not None else camp.spend,
+            "raw_spend": raw_spend,
             "currency": camp.currency or "USD",
             "impressions": camp.impressions,
             "clicks": camp.clicks,
@@ -170,11 +184,32 @@ def list_campaigns(
             "revenue": revenue,
             "orders_count": orders_count,
             "roas": roas,
+            "ctr": ctr,
+            "cpc": cpc,
+            "cpc_raw": cpc_raw,
+            "cpm": cpm,
+            "cpm_raw": cpm_raw,
+            "frequency": frequency,
+            "cost_per_order": cost_per_order,
+            "cost_per_order_raw": cost_per_order_raw,
+            "conversion_rate": conversion_rate,
+            "aov": aov,
+            "profit": profit,
             "date_start": camp.date_start.isoformat() if camp.date_start else None,
             "date_end": camp.date_end.isoformat() if camp.date_end else None
         })
 
     global_roas = round(global_revenue / global_spend, 2) if global_spend > 0 else 0.0
+
+    # Global micro-metrics + raw spend grouped by ad-account currency
+    total_impressions = sum(c.impressions or 0 for c in campaigns)
+    total_clicks = sum(c.clicks or 0 for c in campaigns)
+    total_reach = sum(c.reach or 0 for c in campaigns)
+    raw_spend_by_currency: dict = {}
+    for c in campaigns:
+        cur = (c.currency or "USD").upper()
+        rs = c.raw_spend if c.raw_spend is not None else c.spend
+        raw_spend_by_currency[cur] = round(raw_spend_by_currency.get(cur, 0.0) + (rs or 0.0), 2)
 
     # --- Product-specific ad spend attribution ---
     from app.models.product import Product
@@ -271,7 +306,18 @@ def list_campaigns(
             "total_spend": global_spend,
             "total_revenue": global_revenue,
             "total_orders": global_orders_count,
-            "global_roas": global_roas
+            "global_roas": global_roas,
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "total_reach": total_reach,
+            "raw_spend_by_currency": raw_spend_by_currency,
+            "global_ctr": round(total_clicks / total_impressions * 100, 3) if total_impressions > 0 else 0.0,
+            "global_cpc": round(global_spend / total_clicks, 2) if total_clicks > 0 else 0.0,
+            "global_cpm": round(global_spend / total_impressions * 1000, 2) if total_impressions > 0 else 0.0,
+            "global_cost_per_order": round(global_spend / global_orders_count, 2) if global_orders_count > 0 else 0.0,
+            "global_conversion_rate": round(global_orders_count / total_clicks * 100, 3) if total_clicks > 0 else 0.0,
+            "global_aov": round(global_revenue / global_orders_count, 2) if global_orders_count > 0 else 0.0,
+            "global_profit": round(global_revenue - global_spend, 2)
         }
     }
 

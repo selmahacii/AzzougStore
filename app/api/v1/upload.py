@@ -36,6 +36,14 @@ if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary:/
     except Exception:
         _CLOUDINARY_OK = False
 
+if not (CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://") and _CLOUDINARY_OK):
+    import logging
+    logging.getLogger("app.upload").warning(
+        "CLOUDINARY_URL non configuré — les uploads sont stockés sur le disque local "
+        "ÉPHÉMÈRE (perdus à chaque redémarrage du Space). Configurez le secret "
+        "CLOUDINARY_URL sur HuggingFace pour un stockage persistant."
+    )
+
 
 def get_base_url(request: Request = None) -> str:
     # 1. Try env variable
