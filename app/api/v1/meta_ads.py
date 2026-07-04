@@ -291,11 +291,32 @@ def list_campaigns(
                         product_attribution[pid]["reach"] += int(camp.reach / num_matched)
                         product_attribution[pid]["currency"] = camp.currency or "USD"
 
+    # ── Landing page = sponsored: attribute LP/UTM order revenue even when
+    # no Meta campaign is synced (spend stays 0 until a real sync runs) ──
+    sponsored_sources = {"landing_page", "lp", "facebook", "meta", "instagram"}
+    for o in orders:
+        is_sponsored = bool(o.utm_campaign) or (o.source or "").lower() in sponsored_sources
+        if not is_sponsored:
+            continue
+        for item in o.items:
+            pid = item.product_id
+            if pid and pid in product_attribution:
+                attr = product_attribution[pid]
+                # Only add revenue not already attributed through a campaign
+                if attr["orders_count"] == 0 and attr["spend"] == 0:
+                    attr["revenue"] += item.unit_price * item.quantity
+                    attr.setdefault("_lp_orders", set()).add(o.id)
+
+    for attr in product_attribution.values():
+        lp_orders = attr.pop("_lp_orders", None)
+        if lp_orders:
+            attr["orders_count"] = len(lp_orders)
+
     # Calculate ROAS and filter down to products with activity
     breakdown_list = []
     for pid, data in product_attribution.items():
         data["roas"] = round(data["revenue"] / data["spend"], 2) if data["spend"] > 0 else 0.0
-        if data["spend"] > 0 or data["revenue"] > 0 or data["impressions"] > 0:
+        if data["spend"] > 0 or data["revenue"] > 0 or data["impressions"] > 0 or data["orders_count"] > 0:
             breakdown_list.append(data)
 
     return {
