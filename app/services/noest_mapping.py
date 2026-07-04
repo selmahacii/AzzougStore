@@ -155,6 +155,7 @@ EXPLICIT_MAPPING = {
     # Alger
     (16, "bologhine ibnou ziri"): "Bologhine Ibn Ziri",
     (16, "mohamed belouzdad"): "Belouizdad",
+    (16, "khraissia"): "Khraicia",
     # Tizi Ouzou
     (15, "aghribs"): "Aghrib",
     (15, "iboudrarene"): "Iboudraren",

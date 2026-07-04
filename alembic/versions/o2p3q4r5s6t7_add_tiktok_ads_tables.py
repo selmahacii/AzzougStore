@@ -33,6 +33,8 @@ def upgrade():
         sa.Column('is_connected', sa.Boolean(), default=False),
         sa.Column('exchange_rate', sa.Float(), default=1.0, nullable=True),
         sa.Column('currency', sa.String(), default='USD', nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     )
     op.create_table(
         'tiktok_ads_campaigns',
@@ -48,6 +50,8 @@ def upgrade():
         sa.Column('store_id', sa.String(), sa.ForeignKey('stores.id'), nullable=False, index=True),
         sa.Column('date_start', sa.DateTime(), nullable=True),
         sa.Column('date_end', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     )
 
 
