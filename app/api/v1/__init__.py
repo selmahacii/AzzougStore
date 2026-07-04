@@ -20,6 +20,7 @@ from . import expenses
 from . import partners
 from . import status
 from . import meta_ads
+from . import tiktok_ads
 from . import upsell
 from . import purchase_vouchers
 from . import locations

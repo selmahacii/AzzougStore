@@ -60,6 +60,12 @@ class Order(Base):
     is_abandoned_cart = Column(Boolean, default=False)
     abandoned_cart_recovery_fee = Column(Integer, default=0)
     is_duplicate = Column(Boolean, default=False)
+
+    # Duplicate merge tracking — a MERGED order points to the surviving parent
+    parent_order_id = Column(String, nullable=True, index=True)
+    merged_by = Column(String, nullable=True)
+    merged_at = Column(DateTime, nullable=True)
+    status_before_merge = Column(String, nullable=True)
     
     # Confirmation Workflow
     confirmation_start_time = Column(DateTime, nullable=True)

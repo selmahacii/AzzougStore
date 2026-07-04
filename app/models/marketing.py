@@ -94,6 +94,39 @@ class MetaAdsConfig(Base):
 
     store = relationship("Store")
 
+class TikTokAdsConfig(Base):
+    __tablename__ = "tiktok_ads_configs"
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, unique=True, index=True)
+    access_token = Column(EncryptedString, nullable=True)
+    advertiser_id = Column(String, nullable=True)
+    pixel_id = Column(String, nullable=True)
+    app_id = Column(String, nullable=True)
+    is_connected = Column(Boolean, default=False)
+    exchange_rate = Column(Float, default=1.0, nullable=True)
+    currency = Column(String, default="USD", nullable=True)
+
+    store = relationship("Store")
+
+class TikTokAdsCampaign(Base):
+    __tablename__ = "tiktok_ads_campaigns"
+
+    id = Column(String, primary_key=True, index=True)
+    campaign_id = Column(String, unique=True, index=True, nullable=False)
+    campaign_name = Column(String, nullable=False)
+    spend = Column(Float, default=0.0)  # converted to DZD
+    raw_spend = Column(Float, default=0.0, nullable=True)
+    currency = Column(String, default="USD", nullable=True)
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    reach = Column(Integer, default=0)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    date_start = Column(DateTime, nullable=True)
+    date_end = Column(DateTime, nullable=True)
+
+    store = relationship("Store")
+
 class MetaAdsCampaign(Base):
     __tablename__ = "meta_ads_campaigns"
 

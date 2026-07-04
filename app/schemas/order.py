@@ -137,6 +137,12 @@ class OrderRead(BaseModel):
     nrp_count: int = 0
     next_callback_time: Optional[datetime] = None
 
+    # Duplicate merge tracking
+    parent_order_id: Optional[str] = None
+    merged_by: Optional[str] = None
+    merged_at: Optional[datetime] = None
+    status_before_merge: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -165,6 +171,8 @@ class OrderReadFull(OrderRead):
     assignee: Optional[ActorRef] = None
     carrier: Optional[CarrierRef] = None
     store: Optional[StoreRef] = None
+    # Merged duplicates pointing to this order (populated by get_order)
+    child_orders: List["OrderRead"] = []
 
     class Config:
         from_attributes = True

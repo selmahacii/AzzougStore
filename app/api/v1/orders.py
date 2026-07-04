@@ -365,6 +365,10 @@ def list_orders(
             query = query.filter(Order.status.in_(["NEW", "ASSIGNED"]))
         else:
             query = query.filter(Order.status == status.upper())
+    else:
+        # Merged duplicates stay in DB for traceability but are hidden from
+        # the default listing — the surviving parent represents them.
+        query = query.filter(Order.status != "MERGED")
     if assigned_to:
         query = query.filter(Order.assigned_to == assigned_to)
     if wilaya:
@@ -846,7 +850,60 @@ def get_order(
         raise OrderNotFoundError()
 
     _assert_order_access(order, current_user)
-    return order
+
+    # Attach merged duplicates for the duplication-history panel
+    children = db.query(Order).filter(
+        Order.parent_order_id == order.id,
+        Order.is_deleted == False,
+    ).order_by(Order.created_at.asc()).all()
+
+    from app.schemas.order import OrderReadFull as _OrderReadFull, OrderRead as _OrderRead
+    result = _OrderReadFull.model_validate(order)
+    result.child_orders = [_OrderRead.model_validate(c) for c in children]
+    return result
+
+
+# ─── POST /orders/{id}/unmerge — Restore a merged duplicate ─────────────────
+
+@router.post("/{id}/unmerge", response_model=dict)
+def unmerge_order(
+    id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Detach a merged duplicate from its parent: restores the original status
+    and clears merge tracking fields. Writes a traceability event.
+    """
+    import uuid as _uuid
+    from app.models.events import OrderEvent as _OrderEvent
+
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not order:
+        raise OrderNotFoundError()
+    _assert_order_access(order, current_user)
+    if order.status != "MERGED":
+        raise HTTPException(status_code=400, detail="Cette commande n'est pas une fusion (statut != MERGED).")
+
+    restored_status = order.status_before_merge or "NEW"
+    parent_id = order.parent_order_id
+    order.status = restored_status
+    order.parent_order_id = None
+    order.merged_by = None
+    order.merged_at = None
+    order.status_before_merge = None
+
+    db.add(_OrderEvent(
+        id=str(_uuid.uuid4()),
+        order_id=order.id,
+        actor_id=current_user.id,
+        from_status="MERGED",
+        to_status=restored_status,
+        note=f"Séparée de la commande parente ({parent_id}) — statut restauré.",
+    ))
+    db.commit()
+    logger.info("Order %s unmerged by %s (restored to %s)", order.order_number, current_user.id, restored_status)
+    return {"success": True, "message": f"Commande {order.order_number} séparée, statut restauré à {restored_status}."}
 
 
 # ─── PATCH /orders/{id} ───────────────────────────────────────────────────────
@@ -1217,6 +1274,103 @@ def bulk_update_status(
     return {"success": True, "updated": updated, "message": f"{updated} commandes mises à jour."}
 
 
+# ─── POST /orders/{id}/merge-duplicates — Merge duplicate orders ─────────────
+
+@router.post("/{id}/merge-duplicates", response_model=dict)
+def merge_duplicate_orders(
+    id: str,
+    payload: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Merge duplicate orders into a surviving parent order.
+
+    - The parent (id) stays untouched and remains the only shippable order.
+    - Each duplicate gets status=MERGED, parent_order_id, merged_by/merged_at,
+      and its original status preserved in status_before_merge.
+    - An OrderEvent is written on both sides for full traceability.
+    - Nothing is deleted — merged orders stay queryable (status=MERGED).
+    """
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    from app.models.events import OrderEvent
+
+    parent = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Commande parente introuvable.")
+    _assert_order_access(parent, current_user)
+    if parent.status == "MERGED":
+        raise HTTPException(status_code=400, detail="La commande parente est elle-même déjà fusionnée.")
+
+    duplicate_ids: list = payload.get("duplicate_ids") or []
+    if not duplicate_ids:
+        # Auto-detect: same store + same phone, still in confirmation stage
+        candidates = db.query(Order).filter(
+            Order.store_id == parent.store_id,
+            Order.customer_phone == parent.customer_phone,
+            Order.id != parent.id,
+            Order.is_deleted == False,
+            Order.status.in_(["NEW", "PENDING", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
+        ).all()
+        duplicate_ids = [o.id for o in candidates]
+
+    if not duplicate_ids:
+        return {"success": True, "merged": 0, "message": "Aucun doublon à fusionner."}
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    merged_numbers = []
+    for dup_id in duplicate_ids:
+        if dup_id == parent.id:
+            continue
+        dup = db.query(Order).filter(Order.id == dup_id, Order.is_deleted == False).first()
+        if not dup:
+            continue
+        if dup.store_id != parent.store_id:
+            raise HTTPException(status_code=400, detail=f"La commande {dup.order_number} appartient à une autre boutique.")
+        if dup.status in ("SHIPPED", "DELIVERED", "MERGED"):
+            raise HTTPException(status_code=400, detail=f"La commande {dup.order_number} ({dup.status}) ne peut pas être fusionnée.")
+        if dup.tracking_number:
+            raise HTTPException(status_code=400, detail=f"La commande {dup.order_number} a déjà un colis chez le transporteur.")
+
+        dup.status_before_merge = dup.status
+        dup.status = "MERGED"
+        dup.parent_order_id = parent.id
+        dup.merged_by = current_user.id
+        dup.merged_at = now
+        dup.is_duplicate = True
+        merged_numbers.append(dup.order_number)
+
+        db.add(OrderEvent(
+            id=str(_uuid.uuid4()),
+            order_id=dup.id,
+            actor_id=current_user.id,
+            from_status=dup.status_before_merge,
+            to_status="MERGED",
+            note=f"Fusionnée dans la commande {parent.order_number} (doublon même téléphone).",
+        ))
+
+    if merged_numbers:
+        parent.is_duplicate = False
+        db.add(OrderEvent(
+            id=str(_uuid.uuid4()),
+            order_id=parent.id,
+            actor_id=current_user.id,
+            from_status=parent.status,
+            to_status=parent.status,
+            note=f"Doublons fusionnés dans cette commande : {', '.join(merged_numbers)}.",
+        ))
+
+    db.commit()
+    logger.info("Merged %d duplicates into order %s by %s", len(merged_numbers), parent.order_number, current_user.id)
+    return {
+        "success": True,
+        "merged": len(merged_numbers),
+        "merged_order_numbers": merged_numbers,
+        "message": f"{len(merged_numbers)} doublon(s) fusionné(s) dans {parent.order_number}.",
+    }
+
+
 def _get_wilaya_id(wilaya_val: str | int | None) -> Optional[int]:
     if not wilaya_val: return None
     if isinstance(wilaya_val, int): return wilaya_val
@@ -1273,6 +1427,9 @@ async def dispatch_order(
     )
     if not order:
         raise OrderNotFoundError()
+
+    if order.status == "MERGED":
+        raise HTTPException(400, f"Cette commande a été fusionnée (doublon). Expédiez la commande parente à la place.")
 
     # Build detailed product list description for delivery partner
     details_list = []

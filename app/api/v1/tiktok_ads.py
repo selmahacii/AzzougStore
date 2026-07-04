@@ -1,0 +1,362 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime, timedelta, timezone
+import uuid
+import logging
+
+logger = logging.getLogger(__name__)
+
+from app.api.deps import get_db
+from app.models.marketing import TikTokAdsConfig, TikTokAdsCampaign
+from app.models.order import Order
+
+router = APIRouter()
+
+TIKTOK_API_BASE = "https://business-api.tiktok.com/open_api/v1.3"
+
+
+class TikTokAdsConfigCreate(BaseModel):
+    store_id: str
+    access_token: Optional[str] = None
+    advertiser_id: Optional[str] = None
+    pixel_id: Optional[str] = None
+    app_id: Optional[str] = None
+    is_connected: bool = False
+    exchange_rate: Optional[float] = 1.0
+    currency: Optional[str] = "USD"
+
+
+def _config_out(config: TikTokAdsConfig) -> dict:
+    return {
+        "store_id": config.store_id,
+        "access_token": config.access_token,
+        "advertiser_id": config.advertiser_id,
+        "pixel_id": config.pixel_id,
+        "app_id": config.app_id,
+        "is_connected": config.is_connected,
+        "exchange_rate": config.exchange_rate if config.exchange_rate is not None else 1.0,
+        "currency": config.currency or "USD",
+    }
+
+
+@router.get("/config", response_model=dict)
+def get_tiktok_ads_config(store_id: str = Query(...), db: Session = Depends(get_db)):
+    config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == store_id).first()
+    if not config:
+        config = TikTokAdsConfig(
+            id=str(uuid.uuid4()),
+            store_id=store_id,
+            access_token="",
+            advertiser_id="",
+            pixel_id="",
+            app_id="",
+            is_connected=False,
+            exchange_rate=1.0,
+            currency="USD",
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return {"success": True, "data": _config_out(config)}
+
+
+@router.post("/config", response_model=dict)
+def update_tiktok_ads_config(payload: TikTokAdsConfigCreate, db: Session = Depends(get_db)):
+    config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == payload.store_id).first()
+    if not config:
+        config = TikTokAdsConfig(id=str(uuid.uuid4()), store_id=payload.store_id)
+        db.add(config)
+
+    config.access_token = payload.access_token
+    config.advertiser_id = payload.advertiser_id
+    config.pixel_id = payload.pixel_id
+    config.app_id = payload.app_id
+    config.is_connected = payload.is_connected
+    config.exchange_rate = payload.exchange_rate if payload.exchange_rate is not None else 1.0
+    config.currency = payload.currency or "USD"
+    db.commit()
+    db.refresh(config)
+    return {"success": True, "data": _config_out(config)}
+
+
+def _get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> float:
+    """Same conversion logic as Meta Ads: convert the ad-account currency to DZD."""
+    ad_curr = (ad_currency or "USD").upper()
+    cfg_curr = (config_currency or "USD").upper()
+    cfg_rate = config_rate if config_rate is not None else 1.0
+
+    if ad_curr == "DZD":
+        return 1.0
+    if ad_curr == cfg_curr:
+        return cfg_rate
+
+    fallbacks = {"USD": 220.0, "EUR": 240.0, "CAD": 160.0, "GBP": 280.0}
+    if cfg_curr in fallbacks and ad_curr in fallbacks:
+        return round(cfg_rate * fallbacks[ad_curr] / fallbacks[cfg_curr], 2)
+    if ad_curr in fallbacks:
+        return fallbacks[ad_curr]
+    return cfg_rate
+
+
+def _simulated_campaigns(store_id: str) -> list:
+    return [
+        {
+            "campaign_id": f"tt_mock_1_{store_id[:8]}",
+            "campaign_name": "TikTok - Lancement Produit (USD)",
+            "spend": 95.30, "currency": "USD",
+            "impressions": 210000, "clicks": 5600, "reach": 130000,
+        },
+        {
+            "campaign_id": f"tt_mock_2_{store_id[:8]}",
+            "campaign_name": "TikTok - Spark Ads Vidéo (USD)",
+            "spend": 60.00, "currency": "USD",
+            "impressions": 145000, "clicks": 3900, "reach": 92000,
+        },
+    ]
+
+
+@router.post("/sync", response_model=dict)
+def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Sync campaign insights from the TikTok Business API for this store's
+    advertiser account. Falls back to simulated data when the token is
+    missing/invalid so the dashboard stays usable.
+    """
+    config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == store_id).first()
+    logger.info(f"[TikTok Ads Sync] Démarrage pour le store: {store_id}")
+
+    if not config or not config.is_connected or not config.access_token or not config.advertiser_id:
+        logger.warning(f"[TikTok Ads Sync] Configuration incomplète pour le store: {store_id}")
+        return {"success": False, "message": "TikTok Ads n'est pas configuré. Veuillez connecter votre compte."}
+
+    import httpx
+
+    ad_currency = None
+    is_simulated = False
+
+    if len(config.access_token or "") < 15 or (config.access_token or "").startswith("dummy"):
+        is_simulated = True
+    else:
+        # 1. Advertiser info (currency + name)
+        try:
+            resp = httpx.get(
+                f"{TIKTOK_API_BASE}/advertiser/info/",
+                params={"advertiser_ids": f'["{config.advertiser_id}"]'},
+                headers={"Access-Token": config.access_token},
+                timeout=15.0,
+            )
+            data = resp.json()
+            if data.get("code") == 0 and data.get("data", {}).get("list"):
+                info = data["data"]["list"][0]
+                ad_currency = info.get("currency")
+                logger.info(f"[TikTok Ads Sync] Compte: {info.get('name')} ({ad_currency})")
+            else:
+                logger.warning(f"[TikTok Ads Sync] Erreur advertiser/info: {data.get('message')}")
+                is_simulated = True
+        except Exception as e:
+            logger.error(f"[TikTok Ads Sync] Exception advertiser/info: {e}")
+            is_simulated = True
+
+    if ad_currency:
+        config.currency = ad_currency.upper()
+        db.commit()
+    else:
+        ad_currency = config.currency or "USD"
+
+    # 2. Campaign insights (last 30 days)
+    if is_simulated:
+        campaigns_data = _simulated_campaigns(store_id)
+    else:
+        try:
+            end = datetime.now(timezone.utc).date()
+            start = end - timedelta(days=30)
+            resp = httpx.get(
+                f"{TIKTOK_API_BASE}/report/integrated/get/",
+                params={
+                    "advertiser_id": config.advertiser_id,
+                    "report_type": "BASIC",
+                    "data_level": "AUCTION_CAMPAIGN",
+                    "dimensions": '["campaign_id"]',
+                    "metrics": '["spend","impressions","clicks","reach","campaign_name"]',
+                    "start_date": start.isoformat(),
+                    "end_date": end.isoformat(),
+                    "page_size": 100,
+                },
+                headers={"Access-Token": config.access_token},
+                timeout=30.0,
+            )
+            data = resp.json()
+            if data.get("code") != 0:
+                logger.warning(f"[TikTok Ads Sync] Erreur report: {data.get('message')}")
+                is_simulated = True
+                campaigns_data = _simulated_campaigns(store_id)
+            else:
+                campaigns_data = []
+                for row in data.get("data", {}).get("list", []):
+                    dims = row.get("dimensions", {})
+                    metrics = row.get("metrics", {})
+                    campaigns_data.append({
+                        "campaign_id": dims.get("campaign_id"),
+                        "campaign_name": metrics.get("campaign_name", "Sans nom"),
+                        "spend": float(metrics.get("spend", 0.0) or 0.0),
+                        "currency": ad_currency,
+                        "impressions": int(float(metrics.get("impressions", 0) or 0)),
+                        "clicks": int(float(metrics.get("clicks", 0) or 0)),
+                        "reach": int(float(metrics.get("reach", 0) or 0)),
+                    })
+                logger.info(f"[TikTok Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées.")
+        except Exception as e:
+            logger.error(f"[TikTok Ads Sync] Exception report: {e}")
+            is_simulated = True
+            campaigns_data = _simulated_campaigns(store_id)
+
+    now = datetime.now()
+    synced = 0
+    for c in campaigns_data:
+        camp_id = c.get("campaign_id")
+        if not camp_id:
+            continue
+        camp_currency = (c.get("currency") or "USD").upper()
+        raw_spend = float(c.get("spend", 0.0))
+        rate = _get_conversion_rate(camp_currency, config.currency, config.exchange_rate)
+
+        campaign = db.query(TikTokAdsCampaign).filter(
+            TikTokAdsCampaign.store_id == store_id,
+            TikTokAdsCampaign.campaign_id == camp_id,
+        ).first()
+        if not campaign:
+            campaign = TikTokAdsCampaign(
+                id=str(uuid.uuid4()),
+                campaign_id=camp_id,
+                campaign_name=c.get("campaign_name", "Sans nom"),
+                store_id=store_id,
+                date_start=now - timedelta(days=30),
+                date_end=now,
+            )
+            db.add(campaign)
+
+        campaign.campaign_name = c.get("campaign_name", campaign.campaign_name)
+        campaign.spend = raw_spend * rate
+        campaign.raw_spend = raw_spend
+        campaign.currency = camp_currency
+        campaign.impressions = int(c.get("impressions", 0))
+        campaign.clicks = int(c.get("clicks", 0))
+        campaign.reach = int(c.get("reach", 0))
+        synced += 1
+
+    db.commit()
+    return {
+        "success": True,
+        "synced": synced,
+        "simulated": is_simulated,
+        "message": f"{synced} campagnes TikTok synchronisées." + (" (données simulées — vérifiez le token)" if is_simulated else ""),
+    }
+
+
+@router.get("/campaigns", response_model=dict)
+def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Campaigns with UTM revenue attribution and full micro-metrics,
+    in DZD and in the raw ad-account currency.
+    """
+    campaigns = db.query(TikTokAdsCampaign).filter(TikTokAdsCampaign.store_id == store_id).all()
+
+    orders = db.query(Order).filter(
+        Order.store_id == store_id,
+        Order.status != "CANCELLED",
+        Order.is_deleted == False,
+    ).all()
+
+    data = []
+    global_spend = 0.0
+    global_revenue = 0.0
+    global_orders_count = 0
+
+    for camp in campaigns:
+        camp_orders = [
+            o for o in orders
+            if o.utm_campaign and (
+                o.utm_campaign.lower() == camp.campaign_name.lower()
+                or o.utm_campaign == camp.campaign_id
+            )
+        ]
+        # TikTok-sourced orders can also match by source
+        revenue = sum(o.total for o in camp_orders)
+        orders_count = len(camp_orders)
+        raw_spend = camp.raw_spend if camp.raw_spend is not None else camp.spend
+
+        roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
+        ctr = round(camp.clicks / camp.impressions * 100, 3) if camp.impressions > 0 else 0.0
+        cpc = round(camp.spend / camp.clicks, 2) if camp.clicks > 0 else 0.0
+        cpc_raw = round(raw_spend / camp.clicks, 4) if camp.clicks > 0 else 0.0
+        cpm = round(camp.spend / camp.impressions * 1000, 2) if camp.impressions > 0 else 0.0
+        cpm_raw = round(raw_spend / camp.impressions * 1000, 4) if camp.impressions > 0 else 0.0
+        frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
+        cost_per_order = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
+        conversion_rate = round(orders_count / camp.clicks * 100, 3) if camp.clicks > 0 else 0.0
+        aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
+        profit = round(revenue - camp.spend, 2)
+
+        global_spend += camp.spend
+        global_revenue += revenue
+        global_orders_count += orders_count
+
+        data.append({
+            "id": camp.id,
+            "campaign_id": camp.campaign_id,
+            "campaign_name": camp.campaign_name,
+            "spend": camp.spend,
+            "raw_spend": raw_spend,
+            "currency": camp.currency or "USD",
+            "impressions": camp.impressions,
+            "clicks": camp.clicks,
+            "reach": camp.reach,
+            "revenue": revenue,
+            "orders_count": orders_count,
+            "roas": roas,
+            "ctr": ctr,
+            "cpc": cpc,
+            "cpc_raw": cpc_raw,
+            "cpm": cpm,
+            "cpm_raw": cpm_raw,
+            "frequency": frequency,
+            "cost_per_order": cost_per_order,
+            "conversion_rate": conversion_rate,
+            "aov": aov,
+            "profit": profit,
+            "date_start": camp.date_start.isoformat() if camp.date_start else None,
+            "date_end": camp.date_end.isoformat() if camp.date_end else None,
+        })
+
+    total_impressions = sum(c.impressions or 0 for c in campaigns)
+    total_clicks = sum(c.clicks or 0 for c in campaigns)
+    total_reach = sum(c.reach or 0 for c in campaigns)
+    raw_spend_by_currency: dict = {}
+    for c in campaigns:
+        cur = (c.currency or "USD").upper()
+        rs = c.raw_spend if c.raw_spend is not None else c.spend
+        raw_spend_by_currency[cur] = round(raw_spend_by_currency.get(cur, 0.0) + (rs or 0.0), 2)
+
+    return {
+        "success": True,
+        "data": data,
+        "summary": {
+            "total_spend": global_spend,
+            "total_revenue": global_revenue,
+            "total_orders": global_orders_count,
+            "global_roas": round(global_revenue / global_spend, 2) if global_spend > 0 else 0.0,
+            "total_impressions": total_impressions,
+            "total_clicks": total_clicks,
+            "total_reach": total_reach,
+            "raw_spend_by_currency": raw_spend_by_currency,
+            "global_ctr": round(total_clicks / total_impressions * 100, 3) if total_impressions > 0 else 0.0,
+            "global_cpc": round(global_spend / total_clicks, 2) if total_clicks > 0 else 0.0,
+            "global_cpm": round(global_spend / total_impressions * 1000, 2) if total_impressions > 0 else 0.0,
+            "global_cost_per_order": round(global_spend / global_orders_count, 2) if global_orders_count > 0 else 0.0,
+            "global_conversion_rate": round(global_orders_count / total_clicks * 100, 3) if total_clicks > 0 else 0.0,
+            "global_aov": round(global_revenue / global_orders_count, 2) if global_orders_count > 0 else 0.0,
+            "global_profit": round(global_revenue - global_spend, 2),
+        },
+    }
