@@ -118,6 +118,53 @@ def _normalize_tracking(data: dict) -> dict:
     }
 
 
+# ─── GET /api/yalidine/stations — Bureaux / stopdesks ────────────────────────
+
+import time as _time
+_stations_cache: dict = {}  # store_id -> {"data": [...], "at": monotonic}
+_STATIONS_TTL = 3600.0  # centers list rarely changes
+
+
+@router.get("/stations")
+async def get_stations(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """List Yalidine centers (stopdesks) for the store's account. Cached 1h."""
+    cached = _stations_cache.get(store_id)
+    if cached and _time.monotonic() - cached["at"] < _STATIONS_TTL:
+        return {"success": True, "data": cached["data"], "cached": True}
+
+    partner = _get_partner(db, store_id)
+    api_id, api_token, base = _creds(partner)
+
+    centers: list = []
+    page = 1
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            while page <= 10:  # safety bound
+                resp = await client.get(
+                    f"{base}/centers/",
+                    params={"page": page, "page_size": 100},
+                    headers=_headers(api_id, api_token),
+                )
+                if resp.status_code != 200:
+                    logger.warning("Yalidine centers page %d failed: %s %s", page, resp.status_code, resp.text[:200])
+                    break
+                body = resp.json()
+                batch = body.get("data", [])
+                centers.extend(batch)
+                if not body.get("has_more") or not batch:
+                    break
+                page += 1
+    except httpx.HTTPError as e:
+        logger.error("Yalidine centers fetch error: %s", e)
+        raise HTTPException(502, f"Erreur réseau Yalidine: {e}")
+
+    _stations_cache[store_id] = {"data": centers, "at": _time.monotonic()}
+    return {"success": True, "data": centers}
+
+
 # ─── GET /api/yalidine/track/{tracking_number} ───────────────────────────────
 
 @router.get("/track/{tracking_number}")
