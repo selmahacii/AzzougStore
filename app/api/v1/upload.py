@@ -8,8 +8,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse
 
-import cloudinary
-import cloudinary.uploader
+try:
+    import cloudinary
+    import cloudinary.uploader
+    _CLOUDINARY_OK = True
+except (ImportError, ValueError):
+    _CLOUDINARY_OK = False
 
 from app.api import deps
 
@@ -25,12 +29,12 @@ ALLOWED_TYPES = ALLOWED_IMAGE_TYPES
 MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
-CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL")
-if CLOUDINARY_URL:
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
+if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
     try:
         cloudinary.config()
     except Exception:
-        pass
+        _CLOUDINARY_OK = False
 
 
 def get_base_url(request: Request = None) -> str:
@@ -91,7 +95,7 @@ async def upload_image(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if CLOUDINARY_URL:
+    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),
@@ -167,7 +171,7 @@ async def upload_media(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if CLOUDINARY_URL:
+    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),
