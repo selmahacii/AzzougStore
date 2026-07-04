@@ -267,8 +267,13 @@ def get_agent_counts(
         "shipped":   _count(Order.status == "SHIPPED"),
         "delivered": _count(Order.status == "DELIVERED"),
         "cancelled": _count(Order.status == "CANCELLED"),
-        "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
-        "abandoned_in_progress": _count(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
+        "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
+        "nrp_abandoned": _count(Order.nrp_count > 0, Order.is_abandoned_cart == True,
+                                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
+        "nrp_normal": _count(Order.nrp_count > 0, Order.is_abandoned_cart == False,
+                             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
+        "abandoned_in_progress": _count(Order.is_abandoned_cart == True,
+                                        Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
         "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
     }
@@ -432,10 +437,28 @@ def list_orders(
         elif status.upper() == "NRP":
             query = query.filter(
                 Order.nrp_count > 0,
+                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"]),
+            )
+        elif status.upper() == "NRP_ABANDONED":
+            # NRP sur panier abandonné (reste "abandonné" tant que non confirmé)
+            query = query.filter(
+                Order.nrp_count > 0,
+                Order.is_abandoned_cart == True,
+                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"]),
+            )
+        elif status.upper() == "NRP_NORMAL":
+            # NRP sur commande normale
+            query = query.filter(
+                Order.nrp_count > 0,
+                Order.is_abandoned_cart == False,
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
             )
         elif status.upper() == "ABANDONED_IN_PROGRESS":
-            query = query.filter(Order.is_abandoned_cart == True, Order.status == "ABANDONED")
+            # Un panier abandonné RESTE abandonné tant qu'il n'est pas CONFIRMED
+            query = query.filter(
+                Order.is_abandoned_cart == True,
+                Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"]),
+            )
         elif status.upper() == "RECOVERED":
             query = query.filter(
                 Order.is_abandoned_cart == True,
