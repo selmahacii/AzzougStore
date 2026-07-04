@@ -37,6 +37,10 @@ class Store(Base):
     auto_reassign_minutes = Column(Integer, default=120)
     assignment_active = Column(Boolean, default=False)
 
+    # Operational business rules, editable per store by the admin:
+    # max_nrp_normal, max_nrp_abandoned, nrp_callback_hours, auto_merge_duplicates
+    operations_config = Column(JSON, default={})
+
     # Marketing & Tracking
     marketing_config = Column(EncryptedJSON, default={"facebook_pixel_id": "", "tiktok_pixel_id": "", "snapchat_pixel_id": "", "google_tag_id": "", "fb_access_token": ""})
     

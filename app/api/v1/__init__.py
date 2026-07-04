@@ -25,3 +25,4 @@ from . import payroll
 from . import upsell
 from . import purchase_vouchers
 from . import locations
+from . import notifications

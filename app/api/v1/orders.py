@@ -33,7 +33,7 @@ from app.schemas.order import (
     OrderUpdateStatus,
     OrderInfoUpdate,
 )
-from app.services.order_service import order_service
+from app.services.order_service import order_service, auto_merge_duplicates
 
 router = APIRouter()
 logger = logging.getLogger("app.orders")
@@ -664,6 +664,17 @@ def update_abandoned_cart(
         
     db.commit()
     db.refresh(db_order)
+
+    # A fresh abandoned cart may duplicate an existing active order (or another
+    # abandoned cart) of the same customer — fuse into one operational order.
+    try:
+        if auto_merge_duplicates(db, db_order, actor_id=None):
+            db.commit()
+            db.refresh(db_order)
+    except Exception as merge_err:
+        db.rollback()
+        logger.warning("Auto-merge failed for abandoned cart %s: %s", db_order.id, merge_err)
+
     return {"success": True, "id": db_order.id, "message": "Panier abandonné sauvegardé"}
 
 
@@ -849,7 +860,15 @@ def create_order(
                     
                 db.commit()
                 db.refresh(existing)
-                
+
+                try:
+                    if auto_merge_duplicates(db, existing, actor_id=actor_id):
+                        db.commit()
+                        db.refresh(existing)
+                except Exception as merge_err:
+                    db.rollback()
+                    logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
+
                 return existing
 
         from datetime import datetime, timezone, timedelta
@@ -874,7 +893,18 @@ def create_order(
         )
         db.commit()
         db.refresh(order)
-        
+
+        # Automatic duplicate grouping: same phone + same store, still in
+        # confirmation stage → one operational parent, children become MERGED.
+        try:
+            if auto_merge_duplicates(db, order, actor_id=actor_id):
+                db.commit()
+                db.refresh(order)
+        except Exception as merge_err:
+            db.rollback()
+            logger.warning("Auto-merge failed for order %s: %s", order.id, merge_err)
+
+
         if order.source == "landing_page":
             try:
                 from app.models.landing_page import LandingPage
@@ -995,6 +1025,23 @@ def unmerge_order(
     order.merged_by = None
     order.merged_at = None
     order.status_before_merge = None
+
+    # The order becomes operational again — re-reserve its stock
+    # (mirrors the release done at merge time)
+    if restored_status in ("NEW", "PENDING", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"):
+        from app.services.inventory_service import inventory_service as _inv
+        for item in order.items:
+            try:
+                _inv.reserve_stock(
+                    db,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    order_id=order.id,
+                    actor_id=current_user.id,
+                    variant_details=item.variant_details,
+                )
+            except Exception as exc:
+                logger.warning("Unmerge: stock re-reservation failed for %s: %s", order.id, exc)
 
     db.add(_OrderEvent(
         id=str(_uuid.uuid4()),
@@ -1443,6 +1490,21 @@ def merge_duplicate_orders(
         dup.merged_at = now
         dup.is_duplicate = True
         merged_numbers.append(dup.order_number)
+
+        # The parent carries the stock — free the duplicate's reservation
+        from app.services.inventory_service import inventory_service as _inv
+        for item in dup.items:
+            try:
+                _inv.release_reservation(
+                    db,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    order_id=dup.id,
+                    actor_id=current_user.id,
+                    variant_details=item.variant_details,
+                )
+            except Exception as exc:
+                logger.warning("Merge: reservation release failed for %s: %s", dup.id, exc)
 
         db.add(OrderEvent(
             id=str(_uuid.uuid4()),

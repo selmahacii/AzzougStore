@@ -22,6 +22,9 @@ class StoreBase(BaseModel):
     auto_reassign_minutes: Optional[int] = 120
     assignment_active: Optional[bool] = False
     marketing_config: Optional[dict] = {}
+    # Per-store business rules: max_nrp_normal, max_nrp_abandoned,
+    # nrp_callback_hours, auto_merge_duplicates
+    operations_config: Optional[dict] = None
     # Extra fields from wizard (ignored by backend, stored via theme_config/social_links)
     contact: Optional[dict] = None
 

@@ -400,19 +400,25 @@ async def webhook(request: Request, db: Session = Depends(get_db)) -> Any:
     if tracking and new_status:
         order = db.query(Order).filter(Order.tracking_number == tracking, Order.is_deleted == False).first()
         if order and order.status != new_status:
-            from app.models.events import OrderEvent
-            import uuid
-            
-            event = OrderEvent(
-                id=str(uuid.uuid4()),
-                order_id=order.id,
-                from_status=order.status,
-                to_status=new_status,
-                note=f"Statut mis à jour via Noest ({new_status})"
-            )
-            db.add(event)
-            order.status = new_status
-            db.commit()
-            logger.info("Webhook Noest: %s → %s", tracking, new_status)
+            # Route through the order service so COD payment recording,
+            # return restock, customer tier, notifications, commissions
+            # and salaries follow the exact same business logic as any
+            # other status change.
+            from app.services.order_service import order_service
+            try:
+                order_service.update_order(
+                    db,
+                    order=order,
+                    update_data={
+                        "status": new_status,
+                        "note": f"Statut mis à jour via webhook Noest ({new_status}).",
+                    },
+                    actor_id=None,
+                )
+                db.commit()
+                logger.info("Webhook Noest: %s → %s", tracking, new_status)
+            except Exception as exc:
+                db.rollback()
+                logger.warning("Webhook Noest: transition refusée pour %s (%s): %s", tracking, new_status, exc)
 
     return {"received": True}

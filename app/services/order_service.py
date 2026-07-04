@@ -27,6 +27,7 @@ from app.models.order import Order, OrderItem
 from app.models.store import Store
 from app.models.user import User
 from app.services.inventory_service import inventory_service
+from app.services.notification_service import notify
 
 logger = logging.getLogger("app.order_service")
 
@@ -57,6 +58,168 @@ def _is_valid_transition(from_status: str, to_status: str) -> bool:
     if from_status == to_status:
         return False
     return to_status in _VALID_TRANSITIONS.get(from_status, [])
+
+
+# ─── Per-store operational business rules ─────────────────────────────────────
+# Every value below used to be hardcoded; it is now read from
+# Store.operations_config with these values as safe defaults.
+
+DEFAULT_OPERATIONS_CONFIG: dict = {
+    "max_nrp_normal": 9,        # auto-cancel a normal order after N NRP attempts
+    "max_nrp_abandoned": 12,    # auto-cancel an abandoned cart after N NRP attempts
+    "nrp_callback_hours": 2.0,  # automatic callback delay after each NRP
+    "auto_merge_duplicates": True,  # fuse same-phone orders into one operational order
+}
+
+
+def get_operations_config(db: Session, store_id: Optional[str]) -> dict:
+    """Merge the store's operations_config over the defaults."""
+    cfg = dict(DEFAULT_OPERATIONS_CONFIG)
+    if store_id:
+        store = db.query(Store).filter(Store.id == store_id).first()
+        raw = getattr(store, "operations_config", None) if store else None
+        if isinstance(raw, dict):
+            for key in cfg:
+                if raw.get(key) is not None:
+                    cfg[key] = raw[key]
+    return cfg
+
+
+# ─── Automatic duplicate merge ────────────────────────────────────────────────
+
+# Orders still in the confirmation stage can be fused; anything at the carrier
+# or terminal is never touched.
+_MERGEABLE_STATES = {"NEW", "PENDING", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"}
+
+# Which order of a same-phone group stays operational (the "parent"):
+# a normal order always beats an abandoned cart, then the most advanced
+# status wins, then the oldest order.
+_PARENT_STATUS_PRIORITY = {
+    "CONFIRMED": 6, "RESCHEDULED": 5, "IN_PROGRESS": 5, "CALLED": 5,
+    "ASSIGNED": 4, "NEW": 3, "PENDING": 3, "ABANDONED": 1,
+}
+
+
+def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = None) -> int:
+    """
+    Automatically fuse every same-phone, same-store order still in the
+    confirmation stage into a single operational parent order.
+
+    - Children get status=MERGED with their original status preserved
+      (status_before_merge), parent_order_id, merged_at — nothing is deleted:
+      items, notes and the full OrderEvent timeline stay on each child.
+    - Children's stock reservations are released (the parent carries the stock).
+    - The parent inherits an assignee from its children when it has none, so
+      the confirmatrice always keeps exactly one operational order per client.
+
+    Returns the number of orders merged.
+    """
+    phone = (order.customer_phone or "").strip()
+    if not phone or str(order.status) not in _MERGEABLE_STATES:
+        return 0
+
+    cfg = get_operations_config(db, str(order.store_id))
+    if not cfg.get("auto_merge_duplicates", True):
+        return 0
+
+    siblings = (
+        db.query(Order)
+        .filter(
+            Order.store_id == order.store_id,
+            Order.customer_phone == phone,
+            Order.id != order.id,
+            Order.is_deleted == False,
+            Order.status.in_(list(_MERGEABLE_STATES)),
+        )
+        .all()
+    )
+    if not siblings:
+        return 0
+
+    group = [order] + siblings
+
+    def parent_rank(o: Order):
+        return (
+            1 if o.is_abandoned_cart else 0,                       # normal first
+            -_PARENT_STATUS_PRIORITY.get(str(o.status), 0),        # advanced status first
+            o.created_at or datetime.min,                          # oldest first
+        )
+
+    parent = sorted(group, key=parent_rank)[0]
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    merged_numbers: list[str] = []
+
+    for child in group:
+        if child.id == parent.id:
+            continue
+        if child.tracking_number:  # already at the carrier — never touch
+            continue
+
+        child.status_before_merge = str(child.status)
+        child.status = "MERGED"
+        child.parent_order_id = parent.id
+        child.merged_by = actor_id
+        child.merged_at = now
+        child.is_duplicate = True
+        merged_numbers.append(str(child.order_number))
+
+        # The parent carries the stock — free the child's reservation
+        for item in child.items:
+            try:
+                inventory_service.release_reservation(
+                    db,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    order_id=child.id,
+                    actor_id=actor_id,
+                    variant_details=item.variant_details,
+                )
+            except Exception as exc:
+                logger.warning("Auto-merge: reservation release failed for %s: %s", child.id, exc)
+
+        _log_event(
+            db,
+            order_id=child.id,
+            actor_id=actor_id,
+            from_status=child.status_before_merge,
+            to_status="MERGED",
+            note=f"Fusion automatique dans la commande {parent.order_number} (doublon même téléphone).",
+        )
+
+    if not merged_numbers:
+        return 0
+
+    # Keep exactly one operational order per client, with an owner
+    if not parent.assigned_to:
+        inherited = next((c.assigned_to for c in group if c.id != parent.id and c.assigned_to), None)
+        if inherited:
+            parent.assigned_to = inherited
+            if str(parent.status) == "NEW":
+                parent.status = "ASSIGNED"
+    parent.is_duplicate = False
+
+    _log_event(
+        db,
+        order_id=parent.id,
+        actor_id=actor_id,
+        from_status=str(parent.status),
+        to_status=str(parent.status),
+        note=f"Fusion automatique : doublon(s) {', '.join(merged_numbers)} rattaché(s) à cette commande.",
+    )
+    notify(
+        db,
+        type="DUPLICATE_MERGED",
+        title=f"Doublon fusionné — {parent.order_number}",
+        message=f"{len(merged_numbers)} commande(s) du même client ({phone}) fusionnée(s) automatiquement : {', '.join(merged_numbers)}.",
+        user_id=parent.assigned_to,
+        store_id=str(parent.store_id),
+        order_id=str(parent.id),
+    )
+    logger.info(
+        "Auto-merged %d duplicate(s) [%s] into %s (store=%s)",
+        len(merged_numbers), ", ".join(merged_numbers), parent.order_number, parent.store_id,
+    )
+    return len(merged_numbers)
 
 
 # ─── Auto-assignment Logic ────────────────────────────────────────────────────
@@ -243,11 +406,13 @@ class OrderService:
         order_number = f"ORD-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
 
         # Generate sequential number per store for admin/agent display ("Commande N°X")
-        # Uses SELECT FOR UPDATE on the store row to prevent race conditions under concurrent writes
+        # Lock the STORE row to serialize sequence generation under concurrent
+        # writes — FOR UPDATE cannot be applied to an aggregate query in Postgres.
         from sqlalchemy import func
+        db.query(Store.id).filter(Store.id == store_id).with_for_update().first()
         max_seq = db.query(func.max(Order.store_sequence_number)).filter(
             Order.store_id == store_id
-        ).with_for_update(read=False, skip_locked=False).scalar()
+        ).scalar()
         store_sequence_number = (max_seq or 0) + 1
 
         # Determine initial status / assignment
@@ -397,6 +562,17 @@ class OrderService:
         except Exception as evt_err:
             logger.warning("Order event logging failed: %s", evt_err)
 
+        if explicit_agent and explicit_agent != actor_id:
+            notify(
+                db,
+                type="ORDER_ASSIGNED",
+                title=f"Nouvelle commande assignée — {order.order_number}",
+                message=f"{order.customer_name or 'Client'} · {order.customer_wilaya or ''} · {order.total or 0} DA",
+                user_id=explicit_agent,
+                store_id=str(order.store_id),
+                order_id=str(order.id),
+            )
+
         # Upsert guest customer record
         try:
             self._upsert_guest_customer(db, order)
@@ -483,16 +659,41 @@ class OrderService:
         if call_result == "NRP" or new_status == "IN_PROGRESS":
             new_status = "IN_PROGRESS"
             # If specifically NRP, increment count and schedule callback
+            # (limits and delay are per-store admin settings, see operations_config)
             if call_result == "NRP":
+                ops_cfg = get_operations_config(db, str(order.store_id))
                 order.nrp_count = (order.nrp_count or 0) + 1
-                max_nrp = 12 if order.is_abandoned_cart else 9
+                max_nrp = int(
+                    ops_cfg["max_nrp_abandoned"] if order.is_abandoned_cart else ops_cfg["max_nrp_normal"]
+                )
                 if order.nrp_count >= max_nrp:
                     new_status = "CANCELLED"
                     order.next_callback_time = None
                     if not order_note:
                         order_note = f"Annulation automatique après {max_nrp} tentatives NRP."
+                    notify(
+                        db,
+                        type="NRP_FOLLOWUP",
+                        title=f"Annulation auto NRP — {order.order_number}",
+                        message=f"Plafond de {max_nrp} tentatives NRP atteint : commande annulée automatiquement.",
+                        user_id=order.assigned_to,
+                        store_id=str(order.store_id),
+                        order_id=str(order.id),
+                    )
                 else:
-                    order.next_callback_time = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=2)
+                    callback_hours = float(ops_cfg["nrp_callback_hours"])
+                    order.next_callback_time = (
+                        datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=callback_hours)
+                    )
+                    notify(
+                        db,
+                        type="NRP_FOLLOWUP",
+                        title=f"NRP {order.nrp_count}/{max_nrp} — {order.order_number}",
+                        message=f"Client injoignable. Rappel automatique planifié dans {callback_hours:g} h.",
+                        user_id=order.assigned_to,
+                        store_id=str(order.store_id),
+                        order_id=str(order.id),
+                    )
         
         if scheduled_callback_at:
             order.next_callback_time = scheduled_callback_at
@@ -570,6 +771,31 @@ class OrderService:
             )
             logger.info("Order %s status: %s → %s (actor=%s)", order.order_number, old_status, new_status, actor_id)
 
+            # ── Business notifications ────────────────────────────
+            if new_status == "CONFIRMED" and order.is_abandoned_cart:
+                notify(
+                    db,
+                    type="CART_RECOVERED",
+                    title=f"Panier récupéré 🟩 — {order.order_number}",
+                    message=f"Panier abandonné confirmé ({order.customer_name}, {order.customer_phone}).",
+                    user_id=None,  # broadcast to admins
+                    store_id=str(order.store_id),
+                    order_id=str(order.id),
+                )
+            elif new_status == "DELIVERED":
+                notify(
+                    db,
+                    type="ORDER_DELIVERED",
+                    title=f"Commande livrée — {order.order_number}",
+                    message=(
+                        "Livraison confirmée par le transporteur. "
+                        + ("Commission panier récupéré acquise." if order.is_abandoned_cart else "Commission acquise.")
+                    ),
+                    user_id=order.assigned_to,
+                    store_id=str(order.store_id),
+                    order_id=str(order.id),
+                )
+
         # ── Assignment change ──────────────────────────────────────
         if new_assignee is not None and new_assignee != order.assigned_to:
             old_assignee = order.assigned_to
@@ -582,6 +808,15 @@ class OrderService:
                 from_status=cur_status,
                 to_status=cur_status,
                 note=f"Réassigné de {old_assignee} à {new_assignee}",
+            )
+            notify(
+                db,
+                type="ORDER_ASSIGNED",
+                title=f"Commande assignée — {order.order_number}",
+                message=f"{order.customer_name or 'Client'} · {order.customer_wilaya or ''} · {order.total or 0} DA",
+                user_id=new_assignee,
+                store_id=str(order.store_id),
+                order_id=str(order.id),
             )
 
         # ── Note-only update ────────────────────────────────────────

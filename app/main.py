@@ -13,6 +13,7 @@ from app.api.v1 import (
     reviews, chat, suppliers, purchases, returns, expenses, marketing,
     partners, delivery_partners, upload, landing_pages, api_keys,
     meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
+    notifications,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -113,6 +114,14 @@ def run_db_migrations():
                 print("✅ Backfill sequence numbers completed.")
     except Exception as e:
         print(f"⚠️ Backfill sequence numbers failed: {e}")
+
+@app.on_event("startup")
+async def start_background_sync():
+    """Noest polling + reminder scheduler (see app/services/noest_sync.py)."""
+    import asyncio
+    from app.services.noest_sync import background_loop
+    asyncio.create_task(background_loop())
+
 
 @app.on_event("startup")
 def create_initial_superadmin():
@@ -327,6 +336,7 @@ include_v1(upload.router,         "upload",         ["📸 Upload Fichiers"])
 include_v1(landing_pages.router,  "landing-pages",  ["🚀 Landing Pages"])
 include_v1(api_keys.router,       "api-keys",       ["🔑 Clés API"])
 include_v1(locations.router,      "locations",      ["🌍 Locations"])
+include_v1(notifications.router,  "notifications",  ["🔔 Notifications"])
 
 # ─── Carrier Proxies (outside /api/v1 — own prefix) ─────────────────────────
 app.include_router(yalidine_carrier.router, prefix="/api/yalidine", tags=["🚀 Yalidine"])

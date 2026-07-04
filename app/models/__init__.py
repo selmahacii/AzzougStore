@@ -24,3 +24,4 @@ from .landing_page import LandingPage  # noqa: F401  # registers table in metada
 from .upsell import UpsellRule, UpsellOffer, UpsellCommission  # noqa: F401
 from .internal_delivery import InternalDelivery  # noqa: F401
 from .payroll import PayrollRecord  # noqa: F401
+from .notification import Notification  # noqa: F401
