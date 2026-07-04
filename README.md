@@ -1,3 +1,12 @@
+---
+title: Azzoug Backend
+emoji: 🛒
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # AzzougShop Industrial Backend
 
 This is the production-ready FastAPI backend for the AzzougShop ecosystem.
