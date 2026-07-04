@@ -135,8 +135,14 @@ async def get_stations(
     if cached and _time.monotonic() - cached["at"] < _STATIONS_TTL:
         return {"success": True, "data": cached["data"], "cached": True}
 
-    partner = _get_partner(db, store_id)
-    api_id, api_token, base = _creds(partner)
+    # Not configured is a normal state for stores without Yalidine —
+    # return an empty list instead of spamming 404s.
+    try:
+        partner = _get_partner(db, store_id)
+        api_id, api_token, base = _creds(partner)
+    except HTTPException as e:
+        _stations_cache[store_id] = {"data": [], "at": _time.monotonic()}
+        return {"success": False, "data": [], "message": e.detail}
 
     centers: list = []
     page = 1

@@ -24,6 +24,10 @@ class UserBase(BaseModel):
     @field_validator("payment_type")
     @classmethod
     def validate_payment_type(cls, v: Optional[str]) -> Optional[str]:
+        # Legacy DB rows may hold PER_CONFIRMED_ORDER — normalize instead of
+        # crashing response serialization (salary is only paid on DELIVERED).
+        if v == "PER_CONFIRMED_ORDER":
+            return "PER_DELIVERED_ORDER"
         if v is not None and v not in VALID_PAYMENT_TYPES:
             raise ValueError(
                 f"Type de paiement invalide. Valeurs accept├®es : {', '.join(sorted(VALID_PAYMENT_TYPES))}"

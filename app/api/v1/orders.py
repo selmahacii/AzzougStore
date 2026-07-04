@@ -211,6 +211,70 @@ def get_order_counts(
     return {r.status: r.cnt for r in rows}
 
 
+# ─── GET /orders/agent-counts — Sidebar module counts for confirmatrices ─────
+
+@router.get("/agent-counts")
+def get_agent_counts(
+    store_id: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Counts per agent-dashboard sub-module (new, pending, confirmed, delivered,
+    cancelled, nrp, abandoned_in_progress, recovered, archived, shipped),
+    scoped exactly like the agent's order list.
+    """
+    from sqlalchemy import and_, or_
+    from datetime import datetime
+
+    base = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
+
+    # Same RBAC scoping as list_orders for confirmatrices
+    if current_user.role == "CONFIRMATEUR":
+        store_filter = True
+        scope = getattr(current_user, "assigned_store_scope", "ALL")
+        if scope == "SPECIFIC":
+            raw_stores = getattr(current_user, "assigned_store_ids", None)
+            scoped_stores = raw_stores if isinstance(raw_stores, list) else []
+            store_filter = Order.store_id.in_(scoped_stores) if scoped_stores else False
+        base = base.filter(or_(
+            Order.assigned_to == current_user.id,
+            and_(Order.assigned_to == None, store_filter),
+        ))
+    elif current_user.role == "MANAGER" and current_user.employee_store_id:
+        base = base.filter(Order.store_id == current_user.employee_store_id)
+
+    if store_id:
+        base = base.filter(Order.store_id == store_id)
+    for bound, op_gte in ((start_date, True), (end_date, False)):
+        if bound:
+            try:
+                dt = datetime.fromisoformat(bound.replace("Z", "+00:00")).replace(tzinfo=None)
+                base = base.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
+            except ValueError:
+                pass
+
+    def _count(*criteria):
+        return base.filter(*criteria).count()
+
+    counts = {
+        "all":       base.filter(Order.status.notin_(["CANCELLED", "RETURNED"])).count(),
+        "new":       _count(Order.status.in_(["NEW", "ASSIGNED"])),
+        "pending":   _count(Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
+        "confirmed": _count(Order.status == "CONFIRMED"),
+        "shipped":   _count(Order.status == "SHIPPED"),
+        "delivered": _count(Order.status == "DELIVERED"),
+        "cancelled": _count(Order.status == "CANCELLED"),
+        "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
+        "abandoned_in_progress": _count(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
+        "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
+        "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
+    }
+    return {"success": True, "counts": counts}
+
+
 # ─── GET /orders/track — public storefront order tracking ────────────────────
 
 @router.get("/track")
@@ -363,6 +427,22 @@ def list_orders(
             )
         elif status.upper() == "NEW":
             query = query.filter(Order.status.in_(["NEW", "ASSIGNED"]))
+        elif status.upper() == "PENDING_CONFIRMATION":
+            query = query.filter(Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]))
+        elif status.upper() == "NRP":
+            query = query.filter(
+                Order.nrp_count > 0,
+                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
+            )
+        elif status.upper() == "ABANDONED_IN_PROGRESS":
+            query = query.filter(Order.is_abandoned_cart == True, Order.status == "ABANDONED")
+        elif status.upper() == "RECOVERED":
+            query = query.filter(
+                Order.is_abandoned_cart == True,
+                Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]),
+            )
+        elif status.upper() == "ARCHIVED":
+            query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
         else:
             query = query.filter(Order.status == status.upper())
     else:
