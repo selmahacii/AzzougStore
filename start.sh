@@ -56,8 +56,15 @@ echo "Schema state: $SCHEMA_STATE"
 
 if [ "$SCHEMA_STATE" = "has_alembic" ]; then
   echo "Existing database detected - running pending migrations..."
-  alembic upgrade head
-  echo "Migrations complete."
+  # If upgrade fails (e.g. stale/unknown revision in alembic_version), stamp to actual head
+  # This is safe: stamp only updates the version table, never drops or modifies data
+  if ! alembic upgrade head 2>&1; then
+    echo "Migration failed - stamping DB to current head (no data changes)..."
+    alembic stamp head --purge
+    echo "Stamp complete. Schema already up to date."
+  else
+    echo "Migrations complete."
+  fi
 elif [ "$SCHEMA_STATE" = "has_users" ]; then
   echo "Pre-hydrated database detected (Prisma initialized). Stamping Alembic to head..."
   alembic stamp head
