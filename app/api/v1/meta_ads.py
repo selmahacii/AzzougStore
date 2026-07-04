@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import datetime, timedelta, timezone
 import uuid
 import random
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -607,6 +608,119 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
     else:
         logger.info(f"[Meta Ads Sync] Fin avec succès pour le store: {store_id} ({len(created_campaigns)} traitées)")
     return {"success": True, "message": msg}
+
+
+class MetaEventUserData(BaseModel):
+    em: Optional[str] = None        # hashed email
+    ph: Optional[str] = None        # hashed phone
+    client_ip_address: Optional[str] = None
+    client_user_agent: Optional[str] = None
+    fbc: Optional[str] = None       # _fbc cookie
+    fbp: Optional[str] = None       # _fbp cookie
+    fn: Optional[str] = None        # hashed first name
+    ln: Optional[str] = None        # hashed last name
+
+class MetaEventCustomData(BaseModel):
+    currency: Optional[str] = None
+    value: Optional[float] = None
+    content_ids: Optional[List[str]] = None
+    content_type: Optional[str] = None
+    content_name: Optional[str] = None
+    num_items: Optional[int] = None
+
+class MetaEventPayload(BaseModel):
+    store_id: str
+    event_name: str                 # PageView, ViewContent, InitiateCheckout, Purchase, etc.
+    event_time: Optional[int] = None
+    event_source_url: Optional[str] = None
+    event_id: Optional[str] = None
+    user_data: Optional[MetaEventUserData] = None
+    custom_data: Optional[MetaEventCustomData] = None
+    action_source: Optional[str] = "website"
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()
+
+@router.post("/events", response_model=dict)
+def send_meta_event(payload: MetaEventPayload, request: Request, db: Session = Depends(get_db)):
+    """
+    Server-side Meta Conversions API (CAPI) event relay.
+    Called by the storefront on PageView, ViewContent, Purchase, etc.
+    Forwards to Meta if pixel_id + access_token are configured; always returns 200.
+    """
+    import httpx
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
+
+    if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
+        # No Meta config — accept silently (storefront shouldn't break)
+        return {"success": True, "sent": False, "reason": "no_config"}
+
+    now = payload.event_time or int(datetime.now(timezone.utc).timestamp())
+    event_id = payload.event_id or str(uuid.uuid4())
+
+    # Build user_data dict with auto-hashing if values look unhashed (no hex pattern)
+    ud: Dict[str, Any] = {}
+    if payload.user_data:
+        raw = payload.user_data
+        if raw.em:
+            ud["em"] = [raw.em if len(raw.em) == 64 else _sha256(raw.em)]
+        if raw.ph:
+            ud["ph"] = [raw.ph if len(raw.ph) == 64 else _sha256(raw.ph)]
+        if raw.fn:
+            ud["fn"] = [raw.fn if len(raw.fn) == 64 else _sha256(raw.fn)]
+        if raw.ln:
+            ud["ln"] = [raw.ln if len(raw.ln) == 64 else _sha256(raw.ln)]
+        if raw.fbc:
+            ud["fbc"] = raw.fbc
+        if raw.fbp:
+            ud["fbp"] = raw.fbp
+        if raw.client_ip_address:
+            ud["client_ip_address"] = raw.client_ip_address
+        if raw.client_user_agent:
+            ud["client_user_agent"] = raw.client_user_agent
+
+    # Fallback: inject server IP/UA if missing
+    if "client_ip_address" not in ud:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        ud["client_ip_address"] = forwarded.split(",")[0].strip() or request.client.host
+    if "client_user_agent" not in ud:
+        ua = request.headers.get("user-agent", "")
+        if ua:
+            ud["client_user_agent"] = ua
+
+    event: Dict[str, Any] = {
+        "event_name": payload.event_name,
+        "event_time": now,
+        "event_id": event_id,
+        "action_source": payload.action_source or "website",
+        "user_data": ud,
+    }
+    if payload.event_source_url:
+        event["event_source_url"] = payload.event_source_url
+    if payload.custom_data:
+        cd = payload.custom_data.model_dump(exclude_none=True)
+        if cd:
+            event["custom_data"] = cd
+
+    capi_url = f"https://graph.facebook.com/v18.0/{config.pixel_id}/events"
+    body = {
+        "data": [event],
+        "access_token": config.access_token,
+    }
+
+    try:
+        resp = httpx.post(capi_url, json=body, timeout=8.0)
+        resp_json = resp.json()
+        if resp.status_code == 200:
+            logger.info("[MetaCAPI] %s → %s (event_id=%s)", payload.event_name, payload.store_id, event_id)
+            return {"success": True, "sent": True, "events_received": resp_json.get("events_received")}
+        else:
+            logger.warning("[MetaCAPI] Non-200 from Meta: %s %s", resp.status_code, resp.text)
+            return {"success": True, "sent": False, "meta_error": resp_json.get("error", {}).get("message")}
+    except Exception as exc:
+        logger.error("[MetaCAPI] Failed to send event: %s", exc)
+        return {"success": True, "sent": False, "reason": str(exc)}
 
 
 @router.get("/integration-summary", response_model=dict)
