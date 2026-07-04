@@ -76,17 +76,18 @@ class StorePlan(str, Enum):
 
 # Requests per 60-second window per store
 STORE_PLAN_LIMITS: dict[StorePlan, int] = {
-    StorePlan.STARTER: 120,
-    StorePlan.PROFESSIONAL: 600,
-    StorePlan.ENTERPRISE: 3000,
+    StorePlan.STARTER: 1200,
+    StorePlan.PROFESSIONAL: 3000,
+    StorePlan.ENTERPRISE: 10000,
 }
 
-# Per-IP limits (all requests, anonymous)
-IP_LIMIT_GET = 300       # GET requests / minute / IP
-IP_LIMIT_WRITE = 60      # POST/PATCH/DELETE / minute / IP
+# Per-IP limits — intentionally high because Vercel proxies all traffic
+# through a small pool of AWS edge IPs, so all real users share the same IP.
+IP_LIMIT_GET = 3000      # GET requests / minute / IP
+IP_LIMIT_WRITE = 600     # POST/PATCH/DELETE / minute / IP
 
 # Per-user limits (authenticated)
-USER_LIMIT_WRITE = 120   # write requests / minute / user
+USER_LIMIT_WRITE = 600   # write requests / minute / user
 
 # Auth endpoint brute-force limits
 AUTH_LIMIT = 5           # login attempts per 15 minutes per IP+email key
