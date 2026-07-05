@@ -488,8 +488,15 @@ def list_orders(
         elif current_user.role == "MANAGER" and current_user.employee_store_id:
             query = query.filter(Order.store_id == current_user.employee_store_id)
         elif current_user.role == "LIVREUR":
-            # A delivery agent only lists the orders handed to them
-            query = query.filter(Order.livreur_id == current_user.id)
+            # A delivery agent only lists the orders handed to them for an
+            # INTERNAL delivery — never a carrier-tracked one. Once a NOEST/
+            # Yalidine/ZR tracking number exists, that parcel is the
+            # transporteur's job, whatever livreur_id still says.
+            from sqlalchemy import or_ as _or_liv
+            query = query.filter(
+                Order.livreur_id == current_user.id,
+                _or_liv(Order.tracking_number.is_(None), Order.tracking_number == ""),
+            )
 
     # Explicit filters (from query params)
     if store_id:
