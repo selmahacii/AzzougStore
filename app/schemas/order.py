@@ -189,7 +189,10 @@ class OrderEventRead(BaseModel):
     to_status: str
     note: Optional[str] = None
     call_result: Optional[str] = None
-    call_attempt: int = 0
+    # Nullable in the DB (Column default=1 is Python/ORM-side only — raw SQL
+    # inserts, e.g. data-repair migrations, can leave it NULL) — must accept
+    # None or every /orders response breaks the moment one legacy row exists.
+    call_attempt: Optional[int] = None
     scheduled_callback_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     actor: Optional[ActorRef] = None

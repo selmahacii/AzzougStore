@@ -52,8 +52,8 @@ def upgrade():
     for row in affected:
         conn.execute(
             sa.text(
-                "INSERT INTO order_events (id, order_id, from_status, to_status, note, created_at, updated_at) "
-                "VALUES (:id, :order_id, :status, :status, :note, now(), now())"
+                "INSERT INTO order_events (id, order_id, from_status, to_status, note, call_attempt, created_at, updated_at) "
+                "VALUES (:id, :order_id, :status, :status, :note, 1, now(), now())"
             ),
             {"id": str(uuid.uuid4()), "order_id": row.id, "status": row.status, "note": note},
         )
