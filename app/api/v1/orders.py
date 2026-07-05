@@ -231,7 +231,7 @@ def get_agent_counts(
     scoped exactly like the agent's order list.
     """
     from sqlalchemy import and_, or_
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     base = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
 
@@ -281,6 +281,13 @@ def get_agent_counts(
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
         "internal_delivery": _count(Order.livreur_id.isnot(None), Order.status.in_(["CONFIRMED", "SHIPPED"])),
         "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
+        # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
+        # sans heure de rappel programmée, ou dont l'heure est déjà passée.
+        "recall": _count(
+            Order.nrp_count > 0,
+            Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
+            or_(Order.next_callback_time == None, Order.next_callback_time <= datetime.now(timezone.utc).replace(tzinfo=None)),
+        ),
     }
     return {"success": True, "counts": counts}
 

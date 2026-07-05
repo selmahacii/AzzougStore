@@ -321,7 +321,18 @@ async def create_parcel(
     tracking_number = result.get("tracking") or ""
 
     if order and tracking_number:
+        # Same invariant as the main dispatch endpoint: a carrier parcel and
+        # an internal driver can never both be active on the same order.
+        if order.livreur_id:
+            from app.models.events import OrderEvent as _OE
+            import uuid as _uuid3
+            db.add(_OE(id=str(_uuid3.uuid4()), order_id=order.id, actor_id=current_user.id,
+                       from_status=order.status, to_status=order.status,
+                       note=f"Switch livreur interne -> transporteur (Noest) : nouveau tracking {tracking_number}."))
+            order.livreur_id = None
         order.tracking_number = tracking_number
+        if order.status not in ("SHIPPED", "DELIVERED"):
+            order.status = "SHIPPED"
         db.commit()
 
     return {"success": True, "tracking_number": tracking_number, "data": result}
