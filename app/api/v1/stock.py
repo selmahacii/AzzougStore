@@ -216,7 +216,7 @@ def create_movement(
     RESTOCK: quantity must be > 0.
     MANUAL_ADJUSTMENT: quantity can be negative (shrinkage, loss).
     """
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"):
         raise PermissionError(message="Seul un gestionnaire peut effectuer des ajustements de stock.")
 
     if movement.type not in _MANUAL_TYPES:
@@ -232,6 +232,10 @@ def create_movement(
         raise ProductNotFoundError()
     if movement.store_id and product.store_id != movement.store_id:
         raise PermissionError(message="Le produit n'appartient pas à la boutique spécifiée.")
+
+    # A delivery driver only manages stock for their own store
+    if current_user.role == "LIVREUR" and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+        raise PermissionError(message="Vous ne pouvez ajuster le stock que de votre propre boutique.")
 
     try:
         if movement.type == "RESTOCK":

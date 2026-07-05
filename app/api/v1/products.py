@@ -194,9 +194,9 @@ def create_product(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
-    Create new product. Accessible by ADMIN and MANAGER.
+    Create new product. Accessible by ADMIN, MANAGER and LIVREUR (store-scoped).
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour créer un produit.")
 
     # Store ownership check (non-superadmin)
@@ -364,7 +364,7 @@ def update_product(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Update a product fully."""
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour modifier un produit.")
 
     product = db.query(Product).filter(Product.id == id).first()
@@ -405,7 +405,7 @@ def toggle_product(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Toggle product active/inactive status."""
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
     product = db.query(Product).filter(Product.id == id).first()
@@ -507,12 +507,15 @@ def quick_update_stock(
     Quick stock update directly on product (for inline table edits).
     Expected: { stock: N }
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
+
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+        raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     new_stock = payload.get("stock")
     if new_stock is None or int(new_stock) < 0:
