@@ -1041,6 +1041,33 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
         .first()
     )
 
+    # Retry queue — operational view (not time-windowed: a stuck event should
+    # show up regardless of when it first failed)
+    pending_q = db.query(MetaCapiLog).filter(
+        MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry",
+    )
+    pending_count = pending_q.count()
+    oldest_pending = pending_q.order_by(MetaCapiLog.created_at.asc()).first()
+    failed_count = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "failed")
+        .scalar() or 0
+    )
+    avg_latency = (
+        db.query(func.avg(MetaCapiLog.latency_ms))
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success",
+            MetaCapiLog.created_at >= week_ago, MetaCapiLog.latency_ms.isnot(None),
+        )
+        .scalar()
+    )
+    last_success = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success")
+        .order_by(MetaCapiLog.updated_at.desc())
+        .first()
+    )
+
     # Attribution coverage on last-30-days orders
     order_filters = [
         Order.store_id == store_id, Order.is_deleted == False,
@@ -1087,6 +1114,14 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                     "at": last_error.created_at.isoformat() if last_error.created_at else None,
                 } if last_error else None,
             },
+            "queue": {
+                "pending_count": pending_count,
+                "failed_count": failed_count,
+                "oldest_pending_at": oldest_pending.created_at.isoformat() if oldest_pending and oldest_pending.created_at else None,
+                "oldest_pending_event": oldest_pending.event_name if oldest_pending else None,
+                "avg_latency_ms": round(avg_latency, 0) if avg_latency else None,
+                "last_synced_at": last_success.updated_at.isoformat() if last_success and last_success.updated_at else None,
+            },
             "deduplication": {
                 "strategy": "event_id partage Pixel/CAPI",
                 "coverage": "100% des evenements emis",
@@ -1107,6 +1142,55 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                 "invalid_price": bad_price,
             },
         },
+    }
+
+
+# ─── GET /meta-ads/capi-logs — filterable operational log view ───────────────
+
+@router.get("/capi-logs", response_model=dict)
+def get_meta_capi_logs(
+    store_id: str = Query(...),
+    status: Optional[str] = Query(None, description="success | error | pending_retry | failed"),
+    event_name: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, description="ISO date, inclusive"),
+    date_to: Optional[str] = Query(None, description="ISO date, inclusive"),
+    limit: int = Query(100, le=500),
+    db: Session = Depends(get_db),
+):
+    """Raw CAPI log rows for the monitoring dashboard, filterable by
+    store/date/event type/status — the operational counterpart to the
+    rolled-up /diagnostics summary."""
+    from app.models.marketing import MetaCapiLog
+
+    q = db.query(MetaCapiLog).filter(MetaCapiLog.store_id == store_id)
+    if status:
+        q = q.filter(MetaCapiLog.status == status)
+    if event_name:
+        q = q.filter(MetaCapiLog.event_name == event_name)
+    if date_from:
+        q = q.filter(MetaCapiLog.created_at >= date_from)
+    if date_to:
+        q = q.filter(MetaCapiLog.created_at <= date_to)
+
+    rows = q.order_by(MetaCapiLog.created_at.desc()).limit(limit).all()
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": r.id,
+                "order_id": r.order_id,
+                "event_name": r.event_name,
+                "event_id": r.event_id,
+                "status": r.status,
+                "error_message": r.error_message,
+                "retry_count": r.retry_count,
+                "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
+                "latency_ms": r.latency_ms,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in rows
+        ],
     }
 
 
