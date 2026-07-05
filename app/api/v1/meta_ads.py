@@ -760,7 +760,8 @@ def _dispatch_capi_event(
             _log_send(
                 db, store_id=store_id, order_id=None,
                 event_name=event["event_name"], event_id=event["event_id"],
-                status="pending_retry", error_message=result["error"], payload=event,
+                status="pending_retry", error_message=result["error"],
+                error_category=result.get("error_category"), payload=event,
                 retry_count=0,
                 next_retry_at=datetime.now(timezone.utc) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[0]),
             )
@@ -769,6 +770,7 @@ def _dispatch_capi_event(
                 db, store_id=store_id, order_id=None,
                 event_name=event["event_name"], event_id=event["event_id"],
                 status="error", error_message=result["error"],
+                error_category=result.get("error_category"),
             )
     finally:
         db.close()
@@ -1011,6 +1013,7 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
     from app.models.product import Product
+    from app.services.meta_capi import _MAX_QUEUE_RETRIES
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     week_ago = now - timedelta(days=7)
@@ -1077,6 +1080,38 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.retry_count > 0, MetaCapiLog.created_at >= week_ago)
         .scalar() or 0
     )
+
+    # Network (infrastructure) vs Meta API (application/config) errors — a
+    # growing network_timeout/network_error count points at connectivity,
+    # api_4xx/api_5xx points at token/config or Meta-side issues.
+    error_category_counts: Dict[str, int] = {}
+    for cat, cnt in (
+        db.query(MetaCapiLog.error_category, func.count(MetaCapiLog.id))
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.created_at >= week_ago,
+            MetaCapiLog.status.in_(["error", "pending_retry", "failed"]),
+        )
+        .group_by(MetaCapiLog.error_category)
+        .all()
+    ):
+        error_category_counts[cat or "unknown"] = cnt
+
+    # Average time-to-success for events that needed at least one retry —
+    # created_at (first failure) to updated_at (eventual success).
+    resolved_retried = (
+        db.query(MetaCapiLog.created_at, MetaCapiLog.updated_at)
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success",
+            MetaCapiLog.retry_count > 0, MetaCapiLog.created_at >= week_ago,
+        )
+        .all()
+    )
+    if resolved_retried:
+        deltas = [(u - c).total_seconds() for c, u in resolved_retried if u and c]
+        avg_time_to_success_s = round(sum(deltas) / len(deltas), 1) if deltas else None
+    else:
+        avg_time_to_success_s = None
+
     last_failed = (
         db.query(MetaCapiLog)
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status.in_(["error", "failed"]))
@@ -1145,6 +1180,9 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                 "avg_latency_ms": avg_latency,
                 "p95_latency_ms": p95_latency,
                 "p99_latency_ms": p99_latency,
+                "avg_time_to_success_s": avg_time_to_success_s,
+                "max_retries_configured": _MAX_QUEUE_RETRIES,
+                "error_categories_7d": error_category_counts,
                 "last_synced_at": last_success.updated_at.isoformat() if last_success and last_success.updated_at else None,
                 "last_failed_at": last_failed.updated_at.isoformat() if last_failed and last_failed.updated_at else None,
                 "last_failed_event": last_failed.event_name if last_failed else None,

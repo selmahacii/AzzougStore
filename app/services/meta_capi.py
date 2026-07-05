@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import random
 import re
 import socket
@@ -88,7 +89,16 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 # Split connect (DNS + TCP + TLS handshake) from read (waiting on Meta's
 # response) so a handshake timeout and a slow-response timeout are
 # distinguishable in logs instead of both surfacing as a generic timeout.
-_TIMEOUT = httpx.Timeout(connect=8.0, read=15.0, write=10.0, pool=5.0)
+# Default lowered from 8s: a real handshake to graph.facebook.com completes
+# in tens of milliseconds even from a cold connection (verified against the
+# live API) — 8s per attempt means 4 immediate attempts can burn 32s of a
+# background-task thread during a real outage before the circuit breaker
+# even has a chance to react. Configurable via env var for ops tuning
+# without a code change/redeploy if production networking genuinely needs
+# more headroom than dev/staging.
+_CONNECT_TIMEOUT = float(os.getenv("META_CAPI_CONNECT_TIMEOUT", "5.0"))
+_READ_TIMEOUT = float(os.getenv("META_CAPI_READ_TIMEOUT", "15.0"))
+_TIMEOUT = httpx.Timeout(connect=_CONNECT_TIMEOUT, read=_READ_TIMEOUT, write=10.0, pool=5.0)
 _LIMITS = httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=30.0)
 
 # TCP segment size clamp — mitigates PMTU black-holing (see module docstring).
@@ -484,6 +494,7 @@ def _log_send(
     event_id: str,
     status: str,
     error_message: Optional[str] = None,
+    error_category: Optional[str] = None,
     events_received: Optional[int] = None,
     payload: Optional[Dict[str, Any]] = None,
     retry_count: int = 0,
@@ -507,6 +518,7 @@ def _log_send(
         if existing:
             existing.status = status
             existing.error_message = (error_message or "")[:1000] or None
+            existing.error_category = error_category
             existing.events_received = events_received
             existing.retry_count = retry_count
             existing.next_retry_at = next_retry_at
@@ -522,6 +534,7 @@ def _log_send(
                 event_id=event_id,
                 status=status,
                 error_message=(error_message or "")[:1000] or None,
+                error_category=error_category,
                 events_received=events_received,
                 payload=payload,
                 retry_count=retry_count,
@@ -537,6 +550,28 @@ def _log_send(
 def _fmt_block(**fields: Any) -> str:
     """Structured multi-line log block matching the requested diagnostic format."""
     return "\n".join(f"{k}: {v}" for k, v in fields.items() if v is not None)
+
+
+def _coarse_error_category(failure_category: Optional[str]) -> str:
+    """Collapse the fine-grained failure_category into the four dashboard
+    buckets: network_timeout / network_error / api_4xx / api_5xx / other."""
+    if not failure_category:
+        return "other"
+    if failure_category in ("TLS Handshake Timeout", "TCP Connect Timeout", "Connect Timeout", "Response Timeout"):
+        return "network_timeout"
+    if failure_category in ("DNS Resolution Failed", "TCP Connect Failed", "Connect Error", "Remote Protocol Error"):
+        return "network_error"
+    if failure_category == "Non-retryable client error":
+        return "api_4xx"
+    if failure_category == "Meta server error":
+        return "api_5xx"
+    if failure_category.startswith("HTTP "):
+        try:
+            code = int(failure_category.split(" ", 1)[1])
+            return "api_4xx" if 400 <= code < 500 else "api_5xx" if code >= 500 else "other"
+        except ValueError:
+            return "other"
+    return "other"
 
 
 def send_events(
@@ -578,7 +613,7 @@ def send_events(
         return {
             "success": False, "events_received": None,
             "error": "circuit breaker open: too many consecutive connection failures",
-            "fbtrace_id": None, "retryable": True,
+            "fbtrace_id": None, "retryable": True, "error_category": "network_timeout",
         }
 
     client = _get_client()
@@ -714,6 +749,7 @@ def send_events(
     return {
         "success": False, "events_received": None, "error": last_error,
         "fbtrace_id": None, "retryable": retryable,
+        "error_category": _coarse_error_category(failure_category),
     }
 
 
@@ -771,6 +807,7 @@ def send_purchase_for_order(
                 event_id=event["event_id"],
                 status="pending_retry",
                 error_message=result["error"],
+                error_category=result.get("error_category"),
                 payload=event,
                 retry_count=0,
                 next_retry_at=datetime.now(timezone.utc) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[0]),
@@ -788,9 +825,66 @@ def send_purchase_for_order(
                 event_id=event["event_id"],
                 status="error",
                 error_message=result["error"],
+                error_category=result.get("error_category"),
             )
     finally:
         db.close()
+
+
+_QUEUE_ALERT_THRESHOLD = int(os.getenv("META_CAPI_QUEUE_ALERT_THRESHOLD", "100"))
+_QUEUE_ALERT_COOLDOWN_MINUTES = 60
+
+
+def _check_queue_backlog(db) -> None:
+    """
+    Fires an in-app notification (admin broadcast) when a store's pending
+    retry queue crosses _QUEUE_ALERT_THRESHOLD — a growing backlog usually
+    means the immediate-retry path is failing consistently (real outage) and
+    someone should look, rather than silently waiting for the next sweep.
+    Throttled to one notification per store per cooldown window so a
+    sustained outage doesn't spam admins every sweep.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.models.notification import Notification
+    from app.services.notification_service import notify
+
+    counts = (
+        db.query(MetaCapiLog.store_id, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.status == "pending_retry")
+        .group_by(MetaCapiLog.store_id)
+        .all()
+    )
+    for store_id, count in counts:
+        if count < _QUEUE_ALERT_THRESHOLD:
+            continue
+        cooldown_start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=_QUEUE_ALERT_COOLDOWN_MINUTES)
+        recent = (
+            db.query(Notification)
+            .filter(
+                Notification.type == "META_CAPI_QUEUE_BACKLOG",
+                Notification.store_id == store_id,
+                Notification.created_at >= cooldown_start,
+            )
+            .first()
+        )
+        if recent:
+            continue
+        notify(
+            db, type="META_CAPI_QUEUE_BACKLOG",
+            title="File d'attente Meta CAPI saturée",
+            message=(
+                f"{count} événement(s) Meta en attente de reprise pour cette boutique "
+                f"(seuil: {_QUEUE_ALERT_THRESHOLD}). Vérifiez la connectivité réseau ou "
+                "la configuration Meta Ads (jeton d'accès, pixel)."
+            ),
+            user_id=None, store_id=store_id,
+        )
+        logger.error(
+            "[MetaCAPI] queue backlog alert: store=%s pending=%d (threshold=%d)",
+            store_id, count, _QUEUE_ALERT_THRESHOLD,
+        )
+        db.commit()
 
 
 def retry_pending_events() -> None:
@@ -805,6 +899,8 @@ def retry_pending_events() -> None:
 
     db = SessionLocal()
     try:
+        _check_queue_backlog(db)
+
         now = datetime.now(timezone.utc)
         due = (
             db.query(MetaCapiLog)
@@ -848,6 +944,7 @@ def retry_pending_events() -> None:
             else:
                 row.retry_count += 1
                 row.error_message = result["error"]
+                row.error_category = result.get("error_category")
                 if not result.get("retryable") or row.retry_count >= _MAX_QUEUE_RETRIES:
                     row.status = "failed"
                     row.next_retry_at = None

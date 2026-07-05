@@ -165,6 +165,9 @@ class MetaCapiLog(Base):
     event_id = Column(String, nullable=False)
     status = Column(String, nullable=False, index=True)  # success | error | pending_retry | failed
     error_message = Column(Text, nullable=True)
+    # network_timeout | network_error | api_4xx | api_5xx | other — lets the
+    # dashboard split "network unreachable" from "Meta rejected the request".
+    error_category = Column(String, nullable=True, index=True)
     events_received = Column(Integer, nullable=True)
 
     # Retry queue
