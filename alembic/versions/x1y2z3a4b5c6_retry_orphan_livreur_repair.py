@@ -1,27 +1,22 @@
 # -*- coding: utf-8 -*-
-"""fix_orphan_livreur_carrier_state
+"""retry_orphan_livreur_repair
 
-Data repair: several carrier-parcel-creation endpoints (the standalone
-/api/noest/parcels and /api/yalidine/parcels proxies, and the ZR Express
-push-order endpoint) set Order.tracking_number without ever clearing
-Order.livreur_id, unlike the main /orders/{id}/dispatch endpoint. This left
-orders in an inconsistent state: BOTH an active carrier shipment (tracking
-number) AND an internal driver assignment (livreur_id) at the same time —
-violating the "exactly one active delivery method" invariant, and causing
-those orders to appear in the driver's own dashboard even though the
-confirmatrice's interface never reflected an internal-delivery assignment
-for them (the carrier tracking is what actually happened).
+The previous migration (w0x1y2z3a4b5) crashed on production before making
+any change: it inserted into order_events without supplying `updated_at`,
+which is NOT NULL (inherited from Base, no server-side default). The
+startup script auto-stamped that revision as applied after the failure, so
+alembic will never retry it — this migration performs the actual repair
+with the fix applied.
 
-This migration clears livreur_id on every order that already has a
-tracking_number, and logs one audit-trail event per repaired order so the
-change is traceable. The application code paths that caused this have
-already been fixed to prevent it from recurring.
+Same operation as before: clear Order.livreur_id wherever a tracking_number
+is already set (a carrier parcel and an internal driver can never both be
+active), with one traceability event per repaired order.
 
-Idempotent (a no-op on re-run) and non-destructive (only clears livreur_id,
-never touches tracking_number, status, or any other field).
+Idempotent (no-op if nothing matches) and safe to run on a database where
+the previous migration already succeeded (finds zero rows, does nothing).
 
-Revision ID: w0x1y2z3a4b5
-Revises: v9w0x1y2z3a4
+Revision ID: x1y2z3a4b5c6
+Revises: w0x1y2z3a4b5
 Create Date: 2026-07-06
 """
 
@@ -30,8 +25,8 @@ import uuid
 from alembic import op
 import sqlalchemy as sa
 
-revision = 'w0x1y2z3a4b5'
-down_revision = 'v9w0x1y2z3a4'
+revision = 'x1y2z3a4b5c6'
+down_revision = 'w0x1y2z3a4b5'
 branch_labels = None
 depends_on = None
 
