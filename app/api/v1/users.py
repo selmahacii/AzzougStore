@@ -19,7 +19,7 @@ from app.core.security import get_password_hash
 from app.services.salary_service import compute_salary
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 
 router = APIRouter()
 
@@ -124,34 +124,72 @@ def get_infrastructure_stats(
 
 @router.get("/marketers", response_model=List[MarketerPerformance])
 def get_marketers_performance(
+    store_id: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """
-    Get performance metrics for marketing partners (MARKETER role users).
+    Real performance metrics for marketing/affiliate partners (MARKETER role).
+
+    No fabricated data: a marketer with no `tracking_code` configured shows
+    zero leads/revenue/ROAS and `tracking_configured=False` — the admin must
+    assign a real tracking code (matched against Order.utm_source /
+    Order.campaign_id) before any number appears. Budget comes from the
+    admin-configured `marketing_budget`; ROAS = attributed delivered revenue
+    / budget when a budget is set, else 0.
     """
     marketers = db.query(User).filter(
         User.role == "MARKETER",
-        User.is_active == True
+        User.is_active == True,
     ).all()
-
     if not marketers:
-        return [
-            MarketerPerformance(id="m1", name="Amine Creative DZ", pixel="PX-FB-91022", product="Sneakers Alpha", roas=4.8, leads=450, is_active=True, budget=150000.0),
-            MarketerPerformance(id="m2", name="PixelFlow Media", pixel="PX-TT-22531", product="Smartwatch X", roas=3.9, leads=1200, is_active=True, budget=450000.0),
-        ]
+        return []
 
-    result = []
+    date_filters = []
+    if start_date:
+        try:
+            date_filters.append(Order.created_at >= datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            date_filters.append(Order.created_at <= datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None))
+        except ValueError:
+            pass
+
+    result: List[MarketerPerformance] = []
     for m in marketers:
+        code = getattr(m, "tracking_code", None)
+        budget = float(getattr(m, "marketing_budget", None) or 0)
+
+        if not code:
+            # No real attribution key configured — report zeros, not guesses.
+            result.append(MarketerPerformance(
+                id=str(m.id), name=str(m.name), pixel=None, is_active=bool(m.is_active),
+                budget=budget, leads=0, revenue=0.0, roas=0.0, tracking_configured=False,
+            ))
+            continue
+
+        attribution_filters = [
+            Order.is_deleted == False,
+            Order.status != "MERGED",
+            or_(Order.utm_source == code, Order.campaign_id == code, Order.utm_campaign == code),
+        ] + date_filters
+        if store_id:
+            attribution_filters.append(Order.store_id == store_id)
+
+        leads = db.query(func.count(Order.id)).filter(*attribution_filters).scalar() or 0
+        revenue = db.query(func.coalesce(func.sum(Order.total), 0)).filter(
+            *attribution_filters, Order.status == "DELIVERED"
+        ).scalar() or 0
+        roas = round(float(revenue) / budget, 2) if budget > 0 else 0.0
+
         result.append(MarketerPerformance(
-            id=str(m.id),
-            name=str(m.name),
-            pixel=f"PX-GEN-{str(m.id)[:5].upper()}",
-            product="Multi-Produits",
-            roas=4.5,
-            leads=150,
-            is_active=bool(m.is_active),
-            budget=200000.0
+            id=str(m.id), name=str(m.name), pixel=code, is_active=bool(m.is_active),
+            budget=budget, leads=int(leads), revenue=float(revenue), roas=roas,
+            tracking_configured=True,
         ))
     return result
 
@@ -262,12 +300,20 @@ def create_user(
             detail="Ce courriel est d├®j├á utilis├® par un autre utilisateur."
         )
 
+    new_id = str(uuid.uuid4())
+    role = user_in.role or "CONFIRMATEUR"
+    # A marketer needs a real attribution key from day one — derived from
+    # their own id (never a fabricated brand/pixel name), editable later.
+    tracking_code = user_in.tracking_code
+    if role == "MARKETER" and not tracking_code:
+        tracking_code = f"AFF-{new_id[:8].upper()}"
+
     db_user = User(
-        id=str(uuid.uuid4()),
+        id=new_id,
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
         name=user_in.name,
-        role=user_in.role or "CONFIRMATEUR",
+        role=role,
         phone=user_in.phone,
         avatar=user_in.avatar,
         daily_target=user_in.daily_target or 10,
@@ -280,6 +326,8 @@ def create_user(
         assigned_store_scope=user_in.assigned_store_scope or "ALL",
         assigned_store_ids=user_in.assigned_store_ids or [],
         assigned_product_ids=user_in.assigned_product_ids or [],
+        tracking_code=tracking_code,
+        marketing_budget=user_in.marketing_budget,
     )
     db.add(db_user)
     db.commit()

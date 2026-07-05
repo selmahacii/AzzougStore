@@ -28,6 +28,12 @@ class User(Base):
     payment_recovered_cart = Column(Integer, default=0)
     payment_lost_cart      = Column(Integer, default=0)
 
+    # Affiliate / marketing-partner tracking (role MARKETER). The code is
+    # matched against Order.utm_source / Order.campaign_id to attribute real
+    # leads and revenue — no data is fabricated when these are unset.
+    tracking_code    = Column(String, unique=True, nullable=True, index=True)
+    marketing_budget = Column(Integer, nullable=True)  # DA, admin-configured
+
     # Relationships
     owned_stores = relationship("Store", back_populates="owner", foreign_keys="[Store.owner_id]")
     employee_store = relationship("Store", back_populates="employees", foreign_keys=[employee_store_id])

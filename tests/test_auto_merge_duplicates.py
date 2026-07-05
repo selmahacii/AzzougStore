@@ -181,3 +181,110 @@ async def test_normal_order_beats_abandoned_cart_as_parent(client):
         db.close()
 
     await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_normal_order_restores_as_normal(client):
+    """Case 5: Normal order NEW -> CONFIRMED -> CANCELLED -> CONFIRMED again
+    must stay a Normal order (is_abandoned_cart False, recovered_at unset)."""
+    suffix = str(uuid.uuid4())[:8]
+    phone = "0563" + suffix[:6].replace("-", "0")
+    store_id, product = await _create_store_and_product(client, suffix)
+
+    r = await client.post(f"{settings.API_V1_STR}/orders/",
+                          json=_order_payload(store_id, product, phone),
+                          headers=INTERNAL_KEY_HEADER)
+    assert r.status_code == 201
+    order_id = r.json()["id"]
+
+    r1 = await client.patch(f"{settings.API_V1_STR}/orders/{order_id}",
+                            json={"status": "CONFIRMED"}, headers=INTERNAL_KEY_HEADER)
+    assert r1.status_code == 200
+    r2 = await client.patch(f"{settings.API_V1_STR}/orders/{order_id}",
+                            json={"status": "CANCELLED"}, headers=INTERNAL_KEY_HEADER)
+    assert r2.status_code == 200
+    r3 = await client.patch(f"{settings.API_V1_STR}/orders/{order_id}",
+                            json={"status": "CONFIRMED"}, headers=INTERNAL_KEY_HEADER)
+    assert r3.status_code == 200
+    body = r3.json()
+    assert body["status"] == "CONFIRMED"
+    assert body["is_abandoned_cart"] is False
+    assert not body.get("recovered_at")
+
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+@pytest.mark.asyncio
+async def test_cancelled_abandoned_cart_restores_as_recovered(client):
+    """Case 6: Abandoned cart -> CANCELLED -> CONFIRMED again must become a
+    Recovered Cart (is_abandoned_cart True, recovered_at now set)."""
+    suffix = str(uuid.uuid4())[:8]
+    phone = "0564" + suffix[:6].replace("-", "0")
+    store_id, product = await _create_store_and_product(client, suffix)
+
+    r = await client.post(f"{settings.API_V1_STR}/orders/abandoned",
+                          json=_order_payload(store_id, product, phone),
+                          headers=INTERNAL_KEY_HEADER)
+    assert r.status_code == 201
+    order_id = r.json()["id"]
+
+    r1 = await client.patch(f"{settings.API_V1_STR}/orders/{order_id}",
+                            json={"status": "CANCELLED"}, headers=INTERNAL_KEY_HEADER)
+    assert r1.status_code == 200
+    assert r1.json()["is_abandoned_cart"] is True  # origin untouched by cancellation
+
+    r2 = await client.patch(f"{settings.API_V1_STR}/orders/{order_id}",
+                            json={"status": "CONFIRMED"}, headers=INTERNAL_KEY_HEADER)
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["status"] == "CONFIRMED"
+    assert body["is_abandoned_cart"] is True
+    assert body.get("recovered_at")  # now marked RECOVERED forever
+
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_merge_independent_of_operational_status(client):
+    """Case 4 / item 2: an NRP'd order (IN_PROGRESS) and a fresh NEW order of
+    the same phone must resolve to ONE operational order — detection must not
+    care that one of them is mid-workflow (NRP) rather than freshly created."""
+    suffix = str(uuid.uuid4())[:8]
+    phone = "0565" + suffix[:6].replace("-", "0")
+    store_id, product = await _create_store_and_product(client, suffix)
+
+    r1 = await client.post(f"{settings.API_V1_STR}/orders/",
+                           json=_order_payload(store_id, product, phone),
+                           headers=INTERNAL_KEY_HEADER)
+    assert r1.status_code == 201
+    first_id = r1.json()["id"]
+
+    # Put the first order mid-NRP workflow before the duplicate shows up
+    r_nrp = await client.patch(f"{settings.API_V1_STR}/orders/{first_id}",
+                               json={"call_result": "NRP"}, headers=INTERNAL_KEY_HEADER)
+    assert r_nrp.status_code == 200
+    assert r_nrp.json()["status"] == "IN_PROGRESS"
+
+    r2 = await client.post(f"{settings.API_V1_STR}/orders/",
+                           json=_order_payload(store_id, product, phone),
+                           headers=INTERNAL_KEY_HEADER)
+    assert r2.status_code == 201
+    second_id = r2.json()["id"]
+
+    from app.db.session import SessionLocal
+    from app.models.order import Order
+    db = SessionLocal()
+    try:
+        o1 = db.query(Order).filter(Order.id == first_id).first()
+        o2 = db.query(Order).filter(Order.id == second_id).first()
+        statuses = {str(o1.status), str(o2.status)}
+        assert "MERGED" in statuses, f"expected exactly one operational order, got {statuses}"
+        # The NRP'd order (already being processed) must be the parent —
+        # a fresh, untouched NEW order does not outrank in-progress work.
+        parent = o1 if str(o1.status) != "MERGED" else o2
+        assert parent.id == first_id, "the order already being worked (NRP) should stay the parent"
+        assert parent.nrp_count == 1
+    finally:
+        db.close()
+
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)

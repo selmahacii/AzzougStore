@@ -292,7 +292,12 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     Returns the number of orders merged.
     """
     phone = (order.customer_phone or "").strip()
-    if not phone or str(order.status) not in _MERGEABLE_STATES:
+    # Entry status: any order still in the confirmation stage, OR already
+    # CONFIRMED-without-tracking (it can still legitimately absorb a late
+    # duplicate — e.g. reopened from CANCELLED, or a sibling created after).
+    if not phone or (str(order.status) not in _MERGEABLE_STATES and str(order.status) != "CONFIRMED"):
+        return 0
+    if str(order.status) == "CONFIRMED" and order.tracking_number:
         return 0
 
     cfg = get_operations_config(db, str(order.store_id))
@@ -955,6 +960,33 @@ class OrderService:
                              + (f" — suivi : {order.tracking_number}" if order.tracking_number else "")
                              + ".",
                     )
+
+            # ── Defensive re-merge ──────────────────────────────────
+            # Duplicate detection must be independent of the operational
+            # status: whenever an order (re)enters an active phase — reopened
+            # from CANCELLED, an NRP callback puts it back in IN_PROGRESS,
+            # it gets freshly CONFIRMED — re-scan for same-phone siblings
+            # that were never merged (legacy data, races, admin edits) so the
+            # confirmatrice never ends up with two operational orders for the
+            # same client. No-op (0 merged) in the overwhelming common case
+            # where everything was already merged at creation time.
+            if new_status in _MERGEABLE_STATES or new_status == "CONFIRMED":
+                # Skip if `order` is already an established parent (has
+                # merged children) — re-running would risk demoting it to a
+                # child of some sibling and orphaning its own children's
+                # parent_order_id chain. An existing parent already absorbs
+                # new duplicates at THEIR creation time; nothing to catch up.
+                already_a_parent = (
+                    db.query(Order.id)
+                    .filter(Order.parent_order_id == order.id, Order.status == "MERGED")
+                    .first()
+                    is not None
+                )
+                if not already_a_parent:
+                    try:
+                        auto_merge_duplicates(db, order, actor_id=actor_id)
+                    except Exception as exc:
+                        logger.warning("Defensive re-merge failed for %s: %s", order.order_number, exc)
 
             # ── Business notifications ────────────────────────────
             if new_status == "CONFIRMED" and order.is_abandoned_cart:

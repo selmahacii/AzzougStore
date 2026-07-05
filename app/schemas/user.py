@@ -20,6 +20,8 @@ class UserBase(BaseModel):
     assigned_store_scope: Optional[str] = "ALL"
     assigned_store_ids: Optional[List[str]] = []
     assigned_product_ids: Optional[List[str]] = []
+    tracking_code: Optional[str] = None
+    marketing_budget: Optional[int] = None
 
     @field_validator("payment_type")
     @classmethod
@@ -102,9 +104,11 @@ class InfrastructureStats(BaseModel):
 class MarketerPerformance(BaseModel):
     id: str
     name: str
-    pixel: str
-    product: str
-    roas: float
-    leads: int
-    is_active: bool            # ÔåÉ snake_case (unified with frontend m.is_active)
-    budget: float
+    pixel: Optional[str] = None       # real tracking_code, or None if unconfigured
+    product: str = "Multi-produits"
+    roas: float = 0.0                 # real: attributed delivered revenue / budget
+    leads: int = 0                    # real: orders attributed via tracking_code
+    is_active: bool
+    budget: float = 0.0                # real: admin-configured marketing_budget
+    revenue: float = 0.0               # attributed delivered revenue (DA)
+    tracking_configured: bool = False  # False -> UI should show "Non configure", not a fake code
