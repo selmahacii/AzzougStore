@@ -746,7 +746,7 @@ def _dispatch_capi_event(
     from app.db.session import SessionLocal
     from app.services.meta_capi import send_events, _log_send, _QUEUE_BACKOFF_MINUTES
 
-    result = send_events(pixel_id, access_token, [event])
+    result = send_events(pixel_id, access_token, [event], store_label=store_id, order_label=None)
     db = SessionLocal()
     try:
         if result["success"]:
@@ -754,6 +754,7 @@ def _dispatch_capi_event(
                 db, store_id=store_id, order_id=None,
                 event_name=event["event_name"], event_id=event["event_id"],
                 status="success", events_received=result["events_received"],
+                latency_ms=result.get("latency_ms"),
             )
         elif result.get("retryable"):
             _log_send(
@@ -1053,13 +1054,34 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "failed")
         .scalar() or 0
     )
-    avg_latency = (
-        db.query(func.avg(MetaCapiLog.latency_ms))
-        .filter(
+    latencies = [
+        v for (v,) in db.query(MetaCapiLog.latency_ms).filter(
             MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success",
             MetaCapiLog.created_at >= week_ago, MetaCapiLog.latency_ms.isnot(None),
-        )
-        .scalar()
+        ).all()
+    ]
+    latencies.sort()
+
+    def _percentile(sorted_vals, pct):
+        if not sorted_vals:
+            return None
+        idx = min(len(sorted_vals) - 1, int(round(pct / 100 * (len(sorted_vals) - 1))))
+        return sorted_vals[idx]
+
+    avg_latency = round(sum(latencies) / len(latencies), 0) if latencies else None
+    p95_latency = _percentile(latencies, 95)
+    p99_latency = _percentile(latencies, 99)
+
+    retried_count = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.retry_count > 0, MetaCapiLog.created_at >= week_ago)
+        .scalar() or 0
+    )
+    last_failed = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status.in_(["error", "failed"]))
+        .order_by(MetaCapiLog.updated_at.desc())
+        .first()
     )
     last_success = (
         db.query(MetaCapiLog)
@@ -1117,10 +1139,15 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
             "queue": {
                 "pending_count": pending_count,
                 "failed_count": failed_count,
+                "retried_count_7d": retried_count,
                 "oldest_pending_at": oldest_pending.created_at.isoformat() if oldest_pending and oldest_pending.created_at else None,
                 "oldest_pending_event": oldest_pending.event_name if oldest_pending else None,
-                "avg_latency_ms": round(avg_latency, 0) if avg_latency else None,
+                "avg_latency_ms": avg_latency,
+                "p95_latency_ms": p95_latency,
+                "p99_latency_ms": p99_latency,
                 "last_synced_at": last_success.updated_at.isoformat() if last_success and last_success.updated_at else None,
+                "last_failed_at": last_failed.updated_at.isoformat() if last_failed and last_failed.updated_at else None,
+                "last_failed_event": last_failed.event_name if last_failed else None,
             },
             "deduplication": {
                 "strategy": "event_id partage Pixel/CAPI",

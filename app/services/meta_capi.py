@@ -14,13 +14,32 @@ network failures to graph.facebook.com):
   connection pooling and keep-alive — no per-call TCP+TLS handshake.
 - Separate connect/read/write/pool timeouts (a slow DNS+TLS handshake and a
   slow Graph API response are different failure modes and are logged as such).
+- A custom httpcore transport (_diagnostic_transport) forces IPv4-only DNS
+  resolution and clamps TCP_MAXSEG. Root cause of the observed
+  "_ssl.c:999: handshake operation timed out": on container platforms
+  (including HF Spaces) IPv6 egress is frequently unrouted/black-holed while
+  DNS still returns AAAA records, and/or the overlay network's real path MTU
+  is smaller than advertised, silently dropping the (large) TLS ClientHello
+  packet with no ICMP feedback. Both failure modes present identically: TCP
+  "connects" but the handshake hangs until timeout. IPv4-only + MSS clamping
+  removes both dead paths without needing infrastructure access to confirm
+  which one was active.
+- The same transport times DNS/TCP/TLS phases individually (thread-local)
+  so failures are logged with a precise failure_category (DNS Resolution
+  Failed / TCP Connect Timeout / TLS Handshake Timeout / ...) instead of a
+  bare exception name.
+- A lightweight circuit breaker: after several consecutive connect/TLS
+  failures, immediate attempts are skipped (straight to the persistent
+  queue) for a cooldown window, so a real outage doesn't burn background-task
+  time re-attempting a dead endpoint on every single event.
 - Immediate retries use exponential backoff with jitter; if all immediate
   retries fail, the event is NEVER dropped — it's persisted in
   meta_capi_logs (status='pending_retry', full payload + next_retry_at) and
   picked up later by `retry_pending_events()`, called from the same
   background scheduler as the Noest sync (see services/noest_sync.py).
-- Every attempt is called out in a structured log line: event, attempt,
-  latency, http status, exception type, outcome.
+- Every attempt is called out in a structured log line: event, store, order,
+  attempt/total, DNS/TCP/TLS/request/response/total latency, HTTP status,
+  failure category, outcome.
 - Everything here runs inside a FastAPI BackgroundTasks callback (or the
   scheduler loop) — it NEVER runs on the request/response path, so a slow
   or failing Meta call can never delay order creation or any user action.
@@ -34,13 +53,17 @@ import hashlib
 import logging
 import random
 import re
+import socket
+import threading
 import time
 import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import httpcore
 import httpx
+from httpcore._backends.sync import SyncStream as _BaseSyncStream
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("app.meta_capi")
@@ -68,21 +91,191 @@ _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _TIMEOUT = httpx.Timeout(connect=8.0, read=15.0, write=10.0, pool=5.0)
 _LIMITS = httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=30.0)
 
+# TCP segment size clamp — mitigates PMTU black-holing (see module docstring).
+_TCP_MSS_CLAMP = 1400
+
+# Per-thread connection-phase timing, populated by the custom backend/stream
+# below and consumed by send_events() right after each attempt.
+_timing = threading.local()
+
+
+def _reset_timing() -> None:
+    _timing.dns_ms = None
+    _timing.tcp_ms = None
+    _timing.tls_ms = None
+    _timing.failure_category: Optional[str] = None
+
+
+class _TimedTlsStream(httpcore.NetworkStream):
+    """Wraps the TLS-upgraded stream to accumulate write/read time separately
+    (approximating "request" vs "response" duration in the structured logs)."""
+
+    def __init__(self, inner: httpcore.NetworkStream) -> None:
+        self._inner = inner
+
+    def read(self, max_bytes: int, timeout: Optional[float] = None) -> bytes:
+        t0 = time.monotonic()
+        data = self._inner.read(max_bytes, timeout)
+        _timing.response_ms = (getattr(_timing, "response_ms", None) or 0) + int((time.monotonic() - t0) * 1000)
+        return data
+
+    def write(self, buffer: bytes, timeout: Optional[float] = None) -> None:
+        t0 = time.monotonic()
+        self._inner.write(buffer, timeout)
+        _timing.request_ms = (getattr(_timing, "request_ms", None) or 0) + int((time.monotonic() - t0) * 1000)
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def start_tls(self, ssl_context, server_hostname=None, timeout=None):  # pragma: no cover
+        return self._inner.start_tls(ssl_context, server_hostname, timeout)
+
+    def get_extra_info(self, info: str) -> Any:
+        return self._inner.get_extra_info(info)
+
+
+class _TimedStream(_BaseSyncStream):
+    """Plain TCP stream that times the TLS handshake and tags the precise
+    failure category (vs. a bare exception class name) when it fails."""
+
+    def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+        t0 = time.monotonic()
+        try:
+            new_stream = super().start_tls(ssl_context, server_hostname, timeout)
+        except Exception as exc:
+            _timing.tls_ms = int((time.monotonic() - t0) * 1000)
+            if isinstance(exc, httpcore.ConnectTimeout):
+                _timing.failure_category = "TLS Handshake Timeout"
+            else:
+                _timing.failure_category = f"TLS Error ({type(exc).__name__})"
+            raise
+        _timing.tls_ms = int((time.monotonic() - t0) * 1000)
+        return _TimedTlsStream(new_stream)
+
+
+class _DiagnosticIPv4Backend(httpcore.SyncBackend):
+    """
+    Root-cause fix for repeated "_ssl.c:999: handshake operation timed out":
+    resolves IPv4 (A records) only — never attempts a black-holed IPv6 route
+    — and clamps TCP_MAXSEG to sidestep PMTU black-holing on container
+    overlay networks. Also times DNS + TCP phases individually for logging.
+    """
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: Optional[float] = None,
+        local_address: Optional[str] = None,
+        socket_options=None,
+    ) -> httpcore.NetworkStream:
+        socket_options = list(socket_options or [])
+
+        t_dns = time.monotonic()
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            _timing.dns_ms = int((time.monotonic() - t_dns) * 1000)
+            _timing.failure_category = "DNS Resolution Failed"
+            raise httpcore.ConnectError(f"IPv4 DNS resolution failed for {host}: {exc}") from exc
+        _timing.dns_ms = int((time.monotonic() - t_dns) * 1000)
+
+        t_tcp = time.monotonic()
+        last_exc: Optional[Exception] = None
+        for family, socktype, proto, _, sockaddr in infos:
+            sock: Optional[socket.socket] = None
+            try:
+                sock = socket.socket(family, socktype, proto)
+                sock.settimeout(timeout)
+                sock.connect(sockaddr)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                try:
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG, _TCP_MSS_CLAMP)
+                except OSError:
+                    pass  # not supported on this platform — non-fatal
+                for opt in socket_options:
+                    sock.setsockopt(*opt)
+                _timing.tcp_ms = int((time.monotonic() - t_tcp) * 1000)
+                return _TimedStream(sock)
+            except OSError as exc:
+                last_exc = exc
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+                continue
+
+        _timing.tcp_ms = int((time.monotonic() - t_tcp) * 1000)
+        if isinstance(last_exc, socket.timeout):
+            _timing.failure_category = "TCP Connect Timeout"
+            raise httpcore.ConnectTimeout(str(last_exc)) from last_exc
+        _timing.failure_category = "TCP Connect Failed"
+        raise httpcore.ConnectError(f"TCP connect failed for {host}: {last_exc}") from last_exc
+
+
+# ─── Circuit breaker ────────────────────────────────────────────────────────
+# After several consecutive connect/TLS failures, skip immediate attempts
+# entirely for a cooldown window — queue straight to the persistent retry
+# table instead of burning a background-task thread on a dead endpoint.
+_CIRCUIT_FAILURE_THRESHOLD = 5
+_CIRCUIT_COOLDOWN_SECONDS = 60
+_circuit_lock = threading.Lock()
+_circuit_state = {"consecutive_failures": 0, "opened_at": 0.0}
+
+
+def _circuit_is_open() -> bool:
+    with _circuit_lock:
+        if _circuit_state["consecutive_failures"] < _CIRCUIT_FAILURE_THRESHOLD:
+            return False
+        if time.monotonic() - _circuit_state["opened_at"] >= _CIRCUIT_COOLDOWN_SECONDS:
+            # Cooldown elapsed — allow one probe attempt through (half-open).
+            _circuit_state["consecutive_failures"] = _CIRCUIT_FAILURE_THRESHOLD - 1
+            return False
+        return True
+
+
+def _circuit_record(success: bool) -> None:
+    with _circuit_lock:
+        if success:
+            _circuit_state["consecutive_failures"] = 0
+        else:
+            _circuit_state["consecutive_failures"] += 1
+            if _circuit_state["consecutive_failures"] == _CIRCUIT_FAILURE_THRESHOLD:
+                _circuit_state["opened_at"] = time.monotonic()
+                logger.error(
+                    "[MetaCAPI] circuit breaker OPEN after %d consecutive connection failures — "
+                    "immediate attempts suspended for %ds, events queued directly",
+                    _CIRCUIT_FAILURE_THRESHOLD, _CIRCUIT_COOLDOWN_SECONDS,
+                )
+
+
 # One pooled, keep-alive client reused for the lifetime of the process —
-# avoids a fresh TCP+TLS handshake (the actual cause of the reported
-# "_ssl.c:999: handshake operation timed out") on every single event.
+# avoids a fresh TCP+TLS handshake on every single event.
 _client: Optional[httpx.Client] = None
 
 
 def _get_client() -> httpx.Client:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.Client(
-            timeout=_TIMEOUT,
-            limits=_LIMITS,
-            http2=False,  # Graph API needs nothing beyond HTTP/1.1; avoids h2 negotiation overhead
-            transport=httpx.HTTPTransport(retries=0),  # we own retry/backoff logic below
+        transport = httpx.HTTPTransport(retries=0)
+        # Swap in the diagnostic IPv4-only, MSS-clamped, phase-timed backend.
+        # httpx doesn't expose network_backend as a public constructor kwarg,
+        # so the pool built by HTTPTransport.__init__ is replaced with an
+        # equivalent one carrying our backend — this is the standard pattern
+        # for a custom resolver/transport with httpx (its own docs point at
+        # swapping httpcore.ConnectionPool this way).
+        transport._pool = httpcore.ConnectionPool(
+            ssl_context=transport._pool._ssl_context,
+            max_connections=_LIMITS.max_connections,
+            max_keepalive_connections=_LIMITS.max_keepalive_connections,
+            keepalive_expiry=_LIMITS.keepalive_expiry,
+            http1=True,
+            http2=False,
+            retries=0,
+            network_backend=_DiagnosticIPv4Backend(),
         )
+        _client = httpx.Client(timeout=_TIMEOUT, limits=_LIMITS, http2=False, transport=transport)
     return _client
 
 
@@ -341,17 +534,26 @@ def _log_send(
         logger.warning("meta_capi log write failed: %s", exc)
 
 
+def _fmt_block(**fields: Any) -> str:
+    """Structured multi-line log block matching the requested diagnostic format."""
+    return "\n".join(f"{k}: {v}" for k, v in fields.items() if v is not None)
+
+
 def send_events(
     pixel_id: str,
     access_token: str,
     events: List[Dict[str, Any]],
     *,
     test_event_code: Optional[str] = None,
+    store_label: Optional[str] = None,
+    order_label: Optional[str] = None,
+    queue_retry_count: int = 0,
+    queue_max_retries: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     POST events to the Graph API using the shared pooled client, with
     exponential-backoff-with-jitter immediate retries and full structured
-    logging per attempt (status/exception/latency/retry count).
+    per-phase logging (DNS/TCP/TLS/request/response/total, failure category).
 
     Returns {"success": bool, "events_received": int|None, "error": str|None,
              "fbtrace_id": str|None, "retryable": bool}.
@@ -365,28 +567,51 @@ def send_events(
         body["test_event_code"] = test_event_code
 
     event_names = ",".join(e.get("event_name", "?") for e in events)
-    client = _get_client()
+    total_attempts = queue_max_retries if queue_max_retries is not None else (1 + _IMMEDIATE_RETRIES)
+    attempt_offset = queue_retry_count
 
+    if _circuit_is_open():
+        logger.warning(
+            "[MetaCAPI] circuit breaker OPEN — skipping immediate attempt for event=%s, queuing directly",
+            event_names,
+        )
+        return {
+            "success": False, "events_received": None,
+            "error": "circuit breaker open: too many consecutive connection failures",
+            "fbtrace_id": None, "retryable": True,
+        }
+
+    client = _get_client()
     last_error: Optional[str] = None
     retryable = True
     for attempt in range(1 + _IMMEDIATE_RETRIES):
+        _reset_timing()
         started = time.monotonic()
         exc_type: Optional[str] = None
-        http_status: Optional[int] = None
+        failure_category: Optional[str] = None
         try:
             resp = client.post(url, json=body)
-            latency_ms = int((time.monotonic() - started) * 1000)
-            http_status = resp.status_code
+            total_ms = int((time.monotonic() - started) * 1000)
             data = resp.json() if resp.content else {}
 
             if resp.status_code == 200:
                 received = data.get("events_received")
-                logger.info(
-                    "[MetaCAPI] sent event=%s attempt=%d/%d status=200 latency_ms=%d "
-                    "received=%s fbtrace=%s",
-                    event_names, attempt + 1, 1 + _IMMEDIATE_RETRIES, latency_ms,
-                    received, data.get("fbtrace_id"),
-                )
+                _circuit_record(success=True)
+                logger.info(_fmt_block(
+                    **{
+                        "Meta Event": event_names, "Store": store_label, "Order": order_label,
+                        "Attempt": f"{attempt + attempt_offset + 1} / {total_attempts}",
+                        "DNS": f"{_timing.dns_ms} ms" if _timing.dns_ms is not None else None,
+                        "TCP": f"{_timing.tcp_ms} ms" if _timing.tcp_ms is not None else None,
+                        "TLS": f"{_timing.tls_ms} ms" if _timing.tls_ms is not None else None,
+                        "Request": f"{getattr(_timing, 'request_ms', None)} ms" if getattr(_timing, "request_ms", None) is not None else None,
+                        "Response": f"{getattr(_timing, 'response_ms', None)} ms" if getattr(_timing, "response_ms", None) is not None else None,
+                        "Total": f"{total_ms} ms",
+                        "Result": "Success",
+                        "Received": received,
+                        "Fbtrace": data.get("fbtrace_id"),
+                    }
+                ))
                 if received is not None and received < len(events):
                     logger.warning(
                         "[MetaCAPI] partial delivery: %s/%s events received (fbtrace=%s)",
@@ -395,58 +620,96 @@ def send_events(
                 return {
                     "success": True, "events_received": received, "error": None,
                     "fbtrace_id": data.get("fbtrace_id"), "retryable": False,
+                    "latency_ms": total_ms,
                 }
 
             err = (data.get("error") or {})
             last_error = f"HTTP {resp.status_code}: {err.get('message') or resp.text[:200]}"
+            failure_category = f"HTTP {resp.status_code}"
             # 4xx (bad token, malformed payload) will never improve on retry —
             # a network blip won't fix a bad access token.
+            timing_fields = {
+                "DNS": f"{_timing.dns_ms} ms" if _timing.dns_ms is not None else None,
+                "TCP": f"{_timing.tcp_ms} ms" if _timing.tcp_ms is not None else None,
+                "TLS": f"{_timing.tls_ms} ms" if _timing.tls_ms is not None else None,
+                "Request": f"{getattr(_timing, 'request_ms', None)} ms" if getattr(_timing, "request_ms", None) is not None else None,
+                "Response": f"{getattr(_timing, 'response_ms', None)} ms" if getattr(_timing, "response_ms", None) is not None else None,
+            }
             if 400 <= resp.status_code < 500:
                 retryable = False
-                logger.warning(
-                    "[MetaCAPI] non-retryable client error event=%s attempt=%d status=%d "
-                    "latency_ms=%d error=%s",
-                    event_names, attempt + 1, resp.status_code, latency_ms, last_error,
-                )
+                _circuit_record(success=True)  # not a connectivity failure
+                logger.warning(_fmt_block(**{
+                    "Meta Event": event_names, "Store": store_label, "Order": order_label,
+                    "Attempt": f"{attempt + attempt_offset + 1} / {total_attempts}",
+                    **timing_fields,
+                    "Total": f"{total_ms} ms", "HTTP Status": resp.status_code,
+                    "Meta Response": (resp.text or "")[:500],
+                    "Failure Category": "Non-retryable client error",
+                    "Result": "Failed",
+                }))
                 break
-            logger.warning(
-                "[MetaCAPI] server error event=%s attempt=%d/%d status=%d latency_ms=%d error=%s",
-                event_names, attempt + 1, 1 + _IMMEDIATE_RETRIES, resp.status_code, latency_ms, last_error,
-            )
+            _circuit_record(success=True)  # server responded — connectivity is fine
+            logger.warning(_fmt_block(**{
+                "Meta Event": event_names, "Store": store_label, "Order": order_label,
+                "Attempt": f"{attempt + attempt_offset + 1} / {total_attempts}",
+                **timing_fields,
+                "Total": f"{total_ms} ms", "HTTP Status": resp.status_code,
+                "Meta Response": (resp.text or "")[:500],
+                "Failure Category": "Meta server error",
+                "Result": "Failed (will retry)",
+            }))
 
         except httpx.ConnectTimeout as exc:
             exc_type = "ConnectTimeout"
-            last_error = f"{exc_type}: TCP/TLS handshake did not complete in time ({exc})"
+            failure_category = getattr(_timing, "failure_category", None) or "Connect Timeout"
+            last_error = f"{failure_category}: {exc}"
         except httpx.ReadTimeout as exc:
             exc_type = "ReadTimeout"
-            last_error = f"{exc_type}: Meta did not respond in time ({exc})"
+            failure_category = "Response Timeout"
+            last_error = f"{failure_category}: Meta did not respond in time ({exc})"
         except httpx.ConnectError as exc:
             exc_type = "ConnectError"
-            last_error = f"{exc_type}: DNS resolution or TCP connect failed ({exc})"
+            failure_category = getattr(_timing, "failure_category", None) or "Connect Error"
+            last_error = f"{failure_category}: {exc}"
         except httpx.RemoteProtocolError as exc:
             exc_type = "RemoteProtocolError"
-            last_error = f"{exc_type}: {exc}"
+            failure_category = "Remote Protocol Error"
+            last_error = f"{failure_category}: {exc}"
         except httpx.HTTPError as exc:
             exc_type = type(exc).__name__
+            failure_category = exc_type
             last_error = f"{exc_type}: {exc}"
         except Exception as exc:  # pragma: no cover — defensive catch-all
             exc_type = type(exc).__name__
+            failure_category = exc_type
             last_error = f"{exc_type}: {exc}"
 
         if exc_type:
-            latency_ms = int((time.monotonic() - started) * 1000)
-            logger.warning(
-                "[MetaCAPI] network failure event=%s attempt=%d/%d exception=%s "
-                "latency_ms=%d error=%s",
-                event_names, attempt + 1, 1 + _IMMEDIATE_RETRIES, exc_type, latency_ms, last_error,
+            total_ms = int((time.monotonic() - started) * 1000)
+            is_connectivity_failure = failure_category in (
+                "DNS Resolution Failed", "TCP Connect Timeout", "TCP Connect Failed",
+                "TLS Handshake Timeout", "Connect Timeout", "Connect Error",
             )
+            _circuit_record(success=not is_connectivity_failure)
+            logger.warning(_fmt_block(**{
+                "Meta Event": event_names, "Store": store_label, "Order": order_label,
+                "Attempt": f"{attempt + attempt_offset + 1} / {total_attempts}",
+                "DNS": f"{_timing.dns_ms} ms" if _timing.dns_ms is not None else None,
+                "TCP": f"{_timing.tcp_ms} ms" if _timing.tcp_ms is not None else None,
+                "TLS": f"{_timing.tls_ms} ms" if _timing.tls_ms is not None else None,
+                "Total": f"{total_ms} ms",
+                "Exception": exc_type,
+                "Failure Category": failure_category,
+                "Result": "Failed (will retry)" if attempt < _IMMEDIATE_RETRIES else "Failed",
+            }))
 
         if attempt < _IMMEDIATE_RETRIES:
             time.sleep(_backoff_with_jitter(attempt))
 
     logger.error(
-        "[MetaCAPI] send failed after %d immediate attempt(s): event=%s retryable=%s error=%s",
-        1 + _IMMEDIATE_RETRIES, event_names, retryable, last_error,
+        "[MetaCAPI] send failed after %d immediate attempt(s): event=%s store=%s order=%s "
+        "retryable=%s failure_category=%s error=%s",
+        1 + _IMMEDIATE_RETRIES, event_names, store_label, order_label, retryable, failure_category, last_error,
     )
     return {
         "success": False, "events_received": None, "error": last_error,
@@ -478,7 +741,11 @@ def send_purchase_for_order(
             return
 
         event = build_purchase_event(order, client_ip=client_ip, user_agent=user_agent)
-        result = send_events(config.pixel_id, config.access_token, [event])
+        result = send_events(
+            config.pixel_id, config.access_token, [event],
+            store_label=order.store.name if order.store else str(order.store_id),
+            order_label=f"#{order.order_number}",
+        )
 
         if result["success"]:
             _log_send(
@@ -489,6 +756,7 @@ def send_purchase_for_order(
                 event_id=event["event_id"],
                 status="success",
                 events_received=result["events_received"],
+                latency_ms=result.get("latency_ms"),
             )
             logger.info(
                 "Meta CAPI Purchase sent for %s (event_id=%s, received=%s)",
@@ -562,11 +830,16 @@ def retry_pending_events() -> None:
                 db.commit()
                 continue
 
-            result = send_events(config.pixel_id, config.access_token, [row.payload])
+            result = send_events(
+                config.pixel_id, config.access_token, [row.payload],
+                store_label=str(row.store_id), order_label=row.order_id,
+                queue_retry_count=row.retry_count, queue_max_retries=_MAX_QUEUE_RETRIES,
+            )
             if result["success"]:
                 row.status = "success"
                 row.error_message = None
                 row.events_received = result["events_received"]
+                row.latency_ms = result.get("latency_ms")
                 row.next_retry_at = None
                 logger.info(
                     "[MetaCAPI] retry succeeded event=%s order=%s retry_count=%d",
