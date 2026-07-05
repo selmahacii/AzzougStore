@@ -742,22 +742,33 @@ def _dispatch_capi_event(
     store_id: str,
 ) -> None:
     """Background task: ship one browser-mirrored event with retries + log."""
+    from datetime import datetime, timedelta, timezone
     from app.db.session import SessionLocal
-    from app.services.meta_capi import send_events, _log_send
+    from app.services.meta_capi import send_events, _log_send, _QUEUE_BACKOFF_MINUTES
 
     result = send_events(pixel_id, access_token, [event])
     db = SessionLocal()
     try:
-        _log_send(
-            db,
-            store_id=store_id,
-            order_id=None,
-            event_name=event["event_name"],
-            event_id=event["event_id"],
-            status="success" if result["success"] else "error",
-            error_message=result["error"],
-            events_received=result["events_received"],
-        )
+        if result["success"]:
+            _log_send(
+                db, store_id=store_id, order_id=None,
+                event_name=event["event_name"], event_id=event["event_id"],
+                status="success", events_received=result["events_received"],
+            )
+        elif result.get("retryable"):
+            _log_send(
+                db, store_id=store_id, order_id=None,
+                event_name=event["event_name"], event_id=event["event_id"],
+                status="pending_retry", error_message=result["error"], payload=event,
+                retry_count=0,
+                next_retry_at=datetime.now(timezone.utc) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[0]),
+            )
+        else:
+            _log_send(
+                db, store_id=store_id, order_id=None,
+                event_name=event["event_name"], event_id=event["event_id"],
+                status="error", error_message=result["error"],
+            )
     finally:
         db.close()
 

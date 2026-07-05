@@ -291,5 +291,10 @@ async def background_loop() -> None:
                 scan_payroll_reminder()
             except Exception as exc:
                 logger.error("Payroll reminder scan crashed: %s", exc)
+            try:
+                from app.services.meta_capi import retry_pending_events
+                retry_pending_events()
+            except Exception as exc:
+                logger.error("Meta CAPI retry sweep crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
         seconds_since_sync += REMINDER_SCAN_INTERVAL_SECONDS

@@ -149,7 +149,12 @@ class MetaAdsCampaign(Base):
 class MetaCapiLog(Base):
     """
     One row per server-side Conversions API send — powers the diagnostics
-    dashboard (CAPI status, success rate, deduplication coverage, last errors).
+    dashboard (CAPI status, success rate, deduplication coverage, last errors)
+    AND doubles as the persistent retry queue: a transient failure (SSL
+    handshake timeout, DNS blip, 5xx) is never silently dropped — it stays
+    queryable with status='pending_retry' until the background sweep
+    (app.services.meta_capi.retry_pending_events) resends it or it exhausts
+    its retry budget (status='failed').
     """
     __tablename__ = "meta_capi_logs"
 
@@ -158,9 +163,15 @@ class MetaCapiLog(Base):
     order_id = Column(String, nullable=True, index=True)
     event_name = Column(String, nullable=False, index=True)
     event_id = Column(String, nullable=False)
-    status = Column(String, nullable=False, index=True)  # success | error
+    status = Column(String, nullable=False, index=True)  # success | error | pending_retry | failed
     error_message = Column(Text, nullable=True)
     events_received = Column(Integer, nullable=True)
+
+    # Retry queue
+    payload = Column(JSON, nullable=True)          # full event dict, replayable as-is
+    retry_count = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    latency_ms = Column(Integer, nullable=True)
 
     store = relationship("Store")
 
