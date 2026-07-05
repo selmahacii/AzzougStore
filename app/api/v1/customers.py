@@ -406,7 +406,7 @@ def delete_customer(
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """Remove a customer. ADMIN only."""
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour supprimer un client.")
 
     db_customer = db.query(Customer).filter(Customer.id == customer_id).first()

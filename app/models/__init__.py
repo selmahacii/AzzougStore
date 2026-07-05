@@ -19,7 +19,7 @@ from .delivery import WilayaDeliveryFee
 from .partner import PartnerApiKey, PartnerWebhook
 from .delivery_partner import DeliveryPartner
 from .pos import POSSale  # noqa: F401
-from .marketing import MarketingChannel, MessageTemplate, MarketingAutomation, MarketingLog, MetaAdsConfig, MetaAdsCampaign, TikTokAdsConfig, TikTokAdsCampaign  # noqa: F401
+from .marketing import MarketingChannel, MessageTemplate, MarketingAutomation, MarketingLog, MetaAdsConfig, MetaAdsCampaign, MetaCapiLog, TikTokAdsConfig, TikTokAdsCampaign  # noqa: F401
 from .landing_page import LandingPage  # noqa: F401  # registers table in metadata
 from .upsell import UpsellRule, UpsellOffer, UpsellCommission  # noqa: F401
 from .internal_delivery import InternalDelivery  # noqa: F401

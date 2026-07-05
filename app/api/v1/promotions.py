@@ -208,7 +208,7 @@ def delete_promotion(
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """Delete a promotion. ADMIN only."""
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Seul un administrateur peut supprimer une promotion.")
 
     db_promo = db.query(Promotion).filter(Promotion.id == id).first()

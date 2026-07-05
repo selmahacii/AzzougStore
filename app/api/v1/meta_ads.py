@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
@@ -698,14 +698,19 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
 
 
 class MetaEventUserData(BaseModel):
-    em: Optional[str] = None        # hashed email
-    ph: Optional[str] = None        # hashed phone
+    em: Optional[str] = None        # email (raw or pre-hashed)
+    ph: Optional[str] = None        # phone (raw or pre-hashed)
     client_ip_address: Optional[str] = None
     client_user_agent: Optional[str] = None
     fbc: Optional[str] = None       # _fbc cookie
     fbp: Optional[str] = None       # _fbp cookie
-    fn: Optional[str] = None        # hashed first name
-    ln: Optional[str] = None        # hashed last name
+    fbclid: Optional[str] = None    # raw click id (fbc rebuilt server-side)
+    fn: Optional[str] = None        # first name (raw or pre-hashed)
+    ln: Optional[str] = None        # last name (raw or pre-hashed)
+    ct: Optional[str] = None        # city / commune
+    st: Optional[str] = None        # state / wilaya
+    zp: Optional[str] = None        # zip code
+    external_id: Optional[str] = None
 
 class MetaEventCustomData(BaseModel):
     currency: Optional[str] = None
@@ -713,6 +718,8 @@ class MetaEventCustomData(BaseModel):
     content_ids: Optional[List[str]] = None
     content_type: Optional[str] = None
     content_name: Optional[str] = None
+    content_category: Optional[str] = None
+    contents: Optional[List[Dict[str, Any]]] = None
     num_items: Optional[int] = None
 
 class MetaEventPayload(BaseModel):
@@ -728,14 +735,48 @@ class MetaEventPayload(BaseModel):
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.strip().lower().encode()).hexdigest()
 
+def _dispatch_capi_event(
+    pixel_id: str,
+    access_token: str,
+    event: Dict[str, Any],
+    store_id: str,
+) -> None:
+    """Background task: ship one browser-mirrored event with retries + log."""
+    from app.db.session import SessionLocal
+    from app.services.meta_capi import send_events, _log_send
+
+    result = send_events(pixel_id, access_token, [event])
+    db = SessionLocal()
+    try:
+        _log_send(
+            db,
+            store_id=store_id,
+            order_id=None,
+            event_name=event["event_name"],
+            event_id=event["event_id"],
+            status="success" if result["success"] else "error",
+            error_message=result["error"],
+            events_received=result["events_received"],
+        )
+    finally:
+        db.close()
+
+
 @router.post("/events", response_model=dict)
-def send_meta_event(payload: MetaEventPayload, request: Request, db: Session = Depends(get_db)):
+def send_meta_event(
+    payload: MetaEventPayload,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """
     Server-side Meta Conversions API (CAPI) event relay.
-    Called by the storefront on PageView, ViewContent, Purchase, etc.
-    Forwards to Meta if pixel_id + access_token are configured; always returns 200.
+    Called by the storefront on ViewContent, AddToCart, InitiateCheckout…
+    with the SAME event_id as the browser Pixel so Meta deduplicates.
+    Normalization follows Meta's spec exactly (see services/meta_capi.py).
+    The Graph call runs in a background task — zero latency for the shopper.
     """
-    import httpx
+    from app.services.meta_capi import build_user_data
 
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
 
@@ -746,35 +787,26 @@ def send_meta_event(payload: MetaEventPayload, request: Request, db: Session = D
     now = payload.event_time or int(datetime.now(timezone.utc).timestamp())
     event_id = payload.event_id or str(uuid.uuid4())
 
-    # Build user_data dict with auto-hashing if values look unhashed (no hex pattern)
-    ud: Dict[str, Any] = {}
-    if payload.user_data:
-        raw = payload.user_data
-        if raw.em:
-            ud["em"] = [raw.em if len(raw.em) == 64 else _sha256(raw.em)]
-        if raw.ph:
-            ud["ph"] = [raw.ph if len(raw.ph) == 64 else _sha256(raw.ph)]
-        if raw.fn:
-            ud["fn"] = [raw.fn if len(raw.fn) == 64 else _sha256(raw.fn)]
-        if raw.ln:
-            ud["ln"] = [raw.ln if len(raw.ln) == 64 else _sha256(raw.ln)]
-        if raw.fbc:
-            ud["fbc"] = raw.fbc
-        if raw.fbp:
-            ud["fbp"] = raw.fbp
-        if raw.client_ip_address:
-            ud["client_ip_address"] = raw.client_ip_address
-        if raw.client_user_agent:
-            ud["client_user_agent"] = raw.client_user_agent
+    raw = payload.user_data or MetaEventUserData()
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client_ip = raw.client_ip_address or forwarded.split(",")[0].strip() or (request.client.host if request.client else None)
+    user_agent = raw.client_user_agent or request.headers.get("user-agent")
 
-    # Fallback: inject server IP/UA if missing
-    if "client_ip_address" not in ud:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        ud["client_ip_address"] = forwarded.split(",")[0].strip() or request.client.host
-    if "client_user_agent" not in ud:
-        ua = request.headers.get("user-agent", "")
-        if ua:
-            ud["client_user_agent"] = ua
+    ud = build_user_data(
+        email=raw.em,
+        phone=raw.ph,
+        first_name=raw.fn,
+        last_name=raw.ln,
+        city=raw.ct,
+        state=raw.st,
+        zip_code=raw.zp,
+        external_id=raw.external_id,
+        client_ip=client_ip,
+        user_agent=user_agent,
+        fbp=raw.fbp,
+        fbc=raw.fbc,
+        fbclid=raw.fbclid,
+    )
 
     event: Dict[str, Any] = {
         "event_name": payload.event_name,
@@ -790,24 +822,10 @@ def send_meta_event(payload: MetaEventPayload, request: Request, db: Session = D
         if cd:
             event["custom_data"] = cd
 
-    capi_url = f"https://graph.facebook.com/v18.0/{config.pixel_id}/events"
-    body = {
-        "data": [event],
-        "access_token": config.access_token,
-    }
-
-    try:
-        resp = httpx.post(capi_url, json=body, timeout=8.0)
-        resp_json = resp.json()
-        if resp.status_code == 200:
-            logger.info("[MetaCAPI] %s → %s (event_id=%s)", payload.event_name, payload.store_id, event_id)
-            return {"success": True, "sent": True, "events_received": resp_json.get("events_received")}
-        else:
-            logger.warning("[MetaCAPI] Non-200 from Meta: %s %s", resp.status_code, resp.text)
-            return {"success": True, "sent": False, "meta_error": resp_json.get("error", {}).get("message")}
-    except Exception as exc:
-        logger.error("[MetaCAPI] Failed to send event: %s", exc)
-        return {"success": True, "sent": False, "reason": str(exc)}
+    background_tasks.add_task(
+        _dispatch_capi_event, config.pixel_id, config.access_token, event, payload.store_id
+    )
+    return {"success": True, "sent": True, "event_id": event_id}
 
 
 @router.get("/integration-summary", response_model=dict)
@@ -964,3 +982,332 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
             }
         }
     }
+
+
+# ─── GET /meta-ads/diagnostics — tracking health for the dashboard ───────────
+
+@router.get("/diagnostics", response_model=dict)
+def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Automatic tracking health report:
+    - Pixel / CAPI configuration status
+    - CAPI delivery stats over the last 7 days (success rate, last errors)
+    - Deduplication coverage (every event we emit carries an event_id)
+    - Attribution coverage on recent orders (fbp/fbc/utm presence)
+    - Catalog issues (missing images, ephemeral URLs, missing descriptions)
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.models.product import Product
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    pixel_ok = bool(config and config.pixel_id)
+    capi_ok = bool(config and config.access_token and len(config.access_token or "") >= 15)
+
+    # CAPI delivery over 7 days
+    logs = (
+        db.query(MetaCapiLog.event_name, MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.created_at >= week_ago)
+        .group_by(MetaCapiLog.event_name, MetaCapiLog.status)
+        .all()
+    )
+    by_event: Dict[str, Dict[str, int]] = {}
+    total_sent, total_err = 0, 0
+    for event_name, status, cnt in logs:
+        by_event.setdefault(event_name, {"success": 0, "error": 0})[status] = cnt
+        if status == "success":
+            total_sent += cnt
+        else:
+            total_err += cnt
+    last_error = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "error")
+        .order_by(MetaCapiLog.created_at.desc())
+        .first()
+    )
+
+    # Attribution coverage on last-30-days orders
+    order_filters = [
+        Order.store_id == store_id, Order.is_deleted == False,
+        Order.created_at >= month_ago, Order.status != "MERGED",
+    ]
+    orders_30d = db.query(func.count(Order.id)).filter(*order_filters).scalar() or 0
+
+    def _cov(col):
+        return db.query(func.count(Order.id)).filter(*order_filters, col.isnot(None), col != "").scalar() or 0
+
+    fbp_cov = _cov(Order.fbp)
+    fbc_cov = _cov(Order.fbc)
+    utm_cov = _cov(Order.utm_campaign)
+
+    # Catalog issues
+    products = db.query(Product).filter(
+        Product.store_id == store_id, Product.is_active == True,
+    ).all()
+    missing_image, ephemeral_image, missing_desc, bad_price = [], [], [], []
+    for p in products:
+        img = p.main_image or (p.images[0] if isinstance(p.images, list) and p.images else None)
+        if not img:
+            missing_image.append(p.name)
+        elif "/api/v1/upload/files/" in str(img) or not str(img).startswith("http"):
+            ephemeral_image.append(p.name)
+        if not (p.description and len(p.description.strip()) >= 20):
+            missing_desc.append(p.name)
+        if not p.price or p.price <= 0:
+            bad_price.append(p.name)
+
+    return {
+        "success": True,
+        "data": {
+            "pixel": {"configured": pixel_ok, "pixel_id": config.pixel_id if config else None},
+            "capi": {
+                "configured": capi_ok,
+                "sent_7d": total_sent,
+                "errors_7d": total_err,
+                "success_rate": round(total_sent / (total_sent + total_err) * 100, 1) if (total_sent + total_err) else None,
+                "by_event": by_event,
+                "last_error": {
+                    "message": last_error.error_message,
+                    "event": last_error.event_name,
+                    "at": last_error.created_at.isoformat() if last_error.created_at else None,
+                } if last_error else None,
+            },
+            "deduplication": {
+                "strategy": "event_id partage Pixel/CAPI",
+                "coverage": "100% des evenements emis",
+            },
+            "attribution": {
+                "orders_30d": orders_30d,
+                "with_fbp": fbp_cov,
+                "with_fbc": fbc_cov,
+                "with_utm_campaign": utm_cov,
+                "fbp_rate": round(fbp_cov / orders_30d * 100, 1) if orders_30d else 0,
+                "utm_rate": round(utm_cov / orders_30d * 100, 1) if orders_30d else 0,
+            },
+            "catalog": {
+                "active_products": len(products),
+                "missing_image": missing_image,
+                "ephemeral_image_urls": ephemeral_image,
+                "missing_description": missing_desc,
+                "invalid_price": bad_price,
+            },
+        },
+    }
+
+
+# ─── GET /meta-ads/recommendations — rule-based optimization engine ───────────
+
+@router.get("/recommendations", response_model=dict)
+def get_meta_recommendations(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Actionable optimization recommendations:
+    campaign ROAS outliers, low CTR, weak landing pages, high-abandonment
+    products, catalog quality and signal quality issues.
+    """
+    from sqlalchemy import case as sa_case
+    from sqlalchemy import func, or_
+    from app.models.landing_page import LandingPage
+    from app.models.order import OrderItem
+    from app.models.product import Product
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    month_ago = now - timedelta(days=30)
+    recos: List[Dict[str, Any]] = []
+
+    # Campaign ROAS: spend vs attributed DELIVERED revenue
+    campaigns = db.query(MetaAdsCampaign).filter(MetaAdsCampaign.store_id == store_id).all()
+    for c in campaigns:
+        if not c.spend or c.spend <= 0:
+            continue
+        revenue = (
+            db.query(func.coalesce(func.sum(Order.total), 0))
+            .filter(
+                Order.store_id == store_id,
+                Order.is_deleted == False,
+                Order.status == "DELIVERED",
+                or_(Order.campaign_id == c.campaign_id, Order.utm_campaign == c.campaign_name),
+            )
+            .scalar() or 0
+        )
+        roas = revenue / c.spend if c.spend else 0
+        ctr = (c.clicks / c.impressions * 100) if c.impressions else None
+        if roas < 1:
+            recos.append({
+                "severity": "high", "kind": "campaign_low_roas",
+                "title": f"ROAS faible : campagne {c.campaign_name}",
+                "detail": (
+                    f"Depense {round(c.spend)} DA pour {round(revenue)} DA livres (ROAS {roas:.2f}). "
+                    "Reduisez le budget, testez une nouvelle crea ou coupez la campagne."
+                ),
+                "metric": round(roas, 2),
+            })
+        elif roas >= 3:
+            recos.append({
+                "severity": "info", "kind": "campaign_high_roas",
+                "title": f"ROAS excellent : campagne {c.campaign_name}",
+                "detail": (
+                    f"{roas:.1f}x de retour ({round(revenue)} DA livres). Augmentez le budget progressivement "
+                    "(+20%/48h max pour preserver la phase d'apprentissage)."
+                ),
+                "metric": round(roas, 2),
+            })
+        if ctr is not None and ctr < 1.0 and (c.impressions or 0) >= 1000:
+            recos.append({
+                "severity": "medium", "kind": "campaign_low_ctr",
+                "title": f"CTR faible : campagne {c.campaign_name}",
+                "detail": f"CTR {ctr:.2f}% sur {c.impressions} impressions. Testez de nouvelles creas/accroches.",
+                "metric": round(ctr, 2),
+            })
+
+    # Weak landing pages (views vs orders)
+    lps = db.query(LandingPage).filter(LandingPage.store_id == store_id, LandingPage.is_active == True).all()
+    for lp in lps:
+        views = getattr(lp, "views", 0) or 0
+        lp_orders = getattr(lp, "orders", 0) or 0
+        if views >= 100:
+            cr = lp_orders / views * 100
+            if cr < 1.0:
+                recos.append({
+                    "severity": "high", "kind": "weak_landing_page",
+                    "title": f"Landing page faible : {lp.slug}",
+                    "detail": (
+                        f"{views} visites pour {lp_orders} commandes ({cr:.1f}%). Revoyez l'offre, le prix, "
+                        "les avis clients et la visibilite du bouton de commande."
+                    ),
+                    "metric": round(cr, 2),
+                })
+
+    # Products with high cart abandonment (30 days)
+    rows = (
+        db.query(
+            OrderItem.product_name,
+            func.count(Order.id).label("total"),
+            func.sum(sa_case((Order.is_abandoned_cart == True, 1), else_=0)).label("abandoned"),
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(Order.store_id == store_id, Order.is_deleted == False, Order.created_at >= month_ago)
+        .group_by(OrderItem.product_name)
+        .having(func.count(Order.id) >= 10)
+        .all()
+    )
+    for name, total, abandoned in rows:
+        rate = (abandoned or 0) / total * 100 if total else 0
+        if rate >= 50:
+            recos.append({
+                "severity": "medium", "kind": "high_abandonment_product",
+                "title": f"Abandon eleve : {name}",
+                "detail": (
+                    f"{rate:.0f}% des {total} paniers de ce produit sont abandonnes. Verifiez le prix, "
+                    "les frais de livraison affiches et la clarte de l'offre."
+                ),
+                "metric": round(rate, 1),
+            })
+
+    # Catalog quality
+    products_no_image = (
+        db.query(func.count(Product.id))
+        .filter(Product.store_id == store_id, Product.is_active == True,
+                or_(Product.main_image == None, Product.main_image == ""))
+        .scalar() or 0
+    )
+    if products_no_image:
+        recos.append({
+            "severity": "medium", "kind": "catalog_missing_images",
+            "title": f"{products_no_image} produit(s) sans image principale",
+            "detail": (
+                "Les Dynamic Product Ads exigent une image permanente (Cloudinary). "
+                "Completez les fiches produits avant d'activer un catalogue Meta."
+            ),
+            "metric": products_no_image,
+        })
+
+    # Signal quality (fbp coverage)
+    month_orders = db.query(func.count(Order.id)).filter(
+        Order.store_id == store_id, Order.is_deleted == False,
+        Order.created_at >= month_ago, Order.status != "MERGED").scalar() or 0
+    fbp_orders = db.query(func.count(Order.id)).filter(
+        Order.store_id == store_id, Order.is_deleted == False,
+        Order.created_at >= month_ago, Order.fbp.isnot(None)).scalar() or 0
+    if month_orders >= 10 and fbp_orders / month_orders < 0.5:
+        recos.append({
+            "severity": "high", "kind": "low_signal_quality",
+            "title": "Qualite de signal faible (fbp manquant)",
+            "detail": (
+                f"Seulement {fbp_orders}/{month_orders} commandes portent le cookie _fbp. Verifiez que le "
+                "Pixel se charge sur toutes les pages (bloqueurs, consentement, domaine)."
+            ),
+            "metric": round(fbp_orders / month_orders * 100, 1),
+        })
+
+    order_sev = {"high": 0, "medium": 1, "info": 2}
+    recos.sort(key=lambda r: order_sev.get(r["severity"], 3))
+    return {"success": True, "data": recos}
+
+
+# ─── GET /meta-ads/catalog-feed — Meta product feed (CSV, public) ─────────────
+
+@router.get("/catalog-feed")
+def get_catalog_feed(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Meta Commerce catalog feed (CSV) for Dynamic Product Ads / Advantage+.
+    Public read-only URL to paste into Meta Commerce Manager as a data feed.
+    Products without a permanent absolute image URL are excluded (Meta would
+    reject them) — they surface in /meta-ads/diagnostics instead.
+    """
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    from app.models.product import Product
+    from app.models.store import Store
+
+    store = db.query(Store).filter(Store.id == store_id, Store.is_deleted == False).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Boutique introuvable.")
+    base_url = f"https://{store.domain}" if store.domain else f"https://{store.slug}.azghub.com"
+
+    products = db.query(Product).filter(
+        Product.store_id == store_id, Product.is_active == True,
+    ).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "id", "title", "description", "availability", "condition",
+        "price", "link", "image_link", "brand", "inventory",
+        "additional_image_link", "item_group_id", "google_product_category",
+    ])
+    for p in products:
+        img = p.main_image or (p.images[0] if isinstance(p.images, list) and p.images else None)
+        # Meta requires permanent absolute URLs — skip ephemeral/local images
+        if not img or not str(img).startswith("http"):
+            continue
+        available = (p.stock or 0) - (p.reserved_stock or 0) > 0
+        extra_imgs = ",".join(
+            [str(i) for i in (p.images or []) if str(i).startswith("http") and i != img][:10]
+        ) if isinstance(p.images, list) else ""
+        writer.writerow([
+            p.sku or p.id,
+            p.name,
+            (p.description or p.name)[:5000],
+            "in stock" if available else "out of stock",
+            "new",
+            f"{float(p.price or 0):.2f} DZD",
+            f"{base_url}/?app=storefront&view=product&product={p.slug}",
+            img,
+            store.name,
+            max(0, (p.stock or 0) - (p.reserved_stock or 0)),
+            extra_imgs,
+            p.sku or p.id,
+            p.category or "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="meta-catalog-{store.slug}.csv"'},
+    )

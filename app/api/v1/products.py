@@ -200,7 +200,7 @@ def create_product(
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour créer un produit.")
 
     # Store ownership check (non-superadmin)
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN") and current_user.employee_store_id and str(current_user.employee_store_id) != product_in.store_id:
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != product_in.store_id:
         raise HTTPException(status_code=403, detail="Vous ne pouvez créer des produits que pour votre propre store.")
 
     # Auto-generate slug
@@ -372,7 +372,7 @@ def update_product(
         raise HTTPException(status_code=404, detail="Produit introuvable.")
 
     # Store ownership check
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     update_data = product_in.model_dump(exclude_unset=True)
@@ -412,7 +412,7 @@ def toggle_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
 
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     product.is_active = not bool(product.is_active)  # type: ignore[assignment]
@@ -534,14 +534,14 @@ def delete_product(
     Hard-delete a product. FK children (order_items, reviews, etc.) are SET NULL on product_id;
     stock_movements are CASCADE deleted. Only ADMIN and SUPER_ADMIN can delete.
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Seul un administrateur peut supprimer un produit.")
 
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
 
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
     from sqlalchemy import text

@@ -31,5 +31,5 @@ class User(Base):
     # Relationships
     owned_stores = relationship("Store", back_populates="owner", foreign_keys="[Store.owner_id]")
     employee_store = relationship("Store", back_populates="employees", foreign_keys=[employee_store_id])
-    assigned_orders = relationship("Order", back_populates="assignee")
+    assigned_orders = relationship("Order", back_populates="assignee", foreign_keys="[Order.assigned_to]")
     audit_logs = relationship("AuditLog", back_populates="actor")

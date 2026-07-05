@@ -142,6 +142,25 @@ class MetaAdsCampaign(Base):
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
     date_start = Column(DateTime, nullable=True)
     date_end = Column(DateTime, nullable=True)
-    
+
+    store = relationship("Store")
+
+
+class MetaCapiLog(Base):
+    """
+    One row per server-side Conversions API send — powers the diagnostics
+    dashboard (CAPI status, success rate, deduplication coverage, last errors).
+    """
+    __tablename__ = "meta_capi_logs"
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=True, index=True)
+    order_id = Column(String, nullable=True, index=True)
+    event_name = Column(String, nullable=False, index=True)
+    event_id = Column(String, nullable=False)
+    status = Column(String, nullable=False, index=True)  # success | error
+    error_message = Column(Text, nullable=True)
+    events_received = Column(Integer, nullable=True)
+
     store = relationship("Store")
 

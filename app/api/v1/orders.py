@@ -77,6 +77,10 @@ def _assert_order_access(order: Order, current_user: User) -> None:
     elif current_user.role == "MANAGER":
         if current_user.employee_store_id and order.store_id != current_user.employee_store_id:
             raise PermissionError(message="Accès refusé : commande hors de votre boutique.")
+    elif current_user.role == "LIVREUR":
+        # A delivery agent only sees the orders handed to them
+        if order.livreur_id != current_user.id:
+            raise PermissionError(message="Accès refusé : cette livraison ne vous est pas assignée.")
 
 
 @router.get("/check-duplicate")
@@ -275,9 +279,67 @@ def get_agent_counts(
         "abandoned_in_progress": _count(Order.is_abandoned_cart == True,
                                         Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
+        "internal_delivery": _count(Order.livreur_id.isnot(None), Order.status.in_(["CONFIRMED", "SHIPPED"])),
         "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
     }
     return {"success": True, "counts": counts}
+
+
+# ─── GET /orders/duplicate-stats — duplicate management KPIs ─────────────────
+
+@router.get("/duplicate-stats")
+def get_duplicate_stats(
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Duplicate-management KPIs:
+    total orders, duplicate groups, child orders, duplicate rate,
+    recovered duplicates, merged basket value, shipments prevented and the
+    commission that would have been paid twice without the merge.
+    """
+    from sqlalchemy import func, distinct
+
+    base_filters = [Order.is_deleted == False]
+    if store_id:
+        base_filters.append(Order.store_id == store_id)
+
+    total_orders = db.query(func.count(Order.id)).filter(*base_filters).scalar() or 0
+    child_orders = db.query(func.count(Order.id)).filter(
+        *base_filters, Order.status == "MERGED").scalar() or 0
+    duplicate_groups = db.query(func.count(distinct(Order.parent_order_id))).filter(
+        *base_filters, Order.status == "MERGED", Order.parent_order_id.isnot(None)).scalar() or 0
+    recovered_duplicates = db.query(func.count(Order.id)).filter(
+        *base_filters, Order.status == "MERGED", Order.is_abandoned_cart == True).scalar() or 0
+
+    # Value of the merged baskets (parents that absorbed at least one child)
+    parent_ids = [r[0] for r in db.query(distinct(Order.parent_order_id)).filter(
+        *base_filters, Order.status == "MERGED", Order.parent_order_id.isnot(None)).all() if r[0]]
+    merged_basket_value = 0
+    avg_dups_per_customer = 0.0
+    if parent_ids:
+        merged_basket_value = db.query(func.coalesce(func.sum(Order.total), 0)).filter(
+            Order.id.in_(parent_ids)).scalar() or 0
+        avg_dups_per_customer = round(child_orders / len(parent_ids), 2)
+
+    # Each merged child is one shipment (and one commission) that was NOT
+    # produced twice. Commission estimated at the platform fallback rate.
+    from app.services.salary_service import FALLBACK_RATE_PER_ORDER
+    return {
+        "success": True,
+        "data": {
+            "total_orders": total_orders,
+            "duplicate_groups": duplicate_groups,
+            "child_orders": child_orders,
+            "duplicate_rate": round(child_orders / total_orders * 100, 1) if total_orders else 0,
+            "avg_duplicates_per_customer": avg_dups_per_customer,
+            "recovered_duplicate_orders": recovered_duplicates,
+            "merged_basket_value": merged_basket_value,
+            "shipments_prevented": child_orders,
+            "commission_saved_estimate": child_orders * FALLBACK_RATE_PER_ORDER,
+        },
+    }
 
 
 # ─── GET /orders/track — public storefront order tracking ────────────────────
@@ -362,6 +424,9 @@ def list_orders(
     customer_phone: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    delivery_method: Optional[str] = None,   # internal | carrier
+    livreur_id: Optional[str] = None,
+    campaign: Optional[str] = None,          # utm_campaign or campaign_id
 ):
     logger.debug(f"[Orders] Listing: store_id={store_id!r}, status={status!r}, user={getattr(current_user, 'email', 'anon')!r}")
     
@@ -411,6 +476,9 @@ def list_orders(
                 query = query.filter(or_(assigned_to_me, unassigned_matching))
         elif current_user.role == "MANAGER" and current_user.employee_store_id:
             query = query.filter(Order.store_id == current_user.employee_store_id)
+        elif current_user.role == "LIVREUR":
+            # A delivery agent only lists the orders handed to them
+            query = query.filter(Order.livreur_id == current_user.id)
 
     # Explicit filters (from query params)
     if store_id:
@@ -424,7 +492,8 @@ def list_orders(
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             query = query.filter(
                 Order.nrp_count > 0,
-                Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED"]),
+                # ABANDONED included: abandoned-cart NRPs must appear in recalls too
+                Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
                 or_(
                     Order.next_callback_time == None,
                     Order.next_callback_time <= now
@@ -466,14 +535,33 @@ def list_orders(
             )
         elif status.upper() == "ARCHIVED":
             query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
+        elif status.upper() == "INTERNAL_DELIVERY":
+            # Confirmed orders handed to an internal delivery agent
+            query = query.filter(
+                Order.livreur_id.isnot(None),
+                Order.status.in_(["CONFIRMED", "SHIPPED"]),
+            )
         else:
             query = query.filter(Order.status == status.upper())
     else:
         # Merged duplicates stay in DB for traceability but are hidden from
         # the default listing — the surviving parent represents them.
-        query = query.filter(Order.status != "MERGED")
+        # EXCEPTION: an explicit search must find child orders too (searching
+        # a child order number opens its parent from the UI).
+        if not search:
+            query = query.filter(Order.status != "MERGED")
     if assigned_to:
         query = query.filter(Order.assigned_to == assigned_to)
+    if livreur_id:
+        query = query.filter(Order.livreur_id == livreur_id)
+    if delivery_method:
+        if delivery_method.lower() == "internal":
+            query = query.filter(Order.livreur_id.isnot(None))
+        elif delivery_method.lower() in ("carrier", "noest"):
+            query = query.filter(Order.tracking_number.isnot(None), Order.tracking_number != "")
+    if campaign:
+        from sqlalchemy import or_
+        query = query.filter(or_(Order.utm_campaign == campaign, Order.campaign_id == campaign))
     if wilaya:
         query = query.filter(Order.customer_wilaya == wilaya)
     if source:
@@ -508,6 +596,7 @@ def list_orders(
     final_query = query.options(
             joinedload(Order.items),
             joinedload(Order.assignee),
+            joinedload(Order.livreur),
             joinedload(Order.customer),
             joinedload(Order.carrier),
             joinedload(Order.store),
@@ -678,109 +767,6 @@ def update_abandoned_cart(
     return {"success": True, "id": db_order.id, "message": "Panier abandonné sauvegardé"}
 
 
-def send_meta_capi_purchase(
-    pixel_id: str,
-    access_token: str,
-    order_number: str,
-    total: float,
-    phone: Optional[str],
-    name: Optional[str],
-    wilaya: Optional[str],
-    commune: Optional[str],
-    client_ip: Optional[str],
-    user_agent: Optional[str]
-):
-    import hashlib
-    import time
-    import urllib.request
-    import json
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    def _hash(val: Optional[str]) -> Optional[str]:
-        if not val:
-            return None
-        cleaned = val.strip().lower()
-        return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
-
-    def _format_phone(ph: Optional[str]) -> Optional[str]:
-        if not ph:
-            return None
-        digits = "".join(c for c in ph if c.isdigit())
-        if not digits:
-            return None
-        if digits.startswith("213") and len(digits) >= 11:
-            return digits
-        if digits.startswith("0") and len(digits) >= 10:
-            return "213" + digits[1:]
-        if len(digits) == 9 and digits[0] in ("5", "6", "7"):
-            return "213" + digits
-        return digits
-
-    def _clean_c(c_val: Optional[str]) -> Optional[str]:
-        if not c_val:
-            return None
-        if "·" in c_val:
-            return c_val.split("·")[-1].strip().lower()
-        return c_val.strip().lower()
-
-    user_data = {}
-    formatted_phone = _format_phone(phone)
-    if formatted_phone:
-        user_data["ph"] = [hashlib.sha256(formatted_phone.encode("utf-8")).hexdigest()]
-        
-    if name:
-        parts = name.strip().split()
-        if len(parts) > 0:
-            user_data["fn"] = [_hash(parts[0])]
-        if len(parts) > 1:
-            user_data["ln"] = [_hash(parts[-1])]
-            
-    if wilaya:
-        user_data["st"] = [_hash(wilaya)]
-    if commune:
-        user_data["ct"] = [_hash(_clean_c(commune))]
-        
-    if client_ip:
-        ip = client_ip.split(",")[0].strip()
-        user_data["client_ip_address"] = ip
-    if user_agent:
-        user_data["client_user_agent"] = user_agent
-
-    payload = {
-        "data": [
-          {
-            "event_name": "Purchase",
-            "event_time": int(time.time()),
-            "event_id": f"ORD-{order_number}",
-            "action_source": "website",
-            "user_data": user_data,
-            "custom_data": {
-              "value": total,
-              "currency": "DZD"
-            }
-          }
-        ]
-    }
-
-    url = f"https://graph.facebook.com/v19.0/{pixel_id}/events?access_token={access_token}"
-    req_body = json.dumps(payload).encode("utf-8")
-    
-    req = urllib.request.Request(
-        url,
-        data=req_body,
-        headers={"Content-Type": "application/json"}
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            res_body = response.read().decode("utf-8")
-            logger.info(f"Meta CAPI Purchase sent for ORD-{order_number}. Response: {res_body}")
-    except Exception as exc:
-        logger.error(f"Failed to send Meta CAPI Purchase for ORD-{order_number}: {exc}")
-
-
 @router.post("/", status_code=201)
 def create_order(
     order_in: OrderCreate,
@@ -821,7 +807,11 @@ def create_order(
                 
                 existing.status = "NEW"
                 existing.source = order_in.source or "storefront"  # they checked out themselves
-                
+                # The customer completed the checkout THEMSELVES → this is a
+                # real NORMAL order, not a recovered cart (no confirmatrice
+                # recovery happened). The type badge must say Normal.
+                existing.is_abandoned_cart = False
+
                 # Release old reservations
                 from app.services.inventory_service import InventoryService
                 inv_svc = InventoryService()
@@ -925,23 +915,19 @@ def create_order(
         else:
             logger.info("Order %s created by guest", order.order_number)
             
-        # Trigger Meta Conversions API (CAPI) if configured
+        # Trigger Meta Conversions API (CAPI) if configured — fully normalized
+        # user_data, retries, logging, and an event_id shared with the browser
+        # Pixel (purchase-{order.id}) so Meta deduplicates the two signals.
         try:
             from app.models.marketing import MetaAdsConfig
             meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
             if meta_config and meta_config.pixel_id and meta_config.access_token:
+                from app.services.meta_capi import send_purchase_for_order
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 background_tasks.add_task(
-                    send_meta_capi_purchase,
-                    pixel_id=meta_config.pixel_id,
-                    access_token=meta_config.access_token,
-                    order_number=order.order_number,
-                    total=float(order.total),
-                    phone=order.customer_phone,
-                    name=order.customer_name,
-                    wilaya=order.customer_wilaya,
-                    commune=order.customer_commune,
+                    send_purchase_for_order,
+                    order_id=str(order.id),
                     client_ip=client_ip,
                     user_agent=user_agent
                 )
@@ -973,6 +959,7 @@ def get_order(
             joinedload(Order.items).joinedload(OrderItem.product),
             joinedload(Order.events).joinedload(OrderEvent.actor),
             joinedload(Order.assignee),
+            joinedload(Order.livreur),
             joinedload(Order.customer),
             joinedload(Order.carrier),
         )
@@ -1011,7 +998,7 @@ def unmerge_order(
     import uuid as _uuid
     from app.models.events import OrderEvent as _OrderEvent
 
-    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not order:
         raise OrderNotFoundError()
     _assert_order_access(order, current_user)
@@ -1020,6 +1007,20 @@ def unmerge_order(
 
     restored_status = order.status_before_merge or "NEW"
     parent_id = order.parent_order_id
+
+    # Reverse the basket aggregation: remove this child's quantities from the
+    # parent's merged basket (stock + totals recomputed), fully reversible.
+    if parent_id:
+        parent = (
+            db.query(Order)
+            .filter(Order.id == parent_id, Order.is_deleted == False)
+            .with_for_update()
+            .first()
+        )
+        if parent:
+            from app.services.order_service import _remove_child_items
+            _remove_child_items(db, parent, order, current_user.id)
+
     order.status = restored_status
     order.parent_order_id = None
     order.merged_by = None
@@ -1069,6 +1070,10 @@ def update_order(
     Update order status/assignment with full state machine validation.
     Stock side effects are applied atomically.
     """
+    # Row-level lock on the order (separate query: FOR UPDATE is not allowed
+    # with the OUTER JOIN produced by joinedload). Serializes concurrent
+    # updates on the same order for the whole transaction.
+    db.query(Order.id).filter(Order.id == id).with_for_update().first()
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
@@ -1080,11 +1085,15 @@ def update_order(
 
     _assert_order_access(order, current_user)
 
-    if current_user.role == "CONFIRMATEUR" and order.status == "CANCELLED":
-        raise HTTPException(
-            status_code=400,
-            detail="Une confirmatrice ne peut pas modifier le statut d'une commande annulée."
-        )
+    # A delivery agent can move his parcels through the delivery pipeline
+    # (in delivery / delivered / failed-return / cancelled), optionally with
+    # a note — never reassign or change anything else.
+    if current_user.role == "LIVREUR":
+        requested = (status_update.status or "").upper() if status_update.status else None
+        if requested and requested not in ("SHIPPED", "DELIVERED", "RETURNED", "CANCELLED"):
+            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur (En livraison, Livrée, Retour ou Annulée uniquement).")
+        if status_update.assigned_to or status_update.livreur_id:
+            raise HTTPException(status_code=403, detail="Un livreur ne peut pas réassigner une commande.")
 
     try:
         updated = order_service.update_order(
@@ -1108,7 +1117,9 @@ def update_order(
 
 # ─── PATCH /orders/{id}/info ─────────────────────────────────────────────────
 
-_LOCKED_STATUSES = {"DELIVERED", "RETURNED", "CANCELLED"}
+# CANCELLED is editable again: a confirmatrice can fix the details of a
+# cancelled order and re-confirm it after winning the client back.
+_LOCKED_STATUSES = {"DELIVERED", "RETURNED"}
 
 @router.patch("/{id}/info", response_model=dict)
 def update_order_info(
@@ -1121,7 +1132,7 @@ def update_order_info(
     Update editable order fields (customer info, address, fees, tracking).
     Blocked once the order is SHIPPED, DELIVERED, RETURNED or CANCELLED.
     """
-    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not order:
         raise OrderNotFoundError()
 
@@ -1205,6 +1216,16 @@ def update_order_info(
             
             try:
                 if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
+                    # reserve first (availability check + reserved +q) then
+                    # confirm (stock -q, reserved -q): net effect deducts the
+                    # physical stock WITHOUT eating someone else's reservation.
+                    inv_svc.reserve_stock(
+                        db,
+                        product_id=new_item.product_id,
+                        quantity=new_item.quantity,
+                        order_id=order.id,
+                        variant_details=new_item.variant_details
+                    )
                     inv_svc.confirm_stock(
                         db,
                         product_id=new_item.product_id,
@@ -1328,7 +1349,7 @@ def delete_order(
     Soft-delete an order. Automatically releases stock reservations.
     ADMIN+ only.
     """
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
         raise PermissionError(message="Seul un administrateur peut supprimer une commande.")
 
     order = (
@@ -1446,7 +1467,7 @@ def merge_duplicate_orders(
     from datetime import datetime, timezone
     from app.models.events import OrderEvent
 
-    parent = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    parent = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not parent:
         raise HTTPException(status_code=404, detail="Commande parente introuvable.")
     _assert_order_access(parent, current_user)
@@ -1468,12 +1489,13 @@ def merge_duplicate_orders(
     if not duplicate_ids:
         return {"success": True, "merged": 0, "message": "Aucun doublon à fusionner."}
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from app.services.order_service import merge_child_into_parent
+
     merged_numbers = []
     for dup_id in duplicate_ids:
         if dup_id == parent.id:
             continue
-        dup = db.query(Order).filter(Order.id == dup_id, Order.is_deleted == False).first()
+        dup = db.query(Order).filter(Order.id == dup_id, Order.is_deleted == False).with_for_update().first()
         if not dup:
             continue
         if dup.store_id != parent.store_id:
@@ -1483,37 +1505,10 @@ def merge_duplicate_orders(
         if dup.tracking_number:
             raise HTTPException(status_code=400, detail=f"La commande {dup.order_number} a déjà un colis chez le transporteur.")
 
-        dup.status_before_merge = dup.status
-        dup.status = "MERGED"
-        dup.parent_order_id = parent.id
-        dup.merged_by = current_user.id
-        dup.merged_at = now
-        dup.is_duplicate = True
+        # Shared merge primitive: MERGED child + stock hold moved + basket
+        # aggregated into the parent (same product+variant → summed) + events.
+        merge_child_into_parent(db, parent, dup, current_user.id, reason="fusion manuelle — doublon même téléphone")
         merged_numbers.append(dup.order_number)
-
-        # The parent carries the stock — free the duplicate's reservation
-        from app.services.inventory_service import inventory_service as _inv
-        for item in dup.items:
-            try:
-                _inv.release_reservation(
-                    db,
-                    product_id=item.product_id,
-                    quantity=item.quantity,
-                    order_id=dup.id,
-                    actor_id=current_user.id,
-                    variant_details=item.variant_details,
-                )
-            except Exception as exc:
-                logger.warning("Merge: reservation release failed for %s: %s", dup.id, exc)
-
-        db.add(OrderEvent(
-            id=str(_uuid.uuid4()),
-            order_id=dup.id,
-            actor_id=current_user.id,
-            from_status=dup.status_before_merge,
-            to_status="MERGED",
-            note=f"Fusionnée dans la commande {parent.order_number} (doublon même téléphone).",
-        ))
 
     if merged_numbers:
         parent.is_duplicate = False
@@ -1584,6 +1579,10 @@ async def dispatch_order(
     from app.models.delivery_partner import DeliveryPartner
     
     from sqlalchemy.orm import joinedload
+    # Serialize dispatches on the same order: two concurrent clicks must not
+    # create two parcels at the carrier. The second transaction waits here,
+    # then sees the tracking number already set.
+    db.query(Order.id).filter(Order.id == id).with_for_update().first()
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
@@ -1595,6 +1594,19 @@ async def dispatch_order(
 
     if order.status == "MERGED":
         raise HTTPException(400, f"Cette commande a été fusionnée (doublon). Expédiez la commande parente à la place.")
+
+    if order.tracking_number:
+        raise HTTPException(400, f"Cette commande a déjà un colis chez le transporteur (suivi : {order.tracking_number}).")
+
+    # Rebuild the merged basket before shipping: duplicate merges may have
+    # aggregated items, the parcel must carry the exact quantities and COD
+    # amount. Exactly ONE shipment is ever created (MERGED + tracking guards).
+    computed_subtotal = sum(int(i.quantity or 0) * float(i.unit_price or 0) for i in (order.items or []))
+    if computed_subtotal and abs(computed_subtotal - float(order.subtotal or 0)) > 0.01:
+        order.subtotal = computed_subtotal
+        order.total = max(0, computed_subtotal + float(order.delivery_fee or 0) - float(order.discount or 0))
+        logger.info("Dispatch %s: totals realigned to merged basket (subtotal=%s, total=%s)",
+                    order.order_number, order.subtotal, order.total)
 
     # Build detailed product list description for delivery partner
     details_list = []

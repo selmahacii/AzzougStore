@@ -15,12 +15,17 @@ from app.services.salary_service import compute_salary
 
 router = APIRouter()
 
-PAYABLE_ROLES = ["CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MANAGER", "MARKETER"]
+PAYABLE_ROLES = ["CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MANAGER", "MARKETER", "LIVREUR"]
+
+# Fixed-monthly roles are paid from the revenue of every ACTIVE store of the
+# month (equal split); commission roles split naturally by delivered orders.
+MONTHLY_ROLES = ("MANAGER", "LIVREUR")
 
 
 def _require_super_admin(current_user: User):
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Réservé au super-admin.")
+    # Managers handle day-to-day operations, payroll included.
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs et managers.")
 
 
 def _previous_period() -> str:
@@ -39,6 +44,61 @@ def _period_bounds(period: str):
         return start, end
     except (ValueError, IndexError):
         raise HTTPException(status_code=400, detail="Période invalide — format attendu : YYYY-MM.")
+
+
+def _compute_store_contributions(db: Session, emp: User, salary_result: dict, since, until) -> list:
+    """
+    How each store funds this salary:
+    - PER_DELIVERED_ORDER → proportional to the employee's DELIVERED orders per store.
+    - MONTHLY_SALARY (manager, livreur…) → equal split across every store with
+      business activity in the month (≥ 1 order); falls back to active stores.
+    """
+    from sqlalchemy import func
+    from app.models.order import Order
+    from app.models.store import Store
+
+    total = float(salary_result.get("salary") or 0)
+    if total <= 0:
+        return []
+
+    if salary_result.get("payment_type") == "PER_DELIVERED_ORDER":
+        rows = (
+            db.query(Order.store_id, func.count(Order.id))
+            .filter(
+                Order.assigned_to == emp.id,
+                Order.status == "DELIVERED",
+                Order.is_deleted == False,
+                Order.created_at >= since,
+                Order.created_at <= until,
+            )
+            .group_by(Order.store_id)
+            .all()
+        )
+        delivered_total = sum(cnt for _, cnt in rows)
+        contribs = [(sid, total * cnt / delivered_total) for sid, cnt in rows] if delivered_total else []
+    else:
+        active_ids = [
+            r[0] for r in (
+                db.query(Order.store_id)
+                .filter(Order.is_deleted == False, Order.created_at >= since, Order.created_at <= until)
+                .group_by(Order.store_id)
+                .all()
+            )
+        ]
+        if not active_ids:
+            active_ids = [
+                s.id for s in db.query(Store).filter(Store.is_active == True, Store.is_deleted == False).all()
+            ]
+        contribs = [(sid, total / len(active_ids)) for sid in active_ids] if active_ids else []
+
+    names = {
+        s.id: s.name
+        for s in db.query(Store).filter(Store.id.in_([sid for sid, _ in contribs])).all()
+    } if contribs else {}
+    return [
+        {"store_id": sid, "store_name": names.get(sid, sid), "amount": round(amount, 2)}
+        for sid, amount in contribs
+    ]
 
 
 def _record_out(r: PayrollRecord) -> dict:
@@ -106,7 +166,12 @@ def generate_payroll(
         record.total = float(salary.get("salary") or 0)
         record.delivered_count = int(salary.get("normal_delivered_count") or 0)
         record.recovered_count = int(salary.get("recovered_delivered_count") or 0)
-        record.breakdown = salary
+        record.breakdown = {
+            **salary,
+            "role": emp.role,
+            # Which store funds what share of this salary (business rule §4)
+            "store_contributions": _compute_store_contributions(db, emp, salary, since, until),
+        }
         record.generated_by = current_user.id
 
     db.commit()
@@ -171,9 +236,69 @@ def mark_paid(
     record.status = "PAID"
     record.paid_at = datetime.now(timezone.utc).replace(tzinfo=None)
     record.paid_by = current_user.id
+
+    # ── Expenses integration: one PAID payroll expense per contributing store ──
+    from app.models.expense import Expense, ExpenseCategory, ExpenseStatus
+    emp = record.user or db.query(User).filter(User.id == record.user_id).first()
+    emp_name = emp.name if emp else record.user_id
+    emp_role = emp.role if emp else "?"
+    contributions = (record.breakdown or {}).get("store_contributions") or []
+    if not contributions and record.total:
+        # Legacy records without a stored split: recompute on the fly
+        since, until = _period_bounds(record.period)
+        contributions = _compute_store_contributions(
+            db, emp, record.breakdown or {"salary": record.total, "payment_type": record.payment_type}, since, until,
+        )
+    expenses_created = 0
+    for contrib in contributions:
+        db.add(Expense(
+            id=str(uuid.uuid4()),
+            store_id=contrib["store_id"],
+            category=ExpenseCategory.SALARY,
+            label=f"Salaire {record.period} — {emp_name} ({emp_role})",
+            description=(
+                f"Quote-part boutique : {contrib['amount']} DA sur un salaire total de {record.total} DA "
+                f"({record.payment_type or 'PER_DELIVERED_ORDER'}). Fiche de paie {record.id}."
+            ),
+            amount=int(round(contrib["amount"])),
+            tax_amount=0,
+            total_amount=int(round(contrib["amount"])),
+            status=ExpenseStatus.PAID,
+            expense_date=record.paid_at.date(),
+        ))
+        expenses_created += 1
+
+    # ── Audit + notification ──
+    try:
+        from app.services.audit_service import audit_service
+        audit_service.record_change(
+            db,
+            actor_id=current_user.id,
+            entity_name="payroll_record",
+            entity_id=record.id,
+            action="STATUS_CHANGE",
+            before={"status": "PENDING"},
+            after={"status": "PAID", "total": record.total, "period": record.period,
+                   "expenses_created": expenses_created},
+        )
+    except Exception as audit_err:
+        logger.warning("Payroll audit log failed: %s", audit_err)
+
+    from app.services.notification_service import notify
+    notify(
+        db,
+        type="PAYROLL_PAID",
+        title=f"Salaire payé — {emp_name} ({record.period})",
+        message=f"{record.total} DA versés, {expenses_created} dépense(s) « Salaires » créée(s) sur les boutiques contributrices.",
+        user_id=None,  # broadcast to admins/managers
+    )
+
     db.commit()
-    logger.info("Payroll record %s (period %s) marked PAID by %s", record.id, record.period, current_user.id)
-    return {"success": True, "message": "Fiche marquée payée."}
+    logger.info(
+        "Payroll record %s (period %s) marked PAID by %s — %d expense rows created",
+        record.id, record.period, current_user.id, expenses_created,
+    )
+    return {"success": True, "message": f"Fiche marquée payée — {expenses_created} dépense(s) créée(s).", "expenses_created": expenses_created}
 
 
 @router.get("/reminders", response_model=dict)
@@ -186,7 +311,7 @@ def payroll_reminders(
     - previous month not generated at all → GENERATE reminder
     - generated but some records still PENDING → PAY reminder
     """
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
         return {"success": True, "reminders": []}
 
     period = _previous_period()

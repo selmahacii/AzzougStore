@@ -235,7 +235,7 @@ def create_user(
     - ADMIN: can create MANAGER, CONFIRMATEUR, MARKETER (not SUPER_ADMIN)
     - MANAGER: cannot create users
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(
             status_code=403,
             detail="Privil├¿ges insuffisants pour cr├®er un employ├®."
@@ -246,6 +246,13 @@ def create_user(
         raise HTTPException(
             status_code=403,
             detail="Un administrateur ne peut pas cr├®er un Super Administrateur."
+        )
+
+    # A manager runs operations but can never create platform-level accounts
+    if current_user.role == "MANAGER" and (user_in.role or "CONFIRMATEUR") in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(
+            status_code=403,
+            detail="Un manager ne peut pas creer de compte administrateur.",
         )
 
     user_exists = db.query(User).filter(User.email == user_in.email).first()
@@ -365,7 +372,7 @@ def toggle_user_active(
     """
     Toggle user active/inactive status (activate or deactivate account).
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(
             status_code=403,
             detail="Seul un administrateur peut activer/d├®sactiver un compte."
@@ -378,6 +385,11 @@ def toggle_user_active(
     # Cannot deactivate their own account or another SUPER_ADMIN
     if db_user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Vous ne pouvez pas d├®sactiver votre propre compte.")
+    if current_user.role == "MANAGER" and (
+        db_user.role in ("SUPER_ADMIN", "ADMIN")
+        or (getattr(user_in, "role", None) in ("SUPER_ADMIN", "ADMIN"))
+    ):
+        raise HTTPException(status_code=403, detail="Un manager ne peut pas modifier ou promouvoir un compte administrateur.")
     if db_user.role == "SUPER_ADMIN" and current_user.role not in ("SUPER_ADMIN", "ADMIN"):
         raise HTTPException(status_code=403, detail="Acc├¿s refus├® ├á ce compte super administrateur.")
 
@@ -417,7 +429,7 @@ def reset_user_password(
     Reset user password. Only SUPER_ADMIN and ADMIN can do this.
     Expected payload: { new_password: "..." }
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Privil├¿ges insuffisants.")
 
     db_user = db.query(User).filter(User.id == user_id).first()

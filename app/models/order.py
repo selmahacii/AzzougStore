@@ -49,6 +49,20 @@ class Order(Base):
     utm_source = Column(String, nullable=True)
     utm_medium = Column(String, nullable=True)
     utm_campaign = Column(String, nullable=True)
+    utm_content = Column(String, nullable=True)
+    utm_term = Column(String, nullable=True)
+
+    # Meta Ads attribution — captured on the storefront at first touch and
+    # stored on the order so the admin can trace campaign → order → revenue,
+    # and so the CAPI Purchase carries fbp/fbc for maximum match quality.
+    campaign_id = Column(String, nullable=True, index=True)
+    adset_id = Column(String, nullable=True)
+    ad_id = Column(String, nullable=True)
+    fbclid = Column(String, nullable=True)
+    fbp = Column(String, nullable=True)
+    fbc = Column(String, nullable=True)
+    referrer = Column(String, nullable=True)
+    event_source_url = Column(String, nullable=True)
     
     notes = Column(Text, nullable=True)
     is_deleted = Column(Boolean, default=False)
@@ -60,6 +74,15 @@ class Order(Base):
     is_abandoned_cart = Column(Boolean, default=False)
     abandoned_cart_recovery_fee = Column(Integer, default=0)
     is_duplicate = Column(Boolean, default=False)
+
+    # Business origin marker: set once, the first time an abandoned cart is
+    # confirmed by a confirmatrice. The order TYPE (normal / abandoned /
+    # recovered) derives from is_abandoned_cart + recovered_at and NEVER
+    # changes afterwards, whatever happens to the status.
+    recovered_at = Column(DateTime, nullable=True)
+
+    # Delivery agent (role LIVREUR) the confirmatrice hands the parcel to
+    livreur_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
 
     # Duplicate merge tracking — a MERGED order points to the surviving parent
     parent_order_id = Column(String, nullable=True, index=True)
@@ -73,7 +96,8 @@ class Order(Base):
     next_callback_time = Column(DateTime, nullable=True)
 
     store = relationship("Store", back_populates="orders")
-    assignee = relationship("User", back_populates="assigned_orders")
+    assignee = relationship("User", back_populates="assigned_orders", foreign_keys=[assigned_to])
+    livreur = relationship("User", foreign_keys=[livreur_id])
     customer = relationship("Customer", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     events = relationship("OrderEvent", back_populates="order", cascade="all, delete-orphan")

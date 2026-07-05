@@ -57,6 +57,21 @@ class OrderCreate(BaseModel):
     abandoned_cart_recovery_fee: Optional[int] = 0
     assigned_to: Optional[str] = None
 
+    # Campaign attribution (captured by the storefront at first touch)
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+    campaign_id: Optional[str] = None
+    adset_id: Optional[str] = None
+    ad_id: Optional[str] = None
+    fbclid: Optional[str] = None
+    fbp: Optional[str] = None
+    fbc: Optional[str] = None
+    referrer: Optional[str] = None
+    event_source_url: Optional[str] = None
+
 
 class CarrierRef(BaseModel):
     id: str
@@ -131,7 +146,15 @@ class OrderRead(BaseModel):
     is_abandoned_cart: Optional[bool] = False
     abandoned_cart_recovery_fee: Optional[int] = 0
     is_duplicate:    Optional[bool] = False
-    
+
+    # Business origin: set once when an abandoned cart is first confirmed.
+    # Type badge = f(is_abandoned_cart, recovered_at) — never flips with status.
+    recovered_at: Optional[datetime] = None
+
+    # Delivery agent (role LIVREUR)
+    livreur_id: Optional[str] = None
+    livreur: Optional[ActorRef] = None
+
     # Confirmation Workflow
     confirmation_start_time: Optional[datetime] = None
     nrp_count: int = 0
@@ -142,6 +165,17 @@ class OrderRead(BaseModel):
     merged_by: Optional[str] = None
     merged_at: Optional[datetime] = None
     status_before_merge: Optional[str] = None
+
+    # Campaign attribution (admin: which campaign generated this order)
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    utm_content: Optional[str] = None
+    utm_term: Optional[str] = None
+    campaign_id: Optional[str] = None
+    adset_id: Optional[str] = None
+    ad_id: Optional[str] = None
+    referrer: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -181,6 +215,7 @@ class OrderReadFull(OrderRead):
 class OrderUpdateStatus(BaseModel):
     status: Optional[str] = None
     assigned_to: Optional[str] = None
+    livreur_id: Optional[str] = None
     notes: Optional[str] = None
     call_result: Optional[str] = None
     scheduled_callback_at: Optional[datetime] = None

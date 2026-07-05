@@ -116,8 +116,16 @@ async def test_same_phone_orders_auto_merge(client):
         assert str(child.parent_order_id) == str(parent.id)
         assert child.status_before_merge is not None
         assert child.is_duplicate is True
-        # History preserved: the child keeps its items
+        # History preserved: the child keeps its items (audit copy untouched)
         assert len(child.items) == 1
+        assert int(child.items[0].quantity) == 1
+
+        # Merged basket on the parent: same product + same variant → summed
+        assert len(parent.items) == 1, "same product/variant must merge into one line"
+        assert int(parent.items[0].quantity) == 2
+        # Totals recomputed: 2 × 2000 + 500 delivery
+        assert float(parent.subtotal) == 4000.0
+        assert float(parent.total) == 4500.0
 
         # Notification created
         from app.models.notification import Notification
@@ -164,6 +172,11 @@ async def test_normal_order_beats_abandoned_cart_as_parent(client):
         assert str(abandoned.status_before_merge) == "ABANDONED"
         assert str(abandoned.parent_order_id) == str(normal.id)
         assert str(normal.status) != "MERGED"
+
+        # The normal parent absorbed the abandoned basket (aggregated line)
+        assert len(normal.items) == 1
+        assert int(normal.items[0].quantity) == 2
+        assert float(normal.subtotal) == 4000.0
     finally:
         db.close()
 

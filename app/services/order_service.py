@@ -44,7 +44,9 @@ _VALID_TRANSITIONS: dict[str, list[str]] = {
     "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED"],
     "DELIVERED":   ["RETURNED"],
     "RETURNED":    [],
-    "CANCELLED":   ["IN_PROGRESS"],
+    # A confirmatrice can reopen a cancelled order (edit it) or confirm it
+    # directly after winning the client back on a later call.
+    "CANCELLED":   ["IN_PROGRESS", "CONFIRMED"],
     "ABANDONED":   ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
 }
 
@@ -100,17 +102,192 @@ _PARENT_STATUS_PRIORITY = {
 }
 
 
+def _variant_key(item) -> str:
+    """Merge key: same product line ⇔ same product_id AND same variant string."""
+    vd = item.variant_details
+    if isinstance(vd, dict):
+        return str(vd.get("variant") or "").strip().lower()
+    return str(vd or "").strip().lower()
+
+
+def _recompute_totals(order: Order) -> None:
+    subtotal = sum(int(i.quantity or 0) * float(i.unit_price or 0) for i in (order.items or []))
+    order.subtotal = subtotal
+    order.total = max(0, subtotal + float(order.delivery_fee or 0) - float(order.discount or 0))
+
+
+def _absorb_child_items(db: Session, parent: Order, child: Order, actor_id: Optional[str]) -> None:
+    """
+    Aggregate the child's basket into the parent (the child keeps its own
+    OrderItems untouched for audit):
+      - same product + same variant → quantities are summed;
+      - same product, different variant → separate line;
+      - different product → appended line.
+    The parent takes an equivalent stock hold for what it absorbs (physical
+    deduction too when the parent is already CONFIRMED), and its totals are
+    recomputed. Caller must have freed the child's stock hold beforehand.
+    """
+    parent_confirmed = str(parent.status) in _CONFIRMED_STATES
+    added: list[str] = []
+    for c_item in list(child.items or []):
+        qty = int(c_item.quantity or 0)
+        if qty <= 0:
+            continue
+        try:
+            inventory_service.reserve_stock(
+                db, product_id=c_item.product_id, quantity=qty,
+                order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
+            )
+            if parent_confirmed:
+                inventory_service.confirm_stock(
+                    db, product_id=c_item.product_id, quantity=qty,
+                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
+                )
+        except Exception as exc:
+            logger.warning("Merge: stock hold for absorbed item %s failed on parent %s: %s",
+                           c_item.product_id, parent.id, exc)
+
+        match = next(
+            (p for p in (parent.items or [])
+             if p.product_id == c_item.product_id and _variant_key(p) == _variant_key(c_item)),
+            None,
+        )
+        if match:
+            match.quantity = int(match.quantity or 0) + qty
+        else:
+            parent.items.append(OrderItem(
+                id=str(uuid.uuid4()),
+                order_id=parent.id,
+                product_id=c_item.product_id,
+                product_name=c_item.product_name,
+                quantity=qty,
+                unit_price=c_item.unit_price,
+                variant_details=c_item.variant_details,
+                image_url=c_item.image_url,
+            ))
+        variant = _variant_key(c_item)
+        added.append(f"{c_item.product_name}{f' [{variant}]' if variant else ''} x{qty}")
+
+    _recompute_totals(parent)
+    if added:
+        _log_event(
+            db, order_id=parent.id, actor_id=actor_id,
+            from_status=str(parent.status), to_status=str(parent.status),
+            note=f"Panier fusionné depuis {child.order_number} : + {', '.join(added)}. "
+                 f"Nouveau total : {int(parent.total or 0)} DA.",
+        )
+
+
+def _remove_child_items(db: Session, parent: Order, child: Order, actor_id: Optional[str]) -> None:
+    """Reverse of _absorb_child_items — used by unmerge (admin, reversible)."""
+    parent_confirmed = str(parent.status) in _CONFIRMED_STATES
+    removed: list[str] = []
+    for c_item in list(child.items or []):
+        qty = int(c_item.quantity or 0)
+        if qty <= 0:
+            continue
+        match = next(
+            (p for p in (parent.items or [])
+             if p.product_id == c_item.product_id and _variant_key(p) == _variant_key(c_item)),
+            None,
+        )
+        if not match:
+            continue
+        take = min(qty, int(match.quantity or 0))
+        if take <= 0:
+            continue
+        match.quantity = int(match.quantity or 0) - take
+        if match.quantity <= 0:
+            parent.items.remove(match)
+            db.delete(match)
+        try:
+            if parent_confirmed:
+                inventory_service.return_restock(
+                    db, product_id=c_item.product_id, quantity=take,
+                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
+                )
+            else:
+                inventory_service.release_reservation(
+                    db, product_id=c_item.product_id, quantity=take,
+                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
+                )
+        except Exception as exc:
+            logger.warning("Unmerge: stock release for %s failed on parent %s: %s",
+                           c_item.product_id, parent.id, exc)
+        removed.append(f"{c_item.product_name} x{take}")
+
+    _recompute_totals(parent)
+    if removed:
+        _log_event(
+            db, order_id=parent.id, actor_id=actor_id,
+            from_status=str(parent.status), to_status=str(parent.status),
+            note=f"Défusion de {child.order_number} : - {', '.join(removed)}. "
+                 f"Nouveau total : {int(parent.total or 0)} DA.",
+        )
+
+
+def merge_child_into_parent(
+    db: Session,
+    parent: Order,
+    child: Order,
+    actor_id: Optional[str],
+    reason: str = "doublon même téléphone",
+) -> None:
+    """
+    Single merge primitive used by BOTH automatic and manual merges:
+      1. free the child's stock hold (reservation or physical, by category),
+      2. mark the child MERGED (original status preserved, nothing deleted),
+      3. aggregate its basket into the parent (product+variant merge rules),
+      4. write the traceability event on the child.
+    """
+    child_was_confirmed = str(child.status) in _CONFIRMED_STATES
+    child.status_before_merge = str(child.status)
+    child.status = "MERGED"
+    child.parent_order_id = parent.id
+    child.merged_by = actor_id
+    child.merged_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    child.is_duplicate = True
+
+    for item in list(child.items or []):
+        try:
+            if child_was_confirmed:
+                inventory_service.return_restock(
+                    db, product_id=item.product_id, quantity=item.quantity,
+                    order_id=child.id, actor_id=actor_id, variant_details=item.variant_details,
+                )
+            else:
+                inventory_service.release_reservation(
+                    db, product_id=item.product_id, quantity=item.quantity,
+                    order_id=child.id, actor_id=actor_id, variant_details=item.variant_details,
+                )
+        except Exception as exc:
+            logger.warning("Merge: stock release failed for child %s: %s", child.id, exc)
+
+    _absorb_child_items(db, parent, child, actor_id)
+
+    _log_event(
+        db, order_id=child.id, actor_id=actor_id,
+        from_status=child.status_before_merge, to_status="MERGED",
+        note=f"Fusionnée dans la commande {parent.order_number} ({reason}). "
+             f"Son panier a été agrégé au panier de la commande parente.",
+    )
+
+
 def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = None) -> int:
     """
-    Automatically fuse every same-phone, same-store order still in the
-    confirmation stage into a single operational parent order.
+    Automatically fuse every same-phone, same-store ACTIVE order into a single
+    operational parent order carrying the AGGREGATED basket.
 
+    - Detection ignores cancelled / returned / deleted / already-merged orders
+      and anything already at the carrier (tracking number set).
     - Children get status=MERGED with their original status preserved
       (status_before_merge), parent_order_id, merged_at — nothing is deleted:
       items, notes and the full OrderEvent timeline stay on each child.
-    - Children's stock reservations are released (the parent carries the stock).
+    - The parent's basket becomes the aggregation of all duplicates
+      (same product+variant → summed quantities), totals recomputed, and the
+      equivalent stock hold moves to the parent.
     - The parent inherits an assignee from its children when it has none, so
-      the confirmatrice always keeps exactly one operational order per client.
+      the confirmatrice always manages exactly ONE logical basket per client.
 
     Returns the number of orders merged.
     """
@@ -122,6 +299,9 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     if not cfg.get("auto_merge_duplicates", True):
         return 0
 
+    # Active candidates: confirmation-stage orders + CONFIRMED ones not yet at
+    # the carrier (a confirmed parent can still absorb a late duplicate).
+    candidate_states = list(_MERGEABLE_STATES) + ["CONFIRMED"]
     siblings = (
         db.query(Order)
         .filter(
@@ -129,10 +309,13 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             Order.customer_phone == phone,
             Order.id != order.id,
             Order.is_deleted == False,
-            Order.status.in_(list(_MERGEABLE_STATES)),
+            Order.status.in_(candidate_states),
         )
+        .with_for_update()  # serialize concurrent merges on the same client
         .all()
     )
+    # Never touch anything already at the carrier
+    siblings = [s for s in siblings if not s.tracking_number]
     if not siblings:
         return 0
 
@@ -146,7 +329,6 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
         )
 
     parent = sorted(group, key=parent_rank)[0]
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
     merged_numbers: list[str] = []
 
     for child in group:
@@ -154,37 +336,8 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             continue
         if child.tracking_number:  # already at the carrier — never touch
             continue
-
-        child.status_before_merge = str(child.status)
-        child.status = "MERGED"
-        child.parent_order_id = parent.id
-        child.merged_by = actor_id
-        child.merged_at = now
-        child.is_duplicate = True
+        merge_child_into_parent(db, parent, child, actor_id, reason="fusion automatique — doublon même téléphone")
         merged_numbers.append(str(child.order_number))
-
-        # The parent carries the stock — free the child's reservation
-        for item in child.items:
-            try:
-                inventory_service.release_reservation(
-                    db,
-                    product_id=item.product_id,
-                    quantity=item.quantity,
-                    order_id=child.id,
-                    actor_id=actor_id,
-                    variant_details=item.variant_details,
-                )
-            except Exception as exc:
-                logger.warning("Auto-merge: reservation release failed for %s: %s", child.id, exc)
-
-        _log_event(
-            db,
-            order_id=child.id,
-            actor_id=actor_id,
-            from_status=child.status_before_merge,
-            to_status="MERGED",
-            note=f"Fusion automatique dans la commande {parent.order_number} (doublon même téléphone).",
-        )
 
     if not merged_numbers:
         return 0
@@ -710,7 +863,9 @@ class OrderService:
                     context={"from": old_status, "to": new_status},
                 )
 
-            if new_status == "SHIPPED" and not order.tracking_number:
+            if new_status == "SHIPPED" and not order.tracking_number and not order.livreur_id:
+                # A carrier shipment needs a tracking number; an INTERNAL
+                # delivery (livreur assigned) legitimately has none.
                 from app.core.exceptions import ValidationError
                 raise ValidationError(
                     message="Le numéro de suivi n'a pas été transmis. Impossible de passer au statut Expédiée."
@@ -718,44 +873,55 @@ class OrderService:
 
             order.status = new_status  # type: ignore[assignment]
 
-            # ── Stock side effects ────────────────────────────────
-            if new_status == "CONFIRMED" and old_status in ("CALLED", "ABANDONED"):
-                # Deduct physical stock + release reservations
+            # ── Stock side effects — full symmetric matrix ─────────
+            # Every status belongs to exactly one stock category:
+            #   R (reserved)  = NEW/ASSIGNED/CALLED/ABANDONED/IN_PROGRESS/RESCHEDULED
+            #   C (deducted)  = CONFIRMED/SHIPPED/DELIVERED
+            #   Z (no stock)  = CANCELLED/RETURNED/MERGED
+            # Any category change applies the matching inventory operation, so
+            # the physical stock can never drift regardless of the path taken
+            # (confirm from any stage, rollback of a confirmation, reopening a
+            # cancelled order, re-confirming it…).
+            was_c = old_status in _CONFIRMED_STATES
+            was_r = old_status in _RESERVED_STATES
+            now_c = new_status in _CONFIRMED_STATES
+            now_r = new_status in _RESERVED_STATES
+
+            def _each_item(op, **extra):
                 for item in order.items:
-                    inventory_service.confirm_stock(
+                    op(
                         db,
                         product_id=item.product_id,
                         quantity=item.quantity,
                         order_id=order.id,
                         actor_id=actor_id,
                         variant_details=item.variant_details,
+                        **extra,
                     )
 
-            elif new_status in ("RETURNED", "CANCELLED"):
-                if old_status in _CONFIRMED_STATES:
-                    # Physical stock was deducted → return it
-                    for item in order.items:
-                        inventory_service.return_restock(
-                            db,
-                            product_id=item.product_id,
-                            quantity=item.quantity,
-                            order_id=order.id,
-                            actor_id=actor_id,
-                            variant_details=item.variant_details,
-                        )
-                elif old_status in _RESERVED_STATES:
-                    # Only reservation existed → release it
-                    for item in order.items:
-                        inventory_service.release_reservation(
-                            db,
-                            product_id=item.product_id,
-                            quantity=item.quantity,
-                            order_id=order.id,
-                            actor_id=actor_id,
-                            variant_details=item.variant_details,
-                        )
+            if was_r and now_c:
+                # Reservation → sale: deduct physical stock, release reservation
+                _each_item(inventory_service.confirm_stock)
+            elif was_c and now_r:
+                # Confirmation rolled back: put stock back, hold a reservation again
+                _each_item(inventory_service.return_restock)
+                _each_item(inventory_service.reserve_stock)
+            elif was_r and not (now_c or now_r):
+                # Reservation → terminal: free the reservation
+                _each_item(inventory_service.release_reservation)
+            elif was_c and not (now_c or now_r):
+                # Sale → cancelled/returned: restock physically
+                _each_item(inventory_service.return_restock)
+            elif not (was_c or was_r) and now_r:
+                # Reopened (e.g. CANCELLED → IN_PROGRESS): reserve again
+                _each_item(inventory_service.reserve_stock)
+            elif not (was_c or was_r) and now_c:
+                # Reopened straight to confirmed (CANCELLED → CONFIRMED):
+                # reserve (availability check) then confirm (net: deduct)
+                _each_item(inventory_service.reserve_stock)
+                _each_item(inventory_service.confirm_stock)
 
-            elif new_status == "DELIVERED" and old_status != "DELIVERED":
+            if new_status == "DELIVERED" and old_status != "DELIVERED":
                 # Auto-record COD payment in finance
                 self._record_delivery_payment(db, order)
 
@@ -771,8 +937,31 @@ class OrderService:
             )
             logger.info("Order %s status: %s → %s (actor=%s)", order.order_number, old_status, new_status, actor_id)
 
+            # ── Propagate milestones to merged children (audit trail) ──
+            # The children stay MERGED (one commission, one shipment), but
+            # their timeline explicitly says how the client was served.
+            if new_status in ("CONFIRMED", "SHIPPED", "DELIVERED"):
+                merged_children = (
+                    db.query(Order)
+                    .filter(Order.parent_order_id == order.id, Order.status == "MERGED")
+                    .all()
+                )
+                labels = {"CONFIRMED": "Confirmée", "SHIPPED": "Expédiée", "DELIVERED": "Livrée"}
+                for ch in merged_children:
+                    _log_event(
+                        db, order_id=ch.id, actor_id=actor_id,
+                        from_status="MERGED", to_status="MERGED",
+                        note=f"{labels[new_status]} via la commande parente {order.order_number}"
+                             + (f" — suivi : {order.tracking_number}" if order.tracking_number else "")
+                             + ".",
+                    )
+
             # ── Business notifications ────────────────────────────
             if new_status == "CONFIRMED" and order.is_abandoned_cart:
+                # Origin marker: this cart is now RECOVERED, forever —
+                # the type badge never flips back whatever the status does.
+                if not order.recovered_at:
+                    order.recovered_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 notify(
                     db,
                     type="CART_RECOVERED",
@@ -818,6 +1007,33 @@ class OrderService:
                 store_id=str(order.store_id),
                 order_id=str(order.id),
             )
+
+        # ── Delivery agent (livreur) assignment ────────────────────
+        new_livreur = update_data.get("livreur_id")
+        if new_livreur is not None and new_livreur != order.livreur_id:
+            old_livreur = order.livreur_id
+            order.livreur_id = new_livreur or None
+            cur_status = str(order.status)
+            _log_event(
+                db,
+                order_id=order.id,
+                actor_id=actor_id,
+                from_status=cur_status,
+                to_status=cur_status,
+                note=(f"Livreur assigné ({new_livreur})" if new_livreur
+                      else f"Livreur retiré ({old_livreur})"),
+            )
+            if new_livreur:
+                notify(
+                    db,
+                    type="ORDER_ASSIGNED",
+                    title=f"Livraison assignée — {order.order_number}",
+                    message=(f"{order.customer_name or 'Client'} · {order.customer_phone or ''} · "
+                             f"{order.customer_wilaya or ''} {order.customer_commune or ''} · {order.total or 0} DA"),
+                    user_id=new_livreur,
+                    store_id=str(order.store_id),
+                    order_id=str(order.id),
+                )
 
         # ── Note-only update ────────────────────────────────────────
         if order_note and not new_status and new_assignee is None:

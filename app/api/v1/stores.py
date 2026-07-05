@@ -107,7 +107,7 @@ def read_stores(
     query = db.query(Store).filter(Store.is_deleted == False)
 
     if current_user:
-        if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+        if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
             if current_user.role == "MANAGER" and current_user.employee_store_id:
                 query = query.filter(Store.id == current_user.employee_store_id)
             else:
@@ -174,7 +174,7 @@ def create_store(
     Create new store with template-based initialization.
     Only SUPER_ADMIN and ADMIN can create stores.
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour créer une boutique.")
 
     # Check if slug exists
@@ -336,7 +336,7 @@ def update_store(
     Update a store's configuration, theme, domain, and social links.
     Only SUPER_ADMIN, ADMIN can update stores.
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour modifier une boutique.")
 
     store = db.query(Store).filter(Store.id == id, Store.is_deleted == False).first()
@@ -417,7 +417,7 @@ def toggle_store(
     """
     Toggle store active/inactive status.
     """
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
     store = db.query(Store).filter(Store.id == id, Store.is_deleted == False).first()
