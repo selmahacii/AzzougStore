@@ -279,7 +279,7 @@ def get_agent_counts(
         "abandoned_in_progress": _count(Order.is_abandoned_cart == True,
                                         Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
-        "internal_delivery": _count(Order.livreur_id.isnot(None), Order.status.in_(["CONFIRMED", "SHIPPED"])),
+        "internal_delivery": _count(Order.livreur_id.isnot(None), Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"])),
         "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
         # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
         # sans heure de rappel programmée, ou dont l'heure est déjà passée.
@@ -543,10 +543,13 @@ def list_orders(
         elif status.upper() == "ARCHIVED":
             query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
         elif status.upper() == "INTERNAL_DELIVERY":
-            # Confirmed orders handed to an internal delivery agent
+            # Any order handed to an internal delivery agent, whatever its
+            # current status (assignment is available from every stage now —
+            # NEW, NRP, CANCELLED included). Delivered/Returned/Merged already
+            # have their own dedicated views, so they're excluded here.
             query = query.filter(
                 Order.livreur_id.isnot(None),
-                Order.status.in_(["CONFIRMED", "SHIPPED"]),
+                Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
             )
         else:
             query = query.filter(Order.status == status.upper())
