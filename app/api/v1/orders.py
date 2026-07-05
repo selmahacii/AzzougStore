@@ -1692,6 +1692,16 @@ async def dispatch_order(
             tracking = (parcels[0] if parcels else {}).get("tracking") or ""
             
             if tracking:
+                # Switching internal driver -> carrier: the driver is no
+                # longer the source of truth for this delivery. No orphan
+                # states: exactly one active delivery method at a time.
+                if order.livreur_id:
+                    from app.models.events import OrderEvent as _OE
+                    import uuid as _uuid2
+                    db.add(_OE(id=str(_uuid2.uuid4()), order_id=order.id, actor_id=current_user.id,
+                               from_status=order.status, to_status=order.status,
+                               note=f"Switch livreur interne -> transporteur (Yalidine) : nouveau tracking {tracking}."))
+                    order.livreur_id = None
                 order.tracking_number = tracking
                 order.status = "SHIPPED"
                 db.commit()
@@ -1814,6 +1824,13 @@ async def dispatch_order(
             tracking = res.get("tracking") or ""
             
             if tracking:
+                if order.livreur_id:
+                    from app.models.events import OrderEvent as _OE
+                    import uuid as _uuid2
+                    db.add(_OE(id=str(_uuid2.uuid4()), order_id=order.id, actor_id=current_user.id,
+                               from_status=order.status, to_status=order.status,
+                               note=f"Switch livreur interne -> transporteur (Noest) : nouveau tracking {tracking}."))
+                    order.livreur_id = None
                 order.tracking_number = tracking
                 order.status = "SHIPPED"
                 db.commit()

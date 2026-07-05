@@ -164,6 +164,12 @@ EXPLICIT_MAPPING = {
     (16, "bir touta"): "Birtouta",
     (16, "herraoua"): "Heraoua",
     (16, "h raoua"): "Heraoua",
+    # M'Sila — communes ajoutées à la liste ONS + variantes probables Noest
+    (28, "bou saada"): "Bou Saada",
+    (28, "ain el melh"): "Ain El Melh",
+    (28, "djebel messaad"): "Djebel Messaad",
+    (28, "mohammed boudiaf"): "Mohammed Boudiaf",
+    (28, "sidi m hamed"): "Sidi M'hamed",
     # Tizi Ouzou
     (15, "aghribs"): "Aghrib",
     (15, "iboudrarene"): "Iboudraren",

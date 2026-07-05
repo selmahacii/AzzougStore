@@ -1046,13 +1046,31 @@ class OrderService:
             old_livreur = order.livreur_id
             order.livreur_id = new_livreur or None
             cur_status = str(order.status)
+
+            # Switching a shipped carrier parcel to an internal driver:
+            # the NOEST tracking is no longer the source of truth for this
+            # order — drop it (no orphan tracking number) and step the
+            # status back to CONFIRMED so it re-enters a clean pipeline.
+            # NOEST has no verified public cancel endpoint wired here yet;
+            # the note flags it so ops can cancel it manually carrier-side.
+            switch_note = None
+            if new_livreur and order.tracking_number:
+                switch_note = (
+                    f"Switch transporteur → livreur interne : tracking {order.tracking_number} "
+                    f"détaché (à annuler manuellement chez NOEST si déjà pris en charge)."
+                )
+                order.tracking_number = None
+                if cur_status == "SHIPPED":
+                    order.status = "CONFIRMED"
+                    cur_status = "CONFIRMED"
+
             _log_event(
                 db,
                 order_id=order.id,
                 actor_id=actor_id,
                 from_status=cur_status,
                 to_status=cur_status,
-                note=(f"Livreur assigné ({new_livreur})" if new_livreur
+                note=switch_note or (f"Livreur assigné ({new_livreur})" if new_livreur
                       else f"Livreur retiré ({old_livreur})"),
             )
             if new_livreur:
