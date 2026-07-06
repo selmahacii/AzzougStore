@@ -1683,3 +1683,246 @@ def get_catalog_feed(store_id: str = Query(...), db: Session = Depends(get_db)):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="meta-catalog-{store.slug}.csv"'},
     )
+
+
+# ─── GET /meta-ads/connectivity-test — raw network diagnostic ─────────────────
+
+@router.get("/connectivity-test", response_model=dict)
+def connectivity_test():
+    """
+    Standalone network probe — runs entirely outside CAPI business logic.
+    Tests several transport paths to graph.facebook.com so we can confirm
+    exactly which layer HuggingFace (or any other host) blocks.
+
+    Tests performed:
+      1. Raw TCP + TLS (stdlib ssl) — same path our custom transport uses
+      2. httpx with HTTP/1.1, no keep-alive (fresh connection each call)
+      3. httpx with HTTP/2 (if h2 is installed)
+      4. urllib3 / requests (different TLS stack)
+      5. Control probe to a known-open host (httpbin.org) — confirms general
+         outbound HTTPS works so we can isolate "Meta specifically" vs "all TLS"
+      6. Port 80 plain HTTP to graph.facebook.com — confirms TCP itself is
+         allowed (rules out a full IP-level block)
+
+    Returns a JSON dict with per-test results, timings, and a plain-language
+    verdict for each test.
+    """
+    import socket
+    import ssl as _ssl
+    import time
+    import sys
+
+    TARGET_HOST = "graph.facebook.com"
+    TARGET_PORT = 443
+    CONTROL_HOST = "httpbin.org"
+    TIMEOUT = 8.0
+
+    def _tcp_tls_probe(host: str, port: int, timeout: float) -> dict:
+        result: dict = {}
+        t0 = time.monotonic()
+        try:
+            infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+            result["dns_ms"] = round((time.monotonic() - t0) * 1000)
+            result["resolved_ip"] = infos[0][4][0] if infos else None
+        except Exception as exc:
+            result["dns_ms"] = round((time.monotonic() - t0) * 1000)
+            result["dns_status"] = f"FAIL: {exc}"
+            return result
+        result["dns_status"] = "ok"
+
+        family, socktype, proto, _, sockaddr = infos[0]
+        sock = None
+        t_tcp = time.monotonic()
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["tcp_status"] = "ok"
+        except socket.timeout:
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["tcp_status"] = "TIMEOUT"
+            if sock:
+                try: sock.close()
+                except Exception: pass
+            return result
+        except Exception as exc:
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["tcp_status"] = f"FAIL: {type(exc).__name__}: {exc}"
+            if sock:
+                try: sock.close()
+                except Exception: pass
+            return result
+
+        t_tls = time.monotonic()
+        try:
+            ctx = _ssl.create_default_context()
+            tls_sock = ctx.wrap_socket(sock, server_hostname=host)
+            result["tls_ms"] = round((time.monotonic() - t_tls) * 1000)
+            result["tls_status"] = "ok"
+            result["tls_version"] = tls_sock.version()
+            result["tls_cipher"] = tls_sock.cipher()[0] if tls_sock.cipher() else None
+            tls_sock.close()
+        except socket.timeout:
+            result["tls_ms"] = round((time.monotonic() - t_tls) * 1000)
+            result["tls_status"] = "TIMEOUT"
+            try: sock.close()
+            except Exception: pass
+        except Exception as exc:
+            result["tls_ms"] = round((time.monotonic() - t_tls) * 1000)
+            result["tls_status"] = f"FAIL: {type(exc).__name__}: {exc}"
+            try: sock.close()
+            except Exception: pass
+        return result
+
+    def _httpx_probe(host: str, port: int, timeout: float, http2: bool = False) -> dict:
+        import httpx
+        result: dict = {"http2_requested": http2}
+        url = f"https://{host}/" if port == 443 else f"http://{host}:{port}/"
+        t0 = time.monotonic()
+        try:
+            with httpx.Client(
+                http2=http2,
+                timeout=httpx.Timeout(connect=timeout, read=timeout, write=timeout, pool=5.0),
+                follow_redirects=False,
+            ) as client:
+                resp = client.get(url)
+                result["total_ms"] = round((time.monotonic() - t0) * 1000)
+                result["status"] = "ok"
+                result["http_code"] = resp.status_code
+                result["http_version"] = resp.http_version
+        except httpx.ConnectTimeout:
+            result["total_ms"] = round((time.monotonic() - t0) * 1000)
+            result["status"] = "TIMEOUT (connect)"
+        except httpx.ReadTimeout:
+            result["total_ms"] = round((time.monotonic() - t0) * 1000)
+            result["status"] = "TIMEOUT (read)"
+        except Exception as exc:
+            result["total_ms"] = round((time.monotonic() - t0) * 1000)
+            result["status"] = f"FAIL: {type(exc).__name__}: {str(exc)[:120]}"
+        return result
+
+    def _urllib_probe(host: str, timeout: float) -> dict:
+        import urllib.request
+        result: dict = {}
+        url = f"https://{host}/"
+        t0 = time.monotonic()
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                result["total_ms"] = round((time.monotonic() - t0) * 1000)
+                result["status"] = "ok"
+                result["http_code"] = resp.status
+        except Exception as exc:
+            result["total_ms"] = round((time.monotonic() - t0) * 1000)
+            exc_str = str(exc)
+            if "timed out" in exc_str.lower() or "timeout" in exc_str.lower():
+                result["status"] = f"TIMEOUT: {exc_str[:120]}"
+            else:
+                result["status"] = f"FAIL: {type(exc).__name__}: {exc_str[:120]}"
+        return result
+
+    def _tcp_port80_probe(host: str, timeout: float) -> dict:
+        result: dict = {}
+        t0 = time.monotonic()
+        try:
+            infos = socket.getaddrinfo(host, 80, socket.AF_INET, socket.SOCK_STREAM)
+            result["dns_ms"] = round((time.monotonic() - t0) * 1000)
+        except Exception as exc:
+            result["dns_ms"] = round((time.monotonic() - t0) * 1000)
+            result["status"] = f"DNS FAIL: {exc}"
+            return result
+        family, socktype, proto, _, sockaddr = infos[0]
+        sock = None
+        t_tcp = time.monotonic()
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["status"] = "ok (TCP:80 connected)"
+            sock.close()
+        except socket.timeout:
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["status"] = "TIMEOUT"
+            if sock:
+                try: sock.close()
+                except Exception: pass
+        except Exception as exc:
+            result["tcp_ms"] = round((time.monotonic() - t_tcp) * 1000)
+            result["status"] = f"FAIL: {type(exc).__name__}: {exc}"
+            if sock:
+                try: sock.close()
+                except Exception: pass
+        return result
+
+    def _verdict(probe_result: dict) -> str:
+        status = probe_result.get("status", "")
+        tls_status = probe_result.get("tls_status", "")
+        tcp_status = probe_result.get("tcp_status", "")
+        if "TIMEOUT" in tls_status:
+            return "TLS_BLOCKED — TCP connects but TLS handshake is intercepted/dropped by the host network"
+        if "ok" in str(tcp_status) and "FAIL" in str(tls_status):
+            return "TLS_ERROR — TCP ok but TLS failed (certificate/SNI issue)"
+        if "TIMEOUT" in str(tcp_status):
+            return "TCP_BLOCKED — IP-level firewall (or IP unreachable)"
+        if "FAIL" in str(tcp_status):
+            return "TCP_FAILED — network error before TLS"
+        if "TIMEOUT" in str(status):
+            return "TIMEOUT — connection or response timed out"
+        if "ok" in str(status) or "ok" in str(tls_status):
+            return "OK — full HTTPS connection succeeded"
+        return f"UNKNOWN — {status or tls_status}"
+
+    # ── Run all probes ──────────────────────────────────────────────────────
+    results: dict = {
+        "target": TARGET_HOST,
+        "python_version": sys.version,
+    }
+
+    # 1. Raw stdlib TCP + TLS
+    raw = _tcp_tls_probe(TARGET_HOST, TARGET_PORT, TIMEOUT)
+    results["1_raw_stdlib_tls"] = {**raw, "verdict": _verdict(raw)}
+
+    # 2. httpx HTTP/1.1 (fresh client, no keep-alive pool reuse)
+    hx1 = _httpx_probe(TARGET_HOST, TARGET_PORT, TIMEOUT, http2=False)
+    results["2_httpx_http11"] = {**hx1, "verdict": _verdict(hx1)}
+
+    # 3. httpx HTTP/2
+    try:
+        import h2  # noqa: F401
+        hx2 = _httpx_probe(TARGET_HOST, TARGET_PORT, TIMEOUT, http2=True)
+        results["3_httpx_http2"] = {**hx2, "verdict": _verdict(hx2)}
+    except ImportError:
+        results["3_httpx_http2"] = {"verdict": "SKIPPED — h2 package not installed"}
+
+    # 4. stdlib urllib (different TLS stack path)
+    ul = _urllib_probe(TARGET_HOST, TIMEOUT)
+    results["4_urllib_https"] = {**ul, "verdict": _verdict(ul)}
+
+    # 5. Control probe: httpbin.org (general outbound HTTPS)
+    ctrl = _httpx_probe(CONTROL_HOST, TARGET_PORT, TIMEOUT, http2=False)
+    results["5_control_httpbin"] = {**ctrl, "verdict": _verdict(ctrl)}
+
+    # 6. Port 80 TCP only (is the IP reachable at all without TLS?)
+    p80 = _tcp_port80_probe(TARGET_HOST, TIMEOUT)
+    results["6_tcp_port80_only"] = {**p80, "verdict": _verdict(p80)}
+
+    # ── Summary ────────────────────────────────────────────────────────────
+    verdicts = [v.get("verdict", "") for v in results.values() if isinstance(v, dict)]
+    if any("TLS_BLOCKED" in v for v in verdicts):
+        summary = (
+            "CONFIRMED: HuggingFace intercepts/blocks TLS handshakes to graph.facebook.com. "
+            "TCP connects fine (IP is reachable) but the TLS ClientHello is dropped — "
+            "this is a network-layer policy on the HF infrastructure, not a code bug. "
+            "Events are preserved in the PostgreSQL queue and will deliver automatically "
+            "if you move the backend to a host without this restriction (Railway, Render, VPS)."
+        )
+    elif all("OK" in v for v in verdicts if isinstance(v, str)):
+        summary = "All probes succeeded — full HTTPS connectivity to graph.facebook.com confirmed."
+    elif any("OK" in v for v in verdicts if isinstance(v, str)):
+        summary = "Partial connectivity — some transport paths work, see individual results."
+    else:
+        summary = "All probes failed — no outbound HTTPS to graph.facebook.com from this host."
+    results["summary"] = summary
+
+    return results
