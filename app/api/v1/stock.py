@@ -216,7 +216,7 @@ def create_movement(
     RESTOCK: quantity must be > 0.
     MANUAL_ADJUSTMENT: quantity can be negative (shrinkage, loss).
     """
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"):
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR"):
         raise PermissionError(message="Seul un gestionnaire peut effectuer des ajustements de stock.")
 
     if movement.type not in _MANUAL_TYPES:
@@ -233,9 +233,11 @@ def create_movement(
     if movement.store_id and product.store_id != movement.store_id:
         raise PermissionError(message="Le produit n'appartient pas à la boutique spécifiée.")
 
-    # A delivery driver only manages stock for their own store
-    if current_user.role == "LIVREUR" and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+    # Store-scoped employees (livreur, confirmatrice) only manage stock for their own store
+    if current_user.role in ("LIVREUR", "CONFIRMATEUR") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise PermissionError(message="Vous ne pouvez ajuster le stock que de votre propre boutique.")
+
+    stock_before = product.stock or 0
 
     try:
         if movement.type == "RESTOCK":
@@ -259,6 +261,19 @@ def create_movement(
                 reason=movement.reason or "Ajustement manuel",
                 variant_details=movement.variant_details,
             )
+
+        # Central audit trail (same journal as stores/payroll/landing pages),
+        # in addition to the StockMovement row created by inventory_service.
+        from app.services.audit_service import audit_service
+        audit_service.record_change(
+            db,
+            actor_id=current_user.id,
+            entity_name="stock",
+            entity_id=movement.product_id,
+            action=movement.type,
+            before={"stock": stock_before},
+            after={"stock": product.stock, "reason": movement.reason},
+        )
 
         db.commit()
         db.refresh(product)

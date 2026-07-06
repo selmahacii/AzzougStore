@@ -134,50 +134,70 @@ def get_analytics(
     if type == "kpi":
         period_filters = filters + [Order.created_at >= start_date, Order.created_at < end_date]
         
-        # Total Revenue (Unified: Orders + POS) - Only count DELIVERED orders
-        pos_base = [POSSale.created_at >= start_date, POSSale.created_at < end_date] + ([POSSale.store_id == store_id] if store_id else [])
-        order_rev = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
-        pos_rev = db.query(func.sum(POSSale.total)).filter(and_(*pos_base)).scalar() or 0
-        total_rev = order_rev + pos_rev
+        # ── One conditional-aggregation pass over the period's orders ──
+        # Replaces ~13 sequential COUNT/SUM round-trips (each 50-200ms on a
+        # remote DB) with a single table scan. Every metric keeps the exact
+        # same definition as the individual queries it replaces.
+        agg = db.query(
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("order_rev"),
+            func.coalesce(func.sum(case((Order.status == "RETURNED", Order.total), else_=0)), 0).label("returned_rev"),
+            func.coalesce(func.sum(Order.discount), 0).label("total_discounts"),
+            func.count(Order.id).label("total_orders"),
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", 1), else_=0)), 0).label("delivered"),
+            func.coalesce(func.sum(case((Order.status == "RETURNED", 1), else_=0)), 0).label("returned"),
+            func.coalesce(func.sum(case((Order.status == "NEW", 1), else_=0)), 0).label("new"),
+            func.coalesce(func.sum(case((Order.status == "ASSIGNED", 1), else_=0)), 0).label("assigned"),
+            func.coalesce(func.sum(case((Order.status == "CALLED", 1), else_=0)), 0).label("called"),
+            func.coalesce(func.sum(case((Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), 1), else_=0)), 0).label("confirmed"),
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.delivery_fee), else_=0)), 0).label("shipping_fee_gap"),
+            func.coalesce(func.sum(case((and_(Order.is_upsell == True, Order.status == "DELIVERED"), Order.total), else_=0)), 0).label("upsell_revenue"),
+            func.coalesce(func.sum(case((and_(Order.is_abandoned_cart == True, Order.status == "DELIVERED"), Order.total), else_=0)), 0).label("abandoned_cart_revenue"),
+            # COUNT(DISTINCT ...) ignores the NULLs produced for non-delivered rows
+            func.count(func.distinct(case((Order.status == "DELIVERED", Order.customer_phone)))).label("buyers"),
+        ).filter(and_(*period_filters)).one()
 
-        # Today's Orders (Unified)
+        order_rev = agg.order_rev or 0
+        returned_rev = agg.returned_rev or 0
+        total_discounts = agg.total_discounts or 0
+        total_orders_count = int(agg.total_orders or 0)
+        delivered_orders = int(agg.delivered or 0)
+        returned_orders = int(agg.returned or 0)
+        new_orders = int(agg.new or 0)
+        assigned_orders = int(agg.assigned or 0)
+        called_orders = int(agg.called or 0)
+        confirmed_orders = int(agg.confirmed or 0)
+        pending_orders = new_orders + assigned_orders + called_orders
+        shipping_fee_gap = agg.shipping_fee_gap or 0
+        upsell_revenue = agg.upsell_revenue or 0
+        abandoned_cart_revenue = agg.abandoned_cart_revenue or 0
+        buyers_count = int(agg.buyers or 0)
+
+        # POS revenue + count in one pass
+        pos_base = [POSSale.created_at >= start_date, POSSale.created_at < end_date] + ([POSSale.store_id == store_id] if store_id else [])
+        pos_agg = db.query(
+            func.coalesce(func.sum(POSSale.total), 0).label("rev"),
+            func.count(POSSale.id).label("cnt"),
+        ).filter(and_(*pos_base)).one()
+        pos_rev = pos_agg.rev or 0
+        total_pos_count = int(pos_agg.cnt or 0)
+        total_rev = order_rev + pos_rev
+        total_orders = total_orders_count + total_pos_count
+        # Since total_rev only includes DELIVERED, net_revenue is equal to total_rev
+        net_revenue = total_rev
+
+        # Today's Orders (Unified) — different date window than the period,
+        # so it stays a separate (cheap, indexed) pair of counts.
         pos_today = [POSSale.created_at >= today_start, POSSale.created_at < end_date] + ([POSSale.store_id == store_id] if store_id else [])
         today_orders_count = db.query(func.count(Order.id)).filter(and_(*(filters + [Order.created_at >= today_start, Order.created_at < end_date]))).scalar() or 0
         today_pos_count = db.query(func.count(POSSale.id)).filter(and_(*pos_today)).scalar() or 0
         today_total_orders = today_orders_count + today_pos_count
-        
-        # Status counts
-        delivered_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
-        returned_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "RETURNED"]))).scalar() or 0
-        pending_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status.in_(["NEW", "ASSIGNED", "CALLED"])]))).scalar() or 0
-        confirmed_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])]))).scalar() or 0
-        new_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "NEW"]))).scalar() or 0
-        assigned_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "ASSIGNED"]))).scalar() or 0
-        called_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "CALLED"]))).scalar() or 0
-        
-        # Returned Revenue & Total Discounts
-        returned_rev = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.status == "RETURNED"]))).scalar() or 0
-        total_discounts = db.query(func.sum(Order.discount)).filter(and_(*period_filters)).scalar() or 0
-        # Since total_rev only includes DELIVERED, net_revenue is equal to total_rev
-        net_revenue = total_rev
-        
-        total_orders_count = db.query(func.count(Order.id)).filter(and_(*period_filters)).scalar() or 0
-        total_pos_count = db.query(func.count(POSSale.id)).filter(and_(*pos_base)).scalar() or 0
-        total_orders = total_orders_count + total_pos_count
-        
+
         # Product & Employee counts
         total_products = 0
         total_employees = 0
         if store_id:
             total_products = db.query(func.count(Product.id)).filter(Product.store_id == store_id, Product.is_active == True).scalar() or 0
             total_employees = db.query(func.count(User.id)).filter(User.employee_store_id == store_id, User.is_active == True).scalar() or 0
-        
-        # Real Logistics & Profit
-        shipping_fee_gap = db.query(func.sum(Order.delivery_fee)).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
-        
-        # Micro-details (Upsells & Abandoned Carts)
-        upsell_revenue = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.is_upsell == True, Order.status == "DELIVERED"]))).scalar() or 0
-        abandoned_cart_revenue = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.is_abandoned_cart == True, Order.status == "DELIVERED"]))).scalar() or 0
 
         # Funnel
         funnel = get_funnel_rates(new_orders, assigned_orders, called_orders, confirmed_orders, delivered_orders, returned_orders)
@@ -187,14 +207,17 @@ def get_analytics(
         orders_change = 0
         if prev_start_date and prev_end_date:
             prev_filters = filters + [Order.created_at >= prev_start_date, Order.created_at < prev_end_date]
-            prev_order_rev = db.query(func.sum(Order.total)).filter(and_(*(prev_filters + [Order.status == "DELIVERED"]))).scalar() or 0
-            
+            prev_agg = db.query(
+                func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("rev"),
+                func.count(Order.id).label("orders"),
+            ).filter(and_(*prev_filters)).one()
+
             prev_pos_base = [POSSale.created_at >= prev_start_date, POSSale.created_at < prev_end_date] + ([POSSale.store_id == store_id] if store_id else [])
-            prev_pos_rev = db.query(func.sum(POSSale.total)).filter(and_(*prev_pos_base)).scalar() or 0
-            
-            prev_rev = prev_order_rev + prev_pos_rev
-            prev_orders = db.query(func.count(Order.id)).filter(and_(*prev_filters)).scalar() or 0
-            
+            prev_pos_rev = db.query(func.coalesce(func.sum(POSSale.total), 0)).filter(and_(*prev_pos_base)).scalar() or 0
+
+            prev_rev = (prev_agg.rev or 0) + prev_pos_rev
+            prev_orders = int(prev_agg.orders or 0)
+
             revenue_change = round(((total_rev - prev_rev) / (prev_rev or 1) * 100), 2)
             orders_change = round(((total_orders - prev_orders) / (prev_orders or 1) * 100), 2)
 
@@ -219,8 +242,8 @@ def get_analytics(
         
         profit_per_order = int(gross_profit / delivered_orders) if delivered_orders > 0 else 0
 
-        # Unique buyers approximation from delivered orders
-        buyers_count = db.query(func.count(func.distinct(Order.customer_phone))).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
+        # buyers_count (unique delivered customer phones) computed in the
+        # consolidated aggregation pass above.
         avg_customer_value = int(net_revenue / buyers_count) if buyers_count > 0 else 0
 
         kpi = KpiData(

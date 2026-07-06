@@ -942,23 +942,34 @@ def retry_pending_events() -> None:
                     row.event_name, row.order_id, row.retry_count,
                 )
             else:
-                row.retry_count += 1
+                circuit_blocked = "circuit breaker open" in (result.get("error") or "")
                 row.error_message = result["error"]
                 row.error_category = result.get("error_category")
-                if not result.get("retryable") or row.retry_count >= _MAX_QUEUE_RETRIES:
-                    row.status = "failed"
-                    row.next_retry_at = None
-                    logger.error(
-                        "[MetaCAPI] retry exhausted event=%s order=%s retry_count=%d error=%s",
-                        row.event_name, row.order_id, row.retry_count, result["error"],
+                if circuit_blocked:
+                    # Circuit breaker short-circuited: no real attempt was made.
+                    # Do NOT burn a retry slot — just push next_retry_at forward
+                    # by the circuit cooldown window so we try again once it closes.
+                    row.next_retry_at = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
+                    logger.warning(
+                        "[MetaCAPI] circuit OPEN — retry deferred (no count burn) event=%s order=%s retry_count=%d",
+                        row.event_name, row.order_id, row.retry_count,
                     )
                 else:
-                    idx = min(row.retry_count, len(_QUEUE_BACKOFF_MINUTES) - 1)
-                    row.next_retry_at = now + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
-                    logger.warning(
-                        "[MetaCAPI] retry failed again event=%s order=%s retry_count=%d next_retry_at=%s error=%s",
-                        row.event_name, row.order_id, row.retry_count, row.next_retry_at, result["error"],
-                    )
+                    row.retry_count += 1
+                    if not result.get("retryable") or row.retry_count >= _MAX_QUEUE_RETRIES:
+                        row.status = "failed"
+                        row.next_retry_at = None
+                        logger.error(
+                            "[MetaCAPI] retry exhausted event=%s order=%s retry_count=%d error=%s",
+                            row.event_name, row.order_id, row.retry_count, result["error"],
+                        )
+                    else:
+                        idx = min(row.retry_count, len(_QUEUE_BACKOFF_MINUTES) - 1)
+                        row.next_retry_at = now + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
+                        logger.warning(
+                            "[MetaCAPI] retry failed again event=%s order=%s retry_count=%d next_retry_at=%s error=%s",
+                            row.event_name, row.order_id, row.retry_count, row.next_retry_at, result["error"],
+                        )
             db.commit()
     except Exception:
         db.rollback()

@@ -293,7 +293,13 @@ async def background_loop() -> None:
                 logger.error("Payroll reminder scan crashed: %s", exc)
             try:
                 from app.services.meta_capi import retry_pending_events
-                retry_pending_events()
+                # retry_pending_events() makes blocking network calls (with
+                # time.sleep backoffs) — running it inline here would freeze
+                # this process's single asyncio event loop, stalling every
+                # in-flight HTTP request until the sweep finishes. Offload it
+                # to a worker thread so a Meta outage can't take the whole
+                # app down with it.
+                await asyncio.to_thread(retry_pending_events)
             except Exception as exc:
                 logger.error("Meta CAPI retry sweep crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
