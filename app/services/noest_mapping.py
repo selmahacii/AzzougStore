@@ -30,7 +30,7 @@ _communes_cache: Dict[int, List[str]] = {}
 
 # Static fallback communes for wilayas that Noest may not cover
 _STATIC_COMMUNES: Dict[int, List[str]] = {
-    57: ['In Salah', 'Foggaret Ezzaouia', 'In Ghar'],
+    57: ['Ain Salah', 'Foggaret Ezoua', 'Inghar'],
 }
 
 def normalize_string(s: str) -> str:

@@ -289,6 +289,105 @@ def _get_client() -> httpx.Client:
     return _client
 
 
+# ─── Diagnostic helpers (used by /health endpoint) ───────────────────────────
+
+def probe_connectivity(
+    host: str = "graph.facebook.com", port: int = 443, timeout: float = 5.0
+) -> Dict[str, Any]:
+    """Live DNS + TCP + TLS probe — independent of the pooled client."""
+    import ssl as _ssl
+    result: Dict[str, Any] = {"host": host, "port": port}
+
+    t_dns = time.monotonic()
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        result["dns_ms"] = int((time.monotonic() - t_dns) * 1000)
+        result["dns_status"] = "ok"
+        result["resolved_ip"] = infos[0][4][0] if infos else None
+    except Exception as exc:
+        result["dns_ms"] = int((time.monotonic() - t_dns) * 1000)
+        result["dns_status"] = f"error: {exc}"
+        result["tcp_status"] = "skipped"
+        result["tls_status"] = "skipped"
+        return result
+
+    t_tcp = time.monotonic()
+    sock: Optional[socket.socket] = None
+    try:
+        family, socktype, proto, _, sockaddr = infos[0]
+        sock = socket.socket(family, socktype, proto)
+        sock.settimeout(timeout)
+        sock.connect(sockaddr)
+        result["tcp_ms"] = int((time.monotonic() - t_tcp) * 1000)
+        result["tcp_status"] = "ok"
+    except socket.timeout:
+        result["tcp_ms"] = int((time.monotonic() - t_tcp) * 1000)
+        result["tcp_status"] = "timeout"
+        result["tls_status"] = "skipped"
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        return result
+    except Exception as exc:
+        result["tcp_ms"] = int((time.monotonic() - t_tcp) * 1000)
+        result["tcp_status"] = f"error: {type(exc).__name__}"
+        result["tls_status"] = "skipped"
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        return result
+
+    t_tls = time.monotonic()
+    try:
+        ctx = _ssl.create_default_context()
+        tls_sock = ctx.wrap_socket(sock, server_hostname=host)
+        result["tls_ms"] = int((time.monotonic() - t_tls) * 1000)
+        result["tls_status"] = "ok"
+        result["tls_version"] = tls_sock.version()
+        result["tls_cipher"] = tls_sock.cipher()[0] if tls_sock.cipher() else None
+        tls_sock.close()
+    except socket.timeout:
+        result["tls_ms"] = int((time.monotonic() - t_tls) * 1000)
+        result["tls_status"] = "timeout"
+        result["tls_version"] = None
+        result["tls_cipher"] = None
+        try:
+            sock.close()
+        except Exception:
+            pass
+    except Exception as exc:
+        result["tls_ms"] = int((time.monotonic() - t_tls) * 1000)
+        result["tls_status"] = f"error: {type(exc).__name__}"
+        result["tls_version"] = None
+        result["tls_cipher"] = None
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    return result
+
+
+def get_circuit_state() -> Dict[str, Any]:
+    """Return circuit breaker state for the /health endpoint."""
+    with _circuit_lock:
+        n = _circuit_state["consecutive_failures"]
+        opened = _circuit_state["opened_at"]
+    elapsed = time.monotonic() - opened
+    is_open = n >= _CIRCUIT_FAILURE_THRESHOLD and elapsed < _CIRCUIT_COOLDOWN_SECONDS
+    return {
+        "is_open": is_open,
+        "consecutive_failures": n,
+        "threshold": _CIRCUIT_FAILURE_THRESHOLD,
+        "cooldown_seconds": _CIRCUIT_COOLDOWN_SECONDS,
+        "seconds_until_reset": max(0, int(_CIRCUIT_COOLDOWN_SECONDS - elapsed)) if is_open else 0,
+    }
+
+
 # ─── Normalization (Meta spec) ────────────────────────────────────────────────
 
 def _strip_accents(value: str) -> str:
@@ -632,6 +731,16 @@ def send_events(
             if resp.status_code == 200:
                 received = data.get("events_received")
                 _circuit_record(success=True)
+                _is_retry = attempt_offset > 0 or attempt > 0
+                logger.info(
+                    "[MetaCAPI]\n  Event    : %s\n  Store    : %s\n  Status   : ✓ Success\n  Latency  : %d ms\n  Received : %s\n  Dedup    : Yes\n  Retry    : %s\n  fbtrace  : %s",
+                    event_names,
+                    store_label or "—",
+                    total_ms,
+                    received,
+                    f"Yes — attempt {attempt + attempt_offset + 1}/{total_attempts}" if _is_retry else "No",
+                    data.get("fbtrace_id") or "—",
+                )
                 logger.debug(_fmt_block(
                     **{
                         "Meta Event": event_names, "Store": store_label, "Order": order_label,
@@ -911,7 +1020,7 @@ def retry_pending_events() -> None:
         if not due:
             return
 
-        logger.debug("[MetaCAPI] retry sweep: %d event(s) due", len(due))
+        logger.info("[MetaCAPI] retry sweep: %d event(s) due", len(due))
         for row in due:
             if not row.payload:
                 row.status = "failed"

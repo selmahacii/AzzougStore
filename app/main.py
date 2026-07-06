@@ -122,6 +122,43 @@ async def start_background_sync():
     from app.services.noest_sync import background_loop
     asyncio.create_task(background_loop())
 
+@app.on_event("startup")
+async def resume_pending_queues():
+    """
+    Immediate recovery after any restart: flush overdue CAPI events and
+    resume any pending NOEST operations without waiting for the first
+    background_loop tick (which fires after REMINDER_SCAN_INTERVAL_SECONDS).
+    """
+    import asyncio
+    import logging
+    _log = logging.getLogger("app.startup")
+
+    async def _sweep():
+        try:
+            from app.services.meta_capi import retry_pending_events
+            from app.db.session import SessionLocal
+            from app.models.marketing import MetaCapiLog
+            from datetime import datetime, timezone
+            db = SessionLocal()
+            try:
+                pending = db.query(MetaCapiLog).filter(
+                    MetaCapiLog.status == "pending_retry"
+                ).count()
+            finally:
+                db.close()
+            if pending:
+                _log.info("[StartupRecovery] %d CAPI event(s) pending — running immediate retry sweep", pending)
+                await asyncio.to_thread(retry_pending_events)
+                _log.info("[StartupRecovery] CAPI startup sweep complete")
+            else:
+                _log.info("[StartupRecovery] CAPI queue empty — no recovery needed")
+        except Exception as exc:
+            _log.error("[StartupRecovery] CAPI sweep failed: %s", exc)
+
+    # Run after a short delay so DB connections are fully ready
+    await asyncio.sleep(3)
+    asyncio.create_task(_sweep())
+
 
 @app.on_event("startup")
 def create_initial_superadmin():

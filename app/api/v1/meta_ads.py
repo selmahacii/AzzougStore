@@ -1115,11 +1115,27 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
         )
         .all()
     )
+    recovered_7d = len(resolved_retried)
     if resolved_retried:
         deltas = [(u - c).total_seconds() for c, u in resolved_retried if u and c]
         avg_time_to_success_s = round(sum(deltas) / len(deltas), 1) if deltas else None
     else:
         avg_time_to_success_s = None
+
+    # Soonest next retry for pending events
+    next_retry_row = (
+        db.query(MetaCapiLog)
+        .filter(
+            MetaCapiLog.store_id == store_id,
+            MetaCapiLog.status == "pending_retry",
+            MetaCapiLog.next_retry_at.isnot(None),
+        )
+        .order_by(MetaCapiLog.next_retry_at.asc())
+        .first()
+    )
+    next_retry_at_iso = (
+        next_retry_row.next_retry_at.isoformat() if next_retry_row and next_retry_row.next_retry_at else None
+    )
 
     last_failed = (
         db.query(MetaCapiLog)
@@ -1172,7 +1188,10 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                 "configured": capi_ok,
                 "sent_7d": total_sent,
                 "errors_7d": total_err,
+                "total_7d": total_sent + total_err,
                 "success_rate": round(total_sent / (total_sent + total_err) * 100, 1) if (total_sent + total_err) else None,
+                "failure_rate": round(total_err / (total_sent + total_err) * 100, 1) if (total_sent + total_err) else None,
+                "recovered_7d": recovered_7d,
                 "by_event": by_event,
                 "last_error": {
                     "message": last_error.error_message,
@@ -1192,6 +1211,7 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                 "avg_time_to_success_s": avg_time_to_success_s,
                 "max_retries_configured": _MAX_QUEUE_RETRIES,
                 "error_categories_7d": error_category_counts,
+                "next_retry_at": next_retry_at_iso,
                 "last_synced_at": last_success.updated_at.isoformat() if last_success and last_success.updated_at else None,
                 "last_failed_at": last_failed.updated_at.isoformat() if last_failed and last_failed.updated_at else None,
                 "last_failed_event": last_failed.event_name if last_failed else None,
@@ -1273,22 +1293,182 @@ def get_meta_capi_logs(
 @router.delete("/capi-logs/pending", response_model=dict)
 def purge_pending_capi_logs(
     store_id: str = Query(...),
+    max_age_hours: Optional[int] = Query(None, description="Only purge events older than N hours. Omit to purge all."),
     db: Session = Depends(get_db),
 ):
-    """Mark all pending_retry events as failed/cancelled for this store.
-    Use when the backend cannot reach Meta's API (e.g. network restriction)."""
+    """Mark pending_retry events as failed/cancelled. Optionally restrict to events older than max_age_hours."""
     from app.models.marketing import MetaCapiLog
-    count = (
-        db.query(MetaCapiLog)
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry")
-        .update(
-            {"status": "failed", "error_message": "Annulé manuellement — réseau inaccessible"},
-            synchronize_session=False,
-        )
+    q = db.query(MetaCapiLog).filter(
+        MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry"
+    )
+    if max_age_hours is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).replace(tzinfo=None)
+        q = q.filter(MetaCapiLog.created_at <= cutoff)
+    count = q.update(
+        {"status": "failed", "error_message": "Annulé manuellement — réseau inaccessible"},
+        synchronize_session=False,
     )
     db.commit()
-    logger.info("[MetaCAPI] purged %d pending_retry event(s) for store %s", count, store_id)
+    logger.info("[MetaCAPI] purged %d pending_retry event(s) for store %s (max_age_hours=%s)", count, store_id, max_age_hours)
     return {"success": True, "cancelled": count}
+
+
+# ─── POST /meta-ads/capi-logs/retry-now — manual retry trigger ────────────────
+
+@router.post("/capi-logs/retry-now", response_model=dict)
+def trigger_capi_retry(
+    store_id: str = Query(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """Immediately trigger the retry sweep for pending CAPI events (runs in background)."""
+    from app.services.meta_capi import retry_pending_events
+    background_tasks.add_task(retry_pending_events)
+    logger.info("[MetaCAPI] manual retry sweep triggered for store %s", store_id)
+    return {"success": True, "message": "Retry sweep déclenché en arrière-plan"}
+
+
+# ─── GET /meta-ads/health — live connectivity diagnostic ──────────────────────
+
+@router.get("/health", response_model=dict)
+def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
+    """
+    Live diagnostic: DNS + TCP + TLS probe to graph.facebook.com, circuit breaker
+    state, queue stats, last success/error from DB, token validity, runtime versions.
+    """
+    import ssl as _ssl
+    import httpx as _httpx
+    import httpcore as _httpcore
+    import socket as _socket
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.services.meta_capi import probe_connectivity, get_circuit_state
+
+    probe = probe_connectivity()
+    circuit = get_circuit_state()
+
+    # ── Token + Pixel validation (non-blocking, short timeout) ──────────────
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    token_check: Dict[str, Any] = {"status": "not_configured"}
+    pixel_check: Dict[str, Any] = {"status": "not_configured"}
+    api_version_ok: Optional[bool] = None
+    warnings: list = []
+
+    META_API_VERSION = "v21.0"
+
+    if config and config.access_token and len(config.access_token) >= 15:
+        try:
+            r = _httpx.get(
+                f"https://graph.facebook.com/{META_API_VERSION}/me",
+                params={"access_token": config.access_token, "fields": "id,name"},
+                timeout=8.0,
+            )
+            if r.status_code == 200:
+                d = r.json()
+                token_check = {"status": "valid", "user_id": d.get("id"), "name": d.get("name")}
+                api_version_ok = True
+            elif r.status_code in (400, 401, 403):
+                err = (r.json().get("error") or {})
+                token_check = {
+                    "status": "invalid",
+                    "code": err.get("code"),
+                    "message": err.get("message", r.text[:200]),
+                }
+                warnings.append(f"Access token invalide ou expiré: {err.get('message', '')[:120]}")
+            else:
+                token_check = {"status": f"http_{r.status_code}", "body": r.text[:200]}
+        except (_httpx.ConnectTimeout, _httpx.ReadTimeout):
+            token_check = {"status": "timeout", "note": "TLS bloqué (réseau HuggingFace)"}
+            warnings.append("Impossible de valider le token — TLS bloqué vers graph.facebook.com")
+        except Exception as exc:
+            token_check = {"status": "error", "detail": str(exc)[:200]}
+
+        if config.pixel_id:
+            try:
+                r2 = _httpx.get(
+                    f"https://graph.facebook.com/{META_API_VERSION}/{config.pixel_id}",
+                    params={"access_token": config.access_token, "fields": "id,name,is_unavailable"},
+                    timeout=8.0,
+                )
+                if r2.status_code == 200:
+                    d2 = r2.json()
+                    pixel_check = {
+                        "status": "accessible" if not d2.get("is_unavailable") else "unavailable",
+                        "pixel_id": d2.get("id"),
+                        "name": d2.get("name"),
+                    }
+                    if d2.get("is_unavailable"):
+                        warnings.append("Pixel marqué 'unavailable' par Meta")
+                else:
+                    err2 = (r2.json().get("error") or {})
+                    pixel_check = {"status": "error", "message": err2.get("message", r2.text[:200])}
+                    warnings.append(f"Pixel inaccessible: {err2.get('message', '')[:120]}")
+            except (_httpx.ConnectTimeout, _httpx.ReadTimeout):
+                pixel_check = {"status": "timeout", "note": "TLS bloqué"}
+            except Exception as exc:
+                pixel_check = {"status": "error", "detail": str(exc)[:200]}
+        else:
+            warnings.append("Aucun Pixel ID configuré")
+    else:
+        warnings.append("Token d'accès Meta non configuré ou trop court")
+
+    # ── Queue stats ──────────────────────────────────────────────────────────
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    pending_count = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry")
+        .scalar() or 0
+    )
+    oldest_pending = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry")
+        .order_by(MetaCapiLog.created_at.asc())
+        .first()
+    )
+    oldest_age_minutes = None
+    if oldest_pending and oldest_pending.created_at:
+        oldest_age_minutes = int((now - oldest_pending.created_at).total_seconds() / 60)
+        if oldest_age_minutes > 60:
+            warnings.append(f"Événement en attente depuis {oldest_age_minutes} min — connexion Meta requise")
+
+    if pending_count > 50:
+        warnings.append(f"{pending_count} événements en file — vérifiez la connectivité TLS")
+    if circuit.get("is_open"):
+        warnings.append(f"Circuit breaker OUVERT — {circuit.get('consecutive_failures')} échecs consécutifs")
+
+    last_success = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success")
+        .order_by(MetaCapiLog.created_at.desc())
+        .first()
+    )
+    last_error_row = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status.in_(["error", "failed"]))
+        .order_by(MetaCapiLog.created_at.desc())
+        .first()
+    )
+
+    return {
+        "probe": probe,
+        "circuit_breaker": circuit,
+        "token": token_check,
+        "pixel": pixel_check,
+        "api_version": META_API_VERSION,
+        "api_version_ok": api_version_ok,
+        "warnings": warnings,
+        "queue": {
+            "pending_count": pending_count,
+            "oldest_age_minutes": oldest_age_minutes,
+        },
+        "last_success_at": last_success.created_at.isoformat() if last_success and last_success.created_at else None,
+        "last_error_at": last_error_row.created_at.isoformat() if last_error_row and last_error_row.created_at else None,
+        "last_error_message": last_error_row.error_message if last_error_row else None,
+        "versions": {
+            "openssl": _ssl.OPENSSL_VERSION,
+            "httpx": _httpx.__version__,
+            "httpcore": _httpcore.__version__,
+        },
+    }
 
 
 # ─── GET /meta-ads/recommendations — rule-based optimization engine ───────────
