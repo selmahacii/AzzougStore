@@ -1268,6 +1268,30 @@ def get_meta_capi_logs(
     }
 
 
+# ─── DELETE /meta-ads/capi-logs/pending — purge stuck queue ──────────────────
+
+@router.delete("/capi-logs/pending", response_model=dict)
+def purge_pending_capi_logs(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """Mark all pending_retry events as failed/cancelled for this store.
+    Use when the backend cannot reach Meta's API (e.g. network restriction)."""
+    from app.models.marketing import MetaCapiLog
+    count = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "pending_retry")
+        .update(
+            {"status": "failed", "error_message": "Annulé manuellement — réseau inaccessible"},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    logger.info("[MetaCAPI] purged %d pending_retry event(s) for store %s", count, store_id)
+    return {"success": True, "cancelled": count}
+
+
 # ─── GET /meta-ads/recommendations — rule-based optimization engine ───────────
 
 @router.get("/recommendations", response_model=dict)
