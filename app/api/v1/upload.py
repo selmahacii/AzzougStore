@@ -30,30 +30,18 @@ MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
-_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
-_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
-_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
-
-if _CLOUDINARY_OK:
-    if CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
-        try:
-            cloudinary.config()
-        except Exception:
-            _CLOUDINARY_OK = False
-    elif _CLOUD_NAME and _API_KEY and _API_SECRET:
-        try:
-            cloudinary.config(cloud_name=_CLOUD_NAME, api_key=_API_KEY, api_secret=_API_SECRET)
-        except Exception:
-            _CLOUDINARY_OK = False
-    else:
+if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
+    try:
+        cloudinary.config()
+    except Exception:
         _CLOUDINARY_OK = False
 
-if not _CLOUDINARY_OK:
+if not (CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://") and _CLOUDINARY_OK):
     import logging
     logging.getLogger("app.upload").warning(
-        "Cloudinary non configuré — uploads stockés sur disque local ÉPHÉMÈRE "
-        "(perdus au redémarrage). Configurez CLOUDINARY_URL ou "
-        "CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET."
+        "CLOUDINARY_URL non configuré — les uploads sont stockés sur le disque local "
+        "ÉPHÉMÈRE (perdus à chaque redémarrage du Space). Configurez le secret "
+        "CLOUDINARY_URL sur HuggingFace pour un stockage persistant."
     )
 
 
@@ -115,7 +103,7 @@ async def upload_image(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if _CLOUDINARY_OK:
+    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),
@@ -191,7 +179,7 @@ async def upload_media(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if _CLOUDINARY_OK:
+    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),

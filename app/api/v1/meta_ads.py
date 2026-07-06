@@ -1274,7 +1274,6 @@ def get_meta_capi_logs(
 def purge_pending_capi_logs(
     store_id: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: Any = Depends(deps.get_current_active_user),
 ):
     """Mark all pending_retry events as failed/cancelled for this store.
     Use when the backend cannot reach Meta's API (e.g. network restriction)."""
