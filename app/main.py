@@ -5,7 +5,6 @@ from fastapi import FastAPI, Query, Request, Response, Depends
 from typing import Any
 from app.api import deps
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1 import (
@@ -274,9 +273,6 @@ class VercelPrefixMiddleware:
 
 app.add_middleware(VercelPrefixMiddleware)
 
-# Compress JSON responses over 1KB (orders/analytics payloads are typically
-# tens of KB) — cuts transfer time on every list/detail endpoint.
-app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # ─── Prometheus Monitoring (optional) ────────────────────────

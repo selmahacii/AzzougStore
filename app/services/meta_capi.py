@@ -632,7 +632,7 @@ def send_events(
             if resp.status_code == 200:
                 received = data.get("events_received")
                 _circuit_record(success=True)
-                logger.info(_fmt_block(
+                logger.debug(_fmt_block(
                     **{
                         "Meta Event": event_names, "Store": store_label, "Order": order_label,
                         "Attempt": f"{attempt + attempt_offset + 1} / {total_attempts}",
@@ -911,7 +911,7 @@ def retry_pending_events() -> None:
         if not due:
             return
 
-        logger.info("[MetaCAPI] retry sweep: %d event(s) due", len(due))
+        logger.debug("[MetaCAPI] retry sweep: %d event(s) due", len(due))
         for row in due:
             if not row.payload:
                 row.status = "failed"
