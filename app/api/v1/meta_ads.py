@@ -18,6 +18,32 @@ from app.models.finance import Wallet, FinancialTransaction, TransactionType
 
 router = APIRouter()
 
+# Single source of truth for the Graph API version used across every Meta
+# call in this file (Ads Insights sync + health/token/pixel checks). Was
+# previously split: Ads Insights called v18.0 (released ~Aug 2023 — outside
+# Meta's ~2-year support window as of this audit) while health/token checks
+# already used v21.0. Unified to the version app/services/meta_capi.py uses
+# for CAPI sends, so there is exactly one version to track/upgrade.
+META_GRAPH_VERSION = "v21.0"
+
+
+def _normalize_ad_account_id(raw: Optional[str]) -> Optional[str]:
+    """
+    Meta's Graph API only recognizes an ad account as the node `act_<id>` —
+    a bare numeric ID (as shown in Ads Manager's URL/UI) is not a valid
+    top-level object and GET /v18.0/<numeric_id> fails with exactly:
+    GraphMethodException code 100, error_subcode 33 ("Unsupported get
+    request"). Normalize on save so every downstream call is correct
+    regardless of how the user pasted it.
+    """
+    if not raw:
+        return raw
+    cleaned = raw.strip()
+    if not cleaned:
+        return cleaned
+    return cleaned if cleaned.startswith("act_") else f"act_{cleaned}"
+
+
 class MetaAdsConfigCreate(BaseModel):
     store_id: str
     access_token: Optional[str] = None
@@ -81,7 +107,7 @@ def update_meta_ads_config(payload: MetaAdsConfigCreate, db: Session = Depends(g
         db.add(config)
     
     config.access_token = payload.access_token
-    config.ad_account_id = payload.ad_account_id
+    config.ad_account_id = _normalize_ad_account_id(payload.ad_account_id)
     config.pixel_id = payload.pixel_id
     config.domain_verification_tag = payload.domain_verification_tag
     config.is_connected = payload.is_connected
@@ -379,8 +405,13 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         logger.warning(f"[Meta Ads Sync] Configuration introuvable ou incomplète pour le store: {store_id}")
         return {"success": False, "message": "Meta Ads n'est pas configuré. Veuillez connecter votre compte."}
 
+    # Defensive: rows saved before the act_ normalization fix may still hold
+    # a bare numeric ID. GET /v18.0/<bare_id> is rejected by Meta with
+    # GraphMethodException code 100 subcode 33 ("Unsupported get request").
+    ad_account_id = _normalize_ad_account_id(config.ad_account_id)
+
     import httpx
-    
+
     # 1. Fetch Ad Account Details to get the currency dynamically!
     ad_currency = None
     ad_account_name = "Compte Publicitaire Meta"
@@ -392,12 +423,12 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         is_simulated = True
     else:
         try:
-            ad_account_url = f"https://graph.facebook.com/v18.0/{config.ad_account_id}"
+            ad_account_url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}"
             ad_account_params = {
                 "fields": "currency,name",
                 "access_token": config.access_token
             }
-            logger.info(f"[Meta Ads Sync] Tentative de récupération des détails du compte publicitaire {config.ad_account_id}")
+            logger.info(f"[Meta Ads Sync] Tentative de récupération des détails du compte publicitaire {ad_account_id}")
             acct_response = httpx.get(ad_account_url, params=ad_account_params, timeout=10.0)
             if acct_response.status_code == 200:
                 acct_data = acct_response.json()
@@ -451,7 +482,7 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             }
         ]
     else:
-        url = f"https://graph.facebook.com/v18.0/{config.ad_account_id}/insights"
+        url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"
         params = {
             "level": "campaign",
             "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,date_start,date_stop",
@@ -1336,9 +1367,14 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
     state, queue stats, last success/error from DB, token validity, runtime versions.
     """
     import ssl as _ssl
+    import sys as _sys
     import httpx as _httpx
     import httpcore as _httpcore
     import socket as _socket
+    try:
+        import certifi as _certifi
+    except ImportError:
+        _certifi = None
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
     from app.services.meta_capi import probe_connectivity, get_circuit_state
@@ -1350,10 +1386,11 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
     token_check: Dict[str, Any] = {"status": "not_configured"}
     pixel_check: Dict[str, Any] = {"status": "not_configured"}
+    scope_check: Dict[str, Any] = {"status": "not_checked"}
     api_version_ok: Optional[bool] = None
     warnings: list = []
 
-    META_API_VERSION = "v21.0"
+    META_API_VERSION = META_GRAPH_VERSION
 
     if config and config.access_token and len(config.access_token) >= 15:
         try:
@@ -1381,6 +1418,47 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
             warnings.append("Impossible de valider le token — TLS bloqué vers graph.facebook.com")
         except Exception as exc:
             token_check = {"status": "error", "detail": str(exc)[:200]}
+
+        # ── Token scope + ownership check (debug_token) ─────────────────────
+        # A 200 from /me only proves the token is *some* valid token — it does
+        # NOT prove it can send CAPI events. debug_token exposes the actual
+        # granted scopes (must include ads_management or ads_read) and which
+        # app/business issued it, so a token that authenticates but lacks
+        # ads_management is caught here instead of failing silently at
+        # send-time inside meta_capi.send_events().
+        if token_check.get("status") == "valid":
+            try:
+                dbg = _httpx.get(
+                    f"https://graph.facebook.com/{META_API_VERSION}/debug_token",
+                    params={"input_token": config.access_token, "access_token": config.access_token},
+                    timeout=8.0,
+                )
+                if dbg.status_code == 200:
+                    info = (dbg.json().get("data") or {})
+                    scopes = info.get("scopes") or []
+                    has_ads_management = "ads_management" in scopes
+                    scope_check = {
+                        "status": "ok" if info.get("is_valid") else "expired_or_revoked",
+                        "app_id": info.get("app_id"),
+                        "type": info.get("type"),
+                        "scopes": scopes,
+                        "has_ads_management": has_ads_management,
+                        "expires_at": info.get("expires_at"),
+                    }
+                    if not info.get("is_valid"):
+                        warnings.append("Token expiré ou révoqué (debug_token: is_valid=false)")
+                    if not has_ads_management:
+                        warnings.append(
+                            "Le token n'a PAS la permission 'ads_management' — l'envoi CAPI et la lecture "
+                            "des campagnes échoueront même si /me réussit"
+                        )
+                else:
+                    err_dbg = (dbg.json().get("error") or {})
+                    scope_check = {"status": "error", "message": err_dbg.get("message", dbg.text[:200])}
+            except (_httpx.ConnectTimeout, _httpx.ReadTimeout):
+                scope_check = {"status": "timeout", "note": "TLS bloqué (réseau HuggingFace)"}
+            except Exception as exc:
+                scope_check = {"status": "error", "detail": str(exc)[:200]}
 
         if config.pixel_id:
             try:
@@ -1452,6 +1530,7 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
         "probe": probe,
         "circuit_breaker": circuit,
         "token": token_check,
+        "token_scopes": scope_check,
         "pixel": pixel_check,
         "api_version": META_API_VERSION,
         "api_version_ok": api_version_ok,
@@ -1464,9 +1543,11 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
         "last_error_at": last_error_row.created_at.isoformat() if last_error_row and last_error_row.created_at else None,
         "last_error_message": last_error_row.error_message if last_error_row else None,
         "versions": {
+            "python": _sys.version.split()[0],
             "openssl": _ssl.OPENSSL_VERSION,
             "httpx": _httpx.__version__,
             "httpcore": _httpcore.__version__,
+            "certifi": _certifi.__version__ if _certifi else None,
         },
     }
 

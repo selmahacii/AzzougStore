@@ -262,35 +262,61 @@ def _circuit_record(success: bool) -> None:
                     "immediate attempts suspended for %ds, events queued directly",
                     _CIRCUIT_FAILURE_THRESHOLD, _CIRCUIT_COOLDOWN_SECONDS,
                 )
+                # A run of consecutive TLS/connect failures can mean the pooled
+                # keep-alive connections are stale (half-open sockets, a peer
+                # that silently dropped the connection) rather than the
+                # endpoint being genuinely down. Destroy the pool now so the
+                # first attempt after cooldown gets a fresh TCP+TLS handshake
+                # instead of reusing a socket that's part of the problem.
+                _destroy_client()
 
 
 # One pooled, keep-alive client reused for the lifetime of the process —
 # avoids a fresh TCP+TLS handshake on every single event.
 _client: Optional[httpx.Client] = None
+_client_lock = threading.Lock()
+
+
+def _destroy_client() -> None:
+    """Force the next _get_client() call to build a brand-new pool/client.
+    Called when the circuit breaker opens (5 consecutive connect/TLS
+    failures) so stale keep-alive sockets can't keep poisoning attempts
+    after the network recovers."""
+    global _client
+    with _client_lock:
+        old = _client
+        _client = None
+    if old is not None:
+        try:
+            old.close()
+        except Exception:
+            pass
+        logger.warning("[MetaCAPI] pooled HTTP client destroyed after repeated connection failures — will rebuild on next attempt")
 
 
 def _get_client() -> httpx.Client:
     global _client
-    if _client is None or _client.is_closed:
-        transport = httpx.HTTPTransport(retries=0)
-        # Swap in the diagnostic IPv4-only, MSS-clamped, phase-timed backend.
-        # httpx doesn't expose network_backend as a public constructor kwarg,
-        # so the pool built by HTTPTransport.__init__ is replaced with an
-        # equivalent one carrying our backend — this is the standard pattern
-        # for a custom resolver/transport with httpx (its own docs point at
-        # swapping httpcore.ConnectionPool this way).
-        transport._pool = httpcore.ConnectionPool(
-            ssl_context=transport._pool._ssl_context,
-            max_connections=_LIMITS.max_connections,
-            max_keepalive_connections=_LIMITS.max_keepalive_connections,
-            keepalive_expiry=_LIMITS.keepalive_expiry,
-            http1=True,
-            http2=False,
-            retries=0,
-            network_backend=_DiagnosticIPv4Backend(),
-        )
-        _client = httpx.Client(timeout=_TIMEOUT, limits=_LIMITS, http2=False, transport=transport)
-    return _client
+    with _client_lock:
+        if _client is None or _client.is_closed:
+            transport = httpx.HTTPTransport(retries=0)
+            # Swap in the diagnostic IPv4-only, MSS-clamped, phase-timed backend.
+            # httpx doesn't expose network_backend as a public constructor kwarg,
+            # so the pool built by HTTPTransport.__init__ is replaced with an
+            # equivalent one carrying our backend — this is the standard pattern
+            # for a custom resolver/transport with httpx (its own docs point at
+            # swapping httpcore.ConnectionPool this way).
+            transport._pool = httpcore.ConnectionPool(
+                ssl_context=transport._pool._ssl_context,
+                max_connections=_LIMITS.max_connections,
+                max_keepalive_connections=_LIMITS.max_keepalive_connections,
+                keepalive_expiry=_LIMITS.keepalive_expiry,
+                http1=True,
+                http2=False,
+                retries=0,
+                network_backend=_DiagnosticIPv4Backend(),
+            )
+            _client = httpx.Client(timeout=_TIMEOUT, limits=_LIMITS, http2=False, transport=transport)
+        return _client
 
 
 # ─── Diagnostic helpers (used by /health endpoint) ───────────────────────────
@@ -1039,6 +1065,33 @@ def _retry_pending_events_inner() -> None:
             return
 
         logger.info("[MetaCAPI] retry sweep: %d event(s) due", len(due))
+
+        # Pre-flight probe: if the circuit isn't open yet (fewer than
+        # _CIRCUIT_FAILURE_THRESHOLD consecutive failures recorded so far)
+        # but the network is currently down, don't burn a real send attempt
+        # (up to _CONNECT_TIMEOUT seconds each) per queued event just to
+        # discover that — one cheap DNS+TCP+TLS probe tells us the same thing
+        # in a fraction of the time and lets the whole batch defer together.
+        if not _circuit_is_open():
+            preflight = probe_connectivity()
+            if preflight.get("tls_status") not in ("ok",):
+                deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS)
+                for row in due:
+                    row.next_retry_at = deferred_until
+                    row.error_message = (
+                        f"pre-flight probe failed (dns={preflight.get('dns_status')}, "
+                        f"tcp={preflight.get('tcp_status')}, tls={preflight.get('tls_status')}) "
+                        "— bulk deferred without burning retry attempts"
+                    )
+                db.commit()
+                logger.warning(
+                    "[MetaCAPI] retry sweep: pre-flight connectivity probe failed "
+                    "(dns=%s tcp=%s tls=%s) — %d event(s) bulk deferred to %s UTC without "
+                    "consuming a retry attempt",
+                    preflight.get("dns_status"), preflight.get("tcp_status"),
+                    preflight.get("tls_status"), len(due), deferred_until.strftime("%H:%M:%S"),
+                )
+                return
 
         # If the circuit is already open before we begin, bulk-defer the entire
         # batch with a single log line instead of emitting one warning per event.
