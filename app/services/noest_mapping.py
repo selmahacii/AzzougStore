@@ -28,6 +28,11 @@ WILAYAS = [
 # Cache in-memory: wilaya_id -> List of commune names
 _communes_cache: Dict[int, List[str]] = {}
 
+# Static fallback communes for wilayas that Noest may not cover
+_STATIC_COMMUNES: Dict[int, List[str]] = {
+    57: ['In Salah', 'Foggaret Ezzaouia', 'In Ghar'],
+}
+
 def normalize_string(s: str) -> str:
     """
     Normalizes a string for robust matching:
@@ -142,7 +147,11 @@ async def get_noest_communes(db: Session, store_id: str, wilaya_id: int) -> List
                 return communes
         except Exception as e:
             logger.error("Exception fetching Noest communes: %s", e)
-            
+
+    static = _STATIC_COMMUNES.get(wilaya_id)
+    if static:
+        _communes_cache[wilaya_id] = static
+        return static
     return []
 
 # Explicit mapping table for spelling discrepancies, typos, or special cases

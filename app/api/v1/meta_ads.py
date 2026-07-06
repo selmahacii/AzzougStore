@@ -385,7 +385,8 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
     ad_currency = None
     ad_account_name = "Compte Publicitaire Meta"
     is_simulated = False
-    
+    is_network_error = False  # True = TLS/timeout; False = real auth/config issue
+
     # Check if access token looks fake or empty
     if not config.access_token or len(config.access_token) < 15 or config.access_token.startswith("dummy"):
         is_simulated = True
@@ -409,6 +410,7 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"[Meta Ads Sync] Exception réseau/API lors de la récupération du compte: {e}")
             is_simulated = True
+            is_network_error = True
             
     # Update config.currency if we retrieved it dynamically
     if ad_currency:
@@ -509,6 +511,7 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         except Exception as e:
             logger.error(f"[Meta Ads Sync] Exception lors de la récupération des insights: {e}")
             is_simulated = True
+            is_network_error = True
             campaigns_data = [
                 {
                     "campaign_id": f"camp_mock_1_{store_id[:8]}",
@@ -553,11 +556,17 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             Expense.label.in_([f"Meta Ads: {n}" for n in mock_names]),
         ).delete(synchronize_session=False)
         db.commit()
-        logger.warning(f"[Meta Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, {deleted} campagne(s) de test nettoyée(s).")
+        logger.warning(f"[Meta Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, {deleted} campagne(s) de test nettoyée(s). network_error={is_network_error}")
+        if is_network_error:
+            return {
+                "success": True,
+                "message": "Données Meta Ads affichées — synchronisation temporairement indisponible (API inaccessible).",
+                "network_unavailable": True,
+            }
         return {
             "success": False,
             "simulated": True,
-            "message": "Connexion Meta invalide ou API inaccessible — aucune donnée synchronisée. Vérifiez le token et l'ID du compte publicitaire.",
+            "message": "Connexion Meta invalide — vérifiez le token et l'ID du compte publicitaire.",
         }
 
     created_campaigns = []
