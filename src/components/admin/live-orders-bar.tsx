@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-client';
 import { io } from 'socket.io-client';
 // AnimatePresence removed for clean design
 import { ShoppingBag, Package, X, Eye, Wifi, WifiOff, Activity } from 'lucide-react';
@@ -58,10 +56,6 @@ export default function LiveOrdersBar() {
   const [notifications, setNotifications] = useState<VisibleNotification[]>([]);
   const socketRef = useRef<Socket | null>(null);
   const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  // Tracks order IDs already notified via polling to avoid duplicates.
-  // Seeded with all IDs on first poll so we only notify about truly new arrivals.
-  const seenOrderIdsRef = useRef<Set<string>>(new Set());
-  const pollingBootstrappedRef = useRef(false);
 
   // ---- Helpers ----
 
@@ -115,50 +109,6 @@ export default function LiveOrdersBar() {
     },
     [setSelectedOrderId, setAdminView, dismissNotification]
   );
-
-  // ---- Polling fallback (fires when WebSocket is unavailable) ----
-  // Polls every 15 s for NEW orders. On the first result the seen-set is seeded
-  // with existing IDs so only orders that arrive AFTER component mount trigger a toast.
-
-  const storeId = activeStore?.id ?? '';
-  const { data: polledOrders } = useQuery<{ data: any[] }>({
-    queryKey: ['live-orders-poll', storeId],
-    queryFn: () => apiFetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=20`),
-    enabled: isAuthenticated && !!storeId && !isConnected,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
-  });
-
-  useEffect(() => {
-    if (!polledOrders?.data) return;
-    const orders: any[] = polledOrders.data;
-    if (!pollingBootstrappedRef.current) {
-      // First result — seed the seen set, don't notify
-      orders.forEach((o) => seenOrderIdsRef.current.add(o.id));
-      pollingBootstrappedRef.current = true;
-      return;
-    }
-    for (const order of orders) {
-      if (seenOrderIdsRef.current.has(order.id)) continue;
-      seenOrderIdsRef.current.add(order.id);
-      addNotification({
-        id: `poll-${order.id}`,
-        type: 'new-order',
-        orderId: order.id,
-        orderNumber: order.order_number ?? order.id,
-        storeId: order.store_id ?? storeId,
-        customerName: order.customer_name ?? '—',
-        total: order.total ?? 0,
-        timestamp: order.created_at ?? new Date().toISOString(),
-      });
-    }
-  }, [polledOrders, storeId, addNotification]);
-
-  // Reset polling state when store changes
-  useEffect(() => {
-    seenOrderIdsRef.current = new Set();
-    pollingBootstrappedRef.current = false;
-  }, [storeId]);
 
   // ---- Socket lifecycle ----
 
@@ -219,7 +169,9 @@ export default function LiveOrdersBar() {
 
   // ---- Don't render if not authenticated or if real-time service is unavailable ----
 
-  if (!isAuthenticated || !storeId) return null;
+  if (!isAuthenticated) return null;
+  // If we've never connected and are currently disconnected, the service is not running — hide the bar
+  if (!hasEverConnected && !isConnected) return null;
 
   // ---- Render ----
 
@@ -235,7 +187,7 @@ export default function LiveOrdersBar() {
           )}
           <div className="flex flex-col">
             <span className="text-[9px] font-black uppercase tracking-[0.2em] text-black leading-none">
-              {isConnected ? 'Real-Time Sync active' : 'Polling actif — toutes les 15s'}
+              {isConnected ? 'Real-Time Sync active' : 'Signal Loss Detected'}
             </span>
             <span className="text-[8px] font-black text-neutral-300 uppercase mt-0.5 tracking-widest">
               AzzougSystem // Core Uplink
@@ -247,10 +199,10 @@ export default function LiveOrdersBar() {
           className={`text-[8px] px-3 py-0.5 font-black uppercase tracking-widest rounded-[1px] ${
             isConnected
               ? 'bg-emerald-50 text-emerald-600'
-              : 'bg-amber-50 text-amber-600'
+              : 'bg-rose-50 text-rose-600'
           }`}
         >
-          {isConnected ? 'Operational' : 'Polling mode'}
+          {isConnected ? 'Operational' : 'Disconnected'}
         </Badge>
         
         {isConnected && (

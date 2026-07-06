@@ -1734,6 +1734,138 @@ export default function MetaAdsDashboard() {
               </div>
             )}
 
+            {/* Connectivity Deep-Dive Test */}
+            {(() => {
+              const [ctData, setCtData] = React.useState<any>(null);
+              const [ctLoading, setCtLoading] = React.useState(false);
+              const [ctError, setCtError] = React.useState<string | null>(null);
+
+              const runTest = async () => {
+                setCtLoading(true);
+                setCtError(null);
+                setCtData(null);
+                try {
+                  const res = await apiFetch<any>('/api/v1/meta-ads/connectivity-test');
+                  setCtData(res);
+                } catch (e: any) {
+                  setCtError(e?.message ?? 'Erreur inconnue');
+                } finally {
+                  setCtLoading(false);
+                }
+              };
+
+              const verdictColor = (v: string) => {
+                if (!v) return 'text-slate-400';
+                if (v.startsWith('OK')) return 'text-emerald-600 font-black';
+                if (v.startsWith('TLS_BLOCKED')) return 'text-red-600 font-black';
+                if (v.startsWith('TIMEOUT')) return 'text-amber-600 font-black';
+                if (v.startsWith('SKIP')) return 'text-slate-400';
+                return 'text-red-500 font-black';
+              };
+
+              const testLabels: Record<string, string> = {
+                '1_raw_stdlib_tls':  '① Raw stdlib TCP+TLS',
+                '2_httpx_http11':    '② httpx HTTP/1.1',
+                '3_httpx_http2':     '③ httpx HTTP/2',
+                '4_urllib_https':    '④ urllib HTTPS',
+                '5_control_httpbin': '⑤ Contrôle httpbin.org',
+                '6_tcp_port80_only': '⑥ TCP port 80 (sans TLS)',
+              };
+
+              return (
+                <div className="rounded-2xl border border-slate-200 bg-[#F8F9FC] p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-slate-600">Diagnostic Réseau Approfondi</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Teste 6 chemins vers graph.facebook.com pour confirmer exactement quelle couche est bloquée.</p>
+                    </div>
+                    <button
+                      onClick={runTest}
+                      disabled={ctLoading}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black transition-all disabled:opacity-50"
+                    >
+                      <Server className={cn("size-3.5", ctLoading && "animate-pulse")} />
+                      {ctLoading ? 'Test en cours…' : 'Lancer le test'}
+                    </button>
+                  </div>
+
+                  {ctError && (
+                    <p className="text-xs text-red-500 font-bold bg-red-50 rounded-lg px-3 py-2">{ctError}</p>
+                  )}
+
+                  {ctLoading && (
+                    <div className="space-y-2">
+                      {Object.values(testLabels).map((label) => (
+                        <div key={label} className="flex items-center gap-3 text-[10px] text-slate-400">
+                          <div className="size-2 rounded-full bg-slate-200 animate-pulse" />
+                          <span>{label}</span>
+                          <span className="text-slate-300">en attente…</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {ctData && !ctLoading && (
+                    <div className="space-y-3">
+                      {/* Summary */}
+                      <div className={cn(
+                        "rounded-xl border px-4 py-3 text-xs font-bold",
+                        ctData.summary?.includes('CONFIRMED') ? 'bg-red-50 border-red-200 text-red-700' :
+                        ctData.summary?.includes('succeeded') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                        'bg-amber-50 border-amber-200 text-amber-700'
+                      )}>
+                        {ctData.summary}
+                      </div>
+
+                      {/* Per-test rows */}
+                      <div className="rounded-xl border border-slate-200 overflow-hidden">
+                        <table className="w-full text-[10px]">
+                          <thead className="bg-slate-100 text-slate-400 uppercase font-black tracking-wider">
+                            <tr>
+                              <th className="text-left px-3 py-2">Test</th>
+                              <th className="text-left px-3 py-2">Verdict</th>
+                              <th className="text-left px-3 py-2">DNS</th>
+                              <th className="text-left px-3 py-2">TCP</th>
+                              <th className="text-left px-3 py-2">TLS</th>
+                              <th className="text-left px-3 py-2">Total</th>
+                              <th className="text-left px-3 py-2">Détail</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(testLabels).map(([key, label]) => {
+                              const t = ctData[key];
+                              if (!t) return null;
+                              const isSkip = t.verdict?.startsWith('SKIP');
+                              return (
+                                <tr key={key} className={cn("border-t border-slate-100", isSkip && "opacity-40")}>
+                                  <td className="px-3 py-2 font-black text-slate-700 whitespace-nowrap">{label}</td>
+                                  <td className={cn("px-3 py-2 whitespace-nowrap", verdictColor(t.verdict ?? ''))}>{t.verdict?.split(' — ')[0] ?? '—'}</td>
+                                  <td className="px-3 py-2 text-slate-500">{t.dns_ms != null ? `${t.dns_ms}ms` : '—'}</td>
+                                  <td className="px-3 py-2 text-slate-500">{t.tcp_ms != null ? `${t.tcp_ms}ms` : '—'}</td>
+                                  <td className="px-3 py-2">
+                                    {t.tls_status === 'ok' ? <span className="text-emerald-600 font-black">{t.tls_ms}ms ✅</span>
+                                     : t.tls_status === 'TIMEOUT' ? <span className="text-red-600 font-black">{t.tls_ms}ms ⏱</span>
+                                     : t.tls_status ? <span className="text-red-500">{t.tls_ms}ms ❌</span>
+                                     : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-500">{t.total_ms != null ? `${t.total_ms}ms` : '—'}</td>
+                                  <td className="px-3 py-2 text-slate-400 max-w-[180px] truncate font-mono" title={t.tls_version ?? t.status ?? t.tls_status ?? ''}>
+                                    {t.tls_version ?? t.http_version ?? t.status ?? t.tls_status ?? '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <p className="text-[9px] text-slate-400 font-mono">Python {ctData.python_version?.split(' ')[0]}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
           </div>
         );
       })()}
