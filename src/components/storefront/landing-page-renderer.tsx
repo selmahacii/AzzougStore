@@ -72,7 +72,10 @@ interface LpData {
   faq: { question: string; answer: string }[];
   gallery: string[];
   phone: string | null;
-  produexport default function LandingPageRenderer({ data }: { data: LpData }) {
+  product?: Record<string, any>;
+}
+
+export default function LandingPageRenderer({ data }: { data: LpData }) {
   const addItem = useCartStore((s) => s.addItem);
   const openCart = useCartStore((s) => s.openCart);
   const [added, setAdded] = useState(false);
@@ -635,27 +638,6 @@ interface LpData {
           <button
             onClick={handleOrder}
             className="inline-flex items-center gap-3 px-10 py-5 rounded-2xl font-bold text-xl text-white shadow-2xl transition-all hover:scale-105"
-            style={{ background: primary, boxShadow: `0 12px 40px ${primary}55` }}
-          >
-            <ShoppingCart className="w-6 h-6" />
-            {data.cta_label || 'Commander maintenant'}
-          </button>
-          {data.phone && (
-            <p className={`mt-4 text-sm ${isDark ? 'text-white/50' : 'text-gray-500'}`}>
-              Ou appelez-nous : <a href={`tel:${data.phone}`} className="font-bold" style={{ color: primary }}>{data.phone}</a>
-            </p>
-          )}
-        </FadeIn>
-      </section>
-
-      {/* ── FOOTER ────────────────────────────────────────────── */}
-      <footer className={`py-8 text-center text-xs border-t ${isDark ? 'border-white/10 text-white/30' : 'border-gray-200 text-gray-400'}`}>
-        Livraison partout en Algérie · Paiement à la livraison · Retour sous 14 jours
-      </footer>
-    </div>
-  );
-}
--xl text-white shadow-2xl transition-all hover:scale-105"
             style={{ background: primary, boxShadow: `0 12px 40px ${primary}55` }}
           >
             <ShoppingCart className="w-6 h-6" />
