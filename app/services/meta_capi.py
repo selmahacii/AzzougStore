@@ -233,6 +233,10 @@ _CIRCUIT_COOLDOWN_SECONDS = 60
 _circuit_lock = threading.Lock()
 _circuit_state = {"consecutive_failures": 0, "opened_at": 0.0}
 
+# Prevents two concurrent sweep runs (startup recovery + background loop firing
+# at the same time) from picking up the same events and racing on DB writes.
+_sweep_lock = threading.Lock()
+
 
 def _circuit_is_open() -> bool:
     with _circuit_lock:
@@ -1002,7 +1006,21 @@ def retry_pending_events() -> None:
     sync loop) — resends every queued meta_capi_logs row whose next_retry_at
     has elapsed. The access token is always looked up fresh from
     MetaAdsConfig by store_id; it is never persisted in the log row.
+
+    The sweep mutex (_sweep_lock) prevents the startup recovery handler and
+    the background loop from running two concurrent sweeps that would race on
+    the same DB rows and produce duplicate log spam.
     """
+    if not _sweep_lock.acquire(blocking=False):
+        logger.info("[MetaCAPI] retry sweep: already running — skipped")
+        return
+    try:
+        _retry_pending_events_inner()
+    finally:
+        _sweep_lock.release()
+
+
+def _retry_pending_events_inner() -> None:
     from app.db.session import SessionLocal
     from app.models.marketing import MetaAdsConfig, MetaCapiLog
 
@@ -1021,7 +1039,38 @@ def retry_pending_events() -> None:
             return
 
         logger.info("[MetaCAPI] retry sweep: %d event(s) due", len(due))
-        for row in due:
+
+        # If the circuit is already open before we begin, bulk-defer the entire
+        # batch with a single log line instead of emitting one warning per event.
+        if _circuit_is_open():
+            deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
+            for row in due:
+                row.next_retry_at = deferred_until
+                row.error_message = "circuit breaker open: bulk deferred"
+            db.commit()
+            logger.warning(
+                "[MetaCAPI] retry sweep: circuit OPEN — %d event(s) bulk deferred to %s UTC",
+                len(due), deferred_until.strftime("%H:%M:%S"),
+            )
+            return
+
+        deferred_bulk = 0
+        for i, row in enumerate(due):
+            # If the circuit opened mid-sweep (after the first few TLS failures),
+            # bulk-defer all remaining events instead of logging one line each.
+            if _circuit_is_open():
+                deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
+                for remaining in due[i:]:
+                    remaining.next_retry_at = deferred_until
+                    remaining.error_message = "circuit breaker open: bulk deferred"
+                deferred_bulk = len(due) - i
+                db.commit()
+                logger.warning(
+                    "[MetaCAPI] circuit opened mid-sweep — %d remaining event(s) bulk deferred to %s UTC",
+                    deferred_bulk, deferred_until.strftime("%H:%M:%S"),
+                )
+                return
+
             if not row.payload:
                 row.status = "failed"
                 row.error_message = "no payload persisted, cannot retry"
@@ -1055,9 +1104,8 @@ def retry_pending_events() -> None:
                 row.error_message = result["error"]
                 row.error_category = result.get("error_category")
                 if circuit_blocked:
-                    # Circuit breaker short-circuited: no real attempt was made.
-                    # Do NOT burn a retry slot — just push next_retry_at forward
-                    # by the circuit cooldown window so we try again once it closes.
+                    # Circuit was detected open inside send_events — no real attempt.
+                    # Do NOT burn a retry slot.
                     row.next_retry_at = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
                     logger.warning(
                         "[MetaCAPI] circuit OPEN — retry deferred (no count burn) event=%s order=%s retry_count=%d",
