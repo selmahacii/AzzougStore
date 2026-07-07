@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package, Phone, MapPin, Banknote, LogOut, CheckCircle,
   RotateCcw, Truck, Loader2, Copy, Search, User as UserIcon,
-  Calendar, StickyNote, Boxes, X, Navigation,
+  Calendar, StickyNote, Boxes, Warehouse, X, Navigation,
   Hash, MessageSquare, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -16,18 +16,20 @@ import { cn } from '@/lib/utils';
 import type { Order } from '@/lib/types';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/types';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
-import LivreurInventory from '@/components/livreur/livreur-inventory';
+import ProductsPage from '@/components/admin/products-page';
+import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 
 /**
  * Delivery-agent (LIVREUR) dashboard.
- * Backend scopes /orders to livreur_id = me — driver only ever sees
- * the parcels explicitly assigned to them. Two sections: deliveries and a
- * read-only stock view (the full admin products/inventory tooling —
- * pricing, suppliers, purchases, warehouses — isn't relevant to a driver).
+ * Backend scopes /orders to livreur_id = me — driver only ever sees the
+ * parcels explicitly assigned to them for delivery. Products/Inventory are
+ * full admin-parity access (create products, adjust stock, full visibility)
+ * — the backend already authorizes LIVREUR for all of these (store-scoped),
+ * this just wires the same components the admin uses.
  */
 export default function LivreurDashboard() {
   const { user, setAppView, clearUser, activeStore, allStores, setActiveStore } = useAppStore();
-  const [section, setSection] = useState<'deliveries' | 'stock'>('deliveries');
+  const [section, setSection] = useState<'deliveries' | 'products' | 'inventory'>('deliveries');
   const queryClient = useQueryClient();
 
   const handleLogout = async () => {
@@ -91,7 +93,8 @@ export default function LivreurDashboard() {
         <div className="max-w-3xl mx-auto px-4 flex items-center gap-1 py-2 overflow-x-auto">
           {([
             ['deliveries', 'Mes Livraisons', Truck],
-            ['stock',      'Stock',          Boxes],
+            ['products',   'Produits',        Boxes],
+            ['inventory',  'Inventaire',       Warehouse],
           ] as const).map(([id, label, Icon]) => (
             <button
               key={id}
@@ -110,7 +113,8 @@ export default function LivreurDashboard() {
       </nav>
 
       {section === 'deliveries' && <LivreurDeliveries />}
-      {section === 'stock'      && <LivreurInventory />}
+      {section === 'products'   && <div className="max-w-3xl mx-auto p-4 sm:p-6"><ProductsPage /></div>}
+      {section === 'inventory'  && <div className="max-w-3xl mx-auto p-4 sm:p-6"><InventoryDashboard /></div>}
     </div>
   );
 }
