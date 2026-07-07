@@ -450,7 +450,9 @@ def list_orders(
             raise HTTPException(status_code=401, detail="Authentication required for general listing")
         query = query.filter(Order.customer_phone == customer_phone, Order.store_id == store_id)
     else:
-        if current_user.role == "CONFIRMATEUR":
+        if current_user.role in ("SUPER_ADMIN", "ADMIN"):
+            pass  # unrestricted — admins manage every order
+        elif current_user.role == "CONFIRMATEUR":
             from sqlalchemy import and_, or_
             from app.models.order import OrderItem
             
@@ -497,6 +499,13 @@ def list_orders(
                 Order.livreur_id == current_user.id,
                 _or_liv(Order.tracking_number.is_(None), Order.tracking_number == ""),
             )
+        else:
+            # MANAGER without employee_store_id, MARKETER, CUSTOMER, or any
+            # unrecognized/mistyped role value — deny by default instead of
+            # silently falling through with no filter at all (which used to
+            # grant an unrestricted, admin-like view of every order in the
+            # database to any role this chain didn't explicitly handle).
+            query = query.filter(Order.id.is_(None))
 
     # Explicit filters (from query params)
     if store_id:

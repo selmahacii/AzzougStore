@@ -16,7 +16,6 @@ import { cn } from '@/lib/utils';
 import type { Order } from '@/lib/types';
 import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS } from '@/lib/types';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
-import { NotificationsBell } from '@/components/shared/notifications-bell';
 import LivreurInventory from '@/components/livreur/livreur-inventory';
 
 /**
@@ -65,9 +64,6 @@ export default function LivreurDashboard() {
               ))}
             </select>
           )}
-          <div className="[&_button]:text-slate-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
-            <NotificationsBell />
-          </div>
           <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 transition-colors" title="Déconnexion">
             <LogOut className="size-5" />
           </button>

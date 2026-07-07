@@ -7,8 +7,8 @@ import {
   TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown,
   BarChart3, Activity, FileText, AlertCircle, MapPin, User,
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
-  LayoutGrid, Search, Filter, ChevronRight, Menu, Bell,
-  List, Inbox, PhoneCall, ShoppingCart, Home, Plus,
+  LayoutGrid, Search, Filter, ChevronRight, Menu,
+  List, Inbox, ShoppingCart, Home, Plus,
   Warehouse, History
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
@@ -24,7 +24,6 @@ import { Input } from '@/components/ui/input';
 import { ManualOrderModal } from '@/components/agent/manual-order-modal';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
-import { NotificationsBell } from '@/components/shared/notifications-bell';
 import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
 import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 
@@ -58,11 +57,6 @@ const MODULES: Module[] = [
     // Livrées/Archives retirées : elles vivent uniquement sous Logistique
     // pour ne pas dupliquer le module entre Commandes et Logistique.
     subModules: [
-      // En tête de liste : les rappels dus MAINTENANT (NRP sans heure programmée
-      // ou déjà échue) — c'était invisible sur desktop (seulement dans la barre
-      // mobile), la confirmatrice n'avait donc aucune vue d'ensemble de ses
-      // rappels à passer.
-      { id: 'orders-recall', label: 'Rappels à passer', filter: 'RECALL', icon: PhoneCall },
       { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
       { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
       { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
@@ -1605,16 +1599,6 @@ export default function AgentDashboard() {
                 )}
              </div>
              <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-                <NotificationsBell
-                  onOpenOrder={(orderId) => {
-                    apiFetch<any>(`/api/v1/orders/${orderId}`)
-                      .then((res) => {
-                        const ord = res?.data ?? res;
-                        if (ord?.id) { setSelectedOrder(ord); setDrawerInitialEdit(false); }
-                      })
-                      .catch(() => toast.error('Commande introuvable'));
-                  }}
-                />
                 <div className="hidden sm:flex items-center gap-4 border-r pr-6 mr-2">
                      <button
                        onClick={() => setIsCreatingOrder(true)}
@@ -1651,11 +1635,7 @@ export default function AgentDashboard() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <div className="size-10 border rounded-xl flex items-center justify-center relative shrink-0">
-                    <Bell className="size-5 text-slate-400" />
-                    <div className="absolute top-0 right-0 size-2 bg-red-500 rounded-full border-2 border-white" />
-                  </div>
-                  <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })} 
+                  <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })}
                           className="p-2 border rounded-xl hover:bg-slate-50 transition-colors shrink-0">
                     <RefreshCw className={cn("size-4 text-slate-500", ordersQuery.isFetching && "animate-spin")} />
                   </button>
@@ -1929,7 +1909,6 @@ export default function AgentDashboard() {
           {[
             { id: 'orders-all', label: 'Toutes', icon: List },
             { id: 'orders-new', label: 'Nouvelles', icon: Inbox },
-            { id: 'orders-recall', label: 'Rappels', icon: PhoneCall },
             { id: 'inventory-stock', label: 'Stock', icon: Warehouse },
             { id: 'salary-details', label: 'Salaire', icon: Banknote },
           ].map((tab) => {
