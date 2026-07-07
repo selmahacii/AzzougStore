@@ -1271,7 +1271,8 @@ export default function AgentDashboard() {
       return apiFetch<{ data: Order[] }>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 30000
+    refetchInterval: 10000,
+    refetchIntervalInBackground: true,
   });
 
   const perfQuery = useQuery({

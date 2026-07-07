@@ -70,6 +70,45 @@ def get_base_url(request: Request = None) -> str:
     return "http://localhost:8003"
 
 
+@router.get("/storage-status", response_model=dict)
+def storage_status(current_user: Any = Depends(deps.get_current_active_user)) -> dict:
+    """
+    Reports whether uploads are actually persisted to Cloudinary or falling
+    back to the Space's ephemeral local disk (wiped on every redeploy/restart).
+    Runs a real authenticated call against Cloudinary — not just a format
+    check on the env var — so a wrong/expired CLOUDINARY_URL is caught here
+    instead of silently degrading every future upload to local disk.
+    """
+    result: dict = {
+        "package_installed": _CLOUDINARY_OK,
+        "env_var_present": bool(CLOUDINARY_URL),
+        "env_var_looks_valid": bool(CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://")),
+        "persistent": False,
+        "detail": None,
+    }
+
+    if not CLOUDINARY_URL:
+        result["detail"] = "CLOUDINARY_URL n'est pas défini — tous les uploads (logos, hero, produits) sont perdus à chaque redéploiement du Space."
+        return result
+
+    if not result["env_var_looks_valid"]:
+        result["detail"] = "CLOUDINARY_URL est défini mais n'a pas le format attendu 'cloudinary://<api_key>:<api_secret>@<cloud_name>' — vérifiez le secret sur HuggingFace."
+        return result
+
+    if not _CLOUDINARY_OK:
+        result["detail"] = "Le package cloudinary n'a pas pu être importé/configuré côté serveur."
+        return result
+
+    try:
+        import cloudinary.api as _cloudinary_api
+        _cloudinary_api.ping()
+        result["persistent"] = True
+        result["detail"] = "Stockage Cloudinary actif et joignable — les uploads persistent entre les redéploiements."
+    except Exception as exc:
+        result["detail"] = f"CLOUDINARY_URL est présent mais l'appel de test a échoué ({exc}) — les uploads retombent en stockage local éphémère."
+
+    return result
+
 
 @router.post("/image", response_model=dict)
 async def upload_image(
