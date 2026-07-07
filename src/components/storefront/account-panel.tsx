@@ -50,7 +50,7 @@ function OrderDetail({ order, onBack }: { order: Order; onBack: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+        <div className="grid grid-cols-2 gap-8">
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Statut</p>
             <StatusBadge status={order.status} />
@@ -90,7 +90,7 @@ function OrderDetail({ order, onBack }: { order: Order; onBack: () => void }) {
           </div>
           <div className="pt-3 border-t flex justify-between items-center">
             <span className="text-xs font-bold uppercase tracking-widest">Total</span>
-            <span className="text-lg font-bold">{formatPrice((order.total || 0) + (order.delivery_fee || 0))}</span>
+            <span className="text-lg font-bold">{formatPrice((order.total || 0) + (order.delivery_fee || 0))} DA</span>
           </div>
         </div>
 

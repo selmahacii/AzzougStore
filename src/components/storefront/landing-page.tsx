@@ -11,8 +11,6 @@ import { formatPrice } from '@/lib/format';
 import { motion, useInView } from 'framer-motion';
 import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
-import { useTranslation } from '@/hooks/use-translation';
-import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 
 // ─── Animated counter ─────────────────────────────────────────
 function Counter({ target, suffix = '' }: { target: number; suffix?: string }) {
@@ -58,21 +56,20 @@ export function LandingPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [hero, setHero] = useState<Product | null>(null);
   const [addedId, setAddedId] = useState<string | null>(null);
-  const { t, dir } = useTranslation();
 
   const tc = (activeStore?.theme_config ?? {}) as Record<string, unknown>;
   const primary = (tc.primaryColor as string) || '#e84393';
   const headline  = (tc.heroHeadline as string) || (activeStore?.name ?? 'Découvrez');
   const subtitle  = (tc.heroSubtitle as string) || (activeStore?.description ?? 'Le produit qui change tout.');
-  const ctaLabel  = (tc.heroCta as string) || t('buyNow');
+  const ctaLabel  = (tc.heroCta as string) || 'Commander maintenant';
   const bannerUrl = (activeStore?.banner_url as string) || '';
   const isVideo   = tc.bannerIsVideo as boolean | undefined;
   const phone     = (tc.contact as any)?.phone || '';
 
   const benefits = [
-    { icon: Truck,       title: (tc.benefit1Title as string) || t('fastDelivery'), desc: (tc.benefit1Desc as string) || t('delivery48hDesc') },
-    { icon: ShieldCheck, title: (tc.benefit2Title as string) || t('codFast'), desc: (tc.benefit2Desc as string) || t('securePaymentDesc') },
-    { icon: RotateCcw,   title: (tc.benefit3Title as string) || t('return14d'), desc: (tc.benefit3Desc as string) || t('return14dDesc') },
+    { icon: Truck,       title: (tc.benefit1Title as string) || 'Livraison express', desc: (tc.benefit1Desc as string) || '48h partout en Algérie' },
+    { icon: ShieldCheck, title: (tc.benefit2Title as string) || 'Paiement à livraison', desc: (tc.benefit2Desc as string) || 'Vous payez à réception' },
+    { icon: RotateCcw,   title: (tc.benefit3Title as string) || 'Retour 14 jours', desc: (tc.benefit3Desc as string) || 'Échange sans tracas' },
   ];
 
   const testimonials = [
@@ -82,30 +79,15 @@ export function LandingPage() {
   ];
 
   const steps = [
-    { n: '01', title: t('chooseOption'), desc: t('notesPlaceholderVariants') },
-    { n: '02', title: t('confirmTitle'), desc: t('deliveryInfoDesc') },
-    { n: '03', title: t('received'),   desc: t('receivedDesc') },
+    { n: '01', title: 'Choisissez', desc: 'Sélectionnez votre produit et quantité.' },
+    { n: '02', title: 'Confirmez', desc: 'Laissez votre nom et numéro de téléphone.' },
+    { n: '03', title: 'Recevez',   desc: 'Livraison à domicile sous 48h, payez à la porte.' },
   ];
 
   useEffect(() => {
     if (!activeStore) return;
     apiFetch<any>(`/api/v1/products/?store_id=${activeStore.id}&is_featured=true&pageSize=6&is_active=true`)
-      .then(res => {
-        const items: Product[] = res.data ?? [];
-        if (items.length > 0) {
-          setProducts(items);
-          setHero(items[0] ?? null);
-        } else {
-          // Fallback to active products
-          apiFetch<any>(`/api/v1/products/?store_id=${activeStore.id}&pageSize=6&is_active=true`)
-            .then(resFallback => {
-              const fallbackItems: Product[] = resFallback.data ?? [];
-              setProducts(fallbackItems);
-              setHero(fallbackItems[0] ?? null);
-            })
-            .catch(() => {});
-        }
-      })
+      .then(res => { const items: Product[] = res.data ?? []; setProducts(items); setHero(items[0] ?? null); })
       .catch(() => {});
   }, [activeStore]);
 
@@ -125,14 +107,13 @@ export function LandingPage() {
     : 0;
 
   return (
-    <div className="bg-[#080808] min-h-screen text-white" dir={dir}>
-      <FloatingLanguageSwitcher primaryColor={primary} />
+    <div className="bg-[#080808] min-h-screen text-white">
 
       {/* ── TOP BAR ─────────────────────────────────────────────── */}
       {phone && (
         <div className="w-full py-2.5 text-center text-[10px] font-black uppercase tracking-[0.4em] border-b border-white/5" style={{ backgroundColor: '#0F0F0F' }}>
           <Phone className="inline size-3 mr-2 opacity-50"/>
-          {t('phoneOrder')}&nbsp;
+          Commande par téléphone :&nbsp;
           <a href={`tel:${phone}`} className="font-black" style={{ color: primary }}>{phone}</a>
         </div>
       )}
@@ -164,7 +145,7 @@ export function LandingPage() {
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
             <span className="inline-flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-[0.4em] border mb-8"
               style={{ borderColor: `${primary}40`, color: primary, backgroundColor: `${primary}10` }}>
-              <Zap className="size-3 fill-current"/> {t('limitedOffer')}
+              <Zap className="size-3 fill-current"/> Offre limitée
             </span>
           </motion.div>
 
@@ -188,34 +169,21 @@ export function LandingPage() {
 
           {/* Price row */}
           {hero && (
-            <div className="flex flex-col items-center justify-center mb-10">
-              <motion.div
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="flex items-baseline gap-4 mb-4"
-              >
-                <span className="text-4xl font-black tabular-nums" style={{ color: primary }}>{formatPrice(hero.price)}</span>
-                {hero.compare_price !== null && hero.compare_price > hero.price && (
-                  <>
-                    <span className="text-xl text-white/25 line-through">{formatPrice(hero.compare_price)}</span>
-                    <span className="text-[11px] font-black uppercase tracking-widest px-2 py-1 text-black" style={{ backgroundColor: primary }}>
-                      -{discount}%
-                    </span>
-                  </>
-                )}
-              </motion.div>
-              
-              <motion.div
-                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-sm"
-              >
-                <div className="size-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-xs font-bold text-white uppercase tracking-wider">
-                  Plus que {hero.stock - hero.reserved_stock} articles en stock !
-                </span>
-              </motion.div>
-            </div>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="flex items-baseline justify-center gap-4 mb-10"
+            >
+              <span className="text-4xl font-black tabular-nums" style={{ color: primary }}>{formatPrice(hero.price)} DA</span>
+              {hero.compare_price && hero.compare_price > hero.price && (
+                <>
+                  <span className="text-xl text-white/25 line-through">{formatPrice(hero.compare_price)} DA</span>
+                  <span className="text-[11px] font-black uppercase tracking-widest px-2 py-1 text-black" style={{ backgroundColor: primary }}>
+                    -{discount}%
+                  </span>
+                </>
+              )}
+            </motion.div>
           )}
 
           {/* CTAs */}
@@ -237,7 +205,7 @@ export function LandingPage() {
                   onClick={() => handleAddToCart(hero)}
                   className="w-full sm:w-auto px-8 py-5 text-[11px] font-black uppercase tracking-widest text-white/60 border border-white/10 hover:border-white/30 hover:text-white transition-all"
                 >
-                  {addedId === hero.id ? <><CheckCircle className="inline size-4 mr-2 text-green-400"/>{t('added')} !</> : t('addToCart')}
+                  {addedId === hero.id ? <><CheckCircle className="inline size-4 mr-2 text-green-400"/>Ajouté !</> : 'Ajouter au panier'}
                 </button>
               </>
             ) : (
@@ -256,8 +224,8 @@ export function LandingPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
             className="flex flex-wrap justify-center gap-5"
           >
-            {[t('codText'), t('delivery48h'), t('return14d')].map(b => (
-              <span key={b} className="text-[10px] font-black uppercase tracking-widest text-white/25">✓ {b}</span>
+            {['✓ Paiement à la livraison', '✓ Livraison 48h', '✓ Retour 14 jours'].map(b => (
+              <span key={b} className="text-[10px] font-black uppercase tracking-widest text-white/25">{b}</span>
             ))}
           </motion.div>
         </div>
@@ -275,7 +243,7 @@ export function LandingPage() {
       <section className="border-t border-white/5 py-20 px-6">
         <div className="max-w-4xl mx-auto">
           <FadeIn className="text-center mb-14">
-            <p className="text-[9px] font-black uppercase tracking-[0.5em]" style={{ color: primary }}>{t('whyUs')}</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.5em]" style={{ color: primary }}>Pourquoi nous ?</p>
           </FadeIn>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {benefits.map((b, i) => (
@@ -297,9 +265,9 @@ export function LandingPage() {
       <section className="border-y border-white/5 py-12 px-6" style={{ backgroundColor: '#0D0D0D' }}>
         <div className="max-w-3xl mx-auto grid grid-cols-3 gap-6 text-center">
           {[
-            { value: 500, suffix: '+', label: t('clientsSatisfied') },
-            { value: 99,  suffix: '%', label: t('positiveReviews') },
-            { value: 48,  suffix: 'h', label: t('deliveryTime') },
+            { value: 500, suffix: '+', label: 'Clients satisfaits' },
+            { value: 99,  suffix: '%', label: 'Avis positifs' },
+            { value: 48,  suffix: 'h', label: 'Délai de livraison' },
           ].map((s, i) => (
             <div key={i}>
               <p className="text-3xl sm:text-4xl font-black tabular-nums" style={{ color: primary }}>
@@ -317,14 +285,14 @@ export function LandingPage() {
           <div className="max-w-5xl mx-auto">
             <FadeIn className="flex items-end justify-between mb-12">
               <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>{t('exclusiveSelection')}</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">{t('ourBestSellers')}</h2>
+                <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>Sélection</p>
+                <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">Nos best-sellers</h2>
               </div>
               <button
                 onClick={() => setStorefrontView('shop')}
                 className="hidden sm:flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white/25 hover:text-white transition-colors"
               >
-                {t('seeAll')} <ArrowRight className="size-3.5"/>
+                Tout voir <ArrowRight className="size-3.5"/>
               </button>
             </FadeIn>
 
@@ -345,7 +313,7 @@ export function LandingPage() {
                   }
 
                   {/* Discount ribbon */}
-                  {p.compare_price !== null && p.compare_price > p.price && (
+                  {p.compare_price && p.compare_price > p.price && (
                     <div className="absolute top-0 right-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-black"
                       style={{ backgroundColor: primary }}>
                       -{Math.round(((p.compare_price - p.price) / p.compare_price) * 100)}%
@@ -355,13 +323,13 @@ export function LandingPage() {
                   {/* Hover overlay */}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex flex-col items-center justify-end p-4 gap-2 opacity-0 group-hover:opacity-100">
                     <p className="text-[11px] font-black uppercase tracking-wide text-white text-center line-clamp-2">{p.name}</p>
-                    <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(p.price)}</p>
+                    <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(p.price)} DA</p>
                     <button
                       onClick={e => { e.stopPropagation(); handleAddToCart(p); }}
                       className="w-full py-2.5 text-[10px] font-black uppercase tracking-widest text-black mt-1"
                       style={{ backgroundColor: primary }}
                     >
-                      {addedId === p.id ? `✓ ${t('added')}` : t('addToCart')}
+                      {addedId === p.id ? '✓ Ajouté' : 'Ajouter'}
                     </button>
                   </div>
                 </motion.div>
@@ -375,8 +343,8 @@ export function LandingPage() {
       <section className="py-20 px-6 border-t border-white/5">
         <div className="max-w-4xl mx-auto">
           <FadeIn className="text-center mb-14">
-            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>{t('howItWorks')}</p>
-            <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">{t('howItWorks')}</h2>
+            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>Simple comme bonjour</p>
+            <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">Comment ça marche</h2>
           </FadeIn>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
             {steps.map((s, i) => (
@@ -399,27 +367,27 @@ export function LandingPage() {
       <section className="py-20 px-6 border-t border-white/5" style={{ backgroundColor: '#0D0D0D' }}>
         <div className="max-w-4xl mx-auto">
           <FadeIn className="text-center mb-14">
-            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>{t('testimonials')}</p>
-            <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">{t('theyLovedIt')}</h2>
+            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-2" style={{ color: primary }}>Témoignages</p>
+            <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">Ils ont aimé</h2>
           </FadeIn>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            {testimonials.map((testi, i) => (
+            {testimonials.map((t, i) => (
               <FadeIn key={i} delay={i * 0.09}>
                 <div className="border border-white/5 p-6 space-y-4 h-full" style={{ backgroundColor: '#0A0A0A' }}>
                   <div className="flex gap-0.5">
-                    {Array.from({ length: testi.stars }).map((_, j) => (
+                    {Array.from({ length: t.stars }).map((_, j) => (
                       <Star key={j} className="size-3.5 fill-current" style={{ color: primary }}/>
                     ))}
                   </div>
-                  <p className="text-sm text-white/50 leading-relaxed italic">"{testi.text}"</p>
+                  <p className="text-sm text-white/50 leading-relaxed italic">"{t.text}"</p>
                   <div className="flex items-center gap-3 pt-3 border-t border-white/5">
                     <div className="size-8 rounded-full flex items-center justify-center text-[11px] font-black text-black shrink-0"
                       style={{ backgroundColor: primary }}>
-                      {testi.name[0]}
+                      {t.name[0]}
                     </div>
                     <div>
-                      <p className="text-[11px] font-black text-white">{testi.name}</p>
-                      <p className="text-[10px] text-white/25">{t('verifiedReview')} • {testi.loc}</p>
+                      <p className="text-[11px] font-black text-white">{t.name}</p>
+                      <p className="text-[10px] text-white/25">{t.loc}</p>
                     </div>
                   </div>
                 </div>
@@ -433,13 +401,14 @@ export function LandingPage() {
       <section className="py-24 px-6 border-t border-white/5">
         <div className="max-w-2xl mx-auto text-center">
           <FadeIn>
-            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-4" style={{ color: primary }}>{t('limitedStock')}</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.5em] mb-4" style={{ color: primary }}>Stock limité</p>
             <h2 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight leading-[0.95] mb-6">
-              {t('orderBeforeStock')}
+              Commandez avant<br/>
+              <span style={{ color: primary }}>épuisement du stock</span>
             </h2>
             {hero && (
               <p className="text-lg font-black text-white/40 mb-10 tabular-nums">
-                {formatPrice(hero.price)} · {t('deliveryIncluded')}
+                {formatPrice(hero.price)} DA · Livraison incluse
               </p>
             )}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -457,15 +426,15 @@ export function LandingPage() {
                   className="px-12 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-black"
                   style={{ backgroundColor: primary }}
                 >
-                  {t('seeAll')}
+                  Voir les produits
                 </button>
               )}
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 mt-10">
               {[
-                { icon: ShieldCheck, label: t('securePayment') },
-                { icon: Truck,       label: t('delivery48h') },
-                { icon: RotateCcw,  label: t('return14d') },
+                { icon: ShieldCheck, label: 'Paiement sécurisé' },
+                { icon: Truck,       label: 'Livraison 48h' },
+                { icon: RotateCcw,  label: 'Retour 14j' },
               ].map(({ icon: Icon, label }) => (
                 <div key={label} className="flex items-center gap-2">
                   <Icon className="size-3.5" style={{ color: primary }}/>

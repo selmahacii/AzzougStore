@@ -11,19 +11,19 @@ import {
 
 // ─── ORDER_STATUS_LABELS ──────────────────────────────────────
 describe('ORDER_STATUS_LABELS', () => {
-  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED'];
+  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED'];
 
-  test('has exactly 8 entries', () => {
-    expect(Object.keys(ORDER_STATUS_LABELS)).toHaveLength(8);
+  test('has exactly 7 entries', () => {
+    expect(Object.keys(ORDER_STATUS_LABELS)).toHaveLength(7);
   });
 
-  test('contains all 8 expected statuses', () => {
+  test('contains all 7 expected statuses', () => {
     for (const status of EXPECTED_STATUSES) {
       expect(ORDER_STATUS_LABELS).toHaveProperty(status);
     }
   });
 
-  test('no extra statuses beyond the 8 expected', () => {
+  test('no extra statuses beyond the 7 expected', () => {
     const keys = Object.keys(ORDER_STATUS_LABELS);
     expect(keys.sort()).toEqual(EXPECTED_STATUSES.sort());
   });
@@ -48,13 +48,13 @@ describe('ORDER_STATUS_LABELS', () => {
 
 // ─── ORDER_STATUS_COLORS ──────────────────────────────────────
 describe('ORDER_STATUS_COLORS', () => {
-  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED'];
+  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED'];
 
-  test('has exactly 8 entries', () => {
-    expect(Object.keys(ORDER_STATUS_COLORS)).toHaveLength(8);
+  test('has exactly 7 entries', () => {
+    expect(Object.keys(ORDER_STATUS_COLORS)).toHaveLength(7);
   });
 
-  test('contains all 8 expected statuses', () => {
+  test('contains all 7 expected statuses', () => {
     for (const status of EXPECTED_STATUSES) {
       expect(ORDER_STATUS_COLORS).toHaveProperty(status);
     }
@@ -86,13 +86,13 @@ describe('ORDER_STATUS_COLORS', () => {
 
 // ─── ORDER_STATUS_DOT ─────────────────────────────────────────
 describe('ORDER_STATUS_DOT', () => {
-  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED'];
+  const EXPECTED_STATUSES: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED'];
 
-  test('has exactly 8 entries', () => {
-    expect(Object.keys(ORDER_STATUS_DOT)).toHaveLength(8);
+  test('has exactly 7 entries', () => {
+    expect(Object.keys(ORDER_STATUS_DOT)).toHaveLength(7);
   });
 
-  test('contains all 8 expected statuses', () => {
+  test('contains all 7 expected statuses', () => {
     for (const status of EXPECTED_STATUSES) {
       expect(ORDER_STATUS_DOT).toHaveProperty(status);
     }
@@ -132,13 +132,13 @@ describe('ORDER_STATUS_DOT', () => {
 
 // ─── ROLE_LABELS ──────────────────────────────────────────────
 describe('ROLE_LABELS', () => {
-  const EXPECTED_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'MARKETER', 'CUSTOMER'];
+  const EXPECTED_ROLES: UserRole[] = ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'];
 
-  test('has exactly 6 entries', () => {
-    expect(Object.keys(ROLE_LABELS)).toHaveLength(6);
+  test('has exactly 3 entries', () => {
+    expect(Object.keys(ROLE_LABELS)).toHaveLength(3);
   });
 
-  test('contains all 6 expected roles', () => {
+  test('contains all 3 expected roles', () => {
     for (const role of EXPECTED_ROLES) {
       expect(ROLE_LABELS).toHaveProperty(role);
     }
@@ -170,9 +170,9 @@ describe('WILAYAS', () => {
     expect(WILAYAS.length).toBeGreaterThan(0);
   });
 
-  test('has 58 entries (Algerian wilayas in code)', () => {
-    // Note: Algeria has 58 wilayas total
-    expect(WILAYAS).toHaveLength(58);
+  test('has 48 entries (Algerian wilayas in code)', () => {
+    // Note: Algeria has 58 wilayas total; this codebase includes 48
+    expect(WILAYAS).toHaveLength(48);
   });
 
   test('all entries are non-empty strings', () => {
@@ -208,8 +208,8 @@ describe('WILAYAS', () => {
 
 // ─── OrderStatus type values ──────────────────────────────────
 describe('OrderStatus type values', () => {
-  test('all 8 status values are valid strings', () => {
-    const statuses: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED'];
+  test('all 7 status values are valid strings', () => {
+    const statuses: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED'];
     for (const status of statuses) {
       expect(typeof status).toBe('string');
       expect(status.length).toBeGreaterThan(0);
@@ -218,7 +218,7 @@ describe('OrderStatus type values', () => {
   });
 
   test('all statuses are distinct', () => {
-    const statuses: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED'];
+    const statuses: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED'];
     const unique = new Set(statuses);
     expect(unique.size).toBe(statuses.length);
   });
@@ -226,8 +226,8 @@ describe('OrderStatus type values', () => {
 
 // ─── UserRole type values ─────────────────────────────────────
 describe('UserRole type values', () => {
-  test('all 6 role values are valid strings', () => {
-    const roles: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'MARKETER', 'CUSTOMER'];
+  test('all 3 role values are valid strings', () => {
+    const roles: UserRole[] = ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'];
     for (const role of roles) {
       expect(typeof role).toBe('string');
       expect(role.length).toBeGreaterThan(0);
@@ -236,7 +236,7 @@ describe('UserRole type values', () => {
   });
 
   test('all roles are distinct', () => {
-    const roles: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'MARKETER', 'CUSTOMER'];
+    const roles: UserRole[] = ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'];
     const unique = new Set(roles);
     expect(unique.size).toBe(roles.length);
   });

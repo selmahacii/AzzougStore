@@ -188,9 +188,9 @@ afterAll(async () => {
       });
     }
     // OrderItems (depend on Order + Product)
-    if (createdOrderIds.length > 0) {
+    if (createdOrderItemIds.length > 0) {
       await db.orderItem.deleteMany({
-        where: { orderId: { in: createdOrderIds } },
+        where: { id: { in: createdOrderItemIds } },
       });
     }
     // StockMovements (depend on Product + User)
@@ -263,6 +263,7 @@ describe('Order Creation Integration', () => {
         total: expectedTotal,
         status: 'NEW',
         customerId: testCustomerId,
+        customerTier: 'BRONZE',
       },
     });
     createdOrderIds.push(order.id);
@@ -275,7 +276,8 @@ describe('Order Creation Integration', () => {
     expect(order.total).toBe(expectedTotal);
     expect(order.deliveryFee).toBe(deliveryFee);
     expect(order.discount).toBe(0);
-    expect(order.isDeleted).toBeFalsy();
+    expect(order.isDeleted).toBe(false);
+    expect(order.customerTier).toBe('BRONZE');
   });
 
   test('creates OrderItem records with correct quantity and unitPrice', async () => {
@@ -308,7 +310,7 @@ describe('Order Creation Integration', () => {
         productName: 'Test Product A',
         quantity,
         unitPrice,
-        createdAt: new Date(),
+        category: 'TestCat',
       },
     });
     createdOrderItemIds.push(orderItem.id);
@@ -320,6 +322,7 @@ describe('Order Creation Integration', () => {
     expect(orderItem.productName).toBe('Test Product A');
     expect(orderItem.quantity).toBe(quantity);
     expect(orderItem.unitPrice).toBe(unitPrice);
+    expect(orderItem.category).toBe('TestCat');
 
     // Fetch via relation and verify
     const fetchedOrder = await db.order.findUnique({
@@ -405,7 +408,6 @@ describe('Order Creation Integration', () => {
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          createdAt: new Date(),
         },
       });
       createdOrderItemIds.push(orderItem.id);
@@ -452,7 +454,7 @@ describe('Order Creation Integration', () => {
             productName: 'Test Product A',
             quantity: 2,
             unitPrice: 5000,
-            createdAt: new Date(),
+            category: 'TestCat',
           },
           {
             orderId: newOrder.id,
@@ -460,7 +462,7 @@ describe('Order Creation Integration', () => {
             productName: 'Test Product B',
             quantity: 3,
             unitPrice: 3000,
-            createdAt: new Date(),
+            category: 'TestCat2',
           },
         ],
       });
@@ -525,7 +527,6 @@ describe('Stock Reservation Integration', () => {
         quantity: reserveQty,
         reason: 'Integration test reserve',
         actorId: testUserId,
-        createdAt: new Date(),
       },
     });
     createdStockMovementIds.push(movement.id);
@@ -583,7 +584,6 @@ describe('Stock Reservation Integration', () => {
         quantity: confirmQty,
         reason: 'Integration test confirm',
         actorId: testUserId,
-        createdAt: new Date(),
       },
     });
     createdStockMovementIds.push(movement.id);
@@ -1144,7 +1144,6 @@ describe('Monetary Precision Integration', () => {
         productName: 'Test Product A',
         quantity: 1,
         unitPrice: 5000,
-        createdAt: new Date(),
       },
     });
     createdOrderItemIds.push(orderItem.id);

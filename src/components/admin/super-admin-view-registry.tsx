@@ -22,9 +22,6 @@ import DeliveryPartners from './modules/delivery-partners';
 import LandingPagesDashboard from './modules/landing-pages-dashboard';
 import { SettingsPlaceholder } from '../app/settings-placeholder';
 import VisitorsPage from './visitors-page';
-import MetaAdsDashboard from './modules/meta-ads-dashboard';
-import UpsellManager from './modules/upsell-manager';
-import PurchaseManager from './modules/purchase-manager';
 
 export default function SuperAdminView() {
   const { adminView, adminSubView } = useAppStore();
@@ -50,7 +47,6 @@ export default function SuperAdminView() {
     case 'audit':
       return <AuditPage key={`audit-${adminSubView || 'logs'}`} />;
     case 'stores':
-    case 'stores_menu':
       return <StoresPage key={`stores-${adminSubView || 'list'}`} />;
     case 'promotions':
       return <PromotionsPage key={`promotions-${adminSubView || 'all'}`} />;
@@ -72,12 +68,6 @@ export default function SuperAdminView() {
       return <DeliveryPartners key={`delivery-${adminSubView || 'carriers'}`} />;
     case 'landing_pages':
       return <LandingPagesDashboard key="landing_pages" />;
-    case 'meta_ads':
-      return <MetaAdsDashboard key="meta_ads" />;
-    case 'upsell':
-      return <UpsellManager key="upsell" />;
-    case 'purchase_vouchers':
-      return <PurchaseManager key="purchase_vouchers" />;
     case 'settings':
       return <SettingsPlaceholder key="settings" />;
     default:

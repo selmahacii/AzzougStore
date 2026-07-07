@@ -42,17 +42,17 @@ function getFaqResponse(input: string, store: Store): string {
 
   // Comment commander / passer commande
   if (/comment.*commande|passer.*commande|comment.*acheter|commander|achat/.test(msg)) {
-    return ` Pour passer une commande chez ${name} :\n1. Ajoutez vos produits au panier\n2. Cliquez sur **Commander maintenant** dans le panier\n3. Renseignez vos informations de livraison\n4. Confirmez votre commande\n\nNous vous contacterons pour confirmer la livraison.`;
+    return `🛒 Pour passer une commande chez ${name} :\n1. Ajoutez vos produits au panier\n2. Cliquez sur **Commander maintenant** dans le panier\n3. Renseignez vos informations de livraison\n4. Confirmez votre commande\n\nNous vous contacterons pour confirmer la livraison.`;
   }
 
   // Paiement
   if (/paiement|payer|cash|cheque|virement|carte|cod|contre remboursement/.test(msg)) {
-    return `Chez ${name}, le paiement se fait uniquement en **espèces à la livraison**. Vous payez le livreur à la réception de votre colis.`;
+    return `💳 Chez ${name}, le paiement se fait uniquement en **espèces à la livraison** (paiement contre remboursement / COD). Vous payez le livreur à la réception de votre colis.`;
   }
 
   // Retour / échange / remboursement
   if (/retour|echange|rembours|retourner|renvoyer|insatisf/.test(msg)) {
-    return ` Nous acceptons les retours et échanges dans un délai de **14 jours** après réception.\n\nConditions :\n• Produit non utilisé et dans son emballage d'origine\n• Contacter notre support pour initier le retour${phone ? `\n\n📞 Contactez-nous au **${phone}**` : ''}`;
+    return `🔄 Nous acceptons les retours et échanges dans un délai de **14 jours** après réception.\n\nConditions :\n• Produit non utilisé et dans son emballage d'origine\n• Contacter notre support pour initier le retour${phone ? `\n\n📞 Contactez-nous au **${phone}**` : ''}`;
   }
 
   // Annulation commande
@@ -62,16 +62,16 @@ function getFaqResponse(input: string, store: Store): string {
 
   // Contact / téléphone / email
   if (/contact|appeler|telephone|joindre|email|mail|whatsapp|support/.test(msg)) {
-    const parts: string[] = [` Voici comment joindre l'équipe ${phone}  :`];
-    if (phone) parts.push(` Téléphone : **${phone}**`);
-    if (email) parts.push(` Email : **${email}**`);
+    const parts: string[] = [`📬 Voici comment joindre l'équipe ${name} :`];
+    if (phone) parts.push(`📞 Téléphone : **${phone}**`);
+    if (email) parts.push(`✉️ Email : **${email}**`);
     if (!phone && !email) parts.push('Retrouvez nos coordonnées sur la page de contact de la boutique.');
     return parts.join('\n');
   }
 
   // Disponibilité stock
   if (/stock|dispo|disponible|rupture|epuise/.test(msg)) {
-    return ` La disponibilité des produits est indiquée directement sur chaque fiche produit. Si un article est en rupture de stock, il sera signalé comme "Indisponible".${phone ? `\n\nPour des informations précises, contactez-nous au **${phone}**` : ''}`;
+    return `📊 La disponibilité des produits est indiquée directement sur chaque fiche produit. Si un article est en rupture de stock, il sera signalé comme "Indisponible".${phone ? `\n\nPour des informations précises, contactez-nous au **${phone}**` : ''}`;
   }
 
   // Suivi commande

@@ -30,10 +30,6 @@ import {
    Zap,
    Banknote,
    ShieldCheck,
-   Check,
-   X,
-   Calendar,
-   Trash,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -68,7 +64,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
-import type { EmployeeStats, ApiResponse, UserRole, Product } from '@/lib/types';
+import type { EmployeeStats, ApiResponse, UserRole } from '@/lib/types';
 import { ROLE_LABELS } from '@/lib/types';
 import { formatPrice } from '@/lib/format';
 import { toast } from 'sonner';
@@ -168,156 +164,7 @@ interface RolePermission {
     permissions: string[];
 }
 
-const ALL_PERMISSIONS = [
-   { group: '📦 Produits & Stock', perms: ['products.view', 'products.create', 'products.edit', 'products.delete', 'stock.view', 'stock.adjust'] },
-   { group: '🛒 Commandes', perms: ['orders.view', 'orders.create', 'orders.confirm', 'orders.cancel', 'orders.edit'] },
-   { group: '👥 Clients & CRM', perms: ['customers.view', 'customers.edit', 'customers.export'] },
-   { group: '💰 Finance & Dépenses', perms: ['finance.view', 'finance.transactions', 'expenses.view', 'expenses.create', 'expenses.delete'] },
-   { group: '📈 Analytics & Audit', perms: ['analytics.view', 'audit.view', 'reports.export'] },
-   { group: '👤 Équipe & RH', perms: ['users.view', 'users.create', 'users.edit', 'users.delete', 'roles.manage'] },
-   { group: '🚚 Livraison & Partenaires', perms: ['delivery.view', 'delivery.manage', 'partners.view', 'partners.edit'] },
-   { group: '📣 Marketing & Promotions', perms: ['marketing.view', 'marketing.create', 'promotions.view', 'promotions.manage'] },
-   { group: '⚙️ Paramètres', perms: ['settings.view', 'settings.edit', 'api_keys.manage', 'stores.manage'] },
-];
-
-const ROLE_COLORS = ['#4b7bec', '#20bf6b', '#f7b731', '#eb4d4b', '#a55eea', '#fd9644', '#45aaf2'];
-
-function NewRoleModal({ open, onClose, storeId, onSuccess }: { open: boolean; onClose: () => void; storeId: string; onSuccess: () => void }) {
-   const [form, setForm] = useState({ name: '', description: '', color: ROLE_COLORS[0] });
-   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
-   const [saving, setSaving] = useState(false);
-
-   React.useEffect(() => {
-      if (open) { setForm({ name: '', description: '', color: ROLE_COLORS[0] }); setSelectedPerms([]); }
-   }, [open]);
-
-   const togglePerm = (p: string) => setSelectedPerms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
-   const toggleGroup = (perms: string[]) => {
-      const allSelected = perms.every(p => selectedPerms.includes(p));
-      if (allSelected) setSelectedPerms(prev => prev.filter(p => !perms.includes(p)));
-      else setSelectedPerms(prev => [...new Set([...prev, ...perms])]);
-   };
-
-   const handleSave = async () => {
-      if (!form.name.trim()) { toast.error('Le nom du rôle est obligatoire'); return; }
-      if (selectedPerms.length === 0) { toast.error('Sélectionnez au moins une permission'); return; }
-      setSaving(true);
-      try {
-         await apiFetch('/api/v1/users/roles', {
-            method: 'POST',
-            body: JSON.stringify({ ...form, name: form.name.trim(), permissions: selectedPerms, store_id: storeId }),
-         });
-         toast.success(`Rôle "${form.name}" créé avec succès`);
-         onSuccess();
-         onClose();
-      } catch (err: any) {
-         toast.error(err?.message || 'Erreur lors de la création du rôle');
-      } finally {
-         setSaving(false);
-      }
-   };
-
-   return (
-      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-[2rem] p-0 gap-0 border-0 shadow-2xl">
-            <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white sticky top-0 z-10">
-               <div className="flex items-center gap-4">
-                  <div className="size-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: form.color + '20' }}>
-                     <Shield className="size-6" style={{ color: form.color }} />
-                  </div>
-                  <div>
-                     <DialogTitle className="text-xl font-black text-slate-800">Nouveau Rôle</DialogTitle>
-                     <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Définissez les accès et permissions</DialogDescription>
-                  </div>
-               </div>
-            </DialogHeader>
-
-            <div className="p-8 space-y-8 bg-[#F8FAFC]">
-               {/* Identity */}
-               <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-5">
-                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Identité du rôle</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                        <label className="text-[11px] font-black uppercase text-[#636E72] tracking-widest">Nom du rôle *</label>
-                        <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                           placeholder="Ex: Responsable Régional" className="h-12 rounded-2xl border-slate-100 bg-slate-50 font-bold" />
-                     </div>
-                     <div className="space-y-2">
-                        <label className="text-[11px] font-black uppercase text-[#636E72] tracking-widest">Couleur distinctive</label>
-                        <div className="flex gap-2 flex-wrap">
-                           {ROLE_COLORS.map(c => (
-                              <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
-                                 className="size-9 rounded-xl border-2 transition-all"
-                                 style={{ backgroundColor: c, borderColor: form.color === c ? '#2D3436' : 'transparent' }}
-                              />
-                           ))}
-                        </div>
-                     </div>
-                  </div>
-                  <div className="space-y-2">
-                     <label className="text-[11px] font-black uppercase text-[#636E72] tracking-widest">Description du rôle</label>
-                     <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                        placeholder="Ex: Gère les stocks et les livraisons régionales" className="h-12 rounded-2xl border-slate-100 bg-slate-50 font-medium" />
-                  </div>
-               </div>
-
-               {/* Permissions matrix */}
-               <div className="bg-white rounded-3xl p-6 border border-slate-100 space-y-5">
-                  <div className="flex items-center justify-between">
-                     <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Matrice des permissions</h4>
-                     <span className="text-xs font-bold text-[#4b7bec] bg-indigo-50 px-3 py-1 rounded-xl">{selectedPerms.length} sélectionnées</span>
-                  </div>
-                  <div className="space-y-4">
-                     {ALL_PERMISSIONS.map(({ group, perms }) => {
-                        const allSelected = perms.every(p => selectedPerms.includes(p));
-                        const someSelected = perms.some(p => selectedPerms.includes(p));
-                        return (
-                           <div key={group} className="rounded-2xl border border-slate-100 overflow-hidden">
-                              <button type="button" onClick={() => toggleGroup(perms)}
-                                 className="w-full flex items-center justify-between px-5 py-3 bg-slate-50 hover:bg-slate-100 transition-all">
-                                 <span className="text-xs font-black text-slate-600">{group}</span>
-                                 <div className={cn("size-5 rounded-md border-2 flex items-center justify-center transition-all",
-                                    allSelected ? "bg-[#4b7bec] border-[#4b7bec]" : someSelected ? "bg-indigo-100 border-[#4b7bec]" : "bg-white border-slate-200"
-                                 )}>
-                                    {allSelected && <Check className="size-3 text-white" />}
-                                    {someSelected && !allSelected && <div className="size-2 rounded-sm bg-[#4b7bec]" />}
-                                 </div>
-                              </button>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-4">
-                                 {perms.map(p => (
-                                    <label key={p} onClick={() => togglePerm(p)}
-                                       className={cn("flex items-center gap-2 p-2 rounded-xl cursor-pointer transition-all border text-xs font-bold",
-                                          selectedPerms.includes(p) ? "bg-indigo-50 border-indigo-200 text-[#4b7bec]" : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
-                                       )}>
-                                       <div className={cn("size-4 rounded shrink-0 flex items-center justify-center border transition-all",
-                                          selectedPerms.includes(p) ? "bg-[#4b7bec] border-[#4b7bec]" : "border-slate-200"
-                                       )}>
-                                          {selectedPerms.includes(p) && <Check className="size-2.5 text-white" />}
-                                       </div>
-                                       <span className="truncate font-mono text-[10px]">{p.split('.')[1]}</span>
-                                    </label>
-                                 ))}
-                              </div>
-                           </div>
-                        );
-                     })}
-                  </div>
-               </div>
-            </div>
-
-            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-end gap-3 sticky bottom-0">
-               <button onClick={onClose} className="h-12 px-6 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Annuler</button>
-               <button onClick={handleSave} disabled={saving}
-                  className="h-12 px-8 rounded-2xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-200 transition-all disabled:opacity-50">
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : `Créer le rôle — ${selectedPerms.length} permissions`}
-               </button>
-            </div>
-         </DialogContent>
-      </Dialog>
-   );
-}
-
-function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePermission[]; isLoading: boolean; onRefresh: () => void; onNewRole: () => void }) {
+function RolesView({ roles, isLoading }: { roles: RolePermission[]; isLoading: boolean }) {
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
    if (!Array.isArray(roles)) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
@@ -335,10 +182,10 @@ function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePerm
                </div>
             </div>
             <div className="flex gap-3">
-               <button onClick={onRefresh} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border hover:bg-[#F8F9FC] transition-all" style={{ borderColor: C.border, color: C.textLight }}>
+               <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border hover:bg-[#F8F9FC] transition-all" style={{ borderColor: C.border, color: C.textLight }}>
                   <RefreshCw className="size-4" /> Rafraîchir
                </button>
-               <Button onClick={onNewRole} className="h-11 px-6 rounded-xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center group border-none">
+               <Button className="h-11 px-6 rounded-xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center group border-none">
                   <Plus className="mr-2 size-4 text-white transition-transform group-hover:scale-110" /> Nouveau rôle
                </Button>
             </div>
@@ -509,18 +356,6 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
                         <p className="text-2xl font-bold text-emerald-600 tracking-tight">{stats.securityLevel}</p>
                      </div>
                   </div>
-                  <div className="md:col-span-2 bg-amber-50/50 rounded-[32px] border border-amber-200/50 p-6 flex items-center justify-between gap-6">
-                     <div className="flex items-center gap-4">
-                        <div className="size-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600">
-                           <Activity className="size-6" />
-                        </div>
-                        <div>
-                           <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">Vigilance SLA (2h)</h4>
-                           <p className="text-[11px] font-medium text-amber-700/70">Alerte automatique si une commande n'est pas traitée dans les 120 min.</p>
-                        </div>
-                     </div>
-                     <div className="px-4 py-2 bg-amber-100 rounded-xl text-amber-700 text-[10px] font-black uppercase">Service Actif</div>
-                  </div>
                </div>
             </div>
 
@@ -561,8 +396,8 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
 // ═══════════════════════════════════════════════════════════════
 // Admins Table Sub-View
 // ═══════════════════════════════════════════════════════════════
-function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, totalStaff }: {
-   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onCreate: () => void; totalStaff?: number;
+function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate }: {
+   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onCreate: () => void;
 }) {
    return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -570,7 +405,7 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
                <div className="size-12 rounded-2xl flex items-center justify-center bg-indigo-50 text-[#4b7bec] shadow-inner"><Shield className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Total staff</p><p className="text-xl font-bold text-slate-900">{totalStaff ?? employees.length}</p></div>
+               <div><p className="text-xs font-bold text-slate-400">Total staff</p><p className="text-xl font-bold text-slate-900">{employees.length}</p></div>
             </div>
             <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
                <div className="size-12 rounded-2xl flex items-center justify-center bg-emerald-50 text-emerald-500 shadow-inner"><Activity className="size-6" /></div>
@@ -588,8 +423,8 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                   <UserCheck className="size-6" style={{ color: C.primary }} />
                </div>
                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Staff & Équipes</h2>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Gestion complète du personnel</p>
+                  <h2 className="text-lg font-bold text-slate-900">Administrateurs & Managers</h2>
+                  <p className="text-sm font-medium text-slate-400 mt-1">Personnel de direction et supervision</p>
                </div>
             </div>
             <button onClick={onCreate} className="h-11 px-6 rounded-xl flex items-center gap-2 bg-[#4b7bec] text-white text-xs font-bold shadow-lg shadow-indigo-100 transition-all hover:scale-105" style={{ backgroundColor: C.primary }}>
@@ -625,7 +460,7 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                         </tr>
                      </thead>
                      <tbody className="divide-y" style={{ borderColor: C.border }}>
-                        {employees.map((emp, i) => (
+                        {employees.filter(e => ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(e.role)).map((emp, i) => (
                            <tr key={emp.id} className="hover:bg-[#FAFBFD]/50 transition-colors group">
                               <td className="px-8 py-5">
                                  <div className="flex items-center gap-4">
@@ -673,7 +508,7 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                   </table>
                </div>
             )}
-            <TablePagination total={employees.length} page={1} totalPages={1} onPageChange={() => {}} />
+            <TablePagination total={employees.filter(e => ['ADMIN', 'SUPER_ADMIN', 'MANAGER'].includes(e.role)).length} page={1} totalPages={1} onPageChange={() => {}} />
          </div>
       </div>
    );
@@ -682,27 +517,26 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
 // ═══════════════════════════════════════════════════════════════
 // Agents Table Sub-View
 // ═══════════════════════════════════════════════════════════════
-function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
-   agent: any; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; storeId: string;
-}) {
-   const { data: perf } = useQuery<any>({
-      queryKey: ['employee-perf', agent.id, storeId],
-      queryFn: () => apiFetch(`/api/v1/users/${agent.id}/performance?store_id=${storeId}`),
-      enabled: !!storeId && !!agent.id,
+function AgentRow({ agent, onEdit, onDeactivate, storeId }: { agent: any; onEdit: (e: any) => void; onDeactivate: (e: any) => void; storeId: string }) {
+   const { data: perf } = useQuery({
+      queryKey: ['agent-perf', agent.id, storeId],
+      queryFn: () => apiFetch<any>(`/api/v1/users/${agent.id}/performance?store_id=${storeId}&period=30d`),
+      enabled: !!agent.id,
+      staleTime: 60_000,
    });
-   const stats = perf?.stats ?? {};
+   const stats = perf?.data ?? {};
    const total = stats.total_assigned ?? 0;
-   const confirmed = stats.confirmed_count ?? 0;
-   const rate = stats.confirmation_rate ?? (total > 0 ? Math.round((confirmed / total) * 100) : null);
+   const confirmed = stats.confirmed ?? 0;
+   const rate = total > 0 ? Math.round((confirmed / total) * 100) : null;
 
    // Salary calc
    const paymentType = agent.payment_type ?? '';
    const paymentAmount = agent.payment_amount ?? 0;
-   const delivered = stats.delivered_count ?? 0;
-   const salary = stats.salary ?? (
-      paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
-      : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
-   );
+   const delivered = stats.delivered ?? 0;
+   let salary = 0;
+   if (paymentType === 'PER_CONFIRMED_ORDER') salary = confirmed * paymentAmount;
+   else if (paymentType === 'PER_DELIVERED_ORDER') salary = delivered * paymentAmount;
+   else if (paymentType === 'MONTHLY_SALARY') salary = paymentAmount;
 
    return (
       <tr className="hover:bg-slate-50/50 transition-all group">
@@ -744,9 +578,9 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
          </td>
          <td className="px-8 py-6 text-center">
             <div className="flex flex-col items-center gap-1">
-               <span className="text-sm font-black text-[#2D3436] font-mono">{Number(salary).toLocaleString()} DA</span>
-               <span className="text-[9px] text-slate-400 uppercase tracking-wide font-bold">
-                  {paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
+               <span className="text-sm font-black text-emerald-600">{formatPrice(salary)} DA</span>
+               <span className="text-[9px] text-slate-400 uppercase tracking-wide">
+                  {paymentType === 'PER_CONFIRMED_ORDER' ? 'par confirm.' : paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
                </span>
             </div>
          </td>
@@ -759,17 +593,16 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
          <td className="px-8 py-6 text-right">
             <div className="flex items-center justify-end gap-2">
                <SalaryCalculatorButton employee={agent} />
-               <button onClick={() => onEdit(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm" title="Modifier"><Pencil className="size-4" /></button>
-               <button onClick={() => onDeactivate(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-amber-600 hover:border-amber-600 transition-all shadow-sm" title="Désactiver"><UserX className="size-4" /></button>
-               <button onClick={() => onDelete(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-red-600 hover:border-red-600 transition-all shadow-sm" title="Supprimer définitivement"><Trash className="size-4" /></button>
+               <button onClick={() => onEdit(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm"><Pencil className="size-4" /></button>
+               <button onClick={() => onDeactivate(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-red-500 hover:border-red-500 transition-all shadow-sm"><UserX className="size-4" /></button>
             </div>
          </td>
       </tr>
    );
 }
 
-function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCreate, totalStaff }: {
-   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; onCreate: () => void; totalStaff?: number;
+function AgentsView({ employees, isLoading, onEdit, onDeactivate, onCreate }: {
+   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onCreate: () => void;
 }) {
    const { activeStore } = useAppStore();
    const agents = employees.filter(e => e.role === 'CONFIRMATEUR');
@@ -815,7 +648,7 @@ function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCr
                   </thead>
                   <tbody className="divide-y" style={{ borderColor: C.border }}>
                      {agents.map((agent) => (
-                        <AgentRow key={agent.id} agent={agent} onEdit={onEdit} onDeactivate={onDeactivate} onDelete={onDelete} storeId={activeStore?.id ?? ''} />
+                        <AgentRow key={agent.id} agent={agent} onEdit={onEdit} onDeactivate={onDeactivate} storeId={activeStore?.id ?? ''} />
                      ))}
                   </tbody>
                </table>
@@ -934,6 +767,7 @@ function MarketersView({ marketers, isLoading, onCreate }: { marketers: Marketer
                            </td>
                            <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-2">
+                                 <SalaryCalculatorButton employee={m} />
                                  <button className="size-10 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm"><Pencil className="size-4" /></button>
                               </div>
                            </td>
@@ -956,37 +790,22 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
     updateMutation: ReturnType<typeof useMutation<any, Error, { id: string; data: Record<string, unknown> }>>;
 }) {
    const isEditing = !!editingEmployee;
-   const [productSearch, setProductSearch] = useState('');
    const { data: storesData } = useQuery({
       queryKey: ['stores-list'],
       queryFn: () => apiFetch<any>('/api/v1/stores'),
    });
    const storesList: any[] = Array.isArray(storesData) ? storesData : (storesData?.data ?? []);
 
-   const { data: allProductsData } = useQuery({
-      queryKey: ['all-products-list'],
-      queryFn: () => apiFetch<any>('/api/v1/products?pageSize=1000', { allStores: true }),
-      enabled: open,
-   });
-   const productsList = (Array.isArray(allProductsData) ? allProductsData : (allProductsData?.data ?? [])) as Product[];
-
    const [formData, setFormData] = useState({
       name: '', email: '', password: '', phone: '',
       role: '' as UserRole | '', daily_target: 10, is_active: true,
-      payment_type: '' as 'PER_DELIVERED_ORDER' | 'MONTHLY_SALARY' | '',
+      payment_type: '' as 'PER_DELIVERED_ORDER' | 'PER_CONFIRMED_ORDER' | 'MONTHLY_SALARY' | '',
       payment_amount: '' as number | '',
-      payment_recovered_cart: '' as number | '',
-      payment_lost_cart: '' as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
-      assigned_store_ids: [] as string[],
-      assigned_product_ids: [] as string[],
+      assigned_store_id: '' as string,
    });
    const [errors, setErrors] = useState<Record<string, string>>({});
    const isSubmitting = createMutation.isPending || updateMutation.isPending;
-
-   // Products always shown from ALL stores — a confirmateur can be responsible
-   // for specific products across multiple different stores.
-   const filteredProducts = productsList;
 
    React.useEffect(() => {
       if (open && editingEmployee) {
@@ -1000,14 +819,11 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             is_active: editingEmployee.is_active ?? true,
             payment_type: editingEmployee.payment_type || '',
             payment_amount: editingEmployee.payment_amount ?? '',
-            payment_recovered_cart: editingEmployee.payment_recovered_cart ?? '',
-            payment_lost_cart: editingEmployee.payment_lost_cart ?? '',
-            assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
-            assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
-            assigned_product_ids: editingEmployee.assigned_product_ids || [],
+            assigned_store_scope: editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL',
+            assigned_store_id: editingEmployee.assigned_store_id || '',
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [] });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', assigned_store_scope: 'ALL', assigned_store_id: '' });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1021,18 +837,13 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       if (!formData.role) errs.role = 'Rôle requis';
       if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
-      const paymentPayload = {
-         payment_type: formData.payment_type || null,
-         payment_amount: formData.payment_type ? (Number(formData.payment_amount) || 0) : null,
-         payment_recovered_cart: Number(formData.payment_recovered_cart) || 0,
-         payment_lost_cart: Number(formData.payment_lost_cart) || 0,
-      };
+      const paymentPayload = formData.payment_type
+         ? { payment_type: formData.payment_type, payment_amount: Number(formData.payment_amount) || 0 }
+         : { payment_type: null, payment_amount: null };
 
-      const storePayload = formData.assigned_store_scope === 'SPECIFIC'
-         ? { assigned_store_ids: formData.assigned_store_ids }
-         : { assigned_store_ids: [] };
-
-      const productsPayload = { assigned_product_ids: formData.assigned_product_ids };
+      const storePayload = formData.assigned_store_scope === 'SPECIFIC' && formData.assigned_store_id
+         ? { assigned_store_id: formData.assigned_store_id }
+         : { assigned_store_id: null };
 
       if (isEditing && editingEmployee) {
          updateMutation.mutate({
@@ -1046,7 +857,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                is_active: formData.is_active,
                ...paymentPayload,
                ...storePayload,
-               ...productsPayload,
             }
          }, { onSuccess: () => onOpenChange(false) });
       } else {
@@ -1059,7 +869,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             daily_target: formData.daily_target,
             ...(storeId ? { employee_store_id: storeId } : {}),
             ...storePayload,
-            ...productsPayload,
             ...paymentPayload,
          }, {
             onSuccess: () => onOpenChange(false),
@@ -1112,6 +921,10 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         <Label className="text-[11px] font-semibold text-[#636E72]">Téléphone</Label>
                         <Input value={formData.phone} onChange={(e) => setFormData(p => ({ ...p, phone: e.target.value }))} placeholder="0555 12 34 56" className="h-10 border-[#E9ECF0] rounded-lg bg-[#F8F9FC]" />
                      </div>
+                     <div className="space-y-1.5">
+                        <Label className="text-[11px] font-semibold text-[#636E72]">Adresse & Localisation</Label>
+                        <Input placeholder="Adresse complète..." className="h-10 border-[#E9ECF0] rounded-lg bg-[#F8F9FC]" />
+                     </div>
                   </div>
 
                   {/* Sécurité & Assignation */}
@@ -1128,63 +941,15 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         {errors.role && <p className="text-xs text-red-500">{errors.role}</p>}
                      </div>
                      
-                      <div className="space-y-2 p-4 rounded-xl border bg-indigo-50/30" style={{ borderColor: '#e0e7ff' }}>
-                        <Label className="text-[11px] font-semibold text-[#636E72] flex items-center justify-between">
-                           Produits Assignés
-                           <span className="text-[9px] font-black text-indigo-500 uppercase">{formData.assigned_product_ids.length} sélectionnés</span>
-                        </Label>
-                        
-                        <div className="relative mb-2">
-                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3 text-slate-400" />
-                           <Input 
-                              placeholder="Rechercher un produit..." 
-                              className="h-8 pl-8 text-[10px] border-indigo-100 bg-white"
-                              onChange={(e) => {
-                                 const val = e.target.value.toLowerCase();
-                                 setProductSearch(val);
-                              }}
-                           />
-                        </div>
+                     <div className="space-y-1.5">
+                        <Label className="text-[11px] font-semibold text-[#636E72]">Produits Assignés</Label>
+                        <Select defaultValue="all"><SelectTrigger className="h-10 border-[#E9ECF0] rounded-lg bg-[#F8F9FC]"><SelectValue placeholder="Tous les produits" /></SelectTrigger><SelectContent className="bg-white border-[#E9ECF0] rounded-xl"><SelectItem value="all">Autoriser tous les produits</SelectItem><SelectItem value="specific">Sélection spécifique</SelectItem></SelectContent></Select>
+                     </div>
 
-                        <div className="max-h-[150px] overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
-                           {filteredProducts
-                             .filter(p => p.name.toLowerCase().includes(productSearch))
-                             .map((prod: any) => (
-                              <button
-                                 key={prod.id}
-                                 type="button"
-                                 onClick={() => {
-                                    const exist = formData.assigned_product_ids.includes(prod.id);
-                                    setFormData(p => ({
-                                       ...p,
-                                       assigned_product_ids: exist 
-                                          ? p.assigned_product_ids.filter(id => id !== prod.id)
-                                          : [...p.assigned_product_ids, prod.id]
-                                    }));
-                                 }}
-                                 className={cn(
-                                    "w-full flex items-center justify-between px-3 py-2 rounded-lg text-[10px] font-bold border transition-all",
-                                    formData.assigned_product_ids.includes(prod.id) ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-100 hover:border-indigo-200"
-                                 )}
-                              >
-                                 <div className="flex flex-col items-start truncate">
-                                    <span className="truncate">{prod.name}</span>
-                                    <span className="text-[8px] opacity-60 uppercase tracking-wider">{storesList.find(s => s.id === prod.store_id)?.name || 'Boutique Inconnue'}</span>
-                                 </div>
-                                 {formData.assigned_product_ids.includes(prod.id) ? <Check className="size-3" /> : <Plus className="size-3 text-slate-300" />}
-                              </button>
-                           ))}
-                           {filteredProducts.filter(p => p.name.toLowerCase().includes(productSearch)).length === 0 && (
-                              <div className="text-center py-6 border-2 border-dashed border-slate-100 rounded-xl">
-                                 <Package className="size-6 mx-auto mb-2 text-slate-200" />
-                                 <p className="text-[10px] text-slate-300 italic">Aucun produit trouvé</p>
-                              </div>
-                           )}
-                        </div>
-                        <p className="text-[9px] text-slate-400 leading-tight">
-                           Le confirmateur reçoit les commandes de <strong>toutes les boutiques</strong> contenant ses produits assignés, peu importe la boutique d'origine.
-                        </p>
-                      </div>
+                     <div className="space-y-1.5">
+                        <Label className="text-[11px] font-semibold text-[#636E72]">Canaux de Vente Accessibles</Label>
+                        <Select defaultValue="all"><SelectTrigger className="h-10 border-[#E9ECF0] rounded-lg bg-[#F8F9FC]"><SelectValue placeholder="Tous les canaux" /></SelectTrigger><SelectContent className="bg-white border-[#E9ECF0] rounded-xl"><SelectItem value="all">Tous (Facebook, TikTok, IG...)</SelectItem><SelectItem value="specific">Sélection spécifique</SelectItem></SelectContent></Select>
+                     </div>
 
                      <div className="space-y-1.5">
                         <Label className="text-[11px] font-semibold text-[#636E72]">Objectif Quotidien (KPI)</Label>
@@ -1212,36 +977,19 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                            ))}
                         </div>
                         {formData.assigned_store_scope === 'SPECIFIC' && (
-                           <div className="space-y-3">
-                              <Label className="text-[10px] font-bold text-slate-500 uppercase">Choisir les boutiques</Label>
-                              <div className="grid grid-cols-2 gap-2">
+                           <Select value={formData.assigned_store_id} onValueChange={v => setFormData(p => ({ ...p, assigned_store_id: v }))}>
+                              <SelectTrigger className="h-10 border-blue-100 rounded-lg bg-white text-[11px]">
+                                 <SelectValue placeholder="Sélectionner une boutique" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white border-[#E9ECF0] rounded-xl">
                                  {storesList.map((s: any) => (
-                                    <button
-                                       key={s.id}
-                                       type="button"
-                                       onClick={() => {
-                                          const exist = formData.assigned_store_ids.includes(s.id);
-                                          setFormData(p => ({
-                                             ...p,
-                                             assigned_store_ids: exist 
-                                                ? p.assigned_store_ids.filter(id => id !== s.id)
-                                                : [...p.assigned_store_ids, s.id]
-                                          }));
-                                       }}
-                                       className={cn(
-                                          "flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-bold border transition-all",
-                                          formData.assigned_store_ids.includes(s.id) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-100 hover:border-blue-200"
-                                       )}
-                                    >
-                                       {formData.assigned_store_ids.includes(s.id) ? <Check className="size-3" /> : <Plus className="size-3" />}
-                                       <span className="truncate">{s.name}</span>
-                                    </button>
+                                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                                  ))}
-                              </div>
-                           </div>
+                              </SelectContent>
+                           </Select>
                         )}
                         <p className="text-[10px] text-slate-400">
-                           {formData.assigned_store_scope === 'ALL' ? 'Accès à toutes les boutiques' : `${formData.assigned_store_ids.length} boutique(s) sélectionnée(s)`}
+                           {formData.assigned_store_scope === 'ALL' ? 'Recevra les commandes de toutes les boutiques' : 'Recevra uniquement les commandes de la boutique sélectionnée'}
                         </p>
                      </div>
 
@@ -1260,6 +1008,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                  <SelectValue placeholder="Choisir un mode..." />
                               </SelectTrigger>
                               <SelectContent className="bg-white border-[#E9ECF0] rounded-xl">
+                                 <SelectItem value="PER_CONFIRMED_ORDER">Par confirmation (par commande confirmée)</SelectItem>
                                  <SelectItem value="PER_DELIVERED_ORDER">Par livraison (par commande livrée)</SelectItem>
                                  <SelectItem value="MONTHLY_SALARY">Salaire mensuel fixe</SelectItem>
                               </SelectContent>
@@ -1268,7 +1017,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         {formData.payment_type && (
                            <div className="space-y-1.5">
                               <Label className="text-[11px] font-semibold text-[#636E72]">
-                                 {formData.payment_type === 'PER_DELIVERED_ORDER' ? 'Montant par livraison (DA)' : 'Salaire mensuel (DA)'}
+                                 {formData.payment_type === 'PER_CONFIRMED_ORDER' ? 'Montant par commande confirmée (DA)' : formData.payment_type === 'PER_DELIVERED_ORDER' ? 'Montant par livraison (DA)' : 'Salaire mensuel (DA)'}
                               </Label>
                               <div className="relative">
                                  <Input
@@ -1282,35 +1031,14 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">DA</span>
                               </div>
                               <p className="text-[10px] text-slate-400">
-                                 {formData.payment_type === 'PER_DELIVERED_ORDER'
+                                 {formData.payment_type === 'PER_CONFIRMED_ORDER'
+                                    ? `Ex: 400 DA × commandes confirmées = salaire variable`
+                                    : formData.payment_type === 'PER_DELIVERED_ORDER'
                                     ? 'Calculé uniquement sur les commandes avec statut LIVRÉ'
                                     : 'Versé indépendamment du nombre de commandes traitées'}
                               </p>
                            </div>
                         )}
-
-                        <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
-                           <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                              Commission récupération panier abandonné
-                           </h5>
-                           <div className="space-y-1.5">
-                               <Label className="text-[10px] font-semibold text-[#636E72]">Panier récupéré (DA)</Label>
-                               <div className="relative">
-                                  <Input
-                                     type="number"
-                                     min={0}
-                                     value={formData.payment_recovered_cart}
-                                     onChange={e => setFormData(p => ({ ...p, payment_recovered_cart: e.target.value === '' ? '' : Number(e.target.value) }))}
-                                     placeholder="Ex: 500"
-                                     className="h-10 border-emerald-100 rounded-lg bg-white pr-12 font-black text-xs"
-                                  />
-                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
-                               </div>
-                            </div>
-                            <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
-                               La commission panier récupéré s'applique sur les paniers abandonnés récupérés qui passent à Livré.
-                            </p>
-                        </div>
                      </div>
 
                      <div className="flex flex-col gap-2 p-3 mt-4 rounded-lg border bg-[#F8F9FC]" style={{ borderColor: C.border }}>
@@ -1345,9 +1073,6 @@ export default function EmployeesPage() {
    const [formDialogOpen, setFormDialogOpen] = useState(false);
    const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
    const [deactivateTarget, setDeactivateTarget] = useState<any | null>(null);
-   const [newRoleModalOpen, setNewRoleModalOpen] = useState(false);
-   const [startDate, setStartDate] = useState('');
-   const [endDate, setEndDate] = useState('');
 
    React.useEffect(() => {
       if (!adminSubView) return;
@@ -1362,16 +1087,9 @@ export default function EmployeesPage() {
       if (mapped && mapped !== activeTab) setActiveTab(mapped);
    }, [adminSubView]);
 
-   const buildQueryStr = (basePath: string) => {
-      const params = new URLSearchParams({ store_id: storeId });
-      if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
-      if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
-      return `${basePath}?${params.toString()}`;
-   };
-
    const employeesQuery = useQuery<ApiResponse<any[]>>({
-      queryKey: ['employees', storeId, startDate, endDate],
-      queryFn: () => apiFetch(buildQueryStr('/api/v1/users/')),
+      queryKey: ['employees', storeId],
+      queryFn: () => apiFetch(`/api/v1/users/?store_id=${storeId}`),
    });
 
    const rolesQuery = useQuery<ApiResponse<RolePermission[]>>({
@@ -1381,25 +1099,20 @@ export default function EmployeesPage() {
    });
 
    const infraQuery = useQuery<ApiResponse<InfrastructureStats>>({
-      queryKey: ['employees', 'infra-stats', storeId, startDate, endDate],
-      queryFn: () => apiFetch(buildQueryStr('/api/v1/users/infrastructure-stats')),
-      enabled: true,
+      queryKey: ['employees', 'infra-stats', storeId],
+      queryFn: () => apiFetch(`/api/v1/users/infrastructure-stats?store_id=${storeId}`),
+      enabled: !!storeId,
    });
 
    const marketersQuery = useQuery<ApiResponse<MarketerPerformance[]>>({
-      queryKey: ['employees', 'marketers', storeId, startDate, endDate],
-      queryFn: () => apiFetch(buildQueryStr('/api/v1/users/marketers')),
+      queryKey: ['employees', 'marketers', storeId],
+      queryFn: () => apiFetch(`/api/v1/users/marketers?store_id=${storeId}`),
       enabled: !!storeId,
    });
 
    const auditQuery = useQuery<any>({
-      queryKey: ['audit', 'recent', storeId, startDate, endDate],
-      queryFn: () => {
-         const params = new URLSearchParams({ store_id: storeId, pageSize: '15' });
-         if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
-         if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
-         return apiFetch(`/api/v1/audit/?${params.toString()}`);
-      },
+      queryKey: ['audit', 'recent', storeId],
+      queryFn: () => apiFetch(`/api/v1/audit/?store_id=${storeId}&pageSize=15`),
    });
 
    const createMutation = useMutation({
@@ -1424,27 +1137,6 @@ export default function EmployeesPage() {
       onError: (err: any) => toast.error(err?.message || 'Erreur lors de la mise à jour'),
    });
 
-   const deleteMutation = useMutation({
-      mutationFn: (id: string) =>
-         apiFetch<any>(`/api/v1/users/${id}?hard=true`, { method: 'DELETE' }),
-      onSuccess: () => {
-         queryClient.invalidateQueries({ queryKey: ['employees', storeId] });
-      },
-      onError: (err: any) => toast.error(err?.message || 'Erreur lors de la suppression'),
-   });
-
-   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
-   const handleDelete = (emp: any) => setDeleteTarget(emp);
-   const confirmDelete = () => {
-      if (!deleteTarget) return;
-      deleteMutation.mutate(deleteTarget.id, {
-         onSuccess: () => {
-            toast.success(`Employé ${deleteTarget.name} supprimé définitivement`);
-            setDeleteTarget(null);
-         }
-      });
-   };
-
    const employees = (Array.isArray(employeesQuery.data) ? employeesQuery.data : employeesQuery.data?.data) ?? [];
    const handleCreate = () => { setEditingEmployee(null); setFormDialogOpen(true); };
    const handleEdit = (emp: any) => { setEditingEmployee(emp); setFormDialogOpen(true); };
@@ -1463,8 +1155,8 @@ export default function EmployeesPage() {
       <div className="space-y-5 pb-28 animate-in fade-in duration-700">
 
          {/* ── Header ── */}
-         <div className="bg-white rounded-[32px] border px-6 sm:px-8 py-5 shadow-sm sticky top-0 z-30 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: C.border }}>
-            <div className="flex items-center gap-4 w-full sm:w-auto">
+         <div className="bg-white rounded-[32px] border px-6 sm:px-8 py-5 shadow-sm sticky top-0 z-30 flex items-center justify-between gap-4" style={{ borderColor: C.border }}>
+            <div className="flex items-center gap-4">
                <div className="size-12 rounded-[18px] flex items-center justify-center shadow-lg shadow-indigo-100/50 shrink-0" style={{ backgroundColor: C.primary }}>
                   <Users className="size-6 text-white" />
                </div>
@@ -1478,17 +1170,9 @@ export default function EmployeesPage() {
                   </div>
                </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-               <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 shrink-0">
-                  <Calendar className="size-4 text-slate-400" />
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
-                  <span className="text-slate-300">-</span>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
-               </div>
-               <button onClick={handleCreate} className="h-11 px-6 rounded-2xl flex items-center justify-center gap-2 bg-[#2D3436] text-white text-[11px] font-black shadow-xl shadow-slate-200 hover:scale-[1.02] active:scale-[0.98] transition-all uppercase tracking-widest shrink-0">
-                  <Plus className="size-4" /> Nouvel employé
-               </button>
-            </div>
+            <button onClick={handleCreate} className="h-11 px-6 rounded-2xl flex items-center gap-2 bg-[#2D3436] text-white text-[11px] font-black shadow-xl shadow-slate-200 hover:scale-[1.02] active:scale-[0.98] transition-all uppercase tracking-widest shrink-0">
+               <Plus className="size-4" /> Nouvel employé
+            </button>
          </div>
 
          {/* ── Tab Navigation ── */}
@@ -1516,17 +1200,14 @@ export default function EmployeesPage() {
                   isLoading={infraQuery.isLoading || auditQuery.isLoading}
                />
             )}
-            {activeTab === 'roles' && <RolesView roles={(Array.isArray(rolesQuery.data) ? rolesQuery.data : rolesQuery.data?.data) || []} isLoading={rolesQuery.isLoading} onRefresh={() => rolesQuery.refetch()} onNewRole={() => setNewRoleModalOpen(true)} />}
-            {activeTab === 'admins' && <AdminsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
-            {activeTab === 'agents' && <AgentsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onDelete={handleDelete} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
+            {activeTab === 'roles' && <RolesView roles={(Array.isArray(rolesQuery.data) ? rolesQuery.data : rolesQuery.data?.data) || []} isLoading={rolesQuery.isLoading} />}
+            {activeTab === 'admins' && <AdminsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} />}
+            {activeTab === 'agents' && <AgentsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} />}
             {activeTab === 'marketers' && <MarketersView marketers={(Array.isArray(marketersQuery.data) ? marketersQuery.data : marketersQuery.data?.data) || []} isLoading={marketersQuery.isLoading} onCreate={handleCreate} />}
          </div>
 
          {/* ── Employee Form Dialog ── */}
          <EmployeeFormDialog open={formDialogOpen} onOpenChange={setFormDialogOpen} editingEmployee={editingEmployee} storeId={storeId} createMutation={createMutation} updateMutation={updateMutation} />
-
-         {/* ── New Role Modal ── */}
-         <NewRoleModal open={newRoleModalOpen} onClose={() => setNewRoleModalOpen(false)} storeId={storeId} onSuccess={() => rolesQuery.refetch()} />
 
          {/* ── Deactivate Confirmation ── */}
          <AlertDialog open={!!deactivateTarget} onOpenChange={(o) => { if (!o) setDeactivateTarget(null); }}>
@@ -1541,24 +1222,6 @@ export default function EmployeesPage() {
                   <AlertDialogCancel className="rounded-xl">Annuler</AlertDialogCancel>
                   <AlertDialogAction onClick={confirmDeactivate} className="rounded-xl bg-red-500 hover:bg-red-600 text-white">
                      Révoquer
-                  </AlertDialogAction>
-               </AlertDialogFooter>
-            </AlertDialogContent>
-         </AlertDialog>
-
-         {/* ── Delete Confirmation ── */}
-         <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
-            <AlertDialogContent className="rounded-3xl border-slate-100">
-               <AlertDialogHeader>
-                  <AlertDialogTitle>Supprimer définitivement l'employé ?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                     Le compte de <strong>{deleteTarget?.name}</strong> sera définitivement supprimé. Cette action est irréversible.
-                  </AlertDialogDescription>
-               </AlertDialogHeader>
-               <AlertDialogFooter>
-                  <AlertDialogCancel className="rounded-xl">Annuler</AlertDialogCancel>
-                  <AlertDialogAction onClick={confirmDelete} className="rounded-xl bg-red-600 hover:bg-red-700 text-white">
-                     Supprimer
                   </AlertDialogAction>
                </AlertDialogFooter>
             </AlertDialogContent>
@@ -1604,20 +1267,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    });
 
    const perf = perfQuery.data;
-   const stats = perf?.stats ?? { confirmed_count: 0, delivered_count: 0, returned_count: 0, cancelled_count: 0, total_assigned: 0, confirmation_rate: 0 };
+   const stats = perf?.data ?? { confirmed: 0, delivered: 0, cancelled: 0, total_assigned: 0, confirmation_rate: 0, delivery_rate: 0 };
    const paymentType = employee?.payment_type ?? '';
    const paymentAmount = employee?.payment_amount ?? 0;
-
-   const confirmed = stats.confirmed_count ?? 0;
-   const delivered = stats.delivered_count ?? 0;
-   const cancelled = stats.cancelled_count ?? 0;
-   const returned = stats.returned_count ?? 0;
-   const total_assigned = stats.total_assigned ?? 0;
-
-   const computedSalary = stats.salary ?? (
-     paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
-     : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
-   );
+   const computedSalary = paymentType === 'PER_CONFIRMED_ORDER' ? stats.confirmed * paymentAmount
+     : paymentType === 'PER_DELIVERED_ORDER' ? stats.delivered * paymentAmount
+     : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0;
    const totalSalary = computedSalary + bonus;
    const maxBar = Math.max(...(perf?.daily_chart ?? [{ count: 1 }]).map((d: any) => d.count), 1);
 
@@ -1625,40 +1280,36 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
       <Dialog open={open} onOpenChange={onOpenChange}>
          <DialogContent className="max-w-3xl w-[96vw] p-0 border-none bg-white rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
             {/* Header */}
-            <div className="bg-slate-900 p-6 sm:p-8 text-white shrink-0">
-               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="bg-[#2D3436] p-6 sm:p-8 text-white shrink-0">
+               <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 sm:gap-5">
-                     <div className="size-12 sm:size-14 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
-                        <Banknote className="size-6 sm:size-7" />
+                     <div className="size-12 sm:size-14 rounded-2xl bg-[#20bf6b] flex items-center justify-center shadow-xl shadow-emerald-500/20 shrink-0">
+                        <Banknote className="size-6 sm:size-8" />
                      </div>
                      <div>
-                        <DialogTitle className="text-lg sm:text-xl font-bold">{employee?.name}</DialogTitle>
-                        <p className="text-emerald-100 text-xs font-medium mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance</p>
+                        <DialogTitle className="text-lg sm:text-xl font-black uppercase tracking-tight">{employee?.name}</DialogTitle>
+                        <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance</p>
                      </div>
                   </div>
                   {/* KPI pills */}
-                  <div className="flex items-center gap-4">
-                     <div className="flex flex-col">
-                        <p className="text-xs font-medium text-slate-400">Confirmées</p>
-                        <p className="text-2xl font-bold text-emerald-400">{confirmed}</p>
+                  <div className="hidden sm:flex items-center gap-3">
+                     <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
+                        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">Confirmées</p>
+                        <p className="text-xl font-black text-[#20bf6b]">{stats.confirmed}</p>
                      </div>
-                     <div className="w-px h-10 bg-slate-700 hidden sm:block"></div>
-                     <div className="flex flex-col">
-                        <p className="text-xs font-medium text-slate-400">Salaire estimé</p>
-                        <p className="text-2xl font-bold text-white">{formatPrice(computedSalary)}</p>
+                     <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
+                        <p className="text-[9px] font-black text-white/40 uppercase tracking-widest">Salaire</p>
+                        <p className="text-xl font-black text-white">{formatPrice(computedSalary)}</p>
                      </div>
                   </div>
                </div>
 
                {/* Tabs */}
-               <div className="flex gap-2 mt-8 border-b border-slate-700">
+               <div className="flex gap-1 mt-5 bg-white/10 rounded-2xl p-1">
                   {([['salary', 'Bulletin de Paie', Banknote], ['orders', 'Commandes', Package], ['audit', 'Traçabilité', Activity]] as const).map(([id, label, Icon]) => (
                      <button key={id} onClick={() => setActiveProfileTab(id)}
-                        className={cn(
-                           "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px",
-                           activeProfileTab === id ? "border-emerald-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"
-                        )}>
-                        <Icon className="size-4" /><span className="hidden sm:inline">{label}</span>
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeProfileTab === id ? 'bg-white text-[#2D3436] shadow' : 'text-white/50 hover:text-white/80'}`}>
+                        <Icon className="size-3.5" /><span className="hidden sm:inline">{label}</span>
                      </button>
                   ))}
                </div>
@@ -1695,10 +1346,10 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      {/* Stats grid */}
                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
-                           { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
-                           { label: 'Confirmées', value: confirmed, color: '#20bf6b' },
-                           { label: 'Livrées', value: delivered, color: '#26de81' },
-                           { label: 'Annulées', value: cancelled, color: '#eb4d4b' },
+                           { label: 'Assignées', value: stats.total_assigned, color: '#4b7bec' },
+                           { label: 'Confirmées', value: stats.confirmed, color: '#20bf6b' },
+                           { label: 'Livrées', value: stats.delivered, color: '#26de81' },
+                           { label: 'Annulées', value: stats.cancelled, color: '#eb4d4b' },
                         ].map(s => (
                            <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
                               <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{s.label}</p>
@@ -1711,7 +1362,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      <div className="bg-slate-50 rounded-3xl p-6 space-y-4 border border-slate-100">
                         <div className="flex justify-between items-center text-xs font-bold text-slate-500">
                            <span>{paymentType === 'PER_DELIVERED_ORDER' ? 'Commandes livrées' : paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes confirmées'}</span>
-                           <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${paymentType === 'PER_DELIVERED_ORDER' ? delivered : confirmed} × ${formatPrice(paymentAmount)}`}</span>
+                           <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${paymentType === 'PER_DELIVERED_ORDER' ? stats.delivered : stats.confirmed} × ${formatPrice(paymentAmount)}`}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold text-[#20bf6b]">
                            <span>Total commissions</span>
@@ -1730,12 +1381,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         )}
                         <div className="pt-4 border-t border-slate-200 flex items-end justify-between">
                            <div>
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Net à payer</p>
-                              <p className="text-3xl font-bold text-slate-900">{formatPrice(totalSalary)}</p>
+                              <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] mb-1">Total Net à payer</p>
+                              <p className="text-3xl font-black text-slate-900">{formatPrice(totalSalary)}</p>
                            </div>
                            <div className="text-right">
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux confirmation</p>
-                              <p className="text-2xl font-bold text-emerald-500">{stats.confirmation_rate}%</p>
+                              <p className="text-[10px] font-black uppercase text-slate-400">Taux confirmation</p>
+                              <p className="text-2xl font-black text-[#20bf6b]">{stats.confirmation_rate}%</p>
                            </div>
                         </div>
                      </div>
@@ -1745,35 +1396,23 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                ) : activeProfileTab === 'orders' ? (
                   <div className="p-4 sm:p-6">
                      {(perf?.recent_orders ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                              <Package className="size-8 text-slate-300" />
-                           </div>
-                           <h3 className="text-sm font-semibold text-slate-700">Aucune commande</h3>
-                           <p className="text-sm text-slate-500 mt-1">Cet employé n'a pas encore de commandes assignées.</p>
+                        <div className="text-center py-16">
+                           <Package className="size-10 mx-auto mb-3 text-slate-100" />
+                           <p className="text-xs font-black uppercase text-slate-300">Aucune commande assignée</p>
                         </div>
                      ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                            {(perf?.recent_orders ?? []).map((o: any) => (
-                              <div key={o.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-colors gap-4">
-                                 <div className="flex items-start sm:items-center gap-4">
-                                    <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                       <Package className="size-5 text-slate-500" />
-                                    </div>
-                                    <div>
-                                       <p className="text-sm font-semibold text-slate-900">{o.customer_name}</p>
-                                       <p className="text-xs text-slate-500 mt-0.5">#{o.order_number} · {o.wilaya}</p>
-                                    </div>
+                              <div key={o.id} className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-white transition-colors">
+                                 <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black font-mono text-slate-400">#{o.order_number}</span>
+                                    <span className="text-sm font-bold text-slate-800">{o.customer_name}</span>
+                                    <span className="text-[10px] text-slate-400">{o.wilaya}</span>
                                  </div>
-                                 <div className="flex items-center justify-between sm:justify-end gap-6 sm:w-auto w-full border-t sm:border-t-0 pt-3 sm:pt-0">
-                                    <span className="text-sm font-medium text-slate-700">{formatPrice(o.total)}</span>
-                                    <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
-                                       {({
-                                          NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
-                                          IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
-                                          CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: 'Livrée',
-                                          CANCELLED: 'Annulée', RETURNED: 'Retournée', ABANDONED: 'Abandonné'
-                                       } as Record<string, string>)[o.status] || o.status}
+                                 <div className="flex items-center gap-3">
+                                    <span className="text-sm font-black text-slate-700">{formatPrice(o.total)}</span>
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '20', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
+                                       {o.status}
                                     </span>
                                  </div>
                               </div>
@@ -1786,32 +1425,24 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                ) : (
                   <div className="p-4 sm:p-6">
                      {(perf?.audit_logs ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                              <Activity className="size-8 text-slate-300" />
-                           </div>
-                           <h3 className="text-sm font-semibold text-slate-700">Aucune action</h3>
-                           <p className="text-sm text-slate-500 mt-1">L'historique des actions de cet employé est vide.</p>
+                        <div className="text-center py-16">
+                           <Activity className="size-10 mx-auto mb-3 text-slate-100" />
+                           <p className="text-xs font-black uppercase text-slate-300">Aucune action enregistrée</p>
                         </div>
                      ) : (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                            {(perf?.audit_logs ?? []).map((a: any) => (
-                              <div key={a.id} className="flex items-start gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                                 <div className="size-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                                    <Activity className="size-5 text-blue-500" />
+                              <div key={a.id} className="flex items-start gap-3 px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                 <div className="size-7 rounded-xl bg-[#4b7bec]/10 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Activity className="size-3.5 text-[#4b7bec]" />
                                  </div>
-                                 <div className="flex-1 min-w-0 pt-0.5">
-                                    <p className="text-sm text-slate-700 font-medium">
-                                       {a.action === 'CREATE' ? 'Création' : a.action === 'UPDATE' ? 'Mise à jour' : a.action === 'DELETE' ? 'Suppression' : a.action} d'un enregistrement
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-                                       <span>{a.entity}</span>
-                                       <span>•</span>
-                                       <span className="font-mono text-slate-400">{a.entity_id?.slice(0, 8)}</span>
+                                 <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                       <span className="text-[10px] font-black uppercase text-[#4b7bec] tracking-widest">{a.action}</span>
+                                       <span className="text-[10px] font-bold text-slate-400">{a.entity}</span>
+                                       <span className="text-[9px] font-mono text-slate-300 truncate">{a.entity_id?.slice(0, 8)}…</span>
                                     </div>
-                                 </div>
-                                 <div className="text-xs text-slate-400 shrink-0 pt-1">
-                                    {a.created_at ? new Date(a.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                                    <p className="text-[9px] text-slate-300 mt-0.5">{a.created_at ? new Date(a.created_at).toLocaleString('fr-FR') : '—'}</p>
                                  </div>
                               </div>
                            ))}

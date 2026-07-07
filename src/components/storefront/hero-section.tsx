@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { Package, ArrowRight, ShoppingBag, ChevronDown, Zap } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
+import { useCartStore } from '@/store/cart-store';
 import type { Product, Store } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { useTranslation } from '@/hooks/use-translation';
 
 // ─── Template helpers ─────────────────────────────────────────
 function getHeroTheme(store: Store) {
@@ -17,7 +17,7 @@ function getHeroTheme(store: Store) {
 }
 
 function heroText(store: Store, defaults: { headline: string; subtitle: string; cta: string; cta2: string }) {
-  const tc = store.theme_config ?? ({} as any);
+  const tc = store.theme_config ?? {};
   return {
     headline: (tc.heroHeadline as string | undefined) || defaults.headline,
     subtitle: (tc.heroSubtitle as string | undefined) || store.description || defaults.subtitle,
@@ -33,87 +33,56 @@ function heroText(store: Store, defaults: { headline: string; subtitle: string; 
 }
 
 // ─── ATHLETIC hero ────────────────────────────────────────────
-function AthleticTextContent({ primary, fontWeight, headline, subtitle, cta, cta2, isFullLayout, productCount, heroTag, heroStats, onShop, onScroll }: {
+function AthleticTextContent({ primary, fontWeight, headline, subtitle, cta, cta2, isFullLayout, productCount, onShop, onScroll }: {
   primary: string; fontWeight: string; headline: string; subtitle: string;
   cta: string; cta2: string; isFullLayout: boolean; productCount: string;
-  heroTag: string; heroStats: Array<{label: string; value: string}>;
   onShop: () => void; onScroll: () => void;
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, x: isFullLayout ? 0 : -60, y: isFullLayout ? 30 : 0 }}
+      initial={{ opacity: 0, x: isFullLayout ? 0 : -40, y: isFullLayout ? 20 : 0 }}
       animate={{ opacity: 1, x: 0, y: 0 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-      className="flex flex-col items-start text-left max-w-2xl w-full"
+      transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+      className="flex flex-col items-start text-left max-w-xl w-full"
     >
-      {/* Hero tag — shown only if configured in theme_config */}
-      {(primary && (fontWeight || headline)) && (
-        <div className="flex items-center gap-4 mb-6">
-          <motion.div 
-            animate={{ scaleX: [1, 1.5, 1] }}
-            transition={{ duration: 3, repeat: Infinity }}
-            className="h-1 w-12 rounded-full" 
-            style={{ backgroundColor: primary }} 
-          />
-          {heroTag && (
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] flex items-center" style={{ color: primary }}>
-              <Zap className="inline size-3 mr-1.5 animate-bounce" /> {heroTag}
-            </span>
-          )}
-        </div>
-      )}
-      
-      {(() => {
-        const { locale } = useTranslation();
-        return (
-          <h1 
-            className={cn(
-              "text-5xl sm:text-7xl md:text-8xl uppercase tracking-tight text-white leading-[0.88] select-none",
-              locale === 'ar' ? "font-black" : `${fontWeight} italic`
-            )}
-            style={locale === 'ar' ? { fontFamily: "'Cairo', 'Tajawal', 'Outfit', sans-serif" } : { fontFamily: '"Playfair Display", "Didot", serif' }}
-          >
-            {headline}
-          </h1>
-        );
-      })()}
-      
-      <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.25em] text-white/50 max-w-md leading-relaxed">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="h-0.5 w-10" style={{ backgroundColor: primary }} />
+        <span className="text-[11px] font-black uppercase tracking-[0.4em]" style={{ color: primary }}>
+          <Zap className="inline size-3 mr-1" />Nouvelle Collection
+        </span>
+      </div>
+      <h1 className={`text-5xl sm:text-7xl md:text-8xl ${fontWeight} uppercase tracking-tighter text-white leading-[0.88]`}>
+        {headline}
+      </h1>
+      <p className="mt-8 text-[12px] font-medium uppercase tracking-widest text-white/40 max-w-md leading-relaxed">
         {subtitle}
       </p>
-      
-      <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-5 w-full sm:w-auto">
+      <div className="mt-10 flex flex-col sm:flex-row items-start sm:items-center gap-5">
         <motion.button
-          whileHover={{ scale: 1.04, skewX: -6 }} 
-          whileTap={{ scale: 0.98 }}
+          whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
           onClick={onShop}
-          className="relative overflow-hidden px-10 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-black group rounded-lg"
+          className="relative overflow-hidden px-10 py-4 text-[11px] font-black uppercase tracking-[0.3em] text-black group"
           style={{ backgroundColor: primary }}
         >
-          <span className="relative z-10 flex items-center justify-center gap-2">
-            {cta} <ArrowRight className="size-4" />
-          </span>
-          <div className="absolute inset-0 bg-white/30 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300" />
+          <span className="relative z-10">{cta} →</span>
+          <div className="absolute inset-0 bg-white/20 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-500" />
         </motion.button>
-        <button 
-          onClick={onScroll} 
-          className="text-[11px] py-4 px-6 font-black uppercase tracking-[0.3em] text-white/40 hover:text-white border border-white/10 hover:border-white/40 rounded-lg transition-colors flex items-center justify-center"
-        >
+        <button onClick={onScroll} className="text-[11px] font-black uppercase tracking-[0.3em] text-white/40 border-b border-white/10 pb-1 hover:text-white hover:border-white/40 transition-colors">
           {cta2}
         </button>
       </div>
-      
-      {/* Dynamic stats from theme_config.heroStats or hidden */}
-      {heroStats.length > 0 && (
-        <div className="mt-16 flex gap-12 flex-wrap">
-          {heroStats.map((s) => (
-            <div key={s.label} className="flex flex-col gap-1 border-l-4 pl-4" style={{ borderColor: `${primary}30` }}>
-              <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">{s.label}</span>
-              <span className="text-xs font-black uppercase tracking-widest text-white">{s.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="mt-14 flex gap-8 flex-wrap">
+        {[
+          { label: 'Produits', value: productCount },
+          { label: 'Livraison', value: 'Express' },
+          { label: 'Retour', value: '14 Jours' },
+        ].map((s) => (
+          <div key={s.label} className="flex flex-col gap-1 border-l-2 pl-4" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <span className="text-[10px] font-black uppercase tracking-widest text-white/30">{s.label}</span>
+            <span className="text-[12px] font-black uppercase tracking-widest text-white">{s.value}</span>
+          </div>
+        ))}
+      </div>
     </motion.div>
   );
 }
@@ -121,98 +90,82 @@ function AthleticTextContent({ primary, fontWeight, headline, subtitle, cta, cta
 function AthleticHero({
   store, products, onShop, onScroll,
 }: { store: Store; products: Product[]; loading: boolean; onShop: () => void; onScroll: () => void }) {
-  const { t, dir } = useTranslation();
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image || products[0]?.images?.[0];
   const bannerImg = store.banner_url || heroImg;
   const isVideo = store.theme_config?.bannerIsVideo;
   const { headline, subtitle, cta, cta2, fontWeight, isFullLayout } = heroText(store, {
     headline: store.name,
-    subtitle: store.description || '',
-    cta: t('exploreAll'),
-    cta2: t('seeAll'),
+    subtitle: 'Performance. Qualité. Style.',
+    cta: 'Explorer la collection',
+    cta2: 'Best Sellers',
   });
-  // heroTag from theme_config only
-  const heroTag = (store.theme_config?.heroTag as string | undefined) ?? '';
-  // heroStats from theme_config only — no hardcoded defaults
-  const rawStats = store.theme_config?.heroStats as Array<{label: string; value: string}> | undefined;
-  const heroStats = rawStats ?? [];
-  const productCount = String(store._count?.products ?? '—');
-  const textProps = { primary, fontWeight, headline, subtitle, cta, cta2, isFullLayout, productCount, heroTag, heroStats, onShop, onScroll };
+  const textProps = { primary, fontWeight, headline, subtitle, cta, cta2, isFullLayout, productCount: String(store._count?.products ?? '—'), onShop, onScroll };
 
   if (isFullLayout) {
     return (
-      <div className="w-full bg-[#050505] min-h-[75vh] flex items-center relative overflow-hidden">
-        {/* Dynamic diagonal aesthetic slash backdrops */}
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-indigo-950/20 to-transparent skew-x-12 pointer-events-none" />
-        <div className="absolute inset-0 z-0">
-          {bannerImg && (
-            isVideo ? (
-              <video src={bannerImg} className="absolute inset-0 h-full w-full object-cover" muted loop autoPlay playsInline />
-            ) : (
-              <motion.img initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                transition={{ duration: 1.5 }} src={bannerImg} alt={store.name}
-                className="absolute inset-0 h-full w-full object-cover" />
-            )
+      <div className="w-full bg-[#0A0A0A]">
+        <section className="relative min-h-screen w-full overflow-hidden flex items-center justify-center">
+          {bannerImg && !isVideo && (
+            <motion.img initial={{ scale: 1.1, opacity: 0 }} animate={{ scale: 1, opacity: 0.4 }}
+              transition={{ duration: 2 }} src={bannerImg} alt={store.name}
+              className="absolute inset-0 h-full w-full object-cover" />
           )}
-        </div>
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
-          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
-        
-        <div className="relative z-10 flex items-center justify-start w-full px-8 sm:px-24 lg:px-32">
-          <AthleticTextContent {...textProps} />
-        </div>
+          {bannerImg && isVideo && (
+            <video src={bannerImg} className="absolute inset-0 h-full w-full object-cover opacity-40" muted loop autoPlay playsInline />
+          )}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.04]"
+            style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+          <div className="relative z-10 flex items-center justify-start w-full px-8 sm:px-32 lg:px-48">
+            <AthleticTextContent {...textProps} />
+          </div>
+        </section>
       </div>
     );
   }
 
   return (
-    <div className="w-full bg-[#050505]">
-      <section className="relative min-h-[75vh] w-full overflow-hidden flex lg:grid lg:grid-cols-12">
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
-          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
-        
-        {/* Mobile backdrop */}
+    <div className="w-full bg-[#0A0A0A]">
+      <section className="relative min-h-screen w-full overflow-hidden flex lg:grid lg:grid-cols-2">
+        <div className="absolute inset-0 pointer-events-none opacity-[0.04]"
+          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
         <div className="absolute inset-0 block lg:hidden z-0">
           {bannerImg && (
             isVideo
-              ? <video src={bannerImg} className="h-full w-full object-cover" muted loop autoPlay playsInline />
-              : <img src={bannerImg} alt={store.name} className="h-full w-full object-cover" />
+              ? <video src={bannerImg} className="h-full w-full object-cover opacity-25" muted loop autoPlay playsInline />
+              : <img src={bannerImg} alt={store.name} className="h-full w-full object-cover opacity-25 grayscale" />
           )}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/70 to-transparent" />
         </div>
-
-        <div className="relative lg:col-span-7 flex items-center justify-center p-8 sm:p-20 lg:p-24 z-10">
+        <div className="relative flex items-center justify-center p-8 sm:p-16 lg:p-20 z-10 flex-1">
           <AthleticTextContent {...textProps} />
         </div>
-        
-        <div className="relative lg:col-span-5 h-full w-full overflow-hidden hidden lg:block">
+        <div className="relative h-full w-full overflow-hidden hidden lg:block">
           {bannerImg ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1.5 }} className="absolute inset-0 h-full w-full">
+            <motion.div initial={{ scale: 1.15, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 2 }} className="absolute inset-0">
               {isVideo
                 ? <video src={bannerImg} className="h-full w-full object-cover" muted loop autoPlay playsInline />
-                : <img src={bannerImg} alt={store.name} className="h-full w-full object-cover" />
+                : <img src={bannerImg} alt={store.name} className="h-full w-full object-cover brightness-90 contrast-110" />
               }
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0A0A0A] via-[#0A0A0A]/20 to-transparent" />
             </motion.div>
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#050505] to-[#121212]">
-              <Package className="size-32 opacity-[0.03]" style={{ color: primary }} />
+            <div className="absolute inset-0 flex items-center justify-center" style={{ background: `linear-gradient(135deg, #0A0A0A 40%, ${primary}18)` }}>
+              <Package className="size-32 opacity-10" style={{ color: primary }} />
             </div>
           )}
-
-          {/* Dynamic athletic neon accent banner float */}
           {products[0] && (
-            <motion.div 
-              animate={{ y: [0, -12, 0] }} 
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute bottom-16 right-16 bg-[#0A0A0A] border border-white/10 p-6 shadow-2xl z-20 rounded-2xl max-w-[280px]"
+            <motion.div animate={{ y: [0, -16, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute bottom-16 right-12 bg-white/5 backdrop-blur-xl border p-5 shadow-2xl z-20"
+              style={{ borderColor: `${primary}25` }}
             >
               <div className="flex items-center gap-4">
-                <div className="size-12 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: primary }}>
-                  <Zap className="size-6 text-black" />
+                <div className="size-12 flex items-center justify-center" style={{ backgroundColor: primary }}>
+                  <Package className="size-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: primary }}>Top Produit</p>
-                  <p className="text-xs font-black uppercase tracking-tight text-white line-clamp-1 mt-0.5">{products[0].name}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: primary }}>Nouveauté</p>
+                  <p className="text-[12px] font-black uppercase tracking-tight text-white line-clamp-1">{products[0].name}</p>
                 </div>
               </div>
             </motion.div>
@@ -225,90 +178,70 @@ function AthleticHero({
 
 // ─── MINIMALIST / CLEAN hero ──────────────────────────────────
 function CleanHero({
-  store, products, heroTag, onShop, onScroll,
-}: { store: Store; products: Product[]; loading: boolean; heroTag: string; onShop: () => void; onScroll: () => void }) {
-  const { t, dir, locale } = useTranslation();
+  store, products, onShop, onScroll,
+}: { store: Store; products: Product[]; loading: boolean; onShop: () => void; onScroll: () => void }) {
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image ?? (products[0]?.images as string[] | undefined)?.[0];
   const bannerImg = store.banner_url ?? heroImg;
   const isVideo = store.theme_config?.bannerIsVideo as boolean | undefined;
 
-  const tc = store.theme_config ?? ({} as any);
+  const tc = store.theme_config ?? {};
   const headline = (tc.heroHeadline as string | undefined) ?? store.name;
-  const subtitle  = (tc.heroSubtitle  as string | undefined) ?? store.description ?? t('heroSubtitleDefault');
-  const cta       = (tc.heroCta       as string | undefined) ?? t('viewCollection');
+  const subtitle  = (tc.heroSubtitle  as string | undefined) ?? store.description ?? 'Découvrez notre sélection de produits soigneusement conçus pour vous.';
+  const cta       = (tc.heroCta       as string | undefined) ?? 'Voir la collection';
   const isFullLayout = tc.heroLayout === 'full';
-
-  // Elegant Google Font override based on store settings
-  const fontStyle = {
-    fontFamily: locale === 'ar'
-      ? "'Cairo', 'Tajawal', 'Outfit', sans-serif"
-      : store.theme_config?.fontFamily
-        ? `"${store.theme_config.fontFamily}", sans-serif`
-        : '"Playfair Display", "Didot", serif'
-  };
 
   if (isFullLayout) {
     return (
-      <section className="relative w-full min-h-[75vh] flex items-center justify-center overflow-hidden bg-neutral-950 py-16">
+      <section className="relative w-full min-h-screen flex items-center justify-center overflow-hidden bg-gray-900">
         {/* Background Media */}
-        {bannerImg ? (
-          <div className="absolute inset-0 z-0">
-            {isVideo ? (
-              <video 
-                src={bannerImg} 
-                className="h-full w-full object-cover opacity-100" 
-                muted loop autoPlay playsInline
-              />
-            ) : (
-              <motion.img
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 1.5 }}
-                src={bannerImg} alt={store.name}
-                className="h-full w-full object-cover"
-              />
-            )}
-          </div>
-        ) : (
-          /* Subtle premium mesh gradient fallback */
-          <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 z-0 opacity-90" />
+        {bannerImg && !isVideo && (
+          <motion.img
+            initial={{ scale: 1.1 }} animate={{ scale: 1 }}
+            transition={{ duration: 2, ease: 'easeOut' }}
+            src={bannerImg} alt={store.name}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )}
+        {bannerImg && isVideo && (
+          <video src={bannerImg} className="absolute inset-0 h-full w-full object-cover" muted loop autoPlay playsInline/>
         )}
         
+        {/* Aesthetic Overlay */}
+        <div className="absolute inset-0 z-10" style={{ backgroundColor: 'rgba(13, 27, 42, 0.4)' }} />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 z-10 pointer-events-none" />
+
         <div className="relative z-20 w-full max-w-5xl mx-auto px-6 text-center">
           <motion.div
-            initial={{ opacity: 0, y: 25 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-            className="max-w-4xl mx-auto"
+            initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           >
-            <h1
-              className={cn("text-4xl sm:text-6xl lg:text-7xl text-white tracking-tight leading-[1.05] mb-6 drop-shadow-lg", locale === 'ar' ? 'font-black' : 'font-extralight')}
-              style={fontStyle}
+            <h1 
+              className="text-5xl sm:text-7xl lg:text-8xl font-semibold text-white tracking-tighter leading-[0.95] mb-8"
+              style={{ fontFamily: '"Montserrat", sans-serif' }}
             >
-              {headline}
+              Redéfinissez votre façon de voyager.
             </h1>
-            <p
-              className="text-xs sm:text-sm text-white font-medium max-w-xl mx-auto leading-relaxed tracking-wide mt-4 mb-10 drop-shadow-md"
+            <p 
+              className="text-xl sm:text-2xl text-white/90 italic mb-12 max-w-2xl mx-auto"
+              style={{ fontFamily: '"Playfair Display", serif', fontWeight: 300 }}
             >
-              {subtitle}
+              Le confort d'un nuage, partout avec vous.
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
+            <div className="flex flex-wrap items-center justify-center gap-6">
+              <button
                 onClick={onShop}
-                className="w-full sm:w-auto px-10 py-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-neutral-900 bg-white hover:bg-neutral-900 hover:text-white transition-all duration-300 rounded-none flex items-center justify-center gap-2"
+                className="px-12 py-5 text-[11px] font-black uppercase tracking-[0.4em] text-white shadow-2xl hover:brightness-110 transition-all active:scale-[0.98]"
+                style={{ backgroundColor: primary }}
               >
-                {cta} <ArrowRight className="size-3.5" />
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.01 }}
+                {cta}
+              </button>
+              <button
                 onClick={onScroll}
-                className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/80 hover:text-white border-b border-white/20 hover:border-white pb-1.5 transition-all duration-300 flex items-center gap-2"
+                className="text-[11px] font-black uppercase tracking-[0.3em] text-white border-b border-white/30 pb-1 hover:border-white transition-colors"
               >
-                {t('seeAll')} <ChevronDown className="size-3" />
-              </motion.button>
+                Découvrir plus
+              </button>
             </div>
           </motion.div>
         </div>
@@ -317,91 +250,68 @@ function CleanHero({
   }
 
   return (
-    <section className="w-full min-h-[75vh] flex items-center bg-white py-12 lg:py-0 overflow-hidden relative">
-      <div className="container mx-auto px-6 sm:px-12 lg:px-20 xl:px-24">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
-          {/* Text content - asymmetric layout */}
-          <div className="lg:col-span-6 flex flex-col justify-center order-2 lg:order-1">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-              className="max-w-xl w-full"
+    <section className="w-full min-h-[85vh] grid lg:grid-cols-2 overflow-hidden bg-white">
+      <div className="flex items-center order-2 lg:order-1 px-6 sm:px-12 lg:px-20 xl:px-32 py-16 lg:py-0">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-xl"
+        >
+          <h1 className="text-5xl sm:text-6xl xl:text-7xl font-black text-gray-900 tracking-tight leading-[1.05] mb-6">
+            {headline}
+          </h1>
+          <p className="text-base sm:text-lg text-gray-500 leading-relaxed mb-10 max-w-md">
+            {subtitle}
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              onClick={onShop}
+              className="px-10 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-white hover:brightness-110 transition-all active:scale-[0.98] shadow-xl"
+              style={{ backgroundColor: primary }}
             >
-              <div className="flex items-center gap-2 mb-4">
-                {heroTag && (
-                  <span className="text-[9px] font-medium uppercase tracking-[0.4em] text-neutral-400">{heroTag}</span>
-                )}
-              </div>
-              
-              <h1 
-                className={cn("text-4xl sm:text-5xl lg:text-6xl xl:text-7xl text-neutral-900 tracking-tight leading-[1.05] mb-8 uppercase", locale === 'ar' ? 'font-black' : 'font-extralight')}
-                style={fontStyle}
-              >
-                {headline}
-              </h1>
-              
-              <p className="text-xs sm:text-sm text-neutral-500 leading-relaxed mb-10 max-w-md font-light">
-                {subtitle}
-              </p>
-              
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={onShop}
-                  className="px-9 py-4.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-white hover:bg-neutral-900 transition-all duration-300 rounded-none flex items-center justify-center gap-2"
-                  style={{ backgroundColor: primary }}
-                >
-                  {cta} <ArrowRight className="size-3.5" />
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={onScroll}
-                  className="px-9 py-4.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-neutral-800 bg-transparent border border-neutral-200 hover:border-neutral-900 transition-all duration-300 rounded-none flex items-center justify-center"
-                >
-                  {t('seeAll')}
-                </motion.button>
-              </div>
+              {cta}
+            </button>
+            <button
+              onClick={onScroll}
+              className="px-10 py-5 text-[11px] font-black uppercase tracking-[0.3em] text-gray-900 border border-gray-200 hover:border-gray-900 transition-colors"
+            >
+              Voir Lookbook
+            </button>
+          </div>
+        </motion.div>
+      </div>
+
+      <div className="relative flex items-center justify-center order-1 lg:order-2 px-6 sm:px-12 lg:pr-20 py-12 lg:py-0">
+        <div className="relative w-full aspect-[4/3] lg:aspect-square max-w-2xl group">
+          {bannerImg ? (
+            <motion.div
+              initial={{ scale: 1.05, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 1.2, ease: 'easeOut' }}
+              className="relative h-full w-full overflow-hidden rounded-2xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] border border-gray-100"
+            >
+              {isVideo
+                ? <video src={bannerImg} className="h-full w-full object-cover" muted loop autoPlay playsInline/>
+                : <img src={bannerImg} alt={store.name} className="h-full w-full object-cover" />
+              }
+              <div className="absolute inset-0 bg-gradient-to-tr from-black/5 to-transparent pointer-events-none" />
             </motion.div>
-          </div>
-
-          {/* Media visual - asymmetric split */}
-          <div className="lg:col-span-6 order-1 lg:order-2 flex justify-center lg:justify-end">
-            <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] lg:aspect-[4/5] max-w-xl group">
-              {bannerImg ? (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 1 }}
-                  className="relative h-full w-full overflow-hidden rounded-none shadow-[0_24px_50px_-16px_rgba(0,0,0,0.06)] border border-neutral-100 bg-neutral-50"
-                >
-                  {isVideo ? (
-                    <video 
-                      src={bannerImg} 
-                      className="h-full w-full object-cover" 
-                      muted loop autoPlay playsInline
-                    />
-                  ) : (
-                    <img 
-                      src={bannerImg} 
-                      alt={store.name} 
-                      className="h-full w-full object-cover" 
-                    />
-                  )}
-                </motion.div>
-              ) : (
-                /* Fallback */
-                <div className="h-full w-full rounded-none bg-neutral-50 flex flex-col items-center justify-center border border-neutral-200/60 shadow-sm">
-                  <Package className="size-16 text-neutral-300 stroke-[1] mb-3 animate-pulse" />
-                  <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-400">{t('minimalistConcept')}</span>
-                </div>
-              )}
-
-
+          ) : (
+            <div className="h-full w-full rounded-2xl bg-gray-50 flex items-center justify-center border border-dashed border-gray-200">
+              <Package className="size-20 text-gray-200"/>
             </div>
-          </div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.8, duration: 0.8 }}
+            className="absolute -bottom-6 -left-6 bg-white/80 backdrop-blur-md border border-white/40 shadow-2xl p-6 rounded-2xl max-w-[240px] z-20"
+          >
+            <p className="text-[9px] font-black uppercase tracking-[0.4em] mb-2" style={{ color: primary }}>
+              Nouveau Lancement
+            </p>
+            <h3 className="text-xl font-black text-gray-900 leading-tight">The Zenith Series</h3>
+            <div className="mt-4 h-1 w-12 rounded-full" style={{ backgroundColor: primary }} />
+          </motion.div>
         </div>
       </div>
     </section>
@@ -414,104 +324,65 @@ function LuxeMediaBg({ bannerImg, isVideo, storeName }: {
 }) {
   if (!bannerImg) return null;
   return (
-    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+    <div className="absolute inset-0 z-0">
       {isVideo ? (
-        <video 
-          src={bannerImg} 
-          className="h-full w-full object-cover pointer-events-none" 
-          muted 
-          loop 
-          autoPlay 
-          playsInline 
-          preload="auto"
-        />
+        <video src={bannerImg} className="h-full w-full object-cover grayscale" muted loop autoPlay playsInline />
       ) : (
-        <img 
-          src={bannerImg} 
-          alt={storeName} 
-          className="h-full w-full object-cover" 
-        />
+        <motion.img initial={{ scale: 1.1 }} animate={{ scale: 1 }} transition={{ duration: 2 }} src={bannerImg} alt={storeName} className="h-full w-full object-cover grayscale brightness-75" />
       )}
-      {/* Dark gradient overlay to fade into page background and make text highly readable */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#07090E] via-black/50 to-black/40 z-10" />
+      <div className="absolute inset-0 bg-black/20" />
     </div>
   );
 }
 
-function LuxeTextContent({ primary, headline, subtitle, cta, heroTag, luxeAttributes, onShop, onScroll }: {
+function LuxeTextContent({ primary, fontClass, headline, subtitle, cta, cta2, onShop, onScroll }: {
   primary: string; fontClass: string; headline: string; subtitle: string;
-  cta: string; cta2: string; heroTag: string;
-  luxeAttributes: Array<{label: string; val: string}>;
-  onShop: () => void; onScroll: () => void;
+  cta: string; cta2: string; onShop: () => void; onScroll: () => void;
 }) {
-  const { locale } = useTranslation();
-  const fontStyle = {
-    fontFamily: locale === 'ar'
-      ? "'Cairo', 'Tajawal', 'Outfit', sans-serif"
-      : '"Playfair Display", "Didot", "Georgia", serif'
-  };
-  
   return (
-    <div className="relative z-20 max-w-4xl">
-      <motion.div 
-        initial={{ opacity: 0, y: 40 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <div className="inline-flex items-center gap-4 md:gap-6 mb-8 md:mb-10">
-          {heroTag && (
-            <>
-              <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.6em] text-amber-100/60">{heroTag}</span>
-              <div className="h-[1px] w-12 md:w-24 bg-gradient-to-r from-amber-500/40 to-transparent" />
-            </>
-          )}
+    <div className="relative z-10 max-w-4xl">
+      <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 1 }}>
+        <div className="inline-flex items-center gap-4 md:gap-6 mb-8 md:mb-12">
+          <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.6em]" style={{ color: primary }}>Collection Privée</span>
+          <div className="h-px w-12 md:w-24" style={{ backgroundColor: `${primary}40` }} />
         </div>
         
-        <h1 
-          className={cn("text-5xl sm:text-8xl md:text-9xl tracking-tight leading-[0.85] text-white uppercase", locale === 'ar' ? 'font-black' : 'font-light')}
-          style={fontStyle}
-        >
+        <h1 className={cn("text-5xl sm:text-8xl md:text-9xl uppercase tracking-tighter leading-[0.85] text-white", fontClass)}>
           {headline.split(' ').map((word, i) => (
-            <span key={i} className="block last:text-amber-100/40 last:font-thin">{word}</span>
+            <span key={i} className="block last:opacity-50">{word}</span>
           ))}
         </h1>
 
-        <div className="mt-12 md:mt-16 grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-12 items-end">
-          <div className="md:col-span-8 space-y-8">
-            <p className="text-[11px] md:text-xs font-semibold text-white/70 leading-relaxed uppercase tracking-[0.2em] max-w-md">
+        <div className="mt-12 md:mt-16 grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-12 items-end">
+          <div className="space-y-6 md:space-y-8">
+            <p className="text-[11px] md:text-sm font-medium text-white/40 leading-relaxed uppercase tracking-widest max-w-[240px] md:max-w-xs">
               {subtitle}
             </p>
             <div className="flex items-center gap-3 md:gap-4">
-              <motion.button 
-                whileHover={{ scale: 1.03, backgroundColor: '#FFFFFF', color: '#000000' }}
-                whileTap={{ scale: 0.98 }}
-                onClick={onShop}
-                className="px-8 md:px-12 py-4 md:py-5 border border-white bg-white text-black hover:bg-transparent hover:text-white text-[9px] md:text-[10px] font-bold uppercase tracking-[0.4em] transition-all"
-                style={{ borderColor: primary }}
-              >
-                {cta}
-              </motion.button>
-              <motion.button 
-                whileHover={{ y: 5 }}
-                onClick={onScroll} 
-                className="p-4 md:p-5 border border-white/10 text-white/45 hover:text-white hover:border-white/30 transition-all rounded-full"
-              >
-                <ChevronDown className="size-4" />
-              </motion.button>
+               <button 
+                 onClick={onShop}
+                 className="px-6 md:px-10 py-3.5 md:py-5 bg-white text-black text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] hover:bg-slate-200 transition-colors"
+               >
+                 {cta}
+               </button>
+               <button onClick={onScroll} className="p-3.5 md:p-5 border border-white/10 text-white hover:border-white/40 transition-colors">
+                  <ChevronDown className="size-4" />
+               </button>
             </div>
           </div>
 
-          {/* Attributes from theme_config only — no hardcoded defaults */}
-          {luxeAttributes.length > 0 && (
-            <div className="hidden md:flex md:col-span-4 flex-col gap-6 border-l border-white/10 pl-12">
-              {luxeAttributes.map(i => (
-                <div key={i.label}>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-white/20 mb-1">{i.label}</p>
-                  <p className="text-[10px] font-bold text-amber-100/60 uppercase tracking-widest">{i.val}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="hidden md:flex flex-col gap-6 border-l border-white/10 pl-12">
+             {[
+               { label: 'Matériaux', val: 'Premium' },
+               { label: 'Origine', val: 'France/Italie' },
+               { label: 'Edition', val: 'Limitée' }
+             ].map(i => (
+               <div key={i.label}>
+                 <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-white/20 mb-1">{i.label}</p>
+                 <p className="text-xs font-bold text-white uppercase tracking-widest">{i.val}</p>
+               </div>
+             ))}
+          </div>
         </div>
       </motion.div>
     </div>
@@ -521,48 +392,40 @@ function LuxeTextContent({ primary, headline, subtitle, cta, heroTag, luxeAttrib
 function LuxeHero({
   store, products, onShop, onScroll,
 }: { store: Store; products: Product[]; loading: boolean; onShop: () => void; onScroll: () => void }) {
-  const { t, dir } = useTranslation();
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image || products[0]?.images?.[0];
   const bannerImg = store.banner_url || heroImg;
   const isVideo = store.theme_config?.bannerIsVideo;
   const { headline, subtitle, cta, cta2 } = heroText(store, {
     headline: store.name,
-    subtitle: t('luxeHeroSubtitle'),
-    cta: t('seeAll'),
-    cta2: t('exclusiveSelection'),
+    subtitle: "L'art de l'exception — chaque pièce raconte une histoire unique.",
+    cta: 'Découvrir',
+    cta2: 'Exclusivités',
   });
 
   const fontClass = store.theme_config?.heroFont === 'serif' ? 'font-serif' : 'font-black';
-  // heroTag from theme_config only
-  const heroTag = (store.theme_config?.heroTag as string | undefined) ?? '';
-  // luxeAttributes from theme_config only — no hardcoded defaults
-  const rawAttrs = store.theme_config?.heroAttributes as Array<{label: string; val: string}> | undefined;
-  const luxeAttributes = rawAttrs ?? [];
-  const textProps = { primary, fontClass, headline, subtitle, cta, cta2, heroTag, luxeAttributes, onShop, onScroll };
+  const textProps = { primary, fontClass, headline, subtitle, cta, cta2, onShop, onScroll };
 
   return (
-    <div className="w-full bg-[#07090E]">
-      <section className="relative min-h-[80vh] sm:min-h-[85vh] w-full overflow-hidden flex items-center">
-        {/* Micro-frame border overlay to simulate an art gallery */}
-        <div className="absolute inset-0 z-30 border-[16px] md:border-[28px] border-slate-950 pointer-events-none" />
-        
+    <div className="w-full bg-[#0C0F1A]">
+      <section className="relative min-h-screen w-full overflow-hidden flex items-center">
         <LuxeMediaBg bannerImg={bannerImg} isVideo={isVideo} storeName={store.name} />
         
+        <div className="absolute inset-0 z-0 border-[16px] md:border-[40px] border-black/10 pointer-events-none" />
         <div className="absolute inset-y-0 left-1/2 w-px bg-white/5 z-0 hidden lg:block" />
         
-        <div className="relative z-25 w-full px-8 sm:px-24 lg:px-32 py-20">
+        <div className="relative z-10 w-full px-6 sm:px-24 lg:px-32">
           <LuxeTextContent {...textProps} />
         </div>
 
-        <div className="absolute bottom-16 right-16 hidden lg:flex items-center gap-8 z-20">
+        <div className="absolute bottom-12 right-12 hidden lg:flex items-center gap-8 z-20">
            <div className="flex flex-col items-end gap-1">
-              <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.5em]">{t('establishedIn')}</span>
-              <span className="text-sm font-bold text-amber-100/40 tracking-widest">{new Date().getFullYear()}</span>
+              <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.5em]">Est.</span>
+              <span className="text-sm font-bold text-white tracking-widest">{new Date().getFullYear()}</span>
            </div>
-           <div className="h-12 w-px bg-white/10" />
+           <div className="h-12 w-px bg-white/20" />
            <div className="flex flex-col gap-1">
-              <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.5em]">{t('workshop')}</span>
+              <span className="text-[9px] font-bold text-white/20 uppercase tracking-[0.5em]">Location</span>
               <span className="text-sm font-bold text-white tracking-widest uppercase">{store.name.split(' ')[0]} HQ</span>
            </div>
         </div>
@@ -587,26 +450,12 @@ export function HeroSection() {
       setLoading(true);
       try {
         const res = await fetch(
-          `/api/v1/products?store_id=${activeStore.id}&is_featured=true&pageSize=4&is_active=true`,
+          `/api/v1/products?store_id=${activeStore.id}&is_featured=true&pageSize=4`,
           { signal: controller.signal }
         );
         if (!res.ok) throw new Error('Fetch failed');
         const json = await res.json();
-        if (json.success && json.data && json.data.length > 0) {
-          setFeaturedProducts(json.data);
-        } else {
-          // Fallback to active products
-          const resFallback = await fetch(
-            `/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_active=true`,
-            { signal: controller.signal }
-          );
-          if (resFallback.ok) {
-            const jsonFallback = await resFallback.json();
-            if (jsonFallback.success) {
-              setFeaturedProducts(jsonFallback.data ?? []);
-            }
-          }
-        }
+        if (json.success) setFeaturedProducts(json.data ?? []);
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setFeaturedProducts([]);
@@ -618,14 +467,12 @@ export function HeroSection() {
     return () => controller.abort();
   }, [activeStore]);
 
-  const { t } = useTranslation();
-
   if (!activeStore) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center bg-white">
         <div className="text-center">
           <Package className="mx-auto mb-4 size-12 text-gray-300" />
-          <p className="text-lg text-gray-400">{t('noStoreSelected')}</p>
+          <p className="text-lg text-gray-400">Aucune boutique sélectionnée</p>
         </div>
       </div>
     );
@@ -643,10 +490,8 @@ export function HeroSection() {
   const _raw = activeStore.template_id || 'clean';
   const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
   const props = { store: activeStore, products: featuredProducts, loading, onShop, onScroll };
-  // heroTag for CleanHero
-  const cleanHeroTag = (activeStore.theme_config?.heroTag as string | undefined) ?? '';
 
   if (tpl === 'athletic') return <AthleticHero {...props} />;
   if (tpl === 'luxe') return <LuxeHero {...props} />;
-  return <CleanHero {...props} heroTag={cleanHeroTag} />;
+  return <CleanHero {...props} />;
 }

@@ -23,21 +23,8 @@ export function ThemeInjector() {
     };
 
     Object.entries(vars).forEach(([key, value]) => {
-      root.style.setProperty(key, value ?? null);
+      root.style.setProperty(key, value);
     });
-
-    // Dynamic Google Fonts Loader
-    if (currentTheme.fontFamily) {
-      const fontName = currentTheme.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
-      const linkId = `gfont-${fontName.toLowerCase().replace(/\s+/g, '-')}`;
-      if (!document.getElementById(linkId) && fontName !== 'Inter' && fontName !== 'system-ui') {
-        const link = document.createElement('link');
-        link.id = linkId;
-        link.rel = 'stylesheet';
-        link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300;1,400&display=swap`;
-        document.head.appendChild(link);
-      }
-    }
 
     return () => {
       Object.keys(vars).forEach((key) => {

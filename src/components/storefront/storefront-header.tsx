@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe } from 'lucide-react';
+import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { LoginDialog } from '@/components/auth/login-dialog';
@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'framer-motion';
 import type { Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { useTranslation } from '@/hooks/use-translation';
 
 function getTheme(store: Store | null) {
   const tpl = (store?.template_id ?? 'clean') as 'clean' | 'athletic' | 'luxe' | 'landing';
@@ -26,67 +25,6 @@ function getTheme(store: Store | null) {
 }
 
 
-function LanguageSwitcher({ T }: { T: any }) {
-  const { locale, setLocale, t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handle(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, []);
-
-  const languages = [
-    { code: 'fr', label: 'FR' },
-    { code: 'en', label: 'EN' },
-    { code: 'ar', label: 'AR' },
-  ];
-
-  const current = languages.find(l => l.code === locale) || languages[0];
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-2 py-1 rounded-xl hover:bg-black/5 transition-colors text-xs font-black uppercase tracking-wider"
-        style={{ color: T.icon }}
-      >
-        <Globe className="size-4 opacity-75" />
-        <span>{current.label}</span>
-        <ChevronDown className="size-3 opacity-50" />
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 min-w-[130px] rounded-2xl border shadow-2xl overflow-hidden z-50 py-1.5"
-            style={{ backgroundColor: T.dropBg, borderColor: T.border }}
-          >
-            {languages.map(lang => (
-              <button
-                key={lang.code}
-                onClick={() => { setLocale(lang.code); setOpen(false); }}
-                className="w-full text-left px-4 py-2 text-xs font-bold transition-colors flex items-center justify-between"
-                style={{ color: locale === lang.code ? T.primary : T.dropText }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.dropHover)}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-              >
-                <span>{lang.code === 'ar' ? 'العربية (AR)' : lang.code === 'en' ? 'English (EN)' : 'Français (FR)'}</span>
-                {locale === lang.code && <Check className="size-3.5" style={{ color: T.primary }} />}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 // ─── Category dropdown ────────────────────────────────────────
 function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll }: {
   categories: string[]; T: ReturnType<typeof getTheme>; label?: string;
@@ -94,7 +32,6 @@ function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll 
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { t } = useTranslation();
 
   useEffect(() => {
     function handle(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
@@ -142,7 +79,7 @@ function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll 
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.dropHover)}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
             >
-              {t('allCollection')}
+              Toute la collection
             </button>
             <div className="h-px mx-4 my-1" style={{ backgroundColor: T.border }} />
             {categories.map(cat => (
@@ -170,7 +107,6 @@ function SearchBar({ T, onClose, onSearch }: {
   T: ReturnType<typeof getTheme>; onClose: () => void; onSearch: (q: string) => void;
 }) {
   const [q, setQ] = useState('');
-  const { t } = useTranslation();
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
@@ -185,7 +121,7 @@ function SearchBar({ T, onClose, onSearch }: {
         value={q}
         onChange={e => setQ(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') { onSearch(q); onClose(); } }}
-        placeholder={t('searchPlaceholder')}
+        placeholder="Rechercher un produit..."
         className="flex-1 bg-transparent outline-none text-sm font-medium placeholder-gray-400"
         style={{ color: T.logo }}
       />
@@ -214,7 +150,6 @@ export function StorefrontHeader() {
   const clearUser = useAppStore((s) => s.clearUser);
   const toggleCart = useCartStore((s) => s.toggleCart);
   const totalItems = useCartStore((s) => s.totalItems);
-  const { t } = useTranslation();
 
   const cartCount = totalItems();
   const storeName = activeStore?.name ?? 'Boutique';
@@ -224,7 +159,7 @@ export function StorefrontHeader() {
   // Fetch categories for dropdown
   useEffect(() => {
     if (!activeStore?.id) return;
-    fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=1&is_active=true`)
+    fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=1`)
       .then(r => r.json())
       .then(json => {
         if (json.categories) setCategories(json.categories.slice(0, 12));
@@ -267,8 +202,8 @@ export function StorefrontHeader() {
           {/* ─── Logo ─── */}
           <button onClick={() => handleNav('home')} className="flex items-center gap-3 group shrink-0 focus:outline-none">
             {logoSrc ? (
-              <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center bg-transparent transition-colors">
-                <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center bg-black/5 group-hover:bg-black/10 transition-colors">
+                <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-1.5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
             ) : (
               <div className="size-10 sm:size-12 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 group-hover:brightness-110 transition-all" style={{ backgroundColor: T.primary }}>
@@ -287,7 +222,7 @@ export function StorefrontHeader() {
                   className="text-[9px] italic tracking-[0.1em] mt-0.5 opacity-60" 
                   style={{ color: T.logo, fontFamily: '"Playfair Display", Didot, serif' }}
                 >
-                  {(activeStore?.theme_config?.storeTagline as string | undefined) ?? ''}
+                  Boutique Officielle
                 </span>
               )}
             </div>
@@ -299,13 +234,13 @@ export function StorefrontHeader() {
             T.tpl === 'clean' ? "absolute left-1/2 -translate-x-1/2" : ""
           )}>
             <button onClick={() => handleNav('home')} className="group relative py-2">
-              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>{t('home')}</span>
+              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>Accueil</span>
               <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-300" style={{ backgroundColor: T.navHover }} />
             </button>
 
             {/* Collections Dropdown */}
             <CategoryDropdown
-              label={t('collections')}
+              label="Collections"
               categories={categories}
               T={T}
               onAll={() => handleNav('shop')}
@@ -313,7 +248,7 @@ export function StorefrontHeader() {
             />
 
             <button onClick={() => handleNav('order-tracking')} className="group relative py-4 sm:py-5">
-              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>{t('trackOrder')}</span>
+              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>Suivi commande</span>
               <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-300" style={{ backgroundColor: T.navHover }} />
             </button>
           </nav>
@@ -325,7 +260,7 @@ export function StorefrontHeader() {
             <button
               onClick={() => setSearchOpen(o => !o)}
               className="hidden sm:flex p-2.5 rounded-xl hover:bg-black/5 transition-colors"
-              title={t('searchProduct')}
+              title="Rechercher"
             >
               <Search className="size-5" style={{ color: T.icon }} />
             </button>
@@ -334,7 +269,7 @@ export function StorefrontHeader() {
             <button
               onClick={() => handleNav('shop')}
               className="hidden lg:flex p-2.5 rounded-xl hover:bg-black/5 transition-colors"
-              title={t('wishlist')}
+              title="Favoris"
             >
               <Heart className="size-5" style={{ color: T.icon }} />
             </button>
@@ -343,7 +278,7 @@ export function StorefrontHeader() {
             <button
               onClick={toggleCart}
               className="group relative p-2.5 rounded-xl hover:bg-black/5 transition-colors"
-              title={t('cart')}
+              title="Panier"
             >
               <ShoppingCart className="size-5" style={{ color: T.icon }} />
               {cartCount > 0 && (
@@ -358,14 +293,11 @@ export function StorefrontHeader() {
               )}
             </button>
 
-            {/* Language Switcher */}
-            <LanguageSwitcher T={T} />
-
             {/* Account (Far Right, Visible on Mobile) */}
             <button 
               onClick={isAuthenticated ? () => setShowAccountPanel(true) : () => setShowLoginDialog(true)}
               className="relative p-2.5 rounded-xl hover:bg-black/5 transition-colors"
-              title={t('myAccount')}
+              title="Mon compte"
             >
               <User className="size-5" style={{ color: T.icon }} />
               {isAuthenticated && (
@@ -390,25 +322,25 @@ export function StorefrontHeader() {
           </AnimatePresence>
         </div>
 
-        {/* ─── Trust bar below nav (desktop only) ─ only shown if configured in theme_config ─── */}
-        {T.tpl === 'clean' && (() => {
-          const rawTrustBar = activeStore?.theme_config?.trustBar as Array<{label: string; sub: string; icon?: string}> | undefined;
-          if (!rawTrustBar || rawTrustBar.length === 0) return null;
-          return (
-            <div className="hidden lg:block border-t" style={{ borderColor: T.border }}>
-              <div className="max-w-[1800px] mx-auto px-16 py-2.5 flex items-center justify-center gap-12">
-                {rawTrustBar.map(({ label, sub }) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <span className="size-3.5 shrink-0 rounded-full inline-block" style={{ backgroundColor: T.primary }} />
-                    <span className="text-[10px] font-bold text-gray-500">
-                      <span className="font-black text-gray-800">{label}</span> · {sub}
-                    </span>
-                  </div>
-                ))}
-              </div>
+        {/* ─── Delivery trust bar (below nav, desktop only) ─── */}
+        {T.tpl === 'clean' && (
+          <div className="hidden lg:block border-t" style={{ borderColor: T.border }}>
+            <div className="max-w-[1800px] mx-auto px-16 py-2.5 flex items-center justify-center gap-12">
+              {[
+                { icon: Truck,   label: 'Livraison 48h',            sub: 'partout en Algérie' },
+                { icon: MapPin,  label: 'Paiement à la livraison',  sub: 'Zéro risque' },
+                { icon: Phone,   label: 'Retour 14 jours',          sub: 'Échanges sans frais' },
+              ].map(({ icon: Icon, label, sub }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <Icon className="size-3.5 shrink-0" style={{ color: T.primary }} />
+                  <span className="text-[10px] font-bold text-gray-500">
+                    <span className="font-black text-gray-800">{label}</span> · {sub}
+                  </span>
+                </div>
+              ))}
             </div>
-          );
-        })()}
+          </div>
+        )}
       </motion.header>
 
       {/* ─── Mobile Menu ─── */}
@@ -444,10 +376,10 @@ export function StorefrontHeader() {
               {/* Links */}
               <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
                 {[
-                  { label: t('home'), view: 'home' },
-                  { label: t('allProducts'), view: 'shop' },
-                  { label: t('ourBestSellers'), view: 'home', hash: '#best-sellers' },
-                  { label: t('trackOrder'), view: 'order-tracking' },
+                  { label: 'Accueil', view: 'home' },
+                  { label: 'Tous les produits', view: 'shop' },
+                  { label: 'Best-Sellers', view: 'home', hash: '#best-sellers' },
+                  { label: 'Suivi de commande', view: 'order-tracking' },
                 ].map(link => (
                   <button key={link.label} onClick={() => handleNav(link.view, link.hash)}
                     className="flex w-full items-center justify-between px-4 py-3.5 rounded-2xl text-sm font-black uppercase tracking-tight transition-colors hover:bg-black/5"
@@ -460,7 +392,7 @@ export function StorefrontHeader() {
                 {categories.length > 0 && (
                   <div className="pt-4">
                     <p className="px-4 text-[10px] font-black uppercase tracking-[0.3em] mb-2 opacity-40" style={{ color: T.mobileText }}>
-                      {t('categories')}
+                      Catégories
                     </p>
                     {categories.map(cat => (
                       <button key={cat} onClick={() => handleNav('shop', undefined, cat)}
@@ -476,7 +408,7 @@ export function StorefrontHeader() {
                 {/* Contact */}
                 {(contact?.phone || contact?.email) && (
                   <div className="pt-6 border-t mt-4 space-y-3 px-1" style={{ borderColor: T.mobileBorder }}>
-                    <p className="px-3 text-[10px] font-black uppercase tracking-[0.3em] opacity-40" style={{ color: T.mobileText }}>{t('contact')}</p>
+                    <p className="px-3 text-[10px] font-black uppercase tracking-[0.3em] opacity-40" style={{ color: T.mobileText }}>Contact</p>
                     {contact?.phone && (
                       <a href={`tel:${contact.phone}`} className="flex items-center gap-3 px-3 py-2 text-sm font-bold rounded-xl" style={{ color: T.mobileText }}>
                         <Phone className="size-4 shrink-0" style={{ color: T.mobileAccent }} /> {contact.phone}
@@ -493,29 +425,23 @@ export function StorefrontHeader() {
 
               {/* Bottom CTA */}
               <div className="p-4 border-t space-y-3" style={{ borderColor: T.mobileBorder }}>
-                {/* Mobile Language switcher */}
-                <div className="px-4 py-2 flex items-center justify-between border-b" style={{ borderColor: T.mobileBorder }}>
-                  <span className="text-xs font-bold" style={{ color: T.mobileText }}>Langue / Language</span>
-                  <LanguageSwitcher T={T} />
-                </div>
-
                 {isAuthenticated ? (
                   <button onClick={() => { setAppView('admin'); setMenuOpen(false); }}
                     className="w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-white"
                     style={{ backgroundColor: T.mobileAccent }}>
-                    <LayoutDashboard className="size-4" /> {t('myAdminSpace')}
+                    <LayoutDashboard className="size-4" /> Mon Espace Admin
                   </button>
                 ) : (
                   <button onClick={() => { setShowLoginDialog(true); setMenuOpen(false); }}
                     className="w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-white"
                     style={{ backgroundColor: T.mobileAccent }}>
-                    {t('login')}
+                    Se connecter
                   </button>
                 )}
                 <button onClick={() => { toggleCart(); setMenuOpen(false); }}
                   className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest border"
                   style={{ color: T.mobileText, borderColor: T.mobileBorder }}>
-                  <ShoppingCart className="size-4" /> {t('cart')} {cartCount > 0 && `(${cartCount})`}
+                  <ShoppingCart className="size-4" /> Panier {cartCount > 0 && `(${cartCount})`}
                 </button>
               </div>
             </motion.div>

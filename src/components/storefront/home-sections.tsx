@@ -9,7 +9,6 @@ import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as P
 import { motion } from 'framer-motion';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { useTranslation } from '@/hooks/use-translation';
 
 function useStoreTheme() {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -17,14 +16,20 @@ function useStoreTheme() {
   return { activeStore, primary };
 }
 
-// No static/mock testimonials — only real reviews from the API are shown
+const STATIC_TESTIMONIALS = [
+  { name: 'Yasmine B.', location: 'Alger',     text: 'Qualité au-delà de mes attentes. Livraison rapide, emballage soigné.', rating: 5 },
+  { name: 'Karim M.',   location: 'Oran',      text: 'Exactement comme la photo. Je commande régulièrement maintenant.', rating: 5 },
+  { name: 'Samira H.',  location: 'Constantine', text: 'Service client excellent. Ils ont résolu mon problème en minutes.', rating: 5 },
+  { name: 'Amira L.',   location: 'Sétif',     text: 'Rapide, sérieux et les produits sont exactement conformes à la description.', rating: 5 },
+  { name: 'Riad D.',    location: 'Tizi Ouzou', text: 'Très bon rapport qualité/prix. Je recommande vivement cette boutique.', rating: 5 },
+  { name: 'Nadia K.',   location: 'Annaba',    text: 'Commande reçue en 2 jours. Emballage impeccable, je suis ravie !', rating: 5 },
+];
 
 export function HomeSections() {
   const { activeStore, primary } = useStoreTheme();
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const addItem = useCartStore((s) => s.addItem);
   const openCart = useCartStore((s) => s.openCart);
-  const { t, dir } = useTranslation();
 
   const [featured, setFeatured] = useState<Product[]>([]);
   const [newArrivals, setNewArrivals] = useState<Product[]>([]);
@@ -36,11 +41,10 @@ export function HomeSections() {
     const load = async () => {
       try {
         const [f, n] = await Promise.all([
-          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_featured=true&is_active=true`).then(r => r.json()),
-          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_active=true`).then(r => r.json()),
+          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_featured=true`).then(r => r.json()),
+          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4`).then(r => r.json()),
         ]);
-        const featuredData = f.data && f.data.length > 0 ? f.data : (n.data ?? []);
-        setFeatured(featuredData);
+        setFeatured(f.data ?? []);
         setNewArrivals(n.data ?? []);
       } catch { /* silent */ } finally { setLoading(false); }
     };
@@ -57,93 +61,81 @@ export function HomeSections() {
 
   const categories = Array.from(new Set(featured.map(p => p.category?.trim()).filter(Boolean))).slice(0, 3);
 
-  // Only show real reviews from the API — no static fallback
-  const testimonials = apiReviews.map((r: any) => ({
-    name: r.author_name ?? r.authorName ?? 'Client',
-    location: r.location ?? r.wilaya ?? '',
-    text: r.body ?? r.content ?? r.text ?? '',
-    rating: r.rating ?? 5,
-    verified: true,
-  }));
-
-  // Dynamic section labels from theme_config (ThemeConfig fields are optional, hide if null)
-  const tc = activeStore?.theme_config;
-  const bestSellersLabel = tc?.labelBestSellers ?? t('bestSellers');
-  const bestSellersTag = tc?.labelBestSellersTag ?? t('exclusiveSelection');
-  const newArrivalsLabel = tc?.labelNewArrivals ?? t('newArrivals');
-  const newArrivalsTag = tc?.labelNewArrivalsTag ?? t('latestReleases');
+  const testimonials = apiReviews.length > 0
+    ? apiReviews.map((r: any) => ({
+        name: r.author_name ?? r.authorName ?? 'Client',
+        location: r.location ?? r.wilaya ?? '',
+        text: r.body ?? r.content ?? r.text ?? '',
+        rating: r.rating ?? 5,
+        verified: true,
+      }))
+    : STATIC_TESTIMONIALS;
 
   if (!activeStore) return null;
 
-  const _raw = activeStore.template_id || 'clean';
-  const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
-  
-  const bgClass = 
-    tpl === 'athletic' ? 'bg-[#0A0A0A] text-white min-h-screen' :
-    tpl === 'luxe' ? 'bg-[#0C0F1A] text-white min-h-screen' :
-    'bg-white text-neutral-900 min-h-screen';
-
   return (
-    <div className={bgClass} dir={dir}>
+    <div className="bg-white">
 
-
+      {/* ── LEFT-TO-RIGHT ROLLING STRIP (Sync with Header Style) ──── */}
+      <div className="border-y border-white/10 py-3.5 overflow-hidden relative group" style={{ backgroundColor: primary }}>
+        <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-black/20 to-transparent z-10 pointer-events-none" />
+        <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-black/20 to-transparent z-10 pointer-events-none" />
+        
+        <motion.div 
+          animate={{ x: ['-50%', '0%'] }}
+          transition={{ duration: 35, repeat: Infinity, ease: 'linear' }}
+          className="flex whitespace-nowrap items-center"
+        >
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-12 px-6">
+              <span className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.4em] text-white transition-opacity hover:opacity-80 opacity-90">
+                <Truck className="size-3.5 text-white/60" />
+                Livraison <span className="text-white">Express</span> Algérie
+              </span>
+              <span className="text-white/30">/</span>
+              <span className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.4em] text-white transition-opacity hover:opacity-80 opacity-90">
+                <Star className="size-3.5 text-white/60" />
+                Qualité <span className="text-white">Certifiée</span>
+              </span>
+              <span className="text-white/30">/</span>
+              <span className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.4em] text-white transition-opacity hover:opacity-80 opacity-90">
+                <CheckCircle className="size-3.5 text-white/60" />
+                Paiement à la <span className="text-white">Livraison</span>
+              </span>
+              <span className="text-white/30">/</span>
+            </div>
+          ))}
+        </motion.div>
+      </div>
 
       {/* ── BEST SELLERS ──────────────────────────────────────────── */}
-      <section 
-        id="best-sellers" 
-        className={cn(
-          tpl === 'clean' 
-            ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
-            : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
-        )}
-      >
-        <div className={cn(
-          "flex items-end justify-between mb-12 sm:mb-16",
-          tpl === 'clean' && "border-b border-neutral-100 pb-6"
-        )}>
+      <section id="best-sellers" className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32">
+        <div className="flex items-end justify-between mb-12 sm:mb-16">
           <div>
-            <p className={cn(
-              "text-[9px] uppercase tracking-[0.4em] mb-2.5",
-              tpl === 'clean' ? 'font-semibold text-neutral-400' : 
-              tpl === 'luxe' ? 'font-light text-amber-500/80' : 
-              'font-black'
-            )} style={tpl !== 'clean' && tpl !== 'luxe' ? { color: primary } : {}}>
-              {bestSellersTag}
+            <p className="text-[10px] font-black uppercase tracking-[0.6em] mb-3" style={{ color: primary }}>
+              Sélection Exclusive
             </p>
-            <h2 className={cn(
-              "text-4xl sm:text-5xl tracking-tight leading-none uppercase",
-              tpl === 'clean' ? 'font-extralight text-neutral-900' :
-              tpl === 'luxe' ? 'font-thin text-white' :
-              'font-black text-white tracking-tighter'
-            )}>
-              {bestSellersLabel}
+            <h2 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-none">
+              Best-Sellers
             </h2>
           </div>
           <button 
             onClick={() => setStorefrontView('shop')}
-            className={cn(
-              "hidden sm:flex items-center gap-2.5 text-[9px] font-semibold uppercase tracking-[0.25em] transition-colors group",
-              tpl === 'clean' ? 'text-neutral-400 hover:text-neutral-900' :
-              tpl === 'luxe' ? 'text-white/40 hover:text-white border-b border-white/10 pb-1.5' :
-              'text-white/40 hover:text-white'
-            )}
+            className="hidden sm:flex items-center gap-2.5 text-[11px] font-black uppercase tracking-[0.3em] text-gray-400 hover:text-gray-900 transition-colors group"
           >
-            {t('exploreAll')} 
-            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1"/>
+            Tout explorer 
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-1"/>
           </button>
         </div>
 
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="aspect-[4/5] bg-gray-50/10 animate-pulse rounded-none" />
+              <div key={i} className="aspect-[4/5] bg-gray-50 animate-pulse rounded-2xl" />
             ))}
           </div>
         ) : featured.length > 0 ? (
-          <div className={cn(
-            "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-x-8 gap-y-16 lg:gap-x-10 lg:gap-y-20" : "gap-4 lg:gap-8"
-          )}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8">
             {featured.map(product => (
               <ProductCard 
                 key={product.id} 
@@ -157,31 +149,14 @@ export function HomeSections() {
             ))}
           </div>
         ) : (
-          <div className={cn(
-            "flex flex-col items-center justify-center gap-6 py-32 border border-dashed",
-            tpl === 'clean' ? 'bg-neutral-50/50 border-neutral-200 rounded-none' :
-            tpl === 'luxe' ? 'bg-[#12172A] border-white/5 rounded-none' :
-            'bg-gray-50 border-gray-200 rounded-3xl'
-          )}>
-            <p className={cn(
-              "text-[10px] uppercase tracking-widest",
-              tpl === 'clean' ? 'text-neutral-400 font-medium' :
-              tpl === 'luxe' ? 'text-white/40 font-light' :
-              'text-gray-400 font-medium'
-            )}>
-              {t('collectionComingSoon')}
-            </p>
+          <div className="flex flex-col items-center justify-center gap-6 py-32 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+            <p className="text-sm text-gray-400 font-medium tracking-widest uppercase">La collection arrive bientôt</p>
             <button 
               onClick={() => setStorefrontView('shop')}
-              className={cn(
-                "text-[9px] font-semibold uppercase tracking-[0.25em] px-9 py-4 transition-all duration-300",
-                tpl === 'clean' ? 'text-white bg-neutral-900 hover:bg-neutral-800 rounded-none' :
-                tpl === 'luxe' ? 'text-neutral-950 rounded-none bg-white' :
-                'text-white shadow-xl hover:brightness-110 active:scale-[0.98]'
-              )}
-              style={tpl !== 'clean' && tpl !== 'luxe' ? { backgroundColor: primary } : {}}
+              className="text-[11px] font-black uppercase tracking-[0.4em] px-8 py-4 text-white shadow-xl hover:brightness-110 transition-all active:scale-[0.98]"
+              style={{ backgroundColor: primary }}
             >
-              {t('viewCatalog')}
+              Voir le catalogue
             </button>
           </div>
         )}
@@ -190,51 +165,24 @@ export function HomeSections() {
 
       {/* ── NEW ARRIVALS ──────────────────────────────────────────── */}
       {newArrivals.length > 0 && (
-        <section 
-          className={cn(
-            tpl === 'clean' 
-              ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
-              : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
-          )}
-        >
-          <div className={cn(
-            "flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12 sm:mb-16",
-            tpl === 'clean' && "border-b border-neutral-100 pb-6"
-          )}>
+        <section className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12 sm:mb-16">
             <div>
-              <p className={cn(
-                "text-[9px] uppercase tracking-[0.4em] mb-2.5",
-                tpl === 'clean' ? 'font-semibold text-neutral-400' :
-                tpl === 'luxe' ? 'font-light text-amber-500/80' :
-                'font-black'
-              )} style={tpl !== 'clean' && tpl !== 'luxe' ? { color: primary } : {}}>
-                {newArrivalsTag}
+              <p className="text-[10px] font-black uppercase tracking-[0.6em] mb-3" style={{ color: primary }}>
+                Dernières pépites
               </p>
-              <h2 className={cn(
-                "text-4xl sm:text-5xl tracking-tight leading-none uppercase",
-                tpl === 'clean' ? 'font-extralight text-neutral-900' :
-                tpl === 'luxe' ? 'font-thin text-white' :
-                'font-black text-white tracking-tighter'
-              )}>
-                {newArrivalsLabel}
+              <h2 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-none">
+                Nouveautés
               </h2>
             </div>
             <button 
               onClick={() => setStorefrontView('shop')}
-              className={cn(
-                "text-[9px] font-semibold uppercase tracking-[0.25em] border-b pb-1.5 transition-colors",
-                tpl === 'clean' ? 'text-neutral-400 border-neutral-200 hover:text-neutral-900 hover:border-neutral-900' :
-                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white hover:border-white' :
-                'text-gray-500 border-gray-200 hover:border-gray-900'
-              )}
+              className="text-[11px] font-black uppercase tracking-[0.4em] border-b border-gray-200 pb-1 hover:border-gray-900 transition-colors"
             >
-              {t('viewCollection')}
+              Voir la collection
             </button>
           </div>
-          <div className={cn(
-            "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-x-8 gap-y-16 lg:gap-x-10 lg:gap-y-20" : "gap-4 lg:gap-8"
-          )}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8">
             {newArrivals.map(product => (
               <ProductCard 
                 key={product.id} 
@@ -250,116 +198,66 @@ export function HomeSections() {
         </section>
       )}
 
-      {/* ── ROLLING TESTIMONIALS — only shown if real API reviews exist ──── */}
-      {tpl !== 'clean' && testimonials.length > 0 && (
-        <section className={cn(
-          "py-24 sm:py-32 overflow-hidden border-t",
-          tpl === 'clean' ? 'bg-white border-neutral-100' :
-          tpl === 'luxe' ? 'bg-[#0C0F1A] border-white/5' :
-          'bg-white border-gray-100'
-        )}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mb-16 text-center">
-            <p className={cn(
-              "text-[9px] uppercase tracking-[0.5em] mb-4",
-              tpl === 'clean' ? 'font-semibold text-neutral-400' :
-              tpl === 'luxe' ? 'font-light text-amber-500/60' :
-              'font-black'
-            )} style={tpl !== 'clean' && tpl !== 'luxe' ? { color: primary } : {}}>
-              {t('testimonials')}
-            </p>
-            <h2 className={cn(
-              "text-4xl sm:text-5xl tracking-tight leading-tight uppercase",
-              tpl === 'clean' ? 'font-extralight text-neutral-900' :
-              tpl === 'luxe' ? 'font-thin text-white' :
-              'font-black text-gray-900 tracking-tighter'
-            )}>
-              {t('whatClientsSay')}
-            </h2>
-          </div>
+      {/* ── ROLLING TESTIMONIALS ──────────────────────────────────── */}
+      <section className="bg-white border-t border-gray-100 py-24 sm:py-32 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mb-16 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.7em] mb-4" style={{ color: primary }}>
+            Témoignages
+          </p>
+          <h2 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-tight">
+            Ce que nos clients adorent
+          </h2>
+        </div>
 
-          <div className="relative group">
-            {/* Gradient Overlays */}
-            <div className={cn(
-              "absolute inset-y-0 left-0 w-32 z-10 pointer-events-none",
-              tpl === 'clean' ? 'bg-gradient-to-r from-white to-transparent' :
-              tpl === 'luxe' ? 'bg-gradient-to-r from-[#0C0F1A] to-transparent' :
-              'bg-gradient-to-r from-[#0A0A0A] to-transparent'
-            )} />
-            <div className={cn(
-              "absolute inset-y-0 right-0 w-32 z-10 pointer-events-none",
-              tpl === 'clean' ? 'bg-gradient-to-l from-white to-transparent' :
-              tpl === 'luxe' ? 'bg-gradient-to-l from-[#0C0F1A] to-transparent' :
-              'bg-gradient-to-l from-[#0A0A0A] to-transparent'
-            )} />
+        <div className="relative group">
+          {/* Gradient Overlays */}
+          <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none" />
+          <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none" />
 
-            <motion.div 
-              animate={{ x: ['0%', '-50%'] }}
-              transition={{ duration: 35, repeat: Infinity, ease: 'linear' }}
-              className="flex gap-8 whitespace-nowrap"
-            >
-              {/* Double the list for seamless loop */}
-              {[...testimonials, ...testimonials].map((testi, i) => (
-                <div 
-                  key={i}
-                  className={cn(
-                    "inline-block w-[350px] sm:w-[450px] p-8 sm:p-10 border transition-all duration-500 group whitespace-normal shrink-0",
-                    tpl === 'clean' ? 'rounded-none bg-neutral-50/50 border-neutral-100 hover:shadow-[0_12px_30px_rgba(0,0,0,0.02)]' :
-                    tpl === 'luxe' ? 'rounded-none bg-[#12172A] border-white/5' :
-                    'rounded-[2.5rem] bg-[#fcfcfc] border-gray-100 hover:shadow-2xl hover:border-gray-200'
-                  )}
-                >
-                  <div className="flex items-center gap-1 mb-6">
-                    {Array.from({ length: testi.rating }).map((_, idx) => (
-                      <Star key={idx} className={cn("size-3 fill-current", tpl === 'luxe' ? 'text-amber-500' : 'text-amber-400')} />
-                    ))}
+          <motion.div 
+            animate={{ x: ['0%', '-50%'] }}
+            transition={{ duration: 35, repeat: Infinity, ease: 'linear' }}
+            className="flex gap-8 whitespace-nowrap"
+          >
+            {/* Double the list for seamless loop */}
+            {[...testimonials, ...testimonials].map((t, i) => (
+              <div 
+                key={i}
+                className="inline-block w-[350px] sm:w-[450px] p-8 sm:p-10 rounded-[2.5rem] bg-[#fcfcfc] border border-gray-100 hover:shadow-2xl hover:border-gray-200 transition-all duration-500 group whitespace-normal shrink-0"
+              >
+                <div className="flex items-center gap-1 mb-6">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className="size-3 fill-current text-amber-400" />
+                  ))}
+                </div>
+                
+                <p className="text-lg sm:text-xl leading-relaxed mb-8 italic text-gray-700 font-medium">
+                  "{t.text}"
+                </p>
+
+                <div className="flex items-center gap-4">
+                  <div 
+                    className="size-12 rounded-2xl flex items-center justify-center text-sm font-black text-white shadow-lg shrink-0"
+                    style={{ backgroundColor: primary }}
+                  >
+                    {t.name[0]}
                   </div>
-                  
-                  <p className={cn(
-                    "text-base sm:text-lg leading-relaxed mb-8 italic",
-                    tpl === 'clean' ? 'text-neutral-600 font-light' :
-                    tpl === 'luxe' ? 'text-white/70 font-light' :
-                    'text-gray-700 font-medium'
-                  )}>
-                    "{testi.text}"
-                  </p>
-
-                  <div className="flex items-center gap-4">
-                    <div 
-                      className={cn(
-                        "size-11 flex items-center justify-center text-xs shadow-none shrink-0",
-                        tpl === 'clean' ? 'rounded-none font-semibold text-white' :
-                        tpl === 'luxe' ? 'rounded-none font-light text-neutral-900' :
-                        'rounded-2xl font-black text-white shadow-lg'
-                      )}
-                      style={{ backgroundColor: primary }}
-                    >
-                      {testi.name[0]}
-                    </div>
-                    <div>
-                      <h4 className={cn(
-                        "text-[10px] uppercase tracking-widest",
-                        tpl === 'clean' ? 'font-semibold text-neutral-900' :
-                        tpl === 'luxe' ? 'font-medium text-white' :
-                        'font-black text-gray-900'
-                      )}>
-                        {testi.name}
-                      </h4>
-                      <p className={cn(
-                        "text-[8px] uppercase tracking-[0.2em]",
-                        tpl === 'clean' ? 'font-semibold text-neutral-400' :
-                        tpl === 'luxe' ? 'font-light text-neutral-500' :
-                        'font-bold text-gray-400'
-                      )}>
-                        {t('verifiedReview')} • {testi.location}
-                      </p>
-                    </div>
+                  <div>
+                    <h4 className="text-[13px] font-black uppercase tracking-widest text-gray-900">
+                      {t.name}
+                    </h4>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                      Avis Vérifié • {t.location}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </motion.div>
-          </div>
-        </section>
-      )}
+              </div>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+
 
     </div>
   );

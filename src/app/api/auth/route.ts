@@ -17,9 +17,8 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getBackendUrl } from '@/lib/utils';
 
-const FASTAPI_URL = getBackendUrl();
+const FASTAPI_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
 
 function getClientIp(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for');

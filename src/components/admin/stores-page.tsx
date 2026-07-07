@@ -179,13 +179,8 @@ function StoreGrid({ onSelectStore, onEditStore }: { onSelectStore: (s: Store) =
                               <div className={cn("size-2 rounded-full", store.is_active ? "bg-emerald-500" : "bg-rose-500")} />
                            </div>
                            <div className="flex items-center gap-2 mt-0.5">
-                              <a 
-                                 href={store.domain ? (store.domain.startsWith('http') ? store.domain : `https://${store.domain}`) : `https://${store.slug}.azghub.com`} 
-                                 target="_blank" 
-                                 rel="noreferrer" 
-                                 className="text-[10px] font-bold text-slate-400 hover:text-[#4b7bec] transition-colors flex items-center gap-1 tracking-wider uppercase"
-                              >
-                                 {store.domain ? store.domain : `${store.slug}.azghub.com`} <ExternalLink className="size-3" />
+                              <a href={`/${store.slug}`} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-slate-400 hover:text-[#4b7bec] transition-colors flex items-center gap-1 tracking-wider uppercase">
+                                 /{store.slug} <ExternalLink className="size-3" />
                               </a>
                               <button onClick={() => setDeleteStore(store)} className="size-6 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all">
                                  <Trash2 className="size-3" />
@@ -375,6 +370,477 @@ function StoreAnalytics({ store, onBack }: { store: Store; onBack: () => void })
    );
 }
 
+// ─── CREATE / EDIT STORE MODAL ────────────────────────────
+function CreateStoreModal({ open, onOpenChange, initialData }: { open: boolean; onOpenChange: (o: boolean) => void; initialData?: Store | null }) {
+   const [step, setStep] = useState(1);
+   const [selectedPalette, setSelectedPalette] = useState<string>(
+      PALETTES.find(p => p.primaryColor === initialData?.theme_config?.primaryColor)?.id || 'denim_blue'
+   );
+   const { user, activeStore, setActiveStore, setAllStores } = useAppStore();
+   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+
+   const [formData, setFormData] = useState({
+      name: initialData?.name || '',
+      slug: initialData?.slug || '',
+      description: initialData?.description || '',
+      template_id: initialData?.template_id || 'modern',
+      primaryColor: initialData?.theme_config?.primaryColor || '#4b7bec',
+      domain: initialData?.domain || '',
+      social_links: initialData?.social_links || { facebook: '', instagram: '' },
+      currency: initialData?.currency || 'DZD',
+      language: initialData?.language || 'fr',
+      logo_url: initialData?.logo_url || '',
+      banner_url: initialData?.banner_url || '',
+   });
+
+   const qc = useQueryClient();
+   const isEdit = !!initialData;
+
+   const mutation = useMutation({
+      mutationFn: (data: any) => isEdit
+         ? apiFetch(`/api/v1/stores/${initialData!.id}`, { method: 'PUT', body: JSON.stringify(data) })
+         : apiFetch('/api/v1/stores', { method: 'POST', body: JSON.stringify({ ...data, owner_id: user?.id }) }),
+      onSuccess: (res: any) => {
+         qc.invalidateQueries({ queryKey: ['stores'] });
+         qc.invalidateQueries({ queryKey: ['stores-revenue'] });
+         // Sync Zustand so storefront colors update immediately
+         const updatedStore = res?.data ?? res;
+         if (updatedStore?.id) {
+            if (activeStore?.id === updatedStore.id) setActiveStore(updatedStore);
+            qc.fetchQuery({ queryKey: ['stores'] }).then((data: any) => {
+               const list = Array.isArray(data) ? data : (data?.data ?? []);
+               if (list.length) setAllStores(list);
+            });
+         }
+         toast.success(isEdit ? 'Boutique mise à jour !' : 'Boutique déployée avec succès !');
+         onOpenChange(false);
+         setStep(1);
+      },
+      onError: (err: any) => toast.error(err.message || 'Erreur lors du déploiement'),
+   });
+
+   const currentPalette = PALETTES.find(p => p.id === selectedPalette) || PALETTES[0];
+
+   const handleSelectPalette = (palette: typeof PALETTES[0]) => {
+      setSelectedPalette(palette.id);
+      setFormData(prev => ({ ...prev, primaryColor: palette.primaryColor }));
+   };
+
+   const handleSave = () => {
+      if (!formData.name || !formData.slug) {
+         toast.error('Le nom et le slug sont requis');
+         return;
+      }
+      mutation.mutate({
+         ...formData,
+         theme_config: {
+            primaryColor: formData.primaryColor,
+            accentColor: currentPalette.accentColor,
+            bgColor: currentPalette.bgColor,
+            fontFamily: 'Inter',
+            borderRadius: formData.template_id === 'luxury' ? '0px' : '12px',
+         },
+      });
+   };
+
+   const totalSteps = 4;
+
+   const uploadImage = async (file: File): Promise<string> => {
+      const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+      if (!allowed.includes(file.type)) throw new Error('Format non supporté. Utilisez JPEG, PNG, WebP ou AVIF.');
+      if (file.size > 20 * 1024 * 1024) throw new Error('Image trop volumineuse. Limite : 20 MB.');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/v1/upload/image', { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any)?.detail || 'Échec du téléversement'); }
+      return ((await res.json()) as { url: string }).url;
+   };
+
+   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      setIsUploadingLogo(true);
+      try { setFormData(p => ({ ...p, logo_url: '' })); const url = await uploadImage(file); setFormData(p => ({ ...p, logo_url: url })); toast.success('Logo téléversé'); }
+      catch (err: any) { toast.error(err.message); }
+      finally { setIsUploadingLogo(false); e.target.value = ''; }
+   };
+
+   const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      setIsUploadingBanner(true);
+      try { setFormData(p => ({ ...p, banner_url: '' })); const url = await uploadImage(file); setFormData(p => ({ ...p, banner_url: url })); toast.success('Bannière téléversée'); }
+      catch (err: any) { toast.error(err.message); }
+      finally { setIsUploadingBanner(false); e.target.value = ''; }
+   };
+
+   // Auto-generate slug from name
+   const handleNameChange = (name: string) => {
+      const slug = name.toLowerCase()
+         .replace(/[àáâãäå]/g, 'a').replace(/[èéêë]/g, 'e').replace(/[ìíîï]/g, 'i')
+         .replace(/[òóôõö]/g, 'o').replace(/[ùúûü]/g, 'u')
+         .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+      setFormData(prev => ({ ...prev, name, slug: prev.slug || slug }));
+   };
+
+   return (
+      <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setStep(1); } }}>
+         <DialogContent title={isEdit ? 'Modifier la Boutique' : 'Nouvelle Boutique'} className="max-w-2xl w-[96vw] p-0 bg-white border-[#E9ECF0] rounded-[40px] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col">
+            {/* Header */}
+            <div className="shrink-0" style={{ background: `linear-gradient(135deg, ${formData.primaryColor}, ${formData.primaryColor}BB)` }}>
+               <div className="px-8 py-6 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                     <div className="size-12 rounded-2xl bg-white/20 flex items-center justify-center">
+                        <StoreIcon className="size-6 text-white" />
+                     </div>
+                     <div>
+                        <h2 className="text-lg font-black text-white tracking-tight">
+                           {isEdit ? 'Modifier la Boutique' : 'Nouvelle Boutique'}
+                        </h2>
+                        <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest">Étape {step} / {totalSteps}</p>
+                     </div>
+                  </div>
+                  {/* Step progress */}
+                  <div className="flex gap-2">
+                     {[1, 2, 3, 4].map(s => (
+                        <button key={s} onClick={() => setStep(s)} className={cn("size-7 rounded-lg text-[10px] font-black transition-all", step === s ? "bg-white text-[#2D3436] shadow-lg" : step > s ? "bg-white/30 text-white" : "bg-white/10 text-white/40")}>
+                           {s}
+                        </button>
+                     ))}
+                  </div>
+               </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto">
+               {/* STEP 1: Identité */}
+               {step === 1 && (
+                  <div className="p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                     <div>
+                        <h3 className="text-sm font-black text-slate-700 mb-1">Identité de la Boutique</h3>
+                        <p className="text-[11px] text-slate-400 font-medium">Définissez le nom, l'URL et la description de votre enseigne.</p>
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider">Nom de la boutique *</label>
+                        <Input
+                           placeholder="Ex. Azzoug Luxe, La Maison du Cuir..."
+                           value={formData.name}
+                           onChange={e => handleNameChange(e.target.value)}
+                           className="h-12 border-[#E9ECF0] rounded-xl text-sm font-bold focus:ring-2" style={{ '--tw-ring-color': formData.primaryColor + '30' } as any}
+                        />
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider">URL Slug *</label>
+                        <div className="flex items-center gap-0">
+                           <span className="h-12 px-4 border border-r-0 border-[#E9ECF0] rounded-l-xl bg-[#F8F9FC] flex items-center text-[11px] font-bold text-slate-400">site.com/</span>
+                           <Input
+                              placeholder="ma-boutique"
+                              value={formData.slug}
+                              onChange={e => setFormData(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                              className="h-12 border-[#E9ECF0] rounded-r-xl rounded-l-none font-mono text-sm border-l-0"
+                           />
+                        </div>
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider">Description</label>
+                        <textarea
+                           className="w-full min-h-[90px] p-4 border border-[#E9ECF0] rounded-xl text-sm font-medium focus:outline-none focus:ring-2 resize-none"
+                           style={{ '--tw-ring-color': formData.primaryColor + '30' } as any}
+                           placeholder="Décrivez votre boutique en 2-3 phrases..."
+                           value={formData.description}
+                           onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        />
+                     </div>
+
+                     {/* ── Logo ── */}
+                     <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider">Logo de la boutique</label>
+                        <div className="flex items-center gap-4">
+                           <div className="size-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 relative group">
+                              {formData.logo_url ? (
+                                 <>
+                                    <img src={formData.logo_url} alt="logo" className="size-full object-contain p-1" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                                    <button type="button" onClick={() => setFormData(p => ({ ...p, logo_url: '' }))} className="absolute top-0.5 right-0.5 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                                       <X className="size-3" />
+                                    </button>
+                                 </>
+                              ) : isUploadingLogo ? (
+                                 <Loader2 className="size-6 animate-spin text-slate-300" />
+                              ) : (
+                                 <ImageIcon className="size-8 text-slate-200" />
+                              )}
+                           </div>
+                           <label className={cn('flex-1 flex items-center gap-2 h-11 px-4 rounded-xl border-2 border-dashed cursor-pointer transition-all text-[11px] font-bold uppercase tracking-wider', isUploadingLogo ? 'border-indigo-200 bg-indigo-50 text-indigo-400' : 'border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/50 text-slate-400')}>
+                              {isUploadingLogo ? <><Loader2 className="size-3.5 animate-spin" /> Téléversement...</> : <><Upload className="size-3.5" /> Choisir un logo</>}
+                              <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={handleLogoUpload} disabled={isUploadingLogo} />
+                           </label>
+                        </div>
+                     </div>
+
+                     {/* ── Bannière header ── */}
+                     <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider">Image d'en-tête (bannière)</label>
+                        <div className="relative w-full h-28 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden group">
+                           {formData.banner_url ? (
+                              <>
+                                 <img src={formData.banner_url} alt="bannière" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                                 <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-3">
+                                    <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white/90 rounded-lg cursor-pointer text-[11px] font-bold text-slate-700">
+                                       <Upload className="size-3.5" /> Changer
+                                       <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={handleBannerUpload} disabled={isUploadingBanner} />
+                                    </label>
+                                    <button type="button" onClick={() => setFormData(p => ({ ...p, banner_url: '' }))} className="px-3 py-1.5 bg-rose-500/90 rounded-lg text-[11px] font-bold text-white">
+                                       <X className="size-3.5" />
+                                    </button>
+                                 </div>
+                              </>
+                           ) : (
+                              <label className={cn('absolute inset-0 flex flex-col items-center justify-center cursor-pointer transition-all', isUploadingBanner ? 'bg-indigo-50' : 'hover:bg-slate-100/60')}>
+                                 {isUploadingBanner ? (
+                                    <><Loader2 className="size-6 animate-spin text-indigo-400 mb-1" /><span className="text-[11px] font-bold text-indigo-400">Téléversement...</span></>
+                                 ) : (
+                                    <><Upload className="size-6 text-slate-300 mb-1" /><span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Téléverser une bannière</span><span className="text-[10px] text-slate-300 mt-0.5">Recommandé : 1440 × 400 px</span></>
+                                 )}
+                                 <input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={handleBannerUpload} disabled={isUploadingBanner} />
+                              </label>
+                           )}
+                        </div>
+                     </div>
+                  </div>
+               )}
+
+               {/* STEP 2: Palette de couleurs */}
+               {step === 2 && (
+                  <div className="p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                     <div>
+                        <h3 className="text-sm font-black text-slate-700 mb-1">Identité Visuelle</h3>
+                        <p className="text-[11px] text-slate-400 font-medium">Choisissez une palette de couleurs prédéfinie ou personnalisez la vôtre.</p>
+                     </div>
+
+                     {/* 3 Palettes prédéfinies */}
+                     <div className="space-y-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Palettes Signature</label>
+                        <div className="grid grid-cols-1 gap-3">
+                           {PALETTES.map(palette => (
+                              <button
+                                 key={palette.id}
+                                 onClick={() => handleSelectPalette(palette)}
+                                 className={cn(
+                                    "flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all",
+                                    selectedPalette === palette.id ? "border-2 shadow-lg" : "border-[#E9ECF0] hover:border-slate-200 bg-white"
+                                 )}
+                                 style={selectedPalette === palette.id ? { borderColor: palette.primaryColor, backgroundColor: palette.bgColor } : {}}
+                              >
+                                 {/* Color swatch section */}
+                                 <div className="shrink-0 flex items-center gap-3">
+                                    <div className={cn("size-14 rounded-2xl flex items-center justify-center shadow-lg bg-gradient-to-br", palette.gradient)}>
+                                       {palette.icon}
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                       <div className="flex gap-1.5">
+                                          <div className="size-5 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: palette.primaryColor }} />
+                                          <div className="size-5 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: palette.accentColor }} />
+                                          <div className="size-5 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: palette.bgColor, border: '2px solid #E9ECF0' }} />
+                                       </div>
+                                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{palette.primaryColor}</span>
+                                    </div>
+                                 </div>
+
+                                 <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                       <span className="text-sm font-black text-slate-800">{palette.name}</span>
+                                       <span className="text-[9px] font-black px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: palette.badgeColor }}>
+                                          {palette.badge}
+                                       </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 font-medium leading-snug">{palette.description}</p>
+                                 </div>
+
+                                 {selectedPalette === palette.id && (
+                                    <CheckCircle className="size-5 shrink-0" style={{ color: palette.primaryColor }} />
+                                 )}
+                              </button>
+                           ))}
+                        </div>
+                     </div>
+
+                     {/* Custom color override */}
+                     <div className="bg-slate-50 rounded-2xl p-5 border border-[#E9ECF0] space-y-3">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Couleur personnalisée</span>
+                           <span className="text-[10px] text-slate-400">Surcharge la palette</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <div className="relative group">
+                              <div className="size-14 rounded-xl border-4 border-white shadow-lg cursor-pointer transition-transform group-hover:scale-105" style={{ backgroundColor: formData.primaryColor }} />
+                              <input
+                                 type="color" value={formData.primaryColor}
+                                 onChange={e => {
+                                    setFormData(prev => ({ ...prev, primaryColor: e.target.value }));
+                                    setSelectedPalette('custom');
+                                 }}
+                                 className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                              />
+                           </div>
+                           <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                 <div className="h-8 px-3 rounded-lg bg-white border border-[#E9ECF0] flex items-center font-mono text-xs font-bold text-slate-700">
+                                    {formData.primaryColor.toUpperCase()}
+                                 </div>
+                              </div>
+                              {/* Palette dynamique */}
+                              <div className="flex gap-1.5">
+                                 {[1, 0.8, 0.6, 0.4, 0.2].map((op, i) => (
+                                    <div key={i} className="h-6 flex-1 rounded-md" style={{ backgroundColor: formData.primaryColor, opacity: op }} />
+                                 ))}
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+               )}
+
+               {/* STEP 3: Template */}
+               {step === 3 && (
+                  <div className="p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                     <div>
+                        <h3 className="text-sm font-black text-slate-700 mb-1">Template de Boutique</h3>
+                        <p className="text-[11px] text-slate-400 font-medium">Sélectionnez la mise en page qui correspond à votre marché cible.</p>
+                     </div>
+                     <div className="grid grid-cols-1 gap-3">
+                        {TEMPLATES.map(t => (
+                           <button
+                              key={t.id}
+                              onClick={() => setFormData(prev => ({ ...prev, template_id: t.id }))}
+                              className={cn("flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all", formData.template_id === t.id ? "border-2 bg-slate-50/50 shadow-sm" : "border-[#E9ECF0] bg-white hover:border-slate-200")}
+                              style={formData.template_id === t.id ? { borderColor: formData.primaryColor } : {}}
+                           >
+                              <div className="size-14 rounded-2xl flex items-center justify-center shadow-md" style={{ background: `linear-gradient(135deg, ${t.preview}, ${t.preview}AA)` }}>
+                                 {t.icon}
+                              </div>
+                              <div className="flex-1">
+                                 <div className="flex items-center justify-between mb-1">
+                                    <h4 className="text-sm font-bold text-slate-800">{t.name}</h4>
+                                    <div className="flex gap-1">
+                                       {t.tags.slice(0, 2).map(tag => (
+                                          <span key={tag} className="px-2 py-0.5 rounded-md bg-slate-100 text-[9px] font-bold text-slate-500 uppercase">{tag}</span>
+                                       ))}
+                                    </div>
+                                 </div>
+                                 <p className="text-[11px] text-slate-400 font-medium">{t.description}</p>
+                              </div>
+                              {formData.template_id === t.id && <CheckCircle className="size-5 shrink-0" style={{ color: formData.primaryColor }} />}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+               )}
+
+               {/* STEP 4: Paramètres */}
+               {step === 4 && (
+                  <div className="p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                     <div>
+                        <h3 className="text-sm font-black text-slate-700 mb-1">Paramètres Avancés</h3>
+                        <p className="text-[11px] text-slate-400 font-medium">Domaine personnalisé, réseaux sociaux et configuration régionale.</p>
+                     </div>
+
+                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider flex items-center gap-2">
+                           <Globe className="size-3.5" /> Domaine Personnalisé
+                        </label>
+                        <div className="flex items-center gap-0">
+                           <span className="h-12 px-4 border border-r-0 border-[#E9ECF0] rounded-l-xl bg-[#F8F9FC] flex items-center text-[11px] font-bold text-slate-400">https://</span>
+                           <Input
+                              placeholder="ma-boutique.com"
+                              value={formData.domain}
+                              onChange={e => setFormData(prev => ({ ...prev, domain: e.target.value }))}
+                              className="h-12 border-[#E9ECF0] rounded-r-xl rounded-l-none font-mono text-sm border-l-0"
+                           />
+                        </div>
+                     </div>
+
+                     <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                           <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider flex items-center gap-2">
+                              <Facebook className="size-3.5 text-[#1877F2]" /> Facebook
+                           </label>
+                           <Input
+                              placeholder="url page facebook"
+                              value={formData.social_links?.facebook || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, social_links: { ...prev.social_links, facebook: e.target.value } }))}
+                              className="h-12 border-[#E9ECF0] rounded-xl text-sm"
+                           />
+                        </div>
+                        <div className="space-y-1.5">
+                           <label className="text-[11px] font-bold text-[#636E72] uppercase tracking-wider flex items-center gap-2">
+                              <Instagram className="size-3.5 text-[#E1306C]" /> Instagram
+                           </label>
+                           <Input
+                              placeholder="@votre_compte"
+                              value={formData.social_links?.instagram || ''}
+                              onChange={e => setFormData(prev => ({ ...prev, social_links: { ...prev.social_links, instagram: e.target.value } }))}
+                              className="h-12 border-[#E9ECF0] rounded-xl text-sm"
+                           />
+                        </div>
+                     </div>
+
+                     {/* Preview Card */}
+                     <div className="rounded-2xl overflow-hidden border border-[#E9ECF0] shadow-sm">
+                        <div className="p-4 flex items-center gap-4" style={{ background: `linear-gradient(135deg, ${formData.primaryColor}, ${formData.primaryColor}CC)` }}>
+                           <div className="size-12 rounded-xl bg-white/20 flex items-center justify-center font-black text-white text-xl overflow-hidden">
+                              {formData.logo_url
+                                 ? <img src={formData.logo_url} alt="logo" className="size-full object-contain p-1" />
+                                 : formData.name.charAt(0) || 'A'}
+                           </div>
+                           <div>
+                              <p className="font-black text-white text-base">{formData.name || 'Ma Boutique'}</p>
+                              <p className="text-[10px] text-white/60 font-bold">/{formData.slug || 'ma-boutique'}</p>
+                           </div>
+                        </div>
+                        <div className="p-4 bg-white">
+                           <p className="text-xs text-slate-400 font-medium">{formData.description || 'Description de votre boutique...'}</p>
+                           <div className="flex items-center gap-2 mt-2">
+                              <div className="size-4 rounded-full" style={{ backgroundColor: formData.primaryColor }} />
+                              <span className="text-[10px] font-black text-slate-500 uppercase">{TEMPLATES.find(t => t.id === formData.template_id)?.name}</span>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+               )}
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 px-8 py-5 border-t border-[#E9ECF0] bg-slate-50/50 flex items-center justify-between">
+               <Button variant="ghost" onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1} className="text-slate-400 font-bold rounded-xl h-12 px-6">
+                  ← Précédent
+               </Button>
+               <div className="flex gap-3">
+                  <Button variant="ghost" onClick={() => onOpenChange(false)} className="text-slate-400 font-bold rounded-xl h-12 px-5">Annuler</Button>
+                  {step < totalSteps ? (
+                     <Button
+                        onClick={() => setStep(step + 1)}
+                        disabled={step === 1 && (!formData.name || !formData.slug)}
+                        className="h-12 px-8 rounded-xl font-bold text-white shadow-lg"
+                        style={{ backgroundColor: formData.primaryColor }}
+                     >
+                        Suivant →
+                     </Button>
+                  ) : (
+                     <Button
+                        onClick={handleSave}
+                        disabled={mutation.isPending}
+                        className="h-12 px-8 rounded-xl font-bold text-white shadow-lg"
+                        style={{ backgroundColor: formData.primaryColor }}
+                     >
+                        {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : isEdit ? 'Sauvegarder' : 'Déployer la Boutique'}
+                     </Button>
+                  )}
+               </div>
+            </div>
+         </DialogContent>
+      </Dialog>
+   );
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────
 export default function StoresPage() {
    const [view, setView] = useState<'grid' | 'analytics'>('grid');
@@ -439,10 +905,17 @@ export default function StoresPage() {
          ) : null}
 
          <StoreWizard
-            open={isCreateModalOpen}
+            open={isCreateModalOpen && !editStore}
             onOpenChange={(o) => { setIsCreateModalOpen(o); if (!o) setEditStore(null); }}
-            initialData={editStore}
+            onSuccess={() => qc.invalidateQueries({ queryKey: ['stores'] })}
          />
+         {editStore && (
+           <CreateStoreModal
+              open={isCreateModalOpen}
+              onOpenChange={(o) => { setIsCreateModalOpen(o); if (!o) setEditStore(null); }}
+              initialData={editStore}
+           />
+         )}
       </div>
    );
 }

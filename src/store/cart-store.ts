@@ -1,22 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { CartItem, Product } from '@/lib/types';
-import { trackMetaEvent } from '@/lib/meta-tracking';
 
 interface CartState {
   items: CartItem[];
   isOpen: boolean;
   wishlistItems: string[];
-  addItem: (product: Product, quantity?: number, variant?: string, customNotes?: string, customPrice?: number) => void;
-  removeItem: (productId: string, variant?: string, customNotes?: string) => void;
-  updateQuantity: (productId: string, quantity: number, variant?: string, customNotes?: string) => void;
+  addItem: (product: Product, quantity?: number, variant?: string) => void;
+  removeItem: (productId: string, variant?: string) => void;
+  updateQuantity: (productId: string, quantity: number, variant?: string) => void;
   clearCart: () => void;
   toggleCart: () => void;
   openCart: () => void;
   closeCart: () => void;
   totalItems: () => number;
   totalPrice: () => number;
-  getItemQuantity: (productId: string, variant?: string, customNotes?: string) => number;
+  getItemQuantity: (productId: string, variant?: string) => number;
   toggleWishlist: (productId: string) => void;
   isInWishlist: (productId: string) => boolean;
 }
@@ -28,75 +27,53 @@ export const useCartStore = create<CartState>()(
       isOpen: false,
       wishlistItems: [],
 
-      addItem: (product, quantity = 1, variant, customNotes, customPrice) => {
+      addItem: (product, quantity = 1, variant) => {
         const items = [...get().items];
-        const key = `${product.id}-${variant || ''}-${customNotes || ''}`;
+        const key = variant
+          ? `${product.id}-${variant}`
+          : product.id;
         const existingIdx = items.findIndex((item) =>
-          `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` === key
+          variant
+            ? `${item.product.id}-${item.selectedVariant}` === key
+            : item.product.id === product.id && !item.selectedVariant
         );
 
         if (existingIdx >= 0) {
           items[existingIdx] = {
             ...items[existingIdx],
             quantity: items[existingIdx].quantity + quantity,
-            customPrice,
-            image_url: product.main_image || undefined,
-            sku: product.sku || undefined,
           };
         } else {
-          items.push({ 
-            product, 
-            quantity, 
-            selectedVariant: variant, 
-            customNotes, 
-            customPrice,
-            image_url: product.main_image || undefined,
-            sku: product.sku || undefined,
-          });
+          items.push({ product, quantity, selectedVariant: variant });
         }
-
-        void trackMetaEvent('AddToCart', {
-          content_ids: [product.id],
-          content_name: product.name,
-          content_type: 'product',
-          value: customPrice ?? product.price,
-          currency: 'DZD',
-          contents: [{ id: product.id, quantity }],
-        }, {
-          eventId: `addtocart-${product.id}-${Date.now()}`,
-          userData: {
-            email: typeof window !== 'undefined' ? window.localStorage.getItem('meta-email') || undefined : undefined,
-            phone: typeof window !== 'undefined' ? window.localStorage.getItem('meta-phone') || undefined : undefined,
-          },
-          contentName: product.name,
-          contentCategory: product.category ?? undefined,
-          contentType: 'product',
-          value: customPrice ?? product.price,
-          currency: 'DZD',
-          contents: [{ id: product.id, quantity }],
-        });
 
         set({ items });
       },
 
-      removeItem: (productId, variant, customNotes) => {
+      removeItem: (productId, variant) => {
         set({
           items: get().items.filter((item) =>
-            `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` !== `${productId}-${variant || ''}-${customNotes || ''}`
+            variant
+              ? !(item.product.id === productId && item.selectedVariant === variant)
+              : item.product.id !== productId
           ),
         });
       },
 
-      updateQuantity: (productId, quantity, variant, customNotes) => {
+      updateQuantity: (productId, quantity, variant) => {
         if (quantity <= 0) {
-          get().removeItem(productId, variant, customNotes);
+          get().removeItem(productId, variant);
           return;
         }
         set({
           items: get().items.map((item) =>
-            `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` === `${productId}-${variant || ''}-${customNotes || ''}`
-              ? { ...item, quantity }
-              : item
+            variant
+              ? item.product.id === productId && item.selectedVariant === variant
+                ? { ...item, quantity }
+                : item
+              : item.product.id === productId
+                ? { ...item, quantity }
+                : item
           ),
         });
       },
@@ -112,38 +89,29 @@ export const useCartStore = create<CartState>()(
       totalPrice: () =>
         get().items.reduce(
           (sum, item) => {
-            if (!item?.product) return sum;
-            if (item.customPrice !== undefined && item.customPrice !== null) {
-              return sum + item.customPrice * item.quantity;
-            }
-            const modifier = item.selectedVariant && item.product.variants
-              ? item.product.variants.find((v: any) => v.value === item.selectedVariant)?.priceModifier ?? 0
+            const modifier = item.selectedVariant
+              ? item.product.variants?.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0
               : 0;
             return sum + (item.product.price + modifier) * item.quantity;
           },
           0
         ),
 
-      getItemQuantity: (productId, variant, customNotes) => {
+      getItemQuantity: (productId, variant) => {
         const item = get().items.find((i) =>
-          `${i.product.id}-${i.selectedVariant || ''}-${i.customNotes || ''}` === `${productId}-${variant || ''}-${customNotes || ''}`
+          variant
+            ? i.product.id === productId && i.selectedVariant === variant
+            : i.product.id === productId && !i.selectedVariant
         );
         return item?.quantity ?? 0;
       },
 
       toggleWishlist: (productId) => {
         const current = get().wishlistItems;
-        const willAdd = !current.includes(productId);
-        if (willAdd) {
-          set({ wishlistItems: [...current, productId] });
-          void trackMetaEvent('AddToWishlist', {
-            content_ids: [productId],
-            content_type: 'product',
-          }, {
-            eventId: `addtowishlist-${productId}-${Date.now()}`,
-          });
-        } else {
+        if (current.includes(productId)) {
           set({ wishlistItems: current.filter((id) => id !== productId) });
+        } else {
+          set({ wishlistItems: [...current, productId] });
         }
       },
 

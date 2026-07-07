@@ -64,7 +64,7 @@ function useProductData(storeId: string | undefined) {
     if (!storeId) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ store_id: storeId, page: String(page), pageSize: String(pageSize), sort: sortBy, is_active: 'true' });
+      const params = new URLSearchParams({ store_id: storeId, page: String(page), pageSize: String(pageSize), sort: sortBy });
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (selectedCategory !== 'all') params.set('category', selectedCategory);
       if (minPrice !== null) params.set('min_price', String(minPrice));
@@ -189,58 +189,58 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
 
   return (
     <div className="bg-white min-h-screen">
-      <div className="max-w-[1600px] mx-auto px-6 sm:px-12 py-12 lg:py-20">
+      <div className="max-w-[1800px] mx-auto px-5 sm:px-10 py-10 lg:py-16">
 
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-[8px] font-semibold uppercase tracking-[0.4em] text-neutral-300 mb-10">
-          <button onClick={() => setStorefrontView('home')} className="hover:text-neutral-600 transition-colors">Accueil</button>
+        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.25em] text-slate-300 mb-10">
+          <button onClick={() => setStorefrontView('home')} className="hover:text-slate-600 transition-colors">Accueil</button>
           <ChevronRight className="size-3" />
-          <span className="text-neutral-900">Collections</span>
+          <span className="text-slate-800">Collections</span>
         </div>
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-16 pb-8 border-b border-neutral-100">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-14 pb-10 border-b border-slate-100">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-extralight tracking-tight text-neutral-900 uppercase">
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-900 leading-[0.95]">
               {d.selectedCategory === 'all' ? 'La Collection' : d.selectedCategory}
             </h1>
-            <p className="mt-2.5 text-[9px] text-neutral-400 font-semibold uppercase tracking-[0.3em]">{d.total} pièces</p>
+            <p className="mt-3 text-xs text-slate-400 font-medium uppercase tracking-widest">{d.total} produits</p>
           </div>
           {/* Sort */}
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="size-3.5 text-neutral-400" />
+            <SlidersHorizontal className="size-4 text-slate-300" />
             <select value={d.sortBy} onChange={e => d.setSortBy(e.target.value as SortOption)}
-              className="text-[9px] font-semibold uppercase tracking-[0.25em] text-neutral-500 bg-transparent border-none outline-none cursor-pointer">
+              className="text-xs font-bold uppercase tracking-widest text-slate-500 bg-transparent border-none outline-none cursor-pointer">
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-16">
+        <div className="flex flex-col lg:flex-row gap-14">
           {/* Sidebar — w-64, sticky */}
-          <aside className="hidden lg:flex flex-col w-64 shrink-0 gap-12 sticky top-28 h-fit">
+          <aside className="hidden lg:flex flex-col w-64 shrink-0 gap-10 sticky top-28 h-fit">
             {/* Search */}
             <div className="space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Recherche</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Recherche</p>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-neutral-300" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-300" />
                 <input type="text" value={d.search} onChange={e => d.setSearch(e.target.value)}
-                  placeholder="Chercher..." className="w-full h-10 pl-9 pr-4 text-xs font-light rounded-none border border-neutral-200 bg-transparent focus:outline-none focus:border-neutral-900 transition-colors" />
+                  placeholder="Chercher..." className="w-full h-10 pl-9 pr-4 text-xs font-medium rounded-xl border border-slate-100 bg-slate-50 focus:outline-none focus:border-slate-300 transition-colors" />
               </div>
             </div>
 
-            {/* Categories with sleek textual underlines */}
+            {/* Categories with count badge */}
             <div className="space-y-4">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Catégories</p>
-              <div className="flex flex-col gap-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Catégories</p>
+              <div className="flex flex-col gap-1.5">
                 {[{ id: 'all', label: 'Tous' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
                   <button key={cat.id} onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                    className={`flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.2em] text-left py-2 transition-all duration-300 border-b ${d.selectedCategory === cat.id ? 'text-neutral-900 border-neutral-900' : 'text-neutral-400 border-transparent hover:text-neutral-900'}`}
-                  >
+                    className={`flex items-center justify-between text-xs font-bold text-left py-1.5 transition-all rounded-lg px-3 ${d.selectedCategory === cat.id ? 'text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                    style={d.selectedCategory === cat.id ? { backgroundColor: primary } : {}}>
                     <span>{cat.label}</span>
                     {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                      <span className="text-[8px] font-semibold ml-2">
-                        ({d.categoryCounts[cat.id]})
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ml-2 ${d.selectedCategory === cat.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                        {d.categoryCounts[cat.id]}
                       </span>
                     )}
                   </button>
@@ -250,9 +250,9 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
 
             {/* Prix — dual range inputs */}
             <div className="space-y-4">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Prix</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Prix</p>
               {(d.minPrice !== null || d.maxPrice !== null) && (
-                <p className="text-[10px] font-semibold text-neutral-500">
+                <p className="text-[11px] font-bold text-slate-500">
                   {d.minPrice !== null ? `${d.minPrice.toLocaleString('fr-DZ')} DA` : '0 DA'}
                   {' — '}
                   {d.maxPrice !== null ? `${d.maxPrice.toLocaleString('fr-DZ')} DA` : '∞'}
@@ -260,58 +260,58 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               )}
               <div className="flex items-center gap-2">
                 <input type="number" value={localMin} onChange={e => setLocalMin(e.target.value)} placeholder="Min"
-                  className="w-full h-9 px-3 text-xs font-light border border-neutral-200 rounded-none focus:outline-none focus:border-neutral-900 bg-transparent" />
-                <span className="text-neutral-300 text-xs">—</span>
+                  className="w-full h-9 px-3 text-xs border border-slate-100 rounded-lg focus:outline-none focus:border-slate-300 bg-slate-50" />
+                <span className="text-slate-300 text-xs">—</span>
                 <input type="number" value={localMax} onChange={e => setLocalMax(e.target.value)} placeholder="Max"
-                  className="w-full h-9 px-3 text-xs font-light border border-neutral-200 rounded-none focus:outline-none focus:border-neutral-900 bg-transparent" />
+                  className="w-full h-9 px-3 text-xs border border-slate-100 rounded-lg focus:outline-none focus:border-slate-300 bg-slate-50" />
               </div>
               <button onClick={applyPrice}
-                className="w-full h-9 text-[9px] font-semibold uppercase tracking-widest text-white rounded-none bg-neutral-900 hover:bg-neutral-800 transition-all duration-300"
-              >
+                className="w-full h-9 text-[10px] font-black uppercase tracking-widest text-white rounded-lg transition-all hover:brightness-110"
+                style={{ backgroundColor: primary }}>
                 Appliquer
               </button>
             </div>
 
             {/* Disponibilité — checkboxes */}
             <div className="space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Disponibilité</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Disponibilité</p>
               <div className="flex flex-col gap-2.5">
                 <label className="flex items-center gap-3 cursor-pointer group">
                   <input type="checkbox" checked={d.inStockOnly} onChange={e => d.setInStockOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">En stock</span>
+                    className="size-4 accent-current rounded" style={{ accentColor: primary }} />
+                  <span className="text-xs font-bold text-slate-500 group-hover:text-slate-800 transition-colors">En stock</span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer group">
                   <input type="checkbox" checked={d.preorderOnly} onChange={e => d.setPreorderOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">Pré-commande</span>
+                    className="size-4 rounded" style={{ accentColor: primary }} />
+                  <span className="text-xs font-bold text-slate-500 group-hover:text-slate-800 transition-colors">Pré-commande</span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer group">
                   <input type="checkbox" checked={d.promoOnly} onChange={e => d.setPromoOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">En promotion</span>
+                    className="size-4 rounded" style={{ accentColor: primary }} />
+                  <span className="text-xs font-bold text-slate-500 group-hover:text-slate-800 transition-colors">En promotion</span>
                 </label>
               </div>
             </div>
 
             {d.hasActiveFilters && (
               <button onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400 hover:text-neutral-900 transition-colors flex items-center gap-1.5">
-                <X className="size-3"/> Réinitialiser
+                className="text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-slate-700 transition-colors flex items-center gap-1.5">
+                <X className="size-3"/> Réinitialiser les filtres
               </button>
             )}
 
             {/* Newsletter widget */}
-            <div className="mt-2 pt-6 border-t border-neutral-100 space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Rejoignez-nous</p>
-              <p className="text-[11px] text-neutral-400 font-light leading-relaxed">Recevez nos offres exclusives en avant-première.</p>
-              <div className="flex gap-1.5">
+            <div className="mt-2 pt-6 border-t border-slate-100 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-300">Rejoignez-nous</p>
+              <p className="text-xs text-slate-400">Recevez nos offres exclusives en avant-première.</p>
+              <div className="flex gap-2">
                 <input type="email" value={newsletterEmail} onChange={e => setNewsletterEmail(e.target.value)}
                   placeholder="Votre e-mail"
-                  className="flex-1 h-9 px-3 text-xs font-light border border-neutral-200 rounded-none bg-transparent focus:outline-none focus:border-neutral-900 min-w-0" />
+                  className="flex-1 h-9 px-3 text-xs border border-slate-100 rounded-lg focus:outline-none focus:border-slate-300 bg-slate-50 min-w-0" />
                 <button onClick={() => { if (newsletterEmail) { setNewsletterEmail(''); } }}
-                  className="h-9 w-9 flex items-center justify-center text-white bg-neutral-900 hover:bg-neutral-800 rounded-none shrink-0 transition-all"
-                >
+                  className="h-9 w-9 flex items-center justify-center text-white rounded-lg shrink-0 hover:brightness-110 transition-all"
+                  style={{ backgroundColor: primary }}>
                   →
                 </button>
               </div>
@@ -322,23 +322,22 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
           <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar">
             {['all', ...d.normalizedCategories].map(cat => (
               <button key={cat} onClick={() => { d.setSelectedCategory(cat); d.setSelectedCategoryStore(cat === 'all' ? null : cat); }}
-                className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
+                className="shrink-0 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-full border transition-all"
                 style={d.selectedCategory === cat ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
                 {cat === 'all' ? 'Tous' : cat}
               </button>
             ))}
             <button onClick={() => d.setInStockOnly(!d.inStockOnly)}
-              className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
+              className="shrink-0 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-full border transition-all"
               style={d.inStockOnly ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
               En stock
             </button>
             <button onClick={() => d.setPromoOnly(!d.promoOnly)}
-              className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
+              className="shrink-0 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-full border transition-all"
               style={d.promoOnly ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
               Promo
             </button>
           </div>
-
 
           {/* Grid — 3 columns on desktop */}
           <div className="flex-1 min-w-0">

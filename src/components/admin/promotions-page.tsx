@@ -215,7 +215,7 @@ function PromotionFormDialog({ open, onOpenChange, promotion }: { open: boolean;
    return (
       <Dialog open={open} onOpenChange={onOpenChange}>
          <DialogContent className="max-w-2xl w-[96vw] p-0 overflow-hidden border-none bg-white rounded-[40px] shadow-2xl">
-            <div className="bg-[#6C5CE7] px-5 sm:px-8 py-7 sm:py-10 text-white relative overflow-hidden">
+            <div className="bg-[#6C5CE7] px-8 py-10 text-white relative overflow-hidden">
                <div className="absolute top-0 right-0 p-8 opacity-10">
                   <Tag className="size-32 rotate-12" />
                </div>
@@ -226,7 +226,7 @@ function PromotionFormDialog({ open, onOpenChange, promotion }: { open: boolean;
                   Configurez vos règles de réduction
                </DialogDescription>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 sm:p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="p-8 space-y-6">
                <div className="space-y-1.5">
                   <label className="text-[11px] font-black text-[#636E72] uppercase tracking-widest">Code Coupon</label>
                   <Input 
@@ -237,7 +237,7 @@ function PromotionFormDialog({ open, onOpenChange, promotion }: { open: boolean;
                   />
                   {errors.code && <p className="text-[10px] font-bold text-red-500 uppercase">{errors.code}</p>}
                </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                      <label className="text-[11px] font-black text-[#636E72] uppercase tracking-widest">Type</label>
                      <Select value={form.type} onValueChange={(v: PromotionType) => updateField('type', v)}>
@@ -267,7 +267,7 @@ function PromotionFormDialog({ open, onOpenChange, promotion }: { open: boolean;
                      </div>
                   </div>
                </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                      <label className="text-[11px] font-black text-[#636E72] uppercase tracking-widest">Com. min (DZD)</label>
                      <Input type="number" value={form.minOrderAmount} onChange={(e) => updateField('minOrderAmount', e.target.value)} className="h-12 border-[#E9ECF0] rounded-xl font-bold" />
@@ -331,25 +331,25 @@ export default function PromotionsPage() {
    return (
       <div className="space-y-5 pb-28 animate-in fade-in duration-500">
          {/* ─── Header ─── */}
-         <div className="bg-white rounded-xl border px-4 sm:px-6 py-4 sm:py-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:justify-between" style={{ borderColor: C.border }}>
+         <div className="bg-white rounded-xl border px-6 py-5 flex items-center justify-between" style={{ borderColor: C.border }}>
             <div className="flex items-center gap-3">
                <div className="size-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: C.primaryBg }}>
                   <Tag className="size-4" style={{ color: C.primary }} />
                </div>
                <h1 className="text-sm font-extrabold uppercase tracking-wider text-[#2D3436]">Promotions</h1>
             </div>
-            <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold text-white shadow-sm hover:opacity-90 transition-opacity w-full sm:w-auto justify-center" style={{ backgroundColor: C.primary }}>
+            <button onClick={handleCreate} className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold text-white shadow-sm hover:opacity-90 transition-opacity" style={{ backgroundColor: C.primary }}>
                <Plus className="size-3.5" /> Nouvelle promotion
             </button>
          </div>
 
          {/* ─── Search & Actions ─── */}
-         <div className="bg-white rounded-xl border px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:justify-between" style={{ borderColor: C.border }}>
-            <div className="relative flex-1">
+         <div className="bg-white rounded-xl border px-6 py-4 flex items-center justify-between" style={{ borderColor: C.border }}>
+            <div className="relative max-w-sm flex-1">
                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#B2BEC3]" />
-               <Input placeholder="Rechercher un code..." className="pl-10 h-10 bg-[#F8F9FC] border-[#E9ECF0] rounded-lg text-sm w-full" />
+               <Input placeholder="Rechercher un code..." className="pl-10 h-10 bg-[#F8F9FC] border-[#E9ECF0] rounded-lg text-sm" />
             </div>
-            <button className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold border" style={{ borderColor: C.border, color: C.textLight }}>
+            <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold border" style={{ borderColor: C.border, color: C.textLight }}>
                <RefreshCw className="size-3.5" /> Rafraîchir
             </button>
          </div>

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Package, UserCheck, Eye, Phone, CheckCircle2, Truck,
   CheckSquare, XCircle, RotateCcw, Clock, AlertTriangle,
-  PhoneCall, PhoneMissed, PhoneOff, CalendarClock, Zap, ArrowRightLeft,
+  PhoneCall, PhoneMissed, PhoneOff, CalendarClock, Zap,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,7 @@ interface TraceEvent {
   actor?: Actor | null;
 }
 
+// ─── Event config ─────────────────────────────────────────────
 const EVENT_CONFIG: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   NEW:          { label: 'Commande créée',       icon: Package,      color: '#3b82f6', bg: '#eff6ff' },
   ASSIGNED:     { label: 'Assignée à un agent',  icon: UserCheck,    color: '#8b5cf6', bg: '#f5f3ff' },
@@ -43,24 +44,18 @@ const EVENT_CONFIG: Record<string, { label: string; icon: any; color: string; bg
   RETURNED:     { label: 'Retournée',            icon: RotateCcw,    color: '#ef4444', bg: '#fef2f2' },
   CANCELLED:    { label: 'Annulée',              icon: XCircle,      color: '#6b7280', bg: '#f9fafb' },
   PENDING:      { label: 'En attente',           icon: Clock,        color: '#94a3b8', bg: '#f8fafc' },
-  IN_PROGRESS:  { label: 'En cours de traitement', icon: Clock,        color: '#f59e0b', bg: '#fffbeb' },
-  ABANDONED:    { label: 'Panier abandonné',     icon: Package,      color: '#7c3aed', bg: '#f5f3ff' },
 };
 
 const CALL_RESULT_LABELS: Record<string, { label: string; icon: any; color: string }> = {
   ANSWERED:     { label: 'Répondu',          icon: PhoneCall,     color: '#10b981' },
   NOT_ANSWERED: { label: 'Pas de réponse',   icon: PhoneMissed,   color: '#f59e0b' },
-  NRP:          { label: 'Pas de réponse (NRP)', icon: PhoneMissed, color: '#f59e0b' },
   BUSY:         { label: 'Occupé',           icon: PhoneOff,      color: '#ef4444' },
   REFUSED:      { label: 'Refusé',           icon: PhoneOff,      color: '#ef4444' },
   POSTPONED:    { label: 'Rappel planifié',  icon: CalendarClock, color: '#8b5cf6' },
 };
 
-function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?: TraceEvent; isLast: boolean }) {
-  const isModificationOnly = event.from_status === event.to_status && event.note?.startsWith("Modification");
-  const cfg = isModificationOnly
-    ? { label: 'Modification des détails', icon: ArrowRightLeft, color: '#d97706', bg: '#fef3c7' }
-    : (EVENT_CONFIG[event.to_status] ?? EVENT_CONFIG.NEW);
+function EventRow({ event, isLast }: { event: TraceEvent; isLast: boolean }) {
+  const cfg = EVENT_CONFIG[event.to_status] ?? EVENT_CONFIG.NEW;
   const Icon = cfg.icon;
   const callCfg = event.call_result ? CALL_RESULT_LABELS[event.call_result] : null;
   const CallIcon = callCfg?.icon;
@@ -68,15 +63,6 @@ function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?:
   const createdAt = new Date(event.created_at);
   const timeAgo = formatDistanceToNow(createdAt, { addSuffix: true, locale: fr });
   const exactTime = format(createdAt, 'dd/MM/yyyy HH:mm:ss', { locale: fr });
-
-  let durationText: string | null = null;
-  if (prevEvent) {
-    const ms = createdAt.getTime() - new Date(prevEvent.created_at).getTime();
-    const min = Math.floor(ms / 60000);
-    const sec = Math.floor((ms % 60000) / 1000);
-    if (min < 60) durationText = `${min}m ${sec}s`;
-    else durationText = `${Math.floor(min / 60)}h ${min % 60}m`;
-  }
 
   return (
     <div className="flex gap-3">
@@ -97,11 +83,6 @@ function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?:
                 {EVENT_CONFIG[event.from_status]?.label ?? event.from_status}
                 {' → '}
                 {cfg.label}
-              </p>
-            )}
-            {durationText && (
-              <p className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-flex mt-1">
-                ⏱️ {durationText} (depuis l'étape précédente)
               </p>
             )}
           </div>
@@ -128,7 +109,7 @@ function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?:
         {callCfg && CallIcon && (
           <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black"
             style={{ backgroundColor: `${callCfg.color}15`, color: callCfg.color }}>
-            <CallIcon className="size-3" /> {callCfg.label} {event.call_attempt ? `(Tentative #${event.call_attempt})` : ''}
+            <CallIcon className="size-3" /> {callCfg.label}
           </div>
         )}
 
@@ -182,72 +163,28 @@ function SLAPanel({ events }: { events: TraceEvent[] }) {
     { label: 'Confirmation → Expédition', value: diff(confirmed, shipped), warn: 24 * 3600000, a: confirmed, b: shipped },
   ].filter(s => s.a && s.b);
 
-  const formatMicroDuration = (ms: number) => {
-    const min = Math.floor(ms / 60000);
-    const sec = Math.floor((ms % 60000) / 1000);
-    if (min < 60) return `${min}m ${sec}s`;
-    return `${Math.floor(min / 60)}h ${min % 60}m ${sec}s`;
-  };
-
-  const microSteps = events.slice(1).map((ev, i) => {
-    const prev = events[i];
-    const ms = new Date(ev.created_at).getTime() - new Date(prev.created_at).getTime();
-    return {
-      label: `${EVENT_CONFIG[prev.to_status]?.label ?? prev.to_status} → ${EVENT_CONFIG[ev.to_status]?.label ?? ev.to_status}`,
-      start: format(new Date(prev.created_at), 'dd/MM HH:mm:ss'),
-      end: format(new Date(ev.created_at), 'dd/MM HH:mm:ss'),
-      duration: formatMicroDuration(ms)
-    };
-  });
+  if (!slaItems.length) return null;
 
   return (
-    <div className="space-y-4">
-      {/* SLA Principaux */}
-      {slaItems.length > 0 && (
-        <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5">
-            <Zap className="size-3" /> Indicateurs SLA Principaux
-          </p>
-          {slaItems.map(item => {
-            const ms = item.a && item.b ? new Date(item.b!).getTime() - new Date(item.a!).getTime() : 0;
-            const ok = ms <= item.warn;
-            return (
-              <div key={item.label} className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">{item.label}</span>
-                <span className={cn(
-                  'text-xs font-black px-2 py-0.5 rounded-full',
-                  ok ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                )}>
-                  {ok ? '✓' : '⚠'} {item.value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Micro Détails */}
-      {microSteps.length > 0 && (
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600 flex items-center gap-1.5">
-            <Clock className="size-3" /> Processus Détaillé (Micro KPIs)
-          </p>
-          <div className="space-y-2 divide-y divide-slate-50">
-            {microSteps.map((step, i) => (
-              <div key={i} className="pt-2 flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-700">{step.label}</span>
-                  <span className="text-[10px] font-mono font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{step.duration}</span>
-                </div>
-                <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
-                  <span>Début: {step.start}</span>
-                  <span>Fin: {step.end}</span>
-                </div>
-              </div>
-            ))}
+    <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5">
+        <Zap className="size-3" /> Indicateurs SLA
+      </p>
+      {slaItems.map(item => {
+        const ms = item.a && item.b ? new Date(item.b!).getTime() - new Date(item.a!).getTime() : 0;
+        const ok = ms <= item.warn;
+        return (
+          <div key={item.label} className="flex items-center justify-between">
+            <span className="text-xs text-slate-500">{item.label}</span>
+            <span className={cn(
+              'text-xs font-black px-2 py-0.5 rounded-full',
+              ok ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+            )}>
+              {ok ? '✓' : '⚠'} {item.value}
+            </span>
           </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -258,16 +195,14 @@ interface OrderTraceabilityPanelProps {
 }
 
 export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps) {
-  const eventsQuery = useQuery<any>({
+  const eventsQuery = useQuery<{ success: boolean; data: TraceEvent[] }>({
     queryKey: ['order-events', orderId],
     queryFn: () => apiFetch(`/api/v1/orders/${orderId}/events`),
     refetchInterval: 10000,
     enabled: !!orderId,
   });
 
-  const events = Array.isArray(eventsQuery.data)
-    ? eventsQuery.data
-    : (eventsQuery.data?.data ?? []);
+  const events = eventsQuery.data?.data ?? [];
 
   if (eventsQuery.isLoading) {
     return (
@@ -304,7 +239,7 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
 
       <div className="mt-4 space-y-0">
         {events.map((event, i) => (
-          <EventRow key={event.id} event={event} prevEvent={events[i - 1]} isLast={i === events.length - 1} />
+          <EventRow key={event.id} event={event} isLast={i === events.length - 1} />
         ))}
       </div>
     </div>

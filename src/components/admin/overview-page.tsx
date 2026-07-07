@@ -23,7 +23,6 @@ import {
    Wallet,
    CreditCard,
    RotateCcw,
-   Calendar,
    ShieldCheck,
    Percent,
    ArrowUpRight,
@@ -57,7 +56,6 @@ import {
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { apiFetch } from '@/lib/api-client';
-import { ALGERIA_MAP_WILAYAS } from './algeria-map-data';
 import type {
    KpiData,
    ApiResponse,
@@ -147,13 +145,10 @@ function EmptyState({ message = "Aucune donnée trouvée" }) {
    );
 }
 
-function MetricRow({ label, value, suffix = "(DZD)", color, description }: { label: string; value: string | number; suffix?: string; color?: string; description?: string }) {
+function MetricRow({ label, value, suffix = "(DZD)", color }: { label: string; value: string | number; suffix?: string; color?: string }) {
    return (
       <div className="flex items-center justify-between py-3 border-b border-[#F0F3F6] last:border-0 hover:bg-[#FAFBFD] px-2 -mx-2 rounded transition-colors">
-         <div>
-            <span className="text-[13px] font-medium text-[#636E72] block">{label}</span>
-            {description && <span className="text-[9px] text-[#B2BEC3] leading-tight block mt-0.5 max-w-[180px]">{description}</span>}
-         </div>
+         <span className="text-[13px] font-medium text-[#636E72]">{label}</span>
          <div className="flex items-baseline gap-1.5">
             <span className="text-[13px] font-bold tabular-nums" style={{ color: color || '#2D3436' }}>{value}</span>
             {suffix && <span className="text-[10px] font-semibold text-[#B2BEC3]">{suffix}</span>}
@@ -162,7 +157,7 @@ function MetricRow({ label, value, suffix = "(DZD)", color, description }: { lab
    );
 }
 
-function PerformanceGauge({ label, value, color, displayMode = 'percentage', rawValue, description }: { label: string; value: number; color: string; displayMode?: 'numbers' | 'percentage'; rawValue?: number; description?: string }) {
+function PerformanceGauge({ label, value, color }: { label: string; value: number; color: string }) {
    const radius = 45;
    const circumference = 2 * Math.PI * radius;
    const offset = circumference - (value / 100) * circumference;
@@ -180,15 +175,10 @@ function PerformanceGauge({ label, value, color, displayMode = 'percentage', raw
                />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center flex-col">
-               <span className="text-lg font-extrabold tabular-nums" style={{ color }}>
-                  {displayMode === 'numbers' && rawValue !== undefined ? rawValue : `${value}%`}
-               </span>
+               <span className="text-lg font-extrabold tabular-nums" style={{ color }}>{value}%</span>
             </div>
          </div>
-         <div className="flex flex-col items-center">
-            <span className="text-[11px] font-semibold text-[#636E72] text-center max-w-[100px] leading-tight">{label}</span>
-            {description && <span className="text-[8px] text-[#B2BEC3] text-center max-w-[100px] leading-tight mt-0.5">{description}</span>}
-         </div>
+         <span className="text-[11px] font-semibold text-[#636E72] text-center max-w-[100px] leading-tight">{label}</span>
       </div>
    );
 }
@@ -196,169 +186,50 @@ function PerformanceGauge({ label, value, color, displayMode = 'percentage', raw
 // ═══════════════════════════════════════════════════════════════
 // Algeria SVG Map Component
 // ═══════════════════════════════════════════════════════════════
-function AlgeriaMap({ data }: { data: TopItem[] }) {
-   const [zoom, setZoom] = useState(1);
-   const [pan, setPan] = useState({ x: 0, y: 0 });
-   const [isDragging, setIsDragging] = useState(false);
-   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-   const [hoveredWilaya, setHoveredWilaya] = useState<{ name: string; count: number; x: number; y: number } | null>(null);
-
-   const maxCount = Math.max(...data.map(d => d.count || d.value || 0), 1);
-
-   const normalizeString = (str: string) => 
-      str
-         .toLowerCase()
-         .normalize("NFD")
-         .replace(/[\u0300-\u036f]/g, "")
-         .replace(/[^a-z0-9]/g, "");
-
-   const getWilayaStats = (name: string) => {
-      const normalized = normalizeString(name);
-      const match = data.find(d => normalizeString(d.name) === normalized || normalizeString(d.id) === normalized);
-      return match ? (match.count || match.value || 0) : 0;
-   };
-
-   const getFillColor = (name: string) => {
-      const count = getWilayaStats(name);
-      if (count === 0) return '#F5F6FA'; // Premium light gray
-      
-      const ratio = Math.min(1, count / maxCount);
-      // Interpolate from a light grayish lavender (#DFE6E9) to primary purple (#6C5CE7)
-      const r = Math.round(223 + (108 - 223) * ratio);
-      const g = Math.round(230 + (92 - 230) * ratio);
-      const b = Math.round(233 + (231 - 233) * ratio);
-      return `rgb(${r}, ${g}, ${b})`;
-   };
-
-   // Zoom controls
-   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 4));
-   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.75));
-   const handleReset = () => {
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-   };
-
-   // Drag & Pan handlers
-   const handleMouseDown = (e: React.MouseEvent) => {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-   };
-
-   const handleMouseMoveContainer = (e: React.MouseEvent) => {
-      if (!isDragging) return;
-      setPan({
-         x: e.clientX - dragStart.x,
-         y: e.clientY - dragStart.y,
-      });
-   };
-
-   const handleMouseUp = () => setIsDragging(false);
-
-   const showTooltip = (e: React.MouseEvent, name: string) => {
-      const count = getWilayaStats(name);
-      const rect = e.currentTarget.getBoundingClientRect();
-      const parentRect = e.currentTarget.parentElement?.getBoundingClientRect();
-      if (parentRect) {
-         setHoveredWilaya({
-            name,
-            count,
-            x: e.clientX - parentRect.left,
-            y: e.clientY - parentRect.top - 40,
-         });
-      }
-   };
-
+function AlgeriaMap() {
    return (
-      <div 
-         className="relative w-full aspect-[1/1.1] flex items-center justify-center bg-slate-50/50 rounded-xl overflow-hidden select-none border border-slate-100/85 cursor-grab active:cursor-grabbing"
-         onMouseDown={handleMouseDown}
-         onMouseMove={handleMouseMoveContainer}
-         onMouseUp={handleMouseUp}
-         onMouseLeave={handleMouseUp}
-      >
-         <svg 
-            viewBox="-248.385 -239.386 982.451 955.452" 
-            className="w-full h-full transition-transform duration-100 ease-out"
-            style={{
-               transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-               transformOrigin: 'center center',
-            }}
-         >
-            {ALGERIA_MAP_WILAYAS.map((w) => {
-               const fill = getFillColor(w.name);
-               const isHighlighted = hoveredWilaya?.name === w.name;
-               
-               const commonProps = {
-                  fill,
-                  stroke: isHighlighted ? COLORS.primary : '#FFFFFF',
-                  strokeWidth: isHighlighted ? '2' : '0.8',
-                  className: "transition-all duration-200 cursor-pointer hover:opacity-95 hover:brightness-95",
-                  onMouseEnter: (e: React.MouseEvent) => showTooltip(e, w.name),
-                  onMouseMove: (e: React.MouseEvent) => showTooltip(e, w.name),
-                  onMouseLeave: () => setHoveredWilaya(null),
-                  style: {
-                     filter: isHighlighted ? 'drop-shadow(0px 2px 6px rgba(108, 92, 231, 0.25))' : 'none'
-                  }
-               };
-
-               if (w.type === "polygon") {
-                  return <polygon key={w.name} points={w.data} {...commonProps} />;
-               } else {
-                  return <path key={w.name} d={w.data} {...commonProps} />;
-               }
-            })}
+      <div className="relative w-full aspect-[1/1.1] flex items-center justify-center">
+         <svg viewBox="0 0 600 700" className="w-full h-full">
+            <path
+               d="M180,60 L220,40 L280,35 L340,30 L400,40 L450,55 L480,50 L510,70
+               L530,100 L540,140 L535,180 L545,220 L530,260 L535,300
+               L520,340 L530,380 L510,420 L520,460 L500,500 L480,540
+               L450,570 L420,600 L380,630 L340,650 L300,660 L260,650
+               L220,630 L190,600 L160,570 L140,530 L120,490 L100,450
+               L90,400 L80,360 L70,310 L65,260 L70,220 L80,180
+               L90,140 L110,100 L140,80 Z"
+               fill="#EEF0F5"
+               stroke="#D1D8E0"
+               strokeWidth="2"
+            />
+            <path d="M200,200 L400,180 M150,300 L500,280 M180,400 L480,390 M250,500 L420,490"
+               stroke="#D1D8E0" strokeWidth="1" fill="none" />
+            <path d="M300,40 L290,250 M300,250 L280,500 M200,150 L250,450 M400,120 L380,480"
+               stroke="#D1D8E0" strokeWidth="1" fill="none" />
+            <circle cx="310" cy="100" r="12" fill={COLORS.primary} opacity="0.3" />
+            <circle cx="310" cy="100" r="6" fill={COLORS.primary} opacity="0.7" />
+            <circle cx="250" cy="130" r="10" fill={COLORS.success} opacity="0.3" />
+            <circle cx="250" cy="130" r="5" fill={COLORS.success} opacity="0.7" />
+            <circle cx="380" cy="120" r="8" fill={COLORS.warning} opacity="0.3" />
+            <circle cx="380" cy="120" r="4" fill={COLORS.warning} opacity="0.7" />
          </svg>
-
-         {/* Floating Zoom Controls */}
-         <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
-            <button 
-               onClick={handleZoomIn}
-               type="button"
-               className="size-8 bg-white/90 backdrop-blur border border-slate-200/80 rounded-lg flex items-center justify-center text-slate-600 hover:text-[#6C5CE7] hover:bg-white shadow-sm transition-all text-sm font-black"
-            >
-               +
-            </button>
-            <button 
-               onClick={handleZoomOut}
-               type="button"
-               className="size-8 bg-white/90 backdrop-blur border border-slate-200/80 rounded-lg flex items-center justify-center text-slate-600 hover:text-[#6C5CE7] hover:bg-white shadow-sm transition-all text-sm font-black"
-            >
-               −
-            </button>
-            <button 
-               onClick={handleReset}
-               type="button"
-               className="size-8 bg-white/90 backdrop-blur border border-slate-200/80 rounded-lg flex items-center justify-center text-slate-600 hover:text-[#6C5CE7] hover:bg-white shadow-sm transition-all"
-            >
-               <Globe className="size-3.5" />
+         <div className="absolute top-2 right-2 flex flex-col gap-1">
+            <button className="size-7 bg-white border border-[#E9ECF0] rounded-md flex items-center justify-center text-[#636E72] hover:bg-[#F8F9FC] text-xs font-bold">+</button>
+            <button className="size-7 bg-white border border-[#E9ECF0] rounded-md flex items-center justify-center text-[#636E72] hover:bg-[#F8F9FC] text-xs font-bold">−</button>
+            <button className="size-7 bg-white border border-[#E9ECF0] rounded-md flex items-center justify-center text-[#636E72] hover:bg-[#F8F9FC]">
+               <Globe className="size-3" />
             </button>
          </div>
-
-         {/* Custom Floating Interactive Tooltip */}
-         {hoveredWilaya && (
-            <div 
-               className="absolute z-20 pointer-events-none bg-slate-900 text-white rounded-xl px-3 py-2 text-xs shadow-xl animate-in fade-in zoom-in-95 duration-150 border border-slate-800"
-               style={{
-                  left: hoveredWilaya.x,
-                  top: hoveredWilaya.y,
-                  transform: 'translate(-50%, -100%)',
-               }}
-            >
-               <div className="font-extrabold tracking-tight text-[11px] uppercase text-slate-300">{hoveredWilaya.name}</div>
-               <div className="font-black text-white text-sm mt-0.5 flex items-baseline gap-1">
-                  <span>{hoveredWilaya.count}</span>
-                  <span className="text-[9px] font-bold text-slate-400 normal-case">commande{hoveredWilaya.count > 1 ? 's' : ''}</span>
-               </div>
+         {/* Legend */}
+         <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1">
+            <span className="text-[10px] font-bold text-[#636E72]">High</span>
+            <div className="w-4 h-20 rounded-full overflow-hidden border border-[#E9ECF0]">
+               <div className="w-full h-full bg-gradient-to-b from-[#6C5CE7] via-[#A29BFE] to-[#DFE6E9]" />
             </div>
-         )}
-
-         {/* Map Legend */}
-         <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur border border-slate-200/80 p-2.5 rounded-xl flex flex-col items-center gap-1 z-10 shadow-sm">
-            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest leading-none">Max ({maxCount})</span>
-            <div className="w-16 h-2 rounded-full overflow-hidden border border-slate-100 my-1 bg-[#EEF0F5]">
-               <div className="h-full bg-gradient-to-r from-[#DFE6E9] via-[#A29BFE] to-[#6C5CE7]" />
+            <div className="flex items-baseline gap-1">
+               <span className="text-sm font-extrabold text-[#2D3436]">0</span>
             </div>
-            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest leading-none">Min (0)</span>
+            <span className="text-[10px] font-bold text-[#636E72]">Low</span>
          </div>
       </div>
    );
@@ -370,15 +241,17 @@ function ConfirmateurPerformance({ user, kpi, storeId }: { user: any; kpi: any; 
 
    let estimatedSalary = 0;
    if (paymentType === 'PER_DELIVERED_ORDER') estimatedSalary = (kpi?.deliveredOrders || 0) * rate;
+   else if (paymentType === 'PER_CONFIRMED_ORDER') estimatedSalary = (kpi?.confirmedOrders || 0) * rate;
    else if (paymentType === 'MONTHLY_SALARY') estimatedSalary = rate;
-   else estimatedSalary = (kpi?.deliveredOrders || 0) * 400;
+   else estimatedSalary = (kpi?.confirmedOrders || 0) * 100;
 
    const dailyTarget = user?.dailyTarget || user?.daily_target || 10;
 
    const recentOrdersQuery = useQuery<any>({
       queryKey: ['agent-recent-orders', user?.id, storeId],
       queryFn: () =>
-         apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=5`),
+         fetch(`/api/v1/orders?store_id=${storeId}&pageSize=5&assigned_to=${user?.id}`)
+            .then(r => r.json()),
       refetchInterval: 30000,
       enabled: !!user?.id && !!storeId,
    });
@@ -458,40 +331,31 @@ export default function OverviewPage() {
 
    // ─── State for Filters ───────────────────────────
    const [selectedPeriod, setSelectedPeriod] = React.useState('all_time');
-   const [startDate, setStartDate] = React.useState('');
-   const [endDate, setEndDate] = React.useState('');
-   const [displayMode, setDisplayMode] = React.useState<'numbers' | 'percentage'>('percentage');
-
-   const buildQueryStr = (type: string) => {
-      const params = new URLSearchParams({ store_id: storeId, type, period: selectedPeriod });
-      if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
-      if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
-      return params.toString();
-   };
+   const [displayMode, setDisplayMode] = React.useState<'numbers' | 'percentage'>('numbers');
 
    const kpiQuery = useQuery<ApiResponse<KpiData>>({
-      queryKey: ['analytics', 'kpi', storeId, selectedPeriod, startDate, endDate],
-      queryFn: () => apiFetch(`/api/v1/analytics?${buildQueryStr('kpi')}`),
+      queryKey: ['analytics', 'kpi', storeId, selectedPeriod],
+      queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=kpi&period=${selectedPeriod}`),
    });
 
    const revenueQuery = useQuery<ApiResponse<RevenueDataPoint[]>>({
-      queryKey: ['analytics', 'revenue', storeId, selectedPeriod, startDate, endDate],
-      queryFn: () => apiFetch(`/api/v1/analytics?${buildQueryStr('revenue')}`),
+      queryKey: ['analytics', 'revenue', storeId, selectedPeriod],
+      queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=revenue&period=${selectedPeriod}`),
    });
 
    const topProductsQuery = useQuery<ApiResponse<TopItem[]>>({
-      queryKey: ['analytics', 'products', storeId, selectedPeriod, startDate, endDate],
-      queryFn: () => apiFetch(`/api/v1/analytics?${buildQueryStr('products')}`),
+      queryKey: ['analytics', 'products', storeId, selectedPeriod],
+      queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=products&period=${selectedPeriod}`),
    });
 
    const topWilayasQuery = useQuery<ApiResponse<TopItem[]>>({
-      queryKey: ['analytics', 'wilayas', storeId, selectedPeriod, startDate, endDate],
-      queryFn: () => apiFetch(`/api/v1/analytics?${buildQueryStr('wilayas')}`),
+      queryKey: ['analytics', 'wilayas', storeId, selectedPeriod],
+      queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=wilayas&period=${selectedPeriod}`),
    });
 
    const topAgentsQuery = useQuery<ApiResponse<TopItem[]>>({
-      queryKey: ['analytics', 'agents', storeId, selectedPeriod, startDate, endDate],
-      queryFn: () => apiFetch(`/api/v1/analytics?${buildQueryStr('agents')}`),
+      queryKey: ['analytics', 'agents', storeId, selectedPeriod],
+      queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=agents&period=${selectedPeriod}`),
    });
 
    const kpi = kpiQuery.data?.data;
@@ -535,27 +399,25 @@ export default function OverviewPage() {
                   </div>
                   <h1 className="text-sm sm:text-base font-extrabold uppercase tracking-wider text-[#2D3436]">Tableau de Bord</h1>
                </div>
+               <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-bold w-full sm:w-auto justify-center" style={{ backgroundColor: COLORS.primary }}>
+                  <Filter className="size-3.5" />
+                  Filtres
+               </button>
             </div>
 
             <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4">
-               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  <div className="flex items-center gap-2 bg-[#F8F9FC] border border-[#E9ECF0] rounded-lg px-3 py-1.5 shrink-0">
-                     <Calendar className="size-3.5 text-[#B2BEC3]" />
-                     <input type="date" value={startDate} onChange={e => {setStartDate(e.target.value); setSelectedPeriod('');}} className="bg-transparent text-xs font-bold text-[#636E72] outline-none w-[105px]" />
-                     <span className="text-[#B2BEC3]">-</span>
-                     <input type="date" value={endDate} onChange={e => {setEndDate(e.target.value); setSelectedPeriod('');}} className="bg-transparent text-xs font-bold text-[#636E72] outline-none w-[105px]" />
-                  </div>
+               <div className="flex flex-wrap gap-1.5 sm:gap-2">
                   {filterOptions.map(f => (
                      <button
                         key={f.value}
-                        onClick={() => { setSelectedPeriod(f.value); setStartDate(''); setEndDate(''); }}
+                        onClick={() => setSelectedPeriod(f.value)}
                         className={cn(
                            "px-4 py-2 text-xs font-bold rounded-full transition-all border",
-                           selectedPeriod === f.value && !startDate && !endDate
+                           selectedPeriod === f.value
                               ? "text-white border-transparent"
                               : "bg-[#F8F9FC] text-[#636E72] border-[#E9ECF0] hover:border-[#B2BEC3]"
                         )}
-                        style={selectedPeriod === f.value && !startDate && !endDate ? { backgroundColor: COLORS.primary } : undefined}
+                        style={selectedPeriod === f.value ? { backgroundColor: COLORS.primary } : undefined}
                      >
                         {f.label}
                      </button>
@@ -585,12 +447,7 @@ export default function OverviewPage() {
          </div>
 
          {/* ─── Role Based View ─────────────────────────── */}
-         {kpiQuery.isLoading ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-4">
-               <RefreshCw className="size-8 text-[#B2BEC3] animate-spin" />
-               <p className="text-sm font-bold text-[#B2BEC3]">Chargement des données...</p>
-            </div>
-         ) : currentUser?.role === 'CONFIRMATEUR' ? (
+         {currentUser?.role === 'CONFIRMATEUR' ? (
             <ConfirmateurPerformance user={currentUser} kpi={kpi} storeId={storeId} />
          ) : (
             <>
@@ -632,7 +489,7 @@ export default function OverviewPage() {
                            ))}
                            {topWilayas.length === 0 && <EmptyState />}
                         </div>
-                        <AlgeriaMap data={topWilayas} />
+                        <AlgeriaMap />
                      </div>
                   </SectionCard>
                </div>
@@ -674,12 +531,11 @@ export default function OverviewPage() {
                         </div>
                      </div>
                      <div className="p-5 space-y-0">
-                        <MetricRow label="Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Total des ventes brutes générées" />
-                        <MetricRow label="Ventes (Upsells)" value={kpi?.upsellRevenue ? formatPrice(kpi.upsellRevenue) : '0'} color={COLORS.success} description="Revenus générés par les offres additionnelles" />
-                        <MetricRow label="Ventes (Récupérés)" value={kpi?.abandonedCartRevenue ? formatPrice(kpi.abandonedCartRevenue) : '0'} color={COLORS.info} description="Paniers abandonnés convertis en ventes" />
-                        <MetricRow label="Revenus nets" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} description="Chiffre d'affaires après annulations" />
-                        <MetricRow label="Bénéfices (bruts)" value={kpi?.totalProfit ? formatPrice(kpi.totalProfit) : '0'} description="Profit estimé avant déduction des retours" />
-                        <MetricRow label="ROI" value={`${kpi?.roi || 0}%`} suffix="" description="Retour sur investissement estimé" />
+                        <MetricRow label="Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} />
+                        <MetricRow label="Revenus" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} />
+                        <MetricRow label="Bénéfices" value={kpi?.totalProfit ? formatPrice(kpi.totalProfit) : '0'} />
+                        <MetricRow label="ROI" value={`${kpi?.roas || 0}%`} suffix="" />
+                        <MetricRow label="Capitaux engagés" value={formatPrice(kpi?.totalRevenue || 0)} />
                      </div>
                   </div>
 
@@ -694,10 +550,10 @@ export default function OverviewPage() {
                         </div>
                      </div>
                      <div className="p-5 space-y-0">
-                        <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(kpi.shippingFeeGap) : '0'} description="Coûts totaux de transport" />
-                        <MetricRow label="Remises accordées" value={(kpi as any)?.totalDiscounts ? formatPrice((kpi as any).totalDiscounts) : '0'} description="Total des réductions offertes" />
-                        <MetricRow label="Frais de retour" value={kpi?.returnedOrders ? formatPrice(kpi.returnedOrders * (kpi.avgOrderValue || 0)) : '0'} description="Pertes liées aux colis non livrés" />
-                        <MetricRow label="Coût des produits (COGS)" value={kpi?.totalProfit !== undefined && kpi?.netRevenue !== undefined ? formatPrice(Math.max(0, (kpi.netRevenue || 0) - (kpi.totalProfit || 0) - (kpi.shippingFeeGap || 0))) : '—'} description="Valeur d'achat de la marchandise" />
+                        <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(kpi.shippingFeeGap) : '0'} />
+                        <MetricRow label="Remises accordées" value={kpi?.totalDiscounts ? formatPrice(kpi.totalDiscounts) : '0'} />
+                        <MetricRow label="Frais de retour" value={kpi?.returnedOrders ? formatPrice(kpi.returnedOrders * (kpi.avgOrderValue || 0)) : '0'} />
+                        <MetricRow label="Coût des produits (COGS)" value={kpi?.totalProfit !== undefined && kpi?.netRevenue !== undefined ? formatPrice(Math.max(0, (kpi.netRevenue || 0) - (kpi.totalProfit || 0))) : '—'} />
                      </div>
                   </div>
 
@@ -712,11 +568,40 @@ export default function OverviewPage() {
                         </div>
                      </div>
                      <div className="p-5 flex-1 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-2 gap-4 place-items-center">
-                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} rawValue={kpi?.confirmedOrders || 0} displayMode={displayMode} color={COLORS.primary} description="Taux de validation" />
-                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.success} description="Taux de colis livrés" />
-                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} rawValue={kpi?.returnedOrders || 0} displayMode={displayMode} color={COLORS.danger} description="Proportion d'échecs" />
-                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.orange} description="Visites devenues achats" />
+                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color={COLORS.primary} />
+                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color={COLORS.success} />
+                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color={COLORS.danger} />
+                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color={COLORS.orange} />
                      </div>
+                  </div>
+               </div>
+
+               {/* ─── Sales Chart ─────────────────────── */}
+               <div className="bg-white rounded-xl border border-[#E9ECF0] overflow-hidden">
+                  <div className="px-5 py-4 border-b border-[#E9ECF0] flex items-center justify-between">
+                     <div className="flex items-center gap-3">
+                        <div className="size-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: COLORS.primaryBg }}>
+                           <BarChart3 className="size-4" style={{ color: COLORS.primary }} />
+                        </div>
+                        <h3 className="text-sm font-bold text-[#2D3436]">Évolution des ventes ({filterOptions.find(f => f.value === selectedPeriod)?.label})</h3>
+                     </div>
+                  </div>
+                  <div className="p-4 h-[300px]">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData}>
+                           <defs>
+                              <linearGradient id="colorRevCod" x1="0" y1="0" x2="0" y2="1">
+                                 <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.3} />
+                                 <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0.02} />
+                              </linearGradient>
+                           </defs>
+                           <CartesianGrid strokeDasharray="3 3" stroke="#F0F3F6" vertical={false} />
+                           <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#B2BEC3', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                           <YAxis tick={{ fontSize: 10, fill: '#B2BEC3', fontWeight: 600 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}K`} />
+                           <RechartsTooltip contentStyle={tooltipStyle} />
+                           <Area type="monotone" dataKey="revenue" stroke={COLORS.primary} strokeWidth={2.5} fillOpacity={1} fill="url(#colorRevCod)" />
+                        </AreaChart>
+                     </ResponsiveContainer>
                   </div>
                </div>
             </>

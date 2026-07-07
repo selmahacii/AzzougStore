@@ -94,7 +94,7 @@ export default function ExpensesDashboard() {
 
    // Short-term: operational charges recurring ≤ monthly. Long-term: structural investments ≥ yearly.
    const TERM_BY_CATEGORY: Record<string, 'SHORT_TERM' | 'LONG_TERM'> = {
-      ADVERTISING: 'SHORT_TERM', HR: 'SHORT_TERM', IT: 'SHORT_TERM',
+      MARKETING: 'SHORT_TERM', HR: 'SHORT_TERM', IT: 'SHORT_TERM',
       LOGISTICS: 'SHORT_TERM', TAX: 'SHORT_TERM',
       RENT: 'LONG_TERM', OTHER: 'SHORT_TERM',
    };
@@ -104,7 +104,7 @@ export default function ExpensesDashboard() {
       label: '',
       amount: 0,
       tax_amount: 0,
-      category: 'ADVERTISING',
+      category: 'MARKETING',
       term_type: 'SHORT_TERM' as 'SHORT_TERM' | 'LONG_TERM',
       description: '',
       is_recurring: false,
@@ -149,7 +149,7 @@ export default function ExpensesDashboard() {
          toast.success('Dépense enregistrée dans le grand livre');
          setIsCreating(false);
          setFormData({ 
-            label: '', amount: 0, tax_amount: 0, category: 'ADVERTISING', 
+            label: '', amount: 0, tax_amount: 0, category: 'MARKETING', 
             term_type: 'SHORT_TERM', description: '', is_recurring: false, 
             beneficiary: '', wallet_id: '', recurrence_period: 'MONTHLY',
             expense_date: new Date().toISOString().split('T')[0],
@@ -166,7 +166,7 @@ export default function ExpensesDashboard() {
       { label: 'Flux de Sortie Global', value: totalExpenses, icon: DollarSign, color: C.text, bgColor: '#F0F3F6' },
       { label: 'Charges Court Terme', value: shortTermTotal, icon: Clock, color: C.warning, bgColor: C.warningBg },
       { label: 'Charges Long Terme', value: longTermTotal, icon: Building2, color: C.danger, bgColor: C.dangerBg },
-      { label: 'Marketing & ADS', value: expenses.filter(e => e.category === 'ADVERTISING').reduce((s: number, e: any) => s + e.amount, 0), icon: Zap, color: C.primary, bgColor: C.primaryBg },
+      { label: 'Marketing & ADS', value: expenses.filter(e => e.category === 'MARKETING').reduce((s: number, e: any) => s + e.amount, 0), icon: Zap, color: C.primary, bgColor: C.primaryBg },
    ];
 
    return (
@@ -227,7 +227,7 @@ export default function ExpensesDashboard() {
                      <SelectItem value="all">TOUTES CHARGES</SelectItem>
                      <SelectItem value="SHORT_TERM">⚡ COURT TERME</SelectItem>
                      <SelectItem value="LONG_TERM">🏗 LONG TERME</SelectItem>
-                     <SelectItem value="ADVERTISING">MARKETING & ADS</SelectItem>
+                     <SelectItem value="MARKETING">MARKETING & ADS</SelectItem>
                      <SelectItem value="HR">SALAIRES & RH</SelectItem>
                      <SelectItem value="IT">INFRA & SAAS</SelectItem>
                      <SelectItem value="LOGISTICS">LOGISTIQUE</SelectItem>
@@ -287,34 +287,15 @@ export default function ExpensesDashboard() {
                            </td>
                            <td className="px-10 py-6">
                               <div className="flex flex-col">
-                                 <span className="text-base font-black text-rose-500 tabular-nums">-{formatPrice(e.amount + (e.tax_amount || 0))}</span>
-                                 <span className="text-[9px] font-black text-slate-300 uppercase tracking-wide">TTC</span>
-                                 {(e.tax_amount || 0) > 0 && (
-                                    <span className="text-[10px] font-bold text-slate-400">
-                                       HT: {formatPrice(e.amount)} · TVA: {formatPrice(e.tax_amount)}
-                                    </span>
-                                 )}
+                                 <span className="text-base font-black text-rose-500 tabular-nums">-{formatPrice(e.amount)}</span>
+                                 {e.tax_amount > 0 && <span className="text-[10px] font-bold text-slate-300">Incl. Tax: {formatPrice(e.tax_amount)}</span>}
                               </div>
                            </td>
                            <td className="px-10 py-6 text-center">
                               {e.is_recurring ? (
-                                 <div className="flex flex-col items-center gap-1">
-                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-[#6C5CE7]">
-                                       <Repeat className="size-3" />
-                                       <span className="text-[9px] font-black uppercase">{e.recurrence_period || 'MONTH'}</span>
-                                    </div>
-                                    {e.created_at && (() => {
-                                       const createdDate = new Date(e.created_at);
-                                       const periodMap: Record<string, number> = { DAILY: 1, WEEKLY: 7, MONTHLY: 30, YEARLY: 365 };
-                                       const days = periodMap[e.recurrence_period || 'MONTHLY'] || 30;
-                                       const nextDue = new Date(createdDate);
-                                       while (nextDue <= new Date()) nextDue.setDate(nextDue.getDate() + days);
-                                       return (
-                                          <span className="text-[8px] font-black text-slate-400">
-                                             Prochain: {nextDue.toLocaleDateString('fr-DZ', { day: '2-digit', month: 'short' })}
-                                          </span>
-                                       );
-                                    })()}
+                                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-[#6C5CE7]">
+                                    <Repeat className="size-3" />
+                                    <span className="text-[9px] font-black uppercase">{e.recurrence_period || 'MONTH'}</span>
                                  </div>
                               ) : (
                                  <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Ponctuel</span>
@@ -371,7 +352,7 @@ export default function ExpensesDashboard() {
 
                   <div className="flex-1 overflow-y-auto p-10 custom-scrollbar pb-32">
                      <TabsContent value="basis" className="mt-0 space-y-8 animate-in fade-in slide-in-from-bottom-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                        <div className="grid grid-cols-2 gap-8">
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Libellé de la dépense *</label>
                               <Input 
@@ -387,7 +368,7 @@ export default function ExpensesDashboard() {
                                     <SelectValue placeholder="Choisir" />
                                  </SelectTrigger>
                                  <SelectContent className="rounded-[24px]">
-                                    <SelectItem value="ADVERTISING" className="font-bold">MARKETING & ADS</SelectItem>
+                                    <SelectItem value="MARKETING" className="font-bold">MARKETING & ADS</SelectItem>
                                     <SelectItem value="HR" className="font-bold">SALAIRES & RH</SelectItem>
                                     <SelectItem value="IT" className="font-bold">INFRA & SAAS</SelectItem>
                                     <SelectItem value="LOGISTICS" className="font-bold">LOGISTIQUE</SelectItem>
@@ -412,7 +393,7 @@ export default function ExpensesDashboard() {
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                        <div className="grid grid-cols-2 gap-8">
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Montant Hors Taxe (HT) *</label>
                               <div className="relative">
@@ -432,7 +413,7 @@ export default function ExpensesDashboard() {
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                        <div className="grid grid-cols-2 gap-8">
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Portefeuille Source *</label>
                               <Select value={formData.wallet_id} onValueChange={v => setFormData({...formData, wallet_id: v})}>
@@ -459,7 +440,7 @@ export default function ExpensesDashboard() {
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                        <div className="grid grid-cols-2 gap-8">
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Bénéficiaire (Nom/Entrep.)</label>
                               <div className="relative">
