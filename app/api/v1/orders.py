@@ -482,8 +482,14 @@ def list_orders(
                 product_filter
             )
 
-            # For ABANDONED carts, allow agents to see all of them in their store to recover them
-            if status and status.upper() == "ABANDONED":
+            # For ABANDONED carts, allow agents to see all of them in their store to recover them.
+            # Same for the Logistique tab's statuses (INTERNAL_DELIVERY, SHIPPED, DELIVERED,
+            # RETURNED): once an order is confirmed, tracking its delivery is a store-wide
+            # concern, not tied to whichever confirmatrice originally confirmed it — restricting
+            # to assigned_to_me/unassigned here silently hid orders confirmed by a colleague
+            # from "Assignées Livreur" and the other delivery-tracking views.
+            _STORE_WIDE_STATUSES = {"ABANDONED", "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED", "RETURNED"}
+            if status and status.upper() in _STORE_WIDE_STATUSES:
                 query = query.filter(store_filter)
             else:
                 query = query.filter(or_(assigned_to_me, unassigned_matching))
