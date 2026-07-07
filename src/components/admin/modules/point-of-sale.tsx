@@ -71,7 +71,7 @@ export default function PointOfSale() {
   const [customerSearch, setCustomerSearch] = useState('');
   const customersQuery = useQuery({
     queryKey: ['customers-search', storeId, customerSearch],
-    queryFn: () => apiFetch<PaginatedResponse<{ id: string, name: string, phone: string }>>(`/api/v1/customers?storeId=${storeId}&search=${customerSearch}&pageSize=5`),
+    queryFn: () => apiFetch<PaginatedResponse<{ id: string, name: string, phone: string }>>(`/api/v1/customers?store_id=${storeId}&search=${customerSearch}&pageSize=5`),
     enabled: !!storeId && customerSearch.length > 2,
   });
 
@@ -93,7 +93,7 @@ export default function PointOfSale() {
     queryKey: ['pos-session', storeId, userId],
     queryFn: async () => {
       try {
-        return await apiFetch<any>(`/api/v1/pos/session/active?store_id=${storeId}&user_id=${userId}`);
+        return await apiFetch<any>(`/api/v1/pos/session/active?store_id=${storeId}&user_id=${userId}`, { silent: true });
       } catch (err: any) {
         if (err?.statusCode === 404) return null;
         throw err;
@@ -117,7 +117,7 @@ export default function PointOfSale() {
         return { id: `local-${Date.now()}`, store_id: storeId, opening_balance: balance, is_local: true };
       }
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.setQueryData(['pos-session', storeId, userId], data);
       toast.success("Session POS ouverte");
       setIsOpenSessionModal(false);
@@ -149,7 +149,7 @@ export default function PointOfSale() {
       if (existing) {
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { id: product.id, name: product.name, price: product.sale_price || product.price, quantity: 1, image: product.image_url }];
+      return [...prev, { id: product.id, name: product.name, price: product.compare_price || product.price, quantity: 1, image: product.main_image }];
     });
   };
 
@@ -176,7 +176,7 @@ export default function PointOfSale() {
       method: 'POST',
       body: JSON.stringify(payload)
     }),
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       toast.success(`Transaction validée : ${result.receipt_number}`);
       setCart([]);
       setCustomer(null);
@@ -300,8 +300,8 @@ export default function PointOfSale() {
                       className="bg-white border border-slate-100 p-4 flex flex-col gap-4 text-left group hover:border-[#4b7bec] hover:shadow-2xl hover:shadow-[#4b7bec]/10 transition-all relative overflow-hidden rounded-3xl disabled:opacity-50"
                     >
                        <div className="aspect-square bg-slate-50 rounded-2xl flex items-center justify-center relative overflow-hidden border border-slate-50">
-                          {p.image_url ? (
-                             <img src={p.image_url} alt={p.name} className="object-cover size-full group-hover:scale-110 transition-transform duration-700" />
+                          {p.main_image ? (
+                             <img src={p.main_image} alt={p.name} className="object-cover size-full group-hover:scale-110 transition-transform duration-700" />
                           ) : (
                              <Package className="size-10 text-slate-200 group-hover:text-[#4b7bec] transition-colors" />
                           )}
@@ -319,7 +319,7 @@ export default function PointOfSale() {
                        <div className="space-y-1.5">
                           <h4 className="text-[10px] font-black uppercase tracking-tight text-slate-900 line-clamp-1">{p.name}</h4>
                           <div className="flex items-center justify-between">
-                             <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(p.sale_price || p.price)}</span>
+                             <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(p.compare_price || p.price)}</span>
                              <span className={cn(
                                 "text-[9px] font-black px-2 py-0.5 rounded-full border",
                                 p.stock <= 5 ? "text-orange-500 border-orange-100 bg-orange-50" : "text-emerald-500 border-emerald-100 bg-emerald-50"

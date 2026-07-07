@@ -1,39 +1,133 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/store/app-store';
+import { apiFetch } from '@/lib/api-client';
+import { toast } from 'sonner';
 
 // Admin components
 import AdminSidebar from '@/components/admin/admin-sidebar';
 import SuperAdminSidebar from '@/components/admin/super-admin-sidebar';
 import AdminHeader from '@/components/admin/admin-header';
 import AgentDashboard from '@/components/agent/agent-dashboard';
+import LivreurDashboard from '@/components/livreur/livreur-dashboard';
 
 import SuperAdminViewRegistry from '@/components/admin/super-admin-view-registry';
 
 export function AdminApp() {
-   const { sidebarCollapsed, setSidebarCollapsed, user: currentUser } = useAppStore();
+   const { sidebarCollapsed, setSidebarCollapsed, user: currentUser, activeStore, setAdminView, setQuickAdjustProduct } = useAppStore();
    const [isMobile, setIsMobile] = useState(false);
-   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+   // Managers get the full operational interface — same as the super-admin.
+   // Platform-level administration stays super-admin-only on the backend.
+   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MANAGER';
    const isAgent = currentUser?.role === 'CONFIRMATEUR';
+   const notifiedIdsRef = useRef<Set<string>>(new Set());
+
+   useEffect(() => {
+      if (!activeStore?.id || isAgent) return;
+
+      // Clear notified list when store changes
+      notifiedIdsRef.current.clear();
+
+      const checkLowStock = async () => {
+         try {
+            const res = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&low_stock=true&pageSize=100`);
+            const items = res?.data || res || [];
+
+            items.forEach((p: any) => {
+               // Check if product itself is out of stock (stock === 0)
+               if (p.stock === 0) {
+                  const key = `prod-${p.id}`;
+                  if (!notifiedIdsRef.current.has(key)) {
+                     notifiedIdsRef.current.add(key);
+                     triggerOutOfStockToast(p, null);
+                  }
+               }
+
+               // Check if any variants are out of stock (stock === 0)
+               let vars = p.variants || [];
+               if (typeof vars === 'string') {
+                  try { vars = JSON.parse(vars); } catch { vars = []; }
+               }
+               if (Array.isArray(vars)) {
+                  vars.forEach((v: any) => {
+                     let actualV = v;
+                     if (typeof actualV === 'string') {
+                        try { actualV = JSON.parse(actualV); } catch { return; }
+                     }
+                     if (actualV.sub_variants && actualV.sub_variants.length > 0) {
+                        actualV.sub_variants.forEach((sv: any) => {
+                           if (sv.stock === 0) {
+                              const key = `sv-${p.id}-${actualV.value}-${sv.value}`;
+                              if (!notifiedIdsRef.current.has(key)) {
+                                 notifiedIdsRef.current.add(key);
+                                 triggerOutOfStockToast(p, `${actualV.name}: ${actualV.value}, ${sv.name || 'Taille'}: ${sv.value}`);
+                              }
+                           }
+                        });
+                     } else {
+                        if (actualV.stock === 0) {
+                           const key = `v-${p.id}-${actualV.value}`;
+                           if (!notifiedIdsRef.current.has(key)) {
+                              notifiedIdsRef.current.add(key);
+                              triggerOutOfStockToast(p, `${actualV.name}: ${actualV.value}`);
+                           }
+                        }
+                     }
+                  });
+               }
+            });
+         } catch (err) {
+            console.error("Failed to check low stock", err);
+         }
+      };
+
+      const triggerOutOfStockToast = (product: any, variantLabel: string | null) => {
+         const description = variantLabel 
+            ? `La variante "${variantLabel}" est en rupture de stock.`
+            : `Le produit est en rupture de stock.`;
+
+         toast.error(`Alerte Rupture de Stock ! 🚨`, {
+            description: `Produit: ${product.name}. ${description}`,
+            duration: 20000,
+            action: {
+               label: "Réappro.",
+               onClick: () => {
+                  setAdminView('inventory', 'STOCK');
+                  setQuickAdjustProduct(product);
+               }
+            }
+         });
+      };
+
+      // Initial check
+      checkLowStock();
+
+      // Check every 25 seconds
+      const interval = setInterval(checkLowStock, 25000);
+      return () => clearInterval(interval);
+   }, [activeStore?.id, isAgent, setAdminView, setQuickAdjustProduct]);
 
    useEffect(() => {
       const handleResize = () => {
-         const mobile = window.innerWidth < 1024;
-         setIsMobile(mobile);
-         // Auto-collapse sidebar on mobile initially or when resizing down
-         if (mobile && !sidebarCollapsed) {
-            setSidebarCollapsed(true);
-         }
+         setIsMobile(window.innerWidth < 1024);
       };
 
       handleResize();
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
-   }, [sidebarCollapsed, setSidebarCollapsed]);
+   }, []);
+
+   useEffect(() => {
+      if (isMobile) {
+         setSidebarCollapsed(true);
+      }
+   }, [isMobile, setSidebarCollapsed]);
 
    const sidebarWidth = isSuperAdmin ? (sidebarCollapsed ? '80px' : '288px') : (sidebarCollapsed ? '70px' : '260px');
 
    // Confirmateur gets their own focused dashboard — no sidebar/header clutter
    if (isAgent) return <AgentDashboard />;
+   // Livreur: dedicated delivery view (his assigned parcels only)
+   if (currentUser?.role === 'LIVREUR') return <LivreurDashboard />;
 
    return (
       <div className="min-h-screen flex bg-[#F8F9FC]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>

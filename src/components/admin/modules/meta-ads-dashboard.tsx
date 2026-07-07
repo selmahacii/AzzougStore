@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  TrendingUp,
-  DollarSign,
-  ShoppingBag,
-  BarChart3,
-  RefreshCw,
-  Calendar,
-  Facebook,
+import { 
+  TrendingUp, 
+  DollarSign, 
+  ShoppingBag, 
+  BarChart3, 
+  RefreshCw, 
+  Calendar, 
+  Facebook, 
   CheckCircle,
   HelpCircle,
   ArrowUpRight,
@@ -26,13 +26,6 @@ import {
   Package,
   Zap,
   ArrowDownRight,
-  Shield,
-  Wifi,
-  WifiOff,
-  Clock,
-  RotateCcw,
-  Server,
-  GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,7 +57,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'health'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -83,8 +76,6 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/campaigns?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
   });
 
   // --- Query Integration Summary (cross-module) ---
@@ -94,7 +85,6 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/integration-summary?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 30_000,
     refetchOnWindowFocus: false,
   });
 
@@ -105,17 +95,7 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/diagnostics?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
-  });
-
-  // --- Live connectivity + circuit breaker health ---
-  const { data: healthData, refetch: refetchHealth, isFetching: isRefreshingHealth } = useQuery({
-    queryKey: ['meta_capi_health', activeStore?.id],
-    queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
-    enabled: !!activeStore?.id && activeTab === 'health',
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: false,
+    refetchInterval: 60_000,
   });
 
   // --- Rule-based optimization recommendations ---
@@ -125,7 +105,7 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/recommendations?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 60_000,
+    refetchInterval: 120_000,
   });
 
   // --- Mutations ---
@@ -354,7 +334,7 @@ export default function MetaAdsDashboard() {
           )}
           {(diag.catalog?.ephemeral_image_urls?.length || 0) > 0 && (
             <div className="rounded-2xl bg-amber-50 border border-amber-100 p-3 text-[11px] font-bold text-amber-700">
-              ⚠️ Images non permanentes (exclues du feed) : {diag.catalog.ephemeral_image_urls.join(', ')} — re-téléversez-les depuis la page Produits.
+              ⚠️ Images non permanentes (exclues du feed) : {diag.catalog.ephemeral_image_urls.join(', ')} — re-téléversez-les (Cloudinary).
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -809,17 +789,6 @@ export default function MetaAdsDashboard() {
           )}
         >
           <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Intégration Modules</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('health')}
-          className={cn(
-            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
-            activeTab === 'health'
-              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
-              : "text-[#B2BEC3] hover:text-[#636E72]"
-          )}
-        >
-          <span className="flex items-center gap-1.5"><Shield className="size-3.5" /> CAPI Health</span>
         </button>
       </div>
 
@@ -1452,424 +1421,6 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* ─── TAB: CAPI HEALTH ─── */}
-      {activeTab === 'health' && (() => {
-        const probe = healthData?.probe ?? {};
-        const circuit = healthData?.circuit_breaker ?? {};
-        const queueH = healthData?.queue ?? {};
-        const diagCapi = diagnosticsData?.data?.capi ?? {};
-        const diagQueue = diagnosticsData?.data?.queue ?? {};
-
-        const dnsOk = probe.dns_status === 'ok';
-        const tcpOk = probe.tcp_status === 'ok';
-        const tlsOk = probe.tls_status === 'ok';
-        const circuitOpen = circuit.is_open === true;
-        const circuitHalf = !circuitOpen && (circuit.consecutive_failures ?? 0) > 0;
-        const pendingCount = queueH.pending_count ?? 0;
-        const successRate = diagCapi.success_rate ?? null;
-        const lastSuccessAt = healthData?.last_success_at ?? null;
-        const lastErrorMsg = healthData?.last_error_message ?? null;
-
-        // Overall status determination
-        let overallStatus: 'healthy' | 'degraded' | 'offline' = 'healthy';
-        const hoursWithoutSuccess = lastSuccessAt
-          ? (Date.now() - new Date(lastSuccessAt).getTime()) / 3_600_000
-          : Infinity;
-        if (circuitOpen && hoursWithoutSuccess > 24 && pendingCount > 50) {
-          overallStatus = 'offline';
-        } else if (!tlsOk || circuitOpen || circuitHalf || (successRate !== null && successRate < 80) || pendingCount > 20) {
-          overallStatus = 'degraded';
-        }
-
-        const statusConfig = {
-          healthy:  { label: '✅ Healthy',  bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', hint: 'Tous les événements sont livrés avec succès.' },
-          degraded: { label: '⚠️ Degraded', bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   hint: 'Problèmes détectés — les événements sont mis en file.' },
-          offline:  { label: '❌ Offline',  bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     hint: 'Aucune livraison possible — circuit ouvert.' },
-        }[overallStatus];
-
-        const tokenData = healthData?.token ?? {};
-        const pixelData = healthData?.pixel ?? {};
-        const serverWarnings: string[] = healthData?.warnings ?? [];
-        const tokenOk = tokenData.status === 'valid';
-        const pixelOk = pixelData.status === 'accessible';
-
-        const probeRows: Array<{ label: string; status: string | undefined; ms?: number | null; detail?: string }> = [
-          { label: 'DNS',           status: probe.dns_status,  ms: probe.dns_ms,  detail: probe.resolved_ip },
-          { label: 'TCP',           status: probe.tcp_status,  ms: probe.tcp_ms },
-          { label: 'TLS / HTTPS',   status: probe.tls_status,  ms: probe.tls_ms,  detail: probe.tls_version },
-          { label: 'Token Meta',    status: tokenData.status === 'valid' ? 'ok' : tokenData.status === 'timeout' ? 'timeout' : (tokenData.status === 'not_configured' ? 'skipped' : 'error'), detail: tokenData.status === 'valid' ? `ID: ${tokenData.user_id} — ${tokenData.name}` : tokenData.message ?? tokenData.note },
-          { label: 'Pixel',         status: pixelData.status === 'accessible' ? 'ok' : pixelData.status === 'timeout' ? 'timeout' : (pixelData.status === 'not_configured' ? 'skipped' : 'error'), detail: pixelData.status === 'accessible' ? `${pixelData.pixel_id} — ${pixelData.name}` : pixelData.message ?? pixelData.note },
-          { label: 'Livraison API', status: lastSuccessAt ? 'ok' : (probe.tls_status === 'ok' ? 'unknown' : 'skipped'), detail: lastSuccessAt ? `Dernier succès: ${new Date(lastSuccessAt).toLocaleString('fr-FR')}` : 'Jamais livré via ce nœud' },
-        ];
-
-        const probeIcon = (s: string | undefined) => {
-          if (s === 'ok')      return <span className="text-emerald-500 font-black text-xs">✅</span>;
-          if (s === 'skipped' || s === 'not_configured') return <span className="text-slate-300 font-black text-xs">—</span>;
-          if (s === 'timeout') return <span className="text-amber-500 font-black text-xs">⏱</span>;
-          if (s === 'unknown') return <span className="text-slate-400 font-black text-xs">?</span>;
-          return <span className="text-red-500 font-black text-xs">❌</span>;
-        };
-
-        const fmtDur = (s: number | null) => {
-          if (s === null) return '—';
-          if (s < 60) return `${Math.round(s)}s`;
-          if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
-          return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-        };
-
-        const fmtAgo = (iso: string | null) => {
-          if (!iso) return '—';
-          const d = Date.now() - new Date(iso).getTime();
-          if (d < 60_000) return 'à l\'instant';
-          if (d < 3_600_000) return `il y a ${Math.floor(d / 60_000)} min`;
-          if (d < 86_400_000) return `il y a ${Math.floor(d / 3_600_000)} h`;
-          return new Date(iso).toLocaleDateString('fr-FR');
-        };
-
-        return (
-          <div className="space-y-4">
-
-            {/* Overall Status Banner */}
-            <div className={cn("rounded-2xl border p-5 flex items-center justify-between gap-4", statusConfig.bg, statusConfig.border)}>
-              <div>
-                <div className={cn("text-lg font-black tracking-tight", statusConfig.text)}>{statusConfig.label}</div>
-                <p className={cn("text-xs font-bold mt-0.5", statusConfig.text, "opacity-70")}>{statusConfig.hint}</p>
-              </div>
-              <button
-                onClick={() => refetchHealth()}
-                disabled={isRefreshingHealth}
-                className="flex items-center gap-2 px-4 py-2 bg-white/80 hover:bg-white border border-white/50 rounded-xl text-xs font-black text-slate-600 transition-all"
-              >
-                <RefreshCw className={cn("size-3.5", isRefreshingHealth && "animate-spin")} />
-                Actualiser
-              </button>
-            </div>
-
-            {/* Warnings (auto-generated by backend) */}
-            {serverWarnings.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 space-y-1.5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">⚠️ Alertes proactives</p>
-                {serverWarnings.map((w, i) => (
-                  <p key={i} className="text-xs font-bold text-amber-800">• {w}</p>
-                ))}
-              </div>
-            )}
-
-            {/* 2-column grid: Probe + Circuit Breaker */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* Connection Probe */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <Wifi className="size-4 text-[#1877F2]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Diagnostic Réseau — graph.facebook.com:443</h4>
-                </div>
-                <div className="divide-y divide-[#F0F0F0]">
-                  {probeRows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between px-5 py-3 gap-3">
-                      <div className="flex items-center gap-3">
-                        {probeIcon(row.status)}
-                        <div>
-                          <span className="text-xs font-black text-[#2D3436]">{row.label}</span>
-                          {row.detail && <p className="text-[9px] text-slate-400 font-mono mt-0.5">{row.detail}</p>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {row.ms != null && <span className="text-[10px] font-black tabular-nums text-slate-400">{row.ms} ms</span>}
-                        {row.status && row.status !== 'ok' && row.status !== 'skipped' && (
-                          <p className="text-[9px] text-red-400 font-mono mt-0.5 max-w-[160px] text-right truncate">{row.status}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {probe.tls_status && probe.tls_status !== 'ok' && (
-                  <div className="px-5 py-3 bg-amber-50 border-t border-amber-100">
-                    <p className="text-[10px] font-bold text-amber-700">
-                      TLS bloqué au niveau réseau — les événements sont mis en file d'attente et retraités automatiquement.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Circuit Breaker */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <GitBranch className="size-4 text-[#6C5CE7]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Circuit Breaker</h4>
-                </div>
-                <div className="p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">État</span>
-                    <Badge className={cn(
-                      "font-black text-[10px] px-3 py-1 rounded-lg border-none",
-                      circuitOpen ? "bg-red-100 text-red-700" : circuitHalf ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                    )}>
-                      {circuitOpen ? '❌ OUVERT' : circuitHalf ? '⚠️ SEMI-OUVERT' : '✅ FERMÉ'}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">Échecs consécutifs</span>
-                    <span className={cn("text-xs font-black tabular-nums", (circuit.consecutive_failures ?? 0) >= (circuit.threshold ?? 5) ? "text-red-600" : "text-slate-700")}>
-                      {circuit.consecutive_failures ?? 0} / {circuit.threshold ?? 5}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">Cooldown</span>
-                    <span className="text-xs font-black text-slate-700">{circuit.cooldown_seconds ?? 60} s</span>
-                  </div>
-                  {circuitOpen && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500 font-bold">Réouverture dans</span>
-                      <span className="text-xs font-black text-amber-600 tabular-nums">{circuit.seconds_until_reset ?? 0} s</span>
-                    </div>
-                  )}
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", circuitOpen ? "bg-red-400" : circuitHalf ? "bg-amber-400" : "bg-emerald-400")}
-                      style={{ width: `${Math.min(100, ((circuit.consecutive_failures ?? 0) / (circuit.threshold ?? 5)) * 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-[9px] text-slate-400 font-bold">S'ouvre après {circuit.threshold ?? 5} échecs · Cooldown {circuit.cooldown_seconds ?? 60}s · Sonde auto en half-open</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Queue + Delivery Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* Retry Queue */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <Clock className="size-4 text-[#E17055]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">File d'attente (Retry Queue)</h4>
-                </div>
-                <div className="p-5 space-y-3">
-                  {[
-                    { label: 'Événements en attente',   value: pendingCount,                     hi: pendingCount > 20, lo: pendingCount === 0 },
-                    { label: 'Échecs définitifs (7j)',   value: diagQueue.failed_count ?? '—',   hi: (diagQueue.failed_count ?? 0) > 0 },
-                    { label: 'Récupérés via retry (7j)', value: diagCapi.recovered_7d ?? '—',    lo: true },
-                    { label: 'Prochain retry',           value: diagQueue.next_retry_at ? fmtAgo(diagQueue.next_retry_at) : '—' },
-                    { label: 'Plus ancien event',        value: queueH.oldest_age_minutes != null ? `${queueH.oldest_age_minutes} min` : '—', hi: (queueH.oldest_age_minutes ?? 0) > 60 },
-                    { label: 'Max tentatives / event',   value: diagQueue.max_retries_configured ?? 6 },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-bold">{row.label}</span>
-                      <span className={cn("text-[11px] font-black tabular-nums", row.hi ? "text-red-600" : row.lo ? "text-emerald-600" : "text-slate-700")}>
-                        {String(row.value)}
-                      </span>
-                    </div>
-                  ))}
-                  {pendingCount === 0 && (
-                    <p className="text-[9px] text-emerald-600 font-bold mt-1">✅ File vide — aucun événement en attente</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Delivery Stats 7d */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <BarChart3 className="size-4 text-[#00B894]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Livraison 7 jours</h4>
-                </div>
-                <div className="p-5 space-y-3">
-                  {[
-                    { label: 'Total événements',    value: diagCapi.total_7d ?? (((diagCapi.sent_7d ?? 0) + (diagCapi.errors_7d ?? 0)) || '—') },
-                    { label: 'Succès',              value: diagCapi.sent_7d ?? '—',    lo: true },
-                    { label: 'Erreurs',             value: diagCapi.errors_7d ?? '—',  hi: (diagCapi.errors_7d ?? 0) > 0 },
-                    { label: 'Taux de succès',      value: diagCapi.success_rate != null ? `${diagCapi.success_rate}%` : '—', lo: (diagCapi.success_rate ?? 0) >= 80 },
-                    { label: 'Taux d\'échec',       value: diagCapi.failure_rate != null ? `${diagCapi.failure_rate}%` : '—', hi: (diagCapi.failure_rate ?? 0) > 20 },
-                    { label: 'Latence moyenne',     value: diagQueue.avg_latency_ms != null ? `${diagQueue.avg_latency_ms} ms` : '—' },
-                    { label: 'Latence p95',         value: diagQueue.p95_latency_ms != null ? `${diagQueue.p95_latency_ms} ms` : '—' },
-                    { label: 'Temps moyen retry',   value: diagQueue.avg_time_to_success_s != null ? fmtDur(diagQueue.avg_time_to_success_s) : '—' },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-bold">{row.label}</span>
-                      <span className={cn("text-[11px] font-black tabular-nums", row.hi ? "text-red-600" : row.lo ? "text-emerald-600" : "text-slate-700")}>
-                        {String(row.value)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Last Events */}
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b flex items-center gap-2">
-                <Activity className="size-4 text-slate-400" />
-                <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Derniers Événements</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#F0F0F0]">
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="size-2 rounded-full bg-emerald-500" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dernier Succès</span>
-                  </div>
-                  <p className="text-sm font-black text-slate-700">{fmtAgo(healthData?.last_success_at ?? null)}</p>
-                  {healthData?.last_success_at && (
-                    <p className="text-[9px] text-slate-400 font-mono mt-0.5">{new Date(healthData.last_success_at).toLocaleString('fr-FR')}</p>
-                  )}
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="size-2 rounded-full bg-red-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dernière Erreur</span>
-                  </div>
-                  <p className="text-sm font-black text-slate-700">{fmtAgo(healthData?.last_error_at ?? null)}</p>
-                  {lastErrorMsg && (
-                    <p className="text-[9px] text-red-400 font-mono mt-0.5 break-all line-clamp-2">{lastErrorMsg}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Runtime Versions */}
-            {healthData?.versions && (
-              <div className="bg-[#F8F9FC] rounded-xl border px-5 py-3 flex flex-wrap gap-4">
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Versions runtime :</span>
-                {Object.entries(healthData.versions as Record<string, string>).map(([k, v]) => (
-                  <span key={k} className="text-[9px] font-mono text-slate-500"><span className="font-black">{k}</span> {v}</span>
-                ))}
-              </div>
-            )}
-
-            {/* Connectivity Deep-Dive Test */}
-            {(() => {
-              const [ctData, setCtData] = React.useState<any>(null);
-              const [ctLoading, setCtLoading] = React.useState(false);
-              const [ctError, setCtError] = React.useState<string | null>(null);
-
-              const runTest = async () => {
-                setCtLoading(true);
-                setCtError(null);
-                setCtData(null);
-                try {
-                  const res = await apiFetch<any>('/api/v1/meta-ads/connectivity-test');
-                  setCtData(res);
-                } catch (e: any) {
-                  setCtError(e?.message ?? 'Erreur inconnue');
-                } finally {
-                  setCtLoading(false);
-                }
-              };
-
-              const verdictColor = (v: string) => {
-                if (!v) return 'text-slate-400';
-                if (v.startsWith('OK')) return 'text-emerald-600 font-black';
-                if (v.startsWith('TLS_BLOCKED')) return 'text-red-600 font-black';
-                if (v.startsWith('TIMEOUT')) return 'text-amber-600 font-black';
-                if (v.startsWith('SKIP')) return 'text-slate-400';
-                return 'text-red-500 font-black';
-              };
-
-              const testLabels: Record<string, string> = {
-                '1_raw_stdlib_tls':  '① Raw stdlib TCP+TLS',
-                '2_httpx_http11':    '② httpx HTTP/1.1',
-                '3_httpx_http2':     '③ httpx HTTP/2',
-                '4_urllib_https':    '④ urllib HTTPS',
-                '5_control_httpbin': '⑤ Contrôle httpbin.org',
-                '6_tcp_port80_only': '⑥ TCP port 80 (sans TLS)',
-              };
-
-              return (
-                <div className="rounded-2xl border border-slate-200 bg-[#F8F9FC] p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-600">Diagnostic Réseau Approfondi</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Teste 6 chemins vers graph.facebook.com pour confirmer exactement quelle couche est bloquée.</p>
-                    </div>
-                    <button
-                      onClick={runTest}
-                      disabled={ctLoading}
-                      className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black transition-all disabled:opacity-50"
-                    >
-                      <Server className={cn("size-3.5", ctLoading && "animate-pulse")} />
-                      {ctLoading ? 'Test en cours…' : 'Lancer le test'}
-                    </button>
-                  </div>
-
-                  {ctError && (
-                    <p className="text-xs text-red-500 font-bold bg-red-50 rounded-lg px-3 py-2">{ctError}</p>
-                  )}
-
-                  {ctLoading && (
-                    <div className="space-y-2">
-                      {Object.values(testLabels).map((label) => (
-                        <div key={label} className="flex items-center gap-3 text-[10px] text-slate-400">
-                          <div className="size-2 rounded-full bg-slate-200 animate-pulse" />
-                          <span>{label}</span>
-                          <span className="text-slate-300">en attente…</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {ctData && !ctLoading && (
-                    <div className="space-y-3">
-                      {/* Summary */}
-                      <div className={cn(
-                        "rounded-xl border px-4 py-3 text-xs font-bold",
-                        ctData.summary?.includes('CONFIRMED') ? 'bg-red-50 border-red-200 text-red-700' :
-                        ctData.summary?.includes('succeeded') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                        'bg-amber-50 border-amber-200 text-amber-700'
-                      )}>
-                        {ctData.summary}
-                      </div>
-
-                      {/* Per-test rows */}
-                      <div className="rounded-xl border border-slate-200 overflow-hidden">
-                        <table className="w-full text-[10px]">
-                          <thead className="bg-slate-100 text-slate-400 uppercase font-black tracking-wider">
-                            <tr>
-                              <th className="text-left px-3 py-2">Test</th>
-                              <th className="text-left px-3 py-2">Verdict</th>
-                              <th className="text-left px-3 py-2">DNS</th>
-                              <th className="text-left px-3 py-2">TCP</th>
-                              <th className="text-left px-3 py-2">TLS</th>
-                              <th className="text-left px-3 py-2">Total</th>
-                              <th className="text-left px-3 py-2">Détail</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(testLabels).map(([key, label]) => {
-                              const t = ctData[key];
-                              if (!t) return null;
-                              const isSkip = t.verdict?.startsWith('SKIP');
-                              return (
-                                <tr key={key} className={cn("border-t border-slate-100", isSkip && "opacity-40")}>
-                                  <td className="px-3 py-2 font-black text-slate-700 whitespace-nowrap">{label}</td>
-                                  <td className={cn("px-3 py-2 whitespace-nowrap", verdictColor(t.verdict ?? ''))}>{t.verdict?.split(' — ')[0] ?? '—'}</td>
-                                  <td className="px-3 py-2 text-slate-500">{t.dns_ms != null ? `${t.dns_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2 text-slate-500">{t.tcp_ms != null ? `${t.tcp_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2">
-                                    {t.tls_status === 'ok' ? <span className="text-emerald-600 font-black">{t.tls_ms}ms ✅</span>
-                                     : t.tls_status === 'TIMEOUT' ? <span className="text-red-600 font-black">{t.tls_ms}ms ⏱</span>
-                                     : t.tls_status ? <span className="text-red-500">{t.tls_ms}ms ❌</span>
-                                     : '—'}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-500">{t.total_ms != null ? `${t.total_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2 text-slate-400 max-w-[180px] truncate font-mono" title={t.tls_version ?? t.status ?? t.tls_status ?? ''}>
-                                    {t.tls_version ?? t.http_version ?? t.status ?? t.tls_status ?? '—'}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <p className="text-[9px] text-slate-400 font-mono">Python {ctData.python_version?.split(' ')[0]}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-          </div>
-        );
-      })()}
-
       {/* 🚀 DIALOG: GUIDE D'INSTALLATION 🚀 */}
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -2045,15 +1596,6 @@ function CapiLogsTable({ storeId }: { storeId?: string }) {
     onError: () => toast.error('Erreur lors de la purge'),
   });
 
-  const retryMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/meta-ads/capi-logs/retry-now?store_id=${storeId}`, { method: 'POST' }),
-    onSuccess: () => {
-      toast.success('Retry sweep déclenché — vérifiez les logs dans 30s');
-      setTimeout(() => refetch(), 5000);
-    },
-    onError: () => toast.error('Erreur lors du déclenchement'),
-  });
-
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['meta_capi_logs', storeId, statusFilter, eventFilter, dateFrom, dateTo],
     queryFn: () => {
@@ -2103,13 +1645,6 @@ function CapiLogsTable({ storeId }: { storeId?: string }) {
           className="text-[10px] font-bold border rounded-lg px-2 py-1.5 bg-white" />
         <button onClick={() => refetch()} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border bg-slate-50 hover:bg-slate-100">
           {isFetching ? '…' : 'Rafraîchir'}
-        </button>
-        <button
-          onClick={() => retryMutation.mutate()}
-          disabled={retryMutation.isPending}
-          className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
-        >
-          {retryMutation.isPending ? '…' : 'Relancer'}
         </button>
         <button
           onClick={() => purgeMutation.mutate()}

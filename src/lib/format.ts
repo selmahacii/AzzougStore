@@ -44,3 +44,28 @@ export function hashString(str: string): number {
   }
   return Math.abs(hash);
 }
+
+/**
+ * Format order reference for display.
+ *
+ * @param order — The order object (needs at least order_number, optionally store_sequence_number)
+ * @param context
+ *   - 'admin'    → "Commande N°42" (internal teams: admin, confirmateurs, managers)
+ *   - 'customer' → "ORD-20260630-AB12CD" (storefront, tracking page, email confirmation)
+ *
+ * Falls back gracefully: if store_sequence_number is unavailable, shows "#ORD-..."
+ */
+export function formatOrderRef(
+  order: { order_number: string; store_sequence_number?: number | null },
+  context: 'admin' | 'customer' = 'admin'
+): string {
+  if (context === 'customer') {
+    return order.order_number;
+  }
+  // Admin / agent context — use sequential number when available
+  if (order.store_sequence_number) {
+    return `Commande N°${order.store_sequence_number}`;
+  }
+  // Fallback: order hasn't been backfilled yet or it's an old record
+  return `#${order.order_number}`;
+}

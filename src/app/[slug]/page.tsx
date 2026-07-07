@@ -3,18 +3,21 @@ import { ThemeInjector } from '@/components/theme-injector';
 import { AppBootstrap } from '@/components/app/app-bootstrap';
 import { UrlSync } from '@/components/app/url-sync';
 import { HydrateStore } from '@/components/app/hydrate-store';
+import { StorefrontIntegrations } from '@/components/storefront/store-integrations';
 import { Suspense } from 'react';
 import { getServerSessionCookie, verifyToken } from '@/lib/jwt';
+import { getBackendUrl } from '@/lib/utils';
 import type { User, Store } from '@/lib/types';
 
 async function fetchInitialData(slug: string) {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
+  const backendUrl = getBackendUrl();
 
   let initialStores: Store[] = [];
   let initialUser: User | null = null;
+  let metaAdsConfig: any = null;
 
   try {
-    const res = await fetch(`${backendUrl}/api/v1/stores`, { cache: 'no-store' });
+    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
     if (res.ok) {
       const json = await res.json();
       initialStores = (json.data ?? json ?? []) as Store[];
@@ -41,15 +44,29 @@ async function fetchInitialData(slug: string) {
     // auth check failed gracefully
   }
 
-  return { initialStores, initialUser };
+  const activeStore = initialStores.find(s => s.slug === slug);
+  if (activeStore) {
+    try {
+      const res = await fetch(`${backendUrl}/api/v1/meta-ads/config?store_id=${activeStore.id}`, { next: { revalidate: 10 } });
+      if (res.ok) {
+        const json = await res.json();
+        metaAdsConfig = json.data;
+      }
+    } catch {
+      // meta ads config check failed gracefully
+    }
+  }
+
+  return { initialStores, initialUser, metaAdsConfig };
 }
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { initialStores, initialUser } = await fetchInitialData(slug);
+  const { initialStores, initialUser, metaAdsConfig } = await fetchInitialData(slug);
 
   return (
     <>
+      <StorefrontIntegrations config={metaAdsConfig} />
       <ThemeInjector />
       <HydrateStore initialUser={initialUser} initialStores={initialStores} activeStoreSlug={slug} />
       <Suspense fallback={null}>

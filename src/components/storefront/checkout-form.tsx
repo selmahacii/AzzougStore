@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle, Package, ShoppingBag,
-  MapPin, User, Loader2, Tag, X, Phone, Home, Building2, ShieldCheck, Truck,
+  MapPin, User, Loader2, Tag, X, Phone, Home, Building2, ShieldCheck, Truck, Search,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,14 @@ import {
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { formatPrice } from '@/lib/format';
+import { useTranslation } from '@/hooks/use-translation';
+import { cn } from '@/lib/utils';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
 import type { CartItem, ApiResponse } from '@/lib/types';
+import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
+import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
+import { attributionPayload } from '@/lib/attribution';
+import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 
 const primary = 'var(--store-primary, #4b7bec)';
 
@@ -104,14 +110,172 @@ function useCheckoutTheme(activeStore: any) {
   };
 }
 
-export function CheckoutForm() {
+
+interface SearchableCommuneSelectProps {
+  wilaya: string;
+  value: string;
+  onChange: (communeName: string) => void;
+  dir: string;
+  T: any;
+  placeholder?: string;
+  error?: boolean;
+}
+
+export function SearchableCommuneSelect({
+  wilaya,
+  value,
+  onChange,
+  dir,
+  T,
+  placeholder = 'Sélectionnez une commune',
+  error
+}: SearchableCommuneSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const communes = useMemo(() => {
+    return ALGERIAN_COMMUNES[wilaya] || [];
+  }, [wilaya]);
+
+  const filtered = useMemo(() => {
+    if (!search) return communes;
+    const s = search.toLowerCase().trim();
+    return communes.filter(c => 
+      c.name.toLowerCase().includes(s) || 
+      c.nameAscii.toLowerCase().includes(s)
+    );
+  }, [communes, search]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // When wilaya changes, if current value is not in new communes list, reset it
+  useEffect(() => {
+    if (value && !communes.some(c => c.nameAscii === value || `${c.name} · ${c.nameAscii}` === value)) {
+      if (communes.length > 0) {
+        onChange('');
+      }
+    }
+  }, [wilaya, communes]);
+
+  const displayValue = useMemo(() => {
+    if (!value) return '';
+    const match = communes.find(c => c.nameAscii === value || `${c.name} · ${c.nameAscii}` === value);
+    if (!match) return value.split(' · ').pop() || value;
+    return dir === 'rtl' ? `${match.name} (${match.nameAscii})` : match.nameAscii;
+  }, [value, communes, dir]);
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => {
+          if (!wilaya) return;
+          setOpen(!open);
+          setSearch('');
+        }}
+        disabled={!wilaya}
+        className={cn(
+          "w-full flex items-center justify-between px-3 h-11 text-sm border-2 transition-all outline-none",
+          error ? "border-red-500" : "",
+          !wilaya ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+        )}
+        style={{
+          backgroundColor: T.inputBg,
+          borderColor: T.inputBorder,
+          color: value ? T.inputText : T.inputPlaceholder,
+          borderRadius: T.inputRadius,
+        }}
+      >
+        <span className="truncate">
+          {wilaya 
+            ? (displayValue || placeholder)
+            : (dir === 'rtl' ? 'الرجاء اختيار الولاية أولاً' : 'Sélectionnez d\'abord la wilaya')
+          }
+        </span>
+        <span className="text-[10px] opacity-60">▼</span>
+      </button>
+
+      {open && wilaya && (
+        <div 
+          className="absolute z-50 mt-1 w-full border-2 rounded-xl shadow-xl max-h-72 overflow-hidden flex flex-col"
+          style={{
+            backgroundColor: T.cardBg || '#ffffff',
+            borderColor: T.cardBorder || T.inputBorder || '#e2e8f0',
+          }}
+        >
+          {/* Search bar */}
+          <div className="p-2 border-b flex items-center gap-2" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
+            <Search className="size-3.5 opacity-60 shrink-0" style={{ color: T.inputText }} />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
+              className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
+              style={{ color: T.inputText }}
+              autoFocus
+            />
+          </div>
+
+          {/* List */}
+          <div className="overflow-y-auto flex-1 max-h-56 py-1 scrollbar-thin">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
+                {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
+              </div>
+            ) : (
+              filtered.map(c => {
+                const label = dir === 'rtl' ? `${c.name} (${c.nameAscii})` : c.nameAscii;
+                const isSelected = value === c.nameAscii || value === `${c.name} · ${c.nameAscii}`;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(c.nameAscii);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2.5 text-xs transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between",
+                      isSelected ? "font-bold" : ""
+                    )}
+                    style={{
+                      color: T.inputText,
+                      backgroundColor: isSelected ? `${T.primary}12` : 'transparent',
+                      textAlign: dir === 'rtl' ? 'right' : 'left'
+                    }}
+                  >
+                    <span>{label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
   const items = useCartStore((s) => s.items);
   const totalPrice = useCartStore((s) => s.totalPrice);
   const clearCart = useCartStore((s) => s.clearCart);
+  const { t, dir } = useTranslation();
 
+  const submittingRef = useRef(false); // prevents double-submit on fast multi-click
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -119,6 +283,7 @@ export function CheckoutForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [abandonedCartId, setAbandonedCartId] = useState<string | null>(null);
 
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<{ code: string; type: string; value: number; label: string } | null>(null);
@@ -137,7 +302,20 @@ export function CheckoutForm() {
   const [availablePartners, setAvailablePartners] = useState<any[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
-  const T = useCheckoutTheme(activeStore);
+  const baseT = useCheckoutTheme(activeStore);
+  const T = forceTemplate ? { ...baseT, tpl: forceTemplate } : baseT;
+
+  const isWilayaActive = useCallback((wilayaName: string) => {
+    if (availablePartners.length === 0) return true;
+    const wilayaId = (WILAYAS as readonly string[]).indexOf(wilayaName) + 1;
+    return availablePartners.some(partner => {
+      if (Array.isArray(partner.pricing_grid) && partner.pricing_grid.length > 0) {
+        const gridEntry = partner.pricing_grid.find((g: any) => g.wilaya_id === wilayaId);
+        return gridEntry && (Number(gridEntry.home_fee) > 0 || Number(gridEntry.office_fee) > 0);
+      }
+      return Number(partner.fee_home) > 0 || Number(partner.fee_relay) > 0;
+    });
+  }, [availablePartners]);
 
   const cartSubtotal = totalPrice();
 
@@ -148,17 +326,30 @@ export function CheckoutForm() {
     return 0;
   }, [appliedPromo, cartSubtotal]);
 
-  const currentDeliveryFee = deliveryFee ?? (
-    customerInfo.wilaya
-      ? getDeliveryFee(customerInfo.wilaya, customerInfo.deliveryType.toLowerCase() as 'home' | 'bureau')
-      : DEFAULT_DELIVERY_FEE.home
-  );
+  const currentDeliveryFee = deliveryFee ?? 0;
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
+  // Meta Pixel + CAPI InitiateCheckout (shared event_id, fired once)
+  useEffect(() => {
+    if (!activeStore?.id) return;
+    if (!onceKey('InitiateCheckout', activeStore.id)) return;
+    trackMetaEvent('InitiateCheckout', {
+      value: finalTotal,
+      currency: 'DZD',
+      content_type: 'product',
+      content_ids: items.map(i => i.product?.id || '').filter(Boolean),
+      contents: items
+        .filter(i => i.product?.id)
+        .map(i => ({ id: i.product!.id, quantity: i.quantity, item_price: i.product?.price })),
+      num_items: items.reduce((a, i) => a + i.quantity, 0),
+    }, { storeId: activeStore.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore?.id]);
+
   useEffect(() => {
     if (!activeStore) return;
-    const pIds = items.map(i => i.product.id).join(',');
+    const pIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
     fetch(`/api/v1/delivery-partners/availability?storeId=${activeStore.id}&productIds=${pIds}`)
       .then(r => r.json())
       .then(res => {
@@ -174,7 +365,8 @@ export function CheckoutForm() {
   useEffect(() => {
     if (!customerInfo.wilaya || !activeStore || !selectedPartnerId) return;
     setDeliveryLoading(true);
-    fetch(`/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${customerInfo.wilaya}&type=${customerInfo.deliveryType}`)
+    const productIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
+    fetch(`/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${customerInfo.wilaya}&type=${customerInfo.deliveryType}&productIds=${productIds}`)
       .then(r => r.json())
       .then((res: any) => {
         const fee = res.success ? res.data?.fee : (res.fee ?? null);
@@ -182,23 +374,98 @@ export function CheckoutForm() {
       })
       .catch(() => setDeliveryFee(null))
       .finally(() => setDeliveryLoading(false));
-  }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId]);
+  }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, items]);
+
+  // Track abandoned cart
+  useEffect(() => {
+    if (!activeStore || items.length === 0 || orderSuccess) return;
+    
+    // We only track abandoned carts if a valid phone number (exactly 10 digits) has been entered.
+    // This ensures every abandoned cart listed in the agent dashboard is actionable.
+    const phone = normalizePhone(customerInfo.phone);
+    if (phone.length !== 10) return;
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const orderItems = items
+          .filter((item: CartItem) => item?.product)
+          .map((item: CartItem) => {
+            const vDetails: any = {};
+            if (item.selectedVariant) vDetails.variant = item.selectedVariant;
+            return {
+              product_id: item.product.id,
+              product_name: item.product.name,
+              quantity: item.quantity,
+              unit_price: item.product.price,
+              variant_details: Object.keys(vDetails).length > 0 ? vDetails : null,
+            };
+          });
+
+        const payload = {
+          abandoned_cart_id: abandonedCartId,
+          store_id: activeStore.id,
+          customer_name: `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim() || 'Inconnu',
+          customer_phone: customerInfo.phone.trim() || 'Inconnu',
+          customer_phone2: customerInfo.phone2.trim() || undefined,
+          customer_wilaya: customerInfo.wilaya || 'Alger',
+          customer_commune: customerInfo.commune.trim() || undefined,
+          customer_address: customerInfo.address.trim() || 'Inconnu',
+          delivery_type: customerInfo.deliveryType === 'OFFICE' ? 'stop_desk' : 'HOME',
+          items: orderItems,
+          subtotal: cartSubtotal,
+          delivery_fee: currentDeliveryFee,
+          carrier_id: selectedPartnerId,
+          total: finalTotal,
+          discount: discountAmount,
+          source: isInline ? 'landing_page' : 'storefront',
+        };
+
+        const res = await fetch('/api/v1/orders/abandoned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (res.ok && json.id) {
+          setAbandonedCartId(json.id);
+        }
+      } catch (err) {
+        // ignore errors for background tracking
+      }
+    }, 2000); // 2 seconds debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [customerInfo, items, activeStore, cartSubtotal, finalTotal, abandonedCartId, orderSuccess, selectedPartnerId]);
 
   const handleApplyPromo = useCallback(async () => {
     if (!promoCode.trim() || !activeStore) return;
     setPromoLoading(true);
     setPromoError('');
     try {
-      const res = await fetch(`/api/v1/promotions?storeId=${activeStore.id}&code=${promoCode.trim().toUpperCase()}`);
+      const payload = {
+        code: promoCode.trim().toUpperCase(),
+        store_id: activeStore.id,
+        order_total: cartSubtotal,
+      };
+      const res = await fetch(`/api/v1/promotions/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
       const json = await res.json();
-      const promo = json.data?.find?.((p: { isActive: boolean }) => p.isActive);
-      if (!promo) { setPromoError('Code invalide ou expiré'); setAppliedPromo(null); return; }
-      if (promo.endsAt && new Date(promo.endsAt) < new Date()) { setPromoError('Code expiré'); setAppliedPromo(null); return; }
-      if (promo.minOrderAmount > 0 && cartSubtotal < promo.minOrderAmount) { setPromoError(`Commande minimum : ${formatPrice(promo.minOrderAmount)} DA`); setAppliedPromo(null); return; }
-      if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) { setPromoError('Code épuisé'); setAppliedPromo(null); return; }
-      const label = promo.type === 'PERCENTAGE' ? `−${promo.value}%` : promo.type === 'FIXED_AMOUNT' ? `−${formatPrice(promo.value)} DA` : 'Livraison gratuite';
-      setAppliedPromo({ code: promo.code, type: promo.type, value: promo.value, label });
-    } catch { setPromoError('Erreur de connexion'); setAppliedPromo(null); }
+      
+      if (!json.valid) {
+        setPromoError(json.message || 'Code invalide ou expiré');
+        setAppliedPromo(null);
+        return;
+      }
+      
+      const label = json.type === 'PERCENTAGE' ? `−${json.value}%` : json.type === 'FIXED_AMOUNT' ? `−${formatPrice(json.value)}` : 'Livraison gratuite';
+      setAppliedPromo({ code: json.code, type: json.type, value: json.value, label });
+    } catch { 
+      setPromoError('Erreur de connexion'); 
+      setAppliedPromo(null); 
+    }
     finally { setPromoLoading(false); }
   }, [promoCode, activeStore, cartSubtotal]);
 
@@ -207,13 +474,18 @@ export function CheckoutForm() {
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
     const phone = normalizePhone(customerInfo.phone);
-    if (!customerInfo.firstName.trim()) e.firstName = 'Prénom requis';
-    if (!customerInfo.lastName.trim()) e.lastName = 'Nom requis';
-    if (!phone) e.phone = 'Numéro de téléphone requis';
-    else if (!/^0[5-7]\d{8}$/.test(phone)) e.phone = 'Format invalide — doit commencer par 05/06/07 et contenir 10 chiffres';
-    if (customerInfo.phone2.trim() && !/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2))) e.phone2 = 'Format invalide';
-    if (!customerInfo.wilaya) e.wilaya = 'Veuillez sélectionner votre wilaya';
-    if (!customerInfo.address.trim()) e.address = 'Adresse requise';
+    if (isInline) {
+      if (!customerInfo.firstName.trim()) e.firstName = 'الاسم الكامل مطلوب';
+    } else {
+      if (!customerInfo.firstName.trim()) e.firstName = t('firstNameRequired');
+      if (!customerInfo.lastName.trim()) e.lastName = t('lastNameRequired');
+    }
+    if (!phone) e.phone = t('phoneRequired');
+    else if (!/^0[5-7]\d{8}$/.test(phone)) e.phone = t('phoneInvalid');
+    if (!isInline && customerInfo.phone2.trim() && !/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2))) e.phone2 = t('phone2Invalid');
+    if (!customerInfo.wilaya) e.wilaya = t('wilayaRequired');
+    if (!customerInfo.commune.trim()) e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
+    if (!isInline && !customerInfo.address.trim()) e.address = t('addressRequired');
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -221,22 +493,11 @@ export function CheckoutForm() {
   const handleNext = async () => {
     if (step === 0) {
       if (!validateCustomerInfo()) return;
-      if (!duplicateWarning && activeStore) {
-        setCheckingDuplicate(true);
-        try {
-          const phone = normalizePhone(customerInfo.phone);
-          const res = await fetch(`/api/v1/orders/check-duplicate?customer_phone=${encodeURIComponent(phone)}&store_id=${activeStore.id}&limit=1`);
-          const json = await res.json();
-          const existing = Array.isArray(json) ? json : (json?.data ?? json?.items ?? []);
-          if (existing.length > 0) {
-            setDuplicateWarning(true);
-            setCheckingDuplicate(false);
-            return;
-          }
-        } catch { /* ignore, allow to proceed */ }
-        setCheckingDuplicate(false);
+      
+      if (T.tpl === 'dz_cod' || isInline) {
+        handleSubmit();
+        return;
       }
-      setDuplicateWarning(false);
     }
     setStep(s => Math.min(s + 1, 2));
   };
@@ -244,42 +505,85 @@ export function CheckoutForm() {
 
   const handleSubmit = async () => {
     if (!activeStore || items.length === 0) return;
+    if (submittingRef.current) return; // block concurrent submissions
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      const orderItems = items.map((item: CartItem) => ({
-        product_id: item.product.id,
-        product_name: item.product.name,
-        quantity: item.quantity,
-        unit_price: item.product.price + (item.selectedVariant
-          ? (item.product.variants?.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0)
-          : 0),
-      }));
+      const orderItems = items
+        .filter((item: CartItem) => item?.product)
+        .map((item: CartItem) => {
+          const vDetails: any = {};
+          if (item.selectedVariant) vDetails.variant = item.selectedVariant;
+          if (item.customNotes) vDetails.notes = item.customNotes;
+          return {
+            product_id: item.product.id,
+            product_name: item.product.name,
+            quantity: item.quantity,
+            unit_price: item.customPrice !== undefined && item.customPrice !== null
+              ? item.customPrice
+              : item.product.price + (item.selectedVariant
+                  ? (item.product.variants?.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0)
+                  : 0),
+            variant_details: Object.keys(vDetails).length > 0 ? vDetails : null,
+          };
+        });
+      const payload = {
+        store_id: activeStore.id,
+        customer_name: isInline ? customerInfo.firstName.trim() : `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`,
+        customer_phone: customerInfo.phone.trim(),
+        customer_phone2: !isInline && customerInfo.phone2.trim() ? customerInfo.phone2.trim() : undefined,
+        customer_wilaya: customerInfo.wilaya,
+        customer_commune: customerInfo.commune.trim() || undefined,
+        customer_address: isInline ? (customerInfo.commune.trim() || customerInfo.wilaya) : customerInfo.address.trim(),
+        delivery_type: customerInfo.deliveryType === 'OFFICE' ? 'stop_desk' : 'HOME',
+        items: orderItems,
+        subtotal: cartSubtotal,
+        delivery_fee: currentDeliveryFee,
+        carrier_id: selectedPartnerId,
+        source: isInline ? 'landing_page' : 'storefront',
+        promo_code: appliedPromo?.code || undefined,
+        total: finalTotal,
+        discount: discountAmount,
+        abandoned_cart_id: abandonedCartId,
+        // Campaign attribution + Meta identifiers (fbp/fbc) captured at first touch
+        ...attributionPayload(),
+      };
+      
+      console.log('Sending order payload:', payload);
+      
       const res = await fetch('/api/v1/orders', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        body: JSON.stringify({
-          store_id: activeStore.id,
-          customer_name: `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`,
-          customer_phone: customerInfo.phone.trim(),
-          customer_phone2: customerInfo.phone2.trim() || undefined,
-          customer_wilaya: customerInfo.wilaya,
-          customer_commune: customerInfo.commune.trim() || undefined,
-          customer_address: customerInfo.address.trim(),
-          delivery_type: customerInfo.deliveryType,
-          items: orderItems,
-          subtotal: cartSubtotal,
-          delivery_fee: currentDeliveryFee,
-          carrier_id: selectedPartnerId,
-          source: 'storefront',
-          promo_code: appliedPromo?.code || undefined,
-          total: finalTotal,
-          discount: discountAmount,
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
+      console.log('Order response status:', res.status, 'data:', json);
       // FastAPI returns the order object directly (not wrapped in { success, data })
       if (res.ok && (json.id || json.order_number || json.orderNumber)) {
+        // Meta Pixel Purchase — browser half only: the backend emits the CAPI
+        // half on order creation with the SAME event_id (purchase-{order.id}),
+        // fully normalized user_data, so Meta deduplicates the pair.
+        // NOTE: the 4th fbq argument only reads `eventID` (camelCase).
+        try {
+          trackMetaEvent('Purchase', {
+            value: finalTotal,
+            currency: 'DZD',
+            content_type: 'product',
+            content_ids: orderItems.map(item => item.product_id),
+            contents: orderItems.map(item => ({
+              id: item.product_id,
+              quantity: item.quantity,
+              item_price: item.unit_price,
+            })),
+            num_items: orderItems.reduce((a, i) => a + i.quantity, 0),
+          }, {
+            eventId: `purchase-${json.id}`,
+            mirrorToCapi: false,
+          });
+        } catch (err) {
+          console.error('Meta Pixel Purchase Error:', err);
+        }
         setOrderNumber(json.order_number ?? json.orderNumber ?? json.id ?? '');
         setOrderDiscount(json.discount ?? 0);
         clearCart();
@@ -294,6 +598,7 @@ export function CheckoutForm() {
       setErrors({ general: 'Erreur de connexion. Vérifiez votre réseau et réessayez.' });
       handleBack();
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -306,11 +611,13 @@ export function CheckoutForm() {
     setAppliedPromo(null);
     setPromoCode('');
     setPromoError('');
+    setAbandonedCartId(null);
     setCustomerInfo({ firstName: '', lastName: '', phone: '', phone2: '', wilaya: '', commune: '', address: '', deliveryType: 'HOME' });
   };
 
   if (items.length === 0 && !orderSuccess) {
-    return (
+    if (!isInline) {
+      return (
       <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center px-6 text-center gap-5">
         <div className="size-20 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center">
           <ShoppingBag className="size-9 text-slate-300" />
@@ -328,93 +635,32 @@ export function CheckoutForm() {
         </button>
       </div>
     );
+    }
   }
 
   const STEPS = [
-    { label: 'Livraison', icon: MapPin },
-    { label: 'Récapitulatif', icon: Package },
-    { label: 'Confirmation', icon: CheckCircle },
+    { label: t('deliveryInfo'), icon: MapPin },
+    { label: t('orderSummary'), icon: Package },
+    { label: t('confirmedTitle'), icon: CheckCircle },
   ];
 
   return (
-    <div style={{ backgroundColor: T.pageBg }} className="min-h-screen">
-      <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+    <div style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
+      <div className={isInline ? "w-full py-2" : "mx-auto max-w-2xl px-4 py-10 sm:px-6"}>
         {/* Title */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-black tracking-tight"
-            style={{ color: T.textPrimary, letterSpacing: T.tpl === 'athletic' ? '0.05em' : undefined, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
-            {T.tpl === 'athletic' ? 'FINALISER' : T.tpl === 'luxe' ? 'Votre Commande' : 'Finaliser ma commande'}
-          </h1>
-          <p className="text-xs mt-1 font-medium" style={{ color: T.textSecondary }}>
-            {T.tpl === 'athletic' ? 'PAIEMENT À LA LIVRAISON · SÉCURISÉ' : T.tpl === 'luxe' ? 'Livraison sécurisée · Paiement à réception' : 'Commande sécurisée · Paiement à la livraison'}
-          </p>
-        </div>
+        {T.tpl !== 'dz_cod' && !isInline && (
+          <div className="mb-8">
+            <h1 className="text-2xl font-black tracking-tight"
+              style={{ color: T.textPrimary, letterSpacing: T.tpl === 'athletic' ? '0.05em' : undefined, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
+              {T.tpl === 'athletic' ? 'FINALISER' : T.tpl === 'luxe' ? t('confirmedTitleLuxe') : t('deliveryInfo')}
+            </h1>
+            <p className="text-xs mt-1 font-medium" style={{ color: T.textSecondary }}>
+              {T.tpl === 'athletic' ? 'PAIEMENT À LA LIVRAISON · SÉCURISÉ' : T.tpl === 'luxe' ? 'Livraison sécurisée · Paiement à réception' : t('paymentOnDeliverySecure')}
+            </p>
+          </div>
+        )}
 
-        {/* Step indicator */}
-        <div className="mb-10">
-          {T.tpl === 'athletic' ? (
-            /* Athletic: thin accent line progress */
-            <div className="space-y-3">
-              <div className="h-0.5 w-full rounded-full" style={{ backgroundColor: T.connectorInactive }}>
-                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(step / (STEPS.length - 1)) * 100}%`, backgroundColor: T.primary }} />
-              </div>
-              <div className="flex justify-between">
-                {STEPS.map((s, i) => (
-                  <span key={i} className="text-[9px] font-black uppercase tracking-[0.3em] transition-colors"
-                    style={{ color: i <= step ? T.primary : T.textSecondary }}>{s.label}</span>
-                ))}
-              </div>
-            </div>
-          ) : T.tpl === 'luxe' ? (
-            /* Luxe: thin gold line + dot markers */
-            <div className="relative">
-              <div className="flex items-center">
-                {STEPS.map((s, i) => {
-                  const isDone = i < step || orderSuccess;
-                  const isActive = i === step;
-                  return (
-                    <div key={i} className="flex items-center flex-1">
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="size-2 rounded-full transition-all" style={{ backgroundColor: isDone ? T.primary : isActive ? T.primary : `${T.primary}20` }} />
-                        <span className="text-[9px] tracking-[0.3em] uppercase font-light whitespace-nowrap"
-                          style={{ color: isActive || isDone ? T.primary : T.textSecondary }}>{s.label}</span>
-                      </div>
-                      {i < STEPS.length - 1 && (
-                        <div className="flex-1 mx-3 mb-5 h-px transition-all" style={{ backgroundColor: isDone ? `${T.primary}40` : `${T.primary}10` }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            /* Clean: circles */
-            <div className="flex items-center">
-              {STEPS.map((s, i) => {
-                const isDone = i < step || orderSuccess;
-                const isActive = i === step;
-                return (
-                  <div key={i} className="flex items-center flex-1">
-                    <div className="flex flex-col items-center">
-                      <div className="size-10 rounded-full flex items-center justify-center border-2 text-xs font-black transition-all"
-                        style={isDone ? { backgroundColor: T.stepDoneBg, borderColor: T.stepDoneBg, color: T.stepDoneText }
-                          : isActive ? { backgroundColor: T.stepActiveBg, borderColor: T.stepActiveBorder, color: T.stepActiveText }
-                          : { backgroundColor: T.stepInactiveBg, borderColor: T.stepInactiveBorder, color: T.stepInactiveText }}>
-                        {isDone ? <Check className="size-4" /> : <s.icon className="size-4" />}
-                      </div>
-                      <span className="mt-1.5 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap"
-                        style={{ color: isActive || isDone ? T.textPrimary : T.textSecondary }}>{s.label}</span>
-                    </div>
-                    {i < STEPS.length - 1 && (
-                      <div className="flex-1 mx-2 mb-5 h-0.5 rounded-full transition-all"
-                        style={{ backgroundColor: isDone ? T.connectorDone : T.connectorInactive }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
 
         {/* ── Helper styles ── */}
         <style>{`
@@ -437,15 +683,17 @@ export function CheckoutForm() {
         {/* ── STEP 0: Informations de livraison ── */}
         {step === 0 && (
           <div className="space-y-5">
-            <div>
-              <h2 className="text-base font-bold tracking-tight"
-                style={{ color: T.textPrimary, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
-                Informations de livraison
-              </h2>
-              <p className="text-xs mt-0.5" style={{ color: T.textSecondary }}>
-                Renseignez vos coordonnées pour recevoir votre commande
-              </p>
-            </div>
+            {!isInline && (
+              <div className="text-center mb-6">
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight"
+                  style={{ color: T.textPrimary }}>
+                  {dir === 'rtl' ? 'معلومات التوصيل' : t('deliveryInfo') || 'Informations de livraison'}
+                </h2>
+                <p className="text-xs mt-1 font-medium" style={{ color: T.textSecondary }}>
+                  {dir === 'rtl' ? 'يرجى ملء الاستمارة لتأكيد طلبك' : t('deliveryInfoDesc') || 'Veuillez remplir le formulaire pour confirmer votre commande'}
+                </p>
+              </div>
+            )}
 
             {errors.general && (
               <div className="border px-4 py-3 text-sm text-red-400"
@@ -454,220 +702,343 @@ export function CheckoutForm() {
               </div>
             )}
 
-            {/* Nom */}
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { id: 'firstName', label: 'Prénom *', placeholder: 'Mohamed', key: 'firstName' as const, err: errors.firstName },
-                { id: 'lastName',  label: 'Nom *',    placeholder: 'Benali',  key: 'lastName'  as const, err: errors.lastName  },
-              ].map(f => (
-                <div key={f.id} className="space-y-1.5">
-                  <label htmlFor={f.id} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>{f.label}</label>
-                  <Input id={f.id} placeholder={f.placeholder} value={customerInfo[f.key]}
-                    onChange={e => setCustomerInfo({ ...customerInfo, [f.key]: e.target.value })}
-                    className={`co-input text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
-                  {f.err && <p className="text-[10px] text-red-400">{f.err}</p>}
+             {isInline ? (
+              // Simplified 4-field COD form for landing page
+              <div className="space-y-4">
+                {/* 1. Téléphone */}
+                <div className="space-y-1.5">
+                  <label htmlFor="phone" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <Phone className="size-3" /> {dir === 'rtl' ? 'رقم الهاتف' : t('phone')}
+                  </label>
+                  <Input id="phone" type="tel" placeholder={dir === 'rtl' ? '0555 12 34 56' : '0555 123 456'} value={customerInfo.phone}
+                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                    className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                    dir="ltr" style={{ textAlign: 'left' }} />
+                  {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                 </div>
-              ))}
-            </div>
 
-            {/* Téléphone */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label htmlFor="phone" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                  <Phone className="size-3" /> Téléphone *
-                </label>
-                <Input id="phone" placeholder="0555 123 456" value={customerInfo.phone}
-                  onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                  className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`} />
-                {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="phone2" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
-                  Tél. 2 <span className="normal-case font-normal opacity-50">(optionnel)</span>
-                </label>
-                <Input id="phone2" placeholder="0661 234 567" value={customerInfo.phone2}
-                  onChange={e => setCustomerInfo({ ...customerInfo, phone2: e.target.value })}
-                  className={`co-input text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`} />
-                {errors.phone2 && <p className="text-[10px] text-red-400">{errors.phone2}</p>}
-              </div>
-            </div>
+                {/* 2. Nom Complet */}
+                <div className="space-y-1.5">
+                  <label htmlFor="firstName" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <User className="size-3" /> {dir === 'rtl' ? 'الاسم الكامل' : t('fullName') || 'Nom Complet'}
+                  </label>
+                  <Input id="firstName" placeholder={dir === 'rtl' ? 'محمد بن علي' : 'Mohamed Benali'} value={customerInfo.firstName}
+                    onChange={e => setCustomerInfo({ ...customerInfo, firstName: e.target.value })}
+                    className={`co-input text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
+                  {errors.firstName && <p className="text-[10px] text-red-400">{errors.firstName}</p>}
+                </div>
 
-            {/* Wilaya */}
-            <div className="space-y-1.5">
-              <label htmlFor="wilaya" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                <MapPin className="size-3" /> Wilaya *
-              </label>
-              <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                <SelectTrigger id="wilaya" className={`co-select h-11 text-sm ${errors.wilaya ? 'border-red-400!' : ''}`}
-                  style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
-                  <SelectValue placeholder="Sélectionnez votre wilaya" />
-                </SelectTrigger>
-                <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
-                  {WILAYAS.map(w => (
-                    <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
-            </div>
+                {/* 3. Wilaya */}
+                <div className="space-y-1.5">
+                  <label htmlFor="wilaya" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
+                  </label>
+                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                      <SelectValue placeholder={t('selectWilaya')} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                      {WILAYAS.filter(isWilayaActive).map(w => (
+                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
+                </div>
 
-            {/* Commune + Adresse */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label htmlFor="commune" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
-                  Commune <span className="normal-case font-normal opacity-50">(optionnel)</span>
-                </label>
-                <Input id="commune" placeholder="Bab El Oued" value={customerInfo.commune}
-                  onChange={e => setCustomerInfo({ ...customerInfo, commune: e.target.value })}
-                  className="co-input text-sm h-11" />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="address" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>Adresse *</label>
-                <Input id="address" placeholder="Rue, N° bâtiment..." value={customerInfo.address}
-                  onChange={e => setCustomerInfo({ ...customerInfo, address: e.target.value })}
-                  className={`co-input text-sm h-11 ${errors.address ? 'border-red-400!' : ''}`} />
-                {errors.address && <p className="text-[10px] text-red-400">{errors.address}</p>}
-              </div>
-            </div>
+                {/* 4. Commune */}
+                <div className="space-y-1.5">
+                  <label htmlFor="commune" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <Building2 className="size-3" /> {dir === 'rtl' ? 'البلدية' : t('commune')}
+                  </label>
+                  <SearchableCommuneSelect
+                    wilaya={customerInfo.wilaya}
+                    value={customerInfo.commune}
+                    onChange={v => setCustomerInfo({ ...customerInfo, commune: v })}
+                    dir={dir}
+                    T={T}
+                    placeholder={dir === 'rtl' ? 'اختر البلدية...' : 'Sélectionnez la commune...'}
+                    error={!!errors.commune}
+                  />
+                  {errors.commune && <p className="text-[10px] text-red-400">{errors.commune}</p>}
+                </div>
 
-            {/* Transporteur */}
-            {availablePartners.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                  <Package className="size-3" /> Choisir un transporteur
-                </label>
-                <div className="space-y-2">
-                  {availablePartners.map(p => (
-                    <button key={p.id} type="button" onClick={() => setSelectedPartnerId(p.id)}
-                      className="w-full flex items-center justify-between p-3 border-2 transition-all"
+                {/* 5. Mode de Livraison / طريقة الاستلام */}
+                <div className="space-y-2 pt-1">
+                  <label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <Truck className="size-3.5" /> {dir === 'rtl' ? 'طريقة الاستلام' : 'Mode de livraison'}
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerInfo({ ...customerInfo, deliveryType: 'HOME' })}
+                      className="flex flex-col items-center justify-center gap-2 p-3 border-2 transition-all text-center"
                       style={{
-                        borderRadius: T.radius,
-                        borderColor: selectedPartnerId === p.id ? T.primary : T.cardBorder,
-                        backgroundColor: selectedPartnerId === p.id ? `${T.primary}10` : T.cardBg,
-                      }}>
-                      <div className="flex items-center gap-3">
-                        <div className="size-10 flex items-center justify-center border overflow-hidden"
-                          style={{ borderRadius: T.inputRadius, backgroundColor: T.inputBg, borderColor: T.cardBorder }}>
-                          {p.logoUrl ? <img src={p.logoUrl} alt={p.name} className="size-full object-contain p-1" />
-                            : <Truck className="size-5" style={{ color: T.textSecondary }} />}
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-bold" style={{ color: T.textPrimary }}>{p.name}</p>
-                          <p className="text-[10px] capitalize" style={{ color: T.textSecondary }}>{p.code}</p>
-                        </div>
-                      </div>
-                      {selectedPartnerId === p.id && (
-                        <div className="size-5 rounded-full flex items-center justify-center" style={{ backgroundColor: T.primary }}>
-                          <Check className="size-3" style={{ color: T.btnText }} />
-                        </div>
+                        borderRadius: '16px',
+                        borderColor: customerInfo.deliveryType === 'HOME' ? T.primary : T.inputBorder,
+                        backgroundColor: customerInfo.deliveryType === 'HOME' ? `${T.primary}08` : 'transparent',
+                      }}
+                    >
+                      <Home className="size-4" style={{ color: customerInfo.deliveryType === 'HOME' ? T.primary : T.textSecondary }} />
+                      <span className="text-xs font-bold" style={{ color: T.textPrimary }}>
+                        {dir === 'rtl' ? 'توصيل للمنزل' : 'À domicile'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerInfo({ ...customerInfo, deliveryType: 'OFFICE' })}
+                      className="flex flex-col items-center justify-center gap-2 p-3 border-2 transition-all text-center"
+                      style={{
+                        borderRadius: '16px',
+                        borderColor: customerInfo.deliveryType === 'OFFICE' ? T.primary : T.inputBorder,
+                        backgroundColor: customerInfo.deliveryType === 'OFFICE' ? `${T.primary}08` : 'transparent',
+                      }}
+                    >
+                      <Building2 className="size-4" style={{ color: customerInfo.deliveryType === 'OFFICE' ? T.primary : T.textSecondary }} />
+                      <span className="text-xs font-bold" style={{ color: T.textPrimary }}>
+                        {dir === 'rtl' ? 'استلام من المكتب' : 'Stop Desk (Bureau)'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Standard checkout form
+              <>
+                {/* Nom */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { id: 'firstName', label: t('firstName'), placeholder: 'Mohamed', key: 'firstName' as const, err: errors.firstName },
+                    { id: 'lastName',  label: t('lastName'),    placeholder: 'Benali',  key: 'lastName'  as const, err: errors.lastName  },
+                  ].map(f => (
+                    <div key={f.id} className="space-y-1.5">
+                      <label htmlFor={f.id} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>{f.label}</label>
+                      <Input id={f.id} placeholder={f.placeholder} value={customerInfo[f.key]}
+                        onChange={e => setCustomerInfo({ ...customerInfo, [f.key]: e.target.value })}
+                        className={`co-input text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
+                      {f.err && <p className="text-[10px] text-red-400">{f.err}</p>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Téléphone */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="phone" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                      <Phone className="size-3" /> {t('phone')}
+                    </label>
+                    <Input id="phone" type="tel" placeholder="0555 123 456" value={customerInfo.phone}
+                      onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                      className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                      dir="ltr" style={{ textAlign: 'left' }} />
+                    {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="phone2" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
+                      {t('phone2')}
+                    </label>
+                    <Input id="phone2" type="tel" placeholder="0661 234 567" value={customerInfo.phone2}
+                      onChange={e => setCustomerInfo({ ...customerInfo, phone2: e.target.value })}
+                      className={`co-input text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
+                      dir="ltr" style={{ textAlign: 'left' }} />
+                    {errors.phone2 && <p className="text-[10px] text-red-400">{errors.phone2}</p>}
+                  </div>
+                </div>
+
+                {/* Wilaya */}
+                <div className="space-y-1.5">
+                  <label htmlFor="wilaya" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <MapPin className="size-3" /> {t('wilaya')}
+                  </label>
+                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                      <SelectValue placeholder={t('selectWilaya')} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                      {WILAYAS.filter(isWilayaActive).map(w => (
+                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
+                </div>
+
+                {/* Commune + Adresse */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="commune" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
+                      {t('commune')}
+                    </label>
+                    <SearchableCommuneSelect
+                      wilaya={customerInfo.wilaya}
+                      value={customerInfo.commune}
+                      onChange={v => setCustomerInfo({ ...customerInfo, commune: v })}
+                      dir={dir}
+                      T={T}
+                      placeholder={dir === 'rtl' ? 'اختر البلدية...' : 'Sélectionnez la commune...'}
+                      error={!!errors.commune}
+                    />
+                    {errors.commune && <p className="text-[10px] text-red-400">{errors.commune}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="address" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>
+                      {customerInfo.deliveryType === 'OFFICE' ? 'Bureau de livraison' : t('address')}
+                    </label>
+                    {customerInfo.deliveryType === 'OFFICE' ? (
+                      <Select value={customerInfo.address} onValueChange={v => setCustomerInfo({ ...customerInfo, address: v })}>
+                        <SelectTrigger className={`co-select h-11 text-[16px] md:text-sm w-full ${errors.address ? 'border-red-400!' : ''}`}
+                          style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.address ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                          <SelectValue placeholder="Sélectionnez un bureau..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                          {NOEST_BUREAUX.filter(b => b.wilayaId === (WILAYAS.indexOf(customerInfo.wilaya as typeof WILAYAS[number]) + 1)).map(b => (
+                            <SelectItem key={b.code} value={b.name + ' - ' + b.address} style={{ color: T.inputText }}>
+                              {b.name} - {b.address}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input id="address" placeholder="Rue, N° bâtiment..." value={customerInfo.address}
+                        onChange={e => setCustomerInfo({ ...customerInfo, address: e.target.value })}
+                        className={`co-input text-[16px] md:text-sm h-11 ${errors.address ? 'border-red-400!' : ''}`} />
+                    )}
+                    {errors.address && <p className="text-[10px] text-red-400">{errors.address}</p>}
+                  </div>
+                </div>
+
+
+
+                {/* Type de livraison */}
+                <div className="space-y-2 pt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <MapPin className="size-3" /> {t('remiseMode')}
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { value: 'HOME' as DeliveryType, label: t('homeDelivery'), icon: Home, desc: t('homeDeliveryDesc') },
+                      { value: 'OFFICE' as DeliveryType, label: t('stopDesk'), icon: Building2, desc: t('stopDeskDesc') },
+                    ].map(opt => {
+                      const isSelected = customerInfo.deliveryType === opt.value;
+                      return (
+                        <button key={opt.value} type="button"
+                          onClick={() => setCustomerInfo({ ...customerInfo, deliveryType: opt.value })}
+                          className="flex items-start gap-3 p-3.5 border-2 text-left transition-all"
+                          style={{
+                            borderRadius: T.radius,
+                            borderColor: isSelected ? T.primary : T.cardBorder,
+                            backgroundColor: isSelected ? `${T.primary}10` : T.cardBg,
+                          }}>
+                          <opt.icon className="size-4 mt-0.5 shrink-0" style={{ color: isSelected ? T.primary : T.textSecondary }} />
+                          <div>
+                            <p className="text-xs font-bold" style={{ color: T.textPrimary }}>{opt.label}</p>
+                            <p className="text-[10px]" style={{ color: T.textSecondary }}>{opt.desc}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {customerInfo.wilaya && (
+                    <div className="mt-3 p-3 border flex items-center justify-between"
+                      style={{ borderRadius: T.radius, backgroundColor: T.summaryBg, borderColor: T.cardBorder }}>
+                      <span className="text-xs font-medium flex items-center gap-2" style={{ color: T.textSecondary }}>
+                        <Truck className="size-3.5 text-emerald-500" /> {t('deliveryFeeEstimated')}
+                      </span>
+                      <span className="text-sm font-black" style={{ color: T.textPrimary }}>
+                        {deliveryLoading ? <Loader2 className="size-3.5 animate-spin" /> : `${formatPrice(currentDeliveryFee)}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Code promo */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
+                    <Tag className="size-3" /> {t('promoCode')}
+                  </label>
+                  {appliedPromo ? (
+                    <div className="flex items-center gap-2 border px-3 py-2.5"
+                      style={{ borderRadius: T.radius, borderColor: 'rgba(52,211,153,0.3)', backgroundColor: 'rgba(52,211,153,0.08)' }}>
+                      <span className="text-xs font-bold text-emerald-400">{appliedPromo.code} · {appliedPromo.label}</span>
+                      <button type="button" className="ml-auto text-emerald-400 hover:text-emerald-300"
+                        onClick={() => { setPromoCode(''); setAppliedPromo(null); setPromoError(''); }}>
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Input placeholder="CODE PROMO" value={promoCode} maxLength={20}
+                        onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleApplyPromo(); } }}
+                        className={`co-input flex-1 text-sm font-mono uppercase tracking-wider h-11 ${promoError ? 'border-red-400!' : ''}`} />
+                      <button type="button" onClick={handleApplyPromo} disabled={promoLoading || !promoCode.trim()}
+                        className="px-4 border text-xs font-bold transition-all disabled:opacity-40"
+                        style={{ borderRadius: T.radius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
+                        {promoLoading ? <Loader2 className="size-4 animate-spin" /> : t('applyPromo')}
+                      </button>
+                    </div>
+                  )}
+                  {promoError && <p className="text-[10px] text-red-400">{promoError}</p>}
+                </div>
+              </>
+            )}
+
+
+
+            {/* Render any child components (like variant & pack selectors) */}
+            {children}
+
+            {/* Real-time Pricing Summary */}
+            <div className="pt-2 space-y-2">
+              <div className="border overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ borderRadius: T.radius, borderColor: T.cardBorder }}>
+                <div className="divide-y" style={{ borderColor: T.dividerColor }}>
+                  <div className="flex justify-between px-4 py-2.5 text-xs font-semibold" style={{ color: T.textSecondary }}>
+                    <span>{t('subtotal')}</span>
+                    <span className="tabular-nums font-mono" style={{ color: T.textPrimary }}>{formatPrice(cartSubtotal)}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2.5 text-xs font-semibold" style={{ color: T.textSecondary }}>
+                    <span className="flex items-center gap-1.5"><Truck className="size-3.5" /> {t('deliveryFee')}</span>
+                    <span className="tabular-nums font-mono" style={{ color: T.textPrimary }}>
+                      {customerInfo.wilaya ? (
+                        deliveryLoading ? (
+                          <Loader2 className="size-3 animate-spin inline" />
+                        ) : (
+                          formatPrice(currentDeliveryFee)
+                        )
+                      ) : (
+                        <span className="text-[10px] font-normal italic opacity-60">{t('selectWilaya') || 'Sélectionnez votre wilaya'}</span>
                       )}
-                    </button>
-                  ))}
+                    </span>
+                  </div>
+                  {appliedPromo && discountAmount > 0 && (
+                    <div className="flex justify-between px-4 py-2.5 text-xs font-semibold text-emerald-400" style={{ backgroundColor: 'rgba(52,211,153,0.06)' }}>
+                      <span className="flex items-center gap-1.5"><Tag className="size-3.5" /> {appliedPromo.code}</span>
+                      <span className="tabular-nums font-mono">-{formatPrice(discountAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between px-4 py-3 bg-slate-50/50" style={{ backgroundColor: T.summaryBg }}>
+                    <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
+                    <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
+                  </div>
                 </div>
               </div>
-            )}
-
-            {/* Type de livraison */}
-            <div className="space-y-2 pt-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                <MapPin className="size-3" /> Mode de remise
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: 'HOME' as DeliveryType, label: 'À domicile', icon: Home, desc: 'Livré chez vous' },
-                  { value: 'OFFICE' as DeliveryType, label: 'Stop-desk', icon: Building2, desc: 'Retrait en agence' },
-                ].map(opt => {
-                  const isSelected = customerInfo.deliveryType === opt.value;
-                  return (
-                    <button key={opt.value} type="button"
-                      onClick={() => setCustomerInfo({ ...customerInfo, deliveryType: opt.value })}
-                      className="flex items-start gap-3 p-3.5 border-2 text-left transition-all"
-                      style={{
-                        borderRadius: T.radius,
-                        borderColor: isSelected ? T.primary : T.cardBorder,
-                        backgroundColor: isSelected ? `${T.primary}10` : T.cardBg,
-                      }}>
-                      <opt.icon className="size-4 mt-0.5 shrink-0" style={{ color: isSelected ? T.primary : T.textSecondary }} />
-                      <div>
-                        <p className="text-xs font-bold" style={{ color: T.textPrimary }}>{opt.label}</p>
-                        <p className="text-[10px]" style={{ color: T.textSecondary }}>{opt.desc}</p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {customerInfo.wilaya && (
-                <div className="mt-3 p-3 border flex items-center justify-between"
-                  style={{ borderRadius: T.radius, backgroundColor: T.summaryBg, borderColor: T.cardBorder }}>
-                  <span className="text-xs font-medium flex items-center gap-2" style={{ color: T.textSecondary }}>
-                    <Truck className="size-3.5 text-emerald-500" /> Frais de livraison estimés
-                  </span>
-                  <span className="text-sm font-black" style={{ color: T.textPrimary }}>
-                    {deliveryLoading ? <Loader2 className="size-3.5 animate-spin" /> : `${formatPrice(currentDeliveryFee)} DA`}
-                  </span>
-                </div>
-              )}
             </div>
-
-            {/* Code promo */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                <Tag className="size-3" /> Code promo <span className="normal-case font-normal opacity-50">(optionnel)</span>
-              </label>
-              {appliedPromo ? (
-                <div className="flex items-center gap-2 border px-3 py-2.5"
-                  style={{ borderRadius: T.radius, borderColor: 'rgba(52,211,153,0.3)', backgroundColor: 'rgba(52,211,153,0.08)' }}>
-                  <span className="text-xs font-bold text-emerald-400">{appliedPromo.code} · {appliedPromo.label}</span>
-                  <button type="button" className="ml-auto text-emerald-400 hover:text-emerald-300"
-                    onClick={() => { setPromoCode(''); setAppliedPromo(null); setPromoError(''); }}>
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <Input placeholder="CODE PROMO" value={promoCode} maxLength={20}
-                    onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleApplyPromo(); } }}
-                    className={`co-input flex-1 text-sm font-mono uppercase tracking-wider h-11 ${promoError ? 'border-red-400!' : ''}`} />
-                  <button type="button" onClick={handleApplyPromo} disabled={promoLoading || !promoCode.trim()}
-                    className="px-4 border text-xs font-bold transition-all disabled:opacity-40"
-                    style={{ borderRadius: T.radius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
-                    {promoLoading ? <Loader2 className="size-4 animate-spin" /> : 'Appliquer'}
-                  </button>
-                </div>
-              )}
-              {promoError && <p className="text-[10px] text-red-400">{promoError}</p>}
-            </div>
-
-            {/* Doublon warning */}
-            {duplicateWarning && (
-              <div className="border px-4 py-3 space-y-2"
-                style={{ borderRadius: T.radius, borderColor: 'rgba(251,191,36,0.3)', backgroundColor: 'rgba(251,191,36,0.08)' }}>
-                <p className="text-sm font-bold text-amber-400">⚠️ Ce numéro a déjà passé une commande dans cette boutique.</p>
-                <p className="text-xs text-amber-500/70">Voulez-vous continuer ou vérifier votre numéro ?</p>
-                <div className="flex gap-2 pt-1">
-                  <button type="button" onClick={() => setDuplicateWarning(false)}
-                    className="px-4 py-2 text-xs font-bold text-amber-400 border border-amber-400/30 hover:bg-amber-400/10 transition-all"
-                    style={{ borderRadius: T.radius }}>
-                    Modifier le numéro
-                  </button>
-                  <button type="button" onClick={() => { setDuplicateWarning(false); setStep(s => Math.min(s + 1, 2)); }}
-                    className="px-4 py-2 text-xs font-bold text-black bg-amber-400 hover:bg-amber-500 transition-all"
-                    style={{ borderRadius: T.radius }}>
-                    Continuer quand même
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* CTA */}
             <div className="pt-2">
-              <button onClick={handleNext} disabled={checkingDuplicate}
-                className="w-full h-13 flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
-                style={{ backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }}>
-                {checkingDuplicate
-                  ? <><Loader2 className="size-4 animate-spin" /> Vérification...</>
-                  : <>Continuer <ArrowRight className="size-4" /></>}
+              <button onClick={handleNext} disabled={checkingDuplicate || submitting}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60",
+                  isInline ? "h-14 text-base" : (T.tpl === 'dz_cod' ? "h-16 text-xl bg-red-600 hover:bg-red-700" : "h-13 text-sm")
+                )}
+                style={isInline ? { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }
+                  : (T.tpl === 'dz_cod' ? { color: '#ffffff', borderRadius: '8px' } : { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius })}>
+                {checkingDuplicate || submitting
+                  ? <><Loader2 className="size-5 animate-spin" /> {submitting ? t('submitting') : t('checking')}</>
+                  : isInline ? (dir === 'rtl' ? 'اضغط هنا للطلب' : 'Acheter maintenant') 
+                  : (T.tpl === 'dz_cod' ? t('buyNowCod') : <>{t('continue')} <ArrowRight className="size-4" /></>)}
               </button>
             </div>
           </div>
@@ -676,31 +1047,32 @@ export function CheckoutForm() {
         {/* ── STEP 1: Récapitulatif ── */}
         {step === 1 && (
           <div className="space-y-5">
-            <div>
-              <h2 className="text-base font-bold tracking-tight"
+            <div className="text-center">
+              <h2 className="text-lg font-black tracking-tight"
                 style={{ color: T.textPrimary, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
-                Récapitulatif de commande
+                {t('orderSummary')}
               </h2>
-              <p className="text-xs mt-0.5" style={{ color: T.textSecondary }}>Vérifiez votre commande avant de confirmer</p>
+              <p className="text-xs mt-0.5" style={{ color: T.textSecondary }}>{t('orderSummaryDesc')}</p>
             </div>
 
             {/* Adresse */}
             <div className="p-4 border space-y-1"
               style={{ borderRadius: T.radius, borderColor: T.cardBorder, backgroundColor: T.summaryBg }}>
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: T.textSecondary }}>Livraison à</p>
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: T.textSecondary }}>{t('addressDeliverTo')}</p>
               <p className="text-sm font-bold" style={{ color: T.textPrimary }}>{customerInfo.firstName} {customerInfo.lastName}</p>
               <p className="text-sm font-mono" style={{ color: T.textSecondary }}>{customerInfo.phone}{customerInfo.phone2 ? ` / ${customerInfo.phone2}` : ''}</p>
               <p className="text-sm" style={{ color: T.textSecondary }}>{customerInfo.address}{customerInfo.commune ? `, ${customerInfo.commune}` : ''} — {customerInfo.wilaya}</p>
               <span className="inline-block mt-1 px-2 py-0.5 text-[10px] font-medium border"
                 style={{ borderRadius: T.inputRadius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
-                {customerInfo.deliveryType === 'HOME' ? '🏠 Livraison à domicile' : '🏢 Bureau / Stop-desk'}
+                {customerInfo.deliveryType === 'HOME' ? t('shippingHome') : t('shippingOffice')}
               </span>
             </div>
 
             {/* Articles */}
             <div className="space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: T.textSecondary }}>Articles commandés</p>
+              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: T.textSecondary }}>{t('itemsOrdered')}</p>
               {items.map((item: CartItem) => {
+                if (!item?.product) return null;
                 const modifier = item.selectedVariant && item.product.variants
                   ? (item.product.variants.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0) : 0;
                 const lineTotal = (item.product.price + modifier) * item.quantity;
@@ -709,17 +1081,25 @@ export function CheckoutForm() {
                     onClick={() => setSelectedProductSlug(item.product.slug)}
                     className="flex items-center gap-3 p-3 border cursor-pointer transition-all"
                     style={{ borderRadius: T.radius, borderColor: T.cardBorder, backgroundColor: T.cardBg }}>
-                    <div className="size-11 flex items-center justify-center text-sm font-black shrink-0"
-                      style={{ borderRadius: T.inputRadius, backgroundColor: T.summaryBg, color: T.textSecondary }}>
-                      {item.product.name.charAt(0)}
+                    <div className="size-11 rounded-lg overflow-hidden border shrink-0 bg-slate-50 flex items-center justify-center"
+                      style={{ borderRadius: T.inputRadius, borderColor: T.cardBorder }}>
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.product.name} className="size-full object-cover" />
+                      ) : item.product.main_image ? (
+                        <img src={item.product.main_image} alt={item.product.name} className="size-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-black" style={{ color: T.textSecondary }}>
+                          {item.product.name?.charAt(0) || 'P'}
+                        </span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold truncate" style={{ color: T.textPrimary }}>{item.product.name}</p>
                       <p className="text-xs" style={{ color: T.textSecondary }}>
-                        {formatPrice(item.product.price + modifier)} DA × {item.quantity}{item.selectedVariant ? ` · ${item.selectedVariant}` : ''}
+                        {formatPrice(item.product.price + modifier)} × {item.quantity}{item.selectedVariant ? ` · ${item.selectedVariant}` : ''}
                       </p>
                     </div>
-                    <span className="text-sm font-black shrink-0 tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(lineTotal)} DA</span>
+                    <span className="text-sm font-black shrink-0 tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(lineTotal)}</span>
                   </div>
                 );
               })}
@@ -729,24 +1109,24 @@ export function CheckoutForm() {
             <div className="border overflow-hidden" style={{ borderRadius: T.radius, borderColor: T.cardBorder }}>
               <div className="divide-y" style={{ borderColor: T.dividerColor }}>
                 {[
-                  { label: 'Sous-total', value: cartSubtotal },
-                  { label: 'Livraison', value: currentDeliveryFee, icon: <Truck className="size-3.5" /> },
+                  { label: t('subtotal'), value: cartSubtotal },
+                  { label: t('deliveryFee'), value: currentDeliveryFee, icon: <Truck className="size-3.5" /> },
                 ].map(row => (
                   <div key={row.label} className="flex justify-between px-4 py-3 text-sm"
                     style={{ borderBottomColor: T.dividerColor }}>
                     <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>{row.icon}{row.label}</span>
-                    <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(row.value)} DA</span>
+                    <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(row.value)}</span>
                   </div>
                 ))}
                 {appliedPromo && discountAmount > 0 && (
                   <div className="flex justify-between px-4 py-3 text-sm" style={{ backgroundColor: 'rgba(52,211,153,0.06)' }}>
                     <span className="text-emerald-400 flex items-center gap-1.5"><Tag className="size-3.5" /> {appliedPromo.code}</span>
-                    <span className="font-bold text-emerald-400">−{formatPrice(discountAmount)} DA</span>
+                    <span className="font-bold text-emerald-400">−{formatPrice(discountAmount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between px-4 py-4" style={{ backgroundColor: T.summaryBg }}>
-                  <span className="text-sm font-bold" style={{ color: T.textPrimary }}>Total à payer</span>
-                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)} DA</span>
+                  <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
+                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
                 </div>
               </div>
             </div>
@@ -754,7 +1134,7 @@ export function CheckoutForm() {
             {/* Trust */}
             <div className="flex items-center gap-3 py-1 text-[11px]" style={{ color: T.textSecondary }}>
               <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
-              Paiement à la livraison · Commande 100% sécurisée
+              {t('paymentOnDeliverySecure')}
             </div>
 
             {errors.general && (
@@ -768,14 +1148,14 @@ export function CheckoutForm() {
               <button onClick={handleBack}
                 className="h-13 px-5 border text-sm font-bold transition-all flex items-center gap-2 hover:brightness-110"
                 style={{ borderRadius: T.btnRadius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
-                <ArrowLeft className="size-4" /> Retour
+                <ArrowLeft className="size-4" /> {t('back')}
               </button>
               <button onClick={handleSubmit} disabled={submitting}
                 className="flex-1 h-13 flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
                 style={{ backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }}>
                 {submitting
-                  ? <><Loader2 className="size-4 animate-spin" /> Envoi en cours...</>
-                  : <><CheckCircle className="size-4" /> Confirmer ma commande</>}
+                  ? <><Loader2 className="size-4 animate-spin" /> {t('sendingOrder')}</>
+                  : <><CheckCircle className="size-4" /> {t('confirmOrder')}</>}
               </button>
             </div>
           </div>
@@ -792,30 +1172,30 @@ export function CheckoutForm() {
             <div>
               <h2 className="text-2xl font-black tracking-tight"
                 style={{ color: T.textPrimary, textTransform: T.tpl !== 'clean' ? 'uppercase' : undefined }}>
-                {T.tpl === 'athletic' ? 'ORDER CONFIRMED' : T.tpl === 'luxe' ? 'Commande reçue' : 'Commande confirmée !'}
+                {T.tpl === 'athletic' ? t('confirmedTitleAthletic') : T.tpl === 'luxe' ? t('confirmedTitleLuxe') : t('confirmedTitle')}
               </h2>
               <p className="mt-2 max-w-sm text-sm" style={{ color: T.textSecondary }}>
-                Merci pour votre commande. Notre équipe vous contactera bientôt pour confirmer la livraison.
+                {t('confirmedDesc')}
               </p>
             </div>
             {orderNumber && (
               <div className="border px-8 py-4 text-center"
                 style={{ borderRadius: T.radius, borderColor: T.cardBorder, backgroundColor: T.summaryBg }}>
                 <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: T.textSecondary }}>
-                  Numéro de commande
+                  {t('orderNumber')}
                 </p>
                 <p className="text-xl font-black font-mono" style={{ color: T.primary }}>#{orderNumber}</p>
               </div>
             )}
             {orderDiscount > 0 && (
               <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
-                <Tag className="size-4" /> Réduction appliquée : −{formatPrice(orderDiscount)} DA
+                <Tag className="size-4" /> {t('discount')} : −{formatPrice(orderDiscount)}
               </div>
             )}
             <button onClick={resetForm}
               className="mt-2 px-10 py-3.5 text-sm font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98]"
               style={{ backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }}>
-              Continuer mes achats
+              {t('continueShopping')}
             </button>
           </div>
         )}

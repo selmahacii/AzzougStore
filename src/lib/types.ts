@@ -17,6 +17,21 @@ export interface ThemeConfig {
   heroSubtitle?: string | null;
   heroCta?: string | null;
   heroFont?: 'bold' | 'normal' | 'light' | 'serif';
+  // Dynamic hero elements (all optional — hidden if not set)
+  heroTag?: string | null;
+  heroStats?: Array<{ label: string; value: string }> | null;
+  heroAttributes?: Array<{ label: string; val: string }> | null;
+  // Trust bar below header nav (hidden if not configured)
+  trustBar?: Array<{ label: string; sub: string; icon?: string }> | null;
+  // Store identity
+  storeTagline?: string | null;
+  // Section labels (customizable per store)
+  labelBestSellers?: string | null;
+  labelBestSellersTag?: string | null;
+  labelNewArrivals?: string | null;
+  labelNewArrivalsTag?: string | null;
+  // Help messages (configurable)
+  helpMessages?: Record<string, string> | null;
   [key: string]: unknown;
 }
 
@@ -31,7 +46,24 @@ export interface Store {
   logo?: string | null;
   banner_url?: string | null;
   is_active: boolean;
-  theme_config: ThemeConfig;
+  theme_config?: ThemeConfig;
+  default_delivery_fee?: number;
+  delivery_providers?: Record<string, any>; // JSON
+  
+  // Assignment logic
+  assignment_active?: boolean;
+  assignment_logic?: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
+
+  // Per-store business rules (NRP ceilings, callback delay, auto-merge)
+  operations_config?: {
+    max_nrp_normal?: number;
+    max_nrp_abandoned?: number;
+    nrp_callback_hours?: number;
+    auto_merge_duplicates?: boolean;
+  } | null;
+
+  // Relations
+  users?: User[];
   owner_id: string;
   template_id: string;
   social_links: { facebook?: string; instagram?: string; tiktok?: string; twitter?: string };
@@ -48,9 +80,15 @@ export interface Store {
 
 // ─── Products ───────────────────────────────────────────────
 export interface ProductVariant {
-  name: string;
-  value: string;
-  priceModifier?: number;
+  id?: string;
+  name: string;      // e.g. "Couleur"
+  value: string;     // e.g. "Rouge"
+  sku?: string;      // Specific SKU for this variant
+  stock?: number;    // Specific stock for this variant
+  price?: number;    // Specific price (optional, overrides base)
+  image?: string;    // Specific image for this variant
+  color?: string;    // Hex code for color swatches
+  priceModifier?: number; // Kept for backwards compatibility
 }
 
 export interface Product {
@@ -82,6 +120,21 @@ export interface Product {
   is_pack: boolean;
   main_image?: string | null;
   tags?: string[];
+  
+  // Production & Logistics
+  production_source?: 'imported' | 'local';
+  prod_supplier_name?: string;
+  prod_batch_qty?: number;
+  prod_fabric_cost?: number;
+  prod_accessories_cost?: number;
+  prod_labor_cut_cost?: number;
+  prod_labor_sew_cost?: number;
+  prod_labor_finish_cost?: number;
+  prod_packaging_cost?: number;
+  prod_transport_cost?: number;
+  prod_other_cost?: number;
+  prod_notes?: string;
+  allowed_carriers?: string[];
 
   created_at: string;
   updated_at: string;
@@ -97,6 +150,8 @@ export interface Review {
   customer_name: string;
   rating: number;
   title: string | null;
+  image: string | null;
+  color?: string; // Hex code for color variants
   comment: string;
   is_verified: boolean;
   is_approved: boolean;
@@ -109,11 +164,17 @@ export type OrderStatus =
   | 'NEW'
   | 'ASSIGNED'
   | 'CALLED'
+  | 'IN_PROGRESS'
+  | 'RESCHEDULED'
   | 'CONFIRMED'
   | 'SHIPPED'
   | 'DELIVERED'
   | 'RETURNED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'ABANDONED'
+  | 'RECOVERED_CART'
+  | 'DUPLICATE'
+  | 'MERGED';
 
 export interface OrderItem {
   id?: string;
@@ -130,19 +191,23 @@ export interface Order {
   id: string;
   store_id: string;
   order_number: string;
+  store_sequence_number?: number | null; // Admin/agent display: "Commande N°X"
   customer_name: string;
   customer_phone: string;
   customer_phone2?: string | null;
   customer_email: string | null;
   customer_address: string | null;
   customer_wilaya: string | null;
+  customer_commune: string | null;
   items: OrderItem[];
   total: number;
+  subtotal?: number;
   status: OrderStatus;
   assigned_to: string | null;
   tracking_number: string | null;
   carrier_id: string | null;
   delivery_fee: number;
+  delivery_type?: string | null;
   notes: string | null;
   source: string | null;
   customer_id: string | null;
@@ -153,11 +218,47 @@ export interface Order {
   updated_at: string;
   returned_at?: string | null;
   is_duplicate?: boolean;
+  is_pack?: boolean;
+  is_upsell?: boolean;
+  is_abandoned_cart?: boolean;
+  abandoned_cart_recovery_fee?: number;
+
+  // Business origin marker — set once when an abandoned cart is first
+  // confirmed; the order type badge derives from it and never flips.
+  recovered_at?: string | null;
+
+  // Delivery agent (role LIVREUR)
+  livreur_id?: string | null;
+  livreur?: { id: string; name: string; avatar?: string | null } | null;
+
+  // Campaign attribution (admin traceability: campaign → order → revenue)
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  campaign_id?: string | null;
+  adset_id?: string | null;
+  ad_id?: string | null;
+  referrer?: string | null;
+
+  // Confirmation Workflow
+  confirmation_start_time?: string;
+  nrp_count?: number;
+  next_callback_time?: string;
+
   store?: Pick<Store, 'id' | 'name' | 'slug'>;
   assignee?: Pick<User, 'id' | 'name' | 'avatar'> | null;
   customer?: Pick<Customer, 'id' | 'name' | 'phone' | 'tier'> | null;
   carrier?: { id: string; name: string; code: string | null; logo_url: string | null; fee_home: number; fee_relay: number } | null;
   events?: OrderEvent[];
+  
+  // Duplicate merge details
+  parent_order_id?: string | null;
+  merged_by?: string | null;
+  merged_at?: string | null;
+  status_before_merge?: string | null;
+  child_orders?: Order[];
 }
 
 // ─── Order Events ───────────────────────────────────────────
@@ -178,7 +279,7 @@ export interface OrderEvent {
 }
 
 // ─── Users & Roles ──────────────────────────────────────────
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'CONFIRMATEUR' | 'MARKETER' | 'CUSTOMER';
+export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'CONFIRMATEUR' | 'MARKETER' | 'LIVREUR' | 'CUSTOMER';
 
 export interface User {
   id: string;
@@ -250,6 +351,7 @@ export interface Customer {
   total_returned?: number;
   total_spent: number;
   is_blacklisted: boolean;
+  is_guest: boolean;
   blacklist_note: string | null;
   last_order_at: string | null;
   created_at: string;
@@ -349,6 +451,7 @@ export interface KpiData {
   acquisitionRate: number;
   retentionRate: number;
   profitPerOrder: number;
+  roi: number;
   avgCustomerValue: number;
   profitPerCustomer: number;
   // Logistics
@@ -365,6 +468,9 @@ export interface KpiData {
   churnRate?: number;
   arpu?: number;
   inventoryTurnover?: number;
+  totalDiscounts?: number;
+  upsellRevenue?: number;
+  abandonedCartRevenue?: number;
 }
 
 export interface UserMetadata {
@@ -507,12 +613,18 @@ export interface CartItem {
   product: Product;
   quantity: number;
   selectedVariant?: string;
+  customNotes?: string;
+  customPrice?: number;
+  image_url?: string;
+  sku?: string;
 }
+
+
 
 // ─── Navigation ─────────────────────────────────────────────
 export type AppView = 'storefront' | 'admin';
 export type StorefrontView = 'home' | 'shop' | 'product' | 'cart' | 'checkout' | 'order-tracking' | 'wishlist';
-export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages';
+export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'stores_menu' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages' | 'cost_calculator' | 'meta_ads' | 'tiktok_ads' | 'upsell' | 'purchase_vouchers';
 
 // ─── API Response ───────────────────────────────────────────
 export interface ApiResponse<T> {
@@ -536,33 +648,55 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: 'Nouvelle',
   ASSIGNED: 'Assignée',
   CALLED: 'Appelée',
+  IN_PROGRESS: 'En cours',
+  RESCHEDULED: 'Reportée',
   CONFIRMED: 'Confirmée',
   SHIPPED: 'Expédiée',
   DELIVERED: 'Livrée',
   RETURNED: 'Retournée',
   CANCELLED: 'Annulée',
+  ABANDONED: 'Panier Abandonné',
+  RECOVERED_CART: 'Panier Récupéré',
+  DUPLICATE: 'Doublon',
+  MERGED: 'Fusionnée (doublon)',
 };
 
+// Consistent color system (never reused across concepts):
+// 🟦 blue=normal · 🟧 orange=abandoned · 🟩 green=recovered/delivered ·
+// 🟣 purple=duplicates/related · 🟥 red=NRP/returned · ⬛ gray=cancelled ·
+// 🔵 cyan=in delivery
 export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
   NEW: 'bg-slate-100 text-slate-800',
   ASSIGNED: 'bg-amber-100 text-amber-800',
   CALLED: 'bg-sky-100 text-sky-800',
+  IN_PROGRESS: 'bg-amber-100 text-amber-800',
+  RESCHEDULED: 'bg-violet-100 text-violet-800',
   CONFIRMED: 'bg-emerald-100 text-emerald-800',
-  SHIPPED: 'bg-violet-100 text-violet-800',
+  SHIPPED: 'bg-cyan-100 text-cyan-800',
   DELIVERED: 'bg-green-100 text-green-800',
   RETURNED: 'bg-rose-100 text-rose-800',
-  CANCELLED: 'bg-red-100 text-red-800',
+  CANCELLED: 'bg-slate-200 text-slate-600',
+  ABANDONED: 'bg-orange-100 text-orange-800 border border-orange-200/50',
+  RECOVERED_CART: 'bg-emerald-100 text-emerald-800 border border-emerald-200/30',
+  DUPLICATE: 'bg-purple-50 text-purple-700 border border-purple-200',
+  MERGED: 'bg-purple-50 text-purple-700 border border-purple-200',
 };
 
 export const ORDER_STATUS_DOT: Record<OrderStatus, string> = {
   NEW: 'bg-slate-500',
   ASSIGNED: 'bg-amber-500',
   CALLED: 'bg-sky-500',
+  IN_PROGRESS: 'bg-amber-500',
+  RESCHEDULED: 'bg-violet-500',
   CONFIRMED: 'bg-emerald-500',
-  SHIPPED: 'bg-violet-500',
+  SHIPPED: 'bg-cyan-500',
   DELIVERED: 'bg-green-500',
   RETURNED: 'bg-rose-500',
-  CANCELLED: 'bg-red-500',
+  CANCELLED: 'bg-slate-400',
+  ABANDONED: 'bg-orange-500',
+  RECOVERED_CART: 'bg-emerald-500',
+  DUPLICATE: 'bg-purple-500',
+  MERGED: 'bg-purple-500',
 };
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -571,6 +705,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   MANAGER: 'Manager',
   CONFIRMATEUR: 'Confirmateur',
   MARKETER: 'Marketer',
+  LIVREUR: 'Livreur',
   CUSTOMER: 'Client',
 };
 
@@ -598,14 +733,20 @@ export const PROMOTION_TYPE_LABELS: Record<PromotionType, string> = {
 
 // Valid status transitions (state machine for order pipeline)
 export const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  NEW: ['ASSIGNED', 'RETURNED'],
-  ASSIGNED: ['CALLED', 'RETURNED'],
-  CALLED: ['CONFIRMED', 'CANCELLED', 'RETURNED'],
-  CONFIRMED: ['SHIPPED', 'RETURNED'],
-  SHIPPED: ['DELIVERED', 'RETURNED'],
-  DELIVERED: ['RETURNED'],
-  RETURNED: [],
-  CANCELLED: [],
+  NEW:         ['ASSIGNED', 'RETURNED', 'CANCELLED', 'ABANDONED', 'IN_PROGRESS', 'CONFIRMED', 'RECOVERED_CART'],
+  ASSIGNED:    ['CALLED', 'RETURNED', 'CANCELLED', 'ABANDONED', 'IN_PROGRESS', 'CONFIRMED', 'RESCHEDULED', 'RECOVERED_CART'],
+  CALLED:      ['CONFIRMED', 'NEW', 'RETURNED', 'CANCELLED', 'ABANDONED', 'IN_PROGRESS', 'RESCHEDULED', 'RECOVERED_CART'],
+  IN_PROGRESS: ['CONFIRMED', 'CANCELLED', 'RESCHEDULED', 'IN_PROGRESS', 'RECOVERED_CART'],
+  RESCHEDULED: ['CONFIRMED', 'CANCELLED', 'IN_PROGRESS', 'RESCHEDULED', 'RECOVERED_CART'],
+  CONFIRMED:   ['SHIPPED', 'RETURNED', 'CANCELLED', 'IN_PROGRESS', 'RESCHEDULED'],
+  RECOVERED_CART: ['SHIPPED', 'RETURNED', 'CANCELLED', 'IN_PROGRESS', 'RESCHEDULED'],
+  SHIPPED:     ['DELIVERED', 'RETURNED', 'CANCELLED'],
+  DELIVERED:   ['RETURNED'],
+  RETURNED:    [],
+  CANCELLED:   ['CONFIRMED', 'IN_PROGRESS', 'RECOVERED_CART'],
+  ABANDONED:   ['CONFIRMED', 'CANCELLED', 'IN_PROGRESS', 'RESCHEDULED', 'RECOVERED_CART'],
+  DUPLICATE:   [],
+  MERGED:      [],
 };
 
 

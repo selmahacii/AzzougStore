@@ -40,11 +40,13 @@ interface ApiClientOptions extends RequestInit {
   skipCsrf?: boolean;
   /** Skip automatic toast on error */
   silent?: boolean;
+  /** Bypass tenant isolation — fetches across all stores (admin only) */
+  allStores?: boolean;
 }
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
-let _isRefreshing = false;
+let _refreshPromise: Promise<boolean> | null = null;
 
 /**
  * apiFetch<T> — typed fetch wrapper.
@@ -57,7 +59,7 @@ export async function apiFetch<T = unknown>(
   path: string,
   options: ApiClientOptions = {},
 ): Promise<T> {
-  const { skipCsrf = false, silent = false, headers: customHeaders, ...rest } = options;
+  const { skipCsrf = false, silent = false, allStores = false, headers: customHeaders, ...rest } = options;
 
   console.log(`[API] ${rest.method ?? 'GET'} ${path}`);
 
@@ -69,9 +71,13 @@ export async function apiFetch<T = unknown>(
   }
 
   // Tenant context — send store ID to FastAPI's TenantMiddleware
-  const activeStore = useAppStore.getState().activeStore;
-  if (activeStore?.id) {
-    headers.set('X-Store-Id', activeStore.id);
+  if (allStores) {
+    headers.set('X-Store-Id', 'SUPER_ADMIN_MODE');
+  } else {
+    const activeStore = useAppStore.getState().activeStore;
+    if (activeStore?.id) {
+      headers.set('X-Store-Id', activeStore.id);
+    }
   }
 
   // Auto Content-Type for JSON bodies
@@ -89,26 +95,38 @@ export async function apiFetch<T = unknown>(
   // ── Silent token refresh on 401 ─────────────────────────────────────────
   if (response.status === 401) {
     // Prevent infinite refresh loops
-    if (path.includes('/auth/refresh') || path.includes('/auth/login') || _isRefreshing) {
+    if (path.includes('/auth/refresh') || path.includes('/auth/login')) {
       _clearSession(silent);
       throw new ApiClientError('Session expirée', 401, 'TOKEN_EXPIRED');
     }
 
-    _isRefreshing = true;
-    try {
-      const refreshRes = await fetch('/api/v1/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      });
-      if (refreshRes.ok) {
-        _isRefreshing = false;
+    if (_refreshPromise) {
+      const refreshed = await _refreshPromise;
+      if (refreshed) {
         return apiFetch<T>(path, options);
       }
-    } catch {
-      // Refresh itself failed
-    } finally {
-      _isRefreshing = false;
+      _clearSession(silent);
+      throw new ApiClientError('Session expirée', 401, 'SESSION_EXPIRED');
+    }
+
+    _refreshPromise = (async () => {
+      try {
+        const refreshRes = await fetch('/api/v1/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        return refreshRes.ok;
+      } catch {
+        return false;
+      }
+    })();
+
+    const refreshed = await _refreshPromise;
+    _refreshPromise = null;
+
+    if (refreshed) {
+      return apiFetch<T>(path, options);
     }
 
     _clearSession(silent);
@@ -145,9 +163,12 @@ export async function apiFetch<T = unknown>(
 }
 
 function _clearSession(silent: boolean): void {
-  useAppStore.getState().clearUser();
+  useAppStore.getState().logout();
   if (!silent) {
-    toast.error('Session expirée', { description: 'Veuillez vous reconnecter.' });
+    toast.error('Session expirée', { 
+      id: 'session-expired',
+      description: 'Veuillez vous reconnecter.' 
+    });
   }
 }
 

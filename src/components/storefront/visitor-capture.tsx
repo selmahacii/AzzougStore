@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, User, Mail, Send, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { cn } from '@/lib/utils';
+import { trackMetaEvent } from '@/lib/meta-pixel';
 
 const SESSION_KEY = 'azzougshop_visitor_captured';
 const DELAY_MS = 4000; // show after 4 seconds
@@ -84,6 +85,13 @@ export function VisitorCapture() {
         }),
       });
       sessionStorage.setItem(`${SESSION_KEY}_${activeStore.id}`, 'submitted');
+      trackMetaEvent('Lead', {
+        content_name: 'visitor_capture',
+        content_category: form.source || undefined,
+      }, {
+        storeId: activeStore.id,
+        userData: { ph: form.phone, em: form.email || undefined, fn: form.name || undefined },
+      });
       setSubmitted(true);
       setTimeout(() => setVisible(false), 2500);
     } catch {
@@ -106,22 +114,13 @@ export function VisitorCapture() {
     <AnimatePresence>
       {visible && (
         <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[998] bg-black/50 backdrop-blur-sm"
-            onClick={dismiss}
-          />
-
           {/* Card */}
           <motion.div
             initial={{ opacity: 0, y: 60, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 40, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-            className="fixed bottom-6 right-6 z-[999] w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-[999] sm:w-[320px] rounded-2xl shadow-2xl overflow-hidden"
             style={{ backgroundColor: bg, border: `1px solid ${border}` }}
           >
             {/* Accent stripe */}

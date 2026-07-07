@@ -302,7 +302,7 @@ export default function ReturnManager() {
             </div>
             
             <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
-               <div className="grid grid-cols-2 gap-6">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Entrée d'achat source (Optionnel)</label>
                      <Select value={formData.purchase_id} onValueChange={(v) => setFormData({...formData, purchase_id: v})}>

@@ -10,10 +10,10 @@ const inter = { variable: "--font-inter" };
 const outfit = { variable: "--font-outfit" };
 
 export const metadata: Metadata = {
-  title: "AzzougStore— Plateforme E-Commerce Multi-Magasins",
-  description: "Gérez plusieurs boutiques en ligne depuis une seule interface. Vitrines dynamiques, commandes, employés, analytique.",
+  title: "Azzougshop",
+  description: "Gérez plusieurs boutiques en ligne depuis une seule interface",
   icons: {
-    icon: "/icon.png",
+    icon: "/iazzougshop_logo.png",
   },
 };
 

@@ -1,5 +1,9 @@
 import { notFound } from 'next/navigation';
 import LandingPageRenderer from '@/components/storefront/landing-page-renderer';
+import DzCodRenderer from '@/components/storefront/dz-cod-renderer';
+import { StorefrontIntegrations } from '@/components/storefront/store-integrations';
+import { HydrateStore } from '@/components/app/hydrate-store';
+import { getBackendUrl } from '@/lib/utils';
 
 interface LpData {
   id: string;
@@ -12,6 +16,8 @@ interface LpData {
   cta2_label: string;
   image_url: string | null;
   video_url: string | null;
+  cta_headline: string | null;
+  cta_subtitle: string | null;
   product_name: string | null;
   product_desc: string | null;
   price: number | null;
@@ -32,20 +38,28 @@ interface LpData {
     price: number; compare_price: number | null;
     main_image: string | null; images: string[];
     description: string;
+    variants: any[] | null;
+    stock: number;
   } | null;
 }
 
 async function fetchLandingPage(slug: string, storeId: string): Promise<LpData | null> {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
+  const backendUrl = getBackendUrl();
+  console.log(`[fetchLandingPage] Starting fetch for slug: ${slug}, storeId: ${storeId} using backendUrl: ${backendUrl}`);
   try {
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${slug}?store_id=${storeId}`,
-      { cache: 'no-store' }
+      { next: { revalidate: 10 } }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[fetchLandingPage] Failed to fetch. Status: ${res.status} ${res.statusText}`);
+      return null;
+    }
     const json = await res.json();
+    console.log(`[fetchLandingPage] Successfully fetched. Data present: ${!!json.data}`);
     return json.data ?? null;
-  } catch {
+  } catch (err) {
+    console.error(`[fetchLandingPage] Exception during fetch:`, err);
     return null;
   }
 }
@@ -61,27 +75,78 @@ export default async function LpPage({
   const { slug } = await params;
   const sp = await searchParams;
 
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
+  const backendUrl = getBackendUrl();
 
-  // Resolve store_id from ?store_id= (UUID) or ?store= (slug)
+  console.log(`[LpPage] Rendering LP page for slug: "${slug}"`);
+  console.log(`[LpPage] Incoming searchParams:`, sp);
+
+  // ── Store Resolution with strict tenant isolation ──────────────────────
+  // Priority order:
+  //   1. store_id (UUID) — injected by middleware from domain lookup (most authoritative)
+  //   2. store slug — only used as fallback (e.g. localhost direct URL)
+  // We NEVER let a user-provided ?store= override the domain-resolved tenant.
   let storeId = sp.store_id || '';
-  if (!storeId) {
-    try {
-      const res = await fetch(`${backendUrl}/api/v1/stores`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        const stores: { id: string; slug: string }[] = json.data ?? json ?? [];
+  let stores: any[] = [];
+  let matchedStore: any = null;
+  
+  try {
+    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
+    if (res.ok) {
+      const json = await res.json();
+      stores = json.data ?? json ?? [];
+      console.log(`[LpPage] Fetched ${stores.length} stores from backend`);
+
+      if (storeId) {
+        // store_id was already set by middleware from domain resolution — trust it.
+        // Still find the matchedStore for hydration but do NOT override storeId.
+        matchedStore = stores.find((s) => s.id === storeId) ?? null;
+        console.log(`[LpPage] Using domain-resolved storeId: ${storeId} (${matchedStore?.name || 'Unknown Store'})`);
+      } else {
+        // Localhost fallback: resolve from ?store= slug
         const storeSlug = sp.store || '';
-        const matched = storeSlug ? stores.find((s) => s.slug === storeSlug) : stores[0];
-        if (matched) storeId = matched.id;
+        matchedStore = storeSlug
+          ? (stores.find((s) => s.slug === storeSlug) ?? stores[0])
+          : stores[0];
+        if (matchedStore) storeId = matchedStore.id;
+        console.log(`[LpPage] Resolved storeId from slug "${storeSlug}": ${storeId} (${matchedStore?.name || 'Unknown Store'})`);
       }
-    } catch { /* ignore */ }
+    } else {
+      console.error(`[LpPage] Failed to fetch stores from backend, status: ${res.status}`);
+    }
+  } catch (err) {
+    console.error(`[LpPage] Exception fetching stores:`, err);
   }
 
-  if (!storeId) return notFound();
+  if (!storeId) {
+    console.warn(`[LpPage] No storeId resolved. Returning 404.`);
+    return notFound();
+  }
 
   const lp = await fetchLandingPage(slug, storeId);
-  if (!lp) return notFound();
+  if (!lp) {
+    console.warn(`[LpPage] No landing page found for slug "${slug}" and storeId "${storeId}". Returning 404.`);
+    return notFound();
+  }
 
-  return <LandingPageRenderer data={lp} />;
+  // Fetch Meta Ads Config for the store
+  let metaAdsConfig = null;
+  try {
+    const res = await fetch(`${backendUrl}/api/v1/meta-ads/config?store_id=${storeId}`, { next: { revalidate: 10 } });
+    if (res.ok) {
+      const json = await res.json();
+      metaAdsConfig = json.data;
+    }
+  } catch { /* ignore */ }
+
+  return (
+    <>
+      <HydrateStore initialUser={null} initialStores={stores} activeStoreSlug={matchedStore?.slug} />
+      <StorefrontIntegrations config={metaAdsConfig} />
+      {lp.template === 'dz_cod' ? (
+        <DzCodRenderer data={lp} />
+      ) : (
+        <LandingPageRenderer data={lp} />
+      )}
+    </>
+  );
 }

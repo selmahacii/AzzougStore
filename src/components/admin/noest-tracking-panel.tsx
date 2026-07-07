@@ -62,7 +62,7 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId }),
       }).then(r => r.json()),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ['noest-events', orderId] });
         queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -80,7 +80,7 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId }),
       }).then(r => r.json()),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       if (data.success) {
         toast.success(`Expédié ! N° de suivi : ${data.tracking}`);
         queryClient.invalidateQueries({ queryKey: ['orders'] });

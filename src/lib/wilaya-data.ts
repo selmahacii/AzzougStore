@@ -4,8 +4,6 @@
 // Data sourced from the WilayaDeliveryFee DB table.
 // ═══════════════════════════════════════════════════════════════
 
-import { db } from '@/lib/db';
-
 export type DeliveryType = 'HOME' | 'OFFICE';
 
 export interface DeliveryFeeResult {
@@ -40,33 +38,14 @@ export async function getDeliveryFee(
   wilayaId: number,
   type: 'home' | 'office' = 'home'
 ): Promise<DeliveryFeeResult> {
-  try {
-    const record = await db.wilayaDeliveryFee.findUnique({
-      where: { wilayaId },
-    });
-
-    const homeFee: number = record?.homeFee ?? DEFAULT_DELIVERY_FEE.home;
-    const officeFee: number = record?.officeFee ?? DEFAULT_DELIVERY_FEE.office;
-    const fee: number = type === 'home' ? homeFee : officeFee;
-
-    return {
-      wilayaId,
-      wilayaName: record?.wilayaName ?? (WILAYAS[wilayaId - 1] || null),
-      homeFee,
-      officeFee,
-      type: type.toUpperCase() as DeliveryType,
-      fee,
-    };
-  } catch {
-    return {
-      wilayaId,
-      wilayaName: WILAYAS[wilayaId - 1] || null,
-      homeFee: DEFAULT_DELIVERY_FEE.home,
-      officeFee: DEFAULT_DELIVERY_FEE.office,
-      type: type.toUpperCase() as DeliveryType,
-      fee: type === 'home' ? DEFAULT_DELIVERY_FEE.home : DEFAULT_DELIVERY_FEE.office,
-    };
-  }
+  return {
+    wilayaId,
+    wilayaName: WILAYAS[wilayaId - 1] || null,
+    homeFee: DEFAULT_DELIVERY_FEE.home,
+    officeFee: DEFAULT_DELIVERY_FEE.office,
+    type: type.toUpperCase() as DeliveryType,
+    fee: type === 'home' ? DEFAULT_DELIVERY_FEE.home : DEFAULT_DELIVERY_FEE.office,
+  };
 }
 
 /**

@@ -1561,9 +1561,9 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 3302, name: "جانت", nameAscii: "Djanet" },
   ],
   "In Salah": [
-    { id: 5701, name: "عين صالح", nameAscii: "Ain Salah" },
-    { id: 5702, name: "فقارة الزوى", nameAscii: "Foggaret Ezoua" },
-    { id: 5703, name: "عين قزام", nameAscii: "Inghar" },
+    { id: 5701, name: "عين صالح", nameAscii: "In Salah" },
+    { id: 5702, name: "فقارة الزوى", nameAscii: "Foggaret Ezzaouia" },
+    { id: 5703, name: "عين قزام", nameAscii: "In Ghar" },
   ],
   "In Guezzam": [
     { id: 5801, name: "المنيعة", nameAscii: "El Meniaa" },

@@ -155,7 +155,7 @@ export const createEmployeeSchema = z.object({
   email: z.email('Email invalide'),
   password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères'),
   phone: z.string().optional(),
-  role: z.enum(['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR']).default('CONFIRMATEUR'),
+  role: z.enum(['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'MARKETER']).default('CONFIRMATEUR'),
   employee_store_id: z.string().min(1, 'employee_store_id est requis'),
   daily_target: z.number().int().min(0).optional(),
 }).strip();

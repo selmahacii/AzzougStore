@@ -7,27 +7,40 @@ import {
   TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown,
   BarChart3, Activity, FileText, AlertCircle, MapPin, User,
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
-  LayoutGrid, Search, Filter, ChevronRight, Menu, Bell
+  LayoutGrid, Search, Filter, ChevronRight, Menu, Bell,
+  List, Inbox, PhoneCall, ShoppingCart, Home, Plus,
+  Warehouse, History
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
-import { formatPrice } from '@/lib/format';
+import { formatPrice, formatOrderRef } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { WILAYAS } from '@/lib/wilaya-data';
+import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 import { toast } from 'sonner';
 import type { Order } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { ManualOrderModal } from '@/components/agent/manual-order-modal';
+import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
+import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
+import { NotificationsBell } from '@/components/shared/notifications-bell';
+import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
+import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
-  NEW:       { label: 'Nouvelle',      color: '#0f172a', bg: '#f1f5f9', next: ['EN ATTENTE', 'CONFIRMED', 'CANCELLED'] },
-  'EN ATTENTE': { label: 'En attente', color: '#ea580c', bg: '#fff7ed', next: ['CONFIRMED', 'CANCELLED'] },
-  ASSIGNED:  { label: 'Assignée',      color: '#2563eb', bg: '#eff6ff', next: ['EN ATTENTE', 'CONFIRMED', 'CANCELLED'] },
-  CONFIRMED: { label: 'Confirmée',     color: '#059669', bg: '#ecfdf5', next: ['FOLLOWUP', 'CANCELLED'] },
-  FOLLOWUP:  { label: 'En livraison', color: '#2563eb', bg: '#eff6ff', next: ['COMPLETED', 'CANCELLED'] },
-  COMPLETED: { label: 'Livrée',        color: '#059669', bg: '#ecfdf5', next: [] },
-  CANCELLED: { label: 'Annulée',       color: '#dc2626', bg: '#fef2f2', next: [] },
-  RETURNED:  { label: 'Retournée',     color: '#64748b', bg: '#f8fafc', next: [] },
+  NEW:          { label: 'Nouvelle',         color: '#0f172a', bg: '#f1f5f9', next: ['ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'CANCELLED'] },
+  ASSIGNED:     { label: 'Assignée',         color: '#2563eb', bg: '#eff6ff', next: ['CALLED', 'IN_PROGRESS', 'CONFIRMED', 'CANCELLED', 'RESCHEDULED'] },
+  CALLED:       { label: 'Appelée',          color: '#eab308', bg: '#fef08a', next: ['CONFIRMED', 'CANCELLED', 'RESCHEDULED'] },
+  IN_PROGRESS:  { label: 'En attente',       color: '#ea580c', bg: '#fff7ed', next: ['CONFIRMED', 'CANCELLED', 'RESCHEDULED'] },
+  RESCHEDULED:  { label: 'Reportée',         color: '#d97706', bg: '#fef3c7', next: ['CONFIRMED', 'CANCELLED'] },
+  CONFIRMED:    { label: 'Confirmée',        color: '#059669', bg: '#ecfdf5', next: ['SHIPPED', 'CANCELLED'] },
+  SHIPPED:      { label: 'En livraison',     color: '#0891b2', bg: '#ecfeff', next: ['DELIVERED', 'RETURNED', 'CANCELLED'] },
+  DELIVERED:    { label: 'Livrée',           color: '#059669', bg: '#ecfdf5', next: ['RETURNED'] },
+  CANCELLED:    { label: 'Annulée',          color: '#475569', bg: '#f1f5f9', next: ['CONFIRMED', 'IN_PROGRESS'] },
+  RETURNED:     { label: 'Retournée',        color: '#e11d48', bg: '#fff1f2', next: [] },
+  ABANDONED:    { label: 'Panier Abandonné', color: '#ea580c', bg: '#fff7ed', next: ['CONFIRMED', 'CANCELLED'] },
 };
 
 // ─── Types ──────────────────────────────────────────────────
@@ -39,11 +52,24 @@ const MODULES: Module[] = [
     id: 'orders',
     label: 'Commandes',
     icon: Package,
+    // Ordre = flux de travail de la confirmatrice : traiter les nouvelles,
+    // relancer les NRP, récupérer les paniers, confirmer. « À confirmer »
+    // (PENDING_CONFIRMATION) supprimé : redondant avec les deux modules NRP.
+    // Livrées/Archives retirées : elles vivent uniquement sous Logistique
+    // pour ne pas dupliquer le module entre Commandes et Logistique.
     subModules: [
-      { id: 'orders-all', label: 'Toutes les commandes', filter: 'ALL' },
-      { id: 'orders-new', label: 'Nouvelles / Assignées', filter: 'NEW' },
-      { id: 'orders-pending', label: 'À confirmer', filter: 'EN ATTENTE' },
-      { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED' },
+      // En tête de liste : les rappels dus MAINTENANT (NRP sans heure programmée
+      // ou déjà échue) — c'était invisible sur desktop (seulement dans la barre
+      // mobile), la confirmatrice n'avait donc aucune vue d'ensemble de ses
+      // rappels à passer.
+      { id: 'orders-recall', label: 'Rappels à passer', filter: 'RECALL', icon: PhoneCall },
+      { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
+      { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
+      { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
+      { id: 'orders-abandoned', label: 'Paniers Abandonnés', filter: 'ABANDONED_IN_PROGRESS', icon: ShoppingCart },
+      { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
+      { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
+      { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
     ]
   },
   {
@@ -52,8 +78,22 @@ const MODULES: Module[] = [
     icon: Truck,
     subModules: [
       { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
-      { id: 'delivery-in-progress', label: 'En livraison', filter: 'FOLLOWUP' },
-      { id: 'delivery-completed', label: 'Livrées', filter: 'COMPLETED' },
+      { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
+      { id: 'delivery-in-progress', label: 'En livraison', filter: 'SHIPPED', icon: Truck },
+      { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
+      { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
+    ]
+  },
+  {
+    // Même composant InventoryDashboard que l'admin/livreur : mêmes endpoints,
+    // mêmes KPIs, mêmes ajustements — la cohérence entre profils est structurelle.
+    id: 'inventory',
+    label: 'Inventaire',
+    icon: Warehouse,
+    subModules: [
+      { id: 'inventory-stock', label: 'Stock Produits', icon: Package },
+      { id: 'inventory-history', label: 'Mouvements', icon: History },
+      { id: 'inventory-alerts', label: 'Alertes Rupture', icon: AlertCircle },
     ]
   },
   {
@@ -66,6 +106,23 @@ const MODULES: Module[] = [
     ]
   }
 ];
+
+// ─── Vue inventaire (réutilise le module admin) ─────────────
+// InventoryDashboard choisit son onglet interne via adminSubView (store
+// global) ; on le synchronise avec le sous-module choisi dans la sidebar.
+const INVENTORY_TAB: Record<string, string> = {
+  'inventory-stock': 'STOCK',
+  'inventory-history': 'HISTORY',
+  'inventory-alerts': 'ALERTS',
+};
+
+function AgentInventoryView({ subModuleId }: { subModuleId: string }) {
+  const setAdminSubView = useAppStore(s => s.setAdminSubView);
+  useEffect(() => {
+    setAdminSubView(INVENTORY_TAB[subModuleId] || 'STOCK');
+  }, [subModuleId, setAdminSubView]);
+  return <InventoryDashboard />;
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 function useWorkTimer() {
@@ -94,10 +151,337 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function NrpBadge({ count }: { count: number }) {
+  if (!count || count <= 0) return null;
+  
+  let styles = "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (count === 2) {
+    styles = "bg-amber-50 text-amber-700 border-amber-200";
+  } else if (count === 3) {
+    styles = "bg-orange-50 text-orange-700 border-orange-200";
+  } else if (count >= 4) {
+    styles = "bg-rose-50 text-rose-700 border-rose-200 animate-pulse ring-2 ring-rose-500/20";
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shrink-0 ${styles}`}>
+      NRP {count}
+    </span>
+  );
+}
+
+function OrderTimer({ startTime }: { startTime?: string }) {
+  const [elapsed, setElapsed] = useState('');
+  useEffect(() => {
+    if (!startTime) return;
+    const start = new Date(startTime).getTime();
+    const tick = () => {
+      const diff = Math.floor((Date.now() - start) / 1000);
+      if (diff < 0) return;
+      const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+      const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+      const s = (diff % 60).toString().padStart(2, '0');
+      setElapsed(`${h}:${m}:${s}`);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+  if (!startTime) return null;
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 uppercase tracking-widest">
+      <Timer className="size-3" />
+      {elapsed || '00:00:00'}
+    </div>
+  );
+}
+
 // ─── Components ─────────────────────────────────────────────
 
-function OrderDrawer({ order, onClose, onStatusChange }: { order: Order; onClose: () => void; onStatusChange: (id: string, s: string) => void }) {
+function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void }) {
+  const queryClient = useQueryClient();
+  const livreursQuery = useQuery<any>({
+    queryKey: ['livreurs', order.store_id],
+    queryFn: () => apiFetch(`/api/v1/users/?store_id=${order.store_id}`),
+    staleTime: 60_000,
+  });
+  const livreurs = ((Array.isArray(livreursQuery.data) ? livreursQuery.data : livreursQuery.data?.data) ?? [])
+    .filter((u: any) => u.role === 'LIVREUR' && u.is_active !== false);
+
+  const assignMutation = useMutation({
+    mutationFn: (livreurId: string) =>
+      apiFetch(`/api/v1/orders/${order.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ livreur_id: livreurId }),
+      }),
+    onSuccess: (updated: any) => {
+      toast.success('Livreur assigné — il reçoit tous les détails de la commande');
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      if (onOrderUpdate && updated?.id) onOrderUpdate(updated);
+    },
+    onError: (err: any) => toast.error(err.message || "Impossible d'assigner le livreur"),
+  });
+
+  const current = livreurs.find((l: any) => l.id === order.livreur_id);
+  const hasCarrierParcel = !!order.tracking_number;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">
+        🚚 Méthode de livraison
+      </p>
+
+      {/* Option 1 — transporteur (NOEST / Yalidine…) */}
+      <div className={cn(
+        'p-3 rounded-xl border space-y-1.5',
+        hasCarrierParcel ? 'border-cyan-200 bg-cyan-50/50' : 'border-slate-100 bg-slate-50/50'
+      )}>
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
+        {hasCarrierParcel ? (
+          <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
+        ) : order.status !== 'CONFIRMED' ? (
+          <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
+        ) : order.carrier_id ? (
+          <button
+            type="button"
+            onClick={() => onDispatch && onDispatch(order.id)}
+            className="w-full py-2 rounded-lg bg-cyan-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-cyan-700 transition-colors"
+          >
+            Créer le colis chez le transporteur
+          </button>
+        ) : (
+          <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
+        )}
+      </div>
+
+      {/* Option 2 — livreur interne */}
+      {livreurs.length > 0 && !livreursQuery.isLoading && (
+        <div className={cn(
+          'p-3 rounded-xl border space-y-1.5',
+          order.livreur_id ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50'
+        )}>
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 2 — Livreur interne</p>
+          <select
+            value={order.livreur_id || ''}
+            onChange={(e) => e.target.value && assignMutation.mutate(e.target.value)}
+            disabled={assignMutation.isPending}
+            className="w-full text-xs p-2.5 border rounded-lg bg-white font-bold"
+          >
+            <option value="">— Choisir un livreur —</option>
+            {livreurs.map((l: any) => (
+              <option key={l.id} value={l.id}>{l.name}{l.phone ? ` (${l.phone})` : ''}</option>
+            ))}
+          </select>
+          {current && (
+            <p className="text-[10px] font-bold text-emerald-600">
+              ✓ Assignée à {current.name} — il/elle voit le client, le téléphone, l'adresse, les articles et le montant à encaisser. Suivez sa progression dans la timeline ci-dessous.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
   const cfg = STATUS_CFG[order.status] ?? { next: [] };
+  const queryClient = useQueryClient();
+  const storeId = order.store_id;
+
+  // Per-store NRP ceilings (operations_config), with platform defaults
+  const { allStores: drawerStores } = useAppStore();
+  const opsCfg: any = drawerStores.find(s => s.id === order.store_id)?.operations_config || {};
+  const maxNrp = order.is_abandoned_cart
+    ? (opsCfg.max_nrp_abandoned ?? 12)
+    : (opsCfg.max_nrp_normal ?? 9);
+
+  const [isEditing, setIsEditing] = useState(initialEdit || false);
+  const [selectedBureauCode, setSelectedBureauCode] = useState('');
+  const [yalidineCenters, setYalidineCenters] = useState<any[]>([]);
+  const [loadingCenters, setLoadingCenters] = useState(false);
+
+  useEffect(() => {
+    if (!storeId) return;
+    setLoadingCenters(true);
+    fetch(`/api/yalidine/centers?store_id=${storeId}`)
+      .then(res => res.json())
+      .then(body => {
+        if (body.data) {
+          setYalidineCenters(body.data);
+        }
+      })
+      .catch(err => console.error('Error fetching Yalidine centers:', err))
+      .finally(() => setLoadingCenters(false));
+  }, [storeId]);
+  
+  const [editData, setEditData] = useState({
+    customer_name: order.customer_name || '',
+    customer_phone: order.customer_phone || '',
+    customer_wilaya: order.customer_wilaya || '',
+    customer_commune: order.customer_commune || '',
+    customer_address: order.customer_address || '',
+    delivery_type: order.delivery_type || 'home',
+    carrier_id: order.carrier_id || '',
+    delivery_fee: order.delivery_fee || 0,
+    notes: order.notes || '',
+    items: order.items ? order.items.map(item => ({
+      id: item.id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku: item.sku,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      variant_details: item.variant_details,
+      image_url: item.image_url
+    })) : [] as any[]
+  });
+
+  const wilayaIndex = WILAYAS.indexOf(editData.customer_wilaya as any);
+  const wilayaId = wilayaIndex !== -1 ? wilayaIndex + 1 : null;
+  const filteredBureaux = wilayaId 
+    ? NOEST_BUREAUX.filter(b => b.wilayaId === wilayaId)
+    : [];
+
+  const deliveryPartnersQuery = useQuery<any>({
+    queryKey: ['delivery-partners-lite', storeId],
+    enabled: isEditing && !!storeId,
+    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
+  });
+
+  const productQuery = useQuery<any>({
+    queryKey: ['product-details-agent', order.items?.[0]?.product_id],
+    enabled: isEditing && !!order.items?.[0]?.product_id,
+    queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`),
+  });
+
+  // Only reset editData when the ORDER ID changes (i.e. drawer opened for a different order)
+  // NOT when the order object is updated after a successful save (would erase local edits)
+  useEffect(() => {
+    setEditData({
+      customer_name: order.customer_name || '',
+      customer_phone: order.customer_phone || '',
+      customer_wilaya: order.customer_wilaya || '',
+      customer_commune: order.customer_commune || '',
+      customer_address: order.customer_address || '',
+      delivery_type: order.delivery_type || 'home',
+      carrier_id: order.carrier_id || '',
+      delivery_fee: order.delivery_fee || 0,
+      notes: order.notes || '',
+      items: order.items ? order.items.map(item => ({
+        id: item.id,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        sku: item.sku,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        variant_details: item.variant_details,
+        image_url: item.image_url
+      })) : [] as any[]
+    });
+    
+    let initialBureau = '';
+    if (order.delivery_type === 'stop_desk' || order.delivery_type === 'OFFICE') {
+      const yalMatch = order.customer_address?.match(/Bureau Yalidine \(ID:\s*(\d+)\)/i);
+      if (yalMatch) {
+        initialBureau = yalMatch[1];
+      } else {
+        initialBureau = NOEST_BUREAUX.find(b => order.customer_address?.includes(b.code))?.code || '';
+      }
+    }
+    setSelectedBureauCode(initialBureau);
+    
+    setIsEditing(initialEdit || false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id, initialEdit]);
+
+  // Auto-fetch delivery fee ONLY when carrier or wilaya changes (not on every render)
+  // Uses refs to track previous values so we don't overwrite manual fee entries
+  const prevCarrierId = useRef(editData.carrier_id);
+  const prevWilaya = useRef(editData.customer_wilaya);
+  const prevDeliveryType = useRef(editData.delivery_type);
+  useEffect(() => {
+    const carrierChanged = prevCarrierId.current !== editData.carrier_id;
+    const wilayaChanged = prevWilaya.current !== editData.customer_wilaya;
+    const typeChanged = prevDeliveryType.current !== editData.delivery_type;
+    prevCarrierId.current = editData.carrier_id;
+    prevWilaya.current = editData.customer_wilaya;
+    prevDeliveryType.current = editData.delivery_type;
+
+    if (!isEditing || !editData.carrier_id || !editData.customer_wilaya) return;
+    if (!carrierChanged && !wilayaChanged && !typeChanged) return; // skip if nothing changed
+    const fetchFee = async () => {
+      try {
+        const pId = order.items?.[0]?.product_id || '';
+        const res = await apiFetch<any>(
+          `/api/v1/delivery-partners/calculate?partnerId=${editData.carrier_id}&wilayaId=${editData.customer_wilaya}&type=${editData.delivery_type}&productIds=${pId}`
+        );
+        if (res?.success && typeof res?.data?.fee === 'number') {
+          setEditData(prev => ({ ...prev, delivery_fee: res.data.fee }));
+        }
+      } catch (error) {
+        console.error('Error fetching shipping fee:', error);
+      }
+    };
+    fetchFee();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing, editData.carrier_id, editData.customer_wilaya, editData.delivery_type]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof editData) => {
+      console.log("[DEBUG FRONTEND] updateMutation mutationFn triggered with editData:", JSON.parse(JSON.stringify(data)));
+      return await apiFetch(`/api/v1/orders/${order.id}/info`, {
+        method: 'PATCH',
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: (response: any) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
+      queryClient.invalidateQueries({ queryKey: ['order-events', order.id] });
+      setIsEditing(false);
+      toast.success("Informations mises à jour");
+      
+      console.log("[DEBUG FRONTEND] updateMutation onSuccess triggered. Raw response:", response);
+      // Use the server response data to update the order — only if it contains the full fields
+      const serverData = response?.data;
+      const isFullServerData = serverData && ('customer_name' in serverData || 'items' in serverData);
+
+      if (isFullServerData && onOrderUpdate) {
+        console.log("[DEBUG FRONTEND] Calling onOrderUpdate with serverData:", serverData);
+        onOrderUpdate({
+          ...order,
+          customer_name: serverData.customer_name ?? order.customer_name,
+          customer_phone: serverData.customer_phone ?? order.customer_phone,
+          customer_wilaya: serverData.customer_wilaya ?? order.customer_wilaya,
+          customer_commune: serverData.customer_commune ?? order.customer_commune,
+          customer_address: serverData.customer_address ?? order.customer_address,
+          delivery_type: serverData.delivery_type ?? order.delivery_type,
+          carrier_id: serverData.carrier_id ?? order.carrier_id,
+          delivery_fee: serverData.delivery_fee ?? order.delivery_fee,
+          items: serverData.items ?? order.items,
+          total: serverData.total ?? order.total,
+        });
+      } else if (onOrderUpdate) {
+        console.log("[DEBUG FRONTEND] Falling back to local editData to update order state");
+        onOrderUpdate({
+          ...order,
+          customer_name: editData.customer_name,
+          customer_phone: editData.customer_phone,
+          customer_wilaya: editData.customer_wilaya,
+          customer_commune: editData.customer_commune,
+          customer_address: editData.customer_address,
+          delivery_type: editData.delivery_type,
+          carrier_id: editData.carrier_id || null,
+          delivery_fee: editData.delivery_fee,
+          items: editData.items.map((it: any) => ({ ...it })),
+          total: editData.items.reduce((acc: number, item: any) => acc + item.quantity * item.unit_price, 0) + editData.delivery_fee
+        });
+      }
+    },
+    onError: (err: any) => toast.error(err.message || "Erreur lors de la modification")
+  });
+
   return (
     <div className="fixed inset-0 z-[100] flex">
       <div className="flex-1 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
@@ -105,28 +489,497 @@ function OrderDrawer({ order, onClose, onStatusChange }: { order: Order; onClose
         <div className="p-6 border-b flex items-center justify-between">
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Détails Commande</p>
-            <h2 className="text-sm font-bold font-mono">#{order.order_number}</h2>
+            <h2 className="text-sm font-bold">{formatOrderRef(order, 'admin')}</h2>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-lg"><XCircle className="size-5 text-slate-300" /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           <div className="space-y-4">
-            <StatusBadge status={order.status} />
-            <div className="p-4 bg-slate-50 rounded-lg border space-y-3">
-              <div className="flex items-center gap-3">
-                <User className="size-4 text-slate-400" />
-                <span className="text-xs font-bold">{order.customer_name}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Phone className="size-4 text-slate-400" />
-                <a href={`tel:${order.customer_phone}`} className="text-xs font-bold text-blue-600 underline">{order.customer_phone}</a>
-              </div>
-              <div className="flex items-center gap-3">
-                <MapPin className="size-4 text-slate-400" />
-                <span className="text-xs text-slate-500">{order.customer_address} · {order.customer_wilaya}</span>
-              </div>
+            <div className="flex items-center gap-2 flex-wrap">
+               <OrderTypeBadge order={order} />
+               <StatusBadge status={order.status} />
+               <NrpBadge count={order.nrp_count || 0} />
+               <OrderTimer startTime={order.confirmation_start_time} />
+               {order.tracking_number && (
+                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
+                   📦 SUIVI: {order.tracking_number}
+                 </div>
+               )}
+               {order.nrp_count !== undefined && order.nrp_count > 0 && (
+                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 uppercase tracking-widest">
+                   <Phone className="size-3" />
+                   NRP {order.nrp_count}/{maxNrp}
+                 </div>
+               )}
             </div>
+            {order.status === 'ABANDONED' && (
+              <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl text-[11px] text-violet-700 font-semibold leading-relaxed flex gap-2">
+                <AlertCircle className="size-4 shrink-0 text-violet-500 mt-0.5" />
+                <span>
+                  Ce panier a été abandonné. Appelez le client immédiatement au numéro ci-dessous pour tenter de récupérer la commande !
+                </span>
+              </div>
+            )}
+            {isEditing ? (
+              <div className="p-4 bg-slate-50 rounded-lg border space-y-3">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Nom du client</label>
+                  <input type="text" value={editData.customer_name} onChange={e => setEditData({...editData, customer_name: e.target.value})} className="w-full text-xs p-2 border rounded bg-white" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Téléphone</label>
+                  <input type="text" value={editData.customer_phone} onChange={e => setEditData({...editData, customer_phone: e.target.value})} className="w-full text-xs p-2 border rounded bg-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">Wilaya</label>
+                    <select
+                      value={editData.customer_wilaya}
+                      onChange={e => setEditData({...editData, customer_wilaya: e.target.value})}
+                      className="w-full text-xs p-2 border rounded bg-white font-bold"
+                    >
+                      <option value="">Sélectionnez une wilaya</option>
+                      {WILAYAS.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">Commune *</label>
+                    {editData.delivery_type === 'stop_desk' ? (
+                       <input type="text" readOnly value={editData.customer_commune} className="w-full text-xs p-2 border rounded bg-slate-50 text-slate-500 cursor-not-allowed" placeholder="Sélectionnez un bureau..." />
+                    ) : (
+                       <select 
+                         value={editData.customer_commune} 
+                         onChange={e => setEditData({...editData, customer_commune: e.target.value})} 
+                         className="w-full text-xs p-2 border rounded bg-white"
+                         disabled={!editData.customer_wilaya}
+                         required
+                       >
+                         <option value="">Sélectionnez une commune</option>
+                         {editData.customer_wilaya && ALGERIAN_COMMUNES[editData.customer_wilaya]?.map(c => (
+                            <option key={c.id} value={c.nameAscii}>{c.nameAscii}</option>
+                         ))}
+                       </select>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Adresse détaillée</label>
+                  <input type="text" value={editData.customer_address} onChange={e => setEditData({...editData, customer_address: e.target.value})} className="w-full text-xs p-2 border rounded bg-white" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Mode de Réception</label>
+                  <select 
+                    value={editData.delivery_type} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditData(prev => ({ 
+                        ...prev, 
+                        delivery_type: val,
+                        // Clear bureau if switching to home
+                        ...(val === 'home' ? { customer_commune: '', customer_address: '' } : {})
+                      }));
+                      if (val === 'home') setSelectedBureauCode('');
+                    }} 
+                    className="w-full text-xs p-2 border rounded bg-white font-bold"
+                  >
+                    <option value="home">Livraison à Domicile</option>
+                    <option value="stop_desk">Stop Desk (Bureau)</option>
+                  </select>
+                </div>
+                {editData.delivery_type === 'stop_desk' && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500">Bureau (Stop Desk) *</label>
+                    <select 
+                      value={selectedBureauCode} 
+                      onChange={e => {
+                        const code = e.target.value;
+                        setSelectedBureauCode(code);
+                        
+                        const selectedPartner = deliveryPartnersQuery.data?.data?.find((p: any) => p.id === editData.carrier_id);
+                        const partnerCode = selectedPartner?.code || (/^\d+$/.test(code) ? 'yalidine' : 'noest');
+                        
+                        if (partnerCode === 'yalidine') {
+                          const bureau = yalidineCenters.find(c => String(c.center_id || c.id) === code);
+                          if (bureau) {
+                            setEditData(prev => ({
+                              ...prev,
+                              customer_address: `Bureau Yalidine (ID: ${bureau.center_id || bureau.id}) - ${bureau.name} (${bureau.address})`,
+                              customer_commune: bureau.name,
+                            }));
+                          }
+                        } else {
+                          const bureau = NOEST_BUREAUX.find(b => b.code === code);
+                          if (bureau) {
+                            const match = bureau.name.match(/«\s*([^»]+?)\s*»/);
+                            setEditData(prev => ({
+                              ...prev,
+                              customer_address: `Bureau Noest ${bureau.code} - ${bureau.name} (${bureau.address})`,
+                              customer_commune: match ? match[1].trim() : bureau.name.trim(),
+                            }));
+                          }
+                        }
+                      }} 
+                      className="w-full text-xs p-2 border rounded bg-white font-semibold"
+                      required
+                    >
+                      <option value="">Sélectionnez un bureau de la wilaya</option>
+                      {(() => {
+                        const selectedPartner = deliveryPartnersQuery.data?.data?.find((p: any) => p.id === editData.carrier_id);
+                        const partnerCode = selectedPartner?.code || (/^\d+$/.test(selectedBureauCode) ? 'yalidine' : 'noest');
+                        
+                        if (partnerCode === 'yalidine') {
+                          const centers = yalidineCenters.filter(c => (c.wilaya_name || '').toLowerCase().trim() === (editData.customer_wilaya || '').toLowerCase().trim());
+                          return centers.map(c => (
+                            <option key={c.center_id || c.id} value={String(c.center_id || c.id)}>
+                              {c.name} ({c.address})
+                            </option>
+                          ));
+                        } else {
+                          return filteredBureaux.map(b => (
+                            <option key={b.code} value={b.code}>
+                              {b.code} - {b.name} ({b.address})
+                            </option>
+                          ));
+                        }
+                      })()}
+                    </select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Entreprise de Livraison</label>
+                  <select 
+                    value={editData.carrier_id} 
+                    onChange={e => setEditData({...editData, carrier_id: e.target.value})} 
+                    className="w-full text-xs p-2 border rounded bg-white font-bold"
+                  >
+                    <option value="">Sélectionnez un transporteur</option>
+                    {deliveryPartnersQuery.data?.data?.map((partner: any) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name} ({partner.carrier_id.toUpperCase()})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Frais de livraison (DA)</label>
+                  <input 
+                    type="number" 
+                    value={editData.delivery_fee} 
+                    onChange={e => setEditData({...editData, delivery_fee: parseInt(e.target.value) || 0})} 
+                    className="w-full text-xs p-2 border rounded bg-white font-bold font-mono" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500">Remarque (transmise à Noest lors de l'expédition)</label>
+                  <textarea 
+                    value={editData.notes} 
+                    onChange={e => setEditData({...editData, notes: e.target.value})} 
+                    className="w-full text-xs p-2 border rounded bg-white min-h-[60px]"
+                    placeholder="Saisir une remarque pour cette commande..."
+                  />
+                </div>
+
+                {/* Items & Quantities & Varieties Editor */}
+                <div className="space-y-3 pt-3 border-t">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-black uppercase text-slate-400 tracking-wider">Articles & Quantités</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const firstItem = order.items?.[0];
+                        const newItem = {
+                          id: 'new-' + Date.now(),
+                          product_id: productQuery.data?.id || firstItem?.product_id,
+                          product_name: productQuery.data?.name || firstItem?.product_name,
+                          sku: productQuery.data?.sku || firstItem?.sku || '',
+                          quantity: 1,
+                          unit_price: productQuery.data?.price || firstItem?.unit_price || 0,
+                          variant_details: {},
+                          image_url: productQuery.data?.main_image || firstItem?.image_url || ''
+                        };
+                        setEditData({ ...editData, items: [...editData.items, newItem] });
+                      }}
+                      className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="size-3" /> Ajouter une variante
+                    </button>
+                  </div>
+                  <div className="space-y-2.5">
+                    {editData.items.map((item: any, idx: number) => {
+                      const hasVariants = productQuery.data?.variants && productQuery.data.variants.length > 0;
+                      
+                      // Resolve current selections
+                      const selectedColorVal = item.variant_details?.Couleur || item.variant_details?.Color || '';
+                      const selectedSizeVal = item.variant_details?.Taille || item.variant_details?.Size || '';
+                      
+                      // Filter options
+                      const colorVariants = productQuery.data?.variants || [];
+                      const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColorVal);
+                      const sizeVariants = selectedColorVar?.sub_variants || [];
+
+                      return (
+                        <div key={idx} className="p-3 bg-white border rounded-xl space-y-2.5 shadow-sm">
+                          <div className="flex justify-between items-start">
+                            <span className="text-xs font-bold text-slate-800 line-clamp-1">{item.product_name}</span>
+                            {editData.items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newItems = editData.items.filter((_: any, i: number) => i !== idx);
+                                  setEditData({ ...editData, items: newItems });
+                                }}
+                                className="text-[10px] font-bold text-rose-600 hover:underline shrink-0"
+                              >
+                                Retirer
+                              </button>
+                            )}
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-2">
+                            {hasVariants ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                {/* Color Dropdown */}
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Couleur / Modèle</span>
+                                  <select
+                                    value={selectedColorVal}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const matchedVar = colorVariants.find((v: any) => v.value === val);
+                                      const newItems = [...editData.items];
+                                      
+                                      const updatedDetails = {
+                                        ...newItems[idx].variant_details,
+                                        Couleur: val,
+                                        variant: val
+                                      };
+                                      
+                                      if (matchedVar?.sub_variants && matchedVar.sub_variants.length > 0) {
+                                        const firstSize = matchedVar.sub_variants[0].value;
+                                        updatedDetails.Taille = firstSize;
+                                        updatedDetails.variant = `${val} / ${firstSize}`;
+                                        newItems[idx].sku = matchedVar.sub_variants[0].sku || matchedVar.sku || productQuery.data?.sku;
+                                      } else {
+                                        delete updatedDetails.Taille;
+                                        newItems[idx].sku = matchedVar?.sku || productQuery.data?.sku;
+                                      }
+                                      
+                                      newItems[idx].variant_details = updatedDetails;
+                                      if (matchedVar?.image) {
+                                        newItems[idx].image_url = matchedVar.image;
+                                      }
+                                      
+                                      setEditData({ ...editData, items: newItems });
+                                    }}
+                                    className="w-full text-xs p-1.5 h-8 border rounded bg-slate-50 font-bold"
+                                  >
+                                    <option value="">Choisir</option>
+                                    {colorVariants.map((v: any, i: number) => (
+                                      <option key={i} value={v.value}>{v.value}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Size Dropdown */}
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase">Taille / Option</span>
+                                  <select
+                                    value={selectedSizeVal}
+                                    disabled={!selectedColorVal || sizeVariants.length === 0}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const matchedSubVar = sizeVariants.find((sv: any) => sv.value === val);
+                                      const newItems = [...editData.items];
+                                      
+                                      const updatedDetails = {
+                                        ...newItems[idx].variant_details,
+                                        Taille: val,
+                                        variant: `${selectedColorVal} / ${val}`
+                                      };
+                                      
+                                      newItems[idx].variant_details = updatedDetails;
+                                      if (matchedSubVar?.sku) {
+                                        newItems[idx].sku = matchedSubVar.sku;
+                                      }
+                                      
+                                      setEditData({ ...editData, items: newItems });
+                                    }}
+                                    className="w-full text-xs p-1.5 h-8 border rounded bg-slate-50 font-bold disabled:opacity-50"
+                                  >
+                                    <option value="">Choisir</option>
+                                    {sizeVariants.map((sv: any, i: number) => (
+                                      <option key={i} value={sv.value}>{sv.value}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-slate-400 font-medium italic">Ce produit n'a pas de variantes configurées.</div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* Quantity Modifier */}
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">Quantité</span>
+                                <div className="flex items-center border rounded-lg overflow-hidden h-8 bg-slate-50">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newItems = [...editData.items];
+                                      if (newItems[idx].quantity > 1) {
+                                        newItems[idx].quantity -= 1;
+                                        setEditData({ ...editData, items: newItems });
+                                      }
+                                    }}
+                                    className="w-7 h-full flex items-center justify-center font-bold text-slate-500 hover:bg-slate-100 active:bg-slate-200"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="flex-1 text-center text-xs font-bold font-mono">{item.quantity}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newItems = [...editData.items];
+                                      newItems[idx].quantity += 1;
+                                      setEditData({ ...editData, items: newItems });
+                                    }}
+                                    className="w-7 h-full flex items-center justify-center font-bold text-slate-500 hover:bg-slate-100 active:bg-slate-200"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Price Input */}
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">Prix unitaire (DA)</span>
+                                <input
+                                  type="number"
+                                  value={item.unit_price}
+                                  onChange={(e) => {
+                                    const newItems = [...editData.items];
+                                    newItems[idx].unit_price = parseInt(e.target.value) || 0;
+                                    setEditData({ ...editData, items: newItems });
+                                  }}
+                                  className="w-full text-xs p-1.5 h-8 border rounded bg-slate-50 font-bold font-mono text-right"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between items-center bg-slate-100 p-2.5 rounded-lg text-xs font-bold">
+                    <span>Nouveau Total :</span>
+                    <span className="font-mono text-slate-900">
+                      {formatPrice(editData.items.reduce((acc: number, item: any) => acc + (item.quantity * item.unit_price), 0))} DA
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => updateMutation.mutate(editData)} disabled={updateMutation.isPending} className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded">
+                    {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                  <button onClick={() => setIsEditing(false)} className="px-4 bg-slate-200 text-slate-700 text-xs font-bold rounded">
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 rounded-lg border space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <User className="size-4 text-slate-400" />
+                    <span className="text-xs font-bold">{order.customer_name}</span>
+                    {(order.is_duplicate || isDuplicatePhone?.(order.customer_phone)) && (
+                      <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700">
+                        Doublon
+                      </span>
+                    )}
+                  </div>
+                  <button onClick={() => setIsEditing(true)} className="text-xs text-blue-600 hover:underline">Modifier</button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Phone className="size-4 text-slate-400" />
+                  <a href={`tel:${order.customer_phone}`} className="text-xs font-bold text-blue-600 underline">{order.customer_phone}</a>
+                  {order.customer_phone2 && (
+                    <a href={`tel:${order.customer_phone2}`} className="text-xs font-bold text-blue-500 underline">
+                      / {order.customer_phone2}
+                    </a>
+                  )}
+                  {order.customer_tier && (
+                    <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-violet-200 bg-violet-50 text-violet-700">
+                      {order.customer_tier}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <MapPin className="size-4 text-slate-400" />
+                  <span className="text-xs text-slate-500">{order.customer_address} · {order.customer_commune} · {order.customer_wilaya}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Truck className="size-4 text-slate-400" />
+                  <span className="text-xs text-slate-500 font-bold">
+                    {order.delivery_type === 'stop_desk' ? 'Stop Desk' : 'À domicile'}
+                    {order.carrier?.name ? ` · ${order.carrier.name}` : (order.carrier_id ? ` · Transporteur (ID: ${order.carrier_id})` : ' · Pas de transporteur')}
+                    {order.delivery_fee !== undefined ? ` · ${formatPrice(order.delivery_fee)} DA` : ''}
+                  </span>
+                </div>
+                {order.notes && (
+                  <div className="flex items-start gap-3 bg-amber-50 p-2.5 rounded-lg border border-amber-100/50 mt-1">
+                    <FileText className="size-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div className="text-xs text-amber-900 leading-relaxed font-semibold">
+                      <span className="text-[10px] text-amber-500 uppercase tracking-wider font-bold block mb-0.5">Note de la commande</span>
+                      {order.notes}
+                    </div>
+                  </div>
+                )}
+                {/* Micro-détails commande */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Reçue le</p>
+                    <p className="text-[11px] font-bold text-slate-600">
+                      {order.created_at ? new Date(order.created_at).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </p>
+                    {order.created_at && (() => {
+                      const mins = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
+                      const label = mins < 60 ? `il y a ${mins} min` : mins < 1440 ? `il y a ${Math.floor(mins / 60)}h` : `il y a ${Math.floor(mins / 1440)}j`;
+                      return <p className={cn("text-[9px] font-bold", mins > 1440 ? "text-rose-500" : mins > 240 ? "text-amber-500" : "text-emerald-500")}>{label}</p>;
+                    })()}
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Source</p>
+                    <p className="text-[11px] font-bold text-slate-600">{order.source || 'Direct'}</p>
+                    <div className="flex gap-1 mt-0.5">
+                      {order.is_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">Upsell</span>}
+                      {order.is_pack && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 uppercase">Pack</span>}
+                      {order.is_abandoned_cart && (
+                        ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(order.status)
+                          ? <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">🟩 Panier récupéré</span>
+                          : <span className="text-[8px] font-black px-1 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100 uppercase">🟪 Panier abandonné</span>
+                      )}
+                    </div>
+                  </div>
+                  {order.promo_code && (
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Code Promo</p>
+                      <p className="text-[11px] font-bold text-emerald-600">{order.promo_code} (−{formatPrice(order.discount || 0)})</p>
+                    </div>
+                  )}
+                  {order.next_callback_time && (
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Rappel programmé</p>
+                      <p className="text-[11px] font-bold text-blue-600">
+                        {new Date(order.next_callback_time).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -136,32 +989,95 @@ function OrderDrawer({ order, onClose, onStatusChange }: { order: Order; onClose
                  <div key={i} className="flex items-center justify-between p-3 text-xs">
                    <div>
                      <p className="font-bold">{item.product_name}</p>
+                     {item.variant_details && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Option : {
+                            typeof item.variant_details === 'string'
+                              ? item.variant_details
+                              : Object.entries(item.variant_details)
+                                  .filter(([key]) => key !== 'variant')
+                                  .map(([key, val]) => `${key}: ${val}`)
+                                  .join(', ') || item.variant_details.variant || 'Aucune'
+                          }
+                        </p>
+                      )}
                      <p className="text-slate-400">Qté: {item.quantity}</p>
                    </div>
-                   <span className="font-bold">{formatPrice(item.quantity * item.unit_price)} DA</span>
+                   <span className="font-bold">{formatPrice(item.quantity * item.unit_price)}</span>
                  </div>
                ))}
-               <div className="p-3 bg-slate-50 flex justify-between font-bold">
-                 <span>Total</span>
-                 <span>{formatPrice(order.total)} DA</span>
+               <div className="p-3 bg-slate-50 space-y-1.5 text-xs">
+                 <div className="flex justify-between text-slate-500">
+                   <span>Sous-total produits</span>
+                   <span className="tabular-nums">{formatPrice(order.items?.reduce((acc, it) => acc + it.quantity * it.unit_price, 0) ?? (order.subtotal || 0))}</span>
+                 </div>
+                 {(order.discount || 0) > 0 && (
+                   <div className="flex justify-between text-emerald-600">
+                     <span>Remise{order.promo_code ? ` (${order.promo_code})` : ''}</span>
+                     <span className="tabular-nums">−{formatPrice(order.discount)}</span>
+                   </div>
+                 )}
+                 <div className="flex justify-between text-slate-500">
+                   <span>Livraison ({order.delivery_type === 'stop_desk' ? 'Bureau' : 'Domicile'})</span>
+                   <span className="tabular-nums">{formatPrice(order.delivery_fee || 0)}</span>
+                 </div>
+                 <div className="flex justify-between font-bold border-t border-slate-200 pt-1.5 text-sm">
+                   <span>Total à encaisser</span>
+                   <span className="tabular-nums">{formatPrice(order.total)} DA</span>
+                 </div>
                </div>
              </div>
           </div>
 
+          {/* ── Choix de la méthode de livraison (transporteur / livreur interne) ──
+              Toujours visible (même Annulée/NRP/Abandonnée) : la confirmatrice doit
+              pouvoir préparer ou corriger l'assignation à tout moment. Seules les
+              commandes fusionnées (MERGED, gérées via leur parent) n'ont pas de
+              livraison propre. */}
+          {order.status !== 'MERGED' && (
+            <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} />
+          )}
+
           {cfg.next.length > 0 && (
             <div className="space-y-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
-              <div className="grid grid-cols-1 gap-2">
-                {cfg.next.map(ns => (
-                  <button key={ns} onClick={() => { onStatusChange(order.id, ns); onClose(); }}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
-                    <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
-                    <ChevronRight className="size-4 text-slate-300" />
+              <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
+                {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
+                  <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.id, 'NRP'); }}
+                          className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
+                    <span>Signaler Ne Répond Pas (NRP)</span>
+                    <Phone className="size-4" />
                   </button>
-                ))}
+                )}
+                {cfg.next.map(ns => {
+                  const isShippedWithoutTracking = ns === 'SHIPPED' && !order.tracking_number && order.carrier_id;
+                  return (
+                    <button key={ns} onClick={() => { 
+                      if (isShippedWithoutTracking && onDispatch) {
+                        onDispatch(order.id);
+                      } else {
+                        onStatusChange(order.id, ns, currentUser?.id); 
+                      }
+                    }}
+                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
+                      <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
+                      <ChevronRight className="size-4 text-slate-300" />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
+          {/* Traçabilité / Historique des actions */}
+          <div className="space-y-3 pt-4 border-t">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Activity className="size-3.5" />
+              Traçabilité / Historique
+            </p>
+            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <OrderTraceabilityPanel orderId={order.id} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -169,30 +1085,109 @@ function OrderDrawer({ order, onClose, onStatusChange }: { order: Order; onClose
 }
 
 function SalaryView({ perf, user }: any) {
-  const paymentAmount = user?.payment_amount ?? 0;
-  const confirmedCount = perf?.stats?.confirmed_count ?? 0;
-  const deliveredCount = perf?.stats?.delivered_count ?? 0;
+  const stats = perf?.stats ?? {};
+  const paymentType = stats.payment_type ?? user?.payment_type ?? 'PER_DELIVERED_ORDER';
+  const paymentAmount = stats.payment_amount ?? user?.payment_amount ?? 0;
   
+  const confirmedCount = stats.confirmed_count ?? 0;
+  const deliveredCount = stats.delivered_count ?? 0;
+  const totalAssigned = stats.total_assigned ?? 0;
+  
+  const recoveredCount = stats.recovered_count ?? 0;
+  const lostCount = stats.lost_count ?? 0;
+  const paymentRecovered = stats.payment_recovered_cart ?? user?.payment_recovered_cart ?? 0;
+  const paymentLost = stats.payment_lost_cart ?? user?.payment_lost_cart ?? 0;
+  const abandonedBonus = stats.abandoned_bonus ?? 0;
+  
+  const totalSalary = stats.salary ?? 0;
+
+  // Calculate base salary amount for display
+  let baseSalaryExplain = '';
+  let baseSalaryVal = 0;
+  if (paymentType === 'MONTHLY_SALARY') {
+    baseSalaryVal = paymentAmount;
+    baseSalaryExplain = `Salaire mensuel fixe`;
+  } else if (paymentType === 'PER_DELIVERED_ORDER') {
+    baseSalaryVal = deliveredCount * paymentAmount;
+    baseSalaryExplain = `${deliveredCount} livraisons × ${formatPrice(paymentAmount)}`;
+  } else {
+    baseSalaryVal = deliveredCount * paymentAmount;
+    baseSalaryExplain = `${deliveredCount} livraisons × ${formatPrice(paymentAmount)}`;
+  }
+
   return (
-    <div className="space-y-6">
-       <div className="grid grid-cols-3 gap-4">
+    <div className="space-y-6 animate-in fade-in duration-300">
+       {/* High Level Stats Grid */}
+       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Confirmées', val: confirmedCount, color: '#059669' },
-            { label: 'Livrées', val: deliveredCount, color: '#2563eb' },
-            { label: 'Total Assigné', val: perf?.stats?.total_assigned ?? 0, color: '#0f172a' },
+            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50' },
+            { label: 'Livraisons', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50' },
+            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50' },
+            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50' },
           ].map(s => (
-            <div key={s.label} className="p-4 bg-white border rounded-lg">
+            <div key={s.label} className={cn("p-4 border rounded-xl bg-white", s.bg)}>
                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
-               <p className="text-xl font-bold mt-1" style={{ color: s.color }}>{s.val}</p>
+               <p className={cn("text-2xl font-black mt-1", s.color)}>{s.val}</p>
             </div>
           ))}
        </div>
-       <div className="p-8 bg-slate-900 text-white rounded-xl border border-slate-800">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Estimation Salaire</p>
-          <p className="text-4xl font-bold mt-2">{formatPrice(confirmedCount * paymentAmount)} DA</p>
-          <div className="mt-6 flex items-center gap-2 text-xs text-slate-400">
-             <AlertCircle className="size-4" />
-             Basé sur {confirmedCount} confirmations à {formatPrice(paymentAmount)} DA l'unité.
+
+       {/* Detailed Salary Card */}
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+             <div className="bg-white rounded-2xl border p-6 space-y-6">
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider pb-2 border-b">
+                   Détails de Rémunération
+                </h3>
+                
+                {/* Base Salary Breakdown */}
+                <div className="flex items-center justify-between py-2">
+                   <div>
+                      <p className="text-xs font-bold text-slate-800">Rémunération de base</p>
+                      <p className="text-[10px] text-slate-400 font-medium">{baseSalaryExplain}</p>
+                   </div>
+                   <span className="text-sm font-bold text-slate-800">{formatPrice(baseSalaryVal)}</span>
+                </div>
+
+                {/* Abandoned Cart Recovery breakdown */}
+                {paymentRecovered > 0 && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-violet-600 tracking-wider">
+                         Paniers Abandonnés (Bonus Récupération)
+                      </p>
+                      <div className="flex items-center justify-between text-xs">
+                         <div className="space-y-0.5">
+                            <p className="font-bold text-slate-700">Commission Paniers Récupérés</p>
+                            <p className="text-[10px] text-slate-400">{recoveredCount} paniers récupérés × {formatPrice(paymentRecovered)}</p>
+                         </div>
+                         <span className="font-bold text-emerald-600">+{formatPrice(recoveredCount * paymentRecovered)}</span>
+                      </div>
+                   </div>
+                )}
+             </div>
+          </div>
+
+          {/* Salary estimation Hero widget */}
+          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-8 flex flex-col justify-between">
+             <div>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Revenu Total Estimé</p>
+                <p className="text-4xl font-black mt-2 text-white">{formatPrice(totalSalary)}</p>
+             </div>
+             
+             <div className="mt-8 space-y-4">
+                <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs">
+                   <span className="text-slate-400 font-medium">Base :</span>
+                   <span className="font-bold">{formatPrice(baseSalaryVal)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-violet-300">
+                   <span className="font-medium">Bonus Paniers :</span>
+                   <span className="font-bold">+{formatPrice(abandonedBonus)}</span>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-xl flex items-start gap-2.5 text-[10px] text-slate-400 leading-normal font-medium">
+                   <AlertCircle className="size-4 text-slate-500 shrink-0 mt-0.5" />
+                   <span>Ce montant est calculé dynamiquement par le service de trésorerie en fonction des critères et de la grille de commissions.</span>
+                </div>
+             </div>
           </div>
        </div>
     </div>
@@ -202,14 +1197,49 @@ function SalaryView({ perf, user }: any) {
 // ─── Main Dashboard ──────────────────────────────────────────
 
 export default function AgentDashboard() {
-  const { user, activeStore, setAppView } = useAppStore();
+  const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar, clearUser } = useAppStore();
   const queryClient = useQueryClient();
   const workTimer = useWorkTimer();
+  const [showAllStores, setShowAllStores] = useState(true);
+
+  const handleLogout = async () => {
+    try {
+      await apiFetch('/api/v1/auth', { method: 'DELETE' });
+    } catch {
+      // ignore — clear local state regardless
+    }
+    clearUser();
+    // Defense in depth: never let the next account on this device inherit
+    // this confirmatrice's cached orders/notifications before its own data loads.
+    queryClient.clear();
+    setAppView('storefront');
+  };
+  
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarCollapsed(true);
+    }
+  }, [isMobile, setSidebarCollapsed]);
   
   const [activeModule, setActiveModule] = useState('orders');
   const [activeSubModule, setActiveSubModule] = useState('orders-all');
   const [search, setSearch] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isAutoRotate, setIsAutoRotate] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [drawerInitialEdit, setDrawerInitialEdit] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const currentFilter = useMemo(() => {
     const sub = MODULES.flatMap(m => m.subModules).find(s => s.id === activeSubModule);
@@ -217,119 +1247,471 @@ export default function AgentDashboard() {
   }, [activeSubModule]);
 
   const ordersQuery = useQuery({
-    queryKey: ['agent-orders', user?.id, activeStore?.id, currentFilter],
+    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate],
     queryFn: () => {
-      let url = `/api/v1/orders?assigned_to=${user?.id}&store_id=${activeStore?.id}&pageSize=100`;
-      if (currentFilter !== 'ALL') url += `&status=${encodeURIComponent(currentFilter)}`;
+      const isConfirmateur = user?.role === 'CONFIRMATEUR';
+      let url = `/api/v1/orders?pageSize=100`;
+      
+      // If we are not showing all stores, filter by activeStore
+      if (!showAllStores && activeStore?.id) {
+        url += `&store_id=${activeStore.id}`;
+      }
+      
+      if (currentFilter !== 'ALL') {
+        url += `&status=${encodeURIComponent(currentFilter)}`;
+      }
+      if (startDate) {
+        url += `&start_date=${encodeURIComponent(new Date(startDate).toISOString())}`;
+      }
+      if (endDate) {
+        const d = new Date(endDate);
+        d.setHours(23, 59, 59, 999);
+        url += `&end_date=${encodeURIComponent(d.toISOString())}`;
+      }
       return apiFetch<{ data: Order[] }>(url);
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     refetchInterval: 30000
   });
 
   const perfQuery = useQuery({
-    queryKey: ['agent-perf', user?.id],
-    queryFn: () => apiFetch<any>(`/api/v1/users/${user?.id}/performance?store_id=${activeStore?.id}`),
-    enabled: !!user?.id
+    queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores],
+    queryFn: () => {
+      let url = `/api/v1/users/${user?.id}/performance`;
+      if (!showAllStores && activeStore?.id) {
+        url += `?store_id=${activeStore.id}`;
+      }
+      return apiFetch<any>(url);
+    },
+    enabled: !!user?.id && (showAllStores || !!activeStore?.id)
   });
 
-  const statusMutation = useMutation({
-    mutationFn: ({ orderId, status }: { orderId: string; status: string }) =>
-      apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
-      toast.success('Statut mis à jour');
-    }
+  const agentCountsQuery = useQuery({
+    queryKey: ['agent-orders-counts', user?.id, activeStore?.id, showAllStores, startDate, endDate],
+    queryFn: () => {
+      let url = `/api/v1/orders/agent-counts?`;
+      if (!showAllStores && activeStore?.id) {
+        url += `store_id=${activeStore.id}&`;
+      }
+      if (startDate) {
+        url += `start_date=${encodeURIComponent(new Date(startDate).toISOString())}&`;
+      }
+      if (endDate) {
+        const d = new Date(endDate);
+        d.setHours(23, 59, 59, 999);
+        url += `end_date=${encodeURIComponent(d.toISOString())}&`;
+      }
+      return apiFetch<any>(url);
+    },
+    enabled: !!user?.id && (showAllStores || !!activeStore?.id),
+    refetchInterval: 15000
   });
 
-  const filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 
+  let filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 
     o.order_number.toLowerCase().includes(search.toLowerCase()) ||
     o.customer_name.toLowerCase().includes(search.toLowerCase()) ||
     o.customer_phone.includes(search)
   );
 
+  const phoneCounts = (ordersQuery.data?.data ?? []).reduce((acc: any, o: any) => {
+    acc[o.customer_phone] = (acc[o.customer_phone] || 0) + 1;
+    return acc;
+  }, {});
+  const isDuplicatePhone = (phone: string) => (phoneCounts[phone] ?? 0) > 1;
+
+
+  if (currentFilter === 'ALL') {
+     filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
+  }
+
+  // ─── Fusion visuelle des doublons : un client (même téléphone) = une seule ligne ───
+  // La commande "principale" est celle que la confirmatrice doit traiter :
+  // commande normale avant panier abandonné, puis statut le plus avancé, puis la plus ancienne.
+  const STATUS_WEIGHT: Record<string, number> = {
+    DELIVERED: 7, SHIPPED: 6, CONFIRMED: 5, RESCHEDULED: 4, IN_PROGRESS: 4,
+    CALLED: 4, ASSIGNED: 3, NEW: 2, ABANDONED: 1, CANCELLED: 0, RETURNED: 0,
+  };
+  const groupedOrders: { primary: Order; related: Order[] }[] = (() => {
+    const phoneKey = (o: Order) => (o.customer_phone || '').replace(/\D/g, '') || o.id;
+    const byPhone = new Map<string, Order[]>();
+    for (const o of filteredOrders) {
+      const key = phoneKey(o);
+      if (!byPhone.has(key)) byPhone.set(key, []);
+      byPhone.get(key)!.push(o);
+    }
+    const seen = new Set<string>();
+    const groups: { primary: Order; related: Order[] }[] = [];
+    for (const o of filteredOrders) {
+      const key = phoneKey(o);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const members = byPhone.get(key)!;
+      const primary = [...members].sort((a, b) =>
+        (Number(!!a.is_abandoned_cart) - Number(!!b.is_abandoned_cart)) ||
+        ((STATUS_WEIGHT[b.status] ?? 0) - (STATUS_WEIGHT[a.status] ?? 0)) ||
+        (new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      )[0];
+      groups.push({ primary, related: members.filter(m => m.id !== primary.id) });
+    }
+    return groups;
+  })();
+
+  useEffect(() => {
+    if (selectedOrder) {
+      const updated = filteredOrders.find(o => o.id === selectedOrder.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedOrder)) {
+        setSelectedOrder(updated);
+      }
+    }
+  }, [filteredOrders, selectedOrder]);
+
+  const handleNextOrder = (currentOrderId: string) => {
+    if (!isAutoRotate) {
+      setSelectedOrder(null);
+      return;
+    }
+    const idx = filteredOrders.findIndex(o => o.id === currentOrderId);
+    if (idx >= 0 && idx < filteredOrders.length - 1) {
+      setSelectedOrder(filteredOrders[idx + 1]);
+    } else {
+      setSelectedOrder(null);
+    }
+  };
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ orderId, status, assigned_to, call_result }: { orderId: string; status?: string; assigned_to?: string; call_result?: string }) => {
+      const payload: any = {};
+      if (status) payload.status = status;
+      if (assigned_to) payload.assigned_to = assigned_to;
+      if (call_result) payload.call_result = call_result;
+      
+      const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      
+      if (status === 'CONFIRMED') {
+        try {
+          const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
+          return { ...res, dispatch: dispatchRes };
+        } catch (dispatchErr: any) {
+          return { ...res, dispatch_error: dispatchErr.message || 'Erreur transporteur' };
+        }
+      }
+      return res;
+    },
+    onSuccess: (data: any, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
+      queryClient.invalidateQueries({ queryKey: ['order-events', variables.orderId] });
+      
+      if (variables.status === 'CONFIRMED') {
+        if (data?.dispatch?.tracking_number) {
+          toast.success(`Confirmée & Expédiée ! Suivi : ${data.dispatch.tracking_number}`);
+        } else if (data?.dispatch_error) {
+          toast.warning(`Confirmée, mais l'expédition automatique a échoué : ${data.dispatch_error}`);
+        } else {
+          toast.success('Commande confirmée avec succès');
+        }
+      } else {
+        toast.success('Action enregistrée');
+      }
+
+      if (!isAutoRotate) {
+        setSelectedOrder((prev: any) => {
+          if (!prev || prev.id !== variables.orderId) return prev;
+          return {
+            ...prev,
+            status: data?.dispatch?.tracking_number ? 'SHIPPED' : (variables.status || prev.status),
+            tracking_number: data?.dispatch?.tracking_number || prev.tracking_number
+          };
+        });
+      }
+      
+      handleNextOrder(variables.orderId);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Une erreur s'est produite", { duration: 6000 });
+    }
+  });
+
+  const dispatchMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      return await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
+    },
+    onSuccess: (data: any, orderId) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-events', orderId] });
+      if (data?.tracking_number) {
+        toast.success(`Colis créé avec succès ! Suivi : ${data.tracking_number}`);
+        setSelectedOrder((prev: any) => {
+          if (!prev || prev.id !== orderId) return prev;
+          return {
+            ...prev,
+            status: 'SHIPPED',
+            tracking_number: data.tracking_number
+          };
+        });
+      } else {
+         toast.success("Expédié !");
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Erreur transporteur");
+    }
+  });
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-      {selectedOrder && <OrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onStatusChange={(id, s) => statusMutation.mutate({ orderId: id, status: s })} />}
+      {selectedOrder && <OrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onOrderUpdate={(updated) => {
+            console.log("[DEBUG FRONTEND] Parent onOrderUpdate called. Old selectedOrder:", selectedOrder, "New updated:", updated);
+            setSelectedOrder(updated);
+          }} currentUser={user} initialEdit={drawerInitialEdit} isPending={statusMutation.isPending || dispatchMutation.isPending} onStatusChange={(id, s, assignTo, callResult) => statusMutation.mutate({ orderId: id, status: s, assigned_to: assignTo, call_result: callResult })} onDispatch={(id) => dispatchMutation.mutate(id)} />}
+
+      {/* Sidebar Overlay for Mobile */}
+      {isMobile && !sidebarCollapsed && (
+        <div 
+           className="fixed inset-0 z-[45] bg-slate-900/40 backdrop-blur-sm transition-opacity duration-300"
+           onClick={() => setSidebarCollapsed(true)}
+        />
+      )}
 
       {/* ─── Sidebar ─── */}
-      <aside className="w-64 border-r bg-white flex flex-col shrink-0">
-        <div className="h-16 px-6 border-b flex items-center gap-3 bg-slate-900 text-white">
-          <div className="size-8 bg-blue-600 rounded flex items-center justify-center font-bold">A</div>
-          <span className="text-sm font-bold tracking-tight">AGENT HUB</span>
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 bg-white flex flex-col shrink-0 border-r shadow-2xl lg:shadow-none transition-all duration-300",
+        sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-[70px]" : "translate-x-0 w-[280px] sm:w-[260px]"
+      )}>
+        <div className="h-16 px-4 border-b flex items-center justify-between bg-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-3">
+             <div className="size-8 bg-blue-600 rounded flex items-center justify-center font-bold">A</div>
+             {!sidebarCollapsed && <span className="text-sm font-bold tracking-tight">AGENT HUB</span>}
+          </div>
+          {isMobile && (
+            <button onClick={() => setSidebarCollapsed(true)} className="p-1 lg:hidden hover:bg-slate-800 rounded">
+               <XCircle className="size-5 text-slate-300" />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
           {MODULES.map(module => (
             <div key={module.id} className="space-y-1">
-              <div className="flex items-center gap-2 px-3 py-2 text-slate-400">
-                <module.icon className="size-4" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">{module.label}</span>
+              <div className={cn("flex items-center gap-2 px-3 py-2 text-slate-400", sidebarCollapsed && "justify-center px-0")}>
+                <module.icon className="size-4 shrink-0" />
+                {!sidebarCollapsed && <span className="text-[10px] font-bold uppercase tracking-widest">{module.label}</span>}
               </div>
               <div className="space-y-0.5">
-                {module.subModules.map(sub => (
-                  <button key={sub.id} onClick={() => { setActiveModule(module.id); setActiveSubModule(sub.id); }}
-                          className={cn(
-                            "w-full text-left px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between group",
-                            activeSubModule === sub.id ? "bg-slate-900 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
-                          )}>
-                    <span className="flex items-center gap-2">
-                       {sub.icon && <sub.icon className="size-3.5" />}
-                       {sub.label}
-                    </span>
-                    {activeSubModule === sub.id && <ChevronRight className="size-3" />}
-                  </button>
-                ))}
+                {module.subModules.map(sub => {
+                   const count = sub.filter ? (agentCountsQuery.data?.counts?.[sub.filter.toLowerCase() === 'pending_confirmation' ? 'pending' : sub.filter.toLowerCase() === 'abandoned_in_progress' ? 'abandoned_in_progress' : sub.filter.toLowerCase()] ?? 0) : 0;
+                   return (
+                     <button key={sub.id} onClick={() => { 
+                             setActiveModule(module.id); setActiveSubModule(sub.id); 
+                             if (isMobile) setSidebarCollapsed(true);
+                           }}
+                             className={cn(
+                               "w-full text-left px-3 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between group",
+                               activeSubModule === sub.id ? "bg-[#4b7bec] text-white shadow-lg" : "text-slate-500 hover:bg-slate-50",
+                               sidebarCollapsed && "justify-center px-0"
+                             )}>
+                       <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center w-full")}>
+                          {sub.icon && <sub.icon className={cn("size-5 shrink-0", activeSubModule === sub.id ? "text-white" : "text-slate-400")} />}
+                          {!sidebarCollapsed && sub.label}
+                       </span>
+                       {!sidebarCollapsed && (
+                         <span className="flex items-center gap-1.5 shrink-0">
+                           {count > 0 && (
+                             <span className={cn(
+                               "px-1.5 py-0.5 rounded-full text-[9px] font-black tracking-wide leading-none",
+                               activeSubModule === sub.id 
+                                 ? "bg-white/20 text-white" 
+                                 : "bg-slate-100 text-slate-500"
+                             )}>
+                               {count}
+                             </span>
+                           )}
+                           {activeSubModule === sub.id && <ChevronRight className="size-3" />}
+                         </span>
+                       )}
+                     </button>
+                   );
+                 })}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="p-4 border-t bg-slate-50">
-          <div className="flex items-center gap-3 p-2">
-             <div className="size-8 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold">
+        <div className="p-4 border-t bg-slate-50 shrink-0">
+          <div className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+             <div className="size-9 bg-slate-200 rounded-full flex shrink-0 items-center justify-center text-xs font-bold text-slate-600">
                {user?.name?.charAt(0)}
              </div>
-             <div className="min-w-0">
-                <p className="text-xs font-bold truncate">{user?.name}</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase">{workTimer}</p>
-             </div>
-             <button onClick={() => setAppView('storefront')} className="ml-auto p-2 text-slate-400 hover:text-red-500">
-               <LogOut className="size-4" />
-             </button>
+             {!sidebarCollapsed && (
+               <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold truncate">{user?.name}</p>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase">{workTimer}</p>
+               </div>
+             )}
+             {!sidebarCollapsed && (
+               <button onClick={handleLogout} className="p-2 shrink-0 text-slate-400 hover:text-red-500">
+                 <LogOut className="size-4" />
+               </button>
+             )}
           </div>
         </div>
       </aside>
 
       {/* ─── Main Content ─── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 border-b bg-white flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-4 flex-1 max-w-md">
-             <div className="relative w-full">
-               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-               <Input placeholder="Rechercher une commande, un nom, un téléphone..." className="pl-10 h-10 bg-slate-50 border-none shadow-none text-xs rounded-xl" value={search} onChange={e => setSearch(e.target.value)} />
+      <div 
+        className="flex-1 flex flex-col min-w-0 overflow-hidden transition-all duration-300"
+        style={{ marginLeft: isMobile ? '0' : (sidebarCollapsed ? '70px' : '260px') }}
+      >
+        <header className="border-b bg-white flex flex-col shrink-0 gap-2 p-4 sm:px-6">
+           {/* Row 1: Top Bar */}
+           <div className="flex items-center justify-between gap-4 w-full">
+             <div className="flex items-center gap-3 flex-1 min-w-0">
+                <button
+                   onClick={toggleSidebar}
+                   className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg shrink-0"
+                >
+                   <Menu className="size-5" />
+                </button>
+                <div className="relative w-full max-w-md hidden sm:block">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                  <Input placeholder="Rechercher..." className="pl-10 h-9 bg-slate-50 border-none shadow-none text-xs rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+                
+                {/* On Desktop, show the toggle here */}
+                {allStores.length > 1 && (
+                  <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllStores(true)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                        showAllStores ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      Toutes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllStores(false)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                        !showAllStores ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      Active seule
+                    </button>
+                  </div>
+                )}
              </div>
-          </div>
-          <div className="flex items-center gap-6">
-             <div className="flex flex-col items-end">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Boutique active</span>
-                <span className="text-xs font-bold">{activeStore?.name}</span>
+             <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+                <NotificationsBell
+                  onOpenOrder={(orderId) => {
+                    apiFetch<any>(`/api/v1/orders/${orderId}`)
+                      .then((res) => {
+                        const ord = res?.data ?? res;
+                        if (ord?.id) { setSelectedOrder(ord); setDrawerInitialEdit(false); }
+                      })
+                      .catch(() => toast.error('Commande introuvable'));
+                  }}
+                />
+                <div className="hidden sm:flex items-center gap-4 border-r pr-6 mr-2">
+                     <button
+                       onClick={() => setIsCreatingOrder(true)}
+                       className="flex items-center gap-2 bg-slate-900 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm"
+                     >
+                       <Plus className="size-4 shrink-0" />
+                       <span>Nouvelle Commande</span>
+                     </button>
+                </div>
+                
+                <div className="flex flex-col items-end">
+                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Boutique active</span>
+                   {allStores.length > 1 ? (
+                     <select
+                       value={activeStore?.id || ''}
+                       onChange={(e) => {
+                         const selected = allStores.find(s => s.id === e.target.value);
+                         if (selected) {
+                           setActiveStore(selected);
+                           setShowAllStores(false);
+                         }
+                       }}
+                       className="text-xs font-bold bg-transparent border-none outline-none text-right cursor-pointer text-indigo-600 hover:underline font-sans max-w-[120px] truncate"
+                     >
+                       {allStores.map(store => (
+                         <option key={store.id} value={store.id}>
+                           {store.name}
+                         </option>
+                       ))}
+                     </select>
+                   ) : (
+                     <span className="text-xs font-bold">{activeStore?.name}</span>
+                   )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <div className="size-10 border rounded-xl flex items-center justify-center relative shrink-0">
+                    <Bell className="size-5 text-slate-400" />
+                    <div className="absolute top-0 right-0 size-2 bg-red-500 rounded-full border-2 border-white" />
+                  </div>
+                  <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })} 
+                          className="p-2 border rounded-xl hover:bg-slate-50 transition-colors shrink-0">
+                    <RefreshCw className={cn("size-4 text-slate-500", ordersQuery.isFetching && "animate-spin")} />
+                  </button>
+                </div>
              </div>
-             <div className="size-10 border rounded-xl flex items-center justify-center relative">
-               <Bell className="size-5 text-slate-400" />
-               <div className="absolute top-0 right-0 size-2 bg-red-500 rounded-full border-2 border-white" />
-             </div>
-             <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })} 
-                     className="p-2 border rounded-xl hover:bg-slate-50 transition-colors">
-               <RefreshCw className={cn("size-4 text-slate-500", ordersQuery.isFetching && "animate-spin")} />
-             </button>
-          </div>
-        </header>
+           </div>
+           
+           {/* Row 1.5: Mobile-only search bar */}
+           <div className="relative w-full sm:hidden">
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+             <Input placeholder="Rechercher (nom, n° commande, téléphone)..." className="pl-10 h-9 bg-slate-50 border-none shadow-none text-xs rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
+           </div>
 
-        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/50">
+           {/* Row 2: Mobile-only controls (Toggles & Plus button) */}
+           <div className="flex items-center justify-between gap-2 w-full md:hidden border-t pt-2 mt-1">
+              {allStores.length > 1 ? (
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllStores(true)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                      showAllStores ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                    )}
+                  >
+                    Toutes les boutiques
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAllStores(false)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                      !showAllStores ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                    )}
+                  >
+                    Active seule
+                  </button>
+                </div>
+              ) : (
+                <div className="text-xs font-bold text-slate-400">Boutique: {activeStore?.name}</div>
+              )}
+              
+              <button
+                onClick={() => setIsCreatingOrder(true)}
+                className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm shrink-0"
+              >
+                <Plus className="size-3.5 shrink-0" />
+                <span>Nouvelle</span>
+              </button>
+           </div>
+         </header>
+
+        <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-24 sm:pb-8 custom-scrollbar bg-slate-50/50">
           {activeSubModule === 'salary-details' ? (
             <SalaryView perf={perfQuery.data} user={user} />
+          ) : activeSubModule.startsWith('inventory-') ? (
+            <AgentInventoryView subModuleId={activeSubModule} />
           ) : activeSubModule === 'tracking-search' ? (
             <div className="max-w-2xl mx-auto space-y-6">
                <div className="p-8 bg-white border rounded-2xl shadow-sm space-y-4">
@@ -342,12 +1724,46 @@ export default function AgentDashboard() {
             </div>
           ) : (
             <div className="space-y-6">
-               <div className="flex items-center justify-between">
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <h2 className="text-xl font-bold tracking-tight">
                     {MODULES.flatMap(m => m.subModules).find(s => s.id === activeSubModule)?.label}
                   </h2>
-                  <div className="flex items-center gap-2">
-                     <span className="text-xs font-bold text-slate-400">{filteredOrders.length} résultats</span>
+                  
+                  <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border shadow-sm w-full md:w-auto justify-between md:justify-start">
+                     <div className="flex items-center gap-1.5">
+                       <span className="text-[10px] font-black uppercase text-slate-400">Du</span>
+                       <input
+                         type="date"
+                         value={startDate}
+                         onChange={(e) => setStartDate(e.target.value)}
+                         className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
+                       />
+                     </div>
+                     <div className="flex items-center gap-1.5">
+                       <span className="text-[10px] font-black uppercase text-slate-400">Au</span>
+                       <input
+                         type="date"
+                         value={endDate}
+                         onChange={(e) => setEndDate(e.target.value)}
+                         className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
+                       />
+                     </div>
+                     {(startDate || endDate) && (
+                       <button
+                         onClick={() => {
+                           setStartDate('');
+                           setEndDate('');
+                         }}
+                         className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                       >
+                         Effacer
+                       </button>
+                     )}
+                     <span className="text-xs font-bold text-slate-400 border-l pl-3 ml-1 shrink-0">
+                       {groupedOrders.length !== filteredOrders.length
+                         ? `${groupedOrders.length} clients · ${filteredOrders.length} commandes`
+                         : `${filteredOrders.length} résultats`}
+                     </span>
                   </div>
                </div>
 
@@ -363,35 +1779,185 @@ export default function AgentDashboard() {
                  </div>
                ) : (
                  <div className="grid grid-cols-1 gap-3">
-                    {filteredOrders.map(order => (
-                      <button key={order.id} onClick={() => setSelectedOrder(order)}
-                              className="w-full bg-white border rounded-xl p-4 flex items-center justify-between hover:border-slate-300 hover:shadow-md transition-all group">
-                         <div className="flex items-center gap-4">
-                            <StatusBadge status={order.status} />
-                            <div className="text-left">
-                               <p className="text-xs font-bold font-mono group-hover:text-blue-600 transition-colors">#{order.order_number}</p>
-                               <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">{order.customer_name} · {order.customer_wilaya}</p>
-                            </div>
+                    {groupedOrders.map(({ primary: order, related }) => {
+                      const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
+                      const isExpanded = expandedGroups.has(order.id);
+                      return (
+                       <div key={order.id} className="space-y-0">
+                       <button onClick={() => { setSelectedOrder(order); setDrawerInitialEdit(false); }}
+                               className={cn(
+                                 "w-full border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all group text-left",
+                                 related.length > 0 && isExpanded && "rounded-b-none border-b-0"
+                               )}
+                               style={{ backgroundColor: statusBg }}>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                             <div className="flex items-center gap-2 flex-wrap">
+                               {/* Origin (never changes) + status (evolves) — always both */}
+                               <OrderTypeBadge order={order} />
+                               <StatusBadge status={order.status} />
+                               <NrpBadge count={order.nrp_count || 0} />
+                               {related.length > 0 ? (
+                                 <RelatedOrdersBadge
+                                   count={related.length}
+                                   expanded={isExpanded}
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     setExpandedGroups(prev => {
+                                       const next = new Set(prev);
+                                       if (next.has(order.id)) next.delete(order.id);
+                                       else next.add(order.id);
+                                       return next;
+                                     });
+                                   }}
+                                 />
+                               ) : order.is_duplicate && (
+                                 <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0">
+                                   🟣 Doublon
+                                 </span>
+                               )}
+                               {order.store?.name && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
+                                    🏪 {order.store.name}
+                                  </span>
+                                )}
+                               {order.livreur_id && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
+                                    🚴 {order.livreur?.name || 'Livreur assigné'}
+                                  </span>
+                                )}
+                               {order.tracking_number && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
+                                    📦 {order.tracking_number}
+                                  </span>
+                                )}
+                             </div>
+                             <div>
+                                <p className="text-xs font-bold group-hover:text-blue-600 transition-colors">{formatOrderRef(order, 'admin')}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{order.customer_name} · {order.customer_wilaya}</p>
+                                {order.notes && (
+                                  <p className="text-[9px] text-amber-700 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
+                                    Note: {order.notes}
+                                  </p>
+                                )}
+                                {/* Items and variants summary */}
+                                <div className="mt-1.5 space-y-0.5">
+                                  {order.items?.map((item, i) => (
+                                    <p key={i} className="text-[10px] text-slate-400 font-medium">
+                                      📦 {item.product_name}
+                                      {item.variant_details && ` (${
+                                        typeof item.variant_details === 'string'
+                                          ? item.variant_details
+                                          : Object.entries(item.variant_details)
+                                              .filter(([k]) => k !== 'variant')
+                                              .map(([k, v]) => `${v}`)
+                                              .join(' / ') || item.variant_details.variant || ''
+                                      })`} x{item.quantity}
+                                    </p>
+                                  ))}
+                                </div>
+                             </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 border-t sm:border-t-0 pt-2 sm:pt-0">
+                             <div className="text-left sm:text-right">
+<p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest sm:hidden">Téléphone</p>
+                                <p className="text-xs font-bold">{order.customer_phone}</p>
+                             </div>
+                             <div className="text-right shrink-0">
+                                <p className="text-xs font-bold">{formatPrice(order.total)}</p>
+                                 <p className="text-[9px] text-slate-400 font-bold uppercase" title={new Date(order.created_at).toLocaleString('fr-FR')}>
+                                   📅 {new Date(order.created_at).toLocaleDateString('fr-FR')} 
+                                   <span className="text-slate-300 mx-1">·</span> 
+                                   🕒 {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                 </p>
+                             </div>
+                             <div className="flex items-center gap-2">
+                               <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedOrder(order);
+                                    setDrawerInitialEdit(true);
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-sm shrink-0"
+                                >
+                                  Modifier
+                                </button>
+                               <ChevronRight className="size-4 text-slate-200 group-hover:text-slate-400 transition-colors hidden sm:block" />
+                             </div>
+                          </div>
+                       </button>
+                       {/* Commandes liées du même client, repliées sous la ligne principale */}
+                       {related.length > 0 && isExpanded && (
+                         <div className="border border-t-0 border-purple-200 rounded-b-xl bg-purple-50/40 divide-y divide-purple-100">
+                           {related.map(rel => (
+                             <div key={rel.id} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                               <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                 <span className="text-[9px] font-black uppercase tracking-wider text-purple-600 shrink-0">↳ 🟣 Liée</span>
+                                 <OrderTypeBadge order={rel} size="xs" short />
+                                 <StatusBadge status={rel.status} />
+                                 <span className="text-[10px] font-bold text-slate-500 truncate">{formatOrderRef(rel, 'admin')}</span>
+                               </div>
+                               <div className="flex items-center gap-3 shrink-0">
+                                 <span className="text-[10px] font-bold text-slate-600">{formatPrice(rel.total)}</span>
+                                 <span className="text-[9px] font-bold text-slate-400 uppercase">
+                                   {new Date(rel.created_at).toLocaleDateString('fr-FR')} · {new Date(rel.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                 </span>
+                                 <button
+                                   type="button"
+                                   onClick={() => { setSelectedOrder(rel); setDrawerInitialEdit(false); }}
+                                   className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-200 hover:bg-amber-200 transition-colors"
+                                 >
+                                   Ouvrir
+                                 </button>
+                               </div>
+                             </div>
+                           ))}
                          </div>
-                         <div className="flex items-center gap-8">
-                            <div className="text-right hidden sm:block">
-                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Téléphone</p>
-                               <p className="text-xs font-bold">{order.customer_phone}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                               <p className="text-xs font-bold">{formatPrice(order.total)} DA</p>
-                               <p className="text-[9px] text-slate-400 font-bold uppercase">{new Date(order.created_at).toLocaleDateString()}</p>
-                            </div>
-                            <ChevronRight className="size-4 text-slate-200 group-hover:text-slate-400 transition-colors" />
-                         </div>
-                      </button>
-                    ))}
+                       )}
+                       </div>
+                     );})}
                  </div>
                )}
             </div>
           )}
         </main>
       </div>
+      {/* Mobile Bottom Navigation Bar */}
+      {isMobile && (
+        <div className="fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur-md border-t flex items-center justify-around px-4 z-[40] shadow-lg">
+          {[
+            { id: 'orders-all', label: 'Toutes', icon: List },
+            { id: 'orders-new', label: 'Nouvelles', icon: Inbox },
+            { id: 'orders-recall', label: 'Rappels', icon: PhoneCall },
+            { id: 'inventory-stock', label: 'Stock', icon: Warehouse },
+            { id: 'salary-details', label: 'Salaire', icon: Banknote },
+          ].map((tab) => {
+            const isActive = activeSubModule === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveSubModule(tab.id);
+                  if (tab.id === 'salary-details') {
+                    setActiveModule('performance');
+                  } else if (tab.id === 'inventory-stock') {
+                    setActiveModule('inventory');
+                  } else {
+                    setActiveModule('orders');
+                  }
+                }}
+                className="flex flex-col items-center justify-center flex-1 py-1 gap-1"
+              >
+                <tab.icon className={cn("size-5 transition-all", isActive ? "text-indigo-600 scale-110 font-bold" : "text-slate-400")} />
+                <span className={cn("text-[9px] font-bold tracking-tight", isActive ? "text-indigo-600 font-black" : "text-slate-400")}>
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <ManualOrderModal isOpen={isCreatingOrder} setIsOpen={setIsCreatingOrder} />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useState } from 'react';
 import { useAppStore } from '@/store/app-store';
+import { captureAttribution } from '@/lib/attribution';
 import type { Store, User } from '@/lib/types';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Button } from '@/components/ui/button';
@@ -22,13 +23,25 @@ export function AppBootstrap() {
   const user = useAppStore((s) => s.user);
 
   // Check if user has staff access
-  const isStaff = user && ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'].includes(user.role);
+  const isStaff = user && ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR'].includes(user.role);
 
   const initialize = useCallback(async (signal?: AbortSignal) => {
     try {
+      console.log('[AppBootstrap] Fetching /api/v1/stores...');
       const storesRes = await fetch('/api/v1/stores', { signal });
-      if (!storesRes.ok) throw new Error(`API error ${storesRes.status}`);
+      console.log(`[AppBootstrap] /api/v1/stores response status: ${storesRes.status}`);
+      
+      if (!storesRes.ok) {
+        let errorText = '';
+        try {
+          errorText = await storesRes.text();
+        } catch {}
+        console.error(`[AppBootstrap] /api/v1/stores failed: ${storesRes.status} ${storesRes.statusText}\nBody:`, errorText);
+        throw new Error(`API error ${storesRes.status}`);
+      }
+      
       const storesData = await storesRes.json();
+      console.log('[AppBootstrap] /api/v1/stores success data:', storesData);
 
       // API returns either { success, data } or a plain array
       const stores: Store[] = Array.isArray(storesData)
@@ -37,36 +50,59 @@ export function AppBootstrap() {
 
       if (stores.length > 0) {
         setAllStores(stores);
-        // Validate the cached activeStore is still in the server list.
-        // After a backend restart or DB reset, the persisted store ID may no
-        // longer exist — in that case reset to the first available store.
-        const currentStore = useAppStore.getState().activeStore;
-        const isValid = currentStore && stores.some(s => s.id === currentStore.id);
-        if (!isValid) {
-          setActiveStore(stores[0]);
-        }
-      }
-
-      // Final check for user if not hydrated
-      if (!useAppStore.getState().user) {
-        try {
-          const meRes = await fetch('/api/v1/auth/me', {
-            signal,
-            credentials: 'include',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          });
-          if (meRes.ok) {
-            const meData = await meRes.json();
-            if (meData.success && meData.data) {
-              setUser(meData.data as User);
+        
+        // Final check for user if not hydrated
+        let currentUser = useAppStore.getState().user;
+        if (!currentUser) {
+          try {
+            console.log('[AppBootstrap] Fetching current user /api/v1/auth/me...');
+            const meRes = await fetch('/api/v1/auth/me', {
+              signal,
+              credentials: 'include',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            console.log(`[AppBootstrap] /api/v1/auth/me response status: ${meRes.status}`);
+            if (meRes.ok) {
+              const meData = await meRes.json();
+              if (meData.success && meData.data) {
+                setUser(meData.data as User);
+                currentUser = meData.data as User;
+              }
             }
+          } catch (meError) {
+            console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
           }
-        } catch { /* Auth restore is optional */ }
+        }
+
+        // Determine which store to activate
+        const currentCachedStore = useAppStore.getState().activeStore;
+        const isValidCached = currentCachedStore && stores.some(s => s.id === currentCachedStore.id);
+        
+        // Prioritize employee_store_id if they are an employee (CONFIRMATEUR, MANAGER, etc)
+        // This prevents an employee from getting stuck in a store they shouldn't focus on
+        // just because the admin previously had it cached in the browser.
+        let defaultStore = stores[0];
+        if (currentUser && currentUser.employee_store_id) {
+           const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
+           if (assignedStore) defaultStore = assignedStore;
+        }
+
+        if (!isValidCached) {
+          setActiveStore(defaultStore);
+        } else if (currentUser && currentUser.role !== 'SUPER_ADMIN' && currentUser.employee_store_id) {
+           // For non-super-admins, force them into their assigned store initially to avoid confusion
+           // if the cached store is from a different session
+           if (currentCachedStore.id !== currentUser.employee_store_id) {
+               const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
+               if (assignedStore) setActiveStore(assignedStore);
+           }
+        }
       }
 
       setIsReady(true);
     } catch (error: any) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error('[AppBootstrap] Initialization error details:', error);
       // Backend unreachable — if we have cached stores, show the app anyway
       if (useAppStore.getState().allStores.length > 0) {
         setIsReady(true);
@@ -79,6 +115,11 @@ export function AppBootstrap() {
       }, 3000);
     }
   }, [setActiveStore, setAllStores, setUser]);
+
+  // First-touch campaign attribution (utm_*, fbclid, referrer) — see lib/attribution
+  useEffect(() => {
+    captureAttribution();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -1,21 +1,23 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { CartItem, Product } from '@/lib/types';
+import { trackMetaEvent } from '@/lib/meta-pixel';
+import { useAppStore } from '@/store/app-store';
 
 interface CartState {
   items: CartItem[];
   isOpen: boolean;
   wishlistItems: string[];
-  addItem: (product: Product, quantity?: number, variant?: string) => void;
-  removeItem: (productId: string, variant?: string) => void;
-  updateQuantity: (productId: string, quantity: number, variant?: string) => void;
+  addItem: (product: Product, quantity?: number, variant?: string, customNotes?: string, customPrice?: number) => void;
+  removeItem: (productId: string, variant?: string, customNotes?: string) => void;
+  updateQuantity: (productId: string, quantity: number, variant?: string, customNotes?: string) => void;
   clearCart: () => void;
   toggleCart: () => void;
   openCart: () => void;
   closeCart: () => void;
   totalItems: () => number;
   totalPrice: () => number;
-  getItemQuantity: (productId: string, variant?: string) => number;
+  getItemQuantity: (productId: string, variant?: string, customNotes?: string) => number;
   toggleWishlist: (productId: string) => void;
   isInWishlist: (productId: string) => boolean;
 }
@@ -27,53 +29,67 @@ export const useCartStore = create<CartState>()(
       isOpen: false,
       wishlistItems: [],
 
-      addItem: (product, quantity = 1, variant) => {
+      addItem: (product, quantity = 1, variant, customNotes, customPrice) => {
         const items = [...get().items];
-        const key = variant
-          ? `${product.id}-${variant}`
-          : product.id;
+        const key = `${product.id}-${variant || ''}-${customNotes || ''}`;
         const existingIdx = items.findIndex((item) =>
-          variant
-            ? `${item.product.id}-${item.selectedVariant}` === key
-            : item.product.id === product.id && !item.selectedVariant
+          `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` === key
         );
 
         if (existingIdx >= 0) {
           items[existingIdx] = {
             ...items[existingIdx],
             quantity: items[existingIdx].quantity + quantity,
+            customPrice,
+            image_url: product.main_image || undefined,
+            sku: product.sku || undefined,
           };
         } else {
-          items.push({ product, quantity, selectedVariant: variant });
+          items.push({ 
+            product, 
+            quantity, 
+            selectedVariant: variant, 
+            customNotes, 
+            customPrice,
+            image_url: product.main_image || undefined,
+            sku: product.sku || undefined,
+          });
         }
+
+        // Meta Pixel + CAPI AddToCart (shared event_id — Meta deduplicates)
+        try {
+          const storeId = useAppStore.getState().activeStore?.id;
+          trackMetaEvent('AddToCart', {
+            content_ids: [product.id],
+            content_name: product.name,
+            content_type: 'product',
+            contents: [{ id: product.id, quantity, item_price: customPrice ?? product.price }],
+            value: (customPrice ?? product.price) * quantity,
+            currency: 'DZD',
+          }, { storeId });
+        } catch { /* never break the cart */ }
 
         set({ items });
       },
 
-      removeItem: (productId, variant) => {
+      removeItem: (productId, variant, customNotes) => {
         set({
           items: get().items.filter((item) =>
-            variant
-              ? !(item.product.id === productId && item.selectedVariant === variant)
-              : item.product.id !== productId
+            `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` !== `${productId}-${variant || ''}-${customNotes || ''}`
           ),
         });
       },
 
-      updateQuantity: (productId, quantity, variant) => {
+      updateQuantity: (productId, quantity, variant, customNotes) => {
         if (quantity <= 0) {
-          get().removeItem(productId, variant);
+          get().removeItem(productId, variant, customNotes);
           return;
         }
         set({
           items: get().items.map((item) =>
-            variant
-              ? item.product.id === productId && item.selectedVariant === variant
-                ? { ...item, quantity }
-                : item
-              : item.product.id === productId
-                ? { ...item, quantity }
-                : item
+            `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}` === `${productId}-${variant || ''}-${customNotes || ''}`
+              ? { ...item, quantity }
+              : item
           ),
         });
       },
@@ -89,19 +105,21 @@ export const useCartStore = create<CartState>()(
       totalPrice: () =>
         get().items.reduce(
           (sum, item) => {
-            const modifier = item.selectedVariant
-              ? item.product.variants?.find(v => v.value === item.selectedVariant)?.priceModifier ?? 0
+            if (!item?.product) return sum;
+            if (item.customPrice !== undefined && item.customPrice !== null) {
+              return sum + item.customPrice * item.quantity;
+            }
+            const modifier = item.selectedVariant && item.product.variants
+              ? item.product.variants.find((v: any) => v.value === item.selectedVariant)?.priceModifier ?? 0
               : 0;
             return sum + (item.product.price + modifier) * item.quantity;
           },
           0
         ),
 
-      getItemQuantity: (productId, variant) => {
+      getItemQuantity: (productId, variant, customNotes) => {
         const item = get().items.find((i) =>
-          variant
-            ? i.product.id === productId && i.selectedVariant === variant
-            : i.product.id === productId && !i.selectedVariant
+          `${i.product.id}-${i.selectedVariant || ''}-${i.customNotes || ''}` === `${productId}-${variant || ''}-${customNotes || ''}`
         );
         return item?.quantity ?? 0;
       },

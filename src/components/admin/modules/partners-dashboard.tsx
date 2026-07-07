@@ -42,6 +42,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button as UIButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import MetaAdsDashboard from './meta-ads-dashboard';
+import TikTokAdsDashboard from './tiktok-ads-dashboard';
 
 export default function PartnersDashboard() {
   const { activeStore } = useAppStore();
@@ -130,8 +133,23 @@ export default function PartnersDashboard() {
 
   return (
     <div className="space-y-6 pb-28 animate-in fade-in duration-500">
-      
-      {/* ─── Modern & Human Header ─── */}
+      <Tabs defaultValue="api" className="space-y-6">
+        <div className="flex justify-center sm:justify-start">
+          <TabsList className="bg-white border rounded-2xl p-1 h-auto shadow-sm">
+            <TabsTrigger value="api" className="rounded-xl px-8 h-11 font-black uppercase tracking-widest text-[11px] data-[state=active]:bg-[#6C5CE7] data-[state=active]:text-white transition-all">
+              API & Logistique
+            </TabsTrigger>
+            <TabsTrigger value="meta" className="rounded-xl px-8 h-11 font-black uppercase tracking-widest text-[11px] data-[state=active]:bg-[#1877F2] data-[state=active]:text-white transition-all">
+              Meta Ads & Marketing
+            </TabsTrigger>
+            <TabsTrigger value="tiktok" className="rounded-xl px-8 h-11 font-black uppercase tracking-widest text-[11px] data-[state=active]:bg-black data-[state=active]:text-white transition-all">
+              TikTok Ads
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="api" className="space-y-6 outline-none">
+          {/* ─── Modern & Human Header ─── */}
       <div className="bg-white rounded-[40px] border px-10 py-12 shadow-sm relative overflow-hidden" style={{ borderColor: C.border }}>
          <div className="absolute top-0 right-0 p-12 opacity-[0.03] text-[#6C5CE7] rotate-12">
             <Zap className="size-48" />
@@ -390,6 +408,20 @@ export default function PartnersDashboard() {
             </DialogFooter>
          </DialogContent>
       </Dialog>
+      </TabsContent>
+
+      <TabsContent value="meta" className="outline-none">
+        <div className="mt-2">
+          <MetaAdsDashboard />
+        </div>
+      </TabsContent>
+
+      <TabsContent value="tiktok" className="outline-none">
+        <div className="mt-2">
+          <TikTokAdsDashboard />
+        </div>
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }

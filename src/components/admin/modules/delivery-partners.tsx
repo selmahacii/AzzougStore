@@ -64,6 +64,20 @@ const KNOWN_CARRIERS = [
     fields: ['api_token', 'guid'],
   },
   {
+    id: 'zr_express',
+    name: 'ZR Express',
+    logo: '⚡',
+    color: '#6C5CE7',
+    website: 'https://zrexpress.app',
+    description: 'Transporteur algérien nouvelle génération. API moderne, webhooks, tracking temps réel.',
+    features: ['Tracking temps réel', 'Webhooks', 'COD', 'Dashboard fournisseur'],
+    pricing: { home: 'Selon grille tarifaire', relay: 'Selon grille tarifaire' },
+    api_docs: 'https://api.zrexpress.app',
+    sandbox_url: 'https://api.zrexpress.app/api/v1',
+    prod_url: 'https://api.zrexpress.app/api/v1',
+    fields: ['secret_key', 'tenant_id'],
+  },
+  {
     id: 'add_new',
     name: 'Ajouter un transporteur',
     logo: '➕',
@@ -261,8 +275,8 @@ function TrackingLookup({ storeId }: { storeId: string }) {
             </div>
           </div>
 
-          <div className="p-7">
-            <div className="flex items-center justify-between mb-5">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
               <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Historique des événements</h4>
               <button onClick={() => trackingQuery.refetch()} disabled={trackingQuery.isFetching}
                 className="flex items-center gap-1.5 text-[10px] font-black text-[#4b7bec] hover:underline disabled:opacity-50">
@@ -271,48 +285,56 @@ function TrackingLookup({ storeId }: { storeId: string }) {
             </div>
 
             {trackingQuery.isLoading ? (
-              <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}</div>
+              <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full rounded-xl" />)}</div>
             ) : events.length === 0 ? (
               <div className="text-center py-10 text-slate-300">
                 <Package className="size-10 mx-auto mb-2" />
                 <p className="text-xs font-bold uppercase">Aucun événement disponible</p>
               </div>
             ) : (
-              <div className="space-y-0">
-                {events.map((ev: any, i: number) => {
-                  const isFirst = i === 0;
-                  const isLast = i === events.length - 1;
-                  return (
-                    <div key={i} className="flex gap-4">
-                      <div className="flex flex-col items-center shrink-0 w-8">
-                        <div className={cn("size-3.5 rounded-full border-2 z-10 shrink-0 mt-1",
-                          isFirst ? "border-[#4b7bec] bg-[#4b7bec]" : "border-slate-200 bg-white"
-                        )} />
-                        {!isLast && <div className="w-px flex-1 bg-slate-100 my-1" />}
-                      </div>
-                      <div className={cn("pb-5 flex-1", isLast && "pb-0")}>
-                        <div className={cn("p-3 rounded-xl border transition-all", isFirst ? "bg-[#F0F5FF] border-[#4b7bec]/20" : "bg-slate-50 border-slate-100")}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className={cn("text-xs font-black", isFirst ? "text-[#4b7bec]" : "text-slate-700")}>
-                                {ev.label ?? ev.status ?? ev.event}
-                              </p>
-                              {ev.location && (
-                                <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                                  <MapPin className="size-3" /> {ev.location}
-                                </p>
-                              )}
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-[10px] font-bold text-slate-500">{ev.date}</p>
-                              {ev.time && <p className="text-[9px] text-slate-400">{ev.time}</p>}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="overflow-hidden rounded-2xl border border-slate-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest w-8">#</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Heure</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Événement</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Lieu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {events.map((ev: any, i: number) => {
+                      const rawStatus = (ev.status ?? ev.label ?? '').toUpperCase().replace(/ /g, '_');
+                      const stCfg = TRACKING_STATUS_CONFIG[rawStatus] ?? TRACKING_STATUS_CONFIG.PENDING;
+                      const isLatest = i === 0;
+                      return (
+                        <tr key={i} className={cn("transition-colors", isLatest ? "bg-[#F0F5FF]" : "hover:bg-slate-50/60")}>
+                          <td className="px-4 py-3 text-[10px] font-mono text-slate-300">{events.length - i}</td>
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                            <span className="font-bold">{ev.date ?? '—'}</span>
+                            {ev.time && <span className="text-slate-400 ml-1.5">{ev.time}</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black"
+                              style={{ color: stCfg.color, backgroundColor: stCfg.bg }}>
+                              {stCfg.pulse && isLatest && <span className="size-1.5 rounded-full animate-pulse inline-block" style={{ backgroundColor: stCfg.color }} />}
+                              {stCfg.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-700 max-w-[200px] truncate">
+                            {ev.label ?? ev.status ?? ev.event ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-[11px]">
+                            {ev.location ? (
+                              <span className="flex items-center gap-1"><MapPin className="size-3 shrink-0" />{ev.location}</span>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -331,6 +353,8 @@ function getFieldLabel(field: string): string {
   if (field === 'guid') return 'GUID utilisateur';
   if (field === 'api_key') return 'Clé API';
   if (field === 'secret') return 'Secret';
+  if (field === 'secret_key') return 'Secret Key (ZR Express)';
+  if (field === 'tenant_id') return 'Tenant ID (ZR Express)';
   if (field === 'store_id') return 'Store ID';
   if (field === 'token') return 'Token';
   if (field === 'api_url') return 'URL API';
@@ -360,7 +384,40 @@ function PartnerModal({
   const [wilayaFees, setWilayaFees] = useState<WilayaFees>({});
   const [savingFees, setSavingFees] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [loadingFees, setLoadingFees] = useState(false);
   const qc = useQueryClient();
+
+  // Sync flat fees if existingPartner arrives after mount (query refetch)
+  useEffect(() => {
+    if (!existingPartner) return;
+    console.log('[DeliveryPartners] existingPartner sync', existingPartner);
+    setFeeHome(String(existingPartner.fee_home ?? ''));
+    setFeeRelay(String(existingPartner.fee_relay ?? ''));
+    setFreeThreshold(String(existingPartner.free_shipping_threshold ?? ''));
+    setIsSandbox(existingPartner.is_sandbox ?? false);
+    setSavedPartnerId(existingPartner.id ?? null);
+  }, [open, existingPartner?.id, existingPartner?.fee_home, existingPartner?.fee_relay, existingPartner?.free_shipping_threshold]);
+
+  // Load existing fee grid when opening for an existing partner
+  useEffect(() => {
+    if (!open || !existingPartner?.id) return;
+    console.log('[DeliveryPartners] loading fees for partner', existingPartner.id);
+    setLoadingFees(true);
+    apiFetch(`/api/v1/delivery-partners/${existingPartner.id}/fees`)
+      .then((res: any) => {
+        console.log('[DeliveryPartners] fees loaded', res);
+        const entries: Array<{ wilaya_id: number; home_fee: number; office_fee: number }> = res?.data ?? [];
+        if (entries.length > 0) {
+          const loaded: WilayaFees = {};
+          for (const e of entries) {
+            loaded[e.wilaya_id] = { home: String(e.home_fee || ''), desk: String(e.office_fee || '') };
+          }
+          setWilayaFees(loaded);
+        }
+      })
+      .catch((e: any) => { console.error('[DeliveryPartners] fees load ERROR', e); })
+      .finally(() => setLoadingFees(false));
+  }, [open, existingPartner?.id]);
 
   if (!carrier) return null;
 
@@ -391,21 +448,35 @@ function PartnerModal({
   };
 
   const handleSyncWilayas = async () => {
-    if (!storeId) return;
+    if (!savedPartnerId) return;
     setSyncing(true);
     try {
-      const res: any = await apiFetch(`/api/yalidine/wilayas?store_id=${storeId}`, { method: 'POST' });
-      toast.success(res?.message ?? 'Wilayas synchronisées');
-      const fees: any = await apiFetch(`/api/yalidine/wilayas?store_id=${storeId}`);
-      setSyncedFees(fees?.data ?? []);
+      const res: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/sync-fees`, { method: 'POST' });
+      toast.success(res?.message ?? 'Tarifs synchronisés depuis l\'API');
+      
+      // Recharger la grille tarifaire après synchronisation
+      setLoadingFees(true);
+      const feesRes: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/fees`);
+      const entries: Array<{ wilaya_id: number; home_fee: number; office_fee: number }> = feesRes?.data ?? [];
+      if (entries.length > 0) {
+        const loaded: WilayaFees = {};
+        for (const e of entries) {
+          loaded[e.wilaya_id] = { home: String(e.home_fee || ''), desk: String(e.office_fee || '') };
+        }
+        setWilayaFees(loaded);
+      }
+      setLoadingFees(false);
+      
       qc.invalidateQueries({ queryKey: ['delivery-partners'] });
     } catch (e: any) {
-      toast.error(e?.message ?? 'Erreur synchronisation Yalidine');
+      toast.error(e?.message ?? 'Erreur synchronisation API');
+      setLoadingFees(false);
     } finally {
       setSyncing(false);
     }
   };
 
+  // Single save: partner config + fees grid in one shot
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -413,47 +484,88 @@ function PartnerModal({
       const feeRelayVal = parseFloat(feeRelay) || 0;
       const threshold = freeThreshold ? parseFloat(freeThreshold) : null;
 
-      if (savedPartnerId) {
-        // Update existing — PATCH only changed fields (no API key re-send needed)
-        await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}`, {
+      console.log('[DeliveryPartners] handleSave START', {
+        savedPartnerId, carrierId: carrier.id, storeId,
+        feeHomeVal, feeRelayVal, isSandbox,
+        formKeys: Object.keys(form),
+        wilayaFeesCount: Object.keys(wilayaFees).length,
+      });
+
+      let partnerId = savedPartnerId;
+
+      if (partnerId) {
+        const patchBody = {
+          is_sandbox: isSandbox,
+          fee_home: feeHomeVal,
+          fee_relay: feeRelayVal,
+          free_shipping_threshold: threshold,
+          ...(Object.keys(form).length > 0 ? { api_config: form } : {}),
+        };
+        console.log('[DeliveryPartners] PATCH partner', partnerId, patchBody);
+        const res: any = await apiFetch(`/api/v1/delivery-partners/${partnerId}`, {
           method: 'PATCH',
-          body: JSON.stringify({
-            is_sandbox: isSandbox,
-            fee_home: feeHomeVal,
-            fee_relay: feeRelayVal,
-            free_shipping_threshold: threshold,
-            ...(Object.keys(form).length > 0 ? { api_config: form } : {}),
-          }),
+          body: JSON.stringify(patchBody),
         });
+        console.log('[DeliveryPartners] PATCH response', res);
       } else {
+        const postBody = {
+          store_id: storeId,
+          carrier_id: carrier.id,
+          name: carrier.name,
+          is_sandbox: isSandbox,
+          api_config: form,
+          fee_home: feeHomeVal,
+          fee_relay: feeRelayVal,
+          free_shipping_threshold: threshold,
+        };
+        console.log('[DeliveryPartners] POST partner', postBody);
         const res: any = await apiFetch('/api/v1/delivery-partners', {
           method: 'POST',
-          body: JSON.stringify({
-            store_id: storeId,
-            carrier_id: carrier.id,
-            name: carrier.name,
-            is_sandbox: isSandbox,
-            api_config: form,
-            fee_home: feeHomeVal,
-            fee_relay: feeRelayVal,
-            free_shipping_threshold: threshold,
-          }),
+          body: JSON.stringify(postBody),
         });
-        setSavedPartnerId(res?.data?.id ?? res?.id ?? null);
+        console.log('[DeliveryPartners] POST response', res);
+        partnerId = res?.data?.id ?? res?.id ?? null;
+        console.log('[DeliveryPartners] new partnerId', partnerId);
+        if (partnerId) setSavedPartnerId(partnerId);
       }
-      toast.success(`${carrier.name} configuré avec succès`);
+
+      // Always save fees grid if partner saved successfully
+      if (partnerId) {
+        const fees = Object.entries(wilayaFees)
+          .filter(([, v]) => v.home !== '' || v.desk !== '')
+          .map(([id, v]) => ({
+            wilaya_id: parseInt(id),
+            home_fee: parseFloat(v.home) || 0,
+            office_fee: parseFloat(v.desk) || 0,
+          }));
+        console.log('[DeliveryPartners] saving fees grid', fees.length, 'entries');
+        if (fees.length > 0) {
+          const feesRes: any = await apiFetch(`/api/v1/delivery-partners/${partnerId}/fees`, {
+            method: 'POST',
+            body: JSON.stringify({ fees }),
+          });
+          console.log('[DeliveryPartners] fees grid saved', feesRes);
+        }
+      }
+
+      toast.success(`${carrier.name} — configuration sauvegardée`);
       onSaved();
     } catch (e: any) {
+      console.error('[DeliveryPartners] handleSave ERROR', e);
       toast.error(e?.message || 'Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
     }
   };
 
+  // Keep handleSaveFees for the standalone button on the wilayas tab
   const handleSaveFees = async () => {
     const partnerId = savedPartnerId;
+    console.log('[DeliveryPartners] handleSaveFees START', { partnerId, wilayaFeesCount: Object.keys(wilayaFees).length });
+
     if (!partnerId) {
-      toast.error('Enregistrez la configuration API d\'abord.');
+      console.warn('[DeliveryPartners] handleSaveFees ABORTED — no savedPartnerId');
+      toast.error('Enregistrez d\'abord la configuration API.');
       return;
     }
     const fees = Object.entries(wilayaFees)
@@ -463,18 +575,23 @@ function PartnerModal({
         home_fee: parseFloat(v.home) || 0,
         office_fee: parseFloat(v.desk) || 0,
       }));
+    console.log('[DeliveryPartners] fees to save', fees.length, fees.slice(0, 3));
+
     if (fees.length === 0) {
       toast.error('Aucun tarif saisi.');
       return;
     }
     setSavingFees(true);
     try {
-      await apiFetch(`/api/v1/delivery-partners/${partnerId}/fees`, {
+      const res: any = await apiFetch(`/api/v1/delivery-partners/${partnerId}/fees`, {
         method: 'POST',
         body: JSON.stringify({ fees }),
       });
-      toast.success('Tarifs par wilaya sauvegardés');
+      console.log('[DeliveryPartners] fees save response', res);
+      toast.success(`${fees.length} tarifs sauvegardés`);
+      onSaved();
     } catch (e: any) {
+      console.error('[DeliveryPartners] handleSaveFees ERROR', e);
       toast.error(e?.message ?? 'Erreur sauvegarde des tarifs');
     } finally {
       setSavingFees(false);
@@ -653,15 +770,15 @@ function PartnerModal({
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">Grille Tarifaire par Wilaya (58 Wilayas)</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {carrier.id === 'yalidine' && savedPartnerId && (
+                    {['yalidine', 'zr_express'].includes(carrier.id) && savedPartnerId && (
                       <Button
                         onClick={handleSyncWilayas}
                         disabled={syncing}
                         size="sm"
-                        className="h-8 rounded-lg text-[10px] font-black uppercase bg-[#FF6B35] text-white hover:bg-[#e55a27]"
+                        className="h-8 rounded-lg text-[10px] font-black uppercase bg-[#4b7bec] text-white hover:bg-blue-600"
                       >
                         {syncing ? <Loader2 className="size-3 animate-spin mr-1" /> : <RefreshCw className="size-3 mr-1" />}
-                        Sync Yalidine
+                        Sync depuis API
                       </Button>
                     )}
                   </div>
@@ -748,16 +865,16 @@ function PartnerModal({
 
                     <Button
                       onClick={handleSaveFees}
-                      disabled={savingFees}
+                      disabled={savingFees || loadingFees}
                       className="w-full h-12 rounded-2xl font-black uppercase tracking-widest text-[11px] bg-[#4b7bec] text-white"
                     >
-                      {savingFees ? <Loader2 className="size-4 animate-spin mr-2" /> : <Check className="size-4 mr-2" />}
-                      Sauvegarder les tarifs
+                      {(savingFees || loadingFees) ? <Loader2 className="size-4 animate-spin mr-2" /> : <Check className="size-4 mr-2" />}
+                      {loadingFees ? 'Chargement...' : 'Sauvegarder les tarifs'}
                     </Button>
 
-                    {carrier.id === 'yalidine' && !savedPartnerId && (
+                    {['yalidine', 'zr_express'].includes(carrier.id) && !savedPartnerId && (
                       <p className="text-[11px] text-slate-400 text-center font-medium">
-                        Enregistrez la configuration pour synchroniser les tarifs depuis Yalidine
+                        Enregistrez la configuration pour pouvoir synchroniser les tarifs automatiquement depuis l'API.
                       </p>
                     )}
                   </>
@@ -861,6 +978,63 @@ function PartnerModal({
                     <p className="font-mono text-emerald-600 break-all text-[10px]">{carrier.prod_url || '—'}</p>
                   </div>
                 </div>
+
+                {/* ── Traceability ── */}
+                {existingPartner && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Traçabilité de la connexion</p>
+                    <div className="overflow-hidden rounded-2xl border border-slate-100">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <th className="px-4 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Événement</th>
+                            <th className="px-4 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Date & heure</th>
+                            <th className="px-4 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          <tr>
+                            <td className="px-4 py-3 font-bold text-slate-700">Première configuration</td>
+                            <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">
+                              {existingPartner.created_at ? new Date(existingPartner.created_at).toLocaleString('fr-FR') : '—'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-[#F0EDFF] text-[#6C5CE7]">Enregistré</span>
+                            </td>
+                          </tr>
+                          {(existingPartner as any).updated_at && (existingPartner as any).updated_at !== existingPartner.created_at && (
+                            <tr>
+                              <td className="px-4 py-3 font-bold text-slate-700">Dernière modification</td>
+                              <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">
+                                {new Date((existingPartner as any).updated_at).toLocaleString('fr-FR')}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-700">Mis à jour</span>
+                              </td>
+                            </tr>
+                          )}
+                          {existingPartner.last_test_at && (
+                            <tr>
+                              <td className="px-4 py-3 font-bold text-slate-700">Dernier test de connexion</td>
+                              <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">
+                                {new Date(existingPartner.last_test_at).toLocaleString('fr-FR')}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black",
+                                  existingPartner.last_test_ok
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-rose-100 text-rose-700"
+                                )}>
+                                  {existingPartner.last_test_ok ? '✓ Succès' : '✗ Échec'}
+                                </span>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             </div>
           </Tabs>
@@ -901,11 +1075,236 @@ function normalizeTab(sv: string | null): TabId {
 }
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────
+// ─── CUSTOM CARRIER MODAL ─────────────────────────────────────
+// ─── CARRIER ORDERS LIST ──────────────────────────────────────
+function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: DeliveryPartner[] }) {
+  const [selectedCarrierId, setSelectedCarrierId] = useState<string>('all');
+  const [trackingSearch, setTrackingSearch] = useState('');
+  const [page, setPage] = useState(1);
+
+  const ordersQuery = useQuery({
+    queryKey: ['carrier-orders', storeId, selectedCarrierId, trackingSearch, page],
+    queryFn: () => {
+      const params = new URLSearchParams({ store_id: storeId, page: String(page), pageSize: '20', status: 'SHIPPED' });
+      if (selectedCarrierId !== 'all') params.set('carrier_id', selectedCarrierId);
+      if (trackingSearch) params.set('search', trackingSearch);
+      return apiFetch(`/api/v1/orders?${params}`);
+    },
+    enabled: !!storeId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const orders: any[] = (ordersQuery.data as any)?.data ?? [];
+  const total: number = (ordersQuery.data as any)?.total ?? 0;
+  const totalPages: number = (ordersQuery.data as any)?.totalPages ?? 1;
+
+  const allCarriers = [
+    ...KNOWN_CARRIERS.filter(c => c.id !== 'add_new'),
+    ...partners.filter(p => !['yalidine', 'noest'].includes(p.carrier_id)).map(p => ({ id: p.carrier_id, name: p.name, logo: '🚚', color: '#4b7bec' })),
+  ];
+
+  return (
+    <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+      <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3 flex-1">
+          <Package className="size-4 text-[#4b7bec] shrink-0" />
+          <h3 className="text-sm font-black text-slate-700 uppercase tracking-tight">Commandes en Transit</h3>
+          <span className="text-[10px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-100">{total} colis</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Carrier filter */}
+          <select
+            value={selectedCarrierId}
+            onChange={e => { setSelectedCarrierId(e.target.value); setPage(1); }}
+            className="h-9 rounded-xl border border-slate-100 bg-slate-50 text-xs font-bold text-slate-700 px-3 focus:outline-none focus:border-[#4b7bec]"
+          >
+            <option value="all">Tous les transporteurs</option>
+            {allCarriers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-300" />
+            <Input
+              value={trackingSearch}
+              onChange={e => { setTrackingSearch(e.target.value); setPage(1); }}
+              placeholder="Client, tracking..."
+              className="h-9 pl-9 pr-3 rounded-xl border-slate-100 bg-slate-50 text-xs font-medium w-44"
+            />
+          </div>
+          <button onClick={() => ordersQuery.refetch()} className="h-9 w-9 rounded-xl border border-slate-100 bg-slate-50 flex items-center justify-center text-slate-400 hover:text-[#4b7bec] transition-all">
+            <RefreshCw className={cn("size-3.5", ordersQuery.isFetching && "animate-spin")} />
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left min-w-[700px]">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              {['Commande', 'Client', 'Transporteur', 'Wilaya', 'Tracking', 'Statut', 'Date expéd.'].map(h => (
+                <th key={h} className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {ordersQuery.isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}><td colSpan={7} className="px-5 py-3"><div className="h-8 bg-slate-100 rounded-xl animate-pulse" /></td></tr>
+              ))
+            ) : orders.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-5 py-12 text-center text-slate-300">
+                  <Package className="size-8 mx-auto mb-2" />
+                  <p className="text-xs font-bold uppercase">Aucune commande en transit</p>
+                </td>
+              </tr>
+            ) : orders.map((order: any) => {
+              const carrier = allCarriers.find(c => c.id === order.carrier_id) ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
+              const statusCfg = TRACKING_STATUS_CONFIG[order.delivery_status?.toUpperCase() ?? ''] ?? TRACKING_STATUS_CONFIG.PENDING;
+              return (
+                <tr key={order.id} className="hover:bg-slate-50/60 transition-colors group">
+                  <td className="px-5 py-3">
+                    <p className="text-xs font-black text-slate-800 font-mono">{order.order_number ?? order.id?.slice(0, 8)}</p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <p className="text-xs font-bold text-slate-700">{order.customer_name}</p>
+                    <p className="text-[10px] text-slate-400 font-mono">{order.customer_phone}</p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-xs font-bold">{carrier.logo} {carrier.name}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-xs font-medium text-slate-600">{order.wilaya ?? '—'}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    {order.tracking_number ? (
+                      <code className="text-[10px] font-black font-mono bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg text-[#4b7bec]">{order.tracking_number}</code>
+                    ) : <span className="text-slate-300 text-[10px]">—</span>}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black" style={{ color: statusCfg.color, backgroundColor: statusCfg.bg }}>
+                      {statusCfg.pulse && <span className="size-1.5 rounded-full animate-pulse inline-block" style={{ backgroundColor: statusCfg.color }} />}
+                      {statusCfg.label}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {order.shipped_at ? new Date(order.shipped_at).toLocaleDateString('fr-FR') : order.updated_at ? new Date(order.updated_at).toLocaleDateString('fr-FR') : '—'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+          <span className="text-[10px] font-bold text-slate-400">{total} commandes</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="size-8 rounded-xl border border-slate-100 bg-white flex items-center justify-center text-slate-400 disabled:opacity-30 hover:text-[#4b7bec] transition-all">
+              <ChevronRight className="size-4 rotate-180" />
+            </button>
+            <span className="text-[11px] font-black text-slate-600">{page}/{totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="size-8 rounded-xl border border-slate-100 bg-white flex items-center justify-center text-slate-400 disabled:opacity-30 hover:text-[#4b7bec] transition-all">
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomCarrierModal({ open, onClose, storeId, onSaved }: { open: boolean; onClose: () => void; storeId: string; onSaved: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ name: '', api_url: '', api_key: '', fee_home: '', fee_relay: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast.error('Nom du transporteur requis'); return; }
+    setSaving(true);
+    try {
+      const carrierId = form.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      await apiFetch('/api/v1/delivery-partners', {
+        method: 'POST',
+        body: JSON.stringify({
+          store_id: storeId,
+          carrier_id: carrierId,
+          name: form.name,
+          is_sandbox: false,
+          api_config: { api_url: form.api_url, api_key: form.api_key, notes: form.notes },
+          fee_home: parseFloat(form.fee_home) || 0,
+          fee_relay: parseFloat(form.fee_relay) || 0,
+        }),
+      });
+      toast.success(`${form.name} ajouté avec succès`);
+      qc.invalidateQueries({ queryKey: ['delivery-partners'] });
+      onSaved();
+      onClose();
+      setForm({ name: '', api_url: '', api_key: '', fee_home: '', fee_relay: '', notes: '' });
+    } catch (e: any) {
+      toast.error(e?.message || 'Erreur lors de l\'ajout');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={o => !o && onClose()}>
+      <DialogContent className="max-w-xl rounded-[32px] p-0 overflow-hidden border-none shadow-2xl">
+        <div className="bg-[#2D3436] p-7 text-white">
+          <DialogTitle className="text-lg font-black uppercase tracking-tight">Ajouter un transporteur personnalisé</DialogTitle>
+          <DialogDescription className="text-white/40 text-[10px] font-bold uppercase tracking-widest mt-1">Connectez n'importe quel carrier avec son API</DialogDescription>
+        </div>
+        <div className="p-7 space-y-5">
+          <div className="space-y-2">
+            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Nom du transporteur *</label>
+            <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: MonCarrier DZ" className="h-12 rounded-xl border-slate-100" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Tarif domicile (DA)</label>
+              <Input type="number" value={form.fee_home} onChange={e => setForm({ ...form, fee_home: e.target.value })} placeholder="350" className="h-12 rounded-xl border-slate-100" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Tarif relais (DA)</label>
+              <Input type="number" value={form.fee_relay} onChange={e => setForm({ ...form, fee_relay: e.target.value })} placeholder="250" className="h-12 rounded-xl border-slate-100" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">URL API (optionnel)</label>
+            <Input value={form.api_url} onChange={e => setForm({ ...form, api_url: e.target.value })} placeholder="https://api.moncarrier.dz/v1" className="h-12 rounded-xl border-slate-100" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Clé API / Token (optionnel)</label>
+            <Input type="password" value={form.api_key} onChange={e => setForm({ ...form, api_key: e.target.value })} placeholder="••••••••••••" className="h-12 rounded-xl border-slate-100" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Notes internes</label>
+            <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Ex: Contactez support@moncarrier.dz pour webhooks" rows={2} className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50/50 text-sm font-medium resize-none outline-none focus:border-[#4b7bec]" />
+          </div>
+        </div>
+        <div className="px-7 pb-7 flex justify-end gap-3">
+          <button onClick={onClose} className="h-12 px-6 rounded-xl text-slate-400 font-black text-[11px] uppercase tracking-widest hover:text-slate-600">Annuler</button>
+          <Button onClick={handleSave} disabled={saving} className="h-12 px-8 rounded-xl bg-[#2D3436] text-white font-black text-[11px] uppercase tracking-widest">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : 'Ajouter le Transporteur'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function DeliveryPartners() {
   const { activeStore, adminSubView } = useAppStore();
   const [search, setSearch] = useState('');
   const [selectedCarrier, setSelectedCarrier] = useState<typeof KNOWN_CARRIERS[0] | null>(null);
+  const [showCustomModal, setShowCustomModal] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>(normalizeTab(adminSubView));
+  const [statsPeriod, setStatsPeriod] = useState<'today' | '7d' | '30d' | 'all_time'>('30d');
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -920,10 +1319,11 @@ export default function DeliveryPartners() {
   });
 
   const statsQuery = useQuery({
-    queryKey: ['delivery-stats', activeStore?.id],
-    queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=shipping&period=30d`),
+    queryKey: ['delivery-stats', activeStore?.id, statsPeriod],
+    queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
     enabled: !!activeStore?.id && activeTab === 'stats',
     retry: false,
+    refetchInterval: activeTab === 'stats' ? 60_000 : false,
   });
 
   const deletePartner = useMutation({
@@ -1014,15 +1414,15 @@ export default function DeliveryPartners() {
                 return (
                   <div
                     key={carrier.id}
-                    onClick={() => toast.info('Bientôt disponible — de nouveaux transporteurs arrivent prochainement !')}
-                    className="bg-white rounded-[32px] border-2 border-dashed border-slate-200 p-7 flex flex-col items-center justify-center text-center gap-3 cursor-pointer hover:border-slate-300 hover:bg-slate-50 transition-all min-h-[220px] group"
+                    onClick={() => setShowCustomModal(true)}
+                    className="bg-white rounded-[32px] border-2 border-dashed border-slate-200 p-7 flex flex-col items-center justify-center text-center gap-3 cursor-pointer hover:border-[#4b7bec] hover:bg-[#F0F5FF] transition-all min-h-[220px] group"
                   >
-                    <div className="size-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl group-hover:bg-slate-200 transition-all">
+                    <div className="size-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl group-hover:bg-[#4b7bec] group-hover:text-white transition-all">
                       ➕
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-slate-500">{carrier.name}</h3>
-                      <p className="text-[11px] text-slate-400 font-medium mt-1">Bientôt disponible</p>
+                      <h3 className="text-sm font-black text-slate-600 group-hover:text-[#4b7bec]">Transporteur personnalisé</h3>
+                      <p className="text-[11px] text-slate-400 font-medium mt-1">Connecter n'importe quel carrier avec son API</p>
                     </div>
                   </div>
                 );
@@ -1093,31 +1493,54 @@ export default function DeliveryPartners() {
       )}
 
       {activeTab === 'tracking' && (
-        <div className="max-w-3xl mx-auto">
-          <TrackingLookup storeId={activeStore?.id ?? ''} />
+        <div className="space-y-6">
+          <div className="max-w-3xl mx-auto">
+            <TrackingLookup storeId={activeStore?.id ?? ''} />
+          </div>
+          <CarrierOrdersList storeId={activeStore?.id ?? ''} partners={partners} />
         </div>
       )}
 
       {activeTab === 'stats' && (() => {
         const sd = (statsQuery.data as any)?.data;
         const carriers: any[] = sd?.carriers ?? [];
-        const totalOrders = carriers.reduce((s: number, c: any) => s + (c.totalOrders ?? 0), 0);
-        const avgDeliveryRate = carriers.length > 0
-          ? (carriers.reduce((s: number, c: any) => s + (c.deliveryRate ?? 0), 0) / carriers.length).toFixed(1)
-          : '—';
-        const avgDays = carriers.length > 0
-          ? (carriers.reduce((s: number, c: any) => s + (c.avgDays ?? 0), 0) / carriers.length).toFixed(1)
-          : '—';
-        const totalReturns = carriers.reduce((s: number, c: any) => s + Math.round((c.totalOrders ?? 0) * (c.returnRate ?? 0) / 100), 0);
+        const summary = sd?.summary ?? {};
+        const dailyBreakdown: any[] = sd?.dailyBreakdown ?? [];
+
+        const totalOrders = summary.totalShipped ?? carriers.reduce((s: number, c: any) => s + (c.totalOrders ?? 0), 0);
+        const totalDelivered = summary.totalDelivered ?? carriers.reduce((s: number, c: any) => s + (c.deliveredOrders ?? 0), 0);
+        const totalReturned = summary.totalReturned ?? carriers.reduce((s: number, c: any) => s + (c.returnedOrders ?? 0), 0);
+        const avgDeliveryRate = summary.avgDeliveryRate != null ? summary.avgDeliveryRate.toFixed(1) : (carriers.length > 0 ? (carriers.reduce((s: number, c: any) => s + (c.deliveryRate ?? 0), 0) / carriers.length).toFixed(1) : null);
+        const avgReturnRate = summary.avgReturnRate != null ? summary.avgReturnRate.toFixed(1) : null;
+        const avgDays = carriers.length > 0 ? (carriers.reduce((s: number, c: any) => s + (c.avgDeliveryDays ?? 0), 0) / carriers.length).toFixed(1) : null;
         const topCarrier = carriers.length > 0 ? carriers.reduce((a: any, b: any) => (a.deliveryRate ?? 0) > (b.deliveryRate ?? 0) ? a : b) : null;
+
+        const PERIOD_LABELS: Record<string, string> = { today: "Aujourd'hui", '7d': '7 Jours', '30d': '30 Jours', all_time: 'Tout' };
+
         return (
           <div className="space-y-6">
+            {/* Period filter */}
+            <div className="bg-white rounded-[28px] border border-slate-100 px-6 py-4 flex items-center gap-3 shadow-sm flex-wrap">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Période :</span>
+              {(['today', '7d', '30d', 'all_time'] as const).map(p => (
+                <button key={p} onClick={() => setStatsPeriod(p)}
+                  className={cn("h-9 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
+                    statsPeriod === p ? "bg-[#4b7bec] text-white shadow-md" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  )}>
+                  {PERIOD_LABELS[p]}
+                </button>
+              ))}
+              <button onClick={() => statsQuery.refetch()} disabled={statsQuery.isFetching} className="ml-auto flex items-center gap-1.5 text-[10px] font-black text-slate-400 hover:text-[#4b7bec]">
+                <RefreshCw className={cn("size-3.5", statsQuery.isFetching && "animate-spin")} /> Actualiser
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {[
-                { label: 'Colis ce mois', value: statsQuery.isLoading ? '...' : totalOrders > 0 ? totalOrders : '—', icon: '📦', color: '#4b7bec' },
-                { label: 'Taux livraison moy.', value: statsQuery.isLoading ? '...' : carriers.length > 0 ? `${avgDeliveryRate}%` : '—', icon: '✅', color: '#20bf6b' },
-                { label: 'Délai moyen (j)', value: statsQuery.isLoading ? '...' : carriers.length > 0 ? `${avgDays}j` : '—', icon: '⏱️', color: '#f7b731' },
-                { label: 'Retours estimés', value: statsQuery.isLoading ? '...' : totalReturns > 0 ? totalReturns : '—', icon: '🔄', color: '#eb4d4b' },
+                { label: 'Colis expédiés', value: statsQuery.isLoading ? '...' : totalOrders > 0 ? totalOrders : '—', icon: '📦', color: '#4b7bec' },
+                { label: 'Taux livraison moy.', value: statsQuery.isLoading ? '...' : avgDeliveryRate != null ? `${avgDeliveryRate}%` : '—', icon: '✅', color: '#20bf6b' },
+                { label: 'Délai moyen (j)', value: statsQuery.isLoading ? '...' : avgDays != null ? `${avgDays}j` : '—', icon: '⏱️', color: '#f7b731' },
+                { label: 'Retours', value: statsQuery.isLoading ? '...' : totalReturned > 0 ? totalReturned : '—', icon: '🔄', color: '#eb4d4b' },
                 { label: 'Transporteurs actifs', value: configuredIds.size, icon: '🚚', color: '#6C5CE7' },
                 { label: 'Top carrier', value: statsQuery.isLoading ? '...' : topCarrier?.name ?? '—', icon: '🏆', color: '#00B894' },
               ].map(stat => (
@@ -1130,6 +1553,35 @@ export default function DeliveryPartners() {
                 </div>
               ))}
             </div>
+
+            {/* Daily breakdown mini-chart */}
+            {dailyBreakdown.length > 0 && (
+              <div className="bg-white rounded-[28px] border border-slate-100 p-6">
+                <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2">
+                  <BarChart3 className="size-3.5 text-[#4b7bec]" />
+                  Activité journalière — {PERIOD_LABELS[statsPeriod]}
+                </h3>
+                <div className="flex items-end gap-1 h-24">
+                  {dailyBreakdown.slice(-14).map((d: any, i: number) => {
+                    const max = Math.max(...dailyBreakdown.map((x: any) => x.shipped || 1));
+                    const pct = max > 0 ? Math.round(((d.shipped ?? 0) / max) * 100) : 0;
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[9px] font-bold px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                          {d.date}: {d.shipped} expédiés, {d.delivered} livrés
+                        </div>
+                        <div className="w-full rounded-t-md" style={{ height: `${Math.max(pct, 4)}%`, backgroundColor: '#4b7bec', opacity: 0.7 + (pct / 300) }} />
+                        <span className="text-[8px] text-slate-300 font-mono">{d.date?.slice(5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3">
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="size-2 rounded-full bg-[#4b7bec] inline-block" />Expédiés</span>
+                  <span className="text-[10px] font-bold text-slate-400">Total période: {totalOrders} expédiés · {totalDelivered} livrés · {totalReturned} retours</span>
+                </div>
+              </div>
+            )}
             {carriers.length > 0 ? (
               <div className="bg-white rounded-[28px] border border-slate-100 overflow-hidden">
                 <div className="px-7 py-5 border-b border-slate-100 flex items-center gap-3">
@@ -1166,7 +1618,7 @@ export default function DeliveryPartners() {
                               <span className="text-sm font-black text-rose-500">{c.returnRate != null ? `${c.returnRate}%` : '—'}</span>
                             </td>
                             <td className="px-6 py-4 text-center">
-                              <span className="text-sm font-black text-amber-500">{c.avgDays != null ? `${c.avgDays}j` : '—'}</span>
+                              <span className="text-sm font-black text-amber-500">{c.avgDeliveryDays != null ? `${c.avgDeliveryDays}j` : '—'}</span>
                             </td>
                           </tr>
                         );
@@ -1188,12 +1640,20 @@ export default function DeliveryPartners() {
       })()}
 
       <PartnerModal
+        key={selectedCarrier?.id ?? 'none'}
         open={!!selectedCarrier}
         onClose={() => setSelectedCarrier(null)}
         carrier={selectedCarrier}
         storeId={activeStore?.id ?? ''}
         onSaved={() => qc.invalidateQueries({ queryKey: ['delivery-partners'] })}
         existingPartner={selectedCarrier ? configuredPartnerByCarrier[selectedCarrier.id] ?? null : null}
+      />
+
+      <CustomCarrierModal
+        open={showCustomModal}
+        onClose={() => setShowCustomModal(false)}
+        storeId={activeStore?.id ?? ''}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['delivery-partners'] })}
       />
     </div>
   );

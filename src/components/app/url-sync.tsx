@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useSearchParams, usePathname } from 'next/navigation';
 import { useAppStore } from '@/store/app-store';
 import type { AppView, StorefrontView, AdminView } from '@/lib/types';
 
@@ -11,7 +11,6 @@ import type { AppView, StorefrontView, AdminView } from '@/lib/types';
  * This allows browser back button support and deep-linking to specific products/views.
  */
 export function UrlSync() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isInitialMount = useRef(true);
