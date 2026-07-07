@@ -6,6 +6,7 @@ import { Search, Package, Loader2, Boxes, Clock, FileText } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { cn } from '@/lib/utils';
+import { formatPrice } from '@/lib/format';
 import type { Product } from '@/lib/types';
 
 /**
@@ -13,6 +14,29 @@ import type { Product } from '@/lib/types';
  * need to CHECK inventory (livreur, confirmatrice) — not manage pricing,
  * suppliers, purchases or warehouses like the full admin InventoryDashboard.
  */
+
+// Same palette family as ORDER_STATUS_COLORS/ORDER_STATUS_DOT (src/lib/types.ts)
+// so a variant badge and an order status pill never clash visually, cycled
+// deterministically by variant value so "Rouge" always gets the same color
+// everywhere in the app, not just within one product card.
+const VARIANT_COLORS = [
+  'bg-rose-100 text-rose-700',
+  'bg-sky-100 text-sky-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-700',
+  'bg-violet-100 text-violet-700',
+  'bg-cyan-100 text-cyan-700',
+  'bg-orange-100 text-orange-700',
+  'bg-purple-100 text-purple-700',
+  'bg-green-100 text-green-700',
+  'bg-slate-200 text-slate-700',
+];
+
+function getVariantColor(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  return VARIANT_COLORS[Math.abs(hash) % VARIANT_COLORS.length];
+}
 
 // ─── Stock list ─────────────────────────────────────────────────────────────
 
@@ -43,13 +67,20 @@ export function SimpleStockList({ defaultFilter = 'all' }: { defaultFilter?: 'al
 
   const lowCount = products.filter(p => p.stock > 0 && p.stock <= (p.low_stock_threshold || 5)).length;
   const outCount = products.filter(p => p.stock <= 0).length;
+  const healthyCount = products.length - lowCount - outCount;
+  const totalUnits = products.reduce((sum, p) => sum + Math.max(p.stock, 0), 0);
+  const totalValue = products.reduce((sum, p) => sum + Math.max(p.stock, 0) * (p.price || 0), 0);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <div className="bg-white border rounded-2xl p-3 text-center">
           <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Produits</p>
           <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{products.length}</p>
+        </div>
+        <div className="bg-white border rounded-2xl p-3 text-center">
+          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">En stock</p>
+          <p className="text-2xl font-black text-emerald-500 tabular-nums mt-1">{healthyCount}</p>
         </div>
         <div className="bg-white border rounded-2xl p-3 text-center">
           <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Stock faible</p>
@@ -58,6 +89,14 @@ export function SimpleStockList({ defaultFilter = 'all' }: { defaultFilter?: 'al
         <div className="bg-white border rounded-2xl p-3 text-center">
           <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Rupture</p>
           <p className="text-2xl font-black text-rose-500 tabular-nums mt-1">{outCount}</p>
+        </div>
+        <div className="bg-white border rounded-2xl p-3 text-center">
+          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Unités totales</p>
+          <p className="text-2xl font-black text-cyan-600 tabular-nums mt-1">{totalUnits}</p>
+        </div>
+        <div className="bg-white border rounded-2xl p-3 text-center">
+          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Valeur du stock</p>
+          <p className="text-sm font-black text-slate-800 tabular-nums mt-1.5">{formatPrice(totalValue)}</p>
         </div>
       </div>
 
@@ -136,7 +175,7 @@ function ProductStockCard({ product }: { product: Product }) {
         {(product.variants?.length ?? 0) > 0 && (
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             {product.variants!.slice(0, 4).map((v, i) => (
-              <span key={i} className="text-[9px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+              <span key={i} className={cn('text-[9px] font-black rounded px-1.5 py-0.5', getVariantColor(v.value))}>
                 {v.value}{v.stock != null ? ` · ${v.stock}` : ''}
               </span>
             ))}
