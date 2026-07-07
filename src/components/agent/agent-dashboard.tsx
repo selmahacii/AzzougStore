@@ -25,7 +25,7 @@ import { ManualOrderModal } from '@/components/agent/manual-order-modal';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
 import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
-import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
+import { SimpleStockList, SimpleMovementsList } from '@/components/shared/inventory-views';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
@@ -79,8 +79,8 @@ const MODULES: Module[] = [
     ]
   },
   {
-    // Même composant InventoryDashboard que l'admin/livreur : mêmes endpoints,
-    // mêmes KPIs, mêmes ajustements — la cohérence entre profils est structurelle.
+    // Vue allégée, lecture seule — la confirmatrice consulte le stock,
+    // elle ne gère ni fournisseurs, ni achats, ni entrepôts.
     id: 'inventory',
     label: 'Inventaire',
     icon: Warehouse,
@@ -101,21 +101,18 @@ const MODULES: Module[] = [
   }
 ];
 
-// ─── Vue inventaire (réutilise le module admin) ─────────────
-// InventoryDashboard choisit son onglet interne via adminSubView (store
-// global) ; on le synchronise avec le sous-module choisi dans la sidebar.
-const INVENTORY_TAB: Record<string, string> = {
-  'inventory-stock': 'STOCK',
-  'inventory-history': 'HISTORY',
-  'inventory-alerts': 'ALERTS',
-};
-
+// ─── Vue inventaire simplifiée ───────────────────────────────
+// La confirmatrice n'a besoin que de consulter le stock, pas de gérer
+// fournisseurs/achats/entrepôts — même vue allégée que le livreur
+// (voir src/components/shared/inventory-views.tsx).
 function AgentInventoryView({ subModuleId }: { subModuleId: string }) {
-  const setAdminSubView = useAppStore(s => s.setAdminSubView);
-  useEffect(() => {
-    setAdminSubView(INVENTORY_TAB[subModuleId] || 'STOCK');
-  }, [subModuleId, setAdminSubView]);
-  return <InventoryDashboard />;
+  if (subModuleId === 'inventory-history') {
+    return <SimpleMovementsList />;
+  }
+  if (subModuleId === 'inventory-alerts') {
+    return <SimpleStockList defaultFilter="low" />;
+  }
+  return <SimpleStockList />;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
