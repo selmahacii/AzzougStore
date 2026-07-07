@@ -398,6 +398,28 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                                   </button>
                                 )}
                               </div>
+                              {/* Per-variant stock/reserved badges — visible directly in the row,
+                                  no need to expand, so a confirmatrice can see at a glance what's
+                                  actually available per variant vs. held for unconfirmed orders. */}
+                              {variantItems.length > 0 && (
+                                <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                  {variantItems.map((item, i) => (
+                                    <span
+                                      key={i}
+                                      className={cn(
+                                        "inline-flex items-center gap-1 text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-wide",
+                                        item.stock - item.reserved <= 0
+                                          ? "bg-rose-50 text-rose-600 border-rose-200"
+                                          : "bg-[#F8F9FC] text-[#636E72] border-[#E9ECF0]"
+                                      )}
+                                      title={`${item.variantStr} — ${item.stock} en stock, ${item.reserved} réservé(s)`}
+                                    >
+                                      {item.variantStr}: {item.stock}
+                                      {item.reserved > 0 && <span className="text-amber-500">· {item.reserved} rés.</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                            </td>
                            {variant === 'alerts' ? (
                               <>

@@ -233,9 +233,23 @@ def create_movement(
     if movement.store_id and product.store_id != movement.store_id:
         raise PermissionError(message="Le produit n'appartient pas à la boutique spécifiée.")
 
-    # Store-scoped employees (livreur, confirmatrice) only manage stock for their own store
-    if current_user.role in ("LIVREUR", "CONFIRMATEUR") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
+    # Store-scoped employees only manage stock for stores they're actually
+    # scoped to. LIVREUR is single-store (employee_store_id). CONFIRMATEUR
+    # uses assigned_store_scope/assigned_store_ids instead — the same fields
+    # orders.py's RBAC scoping already checks — a confirmatrice managing
+    # several stores has assigned_store_scope="SPECIFIC" with her stores in
+    # assigned_store_ids, while employee_store_id may be unset or only her
+    # primary store; checking employee_store_id alone wrongly 403'd her for
+    # every other store she's legitimately assigned to.
+    if current_user.role == "LIVREUR" and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise PermissionError(message="Vous ne pouvez ajuster le stock que de votre propre boutique.")
+    if current_user.role == "CONFIRMATEUR":
+        scope = getattr(current_user, "assigned_store_scope", "ALL")
+        if scope == "SPECIFIC":
+            raw_stores = getattr(current_user, "assigned_store_ids", None)
+            scoped_stores = raw_stores if isinstance(raw_stores, list) else []
+            if str(product.store_id) not in {str(s) for s in scoped_stores}:
+                raise PermissionError(message="Vous ne pouvez ajuster le stock que des boutiques qui vous sont assignées.")
 
     stock_before = product.stock or 0
 

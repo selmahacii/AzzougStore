@@ -745,10 +745,18 @@ def send_events(
             "fbtrace_id": None, "retryable": True, "error_category": "network_timeout",
         }
 
-    client = _get_client()
     last_error: Optional[str] = None
     retryable = True
     for attempt in range(1 + _IMMEDIATE_RETRIES):
+        # Re-fetch on every attempt rather than once before the loop: if a
+        # connection failure earlier in THIS same loop opened the circuit
+        # breaker, it destroys the pooled client (see _destroy_client) so a
+        # fresh one gets built on the network's recovery — but a client
+        # captured once before the loop still points at that now-closed
+        # object, and every remaining attempt in the loop fails immediately
+        # with "Cannot send a request, as the client has been closed"
+        # instead of actually retrying.
+        client = _get_client()
         _reset_timing()
         started = time.monotonic()
         exc_type: Optional[str] = None
