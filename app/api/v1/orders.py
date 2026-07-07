@@ -266,7 +266,10 @@ def get_agent_counts(
     counts = {
         "all":       base.filter(Order.status.notin_(["CANCELLED", "RETURNED"])).count(),
         "new":       _count(Order.status.in_(["NEW", "ASSIGNED"])),
-        "pending":   _count(Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
+        "pending":   _count(
+            Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
+            or_(Order.nrp_count == None, Order.nrp_count == 0),
+        ),
         "confirmed": _count(Order.status == "CONFIRMED"),
         "shipped":   _count(Order.status == "SHIPPED"),
         "delivered": _count(Order.status == "DELIVERED"),
@@ -535,7 +538,16 @@ def list_orders(
         elif status.upper() == "NEW":
             query = query.filter(Order.status.in_(["NEW", "ASSIGNED"]))
         elif status.upper() == "PENDING_CONFIRMATION":
-            query = query.filter(Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]))
+            # Orders moved directly to a pending status (IN_PROGRESS/RESCHEDULED)
+            # without ever going through "Signaler NRP" — nrp_count stays 0.
+            # Excludes NRP-driven ones deliberately: those already have their
+            # own dedicated modules (NRP Commandes / NRP Paniers Aband.),
+            # showing them again here would just duplicate that view.
+            from sqlalchemy import or_ as _or_pending
+            query = query.filter(
+                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
+                _or_pending(Order.nrp_count == None, Order.nrp_count == 0),
+            )
         elif status.upper() == "NRP":
             query = query.filter(
                 Order.nrp_count > 0,

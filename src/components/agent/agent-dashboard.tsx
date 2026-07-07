@@ -52,12 +52,13 @@ const MODULES: Module[] = [
     label: 'Commandes',
     icon: Package,
     // Ordre = flux de travail de la confirmatrice : traiter les nouvelles,
-    // relancer les NRP, récupérer les paniers, confirmer. « À confirmer »
-    // (PENDING_CONFIRMATION) supprimé : redondant avec les deux modules NRP.
+    // relancer les NRP, suivre les "En attente" (statut changé directement,
+    // sans passer par "Signaler NRP"), récupérer les paniers, confirmer.
     // Livrées/Archives retirées : elles vivent uniquement sous Logistique
     // pour ne pas dupliquer le module entre Commandes et Logistique.
     subModules: [
       { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
+      { id: 'orders-pending', label: 'En attente', filter: 'PENDING_CONFIRMATION', icon: Clock },
       { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
       { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
       { id: 'orders-abandoned', label: 'Paniers Abandonnés', filter: 'ABANDONED_IN_PROGRESS', icon: ShoppingCart },
@@ -163,6 +164,23 @@ function NrpBadge({ count }: { count: number }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shrink-0 ${styles}`}>
       NRP {count}
+    </span>
+  );
+}
+
+// Distinct from NrpBadge on purpose: an order moved directly to a pending
+// status (IN_PROGRESS/RESCHEDULED) without ever going through "Signaler
+// NRP" is a different situation for the confirmatrice (customer DID answer,
+// just asked for a callback / is still being worked) — different color
+// family (sky, not the NRP amber/orange/rose escalation) so it can't be
+// mistaken for an unanswered-call order at a glance.
+function PendingBadge({ order }: { order: Order }) {
+  const isPendingStatus = order.status === 'IN_PROGRESS' || order.status === 'RESCHEDULED';
+  if (!isPendingStatus || (order.nrp_count ?? 0) > 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shrink-0 bg-sky-50 text-sky-700 border-sky-200">
+      <Clock className="size-2.5" /> En attente
     </span>
   );
 }
@@ -497,6 +515,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                <OrderTypeBadge order={order} />
                <StatusBadge status={order.status} />
                <NrpBadge count={order.nrp_count || 0} />
+               <PendingBadge order={order} />
                <OrderTimer startTime={order.confirmation_start_time} />
                {order.tracking_number && (
                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
@@ -1780,6 +1799,7 @@ export default function AgentDashboard() {
                                <OrderTypeBadge order={order} />
                                <StatusBadge status={order.status} />
                                <NrpBadge count={order.nrp_count || 0} />
+               <PendingBadge order={order} />
                                {related.length > 0 ? (
                                  <RelatedOrdersBadge
                                    count={related.length}
