@@ -1499,7 +1499,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 4825, name: "يلل", nameAscii: "Yellel" },
     { id: 4812, name: "زمورة", nameAscii: "Zemmoura" },
   ],
-  "El M'Ghair": [
+  "Timimoun": [
     { id: 123, name: "أوقروت", nameAscii: "Aougrout" },
     { id: 103, name: "شروين", nameAscii: "Charouine" },
     { id: 117, name: "دلدول", nameAscii: "Deldoul" },
@@ -1511,7 +1511,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 109, name: "تيميمون", nameAscii: "Timimoun" },
     { id: 116, name: "تنركوك", nameAscii: "Tinerkouk" },
   ],
-  "El Meniaa": [
+  "Bordj Baji Mokhtar": [
     { id: 125, name: "برج باجي مختار", nameAscii: "Bordj Badji Mokhtar" },
     { id: 128, name: "تيمياوين", nameAscii: "Timiaouine" },
   ],
@@ -1522,7 +1522,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 515, name: "رأس الميعاد", nameAscii: "Ras El Miad" },
     { id: 708, name: "سيدي خالد", nameAscii: "Sidi Khaled" },
   ],
-  "Bordj Baji Mokhtar": [
+  "Béni Abbès": [
     { id: 807, name: "بني عباس", nameAscii: "Beni-Abbes" },
     { id: 808, name: "بن يخلف", nameAscii: "Beni-Ikhlef" },
     { id: 814, name: "الواتة", nameAscii: "El Ouata" },
@@ -1533,14 +1533,23 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 820, name: "تامترت", nameAscii: "Tamtert" },
     { id: 805, name: "تيمودي", nameAscii: "Timoudi" },
   ],
-  "Béni Abbès": [
-    { id: 1108, name: "عين صالح", nameAscii: "Ain Salah" },
-    { id: 1110, name: "فقارة الزوى", nameAscii: "Foggaret Ezzoua" },
-    { id: 1103, name: "إينغر", nameAscii: "Inghar" },
+  "In Guezzam": [
+    { id: 1104, name: "عين قزام", nameAscii: "In Guezzam" },
+    { id: 1107, name: "تين زواتين", nameAscii: "Tin Zaouatine" },
   ],
-  "Timimoun": [
-    { id: 1104, name: "عين قزام", nameAscii: "Ain Guezzam" },
-    { id: 1107, name: "تين زواتين", nameAscii: "Tin Zouatine" },
+  "El Meniaa": [
+    { id: 5801, name: "المنيعة", nameAscii: "El Meniaa" },
+    { id: 5802, name: "حاسي الفحل", nameAscii: "Hassi El Fahl" },
+    { id: 5803, name: "حاسي القارة", nameAscii: "Hassi Gara" },
+  ],
+  "El M'Ghair": [
+    { id: 9701, name: "المغير", nameAscii: "El M'Ghair" },
+    { id: 9702, name: "جامعة", nameAscii: "Djamaa" },
+    { id: 9703, name: "المرارة", nameAscii: "M'Rara" },
+    { id: 9704, name: "أم الطيور", nameAscii: "Oum Touyour" },
+    { id: 9705, name: "سيدي عمران", nameAscii: "Sidi Amrane" },
+    { id: 9706, name: "سيدي خليل", nameAscii: "Sidi Khelil" },
+    { id: 9707, name: "still", nameAscii: "Still" },
   ],
   "Touggourt": [
     { id: 3017, name: "بن ناصر", nameAscii: "Benaceur" },
@@ -1561,13 +1570,8 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 3302, name: "جانت", nameAscii: "Djanet" },
   ],
   "In Salah": [
-    { id: 5701, name: "عين صالح", nameAscii: "In Salah" },
+    { id: 5701, name: "عين صالح", nameAscii: "Ain Salah" },
     { id: 5702, name: "فقارة الزوى", nameAscii: "Foggaret Ezzaouia" },
-    { id: 5703, name: "عين قزام", nameAscii: "In Ghar" },
-  ],
-  "In Guezzam": [
-    { id: 5801, name: "المنيعة", nameAscii: "El Meniaa" },
-    { id: 5802, name: "حاسي الفحل", nameAscii: "Hassi Fehal" },
-    { id: 5803, name: "حاسي القارة", nameAscii: "Hassi Gara" },
+    { id: 5703, name: "عين قزام", nameAscii: "Inghar" },
   ],
 };

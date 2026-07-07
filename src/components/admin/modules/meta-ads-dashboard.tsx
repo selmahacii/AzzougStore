@@ -57,7 +57,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'diagnostics'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -106,6 +106,23 @@ export default function MetaAdsDashboard() {
     ),
     enabled: !!activeStore?.id,
     refetchInterval: 120_000,
+  });
+
+  // --- Live connectivity/token/circuit-breaker diagnostic ---
+  const { data: healthData, isLoading: isLoadingHealth, refetch: refetchHealth } = useQuery({
+    queryKey: ['meta_ads_health', activeStore?.id],
+    queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
+    enabled: !!activeStore?.id && activeTab === 'diagnostics',
+    refetchInterval: 30_000,
+  });
+
+  const retryNowMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/meta-ads/capi-logs/retry-now?store_id=${activeStore?.id}`, { method: 'POST' }),
+    onSuccess: () => {
+      toast.success('Nouvelle tentative déclenchée en arrière-plan');
+      setTimeout(() => refetchHealth(), 3_000);
+    },
+    onError: (err: any) => toast.error(err.message || 'Erreur lors du déclenchement'),
   });
 
   // --- Mutations ---
@@ -334,7 +351,7 @@ export default function MetaAdsDashboard() {
           )}
           {(diag.catalog?.ephemeral_image_urls?.length || 0) > 0 && (
             <div className="rounded-2xl bg-amber-50 border border-amber-100 p-3 text-[11px] font-bold text-amber-700">
-              ⚠️ Images non permanentes (exclues du feed) : {diag.catalog.ephemeral_image_urls.join(', ')} — re-téléversez-les (Cloudinary).
+              ⚠️ Images non permanentes (exclues du feed) : {diag.catalog.ephemeral_image_urls.join(', ')} — re-téléversez-les depuis la fiche produit.
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -789,6 +806,17 @@ export default function MetaAdsDashboard() {
           )}
         >
           <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Intégration Modules</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('diagnostics')}
+          className={cn(
+            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === 'diagnostics'
+              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
+              : "text-[#B2BEC3] hover:text-[#636E72]"
+          )}
+        >
+          <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Diagnostics</span>
         </button>
       </div>
 
@@ -1418,6 +1446,84 @@ export default function MetaAdsDashboard() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ─── TAB: DIAGNOSTICS ─── */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="size-4 text-[#0984E3]" /> Diagnostic Connexion Meta
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Vérifie en direct la validité du token, l&apos;accessibilité du pixel, le disjoncteur (circuit breaker) et la file d&apos;attente CAPI.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => refetchHealth()} disabled={isLoadingHealth}>
+                <RefreshCw className={cn("size-3.5 mr-1.5", isLoadingHealth && "animate-spin")} /> Actualiser
+              </Button>
+            </div>
+
+            {isLoadingHealth && !healthData ? (
+              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Vérification en cours…</div>
+            ) : healthData ? (
+              <div className="mt-6 space-y-4">
+                {(healthData.warnings?.length ?? 0) > 0 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-1.5">
+                    {healthData.warnings.map((w: string, i: number) => (
+                      <p key={i} className="text-[11px] font-bold text-amber-700">⚠️ {w}</p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className={cn("rounded-2xl border p-3", healthData.token?.status === 'valid' ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Access Token</p>
+                    <p className="text-sm font-black mt-1 text-slate-800">{healthData.token?.status ?? '—'}</p>
+                  </div>
+                  <div className={cn("rounded-2xl border p-3", healthData.token_scopes?.has_ads_management ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Permission ads_management</p>
+                    <p className="text-sm font-black mt-1 text-slate-800">{healthData.token_scopes?.has_ads_management ? 'Accordée' : 'Absente'}</p>
+                  </div>
+                  <div className={cn("rounded-2xl border p-3", healthData.pixel?.status === 'accessible' ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pixel</p>
+                    <p className="text-sm font-black mt-1 text-slate-800">{healthData.pixel?.status ?? '—'}</p>
+                  </div>
+                  <div className={cn("rounded-2xl border p-3", healthData.circuit_breaker?.is_open ? "bg-rose-50 border-rose-100" : "bg-emerald-50 border-emerald-100")}>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Disjoncteur</p>
+                    <p className="text-sm font-black mt-1 text-slate-800">{healthData.circuit_breaker?.is_open ? 'Ouvert' : 'Fermé'}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-[#F8F9FC] rounded-2xl border">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">File d&apos;attente CAPI</p>
+                    <p className="text-sm font-black text-slate-800 mt-1">
+                      {healthData.queue?.pending_count ?? 0} événement(s) en attente
+                      {healthData.queue?.oldest_age_minutes != null && ` — le plus ancien depuis ${healthData.queue.oldest_age_minutes} min`}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => retryNowMutation.mutate()}
+                    disabled={retryNowMutation.isPending || !healthData.queue?.pending_count}
+                  >
+                    <RefreshCw className={cn("size-3.5 mr-1.5", retryNowMutation.isPending && "animate-spin")} /> Relancer maintenant
+                  </Button>
+                </div>
+
+                <div className="text-[10px] text-slate-400 font-medium">
+                  API Meta : v{healthData.api_version} · Python {healthData.versions?.python} · OpenSSL {healthData.versions?.openssl}
+                  {healthData.last_success_at && ` · Dernier succès : ${new Date(healthData.last_success_at).toLocaleString('fr-FR')}`}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée disponible.</div>
+            )}
+          </div>
         </div>
       )}
 

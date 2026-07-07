@@ -146,7 +146,7 @@ async def upload_image(
         "content_type": content_type,
     }
     if cloudinary_error:
-        res["warning"] = f"Cloudinary error: {cloudinary_error}. Using local storage fallback."
+        res["warning"] = "Stockage distant indisponible, image conservée en stockage local temporaire."
     return res
 
 
@@ -227,7 +227,7 @@ async def upload_media(
         "is_video": is_video,
     }
     if cloudinary_error:
-        res["warning"] = f"Cloudinary error: {cloudinary_error}. Using local storage fallback."
+        res["warning"] = "Stockage distant indisponible, image conservée en stockage local temporaire."
     return res
 
 
