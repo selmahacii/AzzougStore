@@ -506,6 +506,16 @@ def quick_update_stock(
     """
     Quick stock update directly on product (for inline table edits).
     Expected: { stock: N }
+
+    Only valid for products WITHOUT variants. For a variant product,
+    product.stock is a DERIVED value — everywhere else (reserve/confirm/
+    release/restock in inventory_service) treats each variant's own stock
+    as the source of truth and recalculates the aggregate from their sum
+    whenever any variant is touched. Blindly overwriting the aggregate here
+    would get silently reverted back to the (unchanged) variant sum the
+    next time any order touches this product, reappearing as "rupture"
+    even though the admin just added stock. Use the per-variant adjustment
+    (StockManager / POST /stock/) instead for those.
     """
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
@@ -516,6 +526,13 @@ def quick_update_stock(
 
     if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
         raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
+
+    if product.variants:
+        raise HTTPException(
+            status_code=400,
+            detail="Ce produit a des variantes : ajustez le stock par variante (module Inventaire) plutôt que le total, "
+                   "sinon la modification sera écrasée au prochain mouvement de stock.",
+        )
 
     new_stock = payload.get("stock")
     if new_stock is None or int(new_stock) < 0:
