@@ -425,7 +425,7 @@ def list_orders(
     db: Session = Depends(deps.get_db),
     current_user: Optional[User] = Depends(deps.get_current_user_optional),
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=100),
+    pageSize: int = Query(20, ge=1, le=2000),
     store_id: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
