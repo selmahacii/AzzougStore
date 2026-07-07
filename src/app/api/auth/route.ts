@@ -51,10 +51,16 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Forward the response (including Set-Cookie from FastAPI)
     const response = NextResponse.json(data, { status: fastApiResponse.status });
 
-    // Forward any Set-Cookie headers from FastAPI (the __session cookie)
-    const setCookie = fastApiResponse.headers.get('set-cookie');
-    if (setCookie) {
-      response.headers.set('set-cookie', setCookie);
+    // FastAPI sets TWO cookies on login (__session + __refresh) via two
+    // separate Set-Cookie headers. headers.get('set-cookie') only ever
+    // returns one of them (or a comma-joined value the browser can't parse
+    // as two cookies) — getSetCookie() is required to get each one intact.
+    // Losing __refresh silently broke every subsequent request: the access
+    // token expires quickly, the client calls /auth/refresh, and with no
+    // refresh cookie ever having reached the browser that call 401s too.
+    const setCookies = fastApiResponse.headers.getSetCookie?.() ?? [];
+    for (const cookie of setCookies) {
+      response.headers.append('set-cookie', cookie);
     }
 
     return response;
@@ -86,18 +92,20 @@ export async function DELETE(request: Request): Promise<NextResponse> {
 
     const response = NextResponse.json(data, { status: fastApiResponse.status });
 
-    // Forward cookie clearing from FastAPI
-    const setCookie = fastApiResponse.headers.get('set-cookie');
-    if (setCookie) {
-      response.headers.set('set-cookie', setCookie);
+    // Forward cookie clearing from FastAPI (__session + __refresh, same
+    // multi-Set-Cookie caveat as the login handler above)
+    const setCookies = fastApiResponse.headers.getSetCookie?.() ?? [];
+    for (const cookie of setCookies) {
+      response.headers.append('set-cookie', cookie);
     }
 
     return response;
   } catch (error) {
     console.error('[DELETE /api/auth] FastAPI proxy error:', error);
-    // Even on error: clear cookie client-side
+    // Even on error: clear cookies client-side
     const response = NextResponse.json({ success: true });
     response.cookies.set('__session', '', { maxAge: 0, path: '/' });
+    response.cookies.set('__refresh', '', { maxAge: 0, path: '/' });
     return response;
   }
 }

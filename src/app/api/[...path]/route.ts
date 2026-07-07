@@ -96,6 +96,19 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       resHeaders.set(key, value);
     });
 
+    // Login/refresh/logout each set TWO cookies (__session + __refresh) via
+    // two separate Set-Cookie headers. The .set() loop above only keeps the
+    // last one — .set() overwrites same-name headers rather than
+    // accumulating them. Re-add every Set-Cookie individually via append()
+    // so both survive the proxy hop.
+    const setCookies = response.headers.getSetCookie?.() ?? [];
+    if (setCookies.length > 0) {
+      resHeaders.delete('set-cookie');
+      for (const cookie of setCookies) {
+        resHeaders.append('set-cookie', cookie);
+      }
+    }
+
     const responseData = await response.arrayBuffer();
 
     return new NextResponse(responseData, {
