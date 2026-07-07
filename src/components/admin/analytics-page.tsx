@@ -75,12 +75,15 @@ const C = {
    bg: '#F8F9FC',
 };
 
-function MetricRow({ label, value, suffix = "(DZD)", badge }: {
-   label: string; value: string | number; suffix?: string; badge?: string;
+function MetricRow({ label, value, suffix = "(DZD)", badge, description }: {
+   label: string; value: string | number; suffix?: string; badge?: string; description?: string;
 }) {
    return (
       <div className="flex items-center justify-between py-3 border-b border-[#F0F3F6] last:border-0 hover:bg-[#FAFBFD] px-3 -mx-3 rounded transition-colors">
-         <span className="text-[13px] font-medium text-[#636E72]">{label}</span>
+         <div>
+            <span className="text-[13px] font-medium text-[#636E72] block">{label}</span>
+            {description && <span className="text-[9px] text-[#B2BEC3] leading-tight block mt-0.5 max-w-[180px]">{description}</span>}
+         </div>
          <div className="flex items-center gap-2">
             <span className="text-[13px] font-bold text-[#2D3436] tabular-nums">{value}</span>
             {suffix && <span className="text-[10px] font-semibold text-[#B2BEC3]">{suffix}</span>}
@@ -92,7 +95,7 @@ function MetricRow({ label, value, suffix = "(DZD)", badge }: {
    );
 }
 
-function PerformanceGauge({ label, value, color }: { label: string; value: number; color: string }) {
+function PerformanceGauge({ label, value, color, description }: { label: string; value: number; color: string; description?: string; }) {
    const radius = 42;
    const circumference = 2 * Math.PI * radius;
    const offset = circumference - (Math.min(value, 100) / 100) * circumference;
@@ -110,7 +113,10 @@ function PerformanceGauge({ label, value, color }: { label: string; value: numbe
                <span className="text-[13px] font-extrabold tabular-nums" style={{ color }}>{value}%</span>
             </div>
          </div>
-         <span className="text-[10px] font-bold text-[#636E72] text-center max-w-[90px] leading-tight">{label}</span>
+         <div className="flex flex-col items-center">
+            <span className="text-[10px] font-bold text-[#636E72] text-center max-w-[90px] leading-tight">{label}</span>
+            {description && <span className="text-[8px] text-[#B2BEC3] text-center max-w-[100px] leading-tight mt-0.5">{description}</span>}
+         </div>
       </div>
    );
 }
@@ -221,32 +227,32 @@ export default function AnalyticsPage() {
       <div className="space-y-5 animate-in fade-in duration-500 pb-28" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
 
          {/* ─── Dynamic Header ────────────────────────── */}
-         <div className="bg-white rounded-xl border px-8 py-10" style={{ borderColor: C.border }}>
-            <div className="flex items-center justify-between">
-               <div className="flex items-center gap-6">
-                  <div className="size-16 rounded-2xl flex items-center justify-center shadow-sm" style={{ backgroundColor: C.primaryBg }}>
+         <div className="bg-white rounded-xl border px-4 sm:px-8 py-6 sm:py-10" style={{ borderColor: C.border }}>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+               <div className="flex items-center gap-4 sm:gap-6">
+                  <div className="size-12 sm:size-16 rounded-2xl flex items-center justify-center shadow-sm shrink-0" style={{ backgroundColor: C.primaryBg }}>
                      {React.createElement(TAB_INFO[activeTab]?.icon || BarChart3, { 
-                        className: "size-8", 
+                        className: "size-6 sm:size-8", 
                         style: { color: C.primary } 
                      })}
                   </div>
                   <div className="space-y-1">
                      <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Suivi d'activité & Performance</span>
-                        <div className="size-1.5 rounded-full bg-emerald-500" />
+                        <div className="size-1.5 rounded-full bg-emerald-500 hidden sm:block" />
                      </div>
-                     <h1 className="text-4xl font-black uppercase tracking-tighter text-[#2D3436]">
+                     <h1 className="text-xl sm:text-3xl lg:text-4xl font-black uppercase tracking-tighter text-[#2D3436] leading-tight">
                         {TAB_INFO[activeTab]?.label || 'Performance (KPI)'}
                      </h1>
                   </div>
                </div>
-               <div className="flex bg-[#F8F9FC] border border-[#E9ECF0] rounded-lg p-1">
+               <div className="flex flex-wrap sm:flex-nowrap bg-[#F8F9FC] border border-[#E9ECF0] rounded-lg p-1 gap-1 sm:gap-0 w-full lg:w-auto overflow-x-auto custom-scrollbar">
                   {['today', '7d', '30d', 'all_time'].map(p => (
                      <button
                         key={p}
                         onClick={() => setPeriod(p)}
                         className={cn(
-                           "px-4 py-1.5 text-xs font-bold rounded transition-all",
+                           "px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs font-bold rounded transition-all whitespace-nowrap flex-1 sm:flex-none",
                            period === p ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]" : "text-[#B2BEC3] hover:text-[#2D3436]"
                         )}
                      >
@@ -263,29 +269,29 @@ export default function AnalyticsPage() {
                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <SectionPanel title="Revenus & Profits" icon={Wallet} iconColor={C.primary} borderColor={C.primary}>
                      <div className="space-y-0">
-                        <MetricRow label="Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} />
-                        <MetricRow label="Revenus" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} />
-                        <MetricRow label="Bénéfices" value={kpi?.totalProfit ? formatPrice(kpi.totalProfit) : (kpi?.profitPerOrder && kpi?.deliveredOrders ? formatPrice(kpi.profitPerOrder * kpi.deliveredOrders) : '0')} badge={kpi?.avgOrderValue && kpi?.profitPerOrder && kpi.avgOrderValue > 0 ? `${((kpi.profitPerOrder / kpi.avgOrderValue) * 100).toFixed(0)}%` : undefined} />
-                        <MetricRow label="ROI" value={`${kpi?.roas || 0}%`} suffix="" />
-                        <MetricRow label="Capital" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} />
+                        <MetricRow label="Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Total des ventes avant déductions (Chiffre d'Affaires Brut)" />
+                        <MetricRow label="Revenus" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} description="Montant net encaissé après annulations (CA Net)" />
+                        <MetricRow label="Bénéfices" value={kpi?.totalProfit ? formatPrice(kpi.totalProfit) : (kpi?.profitPerOrder && kpi?.deliveredOrders ? formatPrice(kpi.profitPerOrder * kpi.deliveredOrders) : '0')} badge={kpi?.avgOrderValue && kpi?.profitPerOrder && kpi.avgOrderValue > 0 ? `${((kpi.profitPerOrder / kpi.avgOrderValue) * 100).toFixed(0)}%` : undefined} description="Profit net généré après soustraction de tous les coûts" />
+                        <MetricRow label="ROI" value={`${kpi?.roas || 0}%`} suffix="" description="Retour sur investissement global (Objectif: > 200%)" />
+                        <MetricRow label="Capital" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Fonds de roulement et liquidités disponibles" />
                      </div>
                   </SectionPanel>
 
                   <SectionPanel title="Dépenses & Frais" icon={CreditCard} iconColor={C.orange} borderColor={C.orange}>
                      <div className="space-y-0">
-                        <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(Math.abs(kpi.shippingFeeGap)) : '0'} />
-                        <MetricRow label="CAC" value={kpi?.cac ? formatPrice(kpi.cac) : '0'} />
-                        <MetricRow label="LTV" value={kpi?.ltv ? formatPrice(kpi.ltv) : '0'} />
-                        <MetricRow label="Coût des Produits" value="Indisponible" />
+                        <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(Math.abs(kpi.shippingFeeGap)) : '0'} description="Dépenses payées aux sociétés de transport" />
+                        <MetricRow label="CAC" value={kpi?.cac ? formatPrice(kpi.cac) : '0'} description="Coût moyen d'Acquisition d'un Client via les pubs" />
+                        <MetricRow label="LTV" value={kpi?.ltv ? formatPrice(kpi.ltv) : '0'} description="Valeur à vie d'un client (Lifetime Value)" />
+                        <MetricRow label="Coût des Produits" value="Indisponible" description="Coût d'achat de la marchandise vendue (COGS)" />
                      </div>
                   </SectionPanel>
 
                   <SectionPanel title="Performance" icon={Target} iconColor={C.success} borderColor={C.success}>
-                     <div className="grid grid-cols-2 gap-6 place-items-center py-4">
-                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color={C.primary} />
-                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color={C.success} />
-                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color={C.orange} />
-                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color={C.danger} />
+                     <div className="grid grid-cols-2 gap-4 sm:gap-6 place-items-center py-4">
+                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color={C.primary} description="Commandes validées au tel (Obj: > 70%)" />
+                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color={C.success} description="Colis arrivés au client (Obj: > 80%)" />
+                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color={C.orange} description="Visites devenues achats (Obj: > 3%)" />
+                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color={C.danger} description="Commandes refusées (Obj: < 15%)" />
                      </div>
                   </SectionPanel>
                </div>

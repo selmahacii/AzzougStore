@@ -6,6 +6,7 @@ import {
    Loader2, ShieldX, ShieldCheck, ShoppingBag, MapPin, Mail, DollarSign,
    ChevronLeft, ChevronRight, X, Package, Calendar, Clock, Star,
    UserPlus, Link2, Copy, Check, Tag, Hash, TrendingUp,
+   UserCircle2, BadgeCheck, BadgeX, Activity, Wallet, CheckCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -89,7 +90,7 @@ function fmtDateFull(d?: string | null) {
 // ─── Pagination ────────────────────────────────────────────────
 function TablePagination({ total, page, totalPages, onPageChange }: { total: number; page: number; totalPages: number; onPageChange: (p: number) => void }) {
    return (
-      <div className="px-8 py-5 flex items-center justify-between border-t" style={{ borderColor: C.border }}>
+      <div className="px-4 sm:px-8 py-4 sm:py-5 flex flex-col sm:flex-row items-center gap-3 sm:justify-between border-t" style={{ borderColor: C.border }}>
          <span className="text-xs font-bold text-slate-400">Total <span className="font-black text-slate-700">{total}</span> clients</span>
          <div className="flex gap-2">
             <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page === 1} className="p-2.5 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 transition-all">
@@ -118,6 +119,14 @@ function CustomerDetailModal({ customer, open, onClose, onBlacklist, storeId }: 
       queryFn: () => apiFetch<any>(`/api/v1/customers/${customer!.id}/orders`),
       enabled: !!customer?.id && open,
    });
+
+   const accountQuery = useQuery({
+      queryKey: ['customer-account', customer?.id],
+      queryFn: () => apiFetch<any>(`/api/v1/customers/${customer!.id}/account`),
+      enabled: !!customer?.id && open,
+   });
+   const account = (accountQuery.data as any)?.account ?? null;
+   const hasAccount = !!(accountQuery.data as any)?.has_account;
 
    const updateNoteMutation = useMutation({
       mutationFn: ({ id, note }: { id: string; note: string }) =>
@@ -155,6 +164,7 @@ function CustomerDetailModal({ customer, open, onClose, onBlacklist, storeId }: 
                      <div>
                         <div className="flex items-center gap-3 mb-2">
                            <h2 className="text-2xl font-black tracking-tight">{customer.name}</h2>
+                           {customer.is_guest && <span className="text-[9px] font-black bg-sky-100 text-sky-700 border border-sky-200 px-3 py-1 rounded-full uppercase tracking-wider">👁 Visiteur</span>}
                            {customer.is_blacklisted && <span className="text-[9px] font-black bg-white/20 px-3 py-1 rounded-full uppercase tracking-wider">🚫 Blacklisté</span>}
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
@@ -173,7 +183,7 @@ function CustomerDetailModal({ customer, open, onClose, onBlacklist, storeId }: 
                </div>
 
                {/* KPI strip */}
-               <div className="grid grid-cols-4 gap-3">
+               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                      { label: 'Commandes', value: customer.total_orders, icon: <ShoppingBag className="size-4" /> },
                      { label: 'Total dépensé', value: `${formatPrice(customer.total_spent)} DA`, icon: <DollarSign className="size-4" /> },
@@ -193,7 +203,7 @@ function CustomerDetailModal({ customer, open, onClose, onBlacklist, storeId }: 
                <div className="p-8 space-y-6">
 
                   {/* Timestamps & metadata */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                      {[
                         { label: 'Inscrit le', value: fmtDateFull(customer.created_at), icon: <Calendar className="size-3.5 text-[#6C5CE7]" /> },
                         { label: 'Dernière commande', value: fmtDateFull(customer.last_order_at), icon: <Clock className="size-3.5 text-[#00B894]" /> },
@@ -286,6 +296,72 @@ function CustomerDetailModal({ customer, open, onClose, onBlacklist, storeId }: 
                         <p className="text-sm font-medium text-rose-600">{customer.blacklist_note}</p>
                      </div>
                   )}
+
+                  {/* ─── Compte Client Portal ─── */}
+                  <div>
+                     <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                           <UserCircle2 className="size-3.5" /> Compte Portail Client
+                        </h3>
+                        {!accountQuery.isLoading && (
+                           hasAccount
+                             ? <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full uppercase tracking-wider"><BadgeCheck className="size-3" /> Compte actif</span>
+                             : <span className="inline-flex items-center gap-1 text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full uppercase tracking-wider"><BadgeX className="size-3" /> Pas de compte</span>
+                        )}
+                     </div>
+                     {accountQuery.isLoading ? (
+                        <Skeleton className="h-24 rounded-2xl" />
+                     ) : hasAccount && account ? (
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 overflow-hidden">
+                           {/* Account header */}
+                           <div className="flex items-center gap-3 p-4 border-b border-emerald-100">
+                              <div className="size-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 font-black text-lg shrink-0">
+                                 {(account.name ?? '?').charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                 <p className="text-sm font-black text-slate-800 truncate">{account.name}</p>
+                                 <p className="text-[10px] text-slate-400 font-medium truncate">{account.email}</p>
+                              </div>
+                              <div className="ml-auto text-right shrink-0">
+                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Membre depuis</p>
+                                 <p className="text-[10px] font-bold text-slate-600">
+                                    {account.created_at ? new Date(account.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                                 </p>
+                              </div>
+                           </div>
+                           {/* Account KPIs */}
+                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-emerald-100">
+                              {[
+                                 { label: 'Commandes', value: account.total_orders ?? 0, icon: <ShoppingBag className="size-3.5 text-[#6C5CE7]" /> },
+                                 { label: 'Livrées', value: account.delivered_orders ?? 0, icon: <CheckCircle className="size-3.5 text-emerald-500" /> },
+                                 { label: 'Retours', value: account.returned_orders ?? 0, icon: <Package className="size-3.5 text-rose-400" /> },
+                                 { label: 'Budget dépensé', value: `${formatPrice(account.total_spent ?? 0)} DA`, icon: <Wallet className="size-3.5 text-amber-500" /> },
+                              ].map((kpi, i) => (
+                                 <div key={i} className="flex flex-col items-center justify-center py-3 px-2 text-center">
+                                    <div className="mb-1">{kpi.icon}</div>
+                                    <p className="text-xs font-black text-slate-700 leading-tight">{kpi.value}</p>
+                                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5 leading-tight">{kpi.label}</p>
+                                 </div>
+                              ))}
+                           </div>
+                           {/* Avg order */}
+                           {(account.avg_order_value ?? 0) > 0 && (
+                              <div className="px-4 py-2.5 border-t border-emerald-100 flex items-center justify-between">
+                                 <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1.5"><Activity className="size-3 text-[#6C5CE7]" /> Panier moyen</span>
+                                 <span className="text-sm font-black text-slate-700">{formatPrice(account.avg_order_value)} DA</span>
+                              </div>
+                           )}
+                        </div>
+                     ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center space-y-3">
+                           <UserCircle2 className="size-8 text-slate-200 mx-auto" />
+                           <div>
+                              <p className="text-xs font-bold text-slate-500">Ce client n'a pas encore créé de compte portail.</p>
+                              <p className="text-[10px] text-slate-400 mt-1">Il peut s'inscrire depuis la page de connexion pour suivre ses commandes.</p>
+                           </div>
+                        </div>
+                     )}
+                  </div>
 
                   {/* Order history */}
                   <div>
@@ -412,7 +488,7 @@ function CreateCustomerModal({ open, onClose, storeId }: { open: boolean; onClos
                </div>
                <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Coordonnées</p>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                      <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                         placeholder="Téléphone principal *" type="tel" className="h-12 rounded-xl border-slate-100 bg-slate-50 font-mono font-bold" />
                      <Input value={form.secondary_phone} onChange={e => setForm(f => ({ ...f, secondary_phone: e.target.value }))}
@@ -548,13 +624,17 @@ function InviteModal({ open, onClose, storeId, storeSlug }: { open: boolean; onC
 
 // ─── Main Page ─────────────────────────────────────────────────
 export default function CustomersPage() {
-   const { activeStore } = useAppStore();
+   const { activeStore, adminSubView } = useAppStore();
    const storeId = activeStore?.id ?? '';
    const qc = useQueryClient();
 
-   const [activeTab, setActiveTab] = useState<'clients' | 'blacklist'>('clients');
+   const [activeTab, setActiveTab] = useState<'clients' | 'blacklist'>(
+      adminSubView === 'blacklist' ? 'blacklist' : 'clients'
+   );
    const [searchQuery, setSearchQuery] = useState('');
    const [sourceFilter, setSourceFilter] = useState<CustomerSource | ''>('');
+   const [startDate, setStartDate] = useState('');
+   const [endDate, setEndDate] = useState('');
    const [page, setPage] = useState(1);
    const [isCreateOpen, setIsCreateOpen] = useState(false);
    const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -569,10 +649,16 @@ export default function CustomersPage() {
          });
          if (searchQuery) params.append('search', searchQuery);
          if (sourceFilter) params.append('source', sourceFilter);
+         if (startDate) params.append('start_date', startDate + 'T00:00:00.000Z');
+         if (endDate) params.append('end_date', endDate + 'T23:59:59.999Z');
          return apiFetch(`/api/v1/customers?${params}`);
       },
       enabled: !!storeId,
    });
+
+   React.useEffect(() => {
+      setPage(1);
+   }, [startDate, endDate]);
 
    const statsQuery = useQuery({
       queryKey: ['customers-stats', storeId],
@@ -696,8 +782,14 @@ export default function CustomersPage() {
             })}
          </div>
 
-         {/* ─── Search bar ─── */}
-         <div className="flex items-center gap-3">
+         {/* ─── Search bar & Dates ─── */}
+         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex items-center gap-2 bg-white rounded-[24px] border px-4 py-2 shadow-sm shrink-0" style={{ borderColor: C.border }}>
+               <Calendar className="size-5 text-slate-300" />
+               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
+               <span className="text-slate-300">-</span>
+               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
+            </div>
             <div className="flex-1 bg-white rounded-[24px] border px-6 py-3.5 flex items-center gap-4 shadow-sm" style={{ borderColor: C.border }}>
                <Search className="size-5 text-slate-300 shrink-0" />
                <Input placeholder="Nom, téléphone, wilaya..."
@@ -754,6 +846,14 @@ export default function CustomersPage() {
                                     <p className="text-sm font-black text-slate-800 leading-tight">{customer.name}</p>
                                     <div className="flex items-center gap-2 mt-1">
                                        <span className="text-[9px] text-slate-300 font-mono">{customer.id.substring(0, 8)}…</span>
+                                       {customer.is_guest && (
+                                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-sky-100 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">👁 Visiteur</span>
+                                       )}
+                                       {(customer as any).has_account && (
+                                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 border border-emerald-200 inline-flex items-center gap-0.5">
+                                             <UserCircle2 className="size-2.5" /> Compte
+                                          </span>
+                                       )}
                                        {customer.tags && customer.tags.length > 0 && (
                                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#F0EDFF] text-[#6C5CE7]">{customer.tags[0]}</span>
                                        )}

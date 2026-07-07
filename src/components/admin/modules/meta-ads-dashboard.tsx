@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  TrendingUp,
-  DollarSign,
-  ShoppingBag,
-  BarChart3,
-  RefreshCw,
-  Calendar,
-  Facebook,
+import { 
+  TrendingUp, 
+  DollarSign, 
+  ShoppingBag, 
+  BarChart3, 
+  RefreshCw, 
+  Calendar, 
+  Facebook, 
   CheckCircle,
   HelpCircle,
   ArrowUpRight,
@@ -26,13 +26,6 @@ import {
   Package,
   Zap,
   ArrowDownRight,
-  Shield,
-  Wifi,
-  WifiOff,
-  Clock,
-  RotateCcw,
-  Server,
-  GitBranch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,6 +48,24 @@ export default function MetaAdsDashboard() {
   });
   const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().split('T')[0]);
 
+  const [ctData, setCtData] = useState<any>(null);
+  const [ctLoading, setCtLoading] = useState(false);
+  const [ctError, setCtError] = useState<string | null>(null);
+
+  const runConnectivityTest = async () => {
+    setCtLoading(true);
+    setCtError(null);
+    setCtData(null);
+    try {
+      const res = await apiFetch<any>('/api/v1/meta-ads/connectivity-test');
+      setCtData(res);
+    } catch (e: any) {
+      setCtError(e?.message ?? 'Erreur inconnue');
+    } finally {
+      setCtLoading(false);
+    }
+  };
+
   const [isConnected, setIsConnected] = useState(false);
   const [adAccountId, setAdAccountId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -64,7 +75,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'health'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -83,8 +94,15 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/campaigns?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 20_000,
-    refetchIntervalInBackground: true,
+  });
+
+  // --- Query Funnel ---
+  const { data: funnelData, isLoading: isLoadingFunnel } = useQuery({
+    queryKey: ['meta_ads_funnel', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; stages: any[]; summary: any }>(
+      `/api/v1/meta-ads/funnel?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id,
   });
 
   // --- Query Integration Summary (cross-module) ---
@@ -94,38 +112,17 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/integration-summary?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 30_000,
     refetchOnWindowFocus: false,
   });
 
-  // --- Tracking health (Pixel / CAPI / attribution / catalog) ---
-  const { data: diagnosticsData } = useQuery({
+  // --- Query Diagnostics ---
+  const { data: diagnosticsData, isLoading: isLoadingDiagnostics } = useQuery({
     queryKey: ['meta_ads_diagnostics', activeStore?.id],
-    queryFn: () => apiFetch<{ success: boolean; data: any }>(
-      `/api/v1/meta-ads/diagnostics?store_id=${activeStore?.id}`
+    queryFn: () => apiFetch<{ success: boolean; data: any; count: number }>(
+      `/api/v1/meta-ads/events/diagnostics?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
-  });
-
-  // --- Live connectivity + circuit breaker health ---
-  const { data: healthData, refetch: refetchHealth, isFetching: isRefreshingHealth } = useQuery({
-    queryKey: ['meta_capi_health', activeStore?.id],
-    queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
-    enabled: !!activeStore?.id && activeTab === 'health',
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: false,
-  });
-
-  // --- Rule-based optimization recommendations ---
-  const { data: recommendationsData } = useQuery({
-    queryKey: ['meta_ads_recommendations', activeStore?.id],
-    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
-      `/api/v1/meta-ads/recommendations?store_id=${activeStore?.id}`
-    ),
-    enabled: !!activeStore?.id,
-    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   // --- Mutations ---
@@ -154,16 +151,12 @@ export default function MetaAdsDashboard() {
       });
     },
     onSuccess: (res: any) => {
-      console.log('[Meta Ads Sync] Résultat de la synchronisation:', res);
+      console.log('[Meta Ads Sync] Succès de la synchronisation:', res);
       queryClient.invalidateQueries({ queryKey: ['meta_ads_campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['meta_ads_integration'] });
-      if (res?.success) {
-        toast.success(res?.message || 'Synchronisation Meta Ads réussie !', {
-          description: 'Dépenses liées aux charges & finance automatiquement.'
-        });
-      } else {
-        toast.error(res?.message || 'Connexion Meta invalide — vérifiez le token et le compte publicitaire.');
-      }
+      toast.success(res?.message || 'Synchronisation Meta Ads réussie !', {
+        description: 'Dépenses liées aux charges & finance automatiquement.'
+      });
     },
     onError: (err: any) => {
       console.error('[Meta Ads Sync] Échec de la synchronisation:', err);
@@ -190,6 +183,8 @@ export default function MetaAdsDashboard() {
     recent_ad_transactions: Array.isArray(intData?.finance?.recent_ad_transactions) ? intData.finance.recent_ad_transactions : []
   };
   const intRevenue = intData?.revenue || {};
+  const diagnosticsEvents = Array.isArray(diagnosticsData?.data?.events) ? diagnosticsData.data.events : [];
+  const diagnosticsSummary = diagnosticsData?.data?.summary || { total_events: 0, successful_events: 0, failed_events: 0 };
 
   const handleSaveConfig = () => {
     saveConfigMutation.mutate({
@@ -220,12 +215,9 @@ export default function MetaAdsDashboard() {
     }
   };
 
-  const diag = diagnosticsData?.data;
-  const recommendations = Array.isArray(recommendationsData?.data) ? recommendationsData.data : [];
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-
+      
       {/* ─── HEADER & ACTIONS ─── */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border shadow-sm">
         <div>
@@ -296,186 +288,6 @@ export default function MetaAdsDashboard() {
           )}
         </div>
       </div>
-
-      {/* ─── SANTÉ DU TRACKING (Pixel / CAPI / Attribution / Catalogue) ─── */}
-      {diag && (
-        <div className="bg-white p-6 rounded-3xl border shadow-sm space-y-4">
-          <h2 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <CheckCircle className="size-4 text-[#00B894]" /> Santé du tracking
-            <span className="text-[9px] font-bold text-slate-400 normal-case tracking-normal">(mise à jour automatique)</span>
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
-            <div className={cn("rounded-2xl border p-3", diag.pixel?.configured ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Pixel</p>
-              <p className={cn("text-sm font-black mt-1", diag.pixel?.configured ? "text-emerald-600" : "text-rose-600")}>
-                {diag.pixel?.configured ? 'Actif' : 'Non configuré'}
-              </p>
-            </div>
-            <div className={cn("rounded-2xl border p-3", diag.capi?.configured ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">CAPI (serveur)</p>
-              <p className={cn("text-sm font-black mt-1", diag.capi?.configured ? "text-emerald-600" : "text-rose-600")}>
-                {diag.capi?.configured ? 'Actif' : 'Non configuré'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Événements 7j</p>
-              <p className="text-sm font-black mt-1 text-slate-800">
-                {diag.capi?.sent_7d ?? 0} ✓ {(diag.capi?.errors_7d ?? 0) > 0 && <span className="text-rose-500">· {diag.capi.errors_7d} ✗</span>}
-              </p>
-              {diag.capi?.success_rate != null && <p className="text-[9px] font-bold text-slate-400">{diag.capi.success_rate}% succès</p>}
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Déduplication</p>
-              <p className="text-sm font-black mt-1 text-slate-800">event_id partagé</p>
-              <p className="text-[9px] font-bold text-emerald-600">100% des événements</p>
-            </div>
-            <div className={cn("rounded-2xl border p-3", (diag.attribution?.fbp_rate ?? 0) >= 50 ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Signal fbp (30j)</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.attribution?.fbp_rate ?? 0}%</p>
-              <p className="text-[9px] font-bold text-slate-400">{diag.attribution?.with_fbp ?? 0}/{diag.attribution?.orders_30d ?? 0} commandes</p>
-            </div>
-            <div className={cn("rounded-2xl border p-3",
-              (diag.catalog?.missing_image?.length || diag.catalog?.ephemeral_image_urls?.length) ? "bg-amber-50 border-amber-100" : "bg-emerald-50 border-emerald-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Catalogue</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.catalog?.active_products ?? 0} produits</p>
-              {(diag.catalog?.missing_image?.length || 0) + (diag.catalog?.ephemeral_image_urls?.length || 0) > 0 ? (
-                <p className="text-[9px] font-bold text-amber-600">
-                  {(diag.catalog?.missing_image?.length || 0) + (diag.catalog?.ephemeral_image_urls?.length || 0)} image(s) à corriger
-                </p>
-              ) : (
-                <p className="text-[9px] font-bold text-emerald-600">Aucune erreur</p>
-              )}
-            </div>
-          </div>
-          {diag.capi?.last_error && (
-            <div className="rounded-2xl bg-rose-50 border border-rose-100 p-3 text-[11px] font-bold text-rose-700">
-              Dernière erreur CAPI ({diag.capi.last_error.event}) : {diag.capi.last_error.message}
-            </div>
-          )}
-          {(diag.catalog?.ephemeral_image_urls?.length || 0) > 0 && (
-            <div className="rounded-2xl bg-amber-50 border border-amber-100 p-3 text-[11px] font-bold text-amber-700">
-              ⚠️ Images non permanentes (exclues du feed) : {diag.catalog.ephemeral_image_urls.join(', ')} — re-téléversez-les depuis la page Produits.
-            </div>
-          )}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Feed catalogue (Dynamic Ads / Advantage+) :</span>
-            <code className="text-[10px] font-bold bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 select-all">
-              {`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/meta-ads/catalog-feed?store_id=${activeStore?.id}`}
-            </code>
-            <span className="text-[9px] font-bold text-slate-400">→ à coller dans Meta Commerce Manager (flux de données planifié)</span>
-          </div>
-        </div>
-      )}
-
-      {/* ─── FILE DE REPRISE CAPI (monitoring opérationnel) ─── */}
-      {diag && (
-        <div className="bg-white p-6 rounded-3xl border shadow-sm space-y-4">
-          <h2 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <RefreshCw className="size-4 text-[#4b7bec]" /> File de reprise Meta CAPI
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <div className={cn("rounded-2xl border p-3", (diag.queue?.pending_count ?? 0) > 0 ? "bg-amber-50 border-amber-100" : "bg-emerald-50 border-emerald-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">En attente</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.pending_count ?? 0}</p>
-            </div>
-            <div className={cn("rounded-2xl border p-3", (diag.queue?.failed_count ?? 0) > 0 ? "bg-rose-50 border-rose-100" : "bg-emerald-50 border-emerald-100")}>
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Échecs définitifs</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.failed_count ?? 0}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Événement le + ancien en attente</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.oldest_pending_event ?? '—'}</p>
-              <p className="text-[9px] font-bold text-slate-400">{diag.queue?.oldest_pending_at ? new Date(diag.queue.oldest_pending_at).toLocaleString('fr-FR') : ''}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Latence (moy / P95 / P99)</p>
-              <p className="text-sm font-black mt-1 text-slate-800">
-                {diag.queue?.avg_latency_ms != null ? `${diag.queue.avg_latency_ms}` : '—'}
-                {' / '}{diag.queue?.p95_latency_ms ?? '—'}
-                {' / '}{diag.queue?.p99_latency_ms ?? '—'} ms
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Événements retentés (7j)</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.retried_count_7d ?? 0}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Délai moyen avant succès</p>
-              <p className="text-sm font-black mt-1 text-slate-800">
-                {diag.queue?.avg_time_to_success_s != null ? `${Math.round(diag.queue.avg_time_to_success_s)} s` : '—'}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Tentatives max / événement</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.max_retries_configured ?? '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 col-span-2 md:col-span-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Erreurs 7j — réseau vs API Meta</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {Object.entries(diag.queue?.error_categories_7d ?? {}).length === 0 && (
-                  <span className="text-[11px] font-bold text-emerald-600">Aucune erreur</span>
-                )}
-                {Object.entries(diag.queue?.error_categories_7d ?? {}).map(([cat, count]) => {
-                  const isNetwork = cat.startsWith('network');
-                  const label: Record<string, string> = {
-                    network_timeout: 'Timeout réseau', network_error: 'Erreur réseau',
-                    api_4xx: 'Erreur API (config/jeton)', api_5xx: 'Erreur serveur Meta', unknown: 'Non catégorisé',
-                  };
-                  return (
-                    <span key={cat} className={cn(
-                      "px-2 py-1 rounded-full text-[10px] font-black",
-                      isNetwork ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"
-                    )}>
-                      {label[cat] || cat}: {count as number}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Dernière synchro réussie</p>
-              <p className="text-sm font-black mt-1 text-slate-800">{diag.queue?.last_synced_at ? new Date(diag.queue.last_synced_at).toLocaleString('fr-FR') : '—'}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Taux d'échec 7j</p>
-              <p className="text-sm font-black mt-1 text-slate-800">
-                {diag.capi?.success_rate != null ? `${(100 - diag.capi.success_rate).toFixed(1)}%` : '—'}
-              </p>
-            </div>
-          </div>
-          <CapiLogsTable storeId={activeStore?.id} />
-        </div>
-      )}
-
-      {/* ─── RECOMMANDATIONS D'OPTIMISATION ─── */}
-      {recommendations.length > 0 && (
-        <div className="bg-white p-6 rounded-3xl border shadow-sm space-y-3">
-          <h2 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-            <TrendingUp className="size-4 text-[#6C5CE7]" /> Recommandations d'optimisation
-          </h2>
-          <div className="space-y-2">
-            {recommendations.map((r: any, i: number) => (
-              <div key={i} className={cn(
-                "rounded-2xl border p-3 flex items-start gap-3",
-                r.severity === 'high' ? 'bg-rose-50/60 border-rose-100' :
-                r.severity === 'medium' ? 'bg-amber-50/60 border-amber-100' : 'bg-emerald-50/60 border-emerald-100'
-              )}>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 mt-0.5",
-                  r.severity === 'high' ? 'bg-rose-100 text-rose-700' :
-                  r.severity === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                )}>
-                  {r.severity === 'high' ? 'Priorité' : r.severity === 'medium' ? 'À traiter' : 'Opportunité'}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-800">{r.title}</p>
-                  <p className="text-[11px] font-medium text-slate-500 mt-0.5 leading-snug">{r.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ─── DIALOG: CONFIGURE META ADS ─── */}
       {isConfiguring && (
@@ -690,19 +502,9 @@ export default function MetaAdsDashboard() {
           <div className="space-y-1">
             <span className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Budget Pub dépensé</span>
             <h2 className="text-2xl font-black text-[#2D3436] tabular-nums">{formatPrice(summary.total_spend)}</h2>
-            {summary.raw_spend_by_currency && Object.keys(summary.raw_spend_by_currency).length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(summary.raw_spend_by_currency as Record<string, number>).map(([cur, amt]) => (
-                  <span key={cur} className="text-[9px] font-black text-[#636E72] bg-slate-50 border border-slate-100 rounded-md px-1.5 py-0.5 tabular-nums">
-                    {amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {cur}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <span className="text-[9px] font-bold text-[#636E72] uppercase">
-                Devises converties dynamiquement en DZD
-              </span>
-            )}
+            <span className="text-[9px] font-bold text-[#636E72] uppercase">
+              Devises converties dynamiquement en DZD
+            </span>
           </div>
           <div className="size-12 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-500">
             <DollarSign className="size-5" />
@@ -752,29 +554,6 @@ export default function MetaAdsDashboard() {
 
       </div>
 
-      {/* ─── MICRO-MÉTRIQUES GLOBALES ─── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-        {[
-          { label: 'Impressions', value: (summary.total_impressions || 0).toLocaleString(), hint: 'Affichages totaux' },
-          { label: 'Portée', value: (summary.total_reach || 0).toLocaleString(), hint: 'Personnes uniques' },
-          { label: 'Clics', value: (summary.total_clicks || 0).toLocaleString(), hint: 'Clics totaux' },
-          { label: 'CTR', value: `${summary.global_ctr || 0}%`, hint: 'Taux de clic' },
-          { label: 'CPC', value: formatPrice(summary.global_cpc || 0), hint: 'Coût par clic' },
-          { label: 'CPM', value: formatPrice(summary.global_cpm || 0), hint: 'Coût / 1000 vues' },
-          { label: 'Coût / Vente', value: formatPrice(summary.global_cost_per_order || 0), hint: `Taux conv. ${summary.global_conversion_rate || 0}%` },
-          { label: 'Profit Net Pub', value: formatPrice(summary.global_profit || 0), hint: `Panier moyen ${formatPrice(summary.global_aov || 0)}`, highlight: (summary.global_profit || 0) >= 0 },
-        ].map((m: any) => (
-          <div key={m.label} className="bg-white p-3 rounded-2xl border shadow-sm">
-            <p className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">{m.label}</p>
-            <p className={cn(
-              "text-sm font-black tabular-nums mt-1",
-              m.highlight === undefined ? "text-[#2D3436]" : m.highlight ? "text-[#00B894]" : "text-[#E17055]"
-            )}>{m.value}</p>
-            <p className="text-[9px] text-slate-400 mt-0.5">{m.hint}</p>
-          </div>
-        ))}
-      </div>
-
       {/* ─── TAB NAVIGATION ─── */}
       <div className="flex items-center gap-1 bg-[#F8F9FC] p-1 rounded-2xl border border-[#E9ECF0] w-fit flex-wrap">
         <button
@@ -800,6 +579,17 @@ export default function MetaAdsDashboard() {
           <span className="flex items-center gap-1.5"><Package className="size-3.5" /> Produits Sponsorisés</span>
         </button>
         <button
+          onClick={() => setActiveTab('funnel')}
+          className={cn(
+            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === 'funnel'
+              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
+              : "text-[#B2BEC3] hover:text-[#636E72]"
+          )}
+        >
+          <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Entonnoir de Conversion</span>
+        </button>
+        <button
           onClick={() => setActiveTab('integration')}
           className={cn(
             "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
@@ -811,15 +601,15 @@ export default function MetaAdsDashboard() {
           <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Intégration Modules</span>
         </button>
         <button
-          onClick={() => setActiveTab('health')}
+          onClick={() => setActiveTab('diagnostics')}
           className={cn(
             "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
-            activeTab === 'health'
+            activeTab === 'diagnostics'
               ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
               : "text-[#B2BEC3] hover:text-[#636E72]"
           )}
         >
-          <span className="flex items-center gap-1.5"><Shield className="size-3.5" /> CAPI Health</span>
+          <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Diagnostics</span>
         </button>
       </div>
 
@@ -866,11 +656,7 @@ export default function MetaAdsDashboard() {
                             <BarChart3 className="size-6 text-slate-400" />
                           </div>
                           <p className="text-sm font-bold text-slate-400">Aucune campagne disponible</p>
-                          <p className="text-xs text-slate-300">
-                            {config.is_connected
-                              ? 'Cliquez sur "Synchroniser" — si rien n\'apparaît, le token ou l\'ID du compte publicitaire est invalide.'
-                              : 'Connectez d\'abord votre vrai compte Meta (token + ID compte pub), puis cliquez sur "Synchroniser". Aucune donnée fictive n\'est affichée.'}
-                          </p>
+                          <p className="text-xs text-slate-300">Cliquez sur "Synchroniser" pour récupérer vos campagnes Meta Ads</p>
                         </div>
                       </td>
                     </tr>
@@ -952,40 +738,26 @@ export default function MetaAdsDashboard() {
                       {isExpanded && (
                         <tr className="bg-[#F0EDFF]/30">
                           <td colSpan={9} className="px-8 py-5">
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                               <div className="bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Impressions</p>
-                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{(c.impressions || 0).toLocaleString()}</p>
-                                <p className="text-[9px] text-slate-400">Fréquence {c.frequency || 0}x / personne</p>
-                              </div>
-                              <div className="bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CTR</p>
-                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{c.ctr || 0}%</p>
-                                <p className="text-[9px] text-slate-400">Taux de clic</p>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPM</p>
+                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{formatPrice(c.cpm || 0)}</p>
+                                <p className="text-[9px] text-slate-400">Coût pour 1 000 vues</p>
                               </div>
                               <div className="bg-white rounded-xl p-3 border border-slate-100">
                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPC</p>
                                 <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{formatPrice(c.cpc || 0)}</p>
-                                {c.currency && c.currency !== 'DZD' && (
-                                  <p className="text-[9px] text-slate-400 tabular-nums">{c.cpc_raw || 0} {c.currency}</p>
-                                )}
+                                <p className="text-[9px] text-slate-400">Coût par clic</p>
                               </div>
                               <div className="bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPM</p>
-                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{formatPrice(c.cpm || 0)}</p>
-                                {c.currency && c.currency !== 'DZD' && (
-                                  <p className="text-[9px] text-slate-400 tabular-nums">{c.cpm_raw || 0} {c.currency}</p>
-                                )}
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Impressions</p>
+                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{(c.impressions || 0).toLocaleString()}</p>
+                                <p className="text-[9px] text-slate-400">Nombre de fois vues</p>
                               </div>
                               <div className="bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Coût / Vente</p>
-                                <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{c.orders_count > 0 ? formatPrice(c.cost_per_order || 0) : '—'}</p>
-                                <p className="text-[9px] text-slate-400">Taux conv. {c.conversion_rate || 0}%</p>
-                              </div>
-                              <div className="bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Profit Net</p>
-                                <p className={cn("text-sm font-black mt-1 tabular-nums", (c.profit || 0) >= 0 ? "text-[#00B894]" : "text-[#E17055]")}>{formatPrice(c.profit || 0)}</p>
-                                <p className="text-[9px] text-slate-400">Panier moyen {c.orders_count > 0 ? formatPrice(c.aov || 0) : '—'}</p>
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Objectif</p>
+                                <p className="text-sm font-black text-slate-700 mt-1">{c.objective || '—'}</p>
+                                <p className="text-[9px] text-slate-400">Type de campagne</p>
                               </div>
                             </div>
                             {c.product_name && (
@@ -1124,6 +896,305 @@ export default function MetaAdsDashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: ENTONNOIR DE CONVERSION ─── */}
+      {activeTab === 'funnel' && (
+        <div className="space-y-6">
+          {/* Funnel header banner */}
+          <div className="flex items-start gap-3 p-5 bg-[#F0EDFF] border border-[#6C5CE7]/15 rounded-3xl">
+            <Activity className="size-5 text-[#6C5CE7] mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-black text-[#6C5CE7]">Entonnoir de Conversion & Efficacité Publicitaire</p>
+              <p className="text-xs text-[#636E72] mt-1 leading-relaxed">
+                Suivez la déperdition des utilisateurs à chaque étape clé du processus de vente. Cet entonnoir croise les signaux Meta Ads (Impressions, Clics) avec l'activité réelle de votre boutique (Vues de page, Paiements initiés, Achats) pour vous donner une vision claire de votre taux d'attribution et de conversion.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingFunnel ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100 shadow-sm">
+              <RefreshCw className="size-8 text-[#6C5CE7] animate-spin" />
+              <p className="text-xs text-slate-400 mt-3 font-bold">Calcul de l'entonnoir en cours...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Funnel visualization */}
+              <div className="lg:col-span-2 bg-white rounded-3xl border p-6 shadow-sm flex flex-col justify-between">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-6 text-[#2D3436]">
+                    <Layers className="size-4 text-[#6C5CE7]" /> Visualisation de l'entonnoir
+                  </h3>
+                  <div className="space-y-4">
+                    {funnelData?.stages?.map((stage: any, idx: number) => {
+                      // Width percentage for visual presentation
+                      const prevStageCount = idx > 0 ? funnelData.stages[idx - 1].count : stage.count;
+                      const ratioOfPrevious = idx === 0 ? 100 : (prevStageCount > 0 ? (stage.count / prevStageCount) * 100 : 0);
+                      const ratioOfTotal = funnelData.stages[0].count > 0 ? (stage.count / funnelData.stages[0].count) * 100 : 0;
+                      
+                      // Funnel block style
+                      const funnelWidths = [100, 90, 80, 70, 60, 50, 40];
+                      const currentWidth = funnelWidths[idx] || 35;
+                      
+                      // Gradients for stages
+                      const gradients = [
+                        "from-[#1877F2] to-[#3b5998]", // Impressions (Facebook blue)
+                        "from-[#0984E3] to-[#74b9ff]", // Clics
+                        "from-[#6C5CE7] to-[#a29bfe]", // Vues
+                        "from-[#E84393] to-[#fd79a8]", // Checkout
+                        "from-[#00B894] to-[#55efc4]", // Purchase
+                        "from-[#F1C40F] to-[#FFEAA7]", // Recovered
+                        "from-[#00CEC9] to-[#81ECEC]"  // Delivered
+                      ];
+                      
+                      return (
+                        <div key={idx} className="flex items-center gap-4">
+                          <div className="w-40 shrink-0 text-left">
+                            <p className="text-xs font-black text-slate-700 leading-tight">{stage.name}</p>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{stage.count.toLocaleString()}</p>
+                          </div>
+                          
+                          <div className="flex-1">
+                            <div className="h-9 w-full bg-slate-50 rounded-xl relative overflow-hidden flex items-center">
+                              {/* Colored Funnel Segment */}
+                              <div
+                                style={{ width: `${currentWidth}%` }}
+                                className={cn(
+                                  "h-full rounded-r-xl bg-gradient-to-r flex items-center justify-end pr-4 transition-all duration-500",
+                                  gradients[idx] || "from-slate-400 to-slate-500"
+                                )}
+                              >
+                                {stage.count > 0 && (
+                                  <span className="text-[10px] font-black text-white font-mono">
+                                    {ratioOfTotal.toFixed(1)}%
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="w-20 shrink-0 text-right font-mono">
+                            {idx > 0 && (
+                              <div className="text-xs font-black text-slate-600">
+                                {ratioOfPrevious.toFixed(1)}%
+                                <p className="text-[8px] font-black uppercase text-slate-400">vs préc.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-4 border-t flex items-center justify-between text-[10px] text-slate-400 font-bold">
+                  <span className="flex items-center gap-1"><AlertCircle className="size-3 text-amber-500" /> Taux calculés sur la base des 30 derniers jours d'activité.</span>
+                </div>
+              </div>
+
+              {/* Conversion Statistics & Recommendations */}
+              <div className="space-y-6">
+                {/* Funnel Metrics */}
+                <div className="bg-white rounded-3xl border p-6 shadow-sm space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-[#2D3436]">Statistiques Clés</h3>
+                  
+                  <div className="space-y-3">
+                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de clic (CTR)</p>
+                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.ctr}%</p>
+                      </div>
+                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
+                        (funnelData?.summary?.ctr || 0) >= 2 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      )}>
+                        {(funnelData?.summary?.ctr || 0) >= 2 ? "Excellent" : "Améliorer"}
+                      </Badge>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de conversion (CR)</p>
+                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.cr}%</p>
+                      </div>
+                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
+                        (funnelData?.summary?.cr || 0) >= 3 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      )}>
+                        {(funnelData?.summary?.cr || 0) >= 3 ? "Rentable" : "Améliorer"}
+                      </Badge>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de livraison (Delivered)</p>
+                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.delivery_rate}%</p>
+                      </div>
+                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
+                        (funnelData?.summary?.delivery_rate || 0) >= 70 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      )}>
+                        {(funnelData?.summary?.delivery_rate || 0) >= 70 ? "Excellente" : "Améliorer"}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recommendations */}
+                <div className="bg-[#FAF9F5] border border-amber-200 rounded-3xl p-6 space-y-4">
+                  <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="size-3.5" /> Recommandations d'Attribution
+                  </h4>
+                  <ul className="space-y-3">
+                    <li className="text-[10px] text-amber-900 leading-relaxed">
+                      <strong>Optimisation CAPI :</strong> Vos événements Pixel et CAPI sont liés à 100% via le paramètre <code>event_id</code>, garantissant une déduplication parfaite.
+                    </li>
+                    <li className="text-[10px] text-amber-900 leading-relaxed">
+                      <strong>Qualité du pixel :</strong> Envoyez le maximum de données clients autorisées (téléphone sans le <code>+</code>, pays <code>co</code> de deux lettres en minuscules) pour optimiser le matching publicitaire.
+                    </li>
+                    <li className="text-[10px] text-amber-900 leading-relaxed">
+                      <strong>Taux de déperdition :</strong> Si le passage de <em>Clics</em> à <em>Vues de Page</em> est inférieur à 70%, vérifiez le temps de chargement de la boutique ou les redirections.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── TAB: DIAGNOSTICS ─── */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertCircle className="size-4 text-[#E17055]" /> Diagnostics Meta Events
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">Suivi des événements relayés, du matching pixel/CAPI et des erreurs récentes par boutique.</p>
+              </div>
+              <Badge className="bg-slate-100 text-slate-600 border-none font-black">{diagnosticsSummary.total_events || 0} événements</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements réussis</p>
+                <p className="text-2xl font-black text-[#2D3436] mt-1">{diagnosticsSummary.successful_events || 0}</p>
+              </div>
+              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements échoués</p>
+                <p className="text-2xl font-black text-[#E17055] mt-1">{diagnosticsSummary.failed_events || 0}</p>
+              </div>
+              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements suivis</p>
+                <p className="text-2xl font-black text-[#2D3436] mt-1">{diagnosticsEvents.length}</p>
+              </div>
+            </div>
+            {isLoadingDiagnostics ? (
+              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement des diagnostics…</div>
+            ) : diagnosticsEvents.length === 0 ? (
+              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucun événement n’a encore été relayé pour cette boutique.</div>
+            ) : (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="bg-[#F8F9FC] border-b border-[#E9ECF0]">
+                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Événement</th>
+                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Qualité</th>
+                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Statut</th>
+                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Dernier envoi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E9ECF0]">
+                    {diagnosticsEvents.map((event: any, index: number) => (
+                      <tr key={`${event.event_name}-${index}`} className="hover:bg-[#FAFBFD] transition-colors text-sm">
+                        <td className="px-4 py-3 font-semibold text-slate-700">{event.event_name}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-700">{event.match_quality || 0}%</td>
+                        <td className="px-4 py-3">
+                          <Badge className={cn(
+                            'border-none rounded-md px-2 py-0.5 text-[10px] font-black',
+                            event.failures ? 'bg-[#FFEDE9] text-[#E17055]' : 'bg-[#E6FFF8] text-[#00B894]'
+                          )}>
+                            {event.failures ? 'À vérifier' : 'OK'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{event.last_successful_send || event.last_failure || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Connectivity Deep-Dive Test */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertCircle className="size-4 text-[#E17055]" /> Diagnostic Réseau Approfondi
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Teste la connectivité réseau réelle vers graph.facebook.com depuis le serveur (DNS, TCP, TLS) pour distinguer une panne Meta d&apos;un problème d&apos;infrastructure d&apos;hébergement.
+                </p>
+              </div>
+              <Button size="sm" onClick={runConnectivityTest} disabled={ctLoading}>
+                {ctLoading ? 'Test en cours…' : 'Lancer le test'}
+              </Button>
+            </div>
+
+            {ctError && (
+              <div className="mt-4 rounded-2xl border border-[#FFD3CB] bg-[#FFF5F3] p-4 text-sm text-[#E17055]">
+                Erreur : {ctError}
+              </div>
+            )}
+
+            {ctData && (
+              <div className="mt-6 space-y-4">
+                {ctData.summary && (
+                  <div className={cn(
+                    'rounded-2xl border p-4 text-xs font-semibold leading-relaxed',
+                    ctData.summary.includes('TLS_BLOCKED') || ctData.summary.toLowerCase?.().includes('bloqu')
+                      ? 'bg-[#FFF5F3] border-[#FFD3CB] text-[#E17055]'
+                      : 'bg-[#E6FFF8] border-[#B3F5E4] text-[#00806B]'
+                  )}>
+                    {ctData.summary}
+                  </div>
+                )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="bg-[#F8F9FC] border-b border-[#E9ECF0]">
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Test</th>
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">DNS</th>
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">TCP</th>
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">TLS</th>
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Total</th>
+                        <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Verdict</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E9ECF0]">
+                      {Object.entries(ctData.tests ?? ctData.probes ?? {}).map(([name, t]: [string, any]) => (
+                        <tr key={name} className="hover:bg-[#FAFBFD] transition-colors text-sm">
+                          <td className="px-4 py-3 font-semibold text-slate-700">{name}</td>
+                          <td className="px-4 py-3 text-slate-500">{t?.dns_ms != null ? `${t.dns_ms}ms` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-500">{t?.tcp_ms != null ? `${t.tcp_ms}ms` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-500">{t?.tls_ms != null ? `${t.tls_ms}ms` : '—'}</td>
+                          <td className="px-4 py-3 text-slate-500">{t?.total_ms != null ? `${t.total_ms}ms` : '—'}</td>
+                          <td className="px-4 py-3">
+                            <Badge className={cn(
+                              'border-none rounded-md px-2 py-0.5 text-[10px] font-black',
+                              t?.verdict === 'OK' ? 'bg-[#E6FFF8] text-[#00B894]' : 'bg-[#FFEDE9] text-[#E17055]'
+                            )}>
+                              {t?.verdict ?? 'N/A'}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1452,424 +1523,6 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* ─── TAB: CAPI HEALTH ─── */}
-      {activeTab === 'health' && (() => {
-        const probe = healthData?.probe ?? {};
-        const circuit = healthData?.circuit_breaker ?? {};
-        const queueH = healthData?.queue ?? {};
-        const diagCapi = diagnosticsData?.data?.capi ?? {};
-        const diagQueue = diagnosticsData?.data?.queue ?? {};
-
-        const dnsOk = probe.dns_status === 'ok';
-        const tcpOk = probe.tcp_status === 'ok';
-        const tlsOk = probe.tls_status === 'ok';
-        const circuitOpen = circuit.is_open === true;
-        const circuitHalf = !circuitOpen && (circuit.consecutive_failures ?? 0) > 0;
-        const pendingCount = queueH.pending_count ?? 0;
-        const successRate = diagCapi.success_rate ?? null;
-        const lastSuccessAt = healthData?.last_success_at ?? null;
-        const lastErrorMsg = healthData?.last_error_message ?? null;
-
-        // Overall status determination
-        let overallStatus: 'healthy' | 'degraded' | 'offline' = 'healthy';
-        const hoursWithoutSuccess = lastSuccessAt
-          ? (Date.now() - new Date(lastSuccessAt).getTime()) / 3_600_000
-          : Infinity;
-        if (circuitOpen && hoursWithoutSuccess > 24 && pendingCount > 50) {
-          overallStatus = 'offline';
-        } else if (!tlsOk || circuitOpen || circuitHalf || (successRate !== null && successRate < 80) || pendingCount > 20) {
-          overallStatus = 'degraded';
-        }
-
-        const statusConfig = {
-          healthy:  { label: '✅ Healthy',  bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', hint: 'Tous les événements sont livrés avec succès.' },
-          degraded: { label: '⚠️ Degraded', bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   hint: 'Problèmes détectés — les événements sont mis en file.' },
-          offline:  { label: '❌ Offline',  bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     hint: 'Aucune livraison possible — circuit ouvert.' },
-        }[overallStatus];
-
-        const tokenData = healthData?.token ?? {};
-        const pixelData = healthData?.pixel ?? {};
-        const serverWarnings: string[] = healthData?.warnings ?? [];
-        const tokenOk = tokenData.status === 'valid';
-        const pixelOk = pixelData.status === 'accessible';
-
-        const probeRows: Array<{ label: string; status: string | undefined; ms?: number | null; detail?: string }> = [
-          { label: 'DNS',           status: probe.dns_status,  ms: probe.dns_ms,  detail: probe.resolved_ip },
-          { label: 'TCP',           status: probe.tcp_status,  ms: probe.tcp_ms },
-          { label: 'TLS / HTTPS',   status: probe.tls_status,  ms: probe.tls_ms,  detail: probe.tls_version },
-          { label: 'Token Meta',    status: tokenData.status === 'valid' ? 'ok' : tokenData.status === 'timeout' ? 'timeout' : (tokenData.status === 'not_configured' ? 'skipped' : 'error'), detail: tokenData.status === 'valid' ? `ID: ${tokenData.user_id} — ${tokenData.name}` : tokenData.message ?? tokenData.note },
-          { label: 'Pixel',         status: pixelData.status === 'accessible' ? 'ok' : pixelData.status === 'timeout' ? 'timeout' : (pixelData.status === 'not_configured' ? 'skipped' : 'error'), detail: pixelData.status === 'accessible' ? `${pixelData.pixel_id} — ${pixelData.name}` : pixelData.message ?? pixelData.note },
-          { label: 'Livraison API', status: lastSuccessAt ? 'ok' : (probe.tls_status === 'ok' ? 'unknown' : 'skipped'), detail: lastSuccessAt ? `Dernier succès: ${new Date(lastSuccessAt).toLocaleString('fr-FR')}` : 'Jamais livré via ce nœud' },
-        ];
-
-        const probeIcon = (s: string | undefined) => {
-          if (s === 'ok')      return <span className="text-emerald-500 font-black text-xs">✅</span>;
-          if (s === 'skipped' || s === 'not_configured') return <span className="text-slate-300 font-black text-xs">—</span>;
-          if (s === 'timeout') return <span className="text-amber-500 font-black text-xs">⏱</span>;
-          if (s === 'unknown') return <span className="text-slate-400 font-black text-xs">?</span>;
-          return <span className="text-red-500 font-black text-xs">❌</span>;
-        };
-
-        const fmtDur = (s: number | null) => {
-          if (s === null) return '—';
-          if (s < 60) return `${Math.round(s)}s`;
-          if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
-          return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-        };
-
-        const fmtAgo = (iso: string | null) => {
-          if (!iso) return '—';
-          const d = Date.now() - new Date(iso).getTime();
-          if (d < 60_000) return 'à l\'instant';
-          if (d < 3_600_000) return `il y a ${Math.floor(d / 60_000)} min`;
-          if (d < 86_400_000) return `il y a ${Math.floor(d / 3_600_000)} h`;
-          return new Date(iso).toLocaleDateString('fr-FR');
-        };
-
-        return (
-          <div className="space-y-4">
-
-            {/* Overall Status Banner */}
-            <div className={cn("rounded-2xl border p-5 flex items-center justify-between gap-4", statusConfig.bg, statusConfig.border)}>
-              <div>
-                <div className={cn("text-lg font-black tracking-tight", statusConfig.text)}>{statusConfig.label}</div>
-                <p className={cn("text-xs font-bold mt-0.5", statusConfig.text, "opacity-70")}>{statusConfig.hint}</p>
-              </div>
-              <button
-                onClick={() => refetchHealth()}
-                disabled={isRefreshingHealth}
-                className="flex items-center gap-2 px-4 py-2 bg-white/80 hover:bg-white border border-white/50 rounded-xl text-xs font-black text-slate-600 transition-all"
-              >
-                <RefreshCw className={cn("size-3.5", isRefreshingHealth && "animate-spin")} />
-                Actualiser
-              </button>
-            </div>
-
-            {/* Warnings (auto-generated by backend) */}
-            {serverWarnings.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 space-y-1.5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">⚠️ Alertes proactives</p>
-                {serverWarnings.map((w, i) => (
-                  <p key={i} className="text-xs font-bold text-amber-800">• {w}</p>
-                ))}
-              </div>
-            )}
-
-            {/* 2-column grid: Probe + Circuit Breaker */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* Connection Probe */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <Wifi className="size-4 text-[#1877F2]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Diagnostic Réseau — graph.facebook.com:443</h4>
-                </div>
-                <div className="divide-y divide-[#F0F0F0]">
-                  {probeRows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between px-5 py-3 gap-3">
-                      <div className="flex items-center gap-3">
-                        {probeIcon(row.status)}
-                        <div>
-                          <span className="text-xs font-black text-[#2D3436]">{row.label}</span>
-                          {row.detail && <p className="text-[9px] text-slate-400 font-mono mt-0.5">{row.detail}</p>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {row.ms != null && <span className="text-[10px] font-black tabular-nums text-slate-400">{row.ms} ms</span>}
-                        {row.status && row.status !== 'ok' && row.status !== 'skipped' && (
-                          <p className="text-[9px] text-red-400 font-mono mt-0.5 max-w-[160px] text-right truncate">{row.status}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {probe.tls_status && probe.tls_status !== 'ok' && (
-                  <div className="px-5 py-3 bg-amber-50 border-t border-amber-100">
-                    <p className="text-[10px] font-bold text-amber-700">
-                      TLS bloqué au niveau réseau — les événements sont mis en file d'attente et retraités automatiquement.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Circuit Breaker */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <GitBranch className="size-4 text-[#6C5CE7]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Circuit Breaker</h4>
-                </div>
-                <div className="p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">État</span>
-                    <Badge className={cn(
-                      "font-black text-[10px] px-3 py-1 rounded-lg border-none",
-                      circuitOpen ? "bg-red-100 text-red-700" : circuitHalf ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                    )}>
-                      {circuitOpen ? '❌ OUVERT' : circuitHalf ? '⚠️ SEMI-OUVERT' : '✅ FERMÉ'}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">Échecs consécutifs</span>
-                    <span className={cn("text-xs font-black tabular-nums", (circuit.consecutive_failures ?? 0) >= (circuit.threshold ?? 5) ? "text-red-600" : "text-slate-700")}>
-                      {circuit.consecutive_failures ?? 0} / {circuit.threshold ?? 5}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500 font-bold">Cooldown</span>
-                    <span className="text-xs font-black text-slate-700">{circuit.cooldown_seconds ?? 60} s</span>
-                  </div>
-                  {circuitOpen && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500 font-bold">Réouverture dans</span>
-                      <span className="text-xs font-black text-amber-600 tabular-nums">{circuit.seconds_until_reset ?? 0} s</span>
-                    </div>
-                  )}
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", circuitOpen ? "bg-red-400" : circuitHalf ? "bg-amber-400" : "bg-emerald-400")}
-                      style={{ width: `${Math.min(100, ((circuit.consecutive_failures ?? 0) / (circuit.threshold ?? 5)) * 100)}%` }}
-                    />
-                  </div>
-                  <p className="text-[9px] text-slate-400 font-bold">S'ouvre après {circuit.threshold ?? 5} échecs · Cooldown {circuit.cooldown_seconds ?? 60}s · Sonde auto en half-open</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Queue + Delivery Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* Retry Queue */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <Clock className="size-4 text-[#E17055]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">File d'attente (Retry Queue)</h4>
-                </div>
-                <div className="p-5 space-y-3">
-                  {[
-                    { label: 'Événements en attente',   value: pendingCount,                     hi: pendingCount > 20, lo: pendingCount === 0 },
-                    { label: 'Échecs définitifs (7j)',   value: diagQueue.failed_count ?? '—',   hi: (diagQueue.failed_count ?? 0) > 0 },
-                    { label: 'Récupérés via retry (7j)', value: diagCapi.recovered_7d ?? '—',    lo: true },
-                    { label: 'Prochain retry',           value: diagQueue.next_retry_at ? fmtAgo(diagQueue.next_retry_at) : '—' },
-                    { label: 'Plus ancien event',        value: queueH.oldest_age_minutes != null ? `${queueH.oldest_age_minutes} min` : '—', hi: (queueH.oldest_age_minutes ?? 0) > 60 },
-                    { label: 'Max tentatives / event',   value: diagQueue.max_retries_configured ?? 6 },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-bold">{row.label}</span>
-                      <span className={cn("text-[11px] font-black tabular-nums", row.hi ? "text-red-600" : row.lo ? "text-emerald-600" : "text-slate-700")}>
-                        {String(row.value)}
-                      </span>
-                    </div>
-                  ))}
-                  {pendingCount === 0 && (
-                    <p className="text-[9px] text-emerald-600 font-bold mt-1">✅ File vide — aucun événement en attente</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Delivery Stats 7d */}
-              <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b flex items-center gap-2">
-                  <BarChart3 className="size-4 text-[#00B894]" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Livraison 7 jours</h4>
-                </div>
-                <div className="p-5 space-y-3">
-                  {[
-                    { label: 'Total événements',    value: diagCapi.total_7d ?? (((diagCapi.sent_7d ?? 0) + (diagCapi.errors_7d ?? 0)) || '—') },
-                    { label: 'Succès',              value: diagCapi.sent_7d ?? '—',    lo: true },
-                    { label: 'Erreurs',             value: diagCapi.errors_7d ?? '—',  hi: (diagCapi.errors_7d ?? 0) > 0 },
-                    { label: 'Taux de succès',      value: diagCapi.success_rate != null ? `${diagCapi.success_rate}%` : '—', lo: (diagCapi.success_rate ?? 0) >= 80 },
-                    { label: 'Taux d\'échec',       value: diagCapi.failure_rate != null ? `${diagCapi.failure_rate}%` : '—', hi: (diagCapi.failure_rate ?? 0) > 20 },
-                    { label: 'Latence moyenne',     value: diagQueue.avg_latency_ms != null ? `${diagQueue.avg_latency_ms} ms` : '—' },
-                    { label: 'Latence p95',         value: diagQueue.p95_latency_ms != null ? `${diagQueue.p95_latency_ms} ms` : '—' },
-                    { label: 'Temps moyen retry',   value: diagQueue.avg_time_to_success_s != null ? fmtDur(diagQueue.avg_time_to_success_s) : '—' },
-                  ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500 font-bold">{row.label}</span>
-                      <span className={cn("text-[11px] font-black tabular-nums", row.hi ? "text-red-600" : row.lo ? "text-emerald-600" : "text-slate-700")}>
-                        {String(row.value)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Last Events */}
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b flex items-center gap-2">
-                <Activity className="size-4 text-slate-400" />
-                <h4 className="text-xs font-black uppercase tracking-wider text-[#2D3436]">Derniers Événements</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#F0F0F0]">
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="size-2 rounded-full bg-emerald-500" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dernier Succès</span>
-                  </div>
-                  <p className="text-sm font-black text-slate-700">{fmtAgo(healthData?.last_success_at ?? null)}</p>
-                  {healthData?.last_success_at && (
-                    <p className="text-[9px] text-slate-400 font-mono mt-0.5">{new Date(healthData.last_success_at).toLocaleString('fr-FR')}</p>
-                  )}
-                </div>
-                <div className="p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="size-2 rounded-full bg-red-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dernière Erreur</span>
-                  </div>
-                  <p className="text-sm font-black text-slate-700">{fmtAgo(healthData?.last_error_at ?? null)}</p>
-                  {lastErrorMsg && (
-                    <p className="text-[9px] text-red-400 font-mono mt-0.5 break-all line-clamp-2">{lastErrorMsg}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Runtime Versions */}
-            {healthData?.versions && (
-              <div className="bg-[#F8F9FC] rounded-xl border px-5 py-3 flex flex-wrap gap-4">
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Versions runtime :</span>
-                {Object.entries(healthData.versions as Record<string, string>).map(([k, v]) => (
-                  <span key={k} className="text-[9px] font-mono text-slate-500"><span className="font-black">{k}</span> {v}</span>
-                ))}
-              </div>
-            )}
-
-            {/* Connectivity Deep-Dive Test */}
-            {(() => {
-              const [ctData, setCtData] = React.useState<any>(null);
-              const [ctLoading, setCtLoading] = React.useState(false);
-              const [ctError, setCtError] = React.useState<string | null>(null);
-
-              const runTest = async () => {
-                setCtLoading(true);
-                setCtError(null);
-                setCtData(null);
-                try {
-                  const res = await apiFetch<any>('/api/v1/meta-ads/connectivity-test');
-                  setCtData(res);
-                } catch (e: any) {
-                  setCtError(e?.message ?? 'Erreur inconnue');
-                } finally {
-                  setCtLoading(false);
-                }
-              };
-
-              const verdictColor = (v: string) => {
-                if (!v) return 'text-slate-400';
-                if (v.startsWith('OK')) return 'text-emerald-600 font-black';
-                if (v.startsWith('TLS_BLOCKED')) return 'text-red-600 font-black';
-                if (v.startsWith('TIMEOUT')) return 'text-amber-600 font-black';
-                if (v.startsWith('SKIP')) return 'text-slate-400';
-                return 'text-red-500 font-black';
-              };
-
-              const testLabels: Record<string, string> = {
-                '1_raw_stdlib_tls':  '① Raw stdlib TCP+TLS',
-                '2_httpx_http11':    '② httpx HTTP/1.1',
-                '3_httpx_http2':     '③ httpx HTTP/2',
-                '4_urllib_https':    '④ urllib HTTPS',
-                '5_control_httpbin': '⑤ Contrôle httpbin.org',
-                '6_tcp_port80_only': '⑥ TCP port 80 (sans TLS)',
-              };
-
-              return (
-                <div className="rounded-2xl border border-slate-200 bg-[#F8F9FC] p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-600">Diagnostic Réseau Approfondi</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Teste 6 chemins vers graph.facebook.com pour confirmer exactement quelle couche est bloquée.</p>
-                    </div>
-                    <button
-                      onClick={runTest}
-                      disabled={ctLoading}
-                      className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-[10px] font-black transition-all disabled:opacity-50"
-                    >
-                      <Server className={cn("size-3.5", ctLoading && "animate-pulse")} />
-                      {ctLoading ? 'Test en cours…' : 'Lancer le test'}
-                    </button>
-                  </div>
-
-                  {ctError && (
-                    <p className="text-xs text-red-500 font-bold bg-red-50 rounded-lg px-3 py-2">{ctError}</p>
-                  )}
-
-                  {ctLoading && (
-                    <div className="space-y-2">
-                      {Object.values(testLabels).map((label) => (
-                        <div key={label} className="flex items-center gap-3 text-[10px] text-slate-400">
-                          <div className="size-2 rounded-full bg-slate-200 animate-pulse" />
-                          <span>{label}</span>
-                          <span className="text-slate-300">en attente…</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {ctData && !ctLoading && (
-                    <div className="space-y-3">
-                      {/* Summary */}
-                      <div className={cn(
-                        "rounded-xl border px-4 py-3 text-xs font-bold",
-                        ctData.summary?.includes('CONFIRMED') ? 'bg-red-50 border-red-200 text-red-700' :
-                        ctData.summary?.includes('succeeded') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                        'bg-amber-50 border-amber-200 text-amber-700'
-                      )}>
-                        {ctData.summary}
-                      </div>
-
-                      {/* Per-test rows */}
-                      <div className="rounded-xl border border-slate-200 overflow-hidden">
-                        <table className="w-full text-[10px]">
-                          <thead className="bg-slate-100 text-slate-400 uppercase font-black tracking-wider">
-                            <tr>
-                              <th className="text-left px-3 py-2">Test</th>
-                              <th className="text-left px-3 py-2">Verdict</th>
-                              <th className="text-left px-3 py-2">DNS</th>
-                              <th className="text-left px-3 py-2">TCP</th>
-                              <th className="text-left px-3 py-2">TLS</th>
-                              <th className="text-left px-3 py-2">Total</th>
-                              <th className="text-left px-3 py-2">Détail</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {Object.entries(testLabels).map(([key, label]) => {
-                              const t = ctData[key];
-                              if (!t) return null;
-                              const isSkip = t.verdict?.startsWith('SKIP');
-                              return (
-                                <tr key={key} className={cn("border-t border-slate-100", isSkip && "opacity-40")}>
-                                  <td className="px-3 py-2 font-black text-slate-700 whitespace-nowrap">{label}</td>
-                                  <td className={cn("px-3 py-2 whitespace-nowrap", verdictColor(t.verdict ?? ''))}>{t.verdict?.split(' — ')[0] ?? '—'}</td>
-                                  <td className="px-3 py-2 text-slate-500">{t.dns_ms != null ? `${t.dns_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2 text-slate-500">{t.tcp_ms != null ? `${t.tcp_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2">
-                                    {t.tls_status === 'ok' ? <span className="text-emerald-600 font-black">{t.tls_ms}ms ✅</span>
-                                     : t.tls_status === 'TIMEOUT' ? <span className="text-red-600 font-black">{t.tls_ms}ms ⏱</span>
-                                     : t.tls_status ? <span className="text-red-500">{t.tls_ms}ms ❌</span>
-                                     : '—'}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-500">{t.total_ms != null ? `${t.total_ms}ms` : '—'}</td>
-                                  <td className="px-3 py-2 text-slate-400 max-w-[180px] truncate font-mono" title={t.tls_version ?? t.status ?? t.tls_status ?? ''}>
-                                    {t.tls_version ?? t.http_version ?? t.status ?? t.tls_status ?? '—'}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <p className="text-[9px] text-slate-400 font-mono">Python {ctData.python_version?.split(' ')[0]}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-          </div>
-        );
-      })()}
-
       {/* 🚀 DIALOG: GUIDE D'INSTALLATION 🚀 */}
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -2025,138 +1678,6 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-    </div>
-  );
-}
-
-/** Filterable operational table over meta_capi_logs — store/date/type/status. */
-function CapiLogsTable({ storeId }: { storeId?: string }) {
-  const [statusFilter, setStatusFilter] = useState('');
-  const [eventFilter, setEventFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-
-  const purgeMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/meta-ads/capi-logs/pending?store_id=${storeId}`, { method: 'DELETE' }),
-    onSuccess: (res: any) => {
-      toast.success(`${res?.cancelled ?? 0} événement(s) annulé(s)`);
-      refetch();
-    },
-    onError: () => toast.error('Erreur lors de la purge'),
-  });
-
-  const retryMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/meta-ads/capi-logs/retry-now?store_id=${storeId}`, { method: 'POST' }),
-    onSuccess: () => {
-      toast.success('Retry sweep déclenché — vérifiez les logs dans 30s');
-      setTimeout(() => refetch(), 5000);
-    },
-    onError: () => toast.error('Erreur lors du déclenchement'),
-  });
-
-  const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['meta_capi_logs', storeId, statusFilter, eventFilter, dateFrom, dateTo],
-    queryFn: () => {
-      const params = new URLSearchParams({ store_id: storeId || '' });
-      if (statusFilter) params.set('status', statusFilter);
-      if (eventFilter) params.set('event_name', eventFilter);
-      if (dateFrom) params.set('date_from', dateFrom);
-      if (dateTo) params.set('date_to', dateTo);
-      return apiFetch<{ success: boolean; data: any[] }>(`/api/v1/meta-ads/capi-logs?${params.toString()}`);
-    },
-    enabled: !!storeId,
-  });
-
-  const rows = data?.data ?? [];
-  const statusLabel: Record<string, string> = {
-    success: 'Envoyé', error: 'Échec', pending_retry: 'En reprise', failed: 'Abandonné',
-  };
-  const statusColor: Record<string, string> = {
-    success: 'text-emerald-600 bg-emerald-50', error: 'text-rose-600 bg-rose-50',
-    pending_retry: 'text-amber-600 bg-amber-50', failed: 'text-slate-500 bg-slate-100',
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="text-[10px] font-bold border rounded-lg px-2 py-1.5 bg-white">
-          <option value="">Tous statuts</option>
-          <option value="success">Envoyé</option>
-          <option value="error">Échec</option>
-          <option value="pending_retry">En reprise</option>
-          <option value="failed">Abandonné</option>
-        </select>
-        <select value={eventFilter} onChange={e => setEventFilter(e.target.value)}
-          className="text-[10px] font-bold border rounded-lg px-2 py-1.5 bg-white">
-          <option value="">Tous événements</option>
-          <option value="PageView">PageView</option>
-          <option value="ViewContent">ViewContent</option>
-          <option value="AddToCart">AddToCart</option>
-          <option value="InitiateCheckout">InitiateCheckout</option>
-          <option value="Purchase">Purchase</option>
-          <option value="Lead">Lead</option>
-        </select>
-        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-          className="text-[10px] font-bold border rounded-lg px-2 py-1.5 bg-white" />
-        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-          className="text-[10px] font-bold border rounded-lg px-2 py-1.5 bg-white" />
-        <button onClick={() => refetch()} className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border bg-slate-50 hover:bg-slate-100">
-          {isFetching ? '…' : 'Rafraîchir'}
-        </button>
-        <button
-          onClick={() => retryMutation.mutate()}
-          disabled={retryMutation.isPending}
-          className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50"
-        >
-          {retryMutation.isPending ? '…' : 'Relancer'}
-        </button>
-        <button
-          onClick={() => purgeMutation.mutate()}
-          disabled={purgeMutation.isPending}
-          className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
-        >
-          {purgeMutation.isPending ? '…' : 'Vider la file'}
-        </button>
-      </div>
-      <div className="overflow-x-auto rounded-2xl border border-slate-100">
-        <table className="w-full text-[10px]">
-          <thead className="bg-slate-50 text-slate-400 uppercase font-black tracking-wider">
-            <tr>
-              <th className="text-left px-3 py-2">Événement</th>
-              <th className="text-left px-3 py-2">Statut</th>
-              <th className="text-left px-3 py-2">Tentatives</th>
-              <th className="text-left px-3 py-2">Latence</th>
-              <th className="text-left px-3 py-2">Prochaine reprise</th>
-              <th className="text-left px-3 py-2">Erreur</th>
-              <th className="text-left px-3 py-2">Créé</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && (
-              <tr><td colSpan={7} className="px-3 py-4 text-center text-slate-400 font-bold">Chargement…</td></tr>
-            )}
-            {!isLoading && rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-4 text-center text-slate-400 font-bold">Aucun événement pour ces filtres</td></tr>
-            )}
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-slate-50">
-                <td className="px-3 py-2 font-bold text-slate-700">{r.event_name}</td>
-                <td className="px-3 py-2">
-                  <span className={cn("px-2 py-0.5 rounded-full font-black", statusColor[r.status] || 'bg-slate-100 text-slate-500')}>
-                    {statusLabel[r.status] || r.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-slate-500">{r.retry_count}</td>
-                <td className="px-3 py-2 text-slate-500">{r.latency_ms != null ? `${r.latency_ms} ms` : '—'}</td>
-                <td className="px-3 py-2 text-slate-500">{r.next_retry_at ? new Date(r.next_retry_at).toLocaleString('fr-FR') : '—'}</td>
-                <td className="px-3 py-2 text-rose-500 max-w-[220px] truncate" title={r.error_message || ''}>{r.error_message || '—'}</td>
-                <td className="px-3 py-2 text-slate-400">{r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

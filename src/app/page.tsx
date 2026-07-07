@@ -5,16 +5,17 @@ import { UrlSync } from '@/components/app/url-sync';
 import { HydrateStore } from '@/components/app/hydrate-store';
 import { Suspense } from 'react';
 import { getServerSessionCookie, verifyToken } from '@/lib/jwt';
+import { getBackendUrl } from '@/lib/utils';
 import type { User, Store } from '@/lib/types';
 
 async function fetchInitialData() {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8003';
+  const backendUrl = getBackendUrl();
 
   let initialStores: Store[] = [];
   let initialUser: User | null = null;
 
   try {
-    const res = await fetch(`${backendUrl}/api/v1/stores`, { cache: 'no-store' });
+    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
     if (res.ok) {
       const json = await res.json();
       initialStores = (json.data ?? json ?? []) as Store[];

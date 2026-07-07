@@ -82,6 +82,14 @@ interface AppState {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   toggleSidebar: () => void;
+
+  // Language Locale (FR, EN, AR)
+  locale: string | null;
+  setLocale: (locale: string) => void;
+
+  // Quick stock adjustment
+  quickAdjustProduct: any | null;
+  setQuickAdjustProduct: (product: any | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -142,6 +150,14 @@ export const useAppStore = create<AppState>()(
       sidebarCollapsed: false,
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+      // ─── Language Locale ──────────────────────────────────────
+      locale: null,
+      setLocale: (locale) => set({ locale }),
+
+      // ─── Quick stock adjustment ──────────────────────────────
+      quickAdjustProduct: null,
+      setQuickAdjustProduct: (quickAdjustProduct) => set({ quickAdjustProduct }),
     }),
     {
       name: 'ecommerce-app-state',
@@ -155,7 +171,9 @@ export const useAppStore = create<AppState>()(
         adminSearchTerm: state.adminSearchTerm,
         sidebarCollapsed: state.sidebarCollapsed,
         user: state.user,
+        isAuthenticated: state.isAuthenticated,
         activeStore: state.activeStore,
+        locale: state.locale,
       }),
     }
   )

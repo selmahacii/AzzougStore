@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import type { Product } from '@/lib/types';
 import { resolveTemplate } from '@/lib/template-resolver';
+import { cn } from '@/lib/utils';
 
 interface ProductCardProps {
   product: Product;
@@ -41,12 +42,29 @@ function useCardData(product: Product) {
     return [];
   }, [product.images]);
 
+  const allImages = useMemo(() => {
+    let imgs = [...parsedImages];
+    if (product.main_image) {
+      imgs = [product.main_image, ...imgs.filter(img => img !== product.main_image)];
+    }
+    return imgs;
+  }, [parsedImages, product.main_image]);
+
   const discount = product.compare_price ? getDiscountPercent(product.price, product.compare_price) : 0;
   const isOutOfStock = product.stock === 0;
-  const img1 = parsedImages[0] || 'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?q=80&w=800';
-  const img2 = parsedImages[1] || null;
+  const img1 = allImages[0] || 'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?q=80&w=800';
+  const img2 = allImages[1] || null;
 
-  return { parsedImages, discount, isOutOfStock, img1, img2 };
+  const colors = useMemo(() => {
+    if (!product.variants) return [];
+    return product.variants
+      .filter(v => v.name.toLowerCase().includes('couleur') && v.color)
+      .map(v => v.color!)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .slice(0, 5);
+  }, [product.variants]);
+
+  return { parsedImages, discount, isOutOfStock, img1, img2, colors };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -56,69 +74,68 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
   onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
-  const { discount, isOutOfStock, img1, img2 } = useCardData(product);
+  const { discount, isOutOfStock, img1, img2, colors } = useCardData(product);
   const toggleWishlist = useCartStore(s => s.toggleWishlist);
   const isInWishlist = useCartStore(s => s.isInWishlist(product.id));
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 15 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white border border-gray-100 cursor-pointer"
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      className="group relative flex flex-col bg-white cursor-pointer transition-all duration-300 pb-2 hover:shadow-[0_12px_30px_rgba(0,0,0,0.03)]"
       onClick={() => onQuickView(product.slug)}
     >
-      {/* Image container — aspect-[4/5], rectangular (no radius) */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-gray-50">
+      {/* Image container — aspect-[4/5] with slight padding/whitespace */}
+      <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50 border border-neutral-100/50">
         <img
           src={img1} alt={product.name}
-          className={`h-full w-full object-cover transition-transform duration-700 ease-out will-change-transform group-hover:scale-[1.02] ${img2 ? 'group-hover:opacity-0' : ''}`}
+          className={`h-full w-full object-cover transition-all duration-1000 ease-out will-change-transform group-hover:scale-[1.03] ${img2 ? 'group-hover:opacity-0' : ''}`}
         />
         {img2 && (
           <img
             src={img2} alt={product.name}
-            className="absolute inset-0 h-full w-full object-cover opacity-0 transition-all duration-700 group-hover:opacity-100"
+            className="absolute inset-0 h-full w-full object-cover opacity-0 transition-all duration-1000 ease-out group-hover:opacity-100 group-hover:scale-[1.03]"
           />
         )}
 
         {/* Wishlist */}
         <button
           onClick={e => { e.stopPropagation(); toggleWishlist(product.id); toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); }}
-          className="absolute top-3 right-3 z-20 size-8 rounded-full bg-white flex items-center justify-center shadow-sm border border-gray-100 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          className="absolute top-3 right-3 z-20 size-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-sm border border-neutral-100/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         >
-          <Heart className={`size-3.5 transition-colors ${isInWishlist ? 'fill-rose-500 text-rose-500' : 'text-gray-400'}`} />
+          <Heart className={`size-3.5 transition-colors ${isInWishlist ? 'fill-rose-500 text-rose-500' : 'text-neutral-400'}`} />
         </button>
 
-        {/* Badge: -XX% if on promo, BEST SELLER if featured, nothing if new/OOS */}
+        {/* Badge */}
         {discount > 0 ? (
           <span
-            className="absolute top-3 left-3 z-20 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-white"
+            className="absolute top-3 left-3 z-20 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.2em] text-white"
             style={{ backgroundColor: primary }}
           >
             -{discount}%
           </span>
         ) : product.featured ? (
-          <span className="absolute top-3 left-3 z-20 px-2 py-1 text-[9px] font-black uppercase tracking-wider bg-gray-900 text-white">
+          <span className="absolute top-3 left-3 z-20 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.2em] bg-neutral-900 text-white">
             Best Seller
           </span>
         ) : null}
 
-        {/* Add to cart — slides up on hover */}
+        {/* Glassmorphic Add to Cart Panel */}
         {!isOutOfStock ? (
-          <div className="absolute inset-x-0 bottom-0 z-10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out">
+          <div className="absolute inset-x-3 bottom-3 z-10 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300 ease-out">
             <button
               onClick={e => { e.stopPropagation(); onAddToCart(product); }}
-              className="w-full py-3.5 text-white text-[10px] font-black uppercase tracking-[0.3em] flex items-center justify-center gap-2 hover:brightness-110 transition-all"
-              style={{ backgroundColor: primary }}
+              className="w-full py-3 backdrop-blur-md bg-white/85 border border-neutral-200/50 text-neutral-900 text-[9px] font-semibold uppercase tracking-[0.3em] flex items-center justify-center gap-1.5 hover:bg-neutral-900 hover:text-white transition-all duration-300"
             >
-              <ShoppingCart className="size-3.5" />
-              Ajouter au panier
+              <ShoppingCart className="size-3" />
+              Ajouter
             </button>
           </div>
         ) : (
-          <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center">
-            <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 border border-gray-200 px-4 py-2 bg-white">
+          <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
+            <span className="text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-400 border border-neutral-200 bg-white/95 px-4 py-2">
               Épuisé
             </span>
           </div>
@@ -126,23 +143,30 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       </div>
 
       {/* Info */}
-      <div className="pt-3 pb-3 px-1">
+      <div className="pt-4 pb-2 px-1">
         {product.category && (
-          <p className="text-[9px] font-black uppercase tracking-[0.35em] text-gray-300 mb-1">{product.category}</p>
+          <p className="text-[8px] font-semibold uppercase tracking-[0.4em] text-neutral-400 mb-1.5">{product.category}</p>
         )}
-        <h3 className="text-[13px] font-semibold text-gray-800 leading-snug line-clamp-2 group-hover:text-gray-600 transition-colors">
+        <h3 className="text-xs font-medium text-neutral-800 leading-relaxed line-clamp-2 group-hover:text-neutral-500 transition-colors">
           {product.name}
         </h3>
         {product.description && (
-          <p className="mt-1 text-xs text-gray-400 leading-snug line-clamp-2">{product.description}</p>
+          <p className="mt-1 text-[11px] text-neutral-400 font-light leading-relaxed line-clamp-2">{product.description}</p>
         )}
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="text-sm font-black" style={{ color: primary }}>
-            {formatPrice(product.price)} DA
+        {colors.length > 0 && (
+          <div className="mt-2.5 flex gap-1.5">
+            {colors.map((c, i) => (
+              <div key={i} className="size-2 rounded-full border border-neutral-100" style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        )}
+        <div className="mt-2.5 flex items-baseline gap-2">
+          <span className="text-xs font-semibold text-neutral-900">
+            {formatPrice(product.price)}
           </span>
-          {product.compare_price && product.compare_price > product.price && (
-            <span className="text-xs font-medium text-gray-300 line-through">
-              {formatPrice(product.compare_price)} DA
+          {product.compare_price !== null && product.compare_price > product.price && (
+            <span className="text-[10px] font-light text-neutral-300 line-through">
+              {formatPrice(product.compare_price)}
             </span>
           )}
         </div>
@@ -158,7 +182,7 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
   onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
-  const { discount, isOutOfStock, img1, img2 } = useCardData(product);
+  const { discount, isOutOfStock, img1, img2, colors } = useCardData(product);
 
   return (
     <motion.div
@@ -215,10 +239,17 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart }: {
           {product.category || 'Series'}
         </p>
         <h3 className="text-[11px] font-black uppercase tracking-[0.1em] text-white leading-tight line-clamp-2">{product.name}</h3>
+        {colors.length > 0 && (
+          <div className="mt-2 flex gap-1">
+            {colors.map((c, i) => (
+              <div key={i} className="size-2 rounded-full border border-white/10" style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        )}
         <div className="mt-2.5 flex items-center gap-3">
-          <span className="text-sm font-black" style={{ color: primary }}>{formatPrice(product.price)} DA</span>
-          {product.compare_price && product.compare_price > product.price && (
-            <span className="text-xs font-bold text-white/20 line-through">{formatPrice(product.compare_price)} DA</span>
+          <span className="text-sm font-black" style={{ color: primary }}>{formatPrice(product.price)}</span>
+          {product.compare_price !== null && product.compare_price > product.price && (
+            <span className="text-xs font-bold text-white/20 line-through">{formatPrice(product.compare_price)}</span>
           )}
         </div>
       </div>
@@ -233,7 +264,7 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
   onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
-  const { discount, isOutOfStock, img1 } = useCardData(product);
+  const { discount, isOutOfStock, img1, colors } = useCardData(product);
   const toggleWishlist = useCartStore(s => s.toggleWishlist);
   const isInWishlist = useCartStore(s => s.isInWishlist(product.id));
 
@@ -286,7 +317,7 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = primary; (e.currentTarget as HTMLButtonElement).style.color = '#0C0F1A'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(12,15,26,0.8)'; (e.currentTarget as HTMLButtonElement).style.color = primary; }}
             >
-              Ajouter — {formatPrice(product.price)} DA
+              Ajouter — {formatPrice(product.price)}
             </button>
           </div>
         ) : (
@@ -307,13 +338,20 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
         <h3 className="text-sm font-light tracking-[0.08em] leading-snug line-clamp-2" style={{ color: 'rgba(255,255,255,0.85)' }}>
           {product.name}
         </h3>
+        {colors.length > 0 && (
+          <div className="mt-2 flex gap-1.5">
+            {colors.map((c, i) => (
+              <div key={i} className="size-2.5 rounded-full border border-white/5" style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        )}
         <div className="mt-3 flex items-baseline gap-3">
           <span className="text-sm font-medium tracking-wider" style={{ color: primary }}>
-            {formatPrice(product.price)} DA
+            {formatPrice(product.price)}
           </span>
-          {product.compare_price && product.compare_price > product.price && (
+          {product.compare_price !== null && product.compare_price > product.price && (
             <span className="text-xs font-light line-through" style={{ color: 'rgba(255,255,255,0.2)' }}>
-              {formatPrice(product.compare_price)} DA
+              {formatPrice(product.compare_price)}
             </span>
           )}
         </div>

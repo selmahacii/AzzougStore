@@ -300,18 +300,30 @@ function AddTemplateModal({ open, onClose, storeId, onSaved }: { open: boolean; 
               className="w-full rounded-xl border border-[#E9ECF0] px-4 py-3 text-sm font-medium text-[#2D3436] resize-none focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]/20"
             />
           </div>
-          <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Variables disponibles</p>
-            <div className="flex flex-wrap gap-1.5">
-              {['Customer_Name', 'Customer_Phone', 'Order_Number', 'Order_Status', 'Total_Order', 'Tracking_ID', 'Delivery_Company', 'Wilaya', 'Agent_Name'].map(v => (
-                <button key={v} onClick={() => insertVar(v)}
-                  className="px-2 py-1 bg-[#F8F9FC] text-[#636E72] border rounded text-[10px] font-bold cursor-pointer hover:bg-[#6C5CE7] hover:text-white hover:border-[#6C5CE7] transition-colors"
-                  style={{ borderColor: C.border }}
-                >
-                  {`{{${v}}}`}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Variables dynamiques — cliquer pour insérer</p>
+            {[
+              { group: '🚚 Livraison', vars: ['Delivery_Channel', 'Tracking_ID', 'Delivery_Company', 'Delivery_Guy_Phone'] },
+              { group: '👤 Client & Localisation', vars: ['Customer_Name', 'Customer_Phone', 'Customer_Address', 'Wilaya', 'Commune'] },
+              { group: '📅 Statut & Dates', vars: ['Order_Status', 'Creation_Date', 'Confirmation_Date', 'Shipping_Date', 'Delivery_Date'] },
+              { group: '🛒 Commande', vars: ['Total_Order', 'Products', 'Order_Source', 'Order_Number'] },
+              { group: '👥 Agents', vars: ['Agent_Name', 'Agent_Phone', 'FollowUp_Agent_Name'] },
+            ].map(group => (
+              <div key={group.group}>
+                <p className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3] mb-1">{group.group}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.vars.map(v => (
+                    <button key={v} onClick={() => insertVar(v)}
+                      className="px-2 py-1 bg-[#F8F9FC] text-[#636E72] border rounded text-[10px] font-bold cursor-pointer hover:bg-[#6C5CE7] hover:text-white hover:border-[#6C5CE7] transition-colors"
+                      style={{ borderColor: C.border }}
+                      title={`Insérer {{${v}}}`}
+                    >
+                      {`{{${v}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div className="px-7 py-5 border-t flex justify-end gap-3 shrink-0" style={{ borderColor: C.border }}>
@@ -360,13 +372,15 @@ export default function SendpilotDashboard() {
   const campaignsQuery = useQuery({
     queryKey: ['marketing', 'campaigns', storeId],
     queryFn: () => apiFetch<Campaign[]>(`/api/v1/marketing/campaigns?store_id=${storeId}`),
-    enabled: !!storeId && activeTab === 'campaigns',
+    enabled: !!storeId,
+    retry: false,
   });
 
   const templatesQuery = useQuery({
     queryKey: ['marketing', 'templates', storeId],
     queryFn: () => apiFetch<Template[]>(`/api/v1/marketing/templates?store_id=${storeId}`),
-    enabled: !!storeId && activeTab === 'templates',
+    enabled: !!storeId,
+    retry: false,
   });
 
   const deleteChannel = useMutation({

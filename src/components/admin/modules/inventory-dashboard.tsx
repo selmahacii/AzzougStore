@@ -48,6 +48,12 @@ interface InventoryMovement {
   quantity: number;
   reason: string | null;
   created_at: string;
+  actor?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
 }
 
 interface InventoryMovementsResponse {
@@ -212,12 +218,7 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
 
    return (
       <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-400">
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            <KpiCard title="Clusters Actifs" value={`${warehouses.length}/${warehouses.length}`} icon={Warehouse} color={C.primary} bgColor={C.primaryBg} status="nominal" />
-            <KpiCard title="Flux Système" value={`${logs.length.toLocaleString()} U`} icon={Activity} color={C.info} bgColor={C.infoBg} />
-            <KpiCard title="Latence Flotte" value="NOMINAL" icon={Truck} color={C.success} bgColor={C.successBg} status="nominal" />
-            <KpiCard title="Audits Récents" value={logs.length.toString()} icon={ShieldCheck} color={C.warning} bgColor={C.warningBg} />
-         </div>
+         {/* REMOVED: Duplicate KPI cards */}
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
@@ -309,10 +310,12 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
                   onClick={() => {
                      if (logs.length === 0) return toast.error("Aucune donnée d'activité à exporter");
                      const csvContent = [
-                        ["Event ID", "Timestamp", "Type", "Quantité", "Raison"],
+                        ["Event ID", "Timestamp", "Acteur", "Rôle Acteur", "Type", "Quantité", "Raison"],
                         ...logs.map(log => [
                            log.id,
                            new Date(log.created_at).toLocaleString(),
+                           (log as any).actor?.name || 'Système',
+                           (log as any).actor?.role || 'N/A',
                            log.type,
                            log.quantity,
                            log.reason || "Flux auto"
@@ -357,12 +360,17 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                     {logs.slice(0, 10).map((log, i) => (
+                     {logs.slice(0, 20).map((log, i) => (
                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                            <td className="py-4 font-mono text-[10px] text-[#2D3436]">#{log.id.split('-')[0]}</td>
                            <td className="py-4 text-[10px] font-bold text-[#636E72]">{new Date(log.created_at).toLocaleString()}</td>
-                           <td className="py-4 text-[10px] font-black uppercase text-[#6C5CE7]">Système / {log.type.split('_')[0]}</td>
-                           <td className="py-4 text-[10px] font-bold text-slate-400 italic">{log.reason || 'Calcul Automatique'}</td>
+                           <td className="py-4">
+                              <div className="flex flex-col">
+                                 <span className="text-[10px] font-black uppercase text-[#6C5CE7]">{log.actor?.name || 'Système'}</span>
+                                 {log.actor?.role && <span className="text-[9px] font-bold text-slate-400">{log.actor.role}</span>}
+                              </div>
+                           </td>
+                           <td className="py-4 text-[10px] font-bold text-[#2D3436]">{log.type.split('_').join(' ')}</td>
                            <td className={cn("py-4 text-[10px] font-black", log.quantity >= 0 ? "text-emerald-500" : "text-rose-500")}>
                               {log.quantity >= 0 ? '+' : ''}{log.quantity}
                            </td>
@@ -426,12 +434,15 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
    const handleExport = () => {
       if (movements.length === 0) return toast.error("Aucune donnée à exporter");
       const csv = [
-         ["Date", "Produit", "Type", "Quantité", "Raison"],
+         ["Date", "ID", "Produit", "Type", "Quantité", "Acteur", "Rôle", "Raison"],
          ...movements.map(m => [
             new Date(m.created_at).toLocaleString(),
+            m.id,
             m.product_id,
             m.type,
             m.quantity,
+            (m as any).actor?.name || 'Système',
+            (m as any).actor?.role || 'N/A',
             m.reason || ""
          ])
       ].map(e => e.join(",")).join("\n");

@@ -73,7 +73,7 @@ export function YalidineTrackingPanel({ orderId, trackingNumber, onShipped }: Pr
         if (!r.ok || !json.success) throw new Error(json.message ?? 'Erreur Yalidine');
         return json;
       }),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast.success(`Expédié via Yalidine — N° suivi : ${data.tracking}`);
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       onShipped?.(data.tracking);

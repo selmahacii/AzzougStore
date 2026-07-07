@@ -12,6 +12,42 @@ function makeYalidineHeaders(apiId: string, apiToken: string) {
   };
 }
 
+/** Build a clear product description: "Coussin (x2) [Noir] + T-Shirt (x1) [L]" */
+function buildProductList(items: Array<{ productName: string; quantity: number; variantDetails?: any }>) {
+  return items
+    .map((i) => {
+      let desc = `${i.productName} (x${i.quantity})`;
+      if (i.variantDetails) {
+        const vd = typeof i.variantDetails === 'string' ? (() => { try { return JSON.parse(i.variantDetails); } catch { return null; } })() : i.variantDetails;
+        const variant = vd?.variant || vd?.color || vd?.size || vd?.name;
+        if (variant) desc += ` [${variant}]`;
+      }
+      return desc;
+    })
+    .join(' + ');
+}
+
+/** Lookup commune ID from Yalidine API */
+async function lookupCommuneId(apiId: string, apiToken: string, wilayaId: number, communeName: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${YALIDINE_BASE}/communes/?wilaya_id=${wilayaId}`, {
+      headers: makeYalidineHeaders(apiId, apiToken),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    const communes: any[] = body?.data ?? body ?? [];
+    const communeNameLower = (communeName || '').toLowerCase().trim();
+    const match = communes.find(
+      (c: any) =>
+        (c.name || '').toLowerCase().trim() === communeNameLower ||
+        (c.name_ascii || '').toLowerCase().trim() === communeNameLower
+    );
+    return match ? Number(match.id ?? match.commune_id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { orderId } = await req.json();
@@ -41,17 +77,42 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, message: 'Identifiants Yalidine manquants' }, { status: 400 });
     }
 
-    // Map wilaya name → number
-    const wilayaIndex = WILAYAS.findIndex(
-      (w) => w.toLowerCase() === (order.customerWilaya ?? '').toLowerCase()
-    );
+    // Map wilaya name → Yalidine wilaya ID (1-indexed)
+    const wilayaName = (order.customerWilaya ?? '').toLowerCase().trim();
+    const wilayaIndex = WILAYAS.findIndex((w) => w.toLowerCase().trim() === wilayaName);
     const wilayaId = wilayaIndex !== -1 ? wilayaIndex + 1 : 16;
 
-    // Get delivery fee for this wilaya
-    const feeGrid = await db.deliveryFeeGrid.findUnique({
-      where: { partnerId_wilayaId: { partnerId: partner.id, wilayaId } },
-    });
-    const price = feeGrid?.homeFee ?? 0;
+    // Lookup commune ID from Yalidine live API
+    const rawCommune = order.customerCommune ?? '';
+    const cleanedCommune = rawCommune.includes('·') ? rawCommune.split('·').pop()?.trim() || rawCommune : rawCommune;
+    const communeId = await lookupCommuneId(apiId, apiToken, wilayaId, cleanedCommune);
+
+    // Get delivery fee — prefer the saved fee on the order, fallback to fee grid
+    let deliveryFee = typeof (order as any).deliveryFee === 'number' ? (order as any).deliveryFee : 0;
+    if (!deliveryFee) {
+      const feeGrid = await db.deliveryFeeGrid.findUnique({
+        where: { partnerId_wilayaId: { partnerId: partner.id, wilayaId } },
+      });
+      deliveryFee = order.deliveryType === 'stop_desk'
+        ? (feeGrid?.officeFee ?? 0)
+        : (feeGrid?.homeFee ?? 0);
+    }
+
+    // Build full product description with quantities and variants
+    const productList = buildProductList(
+      order.items.map((i) => ({
+        productName: i.productName,
+        quantity: i.quantity,
+        variantDetails: (i as any).variantDetails,
+      }))
+    );
+
+    // Total COD = order total (products) + delivery fee
+    const codAmount = Number(order.total ?? 0) + Number(deliveryFee ?? 0);
+
+    const isStopDesk = order.deliveryType === 'stop_desk' || order.deliveryType === 'OFFICE';
+    const stopdeskMatch = (order.customerAddress || '').match(/Bureau Yalidine \(ID:\s*(\d+)\)/i);
+    const stopdeskId = stopdeskMatch ? Number(stopdeskMatch[1]) : null;
 
     const parcelPayload = [
       {
@@ -59,20 +120,20 @@ export async function POST(req: Request) {
         firstname: order.customerName.split(' ')[0] ?? order.customerName,
         familyname: order.customerName.split(' ').slice(1).join(' ') || '-',
         contact_phone: order.customerPhone,
-        address: order.customerAddress || 'Adresse non spécifiée',
+        address: order.customerAddress || order.customerCommune || order.customerWilaya || 'Adresse non spécifiée',
         to_wilaya_id: wilayaId,
-        to_commune_id: null, // Yalidine accepts null if unknown
-        product_list: order.items.map((i) => i.productName).join(', '),
-        price: order.total,
+        to_commune_id: communeId,
+        product_list: productList,
+        price: codAmount,
         do_insurance: 0,
-        declared_value: order.total,
+        declared_value: Number(order.total ?? 0),
         height: 5,
         width: 20,
         length: 30,
         weight: 0.5,
-        freeshipping: price === 0 ? 1 : 0,
-        is_stopdesk: order.deliveryType === 'OFFICE' ? 1 : 0,
-        stopdesk_id: null,
+        freeshipping: deliveryFee === 0 ? 1 : 0,
+        is_stopdesk: isStopDesk ? 1 : 0,
+        stopdesk_id: stopdeskId,
         has_exchange: 0,
         exchange_product_list: '',
       },
@@ -87,11 +148,10 @@ export async function POST(req: Request) {
     if (!res.ok) {
       const errBody = await res.text();
       console.error('[yalidine/ship] API error:', res.status, errBody);
-      return NextResponse.json({ success: false, message: `Yalidine API: ${res.status}` }, { status: 502 });
+      return NextResponse.json({ success: false, message: `Yalidine API: ${res.status} — ${errBody}` }, { status: 502 });
     }
 
     const data = await res.json();
-    // Response: { "ORD-xxx": { success, tracking, label } }
     const key = `ORD-${order.orderNumber}`;
     const result = (data as any)?.[key] ?? Object.values(data as any)[0];
 
