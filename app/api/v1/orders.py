@@ -1155,6 +1155,8 @@ def update_order(
             order=order,
             update_data=status_update.model_dump(exclude_unset=True),
             actor_id=current_user.id,
+            actor_name=current_user.name,
+            actor_role=current_user.role,
         )
         db.commit()
         db.refresh(updated)

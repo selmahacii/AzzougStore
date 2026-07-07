@@ -789,6 +789,8 @@ class OrderService:
         order: Order,
         update_data: dict,
         actor_id: str,
+        actor_name: str | None = None,
+        actor_role: str | None = None,
     ) -> Order:
         """
         Update order status/assignment with full state machine enforcement
@@ -856,9 +858,26 @@ class OrderService:
         if scheduled_callback_at:
             order.next_callback_time = scheduled_callback_at
         
-        # Persist notes on the order model if provided
+        # Persist notes on the order model if provided. Full per-actor history
+        # already lives in the OrderEvent log (_log_event below, surfaced via
+        # GET /orders/{id}/events and OrderTraceabilityPanel) — this field is
+        # just the "at a glance" note shown in the row. Prefixing with the
+        # actor's role means a confirmatrice's note and a livreur's delivery
+        # note are each clearly attributed instead of one silently replacing
+        # the other with no indication of who left it.
         if order_note:
-            order.notes = order_note  # type: ignore[assignment]
+            role_labels = {
+                "CONFIRMATEUR": "Confirmatrice",
+                "LIVREUR": "Livreur",
+                "MANAGER": "Manager",
+                "ADMIN": "Admin",
+                "SUPER_ADMIN": "Admin",
+            }
+            if actor_role and actor_role in role_labels:
+                tag = f"{role_labels[actor_role]} — {actor_name}" if actor_name else role_labels[actor_role]
+                order.notes = f"[{tag}] {order_note}"  # type: ignore[assignment]
+            else:
+                order.notes = order_note  # type: ignore[assignment]
 
         if new_status and new_status != old_status:
             # Enforce state machine

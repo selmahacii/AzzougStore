@@ -30,18 +30,39 @@ MAX_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "")
-if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
-    try:
-        cloudinary.config()
-    except Exception:
+# Accept CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET as
+# an alternative to CLOUDINARY_URL — Cloudinary's own dashboard shows these
+# three values separately, so users who configured "Cloudinary" on HuggingFace
+# by copying cloud name/key/secret (rather than assembling the single
+# cloudinary://key:secret@cloud_name URL themselves) had it silently ignored:
+# this file used to check ONLY CLOUDINARY_URL, so their uploads fell back to
+# the Space's ephemeral local disk despite Cloudinary being "configured".
+_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+_USING_INDIVIDUAL_VARS = False
+
+if _CLOUDINARY_OK:
+    if CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
+        try:
+            cloudinary.config()
+        except Exception:
+            _CLOUDINARY_OK = False
+    elif _CLOUD_NAME and _API_KEY and _API_SECRET:
+        try:
+            cloudinary.config(cloud_name=_CLOUD_NAME, api_key=_API_KEY, api_secret=_API_SECRET)
+            _USING_INDIVIDUAL_VARS = True
+        except Exception:
+            _CLOUDINARY_OK = False
+    else:
         _CLOUDINARY_OK = False
 
-if not (CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://") and _CLOUDINARY_OK):
+if not _CLOUDINARY_OK:
     import logging
     logging.getLogger("app.upload").warning(
-        "CLOUDINARY_URL non configuré — les uploads sont stockés sur le disque local "
-        "ÉPHÉMÈRE (perdus à chaque redémarrage du Space). Configurez le secret "
-        "CLOUDINARY_URL sur HuggingFace pour un stockage persistant."
+        "Cloudinary non configuré — uploads stockés sur disque local ÉPHÉMÈRE "
+        "(perdus à chaque redémarrage du Space). Configurez CLOUDINARY_URL ou "
+        "CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET."
     )
 
 
@@ -79,19 +100,27 @@ def storage_status(current_user: Any = Depends(deps.get_current_active_user)) ->
     check on the env var — so a wrong/expired CLOUDINARY_URL is caught here
     instead of silently degrading every future upload to local disk.
     """
+    url_looks_valid = bool(CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"))
+    individual_vars_present = bool(_CLOUD_NAME and _API_KEY and _API_SECRET)
+
     result: dict = {
         "package_installed": _CLOUDINARY_OK,
-        "env_var_present": bool(CLOUDINARY_URL),
-        "env_var_looks_valid": bool(CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://")),
+        "config_method": "CLOUDINARY_URL" if url_looks_valid else ("individual vars" if individual_vars_present else None),
+        "env_var_present": bool(CLOUDINARY_URL) or individual_vars_present,
+        "env_var_looks_valid": url_looks_valid or individual_vars_present,
         "persistent": False,
         "detail": None,
     }
 
-    if not CLOUDINARY_URL:
-        result["detail"] = "CLOUDINARY_URL n'est pas défini — tous les uploads (logos, hero, produits) sont perdus à chaque redéploiement du Space."
+    if not CLOUDINARY_URL and not individual_vars_present:
+        result["detail"] = (
+            "Aucune configuration Cloudinary trouvée — ni CLOUDINARY_URL, ni le trio "
+            "CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET. "
+            "Tous les uploads (logos, hero, produits) sont perdus à chaque redéploiement du Space."
+        )
         return result
 
-    if not result["env_var_looks_valid"]:
+    if CLOUDINARY_URL and not url_looks_valid and not individual_vars_present:
         result["detail"] = "CLOUDINARY_URL est défini mais n'a pas le format attendu 'cloudinary://<api_key>:<api_secret>@<cloud_name>' — vérifiez le secret sur HuggingFace."
         return result
 
@@ -105,7 +134,7 @@ def storage_status(current_user: Any = Depends(deps.get_current_active_user)) ->
         result["persistent"] = True
         result["detail"] = "Stockage Cloudinary actif et joignable — les uploads persistent entre les redéploiements."
     except Exception as exc:
-        result["detail"] = f"CLOUDINARY_URL est présent mais l'appel de test a échoué ({exc}) — les uploads retombent en stockage local éphémère."
+        result["detail"] = f"Configuration Cloudinary présente mais l'appel de test a échoué ({exc}) — les uploads retombent en stockage local éphémère."
 
     return result
 
@@ -142,7 +171,7 @@ async def upload_image(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
+    if _CLOUDINARY_OK:
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),
@@ -218,7 +247,7 @@ async def upload_media(
 
     # ── Cloudinary Upload ─────────────────────────────────────
     cloudinary_error = None
-    if _CLOUDINARY_OK and CLOUDINARY_URL and CLOUDINARY_URL.startswith("cloudinary://"):
+    if _CLOUDINARY_OK:
         try:
             upload_result = cloudinary.uploader.upload(
                 io.BytesIO(content),
