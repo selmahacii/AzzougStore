@@ -85,6 +85,7 @@ export interface ProductVariant {
   value: string;     // e.g. "Rouge"
   sku?: string;      // Specific SKU for this variant
   stock?: number;    // Specific stock for this variant
+  reserved?: number; // Units held for unconfirmed orders (see inventory_service.py)
   price?: number;    // Specific price (optional, overrides base)
   image?: string;    // Specific image for this variant
   color?: string;    // Hex code for color swatches

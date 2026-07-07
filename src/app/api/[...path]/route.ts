@@ -56,8 +56,18 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       }
     });
 
-    // Add internal API key if present
-    if (process.env.INTERNAL_API_KEY) {
+    // Internal API key is ONLY for genuinely sessionless server-to-server
+    // calls (no browser present, no user to authenticate as). Attaching it
+    // unconditionally here — as this proxy used to — made every browser
+    // request carry it, and the backend's internal-key bypass resolves to
+    // the SUPER_ADMIN account whenever x-user-id is absent (which it always
+    // is for /api/v1/* proxied calls: middleware never sets it there). That
+    // silently authenticated EVERY logged-in user as SUPER_ADMIN, bypassing
+    // all role-based scoping — e.g. a livreur's own session cookie was never
+    // even consulted, so GET /orders returned every order in the database.
+    // Only fall back to the internal key when there's no session cookie to
+    // authenticate with in the first place.
+    if (process.env.INTERNAL_API_KEY && !request.headers.get('cookie')) {
       headers.set('x-internal-key', process.env.INTERNAL_API_KEY);
     }
 

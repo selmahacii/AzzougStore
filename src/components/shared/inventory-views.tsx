@@ -6,7 +6,6 @@ import { Search, Package, Loader2, Boxes, Clock, FileText } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { cn } from '@/lib/utils';
-import { formatPrice } from '@/lib/format';
 import type { Product } from '@/lib/types';
 
 /**
@@ -69,11 +68,10 @@ export function SimpleStockList({ defaultFilter = 'all' }: { defaultFilter?: 'al
   const outCount = products.filter(p => p.stock <= 0).length;
   const healthyCount = products.length - lowCount - outCount;
   const totalUnits = products.reduce((sum, p) => sum + Math.max(p.stock, 0), 0);
-  const totalValue = products.reduce((sum, p) => sum + Math.max(p.stock, 0) * (p.price || 0), 0);
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
         <div className="bg-white border rounded-2xl p-3 text-center">
           <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Produits</p>
           <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{products.length}</p>
@@ -93,10 +91,6 @@ export function SimpleStockList({ defaultFilter = 'all' }: { defaultFilter?: 'al
         <div className="bg-white border rounded-2xl p-3 text-center">
           <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Unités totales</p>
           <p className="text-2xl font-black text-cyan-600 tabular-nums mt-1">{totalUnits}</p>
-        </div>
-        <div className="bg-white border rounded-2xl p-3 text-center">
-          <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Valeur du stock</p>
-          <p className="text-sm font-black text-slate-800 tabular-nums mt-1.5">{formatPrice(totalValue)}</p>
         </div>
       </div>
 
@@ -176,7 +170,9 @@ function ProductStockCard({ product }: { product: Product }) {
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             {product.variants!.slice(0, 4).map((v, i) => (
               <span key={i} className={cn('text-[9px] font-black rounded px-1.5 py-0.5', getVariantColor(v.value))}>
-                {v.value}{v.stock != null ? ` · ${v.stock}` : ''}
+                {v.value}
+                {v.stock != null ? ` · ${v.stock} dispo` : ''}
+                {(v.reserved ?? 0) > 0 ? ` · ${v.reserved} réservé${v.reserved! > 1 ? 's' : ''}` : ''}
               </span>
             ))}
           </div>
