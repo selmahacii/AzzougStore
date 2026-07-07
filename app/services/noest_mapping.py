@@ -20,9 +20,9 @@ WILAYAS = [
     'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
     'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
     'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-    'Ghardaïa', 'Relizane', "El M'Ghair", 'El Meniaa', 'Ouled Djellal',
-    'Bordj Baji Mokhtar', 'Béni Abbès', 'Timimoun', 'Touggourt', 'Djanet',
-    'In Salah', 'In Guezzam'
+    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
+    'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
+    "El M'Ghair", 'El Meniaa'
 ]
 
 # Cache in-memory: wilaya_id -> List of commune names
@@ -30,7 +30,8 @@ _communes_cache: Dict[int, List[str]] = {}
 
 # Static fallback communes for wilayas that Noest may not cover
 _STATIC_COMMUNES: Dict[int, List[str]] = {
-    57: ['Ain Salah', 'Foggaret Ezoua', 'Inghar'],
+    53: ['Ain Salah', 'Foggaret Ezzoua', 'Inghar'],
+    57: ['El M\'Ghair', 'Oum Touyour', 'Sidi Khelil', 'Still', 'Djamaa', 'M\'rara', 'Sidi Amrane', 'Tenedla'],
 }
 
 def normalize_string(s: str) -> str:

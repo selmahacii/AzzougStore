@@ -184,9 +184,9 @@ _WILAYAS = [
     'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
     'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
     'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-    'Ghardaïa', 'Relizane', "El M'Ghair", 'El Meniaa', 'Ouled Djellal',
-    'Bordj Baji Mokhtar', 'Béni Abbès', 'Timimoun', 'Touggourt', 'Djanet',
-    'In Salah', 'In Guezzam',
+    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
+    'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
+    "El M'Ghair", 'El Meniaa',
 ]
 
 def _wilaya_name_to_id(name: str) -> Optional[int]:

@@ -18,9 +18,9 @@ WILAYAS = [
     'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
     'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
     'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-    'Ghardaïa', 'Relizane', "El M'Ghair", 'El Meniaa', 'Ouled Djellal',
-    'Bordj Baji Mokhtar', 'Béni Abbès', 'Timimoun', 'Touggourt', 'Djanet',
-    'In Salah', 'In Guezzam'
+    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
+    'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
+    "El M'Ghair", 'El Meniaa'
 ]
 
 def init_wilayas_if_empty(db: Session):
@@ -33,6 +33,21 @@ def init_wilayas_if_empty(db: Session):
                 home_fee=700.0,
                 office_fee=400.0
             ))
+        db.commit()
+    else:
+        # One-time repair: the 10 post-2019 wilayas (ids 49-58) were seeded
+        # with a scrambled name order that didn't match Noest's actual
+        # wilaya_id numbering (verified live: 49=Timimoun, 50=Bordj Baji
+        # Mokhtar, 51=Ouled Djellal, 52=Béni Abbès, 53=In Salah,
+        # 54=In Guezzam, 55=Touggourt, 56=Djanet, 57=El M'Ghair,
+        # 58=El Meniaa). Fee values are preserved; only the label is fixed.
+        for i, name in enumerate(WILAYAS):
+            wid = i + 1
+            if wid < 49:
+                continue
+            row = db.query(WilayaDeliveryFee).filter(WilayaDeliveryFee.wilaya_id == wid).first()
+            if row and row.wilaya_name != name:
+                row.wilaya_name = name
         db.commit()
 
 @router.get("/", response_model=DeliveryFeeListResponse)

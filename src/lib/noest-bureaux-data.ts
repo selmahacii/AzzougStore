@@ -108,7 +108,7 @@ export const NOEST_BUREAUX: NoestBureau[] = [
   { code: '49A', name: 'Timimoun', address: 'cité MAHDJOUB N° de la porte 16 , Timimoun en face le stade et SAA', phones: ['0555518628'], wilayaId: 49 },
   { code: '51A', name: 'Ouled Djellal', address: 'Rez-de-chaussée de l\'hôtel Transit, à côté de la protection civile d\'Ouled Djellal.', phones: ['0770749651'], wilayaId: 51 },
   { code: '52A', name: 'BENI ABBES', address: 'A coté la wilaya BENI ABBES , en face LAPIWI ( المجلس الشعبي الولائي )', phones: ['0561906728'], wilayaId: 52 },
-  { code: '53A', name: 'In Salah', address: 'Près de la Direction des travaux publics, en face de l\'entrée du radar d\'Algérie Télécom', phones: ['0560362803'], wilayaId: 57 },
+  { code: '53A', name: 'In Salah', address: 'Près de la Direction des travaux publics, en face de l\'entrée du radar d\'Algérie Télécom', phones: ['0560362803'], wilayaId: 53 },
   { code: '55A', name: 'Touggourt', address: 'Cité Sidi Abdeslam (Prés de la banque BEA), Touggourt', phones: ['0770610683'], wilayaId: 55 },
   { code: '56A', name: 'Djanet', address: 'Centre-ville Tine Khatema, à côté du dentiste, Djanet', phones: ['0563026716'], wilayaId: 56 },
   { code: '58A', name: 'El Meniaa', address: 'Rue de l\'unite Africaine (À côté de la boulangerie Boussaid) Il se trouve à 20 mètres de la mosquée saad beno abi elouas', phones: ['0770602445'], wilayaId: 58 },
