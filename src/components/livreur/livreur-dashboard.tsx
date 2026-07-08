@@ -42,75 +42,66 @@ export default function LivreurDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24">
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 bg-slate-900 text-white px-4 sm:px-6 h-16 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="size-9 bg-cyan-500 rounded-xl flex items-center justify-center font-black shrink-0">
-            <Truck className="size-5" />
+      {/* Single sticky bar (was header + a separate mobile store-selector bar
+          stacked on top of the nav) — the nav's sticky offset never accounted
+          for that extra bar's height, so on mobile with multiple stores it
+          would overlap/hide under it while scrolling. Store selector now
+          lives in the header on every breakpoint. */}
+      <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg">
+        <div className="px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="size-9 bg-cyan-500 rounded-xl flex items-center justify-center font-black shrink-0">
+              <Truck className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black tracking-tight leading-none">ESPACE LIVREUR</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-0.5 truncate">{user?.name}</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-black tracking-tight leading-none">ESPACE LIVREUR</p>
-            <p className="text-[10px] font-bold text-slate-400 mt-0.5 truncate">{user?.name}</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {allStores.length > 1 && (
-            <select
-              value={activeStore?.id || ''}
-              onChange={e => { const s = allStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
-              className="hidden sm:block text-xs font-bold bg-white/10 border border-white/10 rounded-lg px-2.5 py-1.5 text-white outline-none cursor-pointer max-w-[160px] truncate"
-              title="Changer de boutique"
-            >
-              {allStores.map(s => (
-                <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
-              ))}
-            </select>
-          )}
-          <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 transition-colors" title="Déconnexion">
-            <LogOut className="size-5" />
-          </button>
-        </div>
-      </header>
-
-      {/* Mobile boutique selector */}
-      {allStores.length > 1 && (
-        <div className="sm:hidden bg-slate-800 px-4 py-2 flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 shrink-0">Boutique :</span>
-          <select
-            value={activeStore?.id || ''}
-            onChange={e => { const s = allStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
-            className="flex-1 text-xs font-bold bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-white outline-none"
-          >
-            {allStores.map(s => (
-              <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* ── Section nav ────────────────────────────────────────────────── */}
-      <nav className="bg-white border-b sticky top-16 z-30">
-        <div className="max-w-3xl mx-auto px-4 flex items-center gap-1 py-2 overflow-x-auto">
-          {([
-            ['deliveries', 'Mes Livraisons', Truck],
-            ['products',   'Produits',        Boxes],
-            ['inventory',  'Inventaire',       Warehouse],
-          ] as const).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              onClick={() => setSection(id)}
-              className={cn(
-                'flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all whitespace-nowrap shrink-0',
-                section === id ? 'bg-slate-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'
-              )}
-            >
-              <Icon className="size-4" />
-              <span className="hidden sm:inline">{label}</span>
-              <span className="sm:hidden">{label === 'Mes Livraisons' ? 'Livraisons' : label}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            {allStores.length > 1 && (
+              <select
+                value={activeStore?.id || ''}
+                onChange={e => { const s = allStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
+                className="text-xs font-bold bg-white/10 border border-white/10 rounded-lg px-2.5 py-1.5 text-white outline-none cursor-pointer max-w-[100px] sm:max-w-[160px] truncate"
+                title="Changer de boutique"
+              >
+                {allStores.map(s => (
+                  <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 transition-colors shrink-0" title="Déconnexion">
+              <LogOut className="size-5" />
             </button>
-          ))}
+          </div>
         </div>
-      </nav>
+
+        {/* ── Section nav — same bar, no separate sticky element to keep in sync ── */}
+        <nav className="bg-slate-800/60 border-t border-white/5">
+          <div className="max-w-3xl mx-auto px-2 flex items-center gap-1 py-1.5 overflow-x-auto">
+            {([
+              ['deliveries', 'Mes Livraisons', Truck],
+              ['products',   'Produits',        Boxes],
+              ['inventory',  'Inventaire',       Warehouse],
+            ] as const).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                onClick={() => setSection(id)}
+                className={cn(
+                  'flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all whitespace-nowrap shrink-0',
+                  section === id ? 'bg-cyan-500 text-white shadow' : 'text-slate-300 hover:bg-white/10'
+                )}
+              >
+                <Icon className="size-4" />
+                <span className="hidden sm:inline">{label}</span>
+                <span className="sm:hidden">{label === 'Mes Livraisons' ? 'Livraisons' : label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      </header>
 
       {section === 'deliveries' && <LivreurDeliveries />}
       {section === 'products'   && <div className="max-w-3xl mx-auto p-4 sm:p-6"><ProductsPage /></div>}

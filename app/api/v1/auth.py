@@ -91,6 +91,8 @@ def _build_user_payload(user: User) -> dict:
         "phone": user.phone,
         "is_active": user.is_active,
         "employee_store_id": str(user.employee_store_id) if user.employee_store_id else None,
+        "assigned_store_scope": getattr(user, "assigned_store_scope", "ALL"),
+        "assigned_store_ids": [str(s) for s in (getattr(user, "assigned_store_ids", None) or [])],
         "daily_target": user.daily_target,
     }
 

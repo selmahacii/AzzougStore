@@ -77,7 +77,23 @@ export function AppBootstrap() {
         // Determine which store to activate
         const currentCachedStore = useAppStore.getState().activeStore;
         const isValidCached = currentCachedStore && stores.some(s => s.id === currentCachedStore.id);
-        
+
+        // A multi-store CONFIRMATEUR (assigned_store_scope="SPECIFIC") legitimately
+        // works across several stores via assigned_store_ids — only employee_store_id
+        // was checked before, so refreshing the page while working in any store OTHER
+        // than her single employee_store_id silently bounced her back to it (or store
+        // #1), even though the store she was in is one she's genuinely assigned to.
+        const isStoreValidForUser = (storeId: string): boolean => {
+          if (!currentUser) return true;
+          if (currentUser.role === 'SUPER_ADMIN') return true;
+          if (currentUser.employee_store_id === storeId) return true;
+          if (currentUser.assigned_store_scope === 'SPECIFIC') {
+            return (currentUser.assigned_store_ids ?? []).includes(storeId);
+          }
+          // scope "ALL" (or unset/legacy user without the field) — any store is fine
+          return true;
+        };
+
         // Prioritize employee_store_id if they are an employee (CONFIRMATEUR, MANAGER, etc)
         // This prevents an employee from getting stuck in a store they shouldn't focus on
         // just because the admin previously had it cached in the browser.
@@ -85,17 +101,17 @@ export function AppBootstrap() {
         if (currentUser && currentUser.employee_store_id) {
            const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
            if (assignedStore) defaultStore = assignedStore;
+        } else if (currentUser?.assigned_store_scope === 'SPECIFIC' && currentUser.assigned_store_ids?.length) {
+           const firstAssigned = stores.find(s => currentUser!.assigned_store_ids!.includes(s.id));
+           if (firstAssigned) defaultStore = firstAssigned;
         }
 
         if (!isValidCached) {
           setActiveStore(defaultStore);
-        } else if (currentUser && currentUser.role !== 'SUPER_ADMIN' && currentUser.employee_store_id) {
-           // For non-super-admins, force them into their assigned store initially to avoid confusion
-           // if the cached store is from a different session
-           if (currentCachedStore.id !== currentUser.employee_store_id) {
-               const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
-               if (assignedStore) setActiveStore(assignedStore);
-           }
+        } else if (currentUser && currentUser.role !== 'SUPER_ADMIN' && !isStoreValidForUser(currentCachedStore.id)) {
+           // Only force-switch when the cached store is genuinely outside this
+           // user's scope — not merely "not her primary" employee_store_id.
+           setActiveStore(defaultStore);
         }
       }
 

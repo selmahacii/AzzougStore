@@ -1810,6 +1810,7 @@ async def dispatch_order(
                 "commune":    best_commune,
                 "montant":    order.total or 0,
                 "produit":    product_details_str,
+                "remarque":   order.notes or "",
                 "type_id":    1,
                 "stop_desk":  is_stopdesk_noest,
                 "station_code": station_code,

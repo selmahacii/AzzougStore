@@ -291,6 +291,8 @@ export interface User {
   phone: string | null;
   is_active: boolean;
   employee_store_id: string | null;
+  assigned_store_scope?: 'ALL' | 'SPECIFIC';
+  assigned_store_ids?: string[];
   daily_target: number;
   created_at: string;
   employee_store?: Pick<Store, 'id' | 'name' | 'slug'> | null;
