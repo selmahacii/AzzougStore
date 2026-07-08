@@ -142,17 +142,28 @@ const PERIODS = [
   { value: 'prev_month', label: 'Mois Dernier' },
 ];
 
+// hideBelow: columns that fold away below that breakpoint instead of
+// forcing the whole table into a fixed min-width (which always produced a
+// horizontal scrollbar on anything narrower than ~1200px, even on a normal
+// laptop screen). Source/Agent/Date are the least essential for an
+// at-a-glance registry — they're still one click away in the order drawer.
 const REGISTRY_COLUMNS = [
-  { key: 'source', label: 'Source' },
+  { key: 'source', label: 'Source', hideBelow: '2xl' as const },
   { key: 'order_number', label: 'N° Commande' },
   { key: 'customer', label: 'Client & Contact' },
-  { key: 'customer_wilaya', label: 'Wilaya' },
-  { key: 'items', label: 'Articles' },
+  { key: 'customer_wilaya', label: 'Wilaya', hideBelow: 'lg' as const },
+  { key: 'items', label: 'Articles', hideBelow: 'xl' as const },
   { key: 'total', label: 'Finances' },
   { key: 'status', label: 'Statut' },
-  { key: 'assignee', label: 'Agent' },
-  { key: 'created_at', label: 'Date & Heure' },
+  { key: 'assignee', label: 'Agent', hideBelow: '2xl' as const },
+  { key: 'created_at', label: 'Date & Heure', hideBelow: 'xl' as const },
 ];
+
+const HIDE_BELOW_CLASS: Record<string, string> = {
+  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',
+  '2xl': 'hidden 2xl:table-cell',
+};
 
 function CallbackCountdown({ nextCallbackTime }: { nextCallbackTime: string }) {
   const [timeLeft, setTimeLeft] = useState('...');
@@ -1219,14 +1230,18 @@ const [timeLeft, setTimeLeft] = useState('');
 
         {/* Tactical Filter Rack */}
         <div className="bg-white rounded-2xl sm:rounded-[32px] border px-4 sm:px-8 py-4 sm:py-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 sm:gap-6 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/90" style={{ borderColor: C.border }}>
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 flex-1">
-            <div className="relative flex-1">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 flex-1 min-w-0">
+            {/* min-w on the input itself (not just its wrapper) so it can never
+                get squeezed to near-zero width by the tab list next to it — that
+                was the actual "search bar isn't visible" bug on medium/laptop
+                viewports where both siblings shared flex-1 with no floor. */}
+            <div className="relative w-full md:w-auto md:flex-1 md:min-w-[220px] shrink-0">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-              <Input 
-                placeholder="Rechercher client, téléphone ou ID..." 
+              <Input
+                placeholder="Rechercher client, téléphone ou ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-11 h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-medium focus-visible:ring-[#4b7bec]" 
+                className="pl-11 h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-medium focus-visible:ring-[#4b7bec] w-full"
               />
             </div>
             
@@ -1320,15 +1335,15 @@ const [timeLeft, setTimeLeft] = useState('');
 
         {/* Performance Ledger Table */}
         <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left min-w-[1200px]">
+          <div className="hidden md:block">
+            <table className="w-full text-left table-fixed">
               <thead>
                 <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                  <th className="px-8 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
+                  <th className="px-3 xl:px-4 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
                   {REGISTRY_COLUMNS.map(col => (
-                    <th key={col.key} className="px-8 py-5 text-xs font-bold text-slate-500">{col.label}</th>
+                    <th key={col.key} className={cn("px-3 xl:px-4 py-5 text-xs font-bold text-slate-500 truncate", col.hideBelow && HIDE_BELOW_CLASS[col.hideBelow])}>{col.label}</th>
                   ))}
-                  <th className="px-8 py-5 text-right text-xs font-bold text-slate-500 w-32">Actions</th>
+                  <th className="px-3 xl:px-4 py-5 text-right text-xs font-bold text-slate-500 w-32">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: C.border }}>
@@ -1337,12 +1352,12 @@ const [timeLeft, setTimeLeft] = useState('');
                     <tr key={i}><td colSpan={10} className="px-10 py-5"><Skeleton className="h-14 w-full rounded-2xl" /></td></tr>
                   ))
                 ) : displayOrders.length === 0 ? (
-                  <tr><td colSpan={10} className="px-8 py-20 text-center text-slate-400 font-medium">Aucune commande trouvée</td></tr>
+                  <tr><td colSpan={10} className="px-3 xl:px-4 py-20 text-center text-slate-400 font-medium">Aucune commande trouvée</td></tr>
                 ) : displayOrders.map((order) => (
                   <React.Fragment key={order.id}>
                     <tr className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-8 py-6"><Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></td>
-                    <td className="px-8 py-6">
+                      <td className="px-3 xl:px-4 py-6"><Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></td>
+                    <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
                       {order.source === 'MANUAL' ? (
                         <Badge className="bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black shadow-none px-2 py-1 uppercase tracking-wider">
                           Manuel
@@ -1357,7 +1372,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         </Badge>
                       )}
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors">{formatOrderRef(order, 'admin')}</span>
@@ -1368,7 +1383,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">ID: {order.id.split('-')[0]}</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
@@ -1418,12 +1433,12 @@ const [timeLeft, setTimeLeft] = useState('');
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden lg:table-cell">
                       <Badge className="bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold shadow-none px-2.5 py-1 truncate max-w-[120px]">
                         {order.customer_wilaya}
                       </Badge>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden xl:table-cell">
                       <div className="flex flex-col gap-1.5 max-w-[200px]">
                         {order.items && order.items.length > 0 ? (
                           order.items.slice(0, 3).map((item: any, i: number) => (
@@ -1446,7 +1461,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(order.total)}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest tabular-nums">
@@ -1459,7 +1474,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col gap-1.5 items-start">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -1506,7 +1521,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
                       {order.assignee ? (
                         <div className="flex items-center gap-2">
                           <div className="size-6 rounded-lg bg-indigo-50 flex items-center justify-center text-[10px] font-black text-[#4b7bec]">{order.assignee.name.charAt(0)}</div>
@@ -1516,7 +1531,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         <span className="text-[10px] font-bold text-slate-300 italic">Non assigné</span>
                       )}
                     </td>
-                    <td className="px-8 py-6 text-xs font-medium text-slate-400">
+                    <td className="px-3 xl:px-4 py-6 text-xs font-medium text-slate-400 hidden xl:table-cell">
                       {(() => {
                         const createdAt = order.created_at ? new Date(order.created_at) : null;
                         const isReturn = order.status === 'RETURNED' || order.status === 'CANCELLED';
@@ -1539,7 +1554,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         );
                       })()}
                     </td>
-                    <td className="px-8 py-6 text-right">
+                    <td className="px-3 xl:px-4 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => handleDetailClick(order)} className="size-10 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all">
                           <Eye className="size-5" />
@@ -1573,7 +1588,7 @@ const [timeLeft, setTimeLeft] = useState('');
                   </tr>
                   {order.child_orders && order.child_orders.length > 0 && expandedMergedOrders.has(order.id) && (
                     <tr className="bg-purple-50/10 border-l-4 border-purple-400">
-                      <td colSpan={10} className="px-8 py-5">
+                      <td colSpan={10} className="px-3 xl:px-4 py-5">
                         <div className="flex flex-col gap-4">
                           <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-purple-600">Historique des commandes doublons fusionnées</h4>
                           <div className="divide-y divide-purple-100/50 bg-white/70 backdrop-blur-md rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
