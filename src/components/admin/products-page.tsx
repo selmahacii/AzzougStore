@@ -30,7 +30,6 @@ import {
    Settings2,
    Zap,
    Upload,
-   Link as LinkIcon,
    BarChart2,
    TrendingUp,
    TrendingDown,
@@ -1340,21 +1339,6 @@ export default function ProductsPage() {
                                        />
                                     </label>
 
-                                    {/* OR: URL input */}
-                                    <div className="flex items-center gap-2">
-                                       <div className="h-px flex-1 bg-slate-100" />
-                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ou</span>
-                                       <div className="h-px flex-1 bg-slate-100" />
-                                    </div>
-                                    <div className="relative">
-                                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                                       <Input
-                                          value={form.main_image}
-                                          placeholder="https://example.com/image.jpg"
-                                          className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-12 font-mono text-xs"
-                                          onChange={(e) => setF({ main_image: e.target.value })}
-                                       />
-                                    </div>
                                     <p className="text-[10px] text-slate-400 ml-1">JPEG, PNG, WebP, GIF, AVIF — max 20 MB</p>
                                  </div>
                               </div>
