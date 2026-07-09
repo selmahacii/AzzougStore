@@ -249,8 +249,10 @@ def create_movement(
     # assigned_store_ids, while employee_store_id may be unset or only her
     # primary store; checking employee_store_id alone wrongly 403'd her for
     # every other store she's legitimately assigned to.
-    if current_user.role == "LIVREUR" and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
-        raise PermissionError(message="Vous ne pouvez ajuster le stock que de votre propre boutique.")
+    # LIVREUR has cross-store parity here (one delivery agent serves every
+    # store in this deployment and must be able to restock any of them — see
+    # the livreur dashboard's "full visibility" design). CONFIRMATEUR stays
+    # limited to the stores explicitly assigned to them.
     if current_user.role == "CONFIRMATEUR":
         scope = getattr(current_user, "assigned_store_scope", "ALL")
         if scope == "SPECIFIC":

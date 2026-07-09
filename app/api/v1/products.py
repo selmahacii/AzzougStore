@@ -22,6 +22,11 @@ from app.db.session import get_db
 router = APIRouter()
 logger = logging.getLogger("app.products")
 
+# Back-office roles that get cross-store product visibility (a livreur serving
+# several stores must browse and restock each one's catalogue). The storefront
+# and unauthenticated traffic are never in this set and stay tenant-isolated.
+_STAFF_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MARKETER")
+
 
 def _generate_slug(name: str) -> str:
     """Generate URL-friendly slug from product name."""
@@ -118,7 +123,6 @@ def read_products(
     # switching store showed nothing. The explicit store_id query param below is
     # what scopes the result; unauthenticated storefront traffic keeps the tenant
     # isolation untouched.
-    _STAFF_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MARKETER")
     if current_user is not None and getattr(current_user, "role", None) in _STAFF_ROLES:
         db.info["skip_tenant_isolation"] = True
 
@@ -322,25 +326,34 @@ def read_product(
     current_user: Optional[Any] = Depends(deps.get_current_user_optional)
 ) -> Any:
     """Get product by ID. Public storefront access is restricted to store tenant and hides secret cost/production fields."""
+    is_staff = current_user is not None and getattr(current_user, "role", None) in _STAFF_ROLES
+    # Staff browse across the stores they serve, so bypass the SELECT tenant
+    # auto-filter (it otherwise 404'd the product when X-Store-Id didn't match
+    # the store the livreur just switched to). Public traffic stays isolated.
+    if is_staff:
+        db.info["skip_tenant_isolation"] = True
+
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
 
     is_admin = current_user is not None and getattr(current_user, "role", None) in ("SUPER_ADMIN", "ADMIN", "MANAGER")
 
-    # 1. Tenant check for non-superadmins and public visitors
-    if not is_admin:
+    if is_staff:
+        # Back-office staff (livreur/confirmateur/marketer/manager/admin) may
+        # view any store's product, active or not. MANAGER stays pinned to their
+        # own store; everyone else with a staff role has cross-store visibility.
+        if getattr(current_user, "role", None) == "MANAGER" and current_user.employee_store_id:
+            if product.store_id != str(current_user.employee_store_id):
+                raise HTTPException(status_code=403, detail="Accès refusé : Ce produit n'appartient pas à votre boutique.")
+    else:
+        # Public storefront: strict tenant isolation + active-only.
         if not x_store_id:
             raise HTTPException(status_code=400, detail="L'identifiant de la boutique (X-Store-Id) est requis.")
         if product.store_id != x_store_id:
             raise HTTPException(status_code=403, detail="Accès refusé : Ce produit n'appartient pas à cette boutique.")
         if not product.is_active:
             raise HTTPException(status_code=404, detail="Produit inactif ou introuvable.")
-    else:
-        # Check store scope for managers
-        if getattr(current_user, "role", None) == "MANAGER" and current_user.employee_store_id:
-            if product.store_id != str(current_user.employee_store_id):
-                raise HTTPException(status_code=403, detail="Accès refusé : Ce produit n'appartient pas à votre boutique.")
 
     # 2. Purge confidential industrial data if not an authorized manager/admin
     if not is_admin:
