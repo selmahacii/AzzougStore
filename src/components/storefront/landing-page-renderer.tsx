@@ -907,7 +907,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {/* Publicity Banner */}
                 {data.banner_image_url && (
                   <div className="mt-6">
-                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 580)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
                   </div>
                 )}
 
