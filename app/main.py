@@ -272,30 +272,6 @@ def debug_noest_token(store_id: str, x_internal_key: str = Depends(deps.get_curr
     finally:
         db.close()
 
-# ─── TEMPORARY — remove after use ──────────────────────────────
-# Added to let the store owner recover the CURRENT value of INTERNAL_API_KEY
-# from the running container (Vercel is missing it — see conversation),
-# without having to guess or rotate it blind. Returns the real value for
-# INTERNAL_API_KEY only (that's the one that needs to be physically copied
-# into Vercel); SECRET_KEY/ENCRYPTION_KEY are only confirmed as "set and
-# non-default", never returned in full, since nothing needs their actual
-# value copied anywhere right now. SUPER_ADMIN/ADMIN only.
-# DELETE THIS ENDPOINT once the value has been copied over.
-@app.get("/api/v1/_temp_secret_check", tags=["système"])
-def _temp_secret_check(current_user: Any = Depends(deps.get_current_active_user)):
-    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Superadmin only")
-    import os
-    secret_key = os.environ.get("SECRET_KEY", "")
-    encryption_key = os.environ.get("ENCRYPTION_KEY", "")
-    return {
-        "internal_api_key": os.environ.get("INTERNAL_API_KEY", ""),
-        "secret_key_is_set_and_non_default": bool(secret_key) and secret_key != "CHANGE_ME_IN_PRODUCTION",
-        "encryption_key_is_set": bool(encryption_key),
-        "environment": os.environ.get("ENVIRONMENT", ""),
-    }
-
 # ─── CORS ────────────────────────────────────────────────────
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
