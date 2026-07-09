@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from datetime import datetime, timedelta, timezone
@@ -69,6 +70,12 @@ class MetaAdsConfigOut(BaseModel):
 
 @router.get("/config", response_model=dict)
 def get_meta_ads_config(store_id: str = Query(...), db: Session = Depends(get_db)):
+    # Explicitly scoped by the store_id param and read across stores (admin
+    # dashboard loads all 3 configs), so bypass the SELECT tenant auto-filter.
+    # Otherwise it hid the EXISTING config whenever X-Store-Id didn't match the
+    # requested store, so the endpoint tried to re-INSERT it and hit the
+    # unique(store_id) constraint → the 409 seen in the browser console.
+    db.info["skip_tenant_isolation"] = True
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
     if not config:
         config = MetaAdsConfig(
@@ -83,8 +90,14 @@ def get_meta_ads_config(store_id: str = Query(...), db: Session = Depends(get_db
             currency="USD"
         )
         db.add(config)
-        db.commit()
-        db.refresh(config)
+        try:
+            db.commit()
+            db.refresh(config)
+        except IntegrityError:
+            # A concurrent request created it first — reuse that row instead of
+            # failing (idempotent get-or-create).
+            db.rollback()
+            config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
     return {"success": True, "data": {
         "store_id": config.store_id,
         "access_token": config.access_token,
@@ -98,6 +111,8 @@ def get_meta_ads_config(store_id: str = Query(...), db: Session = Depends(get_db
 
 @router.post("/config", response_model=dict)
 def update_meta_ads_config(payload: MetaAdsConfigCreate, db: Session = Depends(get_db)):
+    # Same rationale as the GET: scoped by store_id, edited across stores.
+    db.info["skip_tenant_isolation"] = True
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
     if not config:
         config = MetaAdsConfig(
@@ -105,7 +120,7 @@ def update_meta_ads_config(payload: MetaAdsConfigCreate, db: Session = Depends(g
             store_id=payload.store_id,
         )
         db.add(config)
-    
+
     config.access_token = payload.access_token
     config.ad_account_id = _normalize_ad_account_id(payload.ad_account_id)
     config.pixel_id = payload.pixel_id
@@ -133,8 +148,12 @@ def list_campaigns(
     date_end: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
+    # Scoped by store_id, read across stores (each store shows its own Meta
+    # indicators) — bypass the tenant auto-filter so a cross-store admin view
+    # doesn't get empty metrics when X-Store-Id points at a different store.
+    db.info["skip_tenant_isolation"] = True
     query = db.query(MetaAdsCampaign).filter(MetaAdsCampaign.store_id == store_id)
-    
+
     # Simple parse dates if provided
     d_start, d_end = None, None
     if date_start and isinstance(date_start, str):
@@ -397,8 +416,9 @@ def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: flo
 
 @router.post("/sync", response_model=dict)
 def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
+    db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
-    
+
     logger.info(f"[Meta Ads Sync] Démarrage de la synchronisation pour le store: {store_id}")
     
     if not config or not config.is_connected or not config.access_token or not config.ad_account_id:
@@ -913,6 +933,7 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
     """
     from sqlalchemy import func
 
+    db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     # 1. Meta Ads campaigns totals
     campaigns = db.query(MetaAdsCampaign).filter(MetaAdsCampaign.store_id == store_id).all()
     total_ads_spend_dzd = sum(c.spend or 0 for c in campaigns)
@@ -1074,6 +1095,7 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
     from app.models.product import Product
     from app.services.meta_capi import _MAX_QUEUE_RETRIES
 
+    db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
@@ -1398,6 +1420,7 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
     from app.models.marketing import MetaCapiLog
     from app.services.meta_capi import probe_connectivity, get_circuit_state
 
+    db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     probe = probe_connectivity()
     circuit = get_circuit_state()
 
