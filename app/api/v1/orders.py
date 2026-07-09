@@ -696,7 +696,27 @@ def update_abandoned_cart(
             Order.id == order_in.abandoned_cart_id,
             Order.status == "ABANDONED"
         ).first()
-        
+
+    # Fallback dedup by phone+store: the tracked id often stops matching because
+    # auto-merge flips the previous cart to MERGED. Without this, EVERY keystroke
+    # 2s-debounced save then created a brand-new cart (which was merged in turn),
+    # flooding the store with dozens of MERGED duplicate carts seconds apart.
+    # Reuse the customer's existing live abandoned cart instead of creating one.
+    if not db_order:
+        phone = (order_data.get("customer_phone") or "").strip()
+        if phone and phone.lower() != "inconnu":
+            db_order = (
+                db.query(Order)
+                .filter(
+                    Order.store_id == order_in.store_id,
+                    Order.customer_phone == phone,
+                    Order.status == "ABANDONED",
+                    Order.is_deleted == False,
+                )
+                .order_by(Order.created_at.desc())
+                .first()
+            )
+
     if db_order:
         # Update existing
         for key, value in order_data.items():
