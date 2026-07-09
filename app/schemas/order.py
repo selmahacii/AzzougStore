@@ -1,5 +1,5 @@
 from typing import List, Optional, Any
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, field_serializer
 from datetime import datetime
 import json
 
@@ -176,6 +176,22 @@ class OrderRead(BaseModel):
     adset_id: Optional[str] = None
     ad_id: Optional[str] = None
     referrer: Optional[str] = None
+
+    @field_serializer(
+        "created_at", "updated_at", "recovered_at",
+        "confirmation_start_time", "next_callback_time", "merged_at",
+    )
+    def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
+        # Timestamps are stored as naive UTC (func.now() on a UTC DB session).
+        # Emitting them WITHOUT a zone made the browser parse them as LOCAL
+        # time, so in Algeria (UTC+1) an order placed 5 min ago rendered as
+        # ~1h old — the confirmatrice read this as a 1-hour reception delay.
+        # Tagging naive values as UTC ("...Z") makes clients compute real ages.
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.isoformat() + "Z"
+        return value.isoformat()
 
     class Config:
         from_attributes = True

@@ -111,16 +111,26 @@ def read_products(
     """
     logger.debug(f"[Products] Listing: store_id={store_id!r}, page={page}, pageSize={pageSize}, search={search!r}, category={category!r}, user={getattr(current_user, 'email', 'anon')!r}")
 
+    # Authenticated back-office staff (livreur/confirmateur/manager/admin) are
+    # allowed cross-store product visibility — a livreur switches between the
+    # stores they serve and must see each one's catalogue. The SELECT tenant
+    # auto-filter otherwise pins every query to the single X-Store-Id header, so
+    # switching store showed nothing. The explicit store_id query param below is
+    # what scopes the result; unauthenticated storefront traffic keeps the tenant
+    # isolation untouched.
+    _STAFF_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MARKETER")
+    if current_user is not None and getattr(current_user, "role", None) in _STAFF_ROLES:
+        db.info["skip_tenant_isolation"] = True
+
     query = db.query(Product)
 
-    # Storefront always sees only active products
-    # Admins see all products by default (they manage them), but can filter by is_active
-    is_admin = current_user is not None and getattr(current_user, "role", None) in ("SUPER_ADMIN", "ADMIN", "MANAGER")
-    if not is_admin:
-        # Non-admins (storefront visitors, agents, unauthenticated) only see active products
+    # Back-office staff manage products (incl. restocking inactive ones), so
+    # they see every product and may filter by active state; the storefront and
+    # unauthenticated traffic only ever see active products.
+    is_staff = current_user is not None and getattr(current_user, "role", None) in _STAFF_ROLES
+    if not is_staff:
         query = query.filter(Product.is_active == True)
     elif is_active is not None:
-        # Admin explicitly filtering by active state
         query = query.filter(Product.is_active == is_active)
 
     if store_id:
