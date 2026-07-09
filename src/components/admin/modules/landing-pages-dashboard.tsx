@@ -67,6 +67,8 @@ interface LandingPage {
 
   metrics?: {
     orders: number;
+    purchases: number;
+    delivered: number;
     confirmed_delivered: number;
     recovered: number;
     cancelled: number;
@@ -129,10 +131,13 @@ function LandingPageCard({
   const url = isLocal 
     ? `${window.location.origin}/lp/${lp.slug}?store=${lpStoreSlug}`
     : `https://${storeDomain}/lp/${lp.slug}`;
-  // Reliable conversion: real unique orders (duplicates already excluded
-  // server-side) divided by views. Falls back to lp.orders if metrics absent.
   const realOrders = lp.metrics?.orders ?? lp.orders;
-  const convRate = lp.views > 0 ? ((realOrders / lp.views) * 100).toFixed(1) : '0.0';
+  // Conversion, Meta-Ads style: "Purchases" ÷ landing-page views. The numerator
+  // (purchases) is the count of real orders placed at checkout — duplicates and
+  // admin-created manual orders excluded — mirroring how Meta counts an Achat.
+  const purchases = lp.metrics?.purchases ?? realOrders;
+  const delivered = lp.metrics?.delivered ?? 0;
+  const convRate = lp.views > 0 ? ((purchases / lp.views) * 100).toFixed(1) : '0.0';
 
   // Remaining-stock color: red = nothing left, amber = low, green = healthy.
   const sd = lp.stock_detail;
@@ -218,6 +223,7 @@ function LandingPageCard({
         {/* Performance breakdown — recovered / cancelled / duplicates / stock, same row */}
         <div className="flex items-stretch gap-1.5 mb-4">
           {[
+            { label: 'Livrées',  value: delivered, color: '#0984E3', title: 'Commandes effectivement livrées' },
             { label: 'Récup.',   value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
             { label: 'Annulés',  value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
             { label: 'Doublons', value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },

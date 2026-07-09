@@ -149,15 +149,26 @@ def list_landing_pages(
         # filtering on it silently dropped every real order to 0. Every order
         # for this product in this store is a genuine result for the product,
         # so we count them all.
-        #   - orders:              real unique orders (excludes MERGED duplicates)
+        #   - orders:     real unique orders (excludes MERGED duplicates)
+        #   - purchases:  what Meta counts as an "Achat" — a real order placed
+        #                 at checkout, excluding duplicates AND admin-created
+        #                 manual orders (source=MANUAL). This is the numerator
+        #                 of the conversion rate so it matches Meta's method
+        #                 (purchases ÷ landing-page views).
+        #   - delivered:  orders actually delivered (DELIVERED)
         #   - confirmed_delivered: orders confirmed or shipped or delivered
-        #   - recovered:           abandoned carts later confirmed/delivered
-        #   - cancelled:           orders cancelled
-        #   - duplicates:          same-phone repeat submissions (auto-merged)
+        #   - recovered:  abandoned carts later confirmed/delivered
+        #   - cancelled:  orders cancelled
+        #   - duplicates: same-phone repeat submissions (auto-merged)
+        _not_manual = func.coalesce(Order.source, "") != "MANUAL"
         rows = (
             db.query(
                 OrderItem.product_id,
                 func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
+                func.count(distinct(case(
+                    (and_(Order.status != "MERGED", _not_manual), Order.id)
+                ))).label("purchases"),
+                func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
                 func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
                 func.count(distinct(case(
                     (and_(Order.is_abandoned_cart == True, Order.status.in_(_DELIVERED_STATES)), Order.id)
@@ -177,6 +188,8 @@ def list_landing_pages(
         for r in rows:
             metrics_by_product[r.product_id] = {
                 "orders": int(r.orders or 0),
+                "purchases": int(r.purchases or 0),
+                "delivered": int(r.delivered or 0),
                 "confirmed_delivered": int(r.confirmed_delivered or 0),
                 "recovered": int(r.recovered or 0),
                 "cancelled": int(r.cancelled or 0),
