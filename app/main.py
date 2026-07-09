@@ -272,52 +272,6 @@ def debug_noest_token(store_id: str, x_internal_key: str = Depends(deps.get_curr
     finally:
         db.close()
 
-# ─── TEMPORARY — remove after use ──────────────────────────────
-# Lets the store owner verify the CURRENT value of INTERNAL_API_KEY from the
-# running container. Unlike the first version of this endpoint, it deliberately
-# does NOT go through deps.get_current_user: that dependency accepts the
-# x-internal-key bypass, and the Next.js proxy attaches that key to any
-# request without a session cookie — which made the first version publicly
-# reachable. This one only trusts a real __session JWT (browser login),
-# so it works exclusively for someone logged into the admin dashboard.
-# DELETE THIS ENDPOINT once the value has been confirmed and copied to Vercel.
-@app.get("/api/v1/_temp_secret_check", tags=["système"])
-def _temp_secret_check(request: Request):
-    import os
-    from fastapi import HTTPException
-    from jose import jwt as jose_jwt, JWTError
-    from app.core import security
-    from app.models.user import User
-
-    token = request.cookies.get("__session")
-    if not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Connectez-vous au dashboard admin dans ce navigateur, puis rouvrez cette URL.",
-        )
-    try:
-        payload = jose_jwt.decode(token, settings.SECRET_KEY, algorithms=[security.ALGORITHM])
-    except JWTError:
-        raise HTTPException(status_code=403, detail="Session invalide ou expirée — reconnectez-vous.")
-
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == payload.get("sub")).first()
-    finally:
-        db.close()
-    if not user or user.role not in ("SUPER_ADMIN", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Superadmin only")
-
-    secret_key = os.environ.get("SECRET_KEY", "")
-    encryption_key = os.environ.get("ENCRYPTION_KEY", "")
-    return {
-        "verified_as": user.email,
-        "internal_api_key": os.environ.get("INTERNAL_API_KEY", ""),
-        "secret_key_is_set_and_non_default": bool(secret_key) and secret_key != "CHANGE_ME_IN_PRODUCTION",
-        "encryption_key_is_set": bool(encryption_key),
-        "environment": os.environ.get("ENVIRONMENT", ""),
-    }
-
 # ─── CORS ────────────────────────────────────────────────────
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
