@@ -730,6 +730,23 @@ export default function ProductsPage() {
                   </div>
                </div>
                <div className="flex items-center gap-2 sm:gap-3">
+                  {isSuperAdmin && (
+                     <button
+                        onClick={async () => {
+                           try {
+                              const res = await apiFetch<any>('/api/v1/upload/migrate-to-cloudinary', { method: 'POST' });
+                              toast.success(res?.message || 'Migration terminée.');
+                           } catch (err: any) {
+                              toast.error(err?.message || 'Échec de la migration Cloudinary.');
+                           }
+                        }}
+                        title="Retéléverse sur Cloudinary les images encore stockées localement (perdues à chaque redéploiement)"
+                        className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white"
+                        style={{ borderColor: C.border }}
+                     >
+                        <Upload className="size-4 mr-1.5 mb-0.5 inline-block" /> Migrer vers Cloudinary
+                     </button>
+                  )}
                   <button onClick={() => toast.success('Export en cours...')} className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white" style={{ borderColor: C.border }}>
                      <Download className="size-4 mr-1.5 mb-0.5 inline-block" /> Exporter
                   </button>
