@@ -321,7 +321,7 @@ def run_cloudinary_migration(db) -> dict:
     """
     if not _CLOUDINARY_OK:
         return {"success": False, "products_updated": 0, "images_still_local_or_failed": 0,
-                "message": "Cloudinary n'est pas configuré sur ce serveur."}
+                "message": "Stockage permanent des images indisponible sur ce serveur."}
 
     local_marker = "/api/v1/upload/files/"
 
@@ -403,8 +403,11 @@ def run_cloudinary_migration(db) -> dict:
         "success": True,
         "products_updated": products_touched,
         "images_still_local_or_failed": failed,
-        "message": f"{products_touched} produit(s) migré(s) vers Cloudinary."
-                   + (f" {failed} image(s) n'ont pas pu être migrées (fichier introuvable ou erreur Cloudinary)." if failed else ""),
+        # Client-facing wording deliberately avoids naming the storage provider
+        # — the goal is a clean, white-label admin UI regardless of which CDN
+        # is behind the scenes.
+        "message": f"{products_touched} produit(s) sécurisé(s) en stockage permanent."
+                   + (f" {failed} image(s) n'ont pas pu être sécurisées (fichier introuvable ou service indisponible)." if failed else ""),
     }
 
 
