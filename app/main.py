@@ -272,6 +272,51 @@ def debug_noest_token(store_id: str, x_internal_key: str = Depends(deps.get_curr
     finally:
         db.close()
 
+# ─── TEMPORARY — remove after use ──────────────────────────────
+# Lets the store owner back up the full set of container-only secrets
+# (SECRET_KEY, JWT_SECRET, ENCRYPTION_KEY, INTERNAL_API_KEY) into her password
+# manager ahead of the hosting migration. ENCRYPTION_KEY in particular is
+# unrecoverable if the Space is ever lost — encrypted DB columns would become
+# permanently unreadable. Auth: real __session JWT only (browser admin login);
+# deliberately does NOT accept the x-internal-key bypass, which the Next.js
+# proxy attaches to anonymous requests and would make this public.
+# DELETE THIS ENDPOINT once the values are saved.
+@app.get("/api/v1/_temp_secret_check", tags=["système"])
+def _temp_secret_check(request: Request):
+    import os
+    from fastapi import HTTPException
+    from jose import jwt as jose_jwt, JWTError
+    from app.core import security
+    from app.models.user import User
+
+    token = request.cookies.get("__session")
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Connectez-vous au dashboard admin dans ce navigateur, puis rouvrez cette URL.",
+        )
+    try:
+        payload = jose_jwt.decode(token, settings.SECRET_KEY, algorithms=[security.ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=403, detail="Session invalide ou expirée — reconnectez-vous.")
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == payload.get("sub")).first()
+    finally:
+        db.close()
+    if not user or user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+
+    return {
+        "verified_as": user.email,
+        "environment": os.environ.get("ENVIRONMENT", ""),
+        "SECRET_KEY": os.environ.get("SECRET_KEY", ""),
+        "JWT_SECRET": os.environ.get("JWT_SECRET", ""),
+        "ENCRYPTION_KEY": os.environ.get("ENCRYPTION_KEY", ""),
+        "INTERNAL_API_KEY": os.environ.get("INTERNAL_API_KEY", ""),
+    }
+
 # ─── CORS ────────────────────────────────────────────────────
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
