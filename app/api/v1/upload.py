@@ -2,8 +2,9 @@ import os
 import uuid
 import mimetypes
 import io
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse
@@ -18,6 +19,7 @@ except (ImportError, ValueError):
 from app.api import deps
 
 router = APIRouter()
+logger = logging.getLogger("app.upload")
 
 # ─── Configuration ────────────────────────────────────────────
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
@@ -299,6 +301,119 @@ async def upload_media(
     return res
 
 
+@router.post("/migrate-to-cloudinary", response_model=dict)
+def migrate_local_images_to_cloudinary(
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> dict:
+    """
+    One-off, idempotent migration: finds every product image (main_image,
+    gallery images[], variant/sub-variant images) still pointing at this
+    backend's own ephemeral local-disk file server (…/api/v1/upload/files/…)
+    and re-uploads it to Cloudinary, rewriting the stored URL in place.
+
+    Why this exists: uploads made before CLOUDINARY_URL was correctly parsed
+    (or made while Cloudinary was briefly unreachable) silently fell back to
+    local disk. Those images are (a) served from the backend container itself
+    with no CDN/format optimization — the single biggest Lighthouse
+    "Améliorer l'affichage des images" hit on the landing pages — and (b) lost
+    forever on the next Space restart, unlike everything already on Cloudinary.
+    Safe to re-run: already-Cloudinary URLs are left untouched.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+    if not _CLOUDINARY_OK:
+        raise HTTPException(status_code=400, detail="Cloudinary n'est pas configuré sur ce serveur.")
+
+    local_marker = "/api/v1/upload/files/"
+
+    def _migrate_one(url: str) -> Optional[str]:
+        if not url or local_marker not in url:
+            return None
+        filename = url.rsplit("/", 1)[-1]
+        file_path = UPLOAD_DIR / Path(filename).name
+        if not file_path.exists():
+            return None
+        try:
+            content = file_path.read_bytes()
+            upload_result = cloudinary.uploader.upload(
+                io.BytesIO(content), folder="azzougshop/products", resource_type="image"
+            )
+            return upload_result.get("secure_url") or upload_result.get("url")
+        except Exception as exc:
+            logger.warning("Migration Cloudinary échouée pour %s: %s", filename, exc)
+            return None
+
+    from app.models.product import Product
+    from app.db.session import get_db as _get_db
+
+    db = next(_get_db())
+    failed = 0
+    products_touched = 0
+    try:
+        products = db.query(Product).all()
+        for p in products:
+            changed = False
+
+            new_main = _migrate_one(p.main_image or "")
+            if new_main:
+                p.main_image = new_main
+                changed = True
+            elif p.main_image and local_marker in p.main_image:
+                failed += 1
+
+            images = list(p.images) if isinstance(p.images, list) else []
+            new_images = []
+            for img_url in images:
+                new_url = _migrate_one(img_url)
+                if new_url:
+                    new_images.append(new_url)
+                    changed = True
+                else:
+                    new_images.append(img_url)
+                    if img_url and local_marker in img_url:
+                        failed += 1
+            if changed and new_images != images:
+                p.images = new_images
+
+            variants = p.variants if isinstance(p.variants, list) else []
+            for v in variants:
+                if not isinstance(v, dict):
+                    continue
+                if v.get("image"):
+                    new_v_img = _migrate_one(v["image"])
+                    if new_v_img:
+                        v["image"] = new_v_img
+                        changed = True
+                    elif local_marker in v["image"]:
+                        failed += 1
+                for sv in (v.get("sub_variants") or []):
+                    if isinstance(sv, dict) and sv.get("image"):
+                        new_sv_img = _migrate_one(sv["image"])
+                        if new_sv_img:
+                            sv["image"] = new_sv_img
+                            changed = True
+                        elif local_marker in sv["image"]:
+                            failed += 1
+
+            if changed:
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(p, "images")
+                flag_modified(p, "variants")
+                products_touched += 1
+
+        db.commit()
+    finally:
+        db.close()
+
+    return {
+        "success": True,
+        "products_updated": products_touched,
+        "images_still_local_or_failed": failed,
+        "message": f"{products_touched} produit(s) migré(s) vers Cloudinary."
+                   + (f" {failed} image(s) n'ont pas pu être migrées (fichier introuvable ou erreur Cloudinary)." if failed else ""),
+    }
+
+
 @router.get("/files/{filename}")
 def serve_uploaded_file(filename: str) -> FileResponse:
     """
@@ -314,4 +429,14 @@ def serve_uploaded_file(filename: str) -> FileResponse:
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
 
-    return FileResponse(path=str(file_path), filename=safe_name)
+    # The filename is a random UUID minted once at upload time and never
+    # reused for different content, so it's safe to cache "forever" — this was
+    # served with NO cache header at all, meaning every single page view
+    # re-downloaded the full image from this container. Lighthouse flagged
+    # this as "Utiliser des durées de cache efficaces" on every landing page
+    # using a locally-served (non-Cloudinary) image.
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_name,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
