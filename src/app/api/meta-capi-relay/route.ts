@@ -35,31 +35,53 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const pixelId = payload?.pixel_id;
   const accessToken = payload?.access_token;
   const graphVersion = payload?.graph_version || DEFAULT_GRAPH_VERSION;
-  const data = payload?.data;
 
-  if (!pixelId || !accessToken || !Array.isArray(data)) {
-    return NextResponse.json(
-      { success: false, error: 'Missing pixel_id, access_token or data[]' },
-      { status: 400 },
-    );
+  if (!accessToken) {
+    return NextResponse.json({ success: false, error: 'Missing access_token' }, { status: 400 });
   }
 
-  const metaBody: Record<string, any> = { data, access_token: accessToken };
-  if (payload?.test_event_code) metaBody.test_event_code = payload.test_event_code;
+  // Two operations share this relay, both HF → Vercel → Meta:
+  //   kind 'insights' → GET  {ad_account_id}/insights   (Ads Reporting sync)
+  //   default/events  → POST {pixel_id}/events          (Conversions API)
+  let url: string;
+  let init: RequestInit;
 
-  const url = `https://graph.facebook.com/${graphVersion}/${pixelId}/events`;
-
-  try {
-    const metaRes = await fetch(url, {
+  if (payload?.kind === 'insights') {
+    const adAccountId = payload?.ad_account_id;
+    if (!adAccountId) {
+      return NextResponse.json({ success: false, error: 'Missing ad_account_id' }, { status: 400 });
+    }
+    const qs = new URLSearchParams();
+    const params = payload?.params && typeof payload.params === 'object' ? payload.params : {};
+    for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+    qs.set('access_token', accessToken);
+    url = `https://graph.facebook.com/${graphVersion}/${adAccountId}/insights?${qs.toString()}`;
+    init = { method: 'GET' };
+  } else {
+    const pixelId = payload?.pixel_id;
+    const data = payload?.data;
+    if (!pixelId || !Array.isArray(data)) {
+      return NextResponse.json(
+        { success: false, error: 'Missing pixel_id or data[]' },
+        { status: 400 },
+      );
+    }
+    const metaBody: Record<string, any> = { data, access_token: accessToken };
+    if (payload?.test_event_code) metaBody.test_event_code = payload.test_event_code;
+    url = `https://graph.facebook.com/${graphVersion}/${pixelId}/events`;
+    init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(metaBody),
-    });
+    };
+  }
+
+  try {
+    const metaRes = await fetch(url, init);
     // Pass Meta's response through verbatim (status + JSON) so the backend can
-    // parse events_received / error / fbtrace_id exactly as if it called Meta.
+    // parse it exactly as if it had called Meta directly.
     const text = await metaRes.text();
     return new NextResponse(text, {
       status: metaRes.status,
@@ -67,7 +89,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     // Network error reaching Meta from Vercel — report as a 502 so the backend
-    // treats it as retryable and re-queues the event.
+    // treats it as retryable / a transient failure.
     return NextResponse.json(
       { error: { message: `Relay could not reach Meta: ${error?.message || String(error)}` } },
       { status: 502 },

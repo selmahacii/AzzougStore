@@ -221,7 +221,13 @@ def calculate_delivery_fee(
     if not partner:
         return {"success": False, "fee": None}
 
-    is_office = delivery_type.lower() in ("office", "relay", "bureau", "desk", "office_fee", "desk_fee")
+    # The manual-order UI and the storefront send different labels for a
+    # pickup-point delivery ("stop_desk", "stopdesk", "desk", "bureau", …).
+    # Any of them means "office/desk" — matching on a fixed short list missed
+    # "stop_desk" and silently charged the (cheaper) home rate for stop-desk
+    # orders. Detect by substring so every spelling resolves correctly.
+    _dt = (delivery_type or "").lower()
+    is_office = any(k in _dt for k in ("office", "relay", "bureau", "desk", "stop"))
     numeric_id = _wilaya_name_to_id(wilaya_id)
 
     # 1. Resolve fee using products if productIds are provided

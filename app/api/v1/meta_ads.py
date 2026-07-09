@@ -482,16 +482,35 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             }
         ]
     else:
-        url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"
         params = {
             "level": "campaign",
             "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,date_start,date_stop",
-            "access_token": config.access_token,
-            "date_preset": "last_30d"
+            "date_preset": "last_30d",
         }
         try:
+            from app.core.config import settings as _settings
+            relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
             logger.info(f"[Meta Ads Sync] Tentative de récupération des campagnes (insights) pour le store: {store_id}")
-            response = httpx.get(url, params=params, timeout=30.0)
+            if relay_url:
+                # HuggingFace can't reach graph.facebook.com directly (TLS block),
+                # so pull Ads Insights through the same Vercel relay used for CAPI
+                # (HF → Vercel → Meta). Without this the sync always fell back to
+                # simulated/mock campaigns, so the ERP showed fake spend figures.
+                response = httpx.post(
+                    relay_url,
+                    json={
+                        "kind": "insights",
+                        "ad_account_id": ad_account_id,
+                        "graph_version": META_GRAPH_VERSION,
+                        "access_token": config.access_token,
+                        "params": params,
+                    },
+                    headers={"x-internal-key": _settings.INTERNAL_API_KEY},
+                    timeout=30.0,
+                )
+            else:
+                url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"
+                response = httpx.get(url, params={**params, "access_token": config.access_token}, timeout=30.0)
             res_data = response.json()
             if "error" in res_data:
                 logger.warning(f"[Meta Ads Sync] L'API Meta a retourné une erreur d'insights: {res_data['error']}")
