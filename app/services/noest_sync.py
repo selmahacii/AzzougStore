@@ -44,6 +44,9 @@ logger = logging.getLogger("app.noest_sync")
 
 SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "10"))
 REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS", "120"))
+# Meta Ads spend/insights auto-sync cadence (fires on the next scheduler tick
+# once this many minutes have elapsed).
+META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "5"))
 
 # NOEST wording → platform terminal statuses. Intermediate states
 # (en route, collecté…) are ignored: the order simply stays SHIPPED.
@@ -266,16 +269,53 @@ def scan_payroll_reminder() -> None:
         db.close()
 
 
+def sync_meta_ads_all() -> None:
+    """
+    Auto-sync Ads Insights (spend / impressions / clicks / reach) for every
+    store that has a usable Meta Ads connection. Runs the exact same routine
+    as the manual "Synchroniser" button, so the ERP dashboard shows real,
+    fresh figures (cost per purchase, ROAS…) without anyone clicking. Now that
+    insights are pulled through the Vercel relay, this actually reaches Meta
+    from HuggingFace instead of falling back to mock campaigns.
+    """
+    db = SessionLocal()
+    try:
+        from app.models.marketing import MetaAdsConfig
+        from app.api.v1.meta_ads import sync_meta_ads
+
+        configs = db.query(MetaAdsConfig).all()
+        synced = 0
+        for cfg in configs:
+            # Only stores with a real connection (token + ad account) — others
+            # would just spin up mock data or error out.
+            if not getattr(cfg, "access_token", None) or not getattr(cfg, "ad_account_id", None):
+                continue
+            try:
+                sync_meta_ads(store_id=str(cfg.store_id), db=db)
+                synced += 1
+            except Exception as exc:
+                logger.warning("Meta Ads auto-sync failed for store %s: %s", cfg.store_id, exc)
+                try:
+                    db.rollback()  # keep the shared session usable for the next store
+                except Exception:
+                    pass
+        if synced:
+            logger.info("Meta Ads auto-sync: %d store(s) refreshed", synced)
+    finally:
+        db.close()
+
+
 async def background_loop() -> None:
     """Main scheduler: reminders every tick, Noest poll every N minutes."""
     if os.getenv("DISABLE_BACKGROUND_SYNC") == "1":
         logger.info("Background sync disabled by DISABLE_BACKGROUND_SYNC=1")
         return
     logger.info(
-        "Background sync started (Noest every %.0f min, reminders every %.0f s)",
-        SYNC_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
+        "Background sync started (Noest every %.0f min, Meta Ads every %.0f min, reminders every %.0f s)",
+        SYNC_INTERVAL_MINUTES, META_ADS_SYNC_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
     )
     seconds_since_sync = SYNC_INTERVAL_MINUTES * 60  # poll immediately at boot
+    seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
     while True:
         try:
             scan_due_reminders()
@@ -302,5 +342,14 @@ async def background_loop() -> None:
                 await asyncio.to_thread(retry_pending_events)
             except Exception as exc:
                 logger.error("Meta CAPI retry sweep crashed: %s", exc)
+        if seconds_since_meta_sync >= META_ADS_SYNC_INTERVAL_MINUTES * 60:
+            seconds_since_meta_sync = 0
+            try:
+                # Blocking httpx calls inside — offload to a worker thread so it
+                # can't stall the event loop (same reasoning as the CAPI sweep).
+                await asyncio.to_thread(sync_meta_ads_all)
+            except Exception as exc:
+                logger.error("Meta Ads auto-sync pass crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
         seconds_since_sync += REMINDER_SCAN_INTERVAL_SECONDS
+        seconds_since_meta_sync += REMINDER_SCAN_INTERVAL_SECONDS
