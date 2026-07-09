@@ -690,7 +690,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
              {/* Publicity Banner */}
              {data.banner_image_url && (
                <div className="mt-6">
-                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 700)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                 {/* Lighthouse measured this rendering at ~578px wide inside its
+                     max-w-[700px] container (padding eats the rest) — 700 was
+                     fetching more pixels than any real layout ever shows. 600
+                     covers the actual display width with a small retina margin. */}
+                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
                </div>
              )}
           </div>

@@ -1,5 +1,11 @@
 /* cache-bust 2026-07-04: postcss.config.mjs added — force CSS recompilation (Next build cache does not key on postcss config) */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800;900&display=swap');
+/* The Google Fonts @import that used to live here is gone on purpose: a CSS
+   @import is ALWAYS render-blocking (the browser must fetch and parse it
+   before the rest of this stylesheet can apply), which is exactly the
+   "Requêtes de blocage du rendu" ~750ms hit Lighthouse flagged. It's now
+   loaded non-blocking (preload + swap-on-load) by <GoogleFontsLoader /> in
+   the root layout — same font families, same weights, same names, just not
+   blocking first paint anymore. */
 @import "tailwindcss";
 @import "tw-animate-css";
 
