@@ -1361,13 +1361,43 @@ export default function ProductsPage() {
                                              <Badge className="bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest px-3 py-1">Variante #{i + 1}</Badge>
                                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{v.name}: {v.value}</span>
                                           </div>
-                                          <button 
-                                            type="button"
-                                            onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
-                                            className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
-                                          >
-                                             <Trash2 className="size-4" />
-                                          </button>
+                                          <div className="flex items-center gap-1.5">
+                                             {/* Order shown here drives display order everywhere this
+                                                 product renders (storefront, landing page, admin). */}
+                                             <button
+                                               type="button"
+                                               disabled={i === 0}
+                                               title="Déplacer avant"
+                                               onClick={() => {
+                                                  const next = [...form.variants];
+                                                  [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                                                  setF({ variants: next });
+                                               }}
+                                               className="size-8 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                             >
+                                                <ChevronLeft className="size-4" />
+                                             </button>
+                                             <button
+                                               type="button"
+                                               disabled={i === form.variants.length - 1}
+                                               title="Déplacer après"
+                                               onClick={() => {
+                                                  const next = [...form.variants];
+                                                  [next[i], next[i + 1]] = [next[i + 1], next[i]];
+                                                  setF({ variants: next });
+                                               }}
+                                               className="size-8 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                             >
+                                                <ChevronRight className="size-4" />
+                                             </button>
+                                             <button
+                                               type="button"
+                                               onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
+                                               className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+                                             >
+                                                <Trash2 className="size-4" />
+                                             </button>
+                                          </div>
                                        </div>
                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                           <div className="space-y-1.5">
@@ -1672,21 +1702,55 @@ export default function ProductsPage() {
                                     )}
                                  </div>
 
-                                 {/* Thumbnails grid */}
+                                 {/* Thumbnails grid — first photo is the main/cover image shown
+                                     everywhere (storefront, landing page, listings). Reorder with
+                                     the arrows to control display order without re-uploading. */}
                                  {form.images.length > 0 && (
                                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                                       {form.images.map((url, i) => (
-                                          <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                                             <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
-                                             <button
-                                                type="button"
-                                                onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
-                                                className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
-                                             >
-                                                <X className="size-3" />
-                                             </button>
-                                          </div>
-                                       ))}
+                                       {form.images.map((url, i) => {
+                                          const moveImage = (from: number, to: number) => {
+                                             if (to < 0 || to >= form.images.length) return;
+                                             const next = [...form.images];
+                                             const [moved] = next.splice(from, 1);
+                                             next.splice(to, 0, moved);
+                                             setF({ images: next });
+                                          };
+                                          return (
+                                             <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                                                <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
+                                                {i === 0 && (
+                                                   <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-slate-900/70 text-white text-[8px] font-black uppercase tracking-wider">Principale</span>
+                                                )}
+                                                <div className="absolute top-1 left-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                                                   <button
+                                                      type="button"
+                                                      disabled={i === 0}
+                                                      onClick={() => moveImage(i, i - 1)}
+                                                      title="Déplacer avant"
+                                                      className="size-5 rounded-full bg-slate-900/70 text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                                                   >
+                                                      <ChevronLeft className="size-3" />
+                                                   </button>
+                                                   <button
+                                                      type="button"
+                                                      disabled={i === form.images.length - 1}
+                                                      onClick={() => moveImage(i, i + 1)}
+                                                      title="Déplacer après"
+                                                      className="size-5 rounded-full bg-slate-900/70 text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                                                   >
+                                                      <ChevronRight className="size-3" />
+                                                   </button>
+                                                </div>
+                                                <button
+                                                   type="button"
+                                                   onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
+                                                   className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
+                                                >
+                                                   <X className="size-3" />
+                                                </button>
+                                             </div>
+                                          );
+                                       })}
                                     </div>
                                  )}
 
