@@ -319,6 +319,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
               <img
                 src={optimizeCloudinaryUrl(mainImgSrc, 800)}
                 alt={productName || ''}
+                width={800}
+                height={800}
                 className="w-full h-auto transition-transform duration-100 ease-out"
                 style={{
                   transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
@@ -693,7 +695,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                  {/* Lighthouse measured this rendering at exactly 578px wide
                      inside its max-w-[700px] container (padding eats the
                      rest) — matches the display width with a hair of margin. */}
-                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 580)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 580)} alt="Bannière publicitaire" width={580} height={2228} className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
                </div>
              )}
           </div>
