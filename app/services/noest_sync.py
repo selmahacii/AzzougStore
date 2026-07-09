@@ -42,11 +42,11 @@ from app.services.order_service import order_service
 
 logger = logging.getLogger("app.noest_sync")
 
-SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "10"))
+SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "3"))
 REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS", "120"))
 # Meta Ads spend/insights auto-sync cadence (fires on the next scheduler tick
 # once this many minutes have elapsed).
-META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "5"))
+META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "3"))
 
 # NOEST wording → platform terminal statuses. Intermediate states
 # (en route, collecté…) are ignored: the order simply stays SHIPPED.

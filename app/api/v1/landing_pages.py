@@ -161,7 +161,7 @@ def list_landing_pages(
         #   - cancelled:  orders cancelled
         #   - duplicates: same-phone repeat submissions (auto-merged)
         _not_manual = func.coalesce(Order.source, "") != "MANUAL"
-        rows = (
+        _metrics_query = (
             db.query(
                 OrderItem.product_id,
                 func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
@@ -182,9 +182,24 @@ def list_landing_pages(
                 Order.is_deleted == False,
                 OrderItem.product_id.in_(lp_product_ids),
             )
-            .group_by(OrderItem.product_id)
-            .all()
         )
+        # Same start_date/end_date the UI's date-range picker already sends —
+        # scopes the per-product indicators (Ordres/Récup/Annulés/Doublons/
+        # Livrées) to the selected period instead of always aggregating
+        # all-time history.
+        if start_date:
+            try:
+                _sd = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                _metrics_query = _metrics_query.filter(Order.created_at >= _sd)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                _ed = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                _metrics_query = _metrics_query.filter(Order.created_at <= _ed)
+            except ValueError:
+                pass
+        rows = _metrics_query.group_by(OrderItem.product_id).all()
         for r in rows:
             metrics_by_product[r.product_id] = {
                 "orders": int(r.orders or 0),

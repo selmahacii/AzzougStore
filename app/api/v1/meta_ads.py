@@ -204,16 +204,27 @@ def list_campaigns(
             pass
 
     campaigns = query.all()
-    
+
     # Calculate ROAS based on orders with utm_campaign
     orders_query = db.query(Order).filter(
         Order.store_id == store_id,
         Order.status != "CANCELLED",
+        # MERGED = a same-phone duplicate submission auto-fused into its parent
+        # order (see auto_merge_duplicates). It was still counted here as a
+        # separate real sale, inflating "Ventes Générées"/orders_count beyond
+        # what the Orders and Landing Pages modules show for the same period —
+        # the exact mismatch reported between Meta Ads and the rest of the ERP.
+        Order.status != "MERGED",
         Order.is_deleted == False
     )
-    # Filter orders by period if requested
-    # Note: we assume Order has a created_at column (added by final migrations)
-    # Let's check or filter in Python for maximum compatibility.
+    # Filter orders by the period selected in the date-range picker. d_start/
+    # d_end were parsed above but never actually applied to the query — every
+    # call silently used the store's ENTIRE order history regardless of which
+    # dates were shown as selected in the UI.
+    if d_start:
+        orders_query = orders_query.filter(Order.created_at >= d_start)
+    if d_end:
+        orders_query = orders_query.filter(Order.created_at <= d_end)
     orders = orders_query.all()
     
     data = []
@@ -995,6 +1006,9 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
     orders = db.query(Order).filter(
         Order.store_id == store_id,
         Order.status != "CANCELLED",
+        # Exclude auto-merged duplicate children — same fix as list_campaigns,
+        # otherwise a customer's repeat submission counted as an extra sale.
+        Order.status != "MERGED",
         Order.is_deleted == False
     ).all()
     utm_orders = [
