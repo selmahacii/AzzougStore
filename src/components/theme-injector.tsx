@@ -33,8 +33,21 @@ export function ThemeInjector() {
       if (!document.getElementById(linkId) && fontName !== 'Inter' && fontName !== 'system-ui') {
         const link = document.createElement('link');
         link.id = linkId;
-        link.rel = 'stylesheet';
         link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300;1,400&display=swap`;
+        // A plain rel="stylesheet" link blocks rendering until the browser has
+        // fetched and parsed it, whatever font-display says — Lighthouse
+        // flagged this exact request as a ~750ms render-blocking resource.
+        // The standard fix: fetch it as a non-blocking preload, then flip it
+        // to an active stylesheet once it's actually loaded. font-display:
+        // swap (already in the URL) means visible text still renders
+        // immediately with the fallback font and swaps in place — no layout
+        // wait either way, just no more blocking the initial paint on it.
+        link.rel = 'preload';
+        link.as = 'style';
+        link.onload = function () {
+          (this as HTMLLinkElement).onload = null;
+          (this as HTMLLinkElement).rel = 'stylesheet';
+        };
         document.head.appendChild(link);
       }
     }
