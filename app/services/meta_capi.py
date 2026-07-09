@@ -725,8 +725,25 @@ def send_events(
     condition (timeout/connection/5xx) and the caller should queue it for
     the persistent retry sweep rather than treat it as a hard failure.
     """
-    url = f"https://graph.facebook.com/{GRAPH_VERSION}/{pixel_id}/events"
-    body: Dict[str, Any] = {"data": events, "access_token": access_token}
+    # When a relay is configured (backend host can't reach Meta directly, e.g.
+    # HuggingFace's TLS block), post to the Vercel relay which forwards to Meta
+    # from a network that isn't blocked. Otherwise post to Meta directly.
+    from app.core.config import settings as _settings
+    relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
+
+    if relay_url:
+        url = relay_url
+        body: Dict[str, Any] = {
+            "pixel_id": pixel_id,
+            "graph_version": GRAPH_VERSION,
+            "data": events,
+            "access_token": access_token,
+        }
+        _post_headers: Optional[Dict[str, str]] = {"x-internal-key": _settings.INTERNAL_API_KEY}
+    else:
+        url = f"https://graph.facebook.com/{GRAPH_VERSION}/{pixel_id}/events"
+        body = {"data": events, "access_token": access_token}
+        _post_headers = None
     if test_event_code:
         body["test_event_code"] = test_event_code
 
@@ -762,7 +779,7 @@ def send_events(
         exc_type: Optional[str] = None
         failure_category: Optional[str] = None
         try:
-            resp = client.post(url, json=body)
+            resp = client.post(url, json=body, headers=_post_headers)
             total_ms = int((time.monotonic() - started) * 1000)
             data = resp.json() if resp.content else {}
 

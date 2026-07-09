@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     INTERNAL_API_KEY: str = "development_key"
     ENCRYPTION_KEY: str | None = None
 
+    # Meta Conversions API relay: when the backend host's network cannot reach
+    # graph.facebook.com directly (e.g. HuggingFace Spaces blocks the TLS
+    # handshake to Meta's IP ranges), set this to a frontend URL that CAN reach
+    # Meta — the Next.js /api/meta-capi-relay route on Vercel. CAPI events are
+    # then forwarded HF → Vercel → Meta. Empty = post to Meta directly.
+    META_CAPI_RELAY_URL: str = ""
+
     # ENVIRONMENT
     ENVIRONMENT: str = "development"  # development | production
 
