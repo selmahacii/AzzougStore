@@ -949,7 +949,11 @@ def create_order(
             logger.warning("Auto-merge failed for order %s: %s", order.id, merge_err)
 
 
-        if order.source == "landing_page":
+        # Only bump the LP counter for a real, standalone order. If auto-merge
+        # just folded this submission into an existing parent (same phone), the
+        # order is now MERGED and counting it would double-count one customer —
+        # the same inflation the LP list recount deliberately excludes.
+        if order.source == "landing_page" and str(order.status) != "MERGED":
             try:
                 from app.models.landing_page import LandingPage
                 if items and items[0].get("product_id"):

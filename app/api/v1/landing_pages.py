@@ -137,6 +137,11 @@ def list_landing_pages(
                 Order.store_id == store_id,
                 Order.source == "landing_page",
                 Order.is_deleted == False,
+                # Exclude duplicate children: same-phone repeat submissions are
+                # auto-merged into one operational parent and marked MERGED.
+                # Counting them here double-counted a single real customer,
+                # inflating both the LP "Ordres" figure and the conversion rate.
+                Order.status != "MERGED",
                 OrderItem.product_id.in_(lp_product_ids),
             )
             .group_by(OrderItem.product_id)
