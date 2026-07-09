@@ -735,16 +735,19 @@ export default function ProductsPage() {
                         onClick={async () => {
                            try {
                               const res = await apiFetch<any>('/api/v1/upload/migrate-to-cloudinary', { method: 'POST' });
-                              toast.success(res?.message || 'Migration terminée.');
+                              toast.success(res?.message || 'Images déjà à jour — rien à sécuriser.');
                            } catch (err: any) {
-                              toast.error(err?.message || 'Échec de la migration Cloudinary.');
+                              toast.error(err?.message || 'Échec de la sécurisation des images.');
                            }
                         }}
-                        title="Retéléverse sur Cloudinary les images encore stockées localement (perdues à chaque redéploiement)"
+                        // This now runs automatically every few minutes in the background
+                        // (see app/services/noest_sync.py sync_cloudinary_migration) — this
+                        // button just forces an immediate pass instead of waiting.
+                        title="Sécurise immédiatement les photos encore temporaires (normalement déjà fait automatiquement en arrière-plan)"
                         className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white"
                         style={{ borderColor: C.border }}
                      >
-                        <Upload className="size-4 mr-1.5 mb-0.5 inline-block" /> Migrer vers Cloudinary
+                        <Upload className="size-4 mr-1.5 mb-0.5 inline-block" /> Sécuriser les images
                      </button>
                   )}
                   <button onClick={() => toast.success('Export en cours...')} className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white" style={{ borderColor: C.border }}>

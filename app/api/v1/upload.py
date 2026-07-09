@@ -301,15 +301,12 @@ async def upload_media(
     return res
 
 
-@router.post("/migrate-to-cloudinary", response_model=dict)
-def migrate_local_images_to_cloudinary(
-    current_user: Any = Depends(deps.get_current_active_user),
-) -> dict:
+def run_cloudinary_migration(db) -> dict:
     """
-    One-off, idempotent migration: finds every product image (main_image,
-    gallery images[], variant/sub-variant images) still pointing at this
-    backend's own ephemeral local-disk file server (…/api/v1/upload/files/…)
-    and re-uploads it to Cloudinary, rewriting the stored URL in place.
+    Idempotent sweep: finds every product image (main_image, gallery images[],
+    variant/sub-variant images) still pointing at this backend's own ephemeral
+    local-disk file server (…/api/v1/upload/files/…) and re-uploads it to
+    Cloudinary, rewriting the stored URL in place.
 
     Why this exists: uploads made before CLOUDINARY_URL was correctly parsed
     (or made while Cloudinary was briefly unreachable) silently fell back to
@@ -317,12 +314,14 @@ def migrate_local_images_to_cloudinary(
     with no CDN/format optimization — the single biggest Lighthouse
     "Améliorer l'affichage des images" hit on the landing pages — and (b) lost
     forever on the next Space restart, unlike everything already on Cloudinary.
-    Safe to re-run: already-Cloudinary URLs are left untouched.
+    Called automatically by the background scheduler (app/services/noest_sync.py)
+    AND exposed as an on-demand endpoint below — both share this one function so
+    there is exactly one migration code path to keep correct. No-op (returns
+    zeros immediately) once every image has already moved to Cloudinary.
     """
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Superadmin only")
     if not _CLOUDINARY_OK:
-        raise HTTPException(status_code=400, detail="Cloudinary n'est pas configuré sur ce serveur.")
+        return {"success": False, "products_updated": 0, "images_still_local_or_failed": 0,
+                "message": "Cloudinary n'est pas configuré sur ce serveur."}
 
     local_marker = "/api/v1/upload/files/"
 
@@ -344,66 +343,61 @@ def migrate_local_images_to_cloudinary(
             return None
 
     from app.models.product import Product
-    from app.db.session import get_db as _get_db
 
-    db = next(_get_db())
     failed = 0
     products_touched = 0
-    try:
-        products = db.query(Product).all()
-        for p in products:
-            changed = False
+    products = db.query(Product).all()
+    for p in products:
+        changed = False
 
-            new_main = _migrate_one(p.main_image or "")
-            if new_main:
-                p.main_image = new_main
+        new_main = _migrate_one(p.main_image or "")
+        if new_main:
+            p.main_image = new_main
+            changed = True
+        elif p.main_image and local_marker in p.main_image:
+            failed += 1
+
+        images = list(p.images) if isinstance(p.images, list) else []
+        new_images = []
+        for img_url in images:
+            new_url = _migrate_one(img_url)
+            if new_url:
+                new_images.append(new_url)
                 changed = True
-            elif p.main_image and local_marker in p.main_image:
-                failed += 1
+            else:
+                new_images.append(img_url)
+                if img_url and local_marker in img_url:
+                    failed += 1
+        if changed and new_images != images:
+            p.images = new_images
 
-            images = list(p.images) if isinstance(p.images, list) else []
-            new_images = []
-            for img_url in images:
-                new_url = _migrate_one(img_url)
-                if new_url:
-                    new_images.append(new_url)
+        variants = p.variants if isinstance(p.variants, list) else []
+        for v in variants:
+            if not isinstance(v, dict):
+                continue
+            if v.get("image"):
+                new_v_img = _migrate_one(v["image"])
+                if new_v_img:
+                    v["image"] = new_v_img
                     changed = True
-                else:
-                    new_images.append(img_url)
-                    if img_url and local_marker in img_url:
-                        failed += 1
-            if changed and new_images != images:
-                p.images = new_images
-
-            variants = p.variants if isinstance(p.variants, list) else []
-            for v in variants:
-                if not isinstance(v, dict):
-                    continue
-                if v.get("image"):
-                    new_v_img = _migrate_one(v["image"])
-                    if new_v_img:
-                        v["image"] = new_v_img
+                elif local_marker in v["image"]:
+                    failed += 1
+            for sv in (v.get("sub_variants") or []):
+                if isinstance(sv, dict) and sv.get("image"):
+                    new_sv_img = _migrate_one(sv["image"])
+                    if new_sv_img:
+                        sv["image"] = new_sv_img
                         changed = True
-                    elif local_marker in v["image"]:
+                    elif local_marker in sv["image"]:
                         failed += 1
-                for sv in (v.get("sub_variants") or []):
-                    if isinstance(sv, dict) and sv.get("image"):
-                        new_sv_img = _migrate_one(sv["image"])
-                        if new_sv_img:
-                            sv["image"] = new_sv_img
-                            changed = True
-                        elif local_marker in sv["image"]:
-                            failed += 1
 
-            if changed:
-                from sqlalchemy.orm.attributes import flag_modified
-                flag_modified(p, "images")
-                flag_modified(p, "variants")
-                products_touched += 1
+        if changed:
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(p, "images")
+            flag_modified(p, "variants")
+            products_touched += 1
 
-        db.commit()
-    finally:
-        db.close()
+    db.commit()
 
     return {
         "success": True,
@@ -412,6 +406,28 @@ def migrate_local_images_to_cloudinary(
         "message": f"{products_touched} produit(s) migré(s) vers Cloudinary."
                    + (f" {failed} image(s) n'ont pas pu être migrées (fichier introuvable ou erreur Cloudinary)." if failed else ""),
     }
+
+
+@router.post("/migrate-to-cloudinary", response_model=dict)
+def migrate_local_images_to_cloudinary(
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> dict:
+    """
+    On-demand trigger for run_cloudinary_migration() — the same sweep already
+    runs automatically in the background every few minutes (see
+    app/services/noest_sync.py), so this manual endpoint is mostly a "do it
+    right now instead of waiting" button. Usually returns 0 products updated
+    because the automatic pass already caught up.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+
+    from app.db.session import get_db as _get_db
+    db = next(_get_db())
+    try:
+        return run_cloudinary_migration(db)
+    finally:
+        db.close()
 
 
 @router.get("/files/{filename}")

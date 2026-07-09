@@ -47,6 +47,11 @@ REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS
 # Meta Ads spend/insights auto-sync cadence (fires on the next scheduler tick
 # once this many minutes have elapsed).
 META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "3"))
+# How often to sweep product images still stuck on the ephemeral local disk
+# and move them to Cloudinary. Images change far less often than orders/ads,
+# so this runs on a slower cadence — just needs to run before a Space restart
+# would otherwise wipe them.
+CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_INTERVAL_MINUTES", "7"))
 
 # NOEST wording → platform terminal statuses. Intermediate states
 # (en route, collecté…) are ignored: the order simply stays SHIPPED.
@@ -305,17 +310,46 @@ def sync_meta_ads_all() -> None:
         db.close()
 
 
+def sync_cloudinary_migration() -> None:
+    """
+    Automatic sweep that moves any product image still stuck on the backend's
+    ephemeral local disk over to Cloudinary — no admin click required. Runs on
+    its own cadence in the background loop; a no-op (near-instant) once
+    everything has already migrated.
+    """
+    db = SessionLocal()
+    try:
+        from app.api.v1.upload import run_cloudinary_migration
+        result = run_cloudinary_migration(db)
+        if result.get("products_updated"):
+            logger.info(
+                "Cloudinary auto-migration: %d produit(s) migré(s), %d échec(s)",
+                result.get("products_updated", 0), result.get("images_still_local_or_failed", 0),
+            )
+    except Exception as exc:
+        logger.warning("Cloudinary auto-migration crashed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
 async def background_loop() -> None:
     """Main scheduler: reminders every tick, Noest poll every N minutes."""
     if os.getenv("DISABLE_BACKGROUND_SYNC") == "1":
         logger.info("Background sync disabled by DISABLE_BACKGROUND_SYNC=1")
         return
     logger.info(
-        "Background sync started (Noest every %.0f min, Meta Ads every %.0f min, reminders every %.0f s)",
-        SYNC_INTERVAL_MINUTES, META_ADS_SYNC_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
+        "Background sync started (Noest every %.0f min, Meta Ads every %.0f min, "
+        "Cloudinary migration every %.0f min, reminders every %.0f s)",
+        SYNC_INTERVAL_MINUTES, META_ADS_SYNC_INTERVAL_MINUTES,
+        CLOUDINARY_MIGRATION_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
     )
     seconds_since_sync = SYNC_INTERVAL_MINUTES * 60  # poll immediately at boot
     seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
+    seconds_since_cloudinary_sync = CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60  # migrate immediately at boot
     while True:
         try:
             scan_due_reminders()
@@ -350,6 +384,15 @@ async def background_loop() -> None:
                 await asyncio.to_thread(sync_meta_ads_all)
             except Exception as exc:
                 logger.error("Meta Ads auto-sync pass crashed: %s", exc)
+        if seconds_since_cloudinary_sync >= CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60:
+            seconds_since_cloudinary_sync = 0
+            try:
+                # Reads/writes local files and calls the Cloudinary API —
+                # blocking, so offload to a worker thread like the other sweeps.
+                await asyncio.to_thread(sync_cloudinary_migration)
+            except Exception as exc:
+                logger.error("Cloudinary auto-migration pass crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
         seconds_since_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_meta_sync += REMINDER_SCAN_INTERVAL_SECONDS
+        seconds_since_cloudinary_sync += REMINDER_SCAN_INTERVAL_SECONDS
