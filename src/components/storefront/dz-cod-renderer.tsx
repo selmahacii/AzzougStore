@@ -9,6 +9,7 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface DzCodRendererProps {
   data: any;
@@ -273,10 +274,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         <header className="w-full py-4 border-b flex items-center justify-center bg-white border-slate-100 relative shrink-0">
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || data.product?.store?.logo_url) ? (
-              <img 
-                src={data.store?.logo_url || data.product?.store?.logo_url || ''} 
-                alt={data.headline || 'Logo'} 
-                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
+              <img
+                src={optimizeCloudinaryUrl(data.store?.logo_url || data.product?.store?.logo_url || '', 150)}
+                alt={data.headline || 'Logo'}
+                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all"
                 onError={(e) => { 
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -315,22 +316,28 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
               }}
               onMouseLeave={() => setIsZoomed(false)}
             >
-              <img 
-                src={mainImgSrc} 
-                alt={productName || ''} 
-                className="w-full h-auto transition-transform duration-100 ease-out" 
+              <img
+                src={optimizeCloudinaryUrl(mainImgSrc, 800)}
+                alt={productName || ''}
+                className="w-full h-auto transition-transform duration-100 ease-out"
                 style={{
                   transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                   transform: isZoomed ? 'scale(2)' : 'scale(1)'
                 }}
+                // This is the LCP element on the landing page — fetch it eagerly
+                // and at high priority instead of the browser's default
+                // discovery order (Lighthouse: "Requêtes de blocage du rendu").
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
               />
-              
+
               {/* Circular Inset Badge on Top-Right */}
               {insetImgSrc && (
                 <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
                   <span className="text-sm font-bold text-slate-800">+</span>
                   <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                    <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
+                    <img src={optimizeCloudinaryUrl(insetImgSrc, 100)} className="size-full object-cover" alt="detail" loading="lazy" decoding="async" />
                   </div>
                 </div>
               )}
@@ -389,7 +396,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     title={v.value}
                   >
                     {imgStyle ? (
-                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} />
+                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} loading="lazy" decoding="async" />
                     ) : (
                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                     )}
@@ -520,7 +527,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" />
+                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -683,7 +690,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
              {/* Publicity Banner */}
              {data.banner_image_url && (
                <div className="mt-6">
-                 <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
+                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 700)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
                </div>
              )}
           </div>

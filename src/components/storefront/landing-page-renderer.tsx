@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface LpData {
   id: string;
@@ -552,8 +553,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     onMouseLeave={() => setIsZoomed(false)}
                   >
                     <img
-                      src={mainImgSrc}
+                      src={optimizeCloudinaryUrl(mainImgSrc, 800)}
                       alt={productName || ''}
+                      loading="eager"
                       fetchPriority="high"
                       decoding="async"
                       className="w-full h-auto transition-transform duration-100 ease-out"
@@ -599,7 +601,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                     title={v.value}
                                   >
                                     {imgStyle ? (
-                                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} loading="lazy" decoding="async" />
+                                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} loading="lazy" decoding="async" />
                                     ) : (
                                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                                     )}
@@ -665,7 +667,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       type="button"
                       className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
                     >
-                      <img src={url} className="size-full object-cover" alt={`Gallery ${i}`} loading="lazy" decoding="async" />
+                      <img src={optimizeCloudinaryUrl(url, 100)} className="size-full object-cover" alt={`Gallery ${i}`} loading="lazy" decoding="async" />
                     </button>
                   ))}
                 </div>
@@ -779,7 +781,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
+                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )
@@ -905,7 +907,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {/* Publicity Banner */}
                 {data.banner_image_url && (
                   <div className="mt-6">
-                    <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 700)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
                   </div>
                 )}
 
