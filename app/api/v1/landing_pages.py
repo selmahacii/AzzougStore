@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, case, and_, distinct
 
 from app.api import deps
 from app.db.session import get_db
@@ -36,7 +36,13 @@ def _slugify(text: str) -> str:
     return s[:60]
 
 
-def _serialize(lp: LandingPage, product: Optional[Product] = None, orders_override: Optional[int] = None) -> dict:
+def _serialize(
+    lp: LandingPage,
+    product: Optional[Product] = None,
+    orders_override: Optional[int] = None,
+    metrics: Optional[dict] = None,
+    stock_detail: Optional[dict] = None,
+) -> dict:
     p = lp.product or product
     return {
         "id":            lp.id,
@@ -47,6 +53,10 @@ def _serialize(lp: LandingPage, product: Optional[Product] = None, orders_overri
         "is_active":     lp.is_active,
         "views":         lp.views,
         "orders":        orders_override if orders_override is not None else (lp.orders or 0),
+        # Reliable per-product performance breakdown (None when not computed,
+        # e.g. the single-LP and create/update responses that don't need it).
+        "metrics":       metrics,
+        "stock_detail":  stock_detail,
         "headline":      lp.headline,
         "subtitle":      lp.subtitle,
         "badge_text":    lp.badge_text,
@@ -121,48 +131,98 @@ def list_landing_pages(
     pages = q.order_by(LandingPage.created_at.desc()).all()
     logger.info(f"[LP] Found {len(pages)} landing pages for store_id={store_id!r}")
 
-    # Compute live order counts per LP slug to fix stale counters
+    # ── Live per-product performance metrics (computed from real orders) ──────
+    # Everything below is derived directly from the orders table so the numbers
+    # are reliable and self-healing, never dependent on a stale stored counter.
     from app.models.order import Order, OrderItem
-    lp_slugs = [lp.slug for lp in pages]
     lp_product_ids = [lp.product_id for lp in pages if lp.product_id]
 
-    # Build a map: (lp.id) -> live order count
-    # Strategy: orders with source='landing_page' + matching product_id for product LPs
-    live_counts: dict = {}
+    _DELIVERED_STATES = ("CONFIRMED", "SHIPPED", "DELIVERED")
+
+    metrics_by_product: dict = {}
     if lp_product_ids:
+        # Single grouped pass with conditional aggregation. Every figure counts
+        # DISTINCT orders (a product can appear on several order lines) and is
+        # scoped to THIS landing page's traffic (source='landing_page').
+        #   - orders:              real unique orders (excludes MERGED duplicates)
+        #   - confirmed_delivered: orders confirmed or shipped or delivered
+        #   - recovered:           abandoned carts later confirmed/delivered
+        #   - cancelled:           orders cancelled
+        #   - duplicates:          same-phone repeat submissions (auto-merged)
         rows = (
-            db.query(OrderItem.product_id, func.count(func.distinct(Order.id)))
+            db.query(
+                OrderItem.product_id,
+                func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
+                func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
+                func.count(distinct(case(
+                    (and_(Order.is_abandoned_cart == True, Order.status.in_(_DELIVERED_STATES)), Order.id)
+                ))).label("recovered"),
+                func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
+                func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
+            )
             .join(Order, Order.id == OrderItem.order_id)
             .filter(
                 Order.store_id == store_id,
                 Order.source == "landing_page",
                 Order.is_deleted == False,
-                # Exclude duplicate children: same-phone repeat submissions are
-                # auto-merged into one operational parent and marked MERGED.
-                # Counting them here double-counted a single real customer,
-                # inflating both the LP "Ordres" figure and the conversion rate.
-                Order.status != "MERGED",
                 OrderItem.product_id.in_(lp_product_ids),
             )
             .group_by(OrderItem.product_id)
             .all()
         )
-        product_order_counts = {row[0]: row[1] for row in rows}
-        for lp in pages:
-            if lp.product_id and lp.product_id in product_order_counts:
-                live_counts[lp.id] = product_order_counts[lp.product_id]
+        for r in rows:
+            metrics_by_product[r.product_id] = {
+                "orders": int(r.orders or 0),
+                "confirmed_delivered": int(r.confirmed_delivered or 0),
+                "recovered": int(r.recovered or 0),
+                "cancelled": int(r.cancelled or 0),
+                "duplicates": int(r.duplicates or 0),
+            }
 
-    # Also sync the stored counter for future accuracy
+    # ── Remaining stock per product, broken down by variant ───────────────────
+    stock_by_product: dict = {}
+    if lp_product_ids:
+        for p in db.query(Product).filter(Product.id.in_(lp_product_ids)).all():
+            variants = p.variants if isinstance(p.variants, list) else []
+            in_stock = 0
+            total_variant_stock = 0
+            for v in variants:
+                if not isinstance(v, dict):
+                    continue
+                try:
+                    s = int(v.get("stock") or 0)
+                except (TypeError, ValueError):
+                    s = 0
+                total_variant_stock += s
+                if s > 0:
+                    in_stock += 1
+            stock_by_product[p.id] = {
+                "stock": total_variant_stock if variants else int(p.stock or 0),
+                "variants_total": len(variants),
+                "variants_in_stock": in_stock,
+            }
+
+    # Keep the stored LP counter aligned with the reliable live figure
     for lp in pages:
-        live = live_counts.get(lp.id)
-        if live is not None and live != (lp.orders or 0):
-            lp.orders = live
+        m = metrics_by_product.get(lp.product_id) if lp.product_id else None
+        if m is not None and m["orders"] != (lp.orders or 0):
+            lp.orders = m["orders"]
     try:
         db.commit()
     except Exception:
         db.rollback()
 
-    return {"success": True, "data": [_serialize(lp, orders_override=live_counts.get(lp.id)) for lp in pages]}
+    data = []
+    for lp in pages:
+        m = metrics_by_product.get(lp.product_id) if lp.product_id else None
+        st = stock_by_product.get(lp.product_id) if lp.product_id else None
+        data.append(_serialize(
+            lp,
+            orders_override=(m["orders"] if m else None),
+            metrics=m,
+            stock_detail=st,
+        ))
+    return {"success": True, "data": data}
 
 
 # ─── Public: get by slug (storefront) ─────────────────────────────────────────

@@ -65,6 +65,19 @@ interface LandingPage {
   phone: string | null;
   banner_image_url?: string | null;
 
+  metrics?: {
+    orders: number;
+    confirmed_delivered: number;
+    recovered: number;
+    cancelled: number;
+    duplicates: number;
+  } | null;
+  stock_detail?: {
+    stock: number;
+    variants_total: number;
+    variants_in_stock: number;
+  } | null;
+
   created_at: string;
   product: any;
 }
@@ -116,7 +129,30 @@ function LandingPageCard({
   const url = isLocal 
     ? `${window.location.origin}/lp/${lp.slug}?store=${lpStoreSlug}`
     : `https://${storeDomain}/lp/${lp.slug}`;
-  const convRate = lp.views > 0 ? ((lp.orders / lp.views) * 100).toFixed(1) : '0.0';
+  // Reliable conversion: real unique orders (duplicates already excluded
+  // server-side) divided by views. Falls back to lp.orders if metrics absent.
+  const realOrders = lp.metrics?.orders ?? lp.orders;
+  const convRate = lp.views > 0 ? ((realOrders / lp.views) * 100).toFixed(1) : '0.0';
+
+  // Remaining-stock color: red = nothing left, amber = low, green = healthy.
+  const sd = lp.stock_detail;
+  const hasVariants = (sd?.variants_total ?? 0) > 0;
+  const stockDisplay = hasVariants
+    ? `${sd?.variants_in_stock ?? 0}/${sd?.variants_total ?? 0}`
+    : `${sd?.stock ?? 0}`;
+  const stockColor = (() => {
+    if (hasVariants) {
+      const inStock = sd?.variants_in_stock ?? 0;
+      const total = sd?.variants_total ?? 0;
+      if (inStock === 0) return '#E17055';
+      if (inStock <= Math.ceil(total / 2)) return '#FDCB6E';
+      return '#00B894';
+    }
+    const raw = sd?.stock ?? 0;
+    if (raw === 0) return '#E17055';
+    if (raw < 10) return '#FDCB6E';
+    return '#00B894';
+  })();
 
   return (
     <div className={cn(
@@ -169,7 +205,7 @@ function LandingPageCard({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
           {[
             { label: 'Vues',    value: lp.views,  icon: Eye },
-            { label: 'Ordres',  value: lp.orders, icon: ShoppingCart },
+            { label: 'Ordres',  value: realOrders, icon: ShoppingCart },
             { label: 'Conv.',   value: `${convRate}%`, icon: TrendingUp },
           ].map(s => (
             <div key={s.label} className="text-center p-2 bg-slate-50 rounded-xl">
@@ -177,6 +213,30 @@ function LandingPageCard({
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
             </div>
           ))}
+        </div>
+
+        {/* Performance breakdown — recovered / cancelled / duplicates / stock, same row */}
+        <div className="flex items-stretch gap-1.5 mb-4">
+          {[
+            { label: 'Récup.',   value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
+            { label: 'Annulés',  value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
+            { label: 'Doublons', value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
+          ].map(s => (
+            <div key={s.label} title={s.title}
+              className="flex-1 text-center p-2 rounded-xl border"
+              style={{ borderColor: s.color + '33', backgroundColor: s.color + '0F' }}>
+              <p className="text-sm font-black" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider" style={{ color: s.color }}>{s.label}</p>
+            </div>
+          ))}
+          <div title={hasVariants ? 'Variétés encore en stock / total des variétés' : 'Stock restant'}
+            className="flex-1 text-center p-2 rounded-xl border"
+            style={{ borderColor: stockColor + '44', backgroundColor: stockColor + '14' }}>
+            <p className="text-sm font-black" style={{ color: stockColor }}>{stockDisplay}</p>
+            <p className="text-[8px] font-bold uppercase tracking-wider" style={{ color: stockColor }}>
+              {hasVariants ? 'Var. Stock' : 'Stock'}
+            </p>
+          </div>
         </div>
 
         {/* Actions */}
