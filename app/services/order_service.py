@@ -879,6 +879,19 @@ class OrderService:
             else:
                 order.notes = order_note  # type: ignore[assignment]
 
+            # A confirmatrice's note used to only reach Noest at parcel
+            # creation time — editing it afterwards (the common case, since
+            # notes are refined during the confirmation call, often after the
+            # label already exists) never made it to the carrier. Push the
+            # updated note now if this order already has a Noest tracking
+            # number. Best-effort: never blocks or fails the note save itself.
+            if order.tracking_number:
+                try:
+                    from app.api.carriers.noest import push_remarque_update
+                    push_remarque_update(db, order)
+                except Exception as exc:
+                    logger.warning("Could not push note update to Noest for order %s: %s", order.id, exc)
+
         if new_status and new_status != old_status:
             # Enforce state machine
             if not _is_valid_transition(old_status, new_status):

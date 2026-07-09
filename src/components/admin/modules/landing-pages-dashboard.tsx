@@ -1306,19 +1306,26 @@ function LandingPageModal({
                                     {v.name.toLowerCase().includes('couleur') && (
                                       <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Photo de la variante</label>
-                                        <div className="flex gap-2">
-                                          <Input
-                                            placeholder="Image URL"
-                                            value={v.image || ''}
-                                            onChange={(e) => {
-                                              const next = [...prodVariants];
-                                              next[i].image = e.target.value;
-                                              setProdVariants(next);
-                                            }}
-                                            className="h-9 text-xs bg-white flex-1"
-                                          />
+                                        <div className="flex items-center gap-2">
+                                          {v.image && (
+                                            <div className="relative size-9 shrink-0 rounded-lg overflow-hidden border border-slate-200 bg-white">
+                                              <img src={v.image} alt="" className="size-full object-cover" />
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const next = [...prodVariants];
+                                                  next[i].image = '';
+                                                  setProdVariants(next);
+                                                }}
+                                                className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center transition-all"
+                                              >
+                                                <X className="size-3.5 text-white" />
+                                              </button>
+                                            </div>
+                                          )}
                                           <div className="relative h-9 px-3 rounded-lg border border-dashed border-slate-300 hover:border-slate-400 bg-slate-50 hover:bg-slate-100 flex items-center justify-center cursor-pointer transition-all text-xs font-bold text-slate-600 gap-1.5 shrink-0">
-                                            <Plus className="size-3.5" /> Photo
+                                            {uploadingVariantIdx === i ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                                            {v.image ? 'Changer' : 'Photo'}
                                             <input
                                               type="file"
                                               className="absolute inset-0 opacity-0 cursor-pointer"

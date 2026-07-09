@@ -338,6 +338,73 @@ async def create_parcel(
     return {"success": True, "tracking_number": tracking_number, "data": result}
 
 
+def push_remarque_update(db: Session, order: Order) -> bool:
+    """
+    Best-effort sync: push the order's current note to Noest as the parcel's
+    "remarque" AFTER it already has a tracking number.
+
+    create_parcel() above only sends the note ONCE, at the moment the parcel
+    is created. If a confirmatrice adds or edits her note afterwards — the
+    common case, since notes are usually refined during the confirmation call
+    which can happen after the label already exists — that edit never reached
+    Noest: there was no update call at all, so the courier only ever saw
+    whatever note existed at creation time (often none). Called from
+    order_service.update_order() whenever notes change on an order that
+    already has a tracking_number.
+
+    Deliberately swallows every failure (missing/misconfigured Noest partner,
+    network error, non-success API response) and returns False rather than
+    raising — saving the confirmatrice's note must never fail because of a
+    carrier-side sync issue.
+    """
+    if not order.tracking_number:
+        return False
+    partner = (
+        db.query(DeliveryPartner)
+        .filter(
+            DeliveryPartner.store_id == order.store_id,
+            DeliveryPartner.carrier_id == "noest",
+            DeliveryPartner.is_active == True,
+        )
+        .first()
+    )
+    if not partner:
+        return False
+    try:
+        token, guid, base = _creds(partner)
+    except HTTPException:
+        return False
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            r = client.post(
+                f"{base}/api/public/update/order",
+                headers=_headers(token),
+                json={
+                    "user_guid": guid,
+                    "tracking": order.tracking_number,
+                    "remarque": order.notes or "",
+                },
+            )
+        if r.status_code not in (200, 201):
+            logger.warning(
+                "Noest remarque update HTTP %s for tracking %s: %s",
+                r.status_code, order.tracking_number, r.text[:200],
+            )
+            return False
+        data = r.json() if r.content else {}
+        if data and not data.get("success", True):
+            logger.warning(
+                "Noest remarque update rejected for tracking %s: %s",
+                order.tracking_number, data.get("message") or data,
+            )
+            return False
+        return True
+    except Exception as exc:
+        logger.warning("Noest remarque update failed for tracking %s: %s", order.tracking_number, exc)
+        return False
+
+
 # ─── POST /api/noest/test ─────────────────────────────────────────────────────
 
 @router.post("/test")

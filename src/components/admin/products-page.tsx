@@ -247,6 +247,7 @@ export default function ProductsPage() {
 
    const [subProductSearch, setSubProductSearch] = useState('');
    const [isNewSubProductOpen, setIsNewSubProductOpen] = useState(false);
+   const [isUploadingSubProduct, setIsUploadingSubProduct] = useState(false);
    const [newSubProduct, setNewSubProduct] = useState({
       name: '', price: '', cost_price: '', sku: '', stock: '100', main_image: ''
    });
@@ -463,6 +464,47 @@ export default function ProductsPage() {
       } finally {
          setIsUploading(false);
          // Reset input so same file can be re-uploaded
+         e.target.value = '';
+      }
+   };
+
+   const handleSubProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+      if (!allowedTypes.includes(file.type)) {
+         toast.error('Type non supporté. Utilisez JPEG, PNG, WebP, GIF ou AVIF.');
+         return;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+         toast.error('Image trop volumineuse. Limite: 20 MB.');
+         return;
+      }
+
+      setIsUploadingSubProduct(true);
+      try {
+         const form = new FormData();
+         form.append('file', file);
+         const res = await fetch('/api/v1/upload/image', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: form,
+         });
+         if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error((err as any)?.detail || 'Échec du téléversement');
+         }
+         const text = await res.text();
+         const data = text ? JSON.parse(text) : {};
+         if (!data.url) throw new Error('Le serveur n\'a pas renvoyé d\'URL d\'image');
+         setNewSubProduct(prev => ({ ...prev, main_image: data.url }));
+         toast.success('Image téléversée avec succès');
+      } catch (err: any) {
+         toast.error(err.message || 'Erreur lors du téléversement');
+      } finally {
+         setIsUploadingSubProduct(false);
          e.target.value = '';
       }
    };
@@ -3012,13 +3054,34 @@ export default function ProductsPage() {
                      </div>
                   </div>
                   <div className="space-y-1.5">
-                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Image URL (Optionnel)</label>
-                     <Input
-                        value={newSubProduct.main_image}
-                        onChange={e => setNewSubProduct(prev => ({ ...prev, main_image: e.target.value }))}
-                        placeholder="https://..."
-                        className="h-11 rounded-xl border-slate-100"
-                     />
+                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Photo (Optionnel)</label>
+                     <div className="flex items-center gap-2">
+                        {newSubProduct.main_image && (
+                           <div className="relative size-11 shrink-0 rounded-xl overflow-hidden border border-slate-200 bg-white">
+                              <img src={newSubProduct.main_image} alt="" className="size-full object-cover" />
+                              <button
+                                 type="button"
+                                 onClick={() => setNewSubProduct(prev => ({ ...prev, main_image: '' }))}
+                                 className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center transition-all"
+                              >
+                                 <X className="size-4 text-white" />
+                              </button>
+                           </div>
+                        )}
+                        <label className={cn("flex-1 flex items-center justify-center gap-2 h-11 rounded-xl border-2 border-dashed cursor-pointer transition-all text-xs font-bold uppercase tracking-wider",
+                           isUploadingSubProduct ? "border-indigo-300 bg-indigo-50 text-indigo-400" : "border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/50 text-slate-500"
+                        )}>
+                           {isUploadingSubProduct ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                           {isUploadingSubProduct ? 'Téléversement...' : (newSubProduct.main_image ? 'Changer' : 'Téléverser')}
+                           <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                              className="sr-only"
+                              onChange={handleSubProductImageUpload}
+                              disabled={isUploadingSubProduct}
+                           />
+                        </label>
+                     </div>
                   </div>
                </div>
                <DialogFooter className="bg-slate-50 p-4 border-t flex gap-2 shrink-0">
