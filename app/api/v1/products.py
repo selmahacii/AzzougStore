@@ -520,6 +520,10 @@ def quick_update_stock(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
+    # Ownership is enforced explicitly just below, so bypass the SELECT tenant
+    # auto-filter for the lookup — it otherwise 404s a store-scoped livreur/
+    # manager whenever the X-Store-Id header doesn't line up with the product.
+    db.info["skip_tenant_isolation"] = True
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")

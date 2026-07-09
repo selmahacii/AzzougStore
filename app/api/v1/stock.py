@@ -226,6 +226,14 @@ def create_movement(
                     f"Les mouvements ORDER_* sont gérés automatiquement."
         )
 
+    # This endpoint enforces store ownership itself (the LIVREUR / CONFIRMATEUR
+    # scope checks below), so bypass the SELECT tenant auto-filter for the
+    # product lookup. Otherwise the product is hidden (→ 404 "produit
+    # introuvable") whenever the request's X-Store-Id header doesn't happen to
+    # match the product's store — which silently stopped a livreur from
+    # restocking their own store's products.
+    db.info["skip_tenant_isolation"] = True
+
     # Validate product belongs to specified store
     product = db.query(Product).filter(Product.id == movement.product_id).first()
     if not product:
