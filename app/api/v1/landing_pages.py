@@ -143,7 +143,12 @@ def list_landing_pages(
     if lp_product_ids:
         # Single grouped pass with conditional aggregation. Every figure counts
         # DISTINCT orders (a product can appear on several order lines) and is
-        # scoped to THIS landing page's traffic (source='landing_page').
+        # scoped by PRODUCT + STORE — deliberately NOT by source. The checkout
+        # "source" tag (landing_page/storefront/facebook/…) is set
+        # inconsistently across templates (the dz_cod flow in particular), so
+        # filtering on it silently dropped every real order to 0. Every order
+        # for this product in this store is a genuine result for the product,
+        # so we count them all.
         #   - orders:              real unique orders (excludes MERGED duplicates)
         #   - confirmed_delivered: orders confirmed or shipped or delivered
         #   - recovered:           abandoned carts later confirmed/delivered
@@ -163,7 +168,6 @@ def list_landing_pages(
             .join(Order, Order.id == OrderItem.order_id)
             .filter(
                 Order.store_id == store_id,
-                Order.source == "landing_page",
                 Order.is_deleted == False,
                 OrderItem.product_id.in_(lp_product_ids),
             )
