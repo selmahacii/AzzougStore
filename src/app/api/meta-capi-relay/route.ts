@@ -42,13 +42,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Missing access_token' }, { status: 400 });
   }
 
-  // Two operations share this relay, both HF → Vercel → Meta:
-  //   kind 'insights' → GET  {ad_account_id}/insights   (Ads Reporting sync)
-  //   default/events  → POST {pixel_id}/events          (Conversions API)
+  // Operations sharing this relay, all HF → Vercel → Meta:
+  //   kind 'graph_get' → GET  {path}?{params}           (token/pixel/account checks, arbitrary reads)
+  //   kind 'insights'  → GET  {ad_account_id}/insights   (Ads Reporting sync — kept as a named shortcut)
+  //   default/events   → POST {pixel_id}/events          (Conversions API)
   let url: string;
   let init: RequestInit;
 
-  if (payload?.kind === 'insights') {
+  if (payload?.kind === 'graph_get') {
+    const path = payload?.path;
+    if (!path) {
+      return NextResponse.json({ success: false, error: 'Missing path' }, { status: 400 });
+    }
+    const qs = new URLSearchParams();
+    const params = payload?.params && typeof payload.params === 'object' ? payload.params : {};
+    for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
+    qs.set('access_token', accessToken);
+    url = `https://graph.facebook.com/${graphVersion}/${path}?${qs.toString()}`;
+    init = { method: 'GET' };
+  } else if (payload?.kind === 'insights') {
     const adAccountId = payload?.ad_account_id;
     if (!adAccountId) {
       return NextResponse.json({ success: false, error: 'Missing ad_account_id' }, { status: 400 });

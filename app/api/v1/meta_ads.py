@@ -28,6 +28,42 @@ router = APIRouter()
 META_GRAPH_VERSION = "v21.0"
 
 
+def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0):
+    """
+    GET a Graph API path, transparently through the Vercel relay when
+    META_CAPI_RELAY_URL is set (HuggingFace can't reach graph.facebook.com
+    directly — TLS to Meta's IP ranges is blocked at the network layer).
+    Returns an httpx.Response-compatible object with .status_code and .json().
+    Every direct-Graph-call site in this module (ad account details, /me token
+    check, debug_token, pixel check) used to bypass the relay and silently
+    time out on HuggingFace — that's what left spend/impressions at 0 and the
+    health panel reporting "TLS bloqué" even though CAPI itself worked fine.
+    """
+    import httpx
+    from app.core.config import settings as _settings
+
+    relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
+    if relay_url:
+        resp = httpx.post(
+            relay_url,
+            json={
+                "kind": "graph_get",
+                "path": path,
+                "graph_version": META_GRAPH_VERSION,
+                "access_token": access_token,
+                "params": params,
+            },
+            headers={"x-internal-key": _settings.INTERNAL_API_KEY},
+            timeout=timeout,
+        )
+        return resp
+    return httpx.get(
+        f"https://graph.facebook.com/{META_GRAPH_VERSION}/{path}",
+        params={**params, "access_token": access_token},
+        timeout=timeout,
+    )
+
+
 def _normalize_ad_account_id(raw: Optional[str]) -> Optional[str]:
     """
     Meta's Graph API only recognizes an ad account as the node `act_<id>` —
@@ -443,13 +479,8 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         is_simulated = True
     else:
         try:
-            ad_account_url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}"
-            ad_account_params = {
-                "fields": "currency,name",
-                "access_token": config.access_token
-            }
             logger.info(f"[Meta Ads Sync] Tentative de récupération des détails du compte publicitaire {ad_account_id}")
-            acct_response = httpx.get(ad_account_url, params=ad_account_params, timeout=10.0)
+            acct_response = _graph_get(ad_account_id, {"fields": "currency,name"}, config.access_token, timeout=10.0)
             if acct_response.status_code == 200:
                 acct_data = acct_response.json()
                 ad_currency = acct_data.get("currency")
@@ -1436,11 +1467,7 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
 
     if config and config.access_token and len(config.access_token) >= 15:
         try:
-            r = _httpx.get(
-                f"https://graph.facebook.com/{META_API_VERSION}/me",
-                params={"access_token": config.access_token, "fields": "id,name"},
-                timeout=8.0,
-            )
+            r = _graph_get("me", {"fields": "id,name"}, config.access_token, timeout=8.0)
             if r.status_code == 200:
                 d = r.json()
                 token_check = {"status": "valid", "user_id": d.get("id"), "name": d.get("name")}
@@ -1456,8 +1483,11 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
             else:
                 token_check = {"status": f"http_{r.status_code}", "body": r.text[:200]}
         except (_httpx.ConnectTimeout, _httpx.ReadTimeout):
-            token_check = {"status": "timeout", "note": "TLS bloqué (réseau HuggingFace)"}
-            warnings.append("Impossible de valider le token — TLS bloqué vers graph.facebook.com")
+            from app.core.config import settings as _settings_tc
+            _via_relay = bool((getattr(_settings_tc, "META_CAPI_RELAY_URL", "") or "").strip())
+            note = "Relais Vercel injoignable" if _via_relay else "TLS bloqué (réseau HuggingFace)"
+            token_check = {"status": "timeout", "note": note}
+            warnings.append(f"Impossible de valider le token — {note.lower()}")
         except Exception as exc:
             token_check = {"status": "error", "detail": str(exc)[:200]}
 
@@ -1470,11 +1500,7 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
         # send-time inside meta_capi.send_events().
         if token_check.get("status") == "valid":
             try:
-                dbg = _httpx.get(
-                    f"https://graph.facebook.com/{META_API_VERSION}/debug_token",
-                    params={"input_token": config.access_token, "access_token": config.access_token},
-                    timeout=8.0,
-                )
+                dbg = _graph_get("debug_token", {"input_token": config.access_token}, config.access_token, timeout=8.0)
                 if dbg.status_code == 200:
                     info = (dbg.json().get("data") or {})
                     scopes = info.get("scopes") or []
@@ -1504,11 +1530,7 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
 
         if config.pixel_id:
             try:
-                r2 = _httpx.get(
-                    f"https://graph.facebook.com/{META_API_VERSION}/{config.pixel_id}",
-                    params={"access_token": config.access_token, "fields": "id,name,is_unavailable"},
-                    timeout=8.0,
-                )
+                r2 = _graph_get(config.pixel_id, {"fields": "id,name,is_unavailable"}, config.access_token, timeout=8.0)
                 if r2.status_code == 200:
                     d2 = r2.json()
                     pixel_check = {
