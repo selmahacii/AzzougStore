@@ -166,12 +166,12 @@ export default function AdminHeader() {
    const newOrdersTotal = newOrdersQuery.data?.total ?? 0;
    const stockAlerts = stockAlertsQuery.data?.data ?? [];
    
-   // Payroll alert (last 5 days of the month)
-   const today = new Date();
-   const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-   const showPayrollAlert = today.getDate() >= lastDayOfMonth - 5;
-
-   const totalNotifications = newOrdersTotal + stockAlerts.length + (showPayrollAlert ? 1 : 0) + feedUnread;
+   // Payroll is now covered by the per-employee payday system (EMPLOYEE_PAYDAY
+   // notifications in the feed below) — this used to be a separate, purely
+   // date-based guess ("last 5 days of the month") unrelated to whether any
+   // employee actually had a payday or payroll was really due. Removed so
+   // there's exactly one payroll-alert mechanism, driven by real data.
+   const totalNotifications = newOrdersTotal + stockAlerts.length + feedUnread;
 
    const handleLogout = async () => {
       try {
@@ -303,8 +303,6 @@ export default function AdminHeader() {
                               {newOrdersTotal > 0 && `${newOrdersTotal} nouvelle${newOrdersTotal > 1 ? 's' : ''} commande${newOrdersTotal > 1 ? 's' : ''}`}
                               {newOrdersTotal > 0 && stockAlerts.length > 0 && ' · '}
                               {stockAlerts.length > 0 && `${stockAlerts.length} alerte${stockAlerts.length > 1 ? 's' : ''} stock`}
-                              {(newOrdersTotal > 0 || stockAlerts.length > 0) && showPayrollAlert && ' · '}
-                              {showPayrollAlert && '1 alerte de paie'}
                               {totalNotifications === 0 && 'Aucune notification'}
                            </p>
                         </div>
@@ -370,26 +368,6 @@ export default function AdminHeader() {
                                     </div>
                                  </button>
                               ))}
-                              {/* Payroll alert */}
-                              {showPayrollAlert && (
-                                 <button
-                                    onClick={() => {
-                                       setAdminView('employees');
-                                       setShowNotifications(false);
-                                    }}
-                                    className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-[#F2F6FF] transition-colors"
-                                 >
-                                    <div className="size-9 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shrink-0 bg-blue-500">
-                                       <Wallet className="size-4" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                       <div className="flex items-center justify-between gap-2">
-                                          <span className="text-xs font-bold text-[#2D3436] truncate">Rappel de paie</span>
-                                       </div>
-                                       <p className="text-[10px] font-medium text-[#B2BEC3]">C'est la fin du mois. N'oubliez pas de payer vos employés.</p>
-                                    </div>
-                                 </button>
-                              )}
                               {/* Stock alerts */}
                               {stockAlerts.map((product: any) => (
                                  <button

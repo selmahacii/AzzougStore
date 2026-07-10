@@ -218,71 +218,6 @@ def scan_due_reminders() -> None:
         db.close()
 
 
-def scan_payroll_reminder() -> None:
-    """
-    Monthly payroll reminder: while the previous month's payroll is not
-    generated or still has PENDING records, keep one broadcast notification
-    per period alive for admins & managers (deduplicated).
-    """
-    from datetime import timedelta as _td
-
-    from app.models.payroll import PayrollRecord
-    from app.models.user import User
-
-    db = SessionLocal()
-    try:
-        today = datetime.now(timezone.utc)
-        period = (today.replace(day=1) - _td(days=1)).strftime("%Y-%m")
-
-        # 2026-06 was pre-launch testing, not real business activity — no
-        # employee was actually owed a salary that month, so never remind
-        # about it. First real reminder is for 2026-07, starting in August.
-        # No data is touched here (no records deleted/altered); this only
-        # skips creating the notification for this one period.
-        _NO_REMINDER_PERIODS = {"2026-06"}
-        if period in _NO_REMINDER_PERIODS:
-            return
-
-        records = db.query(PayrollRecord).filter(PayrollRecord.period == period).all()
-        pending = [r for r in records if r.status == "PENDING"]
-
-        if records and not pending:
-            return  # everything paid — nothing to remind
-
-        # Dedup: one PAYROLL_DUE broadcast per period
-        already = (
-            db.query(Notification)
-            .filter(
-                Notification.type == "PAYROLL_DUE",
-                Notification.message.contains(period),
-                Notification.is_read == False,
-            )
-            .first()
-        )
-        if already:
-            return
-
-        if not records:
-            payable = db.query(User).filter(
-                User.role.in_(["CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MANAGER", "MARKETER", "LIVREUR"]),
-                User.is_active == True,
-            ).count()
-            if not payable:
-                return
-            title = f"Paie {period} à générer"
-            message = f"La paie de {period} n'a pas encore été générée ({payable} employé(s) à payer)."
-        else:
-            total = sum(r.total or 0 for r in pending)
-            title = f"Salaires {period} en attente"
-            message = f"{len(pending)} salaire(s) de {period} restent à payer ({round(total)} DA). Marquez-les payés pour créer les dépenses."
-
-        notify(db, type="PAYROLL_DUE", title=title, message=message, user_id=None)
-        db.commit()
-        logger.info("Payroll reminder emitted for period %s", period)
-    finally:
-        db.close()
-
-
 def scan_payday_reminders() -> None:
     """
     Salary-date reminder, two audiences, same trigger (admin-set `payday`,
@@ -440,10 +375,6 @@ async def background_loop() -> None:
                 await sync_noest_once()
             except Exception as exc:
                 logger.error("Noest sync pass crashed: %s", exc)
-            try:
-                scan_payroll_reminder()
-            except Exception as exc:
-                logger.error("Payroll reminder scan crashed: %s", exc)
             try:
                 scan_payday_reminders()
             except Exception as exc:
