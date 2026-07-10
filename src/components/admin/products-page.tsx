@@ -24,6 +24,7 @@ import {
    Boxes,
    Tag,
    Info,
+   FileText,
    CheckCircle2,
    ExternalLink,
    Image as ImageIcon,
@@ -1155,9 +1156,12 @@ export default function ProductsPage() {
                      {/* ── Main Scrollable Content ── */}
                      <div className="flex-1 flex flex-col min-h-0 bg-[#F8FAFC] relative">
                         <div className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-10 custom-scrollbar relative">
-                        <TabsContent value="base" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
+                        <TabsContent value="base" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
                            {/* CARD 1: CLASSIFICATION */}
                            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
+                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                              <Package className="size-4 text-[#4b7bec]" /> Classification & Boutique
+                           </h4>
                            {/* ── Type de Produit selector ── */}
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Type de Produit *</label>
@@ -1248,6 +1252,9 @@ export default function ProductsPage() {
 
                            {/* CARD 2: INFORMATIONS PRODUIT */}
                            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
+                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                              <FileText className="size-4 text-[#4b7bec]" /> Identité Produit
+                           </h4>
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                               <div className="space-y-3">
                                  <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Nom commercial de l'article *</label>
@@ -1364,7 +1371,10 @@ export default function ProductsPage() {
                            </div>
 
                            {/* CARD 3: MÉDIA */}
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm">
+                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
+                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                              <ImageIcon className="size-4 text-[#4b7bec]" /> Médias
+                           </h4>
                            {/* ── Image principale ── */}
                            <div className="space-y-4">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Image Principale (HD) (Photo de couverture) *</label>
@@ -1855,7 +1865,7 @@ export default function ProductsPage() {
                            )}
                         </TabsContent>
 
-                        <TabsContent value="pricing" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
+                        <TabsContent value="pricing" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
                            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm">
                               <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-4 sm:mb-6 flex items-center gap-2">
                                  <DollarSign className="size-4 text-[#4b7bec]" /> Ingénierie Financière
@@ -2355,7 +2365,7 @@ export default function ProductsPage() {
 
 
 
-                        <TabsContent value="advanced" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
+                        <TabsContent value="advanced" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
                            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
                               <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                                  <Zap className="size-4 text-[#4b7bec]" /> Référencement & Options
