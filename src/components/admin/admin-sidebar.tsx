@@ -574,7 +574,8 @@ export default function AdminSidebar() {
             )}
             <button
                onClick={toggleSidebar}
-               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-semibold text-[#B2BEC3] hover:text-[#636E72] transition-all"
+               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-all"
+               style={{ color: S.active, backgroundColor: S.activeBg }}
             >
                {sidebarCollapsed
                   ? <ChevronRight className="size-[18px]" />
