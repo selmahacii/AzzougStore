@@ -27,6 +27,12 @@ class User(Base):
     payment_amount = Column(Integer, nullable=True)   # DA — rate per order OR monthly salary
     payment_recovered_cart = Column(Integer, default=0)
     payment_lost_cart      = Column(Integer, default=0)
+    # Day of month (1-28, capped to stay valid in every month) this employee
+    # is due to be paid — admin-configured. Drives the personal SALARY_DUE
+    # reminder (app/services/noest_sync.py scan_payday_reminders) sent
+    # directly to the employee, separate from the admin-facing PAYROLL_DUE
+    # broadcast about generating payroll at all.
+    payday = Column(Integer, nullable=True)
 
     # Affiliate / marketing-partner tracking (role MARKETER). The code is
     # matched against Order.utm_source / Order.campaign_id to attribute real

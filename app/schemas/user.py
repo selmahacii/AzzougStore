@@ -17,6 +17,7 @@ class UserBase(BaseModel):
     payment_amount: Optional[int] = None
     payment_recovered_cart: Optional[int] = 0
     payment_lost_cart: Optional[int] = 0
+    payday: Optional[int] = None  # day of month (1-28) this employee is due to be paid
     assigned_store_scope: Optional[str] = "ALL"
     assigned_store_ids: Optional[List[str]] = []
     assigned_product_ids: Optional[List[str]] = []
@@ -41,6 +42,14 @@ class UserBase(BaseModel):
     def validate_payment_amount(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError("Le montant de paiement ne peut pas ├¬tre n├®gatif.")
+        return v
+
+    @field_validator("payday")
+    @classmethod
+    def validate_payday(cls, v: Optional[int]) -> Optional[int]:
+        # Capped to 28 so it's a valid day in every month, including February.
+        if v is not None and not (1 <= v <= 28):
+            raise ValueError("Le jour de paie doit être compris entre 1 et 28.")
         return v
 
     @model_validator(mode="after")

@@ -990,6 +990,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       payment_amount: '' as number | '',
       payment_recovered_cart: '' as number | '',
       payment_lost_cart: '' as number | '',
+      payday: '' as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
@@ -1017,6 +1018,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             payment_amount: editingEmployee.payment_amount ?? '',
             payment_recovered_cart: editingEmployee.payment_recovered_cart ?? '',
             payment_lost_cart: editingEmployee.payment_lost_cart ?? '',
+            payday: editingEmployee.payday ?? '',
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
@@ -1024,7 +1026,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             marketing_budget: editingEmployee.marketing_budget ?? '',
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], tracking_code: '', marketing_budget: '' });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payday: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], tracking_code: '', marketing_budget: '' });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1043,6 +1045,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payment_amount: formData.payment_type ? (Number(formData.payment_amount) || 0) : null,
          payment_recovered_cart: Number(formData.payment_recovered_cart) || 0,
          payment_lost_cart: Number(formData.payment_lost_cart) || 0,
+         payday: formData.payday === '' ? null : Number(formData.payday),
       };
 
       const storePayload = formData.assigned_store_scope === 'SPECIFIC'
@@ -1315,6 +1318,22 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                               </p>
                            </div>
                         )}
+
+                        <div className="space-y-1.5">
+                           <Label className="text-[11px] font-semibold text-[#636E72]">Jour de paie (chaque mois)</Label>
+                           <Input
+                              type="number"
+                              min={1}
+                              max={28}
+                              value={formData.payday}
+                              onChange={e => setFormData(p => ({ ...p, payday: e.target.value === '' ? '' : Number(e.target.value) }))}
+                              placeholder="Ex: 28"
+                              className="h-10 border-emerald-100 rounded-lg bg-white font-black"
+                           />
+                           <p className="text-[10px] text-slate-400">
+                              L'employé reçoit un rappel automatique ce jour-là chaque mois — la date de son salaire.
+                           </p>
+                        </div>
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">

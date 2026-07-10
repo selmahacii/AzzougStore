@@ -283,6 +283,56 @@ def scan_payroll_reminder() -> None:
         db.close()
 
 
+def scan_payday_reminders() -> None:
+    """
+    Personal salary-date reminder: each employee can have an admin-set
+    `payday` (day of month, 1-28). On that day, send THEM (not a broadcast to
+    admins — this is PAYROLL_DUE's job) a one-time-per-month notification
+    confirming today is their pay date. Purely informational for the
+    employee; does not touch payroll generation or figures.
+    """
+    from app.models.user import User
+
+    db = SessionLocal()
+    try:
+        today = datetime.now(timezone.utc)
+        if today.day < 1:  # defensive; day is always >= 1
+            return
+        period = today.strftime("%Y-%m")
+
+        employees = db.query(User).filter(
+            User.payday == today.day,
+            User.is_active == True,
+        ).all()
+
+        created = 0
+        for emp in employees:
+            already = (
+                db.query(Notification)
+                .filter(
+                    Notification.user_id == emp.id,
+                    Notification.type == "SALARY_DUE",
+                    Notification.message.contains(period),
+                )
+                .first()
+            )
+            if already:
+                continue
+            notify(
+                db,
+                type="SALARY_DUE",
+                title="Date de paie",
+                message=f"Aujourd'hui ({today.strftime('%d/%m/%Y')}) est votre date de versement de salaire pour {period}.",
+                user_id=emp.id,
+            )
+            created += 1
+        if created:
+            db.commit()
+            logger.info("Payday reminder: %d employee(s) notified for %s", created, period)
+    finally:
+        db.close()
+
+
 def sync_meta_ads_all() -> None:
     """
     Auto-sync Ads Insights (spend / impressions / clicks / reach) for every
@@ -374,6 +424,10 @@ async def background_loop() -> None:
                 scan_payroll_reminder()
             except Exception as exc:
                 logger.error("Payroll reminder scan crashed: %s", exc)
+            try:
+                scan_payday_reminders()
+            except Exception as exc:
+                logger.error("Payday reminder scan crashed: %s", exc)
             try:
                 from app.services.meta_capi import retry_pending_events
                 # retry_pending_events() makes blocking network calls (with

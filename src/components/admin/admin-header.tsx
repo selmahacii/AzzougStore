@@ -156,6 +156,7 @@ export default function AdminHeader() {
       ORDER_DELIVERED:  { icon: PackageCheck,  bg: '#26de81' },
       NOEST_SYNC_ERROR: { icon: AlertTriangle, bg: '#eb3b5a' },
       DUPLICATE_MERGED: { icon: Copy,          bg: '#fa8231' },
+      SALARY_DUE:       { icon: Wallet,        bg: '#6C5CE7' },
    };
 
    const title = PAGE_TITLES[adminView] || 'AzzougStore';

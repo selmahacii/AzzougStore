@@ -9,12 +9,13 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus,
-  Warehouse, History
+  Warehouse, History, Bell, Wallet
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice, formatOrderRef } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 import { toast } from 'sonner';
@@ -1282,6 +1283,28 @@ export default function AgentDashboard() {
   const workTimer = useWorkTimer();
   const [showAllStores, setShowAllStores] = useState(true);
 
+  // Personal notifications (salary date, assignments…) — the confirmatrice
+  // previously had no way to see these at all; admin-header.tsx has the
+  // same feed for admins, this is the employee-facing equivalent.
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifQuery = useQuery<{ data: any[]; unread: number }>({
+    queryKey: ['notifications', user?.id],
+    queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
+    refetchInterval: 60000,
+    enabled: !!user?.id,
+  });
+  const notifItems = (notifQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);
+  const notifUnread = notifQuery.data?.unread ?? 0;
+  const markAllNotifRead = useMutation({
+    mutationFn: () => apiFetch('/api/v1/notifications/read-all', { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] }),
+  });
+  const NOTIF_ICONS: Record<string, any> = {
+    SALARY_DUE: Wallet,
+    REMINDER_DUE: Clock,
+    ORDER_ASSIGNED: Package,
+  };
+
   const handleLogout = async () => {
     try {
       await apiFetch('/api/v1/auth', { method: 'DELETE' });
@@ -1694,7 +1717,52 @@ export default function AgentDashboard() {
                        <span>Nouvelle Commande</span>
                      </button>
                 </div>
-                
+
+                <Popover
+                  open={showNotifications}
+                  onOpenChange={(open) => {
+                    setShowNotifications(open);
+                    if (open && notifUnread > 0) markAllNotifRead.mutate();
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button className="relative p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
+                      <Bell className="size-5" />
+                      {notifUnread > 0 && (
+                        <span className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full text-[9px] font-bold text-white bg-[#6C5CE7]">
+                          {notifUnread > 9 ? '9+' : notifUnread}
+                        </span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-[340px] p-0 rounded-xl shadow-2xl">
+                    <div className="px-4 py-3 border-b">
+                      <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
+                    </div>
+                    <div className="max-h-[380px] overflow-y-auto divide-y">
+                      {notifItems.length === 0 ? (
+                        <div className="py-12 text-center">
+                          <Bell className="size-7 text-slate-200 mx-auto mb-2" />
+                          <p className="text-xs font-semibold text-slate-400">Aucune notification</p>
+                        </div>
+                      ) : notifItems.map((n: any) => {
+                        const Icon = NOTIF_ICONS[n.type] || Bell;
+                        return (
+                          <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50">
+                            <div className="size-8 rounded-lg bg-[#6C5CE7]/10 text-[#6C5CE7] flex items-center justify-center shrink-0">
+                              <Icon className="size-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800">{n.title}</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+
                 <div className="flex flex-col items-end">
                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Boutique active</span>
                    {allStores.length > 1 ? (
