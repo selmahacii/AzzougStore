@@ -232,8 +232,15 @@ def get_analytics(
         ) or 0
         
         # gross_profit: only subtract COGS from Order Net Revenue (excluding pos_rev for COGS since POS has no cost tracking yet)
-        order_net_rev = order_rev - returned_rev
-        gross_profit = int(order_net_rev - cogs_result) + int(pos_rev)
+        # order_rev already SUMS ONLY status == DELIVERED orders (see the
+        # aggregation above) — a RETURNED order's total was never added to
+        # order_rev in the first place (its status moved away from DELIVERED).
+        # Subtracting returned_rev again here double-counted the loss, making
+        # profit/ROI look artificially lower whenever any order was returned.
+        # Returned-order impact is already its own dedicated figure
+        # ("Frais de retour" / returnRate) — it must not also bleed into
+        # gross profit, which should reflect DELIVERED business only.
+        gross_profit = int(order_rev - cogs_result) + int(pos_rev)
         
         # ROI = (Net Revenue - Total Costs) / Total Costs. 
         # Here we approximate costs with COGS + Shipping fees.
@@ -390,11 +397,12 @@ def get_analytics(
         return {"success": True, "data": data}
 
     if type == "wilayas":
-        # Top Wilayas by order count
+        # Top Wilayas by order count. Revenue column = DELIVERED orders only —
+        # summing every status counted cancelled/pending carts as revenue.
         results = db.query(
             Order.customer_wilaya,
             func.count(Order.id).label("count"),
-            func.sum(Order.total).label("revenue")
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue")
         ).filter(and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date]))).group_by(Order.customer_wilaya).order_by(func.count(Order.id).desc()).limit(15).all()
         
         data = [TopItem(id=r[0], name=r[0], value=float(r[1]), secondaryValue=float(r[2])) for r in results]
@@ -450,11 +458,11 @@ def get_analytics(
         return {"success": True, "data": data}
 
     if type == "marketers":
-        # Top sources/marketers
+        # Top sources/marketers. Revenue = DELIVERED orders only.
         results = db.query(
             Order.source,
             func.count(Order.id).label("count"),
-            func.sum(Order.total).label("revenue")
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue")
         ).filter(and_(*(filters + [Order.created_at >= start_date]))).group_by(Order.source).order_by(func.count(Order.id).desc()).limit(10).all()
 
         data = [TopItem(id=str(r[0] or "Direct"), name=str(r[0] or "Direct"), value=float(r[1]), secondaryValue=float(r[2])) for r in results]
@@ -506,7 +514,11 @@ def get_analytics(
 
         period_filters = filters + [Order.created_at >= start_date]
 
-        s_total_rev = db.query(func.sum(Order.total)).filter(and_(*period_filters)).scalar() or 0
+        # Revenue must only reflect orders actually DELIVERED — summing every
+        # order regardless of status counted NEW/CANCELLED/pending carts as
+        # real revenue, wildly inflating "Ventes"/"Revenus nets" for any store
+        # with a normal share of unconfirmed or cancelled orders.
+        s_total_rev = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
         s_total_orders = db.query(func.count(Order.id)).filter(and_(*period_filters)).scalar() or 0
         s_delivered = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "DELIVERED"]))).scalar() or 0
         s_returned = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "RETURNED"]))).scalar() or 0
@@ -518,12 +530,13 @@ def get_analytics(
         # Revenue comparison
         s_rev_change = 0.0
         if prev_start_date:
-            prev_f = filters + [Order.created_at >= prev_start_date, Order.created_at < start_date]
+            prev_f = filters + [Order.created_at >= prev_start_date, Order.created_at < start_date, Order.status == "DELIVERED"]
             prev_rev = db.query(func.sum(Order.total)).filter(and_(*prev_f)).scalar() or 0
             s_rev_change = round(((s_total_rev - prev_rev) / (prev_rev or 1) * 100), 2)
 
-        s_returned_rev = db.query(func.sum(Order.total)).filter(and_(*(period_filters + [Order.status == "RETURNED"]))).scalar() or 0
-        s_net_rev = s_total_rev - s_returned_rev
+        # s_total_rev is already DELIVERED-only (see above) — a RETURNED
+        # order's total was never in it, so there's nothing left to subtract.
+        s_net_rev = s_total_rev
         s_avg_order = int(s_total_rev / s_total_orders) if s_total_orders > 0 else 0
         s_return_rate = round((s_returned / (s_delivered or 1) * 100), 2)
         s_conversion = round((s_delivered / (s_total_orders or 1) * 100), 2)
@@ -552,22 +565,25 @@ def get_analytics(
         # Using group_by to avoid N+1 queries
         from app.models.store import Store
         
-        # Aggregate current period
+        # Revenue = DELIVERED orders only — without this filter, every store's
+        # comparison revenue included NEW/CANCELLED/pending carts, inflating
+        # figures for whichever store simply had more unconfirmed traffic
+        # rather than more actual sales.
         curr_stats = db.query(
             Order.store_id,
             func.sum(Order.total).label("revenue"),
             func.count(Order.id).label("orders")
-        ).filter(Order.is_deleted == False, Order.created_at >= start_date, Order.created_at < end_date).group_by(Order.store_id).all()
-        
+        ).filter(Order.is_deleted == False, Order.status == "DELIVERED", Order.created_at >= start_date, Order.created_at < end_date).group_by(Order.store_id).all()
+
         curr_map = {r.store_id: {"revenue": r.revenue or 0, "orders": r.orders or 0} for r in curr_stats}
-        
+
         # Aggregate previous period
         prev_map = {}
         if prev_start_date and prev_end_date:
             prev_stats = db.query(
                 Order.store_id,
                 func.sum(Order.total).label("revenue")
-            ).filter(Order.is_deleted == False, Order.created_at >= prev_start_date, Order.created_at < prev_end_date).group_by(Order.store_id).all()
+            ).filter(Order.is_deleted == False, Order.status == "DELIVERED", Order.created_at >= prev_start_date, Order.created_at < prev_end_date).group_by(Order.store_id).all()
             prev_map = {r.store_id: r.revenue or 0 for r in prev_stats}
         
         stores_list = db.query(Store).filter(Store.is_deleted == False, Store.is_active == True).all()
@@ -686,10 +702,11 @@ def get_analytics(
         }
 
     if type == "channels":
+        # Revenue = DELIVERED orders only (same fix as the other breakdowns).
         results = db.query(
             Order.source,
             func.count(Order.id).label("count"),
-            func.sum(Order.total).label("revenue"),
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue"),
             func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered")
         ).filter(and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date]))).group_by(Order.source).all()
 

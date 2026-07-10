@@ -285,11 +285,14 @@ def scan_payroll_reminder() -> None:
 
 def scan_payday_reminders() -> None:
     """
-    Personal salary-date reminder: each employee can have an admin-set
-    `payday` (day of month, 1-28). On that day, send THEM (not a broadcast to
-    admins — this is PAYROLL_DUE's job) a one-time-per-month notification
-    confirming today is their pay date. Purely informational for the
-    employee; does not touch payroll generation or figures.
+    Salary-date reminder, two audiences, same trigger (admin-set `payday`,
+    day of month 1-28, reached today):
+      - SALARY_DUE  → sent to the employee themselves: purely informational,
+        "today is your payday".
+      - EMPLOYEE_PAYDAY → broadcast to admins/managers: "you need to pay
+        [name] today", shown in the admin dashboard notification feed.
+    Both are deduplicated per employee per period so they fire once a month,
+    not once a day. Neither touches payroll generation or figures.
     """
     from app.models.user import User
 
@@ -316,15 +319,32 @@ def scan_payday_reminders() -> None:
                 )
                 .first()
             )
-            if already:
-                continue
-            notify(
-                db,
-                type="SALARY_DUE",
-                title="Date de paie",
-                message=f"Aujourd'hui ({today.strftime('%d/%m/%Y')}) est votre date de versement de salaire pour {period}.",
-                user_id=emp.id,
+            if not already:
+                notify(
+                    db,
+                    type="SALARY_DUE",
+                    title="Date de paie",
+                    message=f"Aujourd'hui ({today.strftime('%d/%m/%Y')}) est votre date de versement de salaire pour {period}.",
+                    user_id=emp.id,
+                )
+
+            already_admin = (
+                db.query(Notification)
+                .filter(
+                    Notification.type == "EMPLOYEE_PAYDAY",
+                    Notification.message.contains(f"[{emp.id}]"),
+                    Notification.message.contains(period),
+                )
+                .first()
             )
+            if not already_admin:
+                notify(
+                    db,
+                    type="EMPLOYEE_PAYDAY",
+                    title="Salaire à verser",
+                    message=f"Vous devez payer {emp.name} aujourd'hui ({period}). [{emp.id}]",
+                    user_id=None,
+                )
             created += 1
         if created:
             db.commit()
