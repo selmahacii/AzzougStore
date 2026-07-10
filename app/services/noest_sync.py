@@ -234,6 +234,15 @@ def scan_payroll_reminder() -> None:
         today = datetime.now(timezone.utc)
         period = (today.replace(day=1) - _td(days=1)).strftime("%Y-%m")
 
+        # 2026-06 was pre-launch testing, not real business activity — no
+        # employee was actually owed a salary that month, so never remind
+        # about it. First real reminder is for 2026-07, starting in August.
+        # No data is touched here (no records deleted/altered); this only
+        # skips creating the notification for this one period.
+        _NO_REMINDER_PERIODS = {"2026-06"}
+        if period in _NO_REMINDER_PERIODS:
+            return
+
         records = db.query(PayrollRecord).filter(PayrollRecord.period == period).all()
         pending = [r for r in records if r.status == "PENDING"]
 
