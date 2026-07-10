@@ -1767,8 +1767,20 @@ export default function AgentDashboard() {
                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Boutique active</span>
                    {allStores.length > 1 ? (
                      <select
-                       value={activeStore?.id || ''}
+                       value={showAllStores ? '__ALL__' : (activeStore?.id || '')}
                        onChange={(e) => {
+                         if (e.target.value === '__ALL__') {
+                           // Picking a store here used to silently force
+                           // showAllStores=false with no way back from this
+                           // same menu — a confirmatrice switching stores via
+                           // this dropdown (the only switcher she used) got
+                           // permanently narrowed to one store and its orders
+                           // in every OTHER assigned store appeared to vanish,
+                           // even though they were still correctly assigned to
+                           // her server-side. This option is the way back.
+                           setShowAllStores(true);
+                           return;
+                         }
                          const selected = allStores.find(s => s.id === e.target.value);
                          if (selected) {
                            setActiveStore(selected);
@@ -1777,6 +1789,7 @@ export default function AgentDashboard() {
                        }}
                        className="text-xs font-bold bg-transparent border-none outline-none text-right cursor-pointer text-indigo-600 hover:underline font-sans max-w-[120px] truncate"
                      >
+                       <option value="__ALL__">Toutes les boutiques</option>
                        {allStores.map(store => (
                          <option key={store.id} value={store.id}>
                            {store.name}
