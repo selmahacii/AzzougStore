@@ -142,6 +142,10 @@ export default function AdminHeader() {
       mutationFn: (id: string) => apiFetch(`/api/v1/notifications/${id}/read`, { method: 'PATCH' }),
       onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', currentUser?.id] }),
    });
+   const markAllFeedRead = useMutation({
+      mutationFn: () => apiFetch('/api/v1/notifications/read-all', { method: 'POST' }),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', currentUser?.id] }),
+   });
    const feedItems = (feedQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);
    const feedUnread = feedQuery.data?.unread ?? 0;
    const FEED_ICONS: Record<string, { icon: any; bg: string }> = {
@@ -268,7 +272,17 @@ export default function AdminHeader() {
                )}
 
                {/* Notifications */}
-               <Popover open={showNotifications} onOpenChange={setShowNotifications}>
+               <Popover
+                  open={showNotifications}
+                  onOpenChange={(open) => {
+                     setShowNotifications(open);
+                     // Clear the badge once the panel has actually been seen —
+                     // previously it only cleared per-item on click, so it kept
+                     // showing a stale unread count for anyone who just glanced
+                     // at the list without clicking into every single entry.
+                     if (open && feedUnread > 0) markAllFeedRead.mutate();
+                  }}
+               >
                   <PopoverTrigger asChild>
                      <Button variant="ghost" size="icon" className="relative size-9 text-[#636E72] hover:text-[#2D3436] hover:bg-[#F8F9FC] rounded-lg">
                         <Bell className="size-[18px]" />
