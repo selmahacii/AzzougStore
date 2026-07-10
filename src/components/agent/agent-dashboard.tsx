@@ -1460,6 +1460,26 @@ export default function AgentDashboard() {
     return groups;
   })();
 
+  // "Toutes les boutiques" mixed every store's orders into one interleaved
+  // list — hard to work with for a confirmatrice covering several stores,
+  // since a store's own volume of commandes was never visible as its own
+  // section. Group by store (each with its own header + count) whenever more
+  // than one store's orders are actually present in this result set; a
+  // single-store view (dropdown set to one store) stays a plain flat list.
+  const storeSections: { storeId: string; storeName: string; groups: typeof groupedOrders }[] = (() => {
+    const byStore = new Map<string, { storeName: string; groups: typeof groupedOrders }>();
+    for (const g of groupedOrders) {
+      const sid = g.primary.store_id || 'unknown';
+      const sname = (g.primary as any).store?.name || 'Boutique';
+      if (!byStore.has(sid)) byStore.set(sid, { storeName: sname, groups: [] });
+      byStore.get(sid)!.groups.push(g);
+    }
+    return Array.from(byStore.entries())
+      .map(([storeId, v]) => ({ storeId, storeName: v.storeName, groups: v.groups }))
+      .sort((a, b) => a.storeName.localeCompare(b.storeName));
+  })();
+  const showStoreSections = showAllStores && storeSections.length > 1;
+
   useEffect(() => {
     if (selectedOrder) {
       const updated = filteredOrders.find(o => o.id === selectedOrder.id);
@@ -1927,10 +1947,20 @@ export default function AgentDashboard() {
                  </div>
                ) : (
                  <div className="grid grid-cols-1 gap-3">
-                    {groupedOrders.map(({ primary: order, related }) => {
+                    {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
                       const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
                       const isExpanded = expandedGroups.has(order.id);
+                      const isFirstOfStore = showStoreSections && (idx === 0 || arr[idx - 1].primary.store_id !== order.store_id);
+                      const storeSection = isFirstOfStore ? storeSections.find(s => s.storeId === (order.store_id || 'unknown')) : null;
                       return (
+                       <>
+                       {storeSection && (
+                         <div key={`section-${storeSection.storeId}`} className="flex items-center gap-2 pt-2 first:pt-0">
+                           <span className="text-xs font-black uppercase tracking-wider text-slate-500">🏪 {storeSection.storeName}</span>
+                           <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{storeSection.groups.length} client{storeSection.groups.length > 1 ? 's' : ''}</span>
+                           <div className="h-px flex-1 bg-slate-200" />
+                         </div>
+                       )}
                        <div key={order.id} className="space-y-0">
                        <button onClick={() => { setSelectedOrder(order); setDrawerInitialEdit(false); }}
                                className={cn(
@@ -2064,6 +2094,7 @@ export default function AgentDashboard() {
                          </div>
                        )}
                        </div>
+                       </>
                      );})}
                  </div>
                )}
