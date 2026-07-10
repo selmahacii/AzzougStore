@@ -369,6 +369,22 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`),
   });
 
+  // Upsell: let the confirmatrice add a DIFFERENT existing product to this
+  // order during the call. originalProductIds is frozen to what the order
+  // actually had when the drawer opened — used to detect a genuinely new
+  // addition (vs. just editing quantity/variant of what was already there)
+  // so the order gets flagged is_upsell only when that really happened.
+  const originalProductIds = useState(() => new Set((order.items || []).map((i: any) => i.product_id)))[0];
+  const [upsellProductId, setUpsellProductId] = useState('');
+  const storeProductsQuery = useQuery<any>({
+    queryKey: ['agent-store-products-upsell', order.store_id],
+    enabled: isEditing && !!order.store_id,
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200`),
+  });
+  const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
+    (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
+  );
+
   // Only reset editData when the ORDER ID changes (i.e. drawer opened for a different order)
   // NOT when the order object is updated after a successful save (would erase local edits)
   useEffect(() => {
@@ -721,6 +737,44 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       <Plus className="size-3" /> Ajouter une variante
                     </button>
                   </div>
+
+                  {/* Upsell: add a different existing product to this order */}
+                  <div className="flex items-center gap-2 p-2 bg-emerald-50/60 border border-emerald-100 rounded-xl">
+                    <select
+                      value={upsellProductId}
+                      onChange={(e) => setUpsellProductId(e.target.value)}
+                      className="flex-1 text-xs p-1.5 h-8 border rounded bg-white font-bold text-slate-700"
+                    >
+                      <option value="">🎁 Ajouter un produit existant (Upsell)...</option>
+                      {upsellCandidates.map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price)}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!upsellProductId}
+                      onClick={() => {
+                        const p = upsellCandidates.find((c: any) => c.id === upsellProductId);
+                        if (!p) return;
+                        const newItem = {
+                          id: 'new-' + Date.now(),
+                          product_id: p.id,
+                          product_name: p.name,
+                          sku: p.sku || '',
+                          quantity: 1,
+                          unit_price: p.price,
+                          variant_details: {},
+                          image_url: p.main_image || ''
+                        };
+                        setEditData({ ...editData, items: [...editData.items, newItem] });
+                        setUpsellProductId('');
+                      }}
+                      className="h-8 px-3 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0"
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+
                   <div className="space-y-2.5">
                     {editData.items.map((item: any, idx: number) => {
                       const hasVariants = productQuery.data?.variants && productQuery.data.variants.length > 0;
@@ -896,7 +950,17 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button onClick={() => updateMutation.mutate(editData)} disabled={updateMutation.isPending} className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded">
+                  <button
+                    onClick={() => {
+                      // A genuinely new product (not present when the drawer
+                      // opened) means this save is an upsell — flag it so it
+                      // shows the "Upsell" badge and counts in performance.
+                      const addedNewProduct = editData.items.some((it: any) => !originalProductIds.has(it.product_id));
+                      updateMutation.mutate(addedNewProduct ? { ...editData, is_upsell: true } as any : editData);
+                    }}
+                    disabled={updateMutation.isPending}
+                    className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded"
+                  >
                     {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
                   </button>
                   <button onClick={() => setIsEditing(false)} className="px-4 bg-slate-200 text-slate-700 text-xs font-bold rounded">
