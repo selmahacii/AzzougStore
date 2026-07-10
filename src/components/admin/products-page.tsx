@@ -423,6 +423,48 @@ export default function ProductsPage() {
    const suppliers: any[] = suppliersQuery.data?.data ?? suppliersQuery.data?.suppliers ?? [];
    const carriers: any[] = carriersQuery.data?.data ?? carriersQuery.data?.partners ?? [];
 
+   // ── Quick supplier creation, inline, without leaving the product modal ──
+   // Uses the exact same POST /api/v1/suppliers/ the Fournisseurs module
+   // itself uses, so the new supplier is immediately real and shows up there
+   // too — not a product-local stand-in. Invalidating both the ['suppliers']
+   // family (Fournisseurs module + Finance sub-modules that list suppliers)
+   // and this modal's own ['suppliers-select'] keeps every screen in sync.
+   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
+   const [quickSupplierName, setQuickSupplierName] = useState('');
+   const [quickSupplierPhone, setQuickSupplierPhone] = useState('');
+   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
+
+   const handleQuickCreateSupplier = async () => {
+      if (!quickSupplierName.trim()) {
+         toast.error('Le nom du fournisseur est obligatoire');
+         return;
+      }
+      setIsCreatingSupplier(true);
+      try {
+         const res = await apiFetch<any>('/api/v1/suppliers/', {
+            method: 'POST',
+            body: JSON.stringify({
+               store_id: storeId,
+               name: quickSupplierName.trim(),
+               phone: quickSupplierPhone.trim() || undefined,
+            }),
+         });
+         const created = res?.data;
+         if (!created?.id) throw new Error('Réponse inattendue du serveur');
+         qc.invalidateQueries({ queryKey: ['suppliers-select'] });
+         qc.invalidateQueries({ queryKey: ['suppliers'] });
+         setF({ supplier_id: created.id, prod_supplier_name: created.name });
+         toast.success(`Fournisseur "${created.name}" créé et sélectionné`);
+         setIsAddingSupplier(false);
+         setQuickSupplierName('');
+         setQuickSupplierPhone('');
+      } catch (err: any) {
+         toast.error(err?.message || 'Échec de la création du fournisseur');
+      } finally {
+         setIsCreatingSupplier(false);
+      }
+   };
+
    const handleDelete = (product: Product) => setDeleteTarget(product);
 
    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1905,6 +1947,55 @@ export default function ProductsPage() {
                                              ))}
                                           </SelectContent>
                                        </Select>
+
+                                       {!isAddingSupplier ? (
+                                          <button
+                                             type="button"
+                                             onClick={() => setIsAddingSupplier(true)}
+                                             className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-[#4b7bec] hover:text-[#3867d6] transition-colors"
+                                          >
+                                             <Plus className="size-3.5" /> Nouveau fournisseur
+                                          </button>
+                                       ) : (
+                                          <div className="p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100 space-y-3">
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                <Input
+                                                   value={quickSupplierName}
+                                                   onChange={e => setQuickSupplierName(e.target.value)}
+                                                   placeholder="Nom du fournisseur *"
+                                                   className="h-11 rounded-xl border-slate-100 bg-white font-bold text-sm"
+                                                   autoFocus
+                                                />
+                                                <Input
+                                                   value={quickSupplierPhone}
+                                                   onChange={e => setQuickSupplierPhone(e.target.value)}
+                                                   placeholder="Téléphone (optionnel)"
+                                                   className="h-11 rounded-xl border-slate-100 bg-white font-bold text-sm"
+                                                />
+                                             </div>
+                                             <div className="flex items-center gap-2">
+                                                <Button
+                                                   type="button"
+                                                   onClick={handleQuickCreateSupplier}
+                                                   disabled={isCreatingSupplier}
+                                                   className="h-10 px-5 rounded-xl bg-[#4b7bec] hover:bg-[#3867d6] text-white text-[11px] font-black uppercase tracking-widest"
+                                                >
+                                                   {isCreatingSupplier ? <Loader2 className="size-4 animate-spin" /> : 'Créer et sélectionner'}
+                                                </Button>
+                                                <button
+                                                   type="button"
+                                                   onClick={() => { setIsAddingSupplier(false); setQuickSupplierName(''); setQuickSupplierPhone(''); }}
+                                                   className="h-10 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"
+                                                >
+                                                   Annuler
+                                                </button>
+                                             </div>
+                                             <p className="text-[10px] text-slate-400 font-medium">
+                                                Créé instantanément et synchronisé avec le module Fournisseurs — pour les détails complets (adresse, conditions de paiement...), modifiez-le ensuite depuis ce module.
+                                             </p>
+                                          </div>
+                                       )}
+
                                        {form.supplier_id && suppliers.find((s: any) => s.id === form.supplier_id) && (() => {
                                           const sup = suppliers.find((s: any) => s.id === form.supplier_id);
                                           return (
