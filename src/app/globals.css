@@ -138,6 +138,16 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html, body {
+    /* Guard against a stray element (a fixed width, a negative margin, an
+       unwrapped wide table) pushing past the viewport and forcing a
+       horizontal scrollbar on the page — this affected the checkout/order
+       flow on narrow screens. Vertical scrolling is untouched; anything that
+       would have overflowed horizontally is simply clipped at the edge
+       instead of stretching the page. */
+    overflow-x: hidden;
+    max-width: 100%;
+  }
   body {
     @apply bg-background text-foreground;
   }
