@@ -248,6 +248,83 @@ def read_user_me(
     return current_user
 
 
+# ─── TEMPORARY — remove after use ──────────────────────────────
+# Diagnoses why a multi-store CONFIRMATEUR sometimes can't see orders from
+# one of her assigned stores. Reports her RAW assigned_store_scope/
+# assigned_store_ids/assigned_product_ids exactly as stored, resolves the
+# store IDs to names, and replicates list_orders' own CONFIRMATEUR
+# visibility filter per store so we see EXACTLY what she'd see — instead of
+# guessing from code review alone. SUPER_ADMIN/ADMIN only.
+# Placed BEFORE the /{user_id} route below: FastAPI matches routes in
+# registration order, so a static path defined after a dynamic /{user_id}
+# route would never be reached (it'd get swallowed as user_id="store-access-debug").
+# DELETE THIS ENDPOINT once the cause is confirmed.
+@router.get("/store-access-debug", tags=["système"])
+def debug_store_access(
+    email: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+    if not email and not user_id:
+        raise HTTPException(status_code=400, detail="Fournissez ?email=... ou ?user_id=...")
+
+    emp = (
+        db.query(User).filter(User.email == email).first() if email
+        else db.query(User).filter(User.id == user_id).first()
+    )
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employé introuvable.")
+
+    from app.models.store import Store
+
+    raw_scope = getattr(emp, "assigned_store_scope", None)
+    raw_store_ids = getattr(emp, "assigned_store_ids", None)
+    raw_product_ids = getattr(emp, "assigned_product_ids", None)
+
+    store_ids_list = raw_store_ids if isinstance(raw_store_ids, list) else None
+    product_ids_list = raw_product_ids if isinstance(raw_product_ids, list) else None
+
+    stores = db.query(Store).all()
+    store_names = {s.id: s.name for s in stores}
+
+    per_store = []
+    for s in stores:
+        store_filter_passes = (
+            raw_scope != "SPECIFIC"
+            or (store_ids_list is not None and s.id in store_ids_list)
+        )
+        total_orders = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.is_deleted == False).scalar() or 0
+        delivered_orders = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.status == "DELIVERED", Order.is_deleted == False).scalar() or 0
+        assigned_to_her = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.assigned_to == emp.id, Order.is_deleted == False).scalar() or 0
+        delivered_assigned_to_her = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.status == "DELIVERED", Order.assigned_to == emp.id, Order.is_deleted == False).scalar() or 0
+        per_store.append({
+            "store_id": s.id,
+            "store_name": s.name,
+            "store_filter_passes_for_this_employee": store_filter_passes,
+            "total_orders_in_store": int(total_orders),
+            "delivered_orders_in_store": int(delivered_orders),
+            "orders_assigned_to_her_in_store": int(assigned_to_her),
+            "delivered_orders_assigned_to_her_in_store": int(delivered_assigned_to_her),
+        })
+
+    return {
+        "employee": {"id": emp.id, "name": emp.name, "role": emp.role},
+        "raw_assigned_store_scope": raw_scope,
+        "raw_assigned_store_ids": raw_store_ids,
+        "raw_assigned_store_ids_type": type(raw_store_ids).__name__,
+        "resolved_store_names_for_assigned_ids": (
+            [store_names.get(sid, f"UNKNOWN({sid})") for sid in store_ids_list] if store_ids_list is not None else None
+        ),
+        "raw_assigned_product_ids": raw_product_ids,
+        "raw_assigned_product_ids_type": type(raw_product_ids).__name__,
+        "product_scope_active": bool(product_ids_list),
+        "per_store": per_store,
+    }
+
+
 @router.get("/{user_id}", response_model=UserSchema)
 def read_user_by_id(
     user_id: str,
@@ -722,74 +799,5 @@ def get_employee_salary(
             "payment_amount": db_user.payment_amount,
         },
         "salary": salary_data,
-    }
-
-
-# ─── TEMPORARY — remove after use ──────────────────────────────
-# Diagnoses why a multi-store CONFIRMATEUR sometimes can't see orders from
-# one of her assigned stores. Reports her RAW assigned_store_scope/
-# assigned_store_ids/assigned_product_ids exactly as stored, resolves the
-# store IDs to names, and replicates list_orders' own CONFIRMATEUR
-# visibility filter per store so we see EXACTLY what she'd see — instead of
-# guessing from code review alone. SUPER_ADMIN/ADMIN only.
-# DELETE THIS ENDPOINT once the cause is confirmed.
-@router.get("/{user_id}/store-access-debug", tags=["système"])
-def debug_store_access(
-    user_id: str,
-    db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user),
-) -> Any:
-    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Superadmin only")
-
-    emp = db.query(User).filter(User.id == user_id).first()
-    if not emp:
-        raise HTTPException(status_code=404, detail="Employé introuvable.")
-
-    from app.models.store import Store
-    from app.models.order import OrderItem
-
-    raw_scope = getattr(emp, "assigned_store_scope", None)
-    raw_store_ids = getattr(emp, "assigned_store_ids", None)
-    raw_product_ids = getattr(emp, "assigned_product_ids", None)
-
-    store_ids_list = raw_store_ids if isinstance(raw_store_ids, list) else None
-    product_ids_list = raw_product_ids if isinstance(raw_product_ids, list) else None
-
-    stores = db.query(Store).all()
-    store_names = {s.id: s.name for s in stores}
-
-    per_store = []
-    for s in stores:
-        store_filter_passes = (
-            raw_scope != "SPECIFIC"
-            or (store_ids_list is not None and s.id in store_ids_list)
-        )
-        total_orders = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.is_deleted == False).scalar() or 0
-        delivered_orders = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.status == "DELIVERED", Order.is_deleted == False).scalar() or 0
-        assigned_to_her = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.assigned_to == user_id, Order.is_deleted == False).scalar() or 0
-        delivered_assigned_to_her = db.query(func.count(Order.id)).filter(Order.store_id == s.id, Order.status == "DELIVERED", Order.assigned_to == user_id, Order.is_deleted == False).scalar() or 0
-        per_store.append({
-            "store_id": s.id,
-            "store_name": s.name,
-            "store_filter_passes_for_this_employee": store_filter_passes,
-            "total_orders_in_store": int(total_orders),
-            "delivered_orders_in_store": int(delivered_orders),
-            "orders_assigned_to_her_in_store": int(assigned_to_her),
-            "delivered_orders_assigned_to_her_in_store": int(delivered_assigned_to_her),
-        })
-
-    return {
-        "employee": {"id": emp.id, "name": emp.name, "role": emp.role},
-        "raw_assigned_store_scope": raw_scope,
-        "raw_assigned_store_ids": raw_store_ids,
-        "raw_assigned_store_ids_type": type(raw_store_ids).__name__,
-        "resolved_store_names_for_assigned_ids": (
-            [store_names.get(sid, f"UNKNOWN({sid})") for sid in store_ids_list] if store_ids_list is not None else None
-        ),
-        "raw_assigned_product_ids": raw_product_ids,
-        "raw_assigned_product_ids_type": type(raw_product_ids).__name__,
-        "product_scope_active": bool(product_ids_list),
-        "per_store": per_store,
     }
 
