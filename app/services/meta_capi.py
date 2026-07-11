@@ -1098,7 +1098,17 @@ def _retry_pending_events_inner() -> None:
         # discover that — one cheap DNS+TCP+TLS probe tells us the same thing
         # in a fraction of the time and lets the whole batch defer together.
         if not _circuit_is_open():
-            preflight = probe_connectivity()
+            # Probe the host events are ACTUALLY sent to: the relay when one is
+            # configured. Probing graph.facebook.com directly on HuggingFace
+            # always fails (TLS block) and bulk-deferred the whole queue forever
+            # even while the relay itself was perfectly reachable.
+            from app.core.config import settings as _settings_pf
+            _relay_pf = (getattr(_settings_pf, "META_CAPI_RELAY_URL", "") or "").strip()
+            _probe_host = "graph.facebook.com"
+            if _relay_pf:
+                from urllib.parse import urlparse as _urlparse_pf
+                _probe_host = _urlparse_pf(_relay_pf).hostname or _probe_host
+            preflight = probe_connectivity(host=_probe_host)
             if preflight.get("tls_status") not in ("ok",):
                 deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS)
                 for row in due:

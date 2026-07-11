@@ -1466,7 +1466,18 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
     from app.services.meta_capi import probe_connectivity, get_circuit_state
 
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
-    probe = probe_connectivity()
+    # Probe the effective send path: the relay host when configured (probing
+    # graph.facebook.com directly on HuggingFace always reports "TLS bloqué"
+    # even when every event flows perfectly through the relay).
+    from app.core.config import settings as _settings_h
+    _relay_h = (getattr(_settings_h, "META_CAPI_RELAY_URL", "") or "").strip()
+    if _relay_h:
+        from urllib.parse import urlparse as _urlparse_h
+        probe = probe_connectivity(host=_urlparse_h(_relay_h).hostname or "graph.facebook.com")
+        probe["via_relay"] = True
+    else:
+        probe = probe_connectivity()
+        probe["via_relay"] = False
     circuit = get_circuit_state()
 
     # ── Token + Pixel validation (non-blocking, short timeout) ──────────────
