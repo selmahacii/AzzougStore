@@ -71,6 +71,8 @@ interface LandingPage {
     delivered: number;
     confirmed_delivered: number;
     recovered: number;
+    abandoned: number;
+    normal: number;
     cancelled: number;
     duplicates: number;
   } | null;
@@ -220,13 +222,15 @@ function LandingPageCard({
           ))}
         </div>
 
-        {/* Performance breakdown — recovered / cancelled / duplicates / stock, same row */}
-        <div className="flex items-stretch gap-1.5 mb-4">
+        {/* Performance breakdown — recovered / abandoned / normal / cancelled / duplicates / stock, same row */}
+        <div className="flex items-stretch gap-1.5 mb-4 flex-wrap">
           {[
-            { label: 'Livrées',  value: delivered, color: '#0984E3', title: 'Commandes effectivement livrées' },
-            { label: 'Récup.',   value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
-            { label: 'Annulés',  value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
-            { label: 'Doublons', value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
+            { label: 'Livrées',   value: delivered, color: '#0984E3', title: 'Commandes effectivement livrées' },
+            { label: 'Normales',  value: lp.metrics?.normal ?? 0, color: '#6C5CE7', title: 'Commandes passées normalement (hors panier abandonné)' },
+            { label: 'Abandon.',  value: lp.metrics?.abandoned ?? 0, color: '#FDCB6E', title: 'Total des paniers abandonnés (récupérés ou non)' },
+            { label: 'Récup.',    value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
+            { label: 'Annulés',   value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
+            { label: 'Doublons',  value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
           ].map(s => (
             <div key={s.label} title={s.title}
               className="flex-1 text-center p-2 rounded-xl border"

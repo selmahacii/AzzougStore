@@ -112,23 +112,18 @@ def list_landing_pages(
     _auth: Any = Depends(deps.get_current_active_user),
 ) -> Any:
     logger.info(f"[LP] list_landing_pages called: store_id={store_id!r}, user={getattr(_auth, 'email', '?')} role={getattr(_auth, 'role', '?')}")
-    q = db.query(LandingPage).filter(LandingPage.store_id == store_id)
-
-    if start_date:
-        try:
-            sd = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            q = q.filter(LandingPage.created_at >= sd)
-        except ValueError:
-            pass
-
-    if end_date:
-        try:
-            ed = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            q = q.filter(LandingPage.created_at <= ed)
-        except ValueError:
-            pass
-
-    pages = q.order_by(LandingPage.created_at.desc()).all()
+    # start_date/end_date scope the ORDER metrics below (how many commandes,
+    # paniers abandonnés, etc. happened in that window) — they must NOT hide
+    # landing pages themselves. A page created before the selected range used
+    # to vanish entirely from the list just because its created_at fell
+    # outside the window, even though its orders during that window were
+    # perfectly real and worth seeing.
+    pages = (
+        db.query(LandingPage)
+        .filter(LandingPage.store_id == store_id)
+        .order_by(LandingPage.created_at.desc())
+        .all()
+    )
     logger.info(f"[LP] Found {len(pages)} landing pages for store_id={store_id!r}")
 
     # ── Live per-product performance metrics (computed from real orders) ──────
@@ -158,9 +153,14 @@ def list_landing_pages(
         #   - delivered:  orders actually delivered (DELIVERED)
         #   - confirmed_delivered: orders confirmed or shipped or delivered
         #   - recovered:  abandoned carts later confirmed/delivered
+        #   - abandoned:  total carts entered via the abandoned-cart flow,
+        #                 regardless of whether they were later recovered
+        #   - normal:     genuine checkout orders — NOT abandoned carts, not
+        #                 admin-created manual orders, not merged duplicates
         #   - cancelled:  orders cancelled
         #   - duplicates: same-phone repeat submissions (auto-merged)
         _not_manual = func.coalesce(Order.source, "") != "MANUAL"
+        _is_abandoned = Order.is_abandoned_cart == True
         _metrics_query = (
             db.query(
                 OrderItem.product_id,
@@ -171,8 +171,12 @@ def list_landing_pages(
                 func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
                 func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
                 func.count(distinct(case(
-                    (and_(Order.is_abandoned_cart == True, Order.status.in_(_DELIVERED_STATES)), Order.id)
+                    (and_(_is_abandoned, Order.status.in_(_DELIVERED_STATES)), Order.id)
                 ))).label("recovered"),
+                func.count(distinct(case((_is_abandoned, Order.id)))).label("abandoned"),
+                func.count(distinct(case(
+                    (and_(Order.status != "MERGED", _not_manual, func.coalesce(Order.is_abandoned_cart, False) == False), Order.id)
+                ))).label("normal"),
                 func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
                 func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
             )
@@ -207,6 +211,8 @@ def list_landing_pages(
                 "delivered": int(r.delivered or 0),
                 "confirmed_delivered": int(r.confirmed_delivered or 0),
                 "recovered": int(r.recovered or 0),
+                "abandoned": int(r.abandoned or 0),
+                "normal": int(r.normal or 0),
                 "cancelled": int(r.cancelled or 0),
                 "duplicates": int(r.duplicates or 0),
             }
