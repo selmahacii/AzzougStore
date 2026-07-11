@@ -218,7 +218,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onO
   const queryClient = useQueryClient();
   const livreursQuery = useQuery<any>({
     queryKey: ['livreurs', order.store_id],
-    queryFn: () => apiFetch(`/api/v1/users/?store_id=${order.store_id}`),
+    queryFn: () => apiFetch(`/api/v1/users/?store_id=${order.store_id}`, { headers: { 'X-Store-Id': order.store_id } }),
     staleTime: 60_000,
   });
   const livreurs = ((Array.isArray(livreursQuery.data) ? livreursQuery.data : livreursQuery.data?.data) ?? [])
@@ -229,6 +229,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onO
       apiFetch(`/api/v1/orders/${order.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ livreur_id: livreurId }),
+        headers: { 'X-Store-Id': order.store_id },
       }),
     onSuccess: (updated: any) => {
       toast.success('Livreur assigné — il reçoit tous les détails de la commande');
@@ -361,13 +362,13 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const deliveryPartnersQuery = useQuery<any>({
     queryKey: ['delivery-partners-lite', storeId],
     enabled: isEditing && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
+    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`, { headers: { 'X-Store-Id': storeId } }),
   });
 
   const productQuery = useQuery<any>({
     queryKey: ['product-details-agent', order.items?.[0]?.product_id],
     enabled: isEditing && !!order.items?.[0]?.product_id,
-    queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`),
+    queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`, { headers: { 'X-Store-Id': order.store_id } }),
   });
 
   // Upsell: let the confirmatrice add a DIFFERENT existing product to this
@@ -380,7 +381,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200`),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200`, { headers: { 'X-Store-Id': order.store_id } }),
   });
   const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
     (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
@@ -445,7 +446,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       try {
         const pId = order.items?.[0]?.product_id || '';
         const res = await apiFetch<any>(
-          `/api/v1/delivery-partners/calculate?partnerId=${editData.carrier_id}&wilayaId=${editData.customer_wilaya}&type=${editData.delivery_type}&productIds=${pId}`
+          `/api/v1/delivery-partners/calculate?partnerId=${editData.carrier_id}&wilayaId=${editData.customer_wilaya}&type=${editData.delivery_type}&productIds=${pId}`,
+          { headers: { 'X-Store-Id': order.store_id } }
         );
         if (res?.success && typeof res?.data?.fee === 'number') {
           setEditData(prev => ({ ...prev, delivery_fee: res.data.fee }));
@@ -463,7 +465,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       console.log("[DEBUG FRONTEND] updateMutation mutationFn triggered with editData:", JSON.parse(JSON.stringify(data)));
       return await apiFetch(`/api/v1/orders/${order.id}/info`, {
         method: 'PATCH',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        headers: { 'X-Store-Id': order.store_id },
       });
     },
     onSuccess: (response: any) => {
@@ -1349,17 +1352,23 @@ export default function AgentDashboard() {
     return sub?.filter || 'ALL';
   }, [activeSubModule]);
 
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  // Any change of store / filter / period restarts from the first page
+  useEffect(() => {
+    setPage(1);
+  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
+
   const ordersQuery = useQuery({
-    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate],
+    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
     queryFn: () => {
-      const isConfirmateur = user?.role === 'CONFIRMATEUR';
-      let url = `/api/v1/orders?pageSize=100`;
-      
+      let url = `/api/v1/orders?page=${page}&pageSize=${PAGE_SIZE}`;
+
       // If we are not showing all stores, filter by activeStore
       if (!showAllStores && activeStore?.id) {
         url += `&store_id=${activeStore.id}`;
       }
-      
+
       if (currentFilter !== 'ALL') {
         url += `&status=${encodeURIComponent(currentFilter)}`;
       }
@@ -1371,9 +1380,14 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `&end_date=${encodeURIComponent(d.toISOString())}`;
       }
-      return apiFetch<{ data: Order[] }>(url);
+      // allStores: without it, the X-Store-Id tenant header silently restricts
+      // the query to the single active store server-side — "Toutes les boutiques"
+      // never actually returned the other assigned stores' orders. RBAC in
+      // list_orders still scopes a CONFIRMATEUR to her assigned stores/products.
+      return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: showAllStores });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
+    placeholderData: (prev) => prev,
     refetchInterval: 10000,
     refetchIntervalInBackground: true,
   });
@@ -1385,7 +1399,7 @@ export default function AgentDashboard() {
       if (!showAllStores && activeStore?.id) {
         url += `?store_id=${activeStore.id}`;
       }
-      return apiFetch<any>(url);
+      return apiFetch<any>(url, { allStores: showAllStores });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id)
   });
@@ -1405,7 +1419,7 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `end_date=${encodeURIComponent(d.toISOString())}&`;
       }
-      return apiFetch<any>(url);
+      return apiFetch<any>(url, { allStores: showAllStores });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     refetchInterval: 15000
@@ -1509,11 +1523,13 @@ export default function AgentDashboard() {
       if (assigned_to) payload.assigned_to = assigned_to;
       if (call_result) payload.call_result = call_result;
       
-      const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload) });
-      
+      // allStores: the order may belong to another of the agent's assigned stores
+      // than the currently active one — the endpoint's own access check still applies.
+      const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload), allStores: true });
+
       if (status === 'CONFIRMED') {
         try {
-          const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
+          const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST', allStores: true });
           return { ...res, dispatch: dispatchRes };
         } catch (dispatchErr: any) {
           return { ...res, dispatch_error: dispatchErr.message || 'Erreur transporteur' };
@@ -1558,7 +1574,7 @@ export default function AgentDashboard() {
 
   const dispatchMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      return await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
+      return await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST', allStores: true });
     },
     onSuccess: (data: any, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
@@ -2096,6 +2112,30 @@ export default function AgentDashboard() {
                        </div>
                        </>
                      );})}
+                 </div>
+               )}
+               {/* Pagination — server-side, keeps older orders reachable */}
+               {((ordersQuery.data as any)?.totalPages ?? 1) > 1 && (
+                 <div className="flex flex-wrap items-center justify-center gap-3 mt-5 pb-2">
+                    <button
+                      type="button"
+                      disabled={page <= 1 || ordersQuery.isFetching}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ← Précédent
+                    </button>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-3 py-2 bg-slate-100 rounded-xl">
+                      Page {page} / {(ordersQuery.data as any)?.totalPages} · {(ordersQuery.data as any)?.total} commandes
+                    </span>
+                    <button
+                      type="button"
+                      disabled={page >= ((ordersQuery.data as any)?.totalPages ?? 1) || ordersQuery.isFetching}
+                      onClick={() => setPage(p => p + 1)}
+                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Suivant →
+                    </button>
                  </div>
                )}
             </div>

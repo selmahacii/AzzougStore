@@ -1277,6 +1277,21 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-700 flex items-center gap-2">
                            <Banknote className="size-3.5" /> Configuration de Rémunération
                         </h4>
+                        <div className="space-y-1.5 p-3 rounded-xl border-2 border-violet-200 bg-violet-50/70">
+                           <Label className="text-[11px] font-bold text-violet-700">📅 Jour de paie (date de salaire, chaque mois)</Label>
+                           <Input
+                              type="number"
+                              min={1}
+                              max={28}
+                              value={formData.payday}
+                              onChange={e => setFormData(p => ({ ...p, payday: e.target.value === '' ? '' : Number(e.target.value) }))}
+                              placeholder="Ex: 28 (entre 1 et 28)"
+                              className="h-10 border-violet-200 rounded-lg bg-white font-black"
+                           />
+                           <p className="text-[10px] text-violet-500 font-medium">
+                              Ce jour-là chaque mois : l'employé reçoit un rappel de sa date de salaire, et l'admin une alerte « vous devez payer cet employé ».
+                           </p>
+                        </div>
                         <div className="space-y-1.5">
                            <Label className="text-[11px] font-semibold text-[#636E72]">Mode de paiement</Label>
                            <Select
@@ -1318,22 +1333,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                               </p>
                            </div>
                         )}
-
-                        <div className="space-y-1.5">
-                           <Label className="text-[11px] font-semibold text-[#636E72]">Jour de paie (chaque mois)</Label>
-                           <Input
-                              type="number"
-                              min={1}
-                              max={28}
-                              value={formData.payday}
-                              onChange={e => setFormData(p => ({ ...p, payday: e.target.value === '' ? '' : Number(e.target.value) }))}
-                              placeholder="Ex: 28"
-                              className="h-10 border-emerald-100 rounded-lg bg-white font-black"
-                           />
-                           <p className="text-[10px] text-slate-400">
-                              L'employé reçoit un rappel automatique ce jour-là chaque mois — la date de son salaire.
-                           </p>
-                        </div>
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
