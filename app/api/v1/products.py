@@ -390,13 +390,13 @@ def update_product(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour modifier un produit.")
 
+    # Back-office staff (livreur included) edit products across stores in real
+    # time; bypass the SELECT tenant auto-filter so a mismatched X-Store-Id
+    # header doesn't 404 the lookup (same rationale as read_product / stock).
+    db.info["skip_tenant_isolation"] = True
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
-
-    # Store ownership check
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
-        raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     update_data = product_in.model_dump(exclude_unset=True)
 
@@ -431,12 +431,11 @@ def toggle_product(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
         raise HTTPException(status_code=403, detail="Accès refusé.")
 
+    # Livreur toggles products across stores too — see update_product.
+    db.info["skip_tenant_isolation"] = True
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
-
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
-        raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     product.is_active = not bool(product.is_active)  # type: ignore[assignment]
     db.commit()
@@ -550,9 +549,6 @@ def quick_update_stock(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
-
-    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER") and current_user.employee_store_id and str(current_user.employee_store_id) != str(product.store_id):
-        raise HTTPException(status_code=403, detail="Accès refusé à ce produit.")
 
     if product.variants:
         raise HTTPException(

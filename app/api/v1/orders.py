@@ -41,37 +41,73 @@ logger = logging.getLogger("app.orders")
 
 # ─── RBAC helpers ────────────────────────────────────────────────────────────
 
+# Confirmatrice responsibility scope — UNION semantics, no ambiguity:
+#   • scope="SPECIFIC": she is responsible for every store in
+#     assigned_store_ids COMPLETELY (all its products), PLUS every product in
+#     assigned_product_ids wherever that product's store is. An order is in
+#     her scope if its store is fully hers OR it contains one of her products.
+#   • scope="ALL" without products: every store, every product.
+#   • scope="ALL" with products: only orders containing those products,
+#     across all stores ("certains produits de chaque boutique").
+# This covers the three real-world setups: full store(s) only, products only,
+# and the hybrid "one full store + specific products of other stores".
+
+def _confirmateur_scope_criterion(user: User):
+    """SQLAlchemy criterion version of the scope, for list/count queries."""
+    from sqlalchemy import or_
+    from app.models.order import OrderItem
+
+    raw_products = getattr(user, "assigned_product_ids", None)
+    products = raw_products if isinstance(raw_products, list) else []
+    product_crit = Order.items.any(OrderItem.product_id.in_(products)) if products else None
+
+    scope = getattr(user, "assigned_store_scope", "ALL")
+    if scope != "SPECIFIC":
+        return product_crit if product_crit is not None else True
+
+    raw_stores = getattr(user, "assigned_store_ids", None)
+    stores = raw_stores if isinstance(raw_stores, list) else []
+    crits = []
+    if stores:
+        crits.append(Order.store_id.in_(stores))
+    if product_crit is not None:
+        crits.append(product_crit)
+    if not crits:
+        return False  # SPECIFIC with nothing assigned → no unassigned visibility
+    return or_(*crits) if len(crits) > 1 else crits[0]
+
+
+def _confirmateur_scope_ok(order: Order, user: User) -> bool:
+    """Python version of the same scope, for single-order access checks."""
+    raw_products = getattr(user, "assigned_product_ids", None)
+    products = raw_products if isinstance(raw_products, list) else []
+    product_ok = any(item.product_id in products for item in (order.items or [])) if products else None
+
+    scope = getattr(user, "assigned_store_scope", "ALL")
+    if scope != "SPECIFIC":
+        return product_ok if product_ok is not None else True
+
+    raw_stores = getattr(user, "assigned_store_ids", None)
+    stores = raw_stores if isinstance(raw_stores, list) else []
+    return (order.store_id in stores) or bool(product_ok)
+
+
 def _assert_order_access(order: Order, current_user: User) -> None:
     """
-    CONFIRMATEUR can access orders assigned to them, or abandoned carts matching their store & product scope.
+    CONFIRMATEUR can access orders assigned to them, or unassigned orders in
+    their responsibility scope (see _confirmateur_scope_criterion).
     MANAGER can only access orders in their store.
     ADMIN/SUPER_ADMIN: full access.
     """
     if current_user.role == "CONFIRMATEUR":
         is_assigned = order.assigned_to == current_user.id
         is_unassigned = order.assigned_to == None
-        
-        # Check store scope
-        store_ok = True
-        scope = getattr(current_user, "assigned_store_scope", "ALL")
-        if scope == "SPECIFIC":
-            raw_stores = getattr(current_user, "assigned_store_ids", None)
-            scoped_stores = raw_stores if isinstance(raw_stores, list) else []
-            store_ok = order.store_id in scoped_stores
-            
-        # Check product scope
-        product_ok = True
-        raw_products = getattr(current_user, "assigned_product_ids", None)
-        scoped_products = raw_products if isinstance(raw_products, list) else []
-        if scoped_products:
-            # Check if any item in the order is in the scoped products
-            product_ok = any(item.product_id in scoped_products for item in (order.items or []))
-            
+
         # A confirmatrice can access an order if:
         # 1. It is assigned to them
-        # 2. It is unassigned and matches their store/product scope
-        is_accessible = is_assigned or (is_unassigned and store_ok and product_ok)
-        
+        # 2. It is unassigned and inside their responsibility scope
+        is_accessible = is_assigned or (is_unassigned and _confirmateur_scope_ok(order, current_user))
+
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")
     elif current_user.role == "MANAGER":
@@ -235,17 +271,12 @@ def get_agent_counts(
 
     base = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
 
-    # Same RBAC scoping as list_orders for confirmatrices
+    # Same RBAC scoping as list_orders for confirmatrices (union store/product scope)
     if current_user.role == "CONFIRMATEUR":
-        store_filter = True
-        scope = getattr(current_user, "assigned_store_scope", "ALL")
-        if scope == "SPECIFIC":
-            raw_stores = getattr(current_user, "assigned_store_ids", None)
-            scoped_stores = raw_stores if isinstance(raw_stores, list) else []
-            store_filter = Order.store_id.in_(scoped_stores) if scoped_stores else False
+        scope_crit = _confirmateur_scope_criterion(current_user)
         base = base.filter(or_(
             Order.assigned_to == current_user.id,
-            and_(Order.assigned_to == None, store_filter),
+            and_(Order.assigned_to == None, scope_crit),
         ))
     elif current_user.role == "MANAGER" and current_user.employee_store_id:
         base = base.filter(Order.store_id == current_user.employee_store_id)
@@ -457,43 +488,27 @@ def list_orders(
             pass  # unrestricted — admins manage every order
         elif current_user.role == "CONFIRMATEUR":
             from sqlalchemy import and_, or_
-            from app.models.order import OrderItem
-            
-            # Store scope filter
-            store_filter = True
-            scope = getattr(current_user, "assigned_store_scope", "ALL")
-            if scope == "SPECIFIC":
-                raw_stores = getattr(current_user, "assigned_store_ids", None)
-                scoped_stores = raw_stores if isinstance(raw_stores, list) else []
-                if scoped_stores:
-                    store_filter = Order.store_id.in_(scoped_stores)
-                else:
-                    store_filter = False
-            
-            # Product scope filter
-            raw_products = getattr(current_user, "assigned_product_ids", None)
-            scoped_products = raw_products if isinstance(raw_products, list) else []
-            if scoped_products:
-                product_filter = Order.items.any(OrderItem.product_id.in_(scoped_products))
-            else:
-                product_filter = True
+
+            # Union responsibility scope: full stores + specific products of
+            # other stores — see _confirmateur_scope_criterion.
+            scope_crit = _confirmateur_scope_criterion(current_user)
 
             assigned_to_me = Order.assigned_to == current_user.id
             unassigned_matching = and_(
                 Order.assigned_to == None,
-                store_filter,
-                product_filter
+                scope_crit,
             )
 
-            # For ABANDONED carts, allow agents to see all of them in their store to recover them.
+            # For ABANDONED carts, allow agents to see all of them in their scope to recover them.
             # Same for the Logistique tab's statuses (INTERNAL_DELIVERY, SHIPPED, DELIVERED,
             # RETURNED): once an order is confirmed, tracking its delivery is a store-wide
             # concern, not tied to whichever confirmatrice originally confirmed it — restricting
             # to assigned_to_me/unassigned here silently hid orders confirmed by a colleague
-            # from "Assignées Livreur" and the other delivery-tracking views.
+            # from "Assignées Livreur" and the other delivery-tracking views. Still bounded by
+            # her responsibility scope so one confirmatrice never sees another's stores.
             _STORE_WIDE_STATUSES = {"ABANDONED", "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED", "RETURNED"}
             if status and status.upper() in _STORE_WIDE_STATUSES:
-                query = query.filter(store_filter)
+                query = query.filter(or_(assigned_to_me, scope_crit))
             else:
                 query = query.filter(or_(assigned_to_me, unassigned_matching))
         elif current_user.role == "MANAGER" and current_user.employee_store_id:
