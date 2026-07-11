@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -43,6 +44,14 @@ def _config_out(config: TikTokAdsConfig) -> dict:
 
 @router.get("/config", response_model=dict)
 def get_tiktok_ads_config(store_id: str = Query(...), db: Session = Depends(get_db)):
+    # Same fix already applied to meta-ads/config: explicitly scoped by the
+    # store_id param, so bypass the SELECT tenant auto-filter. Without this,
+    # whenever X-Store-Id (the active-store header) didn't match the
+    # requested store_id, the tenant filter hid the EXISTING row, this
+    # endpoint concluded "no config yet" and tried to re-INSERT it, and hit
+    # the unique(store_id) constraint — the exact 409/IntegrityError seen
+    # live for Trust Shop's config.
+    db.info["skip_tenant_isolation"] = True
     config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == store_id).first()
     if not config:
         config = TikTokAdsConfig(
@@ -57,13 +66,26 @@ def get_tiktok_ads_config(store_id: str = Query(...), db: Session = Depends(get_
             currency="USD",
         )
         db.add(config)
-        db.commit()
-        db.refresh(config)
+        try:
+            db.commit()
+        except IntegrityError:
+            # Two requests for the same store_id (e.g. the storefront and the
+            # admin dashboard both loading tiktok-ads/config in parallel) both
+            # saw "no config yet" and both tried to insert — the loser hits
+            # the store_id unique constraint and 500s/409s instead of just
+            # returning the row the winner created. Roll back and read it.
+            db.rollback()
+            config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == store_id).first()
+        else:
+            db.refresh(config)
     return {"success": True, "data": _config_out(config)}
 
 
 @router.post("/config", response_model=dict)
 def update_tiktok_ads_config(payload: TikTokAdsConfigCreate, db: Session = Depends(get_db)):
+    # Same rationale as the GET above: scoped explicitly by store_id, edited
+    # across stores from the admin dashboard.
+    db.info["skip_tenant_isolation"] = True
     config = db.query(TikTokAdsConfig).filter(TikTokAdsConfig.store_id == payload.store_id).first()
     if not config:
         config = TikTokAdsConfig(id=str(uuid.uuid4()), store_id=payload.store_id)
