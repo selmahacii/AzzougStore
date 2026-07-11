@@ -1416,6 +1416,16 @@ const [timeLeft, setTimeLeft] = useState('');
                           {order.utm_campaign && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase" title={`Campagne : ${order.utm_campaign}`}>📣 {String(order.utm_campaign).slice(0, 18)}</span>
                           )}
+                          {!!order.events_count && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDetailClick(order); }}
+                              className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase hover:bg-slate-200 transition-colors"
+                              title="Voir l'historique complet de cette commande"
+                            >
+                              🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                            </button>
+                          )}
                         </div>
                         {order.child_orders && order.child_orders.length > 0 && (
                           <button

@@ -2090,6 +2090,16 @@ export default function AgentDashboard() {
                                     📦 {order.tracking_number}
                                   </span>
                                 )}
+                               {!!order.events_count && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
+                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                                    title="Voir l'historique complet de cette commande"
+                                  >
+                                    🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                                  </button>
+                                )}
                              </div>
                              <div>
                                 <p className="text-xs font-bold group-hover:text-blue-600 transition-colors">{formatOrderRef(order, 'admin')}</p>

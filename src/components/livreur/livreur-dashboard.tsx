@@ -354,13 +354,22 @@ function OrderCard({ order, tab, isPending, onQuickStatus, onOpen }: OrderCardPr
       </div>
 
       {/* Items preview */}
-      <div className="mx-4 mb-3 p-2.5 bg-slate-50 rounded-xl">
+      <div className="mx-4 mb-3 p-2.5 bg-slate-50 rounded-xl space-y-1.5">
         {order.items?.slice(0, 2).map((item, i) => (
-          <p key={i} className="text-[11px] font-bold text-slate-600 truncate">
-            · {item.product_name}
-            {item.variant_details && typeof item.variant_details === 'object' && (item.variant_details as any).variant
-              ? ` [${(item.variant_details as any).variant}]` : ''} × {item.quantity}
-          </p>
+          <div key={i} className="flex items-center gap-2">
+            {item.image_url ? (
+              <img src={item.image_url} alt="" className="size-6 rounded-md object-cover border border-slate-200 shrink-0" />
+            ) : (
+              <div className="size-6 rounded-md bg-slate-200 flex items-center justify-center shrink-0">
+                <Package className="size-3 text-slate-400" />
+              </div>
+            )}
+            <p className="text-[11px] font-bold text-slate-600 truncate">
+              {item.product_name}
+              {item.variant_details && typeof item.variant_details === 'object' && (item.variant_details as any).variant
+                ? ` [${(item.variant_details as any).variant}]` : ''} × {item.quantity}
+            </p>
+          </div>
         ))}
         {(order.items?.length ?? 0) > 2 && (
           <p className="text-[10px] text-slate-400 font-bold mt-0.5">+{order.items!.length - 2} autre(s)…</p>
@@ -578,9 +587,13 @@ function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: Drawer
             <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Articles</h3>
             {order.items?.map((item, i) => (
               <div key={i} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl">
-                <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                  <Package className="size-4 text-slate-400" />
-                </div>
+                {item.image_url ? (
+                  <img src={item.image_url} alt="" className="size-9 rounded-xl object-cover border border-slate-100 shrink-0" />
+                ) : (
+                  <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <Package className="size-4 text-slate-400" />
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-slate-800 truncate">{item.product_name}</p>
                   {item.variant_details && typeof item.variant_details === 'object' && (item.variant_details as any).variant && (

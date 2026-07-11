@@ -211,6 +211,7 @@ export interface Order {
   delivery_type?: string | null;
   notes: string | null;
   internal_notes?: string | null;
+  events_count?: number | null;
   source: string | null;
   customer_id: string | null;
   customer_tier: string | null;
