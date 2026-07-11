@@ -217,7 +217,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
-        <div className="sticky top-0 px-12 py-8 z-20 flex items-center justify-between text-white" style={{ backgroundColor: primaryColor }}>
+        <div className="sticky top-0 px-4 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white" style={{ backgroundColor: primaryColor }}>
           <div className="space-y-1">
             <DialogTitle className="text-xl font-black uppercase tracking-widest text-white shadow-sm">Saisie de Commande</DialogTitle>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">Création d'une nouvelle commande manuelle</p>
@@ -292,10 +292,10 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                 };
                 createOrderMutation.mutate(payload);
               }}
-              className="p-12 space-y-12 bg-white"
+              className="p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white"
             >
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12 text-slate-800">
-                 <div className="space-y-10">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 text-slate-800">
+                 <div className="space-y-6 sm:space-y-10">
                     <div className="flex items-center gap-4 border-l-2 pl-4" style={{ borderColor: primaryColor }}>
                        <span className="text-sm font-bold uppercase tracking-widest text-[#2D3436]">01. Coordonnées du Client</span>
                     </div>
@@ -429,7 +429,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           )}
                        </div>
 
-                       <div className="grid grid-cols-3 gap-4">
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">SKU</label>
                              <Input disabled value={selectedSku || selectedOrderProduct?.sku || '---'} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] italic text-xs h-12 rounded-xl" />
@@ -446,7 +446,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           </div>
                        </div>
 
-                       <div className="grid grid-cols-3 gap-4">
+                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Prix Unitaire (DA) *</label>
                              <Input type="number" step="1" value={orderPrice} onChange={e => setOrderPrice(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4" />
@@ -549,7 +549,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                  </div>
               </div>
 
-              <div className="pt-8 border-t flex items-center justify-between bg-white">
+              <div className="pt-6 sm:pt-8 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white">
                  <div className="space-y-1 text-slate-800">
                     <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
                     <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
@@ -562,7 +562,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                       + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
                     </p>
                  </div>
-                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
+                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-6 sm:px-10 w-full sm:w-auto text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
                     {createOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : <>Enregistrer la Commande <ArrowRightLeft className="ml-3 size-4 group-hover:translate-x-1 transition-transform" /></>}
                  </Button>
               </div>

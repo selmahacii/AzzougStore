@@ -220,9 +220,13 @@ export function SearchableCommuneSelect({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
-              className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
-              style={{ color: T.inputText }}
-              autoFocus
+              className="w-full bg-transparent border-none outline-none focus:ring-0 focus:outline-none"
+              // 16px minimum : iOS Safari zoome automatiquement sur tout champ
+              // focalisé < 16px — c'était le "zoom" au clic sur le dropdown
+              // commune sur téléphone. autoFocus est aussi limité au desktop :
+              // sur écran tactile il déclenchait le clavier + le zoom d'un coup.
+              style={{ color: T.inputText, fontSize: 16 }}
+              autoFocus={typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches}
             />
           </div>
 

@@ -2045,7 +2045,7 @@ export default function ProductsPage() {
                                        const marginPct = sellPrice > 0 ? ((margin / sellPrice) * 100).toFixed(1) : '—';
                                        if (!sellPrice && !costPrice) return null;
                                        return (
-                                          <div className="grid grid-cols-3 gap-3 p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm">
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm">
                                              <div className="text-center">
                                                 <p className="text-xl font-black text-rose-500">{costPrice.toLocaleString()} DA</p>
                                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-1">Coût d'achat (PAF)</p>
@@ -2301,7 +2301,7 @@ export default function ProductsPage() {
                                        const marginPct = parseInt(form.price || '0') > 0
                                           ? ((margin / parseInt(form.price)) * 100).toFixed(1) : '—';
                                        return (
-                                          <div className="grid grid-cols-3 gap-3 p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm mt-4">
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm mt-4">
                                              <div className="text-center">
                                                 <p className="text-xl font-black text-rose-500">{total.toLocaleString()} DA</p>
                                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-1">Coût total du lot</p>
@@ -3011,7 +3011,7 @@ export default function ProductsPage() {
                            {/* Financials row */}
                            <div>
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Analyse Financière · Livraisons</p>
-                              <div className="grid grid-cols-3 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                  {financialCards.map(({ label, value, sub, color }) => (
                                     <div key={label} className="rounded-2xl bg-slate-50 border border-slate-100 p-5">
                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{label}</p>
