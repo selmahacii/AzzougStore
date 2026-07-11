@@ -1209,7 +1209,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                            )}
                         </div>
                         <p className="text-[9px] text-slate-400 leading-tight">
-                           Le confirmateur reçoit les commandes de <strong>toutes les boutiques</strong> contenant ses produits assignés, peu importe la boutique d'origine.
+                           Produits <strong>en plus</strong> de ses boutiques complètes : le confirmateur reçoit aussi toute commande contenant l'un de ces produits, <strong>peu importe la boutique d'origine</strong>. Laisser vide s'il est responsable de boutiques entières uniquement.
                         </p>
                       </div>
 
@@ -1268,7 +1268,9 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                            </div>
                         )}
                         <p className="text-[10px] text-slate-400">
-                           {formData.assigned_store_scope === 'ALL' ? 'Accès à toutes les boutiques' : `${formData.assigned_store_ids.length} boutique(s) sélectionnée(s)`}
+                           {formData.assigned_store_scope === 'ALL'
+                              ? 'Responsable de toutes les boutiques'
+                              : `${formData.assigned_store_ids.length} boutique(s) complète(s) — il reçoit TOUTES les commandes de ces boutiques, + celles de ses produits assignés ailleurs`}
                         </p>
                      </div>
 

@@ -1437,6 +1437,20 @@ export default function AgentDashboard() {
   }, {});
   const isDuplicatePhone = (phone: string) => (phoneCounts[phone] ?? 0) > 1;
 
+  // Stores this agent is actually responsible for — nothing else is shown to her.
+  // Scope SPECIFIC: her fully-assigned stores, plus any store discovered in her
+  // visible orders (covers products assigned to her in OTHER stores). Scope ALL
+  // (or non-confirmateur roles): every store.
+  const myStores = useMemo(() => {
+    if (user?.role !== 'CONFIRMATEUR' || user?.assigned_store_scope !== 'SPECIFIC') return allStores;
+    const ids = new Set<string>(user?.assigned_store_ids ?? []);
+    for (const o of (ordersQuery.data?.data ?? []) as any[]) {
+      if (o.store_id) ids.add(o.store_id);
+    }
+    const filtered = allStores.filter(s => ids.has(s.id));
+    return filtered.length > 0 ? filtered : allStores;
+  }, [user, allStores, ordersQuery.data]);
+
 
   if (currentFilter === 'ALL') {
      filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
@@ -1718,7 +1732,7 @@ export default function AgentDashboard() {
                 </div>
                 
                 {/* On Desktop, show the toggle here */}
-                {allStores.length > 1 && (
+                {myStores.length > 1 && (
                   <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
                     <button
                       type="button"
@@ -1801,7 +1815,7 @@ export default function AgentDashboard() {
 
                 <div className="flex flex-col items-end">
                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Boutique active</span>
-                   {allStores.length > 1 ? (
+                   {myStores.length > 1 ? (
                      <select
                        value={showAllStores ? '__ALL__' : (activeStore?.id || '')}
                        onChange={(e) => {
@@ -1817,7 +1831,7 @@ export default function AgentDashboard() {
                            setShowAllStores(true);
                            return;
                          }
-                         const selected = allStores.find(s => s.id === e.target.value);
+                         const selected = myStores.find(s => s.id === e.target.value);
                          if (selected) {
                            setActiveStore(selected);
                            setShowAllStores(false);
@@ -1825,8 +1839,8 @@ export default function AgentDashboard() {
                        }}
                        className="text-xs font-bold bg-transparent border-none outline-none text-right cursor-pointer text-indigo-600 hover:underline font-sans max-w-[120px] truncate"
                      >
-                       <option value="__ALL__">Toutes les boutiques</option>
-                       {allStores.map(store => (
+                       <option value="__ALL__">Toutes mes boutiques</option>
+                       {myStores.map(store => (
                          <option key={store.id} value={store.id}>
                            {store.name}
                          </option>
@@ -1854,7 +1868,7 @@ export default function AgentDashboard() {
 
            {/* Row 2: Mobile-only controls (Toggles & Plus button) */}
            <div className="flex items-center justify-between gap-2 w-full md:hidden border-t pt-2 mt-1">
-              {allStores.length > 1 ? (
+              {myStores.length > 1 ? (
                 <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
                   <button
                     type="button"
