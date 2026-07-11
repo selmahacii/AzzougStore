@@ -130,19 +130,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
-  const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
-  const { t, dir, setLocale } = useTranslation();
+  const { t, dir } = useTranslation('ar');
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
-
-  useEffect(() => {
-    setMounted(true);
-    if (setLocale) {
-      setLocale('ar');
-    }
-  }, [setLocale]);
 
   // Meta Pixel + CAPI ViewContent — once per landing page product
   useEffect(() => {
@@ -363,16 +355,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers]);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] text-slate-900 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <div className="size-8 rounded-full border-2 border-slate-200 border-t-slate-800 animate-spin" />
-        </div>
-      </div>
-    );
-  }
 
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);

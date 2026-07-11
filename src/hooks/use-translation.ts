@@ -597,12 +597,17 @@ const translations = {
   }
 };
 
-export function useTranslation() {
+export function useTranslation(forceLocale?: 'ar' | 'fr') {
   const activeStore = useAppStore((s) => s.activeStore);
   const storeLanguage = activeStore?.language || 'fr';
   // If the user hasn't explicitly set a locale override, fall back to the active store's configured language.
   const userLocale = useAppStore((s) => (s as any).locale);
-  const locale = userLocale || storeLanguage;
+  // forceLocale wins outright and is available on the very first render (SSR
+  // included) — callers that always want one language (e.g. landing pages,
+  // which are Arabic-only regardless of store config) must use this instead
+  // of setLocale() in an effect, which only takes effect post-hydration and
+  // causes a visible flash + RTL/LTR layout shift on first paint.
+  const locale = forceLocale || userLocale || storeLanguage;
   const setLocale = useAppStore((s) => (s as any).setLocale);
   const dir = locale === 'ar' ? 'rtl' : 'ltr';
 

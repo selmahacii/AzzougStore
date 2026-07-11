@@ -74,7 +74,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
-  const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
   const { t, dir } = useTranslation();
@@ -92,10 +91,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
-
-  useEffect(() => { 
-    setMounted(true); 
-  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -249,14 +244,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity]);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] text-slate-900">
-        <div className="size-8 rounded-full border-2 border-slate-200 border-t-red-600 animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-12" dir={dir}>
