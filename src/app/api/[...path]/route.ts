@@ -41,6 +41,15 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     const searchParams = request.nextUrl.searchParams.toString();
     const targetUrl = `${BACKEND_URL}/api/${subPath}${searchParams ? `?${searchParams}` : ''}`;
 
+    // Capture the REAL client IP before stripping x-forwarded-* below — Vercel's
+    // edge sets this correctly on the incoming request. Without re-adding it,
+    // the backend sees every single user's request as coming from the same
+    // Vercel serverless outbound IP, which turns per-IP rate limits (e.g. the
+    // /auth/refresh brute-force guard, 10 req/60s) into a bucket SHARED BY THE
+    // ENTIRE SITE — a handful of staff refreshing sessions around the same
+    // time exhausts it for everyone else, who then get silently logged out.
+    const realClientIp = request.headers.get('x-forwarded-for');
+
     // Filter headers to only pass essential ones, stripping Host/Origin/Referer
     const headers = new Headers();
     request.headers.forEach((value, key) => {
@@ -55,6 +64,9 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
         headers.set(key, value);
       }
     });
+    if (realClientIp) {
+      headers.set('x-forwarded-for', realClientIp);
+    }
 
     // Internal API key is ONLY for genuinely sessionless server-to-server
     // calls (no browser present, no user to authenticate as). Attaching it
