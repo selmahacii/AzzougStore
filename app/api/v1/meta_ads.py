@@ -55,6 +55,12 @@ def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0
             },
             headers={"x-internal-key": _settings.INTERNAL_API_KEY},
             timeout=timeout,
+            # The relay's apex domain can 308 at the platform/DNS level
+            # (confirmed live, outside this codebase) — httpx doesn't follow
+            # redirects by default, so every relay call got back a redirect's
+            # HTML body instead of Meta's JSON, permanently breaking the
+            # sync with JSONDecodeError. See the same fix in meta_capi.py.
+            follow_redirects=True,
         )
         return resp
     return httpx.get(
@@ -631,6 +637,11 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                     },
                     headers={"x-internal-key": _settings.INTERNAL_API_KEY},
                     timeout=30.0,
+                    # See the graph_get relay call above — the relay's apex
+                    # domain can 308 outside this codebase; without following
+                    # it every insights sync silently got a redirect page
+                    # instead of Meta's JSON and fell back to mock campaigns.
+                    follow_redirects=True,
                 )
             else:
                 url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"

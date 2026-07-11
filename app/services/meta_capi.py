@@ -315,7 +315,17 @@ def _get_client() -> httpx.Client:
                 retries=0,
                 network_backend=_DiagnosticIPv4Backend(),
             )
-            _client = httpx.Client(timeout=_TIMEOUT, limits=_LIMITS, http2=False, transport=transport)
+            # follow_redirects=True: the Vercel relay's apex domain can 308
+            # to its www/canonical host at the platform/DNS level (outside
+            # this codebase entirely — confirmed live: POSTing the apex
+            # always 308s regardless of path). httpx does NOT follow
+            # redirects by default, so every relay call silently got back a
+            # redirect's HTML body instead of Meta's JSON response —
+            # every single event failed with JSONDecodeError and endless
+            # retries, never actually reaching Meta. Following it here
+            # means a domain redirect degrades to one extra hop instead of
+            # a hard, permanent failure.
+            _client = httpx.Client(timeout=_TIMEOUT, limits=_LIMITS, http2=False, transport=transport, follow_redirects=True)
         return _client
 
 

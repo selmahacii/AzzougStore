@@ -135,8 +135,31 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
 
     ad_currency = None
     is_simulated = False
+    is_network_error = False  # True = TLS/DNS/timeout reaching TikTok itself; False = credentials/API rejected us
+
+    def _log_network_exception(step: str, exc: Exception) -> bool:
+        """
+        Log with enough detail to tell "TikTok's API is unreachable from this
+        server" (network/TLS — the same class of problem Meta Ads hit,
+        needing a relay) apart from "the token/advertiser_id is wrong" (a
+        config problem the user needs to fix in the TikTok Ads dashboard
+        connection form). Returns True if this looks like a network issue.
+        """
+        is_net = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError))
+        logger.error(
+            f"[TikTok Ads Sync] Exception {step} — type={type(exc).__name__} "
+            f"network_error={is_net} détail={exc}"
+        )
+        if is_net:
+            logger.error(
+                "[TikTok Ads Sync] business-api.tiktok.com semble inaccessible depuis ce serveur "
+                "(comme graph.facebook.com l'était avant le relais Vercel pour Meta Ads) — "
+                "si ce message se répète, TikTok pourrait nécessiter le même relais réseau."
+            )
+        return is_net
 
     if len(config.access_token or "") < 15 or (config.access_token or "").startswith("dummy"):
+        logger.warning(f"[TikTok Ads Sync] Access Token absent/factice pour le store: {store_id} — données simulées.")
         is_simulated = True
     else:
         # 1. Advertiser info (currency + name)
@@ -153,10 +176,13 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                 ad_currency = info.get("currency")
                 logger.info(f"[TikTok Ads Sync] Compte: {info.get('name')} ({ad_currency})")
             else:
-                logger.warning(f"[TikTok Ads Sync] Erreur advertiser/info: {data.get('message')}")
+                logger.warning(
+                    f"[TikTok Ads Sync] Erreur advertiser/info: code={data.get('code')} "
+                    f"message={data.get('message')} — vérifiez Access Token / Advertiser ID."
+                )
                 is_simulated = True
         except Exception as e:
-            logger.error(f"[TikTok Ads Sync] Exception advertiser/info: {e}")
+            is_network_error = _log_network_exception("advertiser/info", e)
             is_simulated = True
 
     if ad_currency:
@@ -240,7 +266,7 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                     })
                 logger.info(f"[TikTok Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées.")
         except Exception as e:
-            logger.error(f"[TikTok Ads Sync] Exception report: {e}")
+            is_network_error = _log_network_exception("report/integrated/get", e)
             is_simulated = True
             campaigns_data = _simulated_campaigns(store_id)
 
@@ -253,11 +279,19 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             TikTokAdsCampaign.campaign_id.like("tt_mock_%"),
         ).delete(synchronize_session=False)
         db.commit()
-        logger.warning(f"[TikTok Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, {deleted} campagne(s) de test nettoyée(s).")
+        logger.warning(
+            f"[TikTok Ads Sync] Connexion invalide pour store {store_id} — rien synchronisé, "
+            f"{deleted} campagne(s) de test nettoyée(s). network_error={is_network_error}"
+        )
         return {
             "success": False,
             "simulated": True,
-            "message": "Connexion TikTok invalide ou API inaccessible — aucune donnée synchronisée. Vérifiez l'Access Token et l'Advertiser ID.",
+            "network_error": is_network_error,
+            "message": (
+                "TikTok Ads semble inaccessible depuis le serveur (problème réseau, pas vos identifiants) — réessayez plus tard."
+                if is_network_error else
+                "Connexion TikTok invalide — aucune donnée synchronisée. Vérifiez l'Access Token et l'Advertiser ID."
+            ),
         }
 
     synced = 0
