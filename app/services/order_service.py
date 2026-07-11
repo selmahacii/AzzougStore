@@ -403,8 +403,11 @@ def _auto_assign(
       - Product match: order contains one of the agent's assigned_product_ids
         (cross-store product specialist), OR
       - Store match: the order's store is fully hers — employee_store_id, OR
-        the store is in her assigned_store_ids (if that list is non-empty), OR
-        she has neither a store list nor a product list (unrestricted agent).
+        the store is in her assigned_store_ids (if that list is non-empty).
+    An agent with NEITHER a store list NOR a product list configured is never
+    eligible — strict isolation: she must never become an accidental catch-all
+    for stores she was never actually assigned to. Such an order stays
+    unassigned until an admin configures or manually assigns it.
     """
     if not force:
         if not store.assignment_active or store.assignment_logic == "MANUAL":
@@ -441,15 +444,14 @@ def _auto_assign(
         # Product side of the union
         product_match = bool(order_pid_set and agent_product_ids and order_pid_set.intersection(agent_product_ids))
 
-        # Store side of the union — the order's store is FULLY hers
+        # Store side of the union — the order's store is FULLY hers.
+        # No fallback when both lists are empty: an unconfigured agent is
+        # never store-eligible (strict isolation, see docstring above).
         store_match = False
         if getattr(agent, "employee_store_id", None) == store.id:
             store_match = True
         elif agent_store_ids:
             store_match = store.id in agent_store_ids
-        elif not agent_product_ids:
-            # No store list AND no product list configured at all → unrestricted agent.
-            store_match = True
 
         if product_match:
             specialists.append(agent)

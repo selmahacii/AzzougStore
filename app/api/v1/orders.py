@@ -41,21 +41,36 @@ logger = logging.getLogger("app.orders")
 
 # ─── RBAC helpers ────────────────────────────────────────────────────────────
 
-# Confirmatrice responsibility scope — UNION semantics, no ambiguity, and
-# INDEPENDENT of the legacy assigned_store_scope ("ALL"/"SPECIFIC") flag:
-#   • assigned_store_ids (if non-empty): she is responsible for every one of
-#     these stores COMPLETELY (all its products) — always honored, whatever
-#     assigned_store_scope says. Previously this list was silently ignored
-#     whenever scope="ALL", which is exactly the config an admin ends up with
-#     after toggling "Toutes les boutiques" without clearing the store picker
-#     — a confirmatrice with two fully-assigned stores stopped receiving BOTH
-#     the moment products were also added to her profile.
+# Confirmatrice responsibility scope — UNION semantics, STRICT ISOLATION by
+# default, independent of the legacy assigned_store_scope ("ALL"/"SPECIFIC")
+# flag:
+#   • Resolved stores = assigned_store_ids ∪ {employee_store_id} (whichever
+#     are set) — she is responsible for every one of these stores COMPLETELY
+#     (all its products). assigned_store_ids is always honored regardless of
+#     assigned_store_scope: that flag previously made the list dead weight
+#     whenever it said "ALL", which is exactly the state an admin ends up in
+#     after adding products to a confirmatrice already responsible for full
+#     stores — a completely ordinary setup.
 #   • assigned_product_ids (if non-empty): PLUS every order containing one of
 #     these products, wherever that product's store is.
-#   • Both empty: no explicit restriction configured → every store, every
-#     product (the "responsible for everything" default for a lead agent).
+#   • NOTHING configured at all (no store, no product, no employee_store_id):
+#     she sees ZERO unassigned orders — never a silent fallback to "every
+#     store". Two confirmatrices each fully unconfigured must NEVER end up
+#     seeing each other's orders; only an order actually ASSIGNED TO her
+#     (handled separately in _assert_order_access / list_orders) is ever
+#     visible in that case. Isolation is strict unless stores/products
+#     genuinely overlap between agents.
 # This covers all three real-world setups: full store(s) only, products only,
 # and the hybrid "full store(s) + specific products of other stores".
+
+def _confirmateur_resolved_stores(user: User) -> list:
+    raw_stores = getattr(user, "assigned_store_ids", None)
+    stores = list(raw_stores) if isinstance(raw_stores, list) else []
+    employee_store_id = getattr(user, "employee_store_id", None)
+    if employee_store_id and employee_store_id not in stores:
+        stores.append(employee_store_id)
+    return stores
+
 
 def _confirmateur_scope_criterion(user: User):
     """SQLAlchemy criterion version of the scope, for list/count queries."""
@@ -64,8 +79,7 @@ def _confirmateur_scope_criterion(user: User):
 
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
-    raw_stores = getattr(user, "assigned_store_ids", None)
-    stores = raw_stores if isinstance(raw_stores, list) else []
+    stores = _confirmateur_resolved_stores(user)
 
     crits = []
     if stores:
@@ -74,7 +88,7 @@ def _confirmateur_scope_criterion(user: User):
         crits.append(Order.items.any(OrderItem.product_id.in_(products)))
 
     if not crits:
-        return True  # nothing explicitly assigned → unrestricted
+        return False  # nothing configured → no unassigned visibility (strict isolation)
     return or_(*crits) if len(crits) > 1 else crits[0]
 
 
@@ -82,11 +96,10 @@ def _confirmateur_scope_ok(order: Order, user: User) -> bool:
     """Python version of the same scope, for single-order access checks."""
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
-    raw_stores = getattr(user, "assigned_store_ids", None)
-    stores = raw_stores if isinstance(raw_stores, list) else []
+    stores = _confirmateur_resolved_stores(user)
 
     if not stores and not products:
-        return True  # nothing explicitly assigned → unrestricted
+        return False  # nothing configured → no unassigned visibility (strict isolation)
 
     store_ok = bool(stores) and order.store_id in stores
     product_ok = bool(products) and any(item.product_id in products for item in (order.items or []))
