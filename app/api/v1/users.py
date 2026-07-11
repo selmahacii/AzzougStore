@@ -540,12 +540,35 @@ def get_user_performance(
     user_id: str,
     store_id: Optional[str] = Query(None),
     period_days: int = 30,
+    start_date: Optional[str] = Query(None, description="ISO date, inclusive lower bound on Order.created_at"),
+    end_date: Optional[str] = Query(None, description="ISO date, inclusive upper bound on Order.created_at"),
     db: Session = Depends(deps.get_db),
 ):
-    """Return performance metrics and salary for an employee."""
+    """Return performance metrics and salary for an employee.
+
+    start_date/end_date scope BOTH the order-count stats (confirmed/
+    delivered/returned/cancelled) AND the salary computation to the same
+    window — previously the date pickers in the admin UI had no effect at
+    all here: this endpoint only ever took store_id/period_days (the latter
+    only used for the daily chart), so the salary shown for a "confirmatrice"
+    was always all-time regardless of any date range selected.
+    """
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+
+    since = None
+    until = None
+    if start_date:
+        try:
+            since = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            until = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except ValueError:
+            pass
 
     store_filter = True
     scope = getattr(db_user, "assigned_store_scope", "ALL")
@@ -563,6 +586,10 @@ def get_user_performance(
             Order.is_deleted  == False,
         )
     )
+    if since:
+        base_q = base_q.filter(Order.created_at >= since)
+    if until:
+        base_q = base_q.filter(Order.created_at <= until)
 
     total_assigned   = base_q.count()
     confirmed_count  = base_q.filter(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"])).count()
@@ -570,8 +597,9 @@ def get_user_performance(
     returned_count   = base_q.filter(Order.status == "RETURNED").count()
     cancelled_count  = base_q.filter(Order.status == "CANCELLED").count()
 
-    # Salary via service (uses DELIVERED orders only, respects payment_type)
-    salary_data = compute_salary(db, db_user, store_id)
+    # Salary via service (uses DELIVERED orders only, respects payment_type),
+    # now scoped to the same since/until window as the stats above.
+    salary_data = compute_salary(db, db_user, store_id, since=since, until=until)
 
     recent_orders = base_q.order_by(Order.id.desc()).limit(20).all()
 
@@ -622,13 +650,14 @@ def get_user_performance(
             "payment_type":              salary_data["payment_type"],
             "payment_amount":            salary_data["payment_amount"],
             "payment_recovered_cart":    salary_data.get("payment_recovered_cart", 0),
-            "payment_lost_cart":         0,
+            "payment_lost_cart":         salary_data.get("payment_lost_cart", 0),
             "base_salary":               salary_data.get("base_salary", 0),
             "abandoned_bonus":           salary_data.get("abandoned_bonus", 0),
             "normal_delivered_count":    salary_data.get("normal_delivered_count", 0),
             "recovered_count":           salary_data.get("recovered_count", 0),
             "recovered_delivered_count": salary_data.get("recovered_delivered_count", 0),
-            "lost_count":                0,
+            "lost_count":                salary_data.get("lost_count", 0),
+            "returned_penalty":          salary_data.get("returned_penalty", 0),
             # commission_per_order: per-order rate (None for MONTHLY_SALARY)
             "commission_per_order": (
                 salary_data["payment_amount"]

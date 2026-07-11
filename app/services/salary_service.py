@@ -6,10 +6,21 @@ Rules
 PER_DELIVERED_ORDER:
     salary = (normal_delivered_count ├ù payment_amount)
            + (recovered_delivered_count ├ù payment_recovered_cart)
+           - (returned_count ├ù payment_lost_cart)
 
 MONTHLY_SALARY:
     salary = payment_amount (fixed)
            + (recovered_delivered_count ├ù payment_recovered_cart)
+           - (returned_count ├ù payment_lost_cart)
+
+RETURNED penalty
+----------------
+A RETURNED order was confirmed (and often already commissioned as CONFIRMED
+in real business practice) but the carrier brought it back undelivered ÔÇö the
+company still eats the delivery-fee cost. payment_lost_cart (DA, configured
+per-employee, default 0) is deducted per RETURNED order assigned to the
+employee in the same date window as everything else. Salary is floored at 0
+(never goes negative). Set payment_lost_cart to 0 to disable this entirely.
 
 Classification at query time
 -----------------------------
@@ -86,29 +97,35 @@ def compute_salary(
     payment_amount = employee.payment_amount  # DA
 
     recovered_rate = getattr(employee, "payment_recovered_cart", 0) or 0
+    lost_rate      = getattr(employee, "payment_lost_cart", 0) or 0
 
     # ÔöÇÔöÇ Count delivered orders, split by classification ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     normal_delivered    = _count_normal_delivered(db, employee.id, store_id, since, until)
     recovered_delivered = _count_recovered_delivered(db, employee.id, store_id, since, until)
     total_delivered     = normal_delivered + recovered_delivered
+    returned_count      = _count_returned(db, employee.id, store_id, since, until)
 
     # Recovery bonus is always additive regardless of payment_type
-    abandoned_bonus = recovered_delivered * recovered_rate
+    abandoned_bonus  = recovered_delivered * recovered_rate
+    returned_penalty = returned_count * lost_rate
 
     # ÔöÇÔöÇ Branch by payment type ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
-        salary      = base_salary + abandoned_bonus
+        salary      = max(0, base_salary + abandoned_bonus - returned_penalty)
 
         return _build_result(
             payment_type="MONTHLY_SALARY",
             payment_amount=payment_amount,
             recovered_rate=recovered_rate,
+            lost_rate=lost_rate,
             total_delivered=total_delivered,
             normal_delivered=normal_delivered,
             recovered_delivered=recovered_delivered,
+            returned_count=returned_count,
             base_salary=base_salary,
             abandoned_bonus=abandoned_bonus,
+            returned_penalty=returned_penalty,
             salary=salary,
             since=since,
             until=until,
@@ -117,17 +134,20 @@ def compute_salary(
     # PER_DELIVERED_ORDER (explicit or implicit fallback when payment_type is None)
     effective_rate = payment_amount if payment_amount is not None else FALLBACK_RATE_PER_ORDER
     base_salary    = normal_delivered * effective_rate
-    salary         = base_salary + abandoned_bonus
+    salary         = max(0, base_salary + abandoned_bonus - returned_penalty)
 
     return _build_result(
         payment_type=payment_type or "PER_DELIVERED_ORDER",
         payment_amount=effective_rate,
         recovered_rate=recovered_rate,
+        lost_rate=lost_rate,
         total_delivered=total_delivered,
         normal_delivered=normal_delivered,
         recovered_delivered=recovered_delivered,
+        returned_count=returned_count,
         base_salary=base_salary,
         abandoned_bonus=abandoned_bonus,
+        returned_penalty=returned_penalty,
         salary=salary,
         since=since,
         until=until,
@@ -218,16 +238,44 @@ def _count_recovered_delivered(
     return db.query(Order).filter(and_(*filters)).count()
 
 
+def _count_returned(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+) -> int:
+    """
+    Count RETURNED orders assigned to user_id ÔÇö the carrier brought the order
+    back undelivered after the employee had already confirmed it. Informational
+    on its own; drives returned_penalty when the employee has a non-zero
+    payment_lost_cart rate configured.
+    """
+    store_filter = _build_store_filter(db, user_id, store_id)
+
+    filters = [
+        store_filter,
+        Order.assigned_to == user_id,
+        Order.status      == "RETURNED",
+        Order.is_deleted  == False,
+    ] + _build_time_filters(since, until)
+
+    return db.query(Order).filter(and_(*filters)).count()
+
+
 def _build_result(
     *,
     payment_type: str,
     payment_amount,
     recovered_rate: int,
+    lost_rate: int = 0,
     total_delivered: int,
     normal_delivered: int,
     recovered_delivered: int,
+    returned_count: int = 0,
     base_salary: int,
     abandoned_bonus: int,
+    returned_penalty: int = 0,
     salary: int,
     since: Optional[datetime],
     until: Optional[datetime],
@@ -242,8 +290,9 @@ def _build_result(
         "recovered_delivered_count": recovered_delivered,
         # Legacy alias kept for backward-compatibility with existing API consumers
         "recovered_count":           recovered_delivered,
-        "lost_count":                0,
-        "payment_lost_cart":         0,
+        "lost_count":                returned_count,
+        "payment_lost_cart":         lost_rate,
+        "returned_penalty":          returned_penalty,
         "base_salary":               base_salary,
         "abandoned_bonus":           abandoned_bonus,
         "salary":                    salary,

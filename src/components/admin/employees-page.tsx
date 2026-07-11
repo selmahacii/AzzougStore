@@ -1358,6 +1358,29 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                La commission panier récupéré s'applique sur les paniers abandonnés récupérés qui passent à Livré.
                             </p>
                         </div>
+
+                        <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
+                           <h5 className="text-[9px] font-black uppercase tracking-wider text-rose-700">
+                              Pénalité commande retournée
+                           </h5>
+                           <div className="space-y-1.5">
+                               <Label className="text-[10px] font-semibold text-[#636E72]">Montant déduit par retour (DA)</Label>
+                               <div className="relative">
+                                  <Input
+                                     type="number"
+                                     min={0}
+                                     value={formData.payment_lost_cart}
+                                     onChange={e => setFormData(p => ({ ...p, payment_lost_cart: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                     placeholder="Ex: 200"
+                                     className="h-10 border-rose-100 rounded-lg bg-white pr-12 font-black text-xs"
+                                  />
+                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
+                               </div>
+                            </div>
+                            <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
+                               Déduit du salaire pour chaque commande passée au statut RETOURNÉ (la commande avait été confirmée, mais le transporteur ne l'a pas livrée). Laisser à 0 pour désactiver.
+                            </p>
+                        </div>
                      </div>
 
                      {formData.role === 'MARKETER' && (
@@ -1679,10 +1702,17 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const storeId = activeStore?.id ?? '';
    const [activeProfileTab, setActiveProfileTab] = useState<'salary' | 'orders' | 'audit'>('salary');
    const [bonus, setBonus] = useState(0);
+   const [salaryStartDate, setSalaryStartDate] = useState('');
+   const [salaryEndDate, setSalaryEndDate] = useState('');
 
    const perfQuery = useQuery({
-      queryKey: ['employee-performance', employee?.id, storeId],
-      queryFn: () => apiFetch<any>(`/api/v1/users/${employee.id}/performance?store_id=${storeId}&period=30d`),
+      queryKey: ['employee-performance', employee?.id, storeId, salaryStartDate, salaryEndDate],
+      queryFn: () => {
+         const params = new URLSearchParams({ store_id: storeId });
+         if (salaryStartDate) params.set('start_date', salaryStartDate + 'T00:00:00.000Z');
+         if (salaryEndDate) params.set('end_date', salaryEndDate + 'T23:59:59.999Z');
+         return apiFetch<any>(`/api/v1/users/${employee.id}/performance?${params.toString()}`);
+      },
       enabled: open && !!employee?.id && !!storeId,
    });
 
@@ -1695,6 +1725,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const delivered = stats.delivered_count ?? 0;
    const cancelled = stats.cancelled_count ?? 0;
    const returned = stats.returned_count ?? 0;
+   const returnedPenalty = stats.returned_penalty ?? 0;
    const total_assigned = stats.total_assigned ?? 0;
 
    const computedSalary = stats.salary ?? (
@@ -1734,8 +1765,24 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                   </div>
                </div>
 
+               {/* Date range filter — scopes both the stats above and the salary computation */}
+               <div className="flex items-center gap-2 mt-4">
+                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Période</span>
+                  <input type="date" value={salaryStartDate} onChange={e => setSalaryStartDate(e.target.value)}
+                     className="h-8 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 outline-none" />
+                  <span className="text-slate-500 text-xs">→</span>
+                  <input type="date" value={salaryEndDate} onChange={e => setSalaryEndDate(e.target.value)}
+                     className="h-8 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 outline-none" />
+                  {(salaryStartDate || salaryEndDate) && (
+                     <button onClick={() => { setSalaryStartDate(''); setSalaryEndDate(''); }}
+                        className="text-[10px] font-black uppercase text-slate-400 hover:text-white underline">
+                        Réinitialiser
+                     </button>
+                  )}
+               </div>
+
                {/* Tabs */}
-               <div className="flex gap-2 mt-8 border-b border-slate-700">
+               <div className="flex gap-2 mt-4 border-b border-slate-700">
                   {([['salary', 'Bulletin de Paie', Banknote], ['orders', 'Commandes', Package], ['audit', 'Traçabilité', Activity]] as const).map(([id, label, Icon]) => (
                      <button key={id} onClick={() => setActiveProfileTab(id)}
                         className={cn(
@@ -1777,12 +1824,13 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      )}
 
                      {/* Stats grid */}
-                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {[
                            { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
                            { label: 'Confirmées', value: confirmed, color: '#20bf6b' },
                            { label: 'Livrées', value: delivered, color: '#26de81' },
-                           { label: 'Annulées', value: cancelled, color: '#eb4d4b' },
+                           { label: 'Retournées', value: returned, color: '#eb4d4b' },
+                           { label: 'Annulées', value: cancelled, color: '#a5b1c2' },
                         ].map(s => (
                            <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
                               <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{s.label}</p>
@@ -1797,6 +1845,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            <span>{paymentType === 'PER_DELIVERED_ORDER' ? 'Commandes livrées' : paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes confirmées'}</span>
                            <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${paymentType === 'PER_DELIVERED_ORDER' ? delivered : confirmed} × ${formatPrice(paymentAmount)}`}</span>
                         </div>
+                        {returnedPenalty > 0 && (
+                           <div className="flex justify-between items-center text-xs font-bold text-rose-500">
+                              <span>Pénalité retours ({returned} × {formatPrice((employee?.payment_lost_cart) || 0)})</span>
+                              <span>− {formatPrice(returnedPenalty)}</span>
+                           </div>
+                        )}
                         <div className="flex justify-between items-center text-xs font-bold text-[#20bf6b]">
                            <span>Total commissions</span>
                            <span>= {formatPrice(computedSalary)}</span>

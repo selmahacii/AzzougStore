@@ -227,7 +227,11 @@ const [timeLeft, setTimeLeft] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     const m: Record<string, string> = {
       NEW: 'NEW', 'EN ATTENTE': 'ASSIGNED', CONFIRMED: 'CONFIRMED',
-      FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED', CANCELLED: 'CANCELLED',
+      FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED',
+      // 'CANCELLED' tab is labeled "Annulations & Retours" — it must include
+      // RETURNED orders too, not just CANCELLED, or returned orders are
+      // invisible everywhere in the ERP despite the tab claiming to show them.
+      CANCELLED: 'ARCHIVED',
       ABANDONED: 'ABANDONED', ALL: 'all',
     };
     return m[(adminSubView as string) || 'NEW'] ?? 'NEW';
@@ -523,7 +527,10 @@ const [timeLeft, setTimeLeft] = useState('');
     CONFIRMED: 'CONFIRMED',
     FOLLOWUP: 'SHIPPED',
     COMPLETED: 'DELIVERED',
-    CANCELLED: 'CANCELLED',
+    // Same reasoning as the statusFilter initializer above: this tab shows
+    // both cancelled AND returned orders, so it must request the backend's
+    // ARCHIVED bucket (CANCELLED + RETURNED), not CANCELLED alone.
+    CANCELLED: 'ARCHIVED',
     ABANDONED: 'ABANDONED',
     ALL: 'all',
   };
@@ -543,6 +550,7 @@ const [timeLeft, setTimeLeft] = useState('');
     SHIPPED: 'FOLLOWUP',
     DELIVERED: 'COMPLETED',
     CANCELLED: 'CANCELLED',
+    RETURNED: 'CANCELLED',
     ABANDONED: 'ABANDONED',
   };
 
@@ -1256,12 +1264,17 @@ const [timeLeft, setTimeLeft] = useState('');
                     { id: 'CONFIRMED',  label: 'Confirmées', statusKey: 'CONFIRMED' },
                     { id: 'FOLLOWUP',   label: 'Suivi',      statusKey: 'SHIPPED' },
                     { id: 'COMPLETED',  label: 'Terminées',  statusKey: 'DELIVERED' },
-                    { id: 'CANCELLED',  label: 'Annulées',   statusKey: 'CANCELLED' },
+                    { id: 'CANCELLED',  label: 'Annulées & Retours', statusKey: 'CANCELLED' },
                     { id: 'ABANDONED',  label: 'Abandonnés', statusKey: 'ABANDONED' },
                     { id: 'ALL',        label: 'Tous',       statusKey: 'ALL' },
                   ].map(tab => {
                     const count = tab.statusKey === 'ALL'
                       ? Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)
+                      // CANCELLED tab is also RETURNED's home (see MODE_TO_STATUS →
+                      // 'ARCHIVED') — its badge count must include both or it
+                      // undercounts vs. what the tab actually displays when clicked.
+                      : tab.statusKey === 'CANCELLED'
+                      ? (tabCounts['CANCELLED'] ?? 0) + (tabCounts['RETURNED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
                     return (
                       <TabsTrigger key={tab.id} value={tab.id} className="rounded-lg sm:rounded-xl px-3 sm:px-5 py-2 text-[10px] sm:text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-[#4b7bec] data-[state=active]:shadow-sm transition-all focus-visible:ring-0 whitespace-nowrap">
