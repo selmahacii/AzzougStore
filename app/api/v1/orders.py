@@ -1421,6 +1421,7 @@ def update_order_info(
         "delivery_type": "type de livraison",
         "carrier_id": "transporteur",
         "notes": "remarques",
+        "internal_notes": "notes internes",
         "items": "articles",
         "total": "total",
         "discount": "remise"

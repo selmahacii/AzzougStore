@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     # ENVIRONMENT
     ENVIRONMENT: str = "development"  # development | production
 
+    # Session cookie Domain attribute — set to ".azghub.com" (leading dot) so
+    # the __session/__refresh cookies are shared across every store's custom
+    # subdomain (azconfort.azghub.com, trustshop.azghub.com, chicoutfit...).
+    # Without this, a cookie is host-only: logging in on one store's domain
+    # left staff 401'd on every other store's domain — exactly the reported
+    # "GET https://trustshop.azghub.com/api/v1/auth/me 401" while she was
+    # authenticated fine on another store's subdomain. Empty = host-only
+    # cookie (safe default for localhost / *.vercel.app preview URLs, where a
+    # shared-domain cookie wouldn't make sense anyway).
+    SESSION_COOKIE_DOMAIN: str = ""
+
     # CORS — restrict to known origins in production via env var
     # Format: comma-separated URLs, e.g. "https://app.com,https://admin.app.com"
     BACKEND_CORS_ORIGINS: List[Union[AnyHttpUrl, str]] = ["http://localhost:3000", "http://localhost:3016"]

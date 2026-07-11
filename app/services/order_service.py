@@ -883,7 +883,16 @@ class OrderService:
         # actor's role means a confirmatrice's note and a livreur's delivery
         # note are each clearly attributed instead of one silently replacing
         # the other with no indication of who left it.
-        if order_note:
+        #
+        # System-triggered updates (actor_id is None — Noest auto-sync,
+        # scheduled jobs) must NOT touch this field: it used to overwrite
+        # whatever internal note a confirmatrice had written for the order
+        # with "Synchronisation automatique Noest : DELIVERED." every time
+        # the background sync ran, silently erasing her note. The status
+        # change itself is still fully recorded in the OrderEvent timeline
+        # below regardless — only the always-visible "at a glance" note is
+        # protected from system overwrites.
+        if order_note and actor_id is not None:
             role_labels = {
                 "CONFIRMATEUR": "Confirmatrice",
                 "LIVREUR": "Livreur",

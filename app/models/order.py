@@ -65,6 +65,12 @@ class Order(Base):
     event_source_url = Column(String, nullable=True)
     
     notes = Column(Text, nullable=True)
+    # Staff-only note — NEVER pushed to the carrier (unlike `notes`, which is
+    # sent to Noest via push_remarque_update whenever it changes). Confused
+    # for the same field before: `notes` is carrier-facing "remarque", this
+    # one is purely internal team communication (e.g. "client difficile,
+    # rappeler après 18h" — should never reach the delivery company).
+    internal_notes = Column(Text, nullable=True)
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime, nullable=True)
     

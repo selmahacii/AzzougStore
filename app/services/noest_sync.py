@@ -53,12 +53,31 @@ META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES
 # would otherwise wipe them.
 CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_INTERVAL_MINUTES", "7"))
 
-# NOEST wording → platform terminal statuses. Intermediate states
-# (en route, collecté…) are ignored: the order simply stays SHIPPED.
+# NOEST wording → platform terminal statuses. Checked against BOTH
+# OrderInfo.statut (French human text) AND the last activity's event_key
+# (English snake_case, per NOEST's own event-key vocabulary — see their API
+# docs' "Liste des événements" table). The previous version only had French
+# substrings, so any tracking whose statut field was empty and fell back to
+# event_key (e.g. "livraison_echoue_recu", "colis_retour_transmit_to_partner")
+# never matched — those orders silently stayed SHIPPED forever, contradicting
+# the requirement that every carrier-side status change be reflected here.
+# Intermediate/in-transit events (en route, collecté, retour demandé/en
+# transit but not yet received back) are deliberately excluded: the order
+# simply stays SHIPPED until a genuinely terminal event arrives.
 _TERMINAL_MAP = {
+    # Delivered
     "livré": "DELIVERED", "livre": "DELIVERED", "delivered": "DELIVERED",
+    # Returned — only the terminal "received/confirmed back" events, not the
+    # in-progress "asked"/"en transit" ones (return_asked_by_*, *_redispatched_to_livraison).
     "retourné": "RETURNED", "retourne": "RETURNED", "returned": "RETURNED",
     "retour": "RETURNED",
+    "livraison_echoue_recu": "RETURNED",           # Retour reçu par le partenaire
+    "colis_retour_transmit_to_partner": "RETURNED",  # Retour transmis au partenaire
+    "colis_pickup_transmit_to_partner": "RETURNED",  # Pick-Up transmis au partenaire
+    "retour_dispatched_to_partenaires": "RETURNED",  # Retour transmis au partenaire
+    "return_dispatched_to_partenaire": "RETURNED",   # Retour transmis au partenaire
+    "return_validated_by_partener": "RETURNED",      # Retour validé par le partenaire
+    "return_dispatched_to_warehouse": "RETURNED",    # Retour transmis vers entrepôt
 }
 
 _ACTIVE_CALLBACK_STATES = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"]
@@ -114,7 +133,33 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
         if not isinstance(parcel, dict):
             continue
         new_status = _extract_terminal_status(parcel)
-        if not new_status or new_status == str(order.status):
+        if not new_status:
+            # Not yet a terminal event — still worth flagging "colis suspendu"
+            # (carrier blocked the delivery, needs staff attention) even
+            # though the order stays SHIPPED. Logged once per occurrence via
+            # the OrderEvent timeline, not the single-slot notes field.
+            activity = parcel.get("activity") or []
+            last_key = (activity[-1].get("event_key") or "").strip().lower() if activity else ""
+            if last_key == "colis_suspendu":
+                from app.services.order_service import _log_event as _log_order_event
+                from app.models.order import OrderEvent
+                already = (
+                    db.query(OrderEvent)
+                    .filter(
+                        OrderEvent.order_id == order.id,
+                        OrderEvent.note == "Colis suspendu par le transporteur.",
+                    )
+                    .first()
+                )
+                if not already:
+                    _log_order_event(
+                        db, order_id=order.id, actor_id=None,
+                        from_status=str(order.status), to_status=str(order.status),
+                        note="Colis suspendu par le transporteur.",
+                    )
+                    db.commit()
+            continue
+        if new_status == str(order.status):
             continue
         # Lock the row only now (after the network call) and re-check the
         # status: a confirmatrice may have updated the order meanwhile.

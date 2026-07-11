@@ -54,6 +54,7 @@ def _set_auth_cookies(
     access_max_age: int,
     refresh_max_age: int,
 ) -> None:
+    cookie_domain = settings.SESSION_COOKIE_DOMAIN or None
     response.set_cookie(
         key=_COOKIE_NAME,
         value=access_token,
@@ -63,6 +64,7 @@ def _set_auth_cookies(
         samesite=_SAME_SITE,
         secure=(settings.ENVIRONMENT == "production"),
         path="/",
+        domain=cookie_domain,
     )
     response.set_cookie(
         key=_REFRESH_COOKIE_NAME,
@@ -73,12 +75,16 @@ def _set_auth_cookies(
         samesite=_SAME_SITE,
         secure=(settings.ENVIRONMENT == "production"),
         path="/",
+        domain=cookie_domain,
     )
 
 
 def _clear_auth_cookies(response: Response) -> None:
-    response.delete_cookie(key=_COOKIE_NAME, path="/", samesite=_SAME_SITE)
-    response.delete_cookie(key=_REFRESH_COOKIE_NAME, path="/", samesite=_SAME_SITE)
+    cookie_domain = settings.SESSION_COOKIE_DOMAIN or None
+    # domain must match what was used at set_cookie time, otherwise the
+    # browser treats it as a different cookie and the old one lingers.
+    response.delete_cookie(key=_COOKIE_NAME, path="/", samesite=_SAME_SITE, domain=cookie_domain)
+    response.delete_cookie(key=_REFRESH_COOKIE_NAME, path="/", samesite=_SAME_SITE, domain=cookie_domain)
 
 
 def _build_user_payload(user: User) -> dict:

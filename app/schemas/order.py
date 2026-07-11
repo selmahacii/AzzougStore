@@ -137,6 +137,7 @@ class OrderRead(BaseModel):
     assigned_to:     Optional[str] = None
     source:          Optional[str] = None
     notes:           Optional[str] = None
+    internal_notes:  Optional[str] = None
     created_at:      datetime
     updated_at:      Optional[datetime] = None
     tracking_number: Optional[str] = None
@@ -250,6 +251,7 @@ class OrderInfoUpdate(BaseModel):
     delivery_fee: Optional[float] = None
     tracking_number: Optional[str] = None
     notes: Optional[str] = None
+    internal_notes: Optional[str] = None
     is_pack: Optional[bool] = None
     is_upsell: Optional[bool] = None
     is_abandoned_cart: Optional[bool] = None
