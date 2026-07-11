@@ -406,6 +406,9 @@ export default function TikTokAdsDashboard() {
                             <div className="bg-white rounded-xl p-3 border border-slate-100">
                               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Coût / Vente</p>
                               <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{c.orders_count > 0 ? formatPrice(c.cost_per_order || 0) : '—'}</p>
+                              {c.orders_count > 0 && c.currency && c.currency !== 'DZD' && (
+                                <p className="text-[9px] text-slate-400 tabular-nums">{c.cost_per_order_raw || 0} {c.currency}</p>
+                              )}
                               <p className="text-[9px] text-slate-400">Taux conv. {c.conversion_rate || 0}%</p>
                             </div>
                             <div className="bg-white rounded-xl p-3 border border-slate-100">

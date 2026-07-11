@@ -384,6 +384,11 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
         cpm_raw = round(raw_spend / camp.impressions * 1000, 4) if camp.impressions > 0 else 0.0
         frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
         cost_per_order = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
+        # Raw ad-account currency version, same as cpc_raw/cpm_raw above and
+        # Meta Ads' identical cost_per_order_raw — "Coût / Vente" was only
+        # ever shown converted to DZD, with no way to see it in the account's
+        # own currency the way spend/CPC/CPM already could.
+        cost_per_order_raw = round(raw_spend / orders_count, 4) if orders_count > 0 else 0.0
         conversion_rate = round(orders_count / camp.clicks * 100, 3) if camp.clicks > 0 else 0.0
         aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
         profit = round(revenue - camp.spend, 2)
@@ -418,6 +423,7 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
             "cpm_raw": cpm_raw,
             "frequency": frequency,
             "cost_per_order": cost_per_order,
+            "cost_per_order_raw": cost_per_order_raw,
             "conversion_rate": conversion_rate,
             "aov": aov,
             "profit": profit,
