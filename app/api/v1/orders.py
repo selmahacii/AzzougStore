@@ -302,6 +302,14 @@ def get_agent_counts(
     from sqlalchemy import and_, or_
     from datetime import datetime, timezone
 
+    # Same reasoning as list_orders: this endpoint scopes itself explicitly
+    # below (CONFIRMATEUR union scope, MANAGER's employee_store_id) including
+    # the store_id query param — the global header-driven tenant auto-filter
+    # is redundant and, on a mismatch, silently ANDs two different store_ids
+    # together and returns zero results. get_db() hands out a fresh Session
+    # per request, so this never leaks across requests.
+    db.info["skip_tenant_isolation"] = True
+
     base = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
 
     # Same RBAC scoping as list_orders for confirmatrices (union store/product scope)
@@ -507,7 +515,24 @@ def list_orders(
     campaign: Optional[str] = None,          # utm_campaign or campaign_id
 ):
     logger.debug(f"[Orders] Listing: store_id={store_id!r}, status={status!r}, user={getattr(current_user, 'email', 'anon')!r}")
-    
+
+    # This endpoint does its OWN complete, explicit scoping below (guest
+    # phone+store_id, SUPER_ADMIN/ADMIN unrestricted, CONFIRMATEUR union
+    # scope, MANAGER's employee_store_id, LIVREUR, deny-by-default) — including
+    # explicitly honoring the store_id QUERY PARAM at "if store_id:" further
+    # down. The global do_orm_execute tenant auto-filter (TenantMiddleware,
+    # driven by the X-Store-Id HEADER) is a blunt safety net for endpoints
+    # that DON'T scope themselves; here it's redundant, and when the header
+    # doesn't match the query param — the frontend's active-store header can
+    # legitimately differ from the store the confirmatrice is browsing on a
+    # multi-store account — it silently ANDs both filters together
+    # (store_id == 'A' AND store_id == 'B'), which can never match anything.
+    # A confirmatrice with 176 real orders in a store then sees total=0,
+    # indistinguishable from "this store genuinely has no orders". get_db()
+    # hands out a fresh Session per request (closed at teardown), so this
+    # flag never leaks across requests.
+    db.info["skip_tenant_isolation"] = True
+
     query = db.query(Order).filter(Order.is_deleted == False)
 
     # Authentication & RBAC scoping
