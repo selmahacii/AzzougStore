@@ -41,16 +41,21 @@ logger = logging.getLogger("app.orders")
 
 # ─── RBAC helpers ────────────────────────────────────────────────────────────
 
-# Confirmatrice responsibility scope — UNION semantics, no ambiguity:
-#   • scope="SPECIFIC": she is responsible for every store in
-#     assigned_store_ids COMPLETELY (all its products), PLUS every product in
-#     assigned_product_ids wherever that product's store is. An order is in
-#     her scope if its store is fully hers OR it contains one of her products.
-#   • scope="ALL" without products: every store, every product.
-#   • scope="ALL" with products: only orders containing those products,
-#     across all stores ("certains produits de chaque boutique").
-# This covers the three real-world setups: full store(s) only, products only,
-# and the hybrid "one full store + specific products of other stores".
+# Confirmatrice responsibility scope — UNION semantics, no ambiguity, and
+# INDEPENDENT of the legacy assigned_store_scope ("ALL"/"SPECIFIC") flag:
+#   • assigned_store_ids (if non-empty): she is responsible for every one of
+#     these stores COMPLETELY (all its products) — always honored, whatever
+#     assigned_store_scope says. Previously this list was silently ignored
+#     whenever scope="ALL", which is exactly the config an admin ends up with
+#     after toggling "Toutes les boutiques" without clearing the store picker
+#     — a confirmatrice with two fully-assigned stores stopped receiving BOTH
+#     the moment products were also added to her profile.
+#   • assigned_product_ids (if non-empty): PLUS every order containing one of
+#     these products, wherever that product's store is.
+#   • Both empty: no explicit restriction configured → every store, every
+#     product (the "responsible for everything" default for a lead agent).
+# This covers all three real-world setups: full store(s) only, products only,
+# and the hybrid "full store(s) + specific products of other stores".
 
 def _confirmateur_scope_criterion(user: User):
     """SQLAlchemy criterion version of the scope, for list/count queries."""
@@ -59,21 +64,17 @@ def _confirmateur_scope_criterion(user: User):
 
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
-    product_crit = Order.items.any(OrderItem.product_id.in_(products)) if products else None
-
-    scope = getattr(user, "assigned_store_scope", "ALL")
-    if scope != "SPECIFIC":
-        return product_crit if product_crit is not None else True
-
     raw_stores = getattr(user, "assigned_store_ids", None)
     stores = raw_stores if isinstance(raw_stores, list) else []
+
     crits = []
     if stores:
         crits.append(Order.store_id.in_(stores))
-    if product_crit is not None:
-        crits.append(product_crit)
+    if products:
+        crits.append(Order.items.any(OrderItem.product_id.in_(products)))
+
     if not crits:
-        return False  # SPECIFIC with nothing assigned → no unassigned visibility
+        return True  # nothing explicitly assigned → unrestricted
     return or_(*crits) if len(crits) > 1 else crits[0]
 
 
@@ -81,15 +82,15 @@ def _confirmateur_scope_ok(order: Order, user: User) -> bool:
     """Python version of the same scope, for single-order access checks."""
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
-    product_ok = any(item.product_id in products for item in (order.items or [])) if products else None
-
-    scope = getattr(user, "assigned_store_scope", "ALL")
-    if scope != "SPECIFIC":
-        return product_ok if product_ok is not None else True
-
     raw_stores = getattr(user, "assigned_store_ids", None)
     stores = raw_stores if isinstance(raw_stores, list) else []
-    return (order.store_id in stores) or bool(product_ok)
+
+    if not stores and not products:
+        return True  # nothing explicitly assigned → unrestricted
+
+    store_ok = bool(stores) and order.store_id in stores
+    product_ok = bool(products) and any(item.product_id in products for item in (order.items or []))
+    return store_ok or product_ok
 
 
 def _assert_order_access(order: Order, current_user: User) -> None:
