@@ -139,6 +139,17 @@ class MetaAdsCampaign(Base):
     impressions = Column(Integer, default=0)
     clicks = Column(Integer, default=0)
     reach = Column(Integer, default=0)
+    # Meta's OWN attributed purchase count/value, pulled straight from the
+    # Insights API's `actions`/`action_values` (action_type in
+    # PURCHASE_ACTION_TYPES) — i.e. Meta's pixel/CAPI attribution window and
+    # dedup logic, not ours. Kept side-by-side with orders_count/revenue
+    # (which come from OUR order table matched by utm_campaign) so the
+    # dashboard can show both numbers instead of forcing a fake match: the
+    # two will never be perfectly identical (different attribution windows,
+    # view-through vs click-through, events fired for carts that never became
+    # a DB order, etc.) — that gap is real, not a bug.
+    meta_purchases = Column(Integer, default=0, nullable=True)
+    meta_purchase_value = Column(Float, default=0.0, nullable=True)
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
     date_start = Column(DateTime, nullable=True)
     date_end = Column(DateTime, nullable=True)

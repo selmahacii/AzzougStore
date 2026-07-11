@@ -263,6 +263,18 @@ def list_campaigns(
         aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
         profit = round(revenue - camp.spend, 2)
 
+        # Meta's OWN reported conversions (its pixel/CAPI attribution, its
+        # dedup) — deliberately kept separate from orders_count/revenue
+        # above, which come from OUR order table matched by utm_campaign.
+        # The two numbers WILL differ (different attribution windows,
+        # view-through credit, checkout abandons that fired a pixel event but
+        # never became a DB order) — that gap is real, not a display bug.
+        meta_purchases = camp.meta_purchases or 0
+        meta_purchase_value = camp.meta_purchase_value or 0.0
+        meta_conversion_rate = round(meta_purchases / camp.clicks * 100, 3) if camp.clicks > 0 else 0.0
+        meta_roas = round(meta_purchase_value / raw_spend, 2) if raw_spend > 0 else 0.0
+        conversion_gap = orders_count - meta_purchases
+
         data.append({
             "id": camp.id,
             "campaign_id": camp.campaign_id,
@@ -287,11 +299,18 @@ def list_campaigns(
             "conversion_rate": conversion_rate,
             "aov": aov,
             "profit": profit,
+            "meta_purchases": meta_purchases,
+            "meta_purchase_value": meta_purchase_value,
+            "meta_conversion_rate": meta_conversion_rate,
+            "meta_roas": meta_roas,
+            "conversion_gap": conversion_gap,
             "date_start": camp.date_start.isoformat() if camp.date_start else None,
             "date_end": camp.date_end.isoformat() if camp.date_end else None
         })
 
     global_roas = round(global_revenue / global_spend, 2) if global_spend > 0 else 0.0
+    global_meta_purchases = sum(c.meta_purchases or 0 for c in campaigns)
+    global_meta_purchase_value = sum(c.meta_purchase_value or 0.0 for c in campaigns)
 
     # Global micro-metrics + raw spend grouped by ad-account currency
     total_impressions = sum(c.impressions or 0 for c in campaigns)
@@ -430,9 +449,47 @@ def list_campaigns(
             "global_cost_per_order": round(global_spend / global_orders_count, 2) if global_orders_count > 0 else 0.0,
             "global_conversion_rate": round(global_orders_count / total_clicks * 100, 3) if total_clicks > 0 else 0.0,
             "global_aov": round(global_revenue / global_orders_count, 2) if global_orders_count > 0 else 0.0,
-            "global_profit": round(global_revenue - global_spend, 2)
+            "global_profit": round(global_revenue - global_spend, 2),
+            "global_meta_purchases": global_meta_purchases,
+            "global_meta_purchase_value": global_meta_purchase_value,
+            "global_conversion_gap": global_orders_count - global_meta_purchases,
         }
     }
+
+# Every action_type Meta uses across pixel/CAPI/onsite for a completed
+# purchase — Ads Manager's "Purchases" column sums all of these, so we must
+# too or we'll silently undercount vs. what the user sees in Meta's own UI.
+_META_PURCHASE_ACTION_TYPES = {
+    "purchase",
+    "omni_purchase",
+    "offsite_conversion.fb_pixel_purchase",
+    "onsite_web_purchase",
+    "onsite_web_app_purchase",
+    "app_custom_event.fb_mobile_purchase",
+}
+
+
+def _extract_meta_purchases(raw_campaign: dict) -> tuple:
+    """Sum Meta's own attributed purchase count/value from an Insights API
+    row's `actions`/`action_values` arrays (see _META_PURCHASE_ACTION_TYPES).
+    Returns (count, value) — both 0 if Meta reports no purchase actions for
+    this campaign/date range."""
+    count = 0
+    value = 0.0
+    for action in (raw_campaign.get("actions") or []):
+        if action.get("action_type") in _META_PURCHASE_ACTION_TYPES:
+            try:
+                count += int(float(action.get("value", 0)))
+            except (TypeError, ValueError):
+                pass
+    for action_value in (raw_campaign.get("action_values") or []):
+        if action_value.get("action_type") in _META_PURCHASE_ACTION_TYPES:
+            try:
+                value += float(action_value.get("value", 0))
+            except (TypeError, ValueError):
+                pass
+    return count, value
+
 
 def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> float:
     ad_curr = ad_currency.upper() if ad_currency else "USD"
@@ -546,7 +603,12 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
     else:
         params = {
             "level": "campaign",
-            "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,date_start,date_stop",
+            # actions/action_values carry Meta's OWN attributed conversions
+            # (its pixel/CAPI events, its attribution window, its dedup) —
+            # without these fields there is no way to compare against what
+            # Ads Manager actually reports, only our own utm_campaign-matched
+            # order count, which is a different methodology by construction.
+            "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,actions,action_values,date_start,date_stop",
             "date_preset": "last_30d",
         }
         try:
@@ -610,6 +672,7 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                 raw_camps = res_data.get("data", [])
                 campaigns_data = []
                 for rc in raw_camps:
+                    meta_purchases, meta_purchase_value = _extract_meta_purchases(rc)
                     campaigns_data.append({
                         "campaign_id": rc.get("campaign_id"),
                         "campaign_name": rc.get("campaign_name", "Sans nom"),
@@ -617,7 +680,9 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                         "currency": ad_currency,
                         "impressions": int(rc.get("impressions", 0)),
                         "clicks": int(rc.get("clicks", 0)),
-                        "reach": int(rc.get("reach", 0))
+                        "reach": int(rc.get("reach", 0)),
+                        "meta_purchases": meta_purchases,
+                        "meta_purchase_value": meta_purchase_value,
                     })
                 logger.info(f"[Meta Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées de Meta.")
         except Exception as e:
@@ -718,6 +783,8 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         campaign.impressions = imp
         campaign.clicks = clicks
         campaign.reach = reach
+        campaign.meta_purchases = int(c.get("meta_purchases", 0) or 0)
+        campaign.meta_purchase_value = float(c.get("meta_purchase_value", 0.0) or 0.0)
         created_campaigns.append(campaign)
 
         # --- Synchronize to Expenses Module ---
