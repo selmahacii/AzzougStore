@@ -84,9 +84,25 @@ _ACTIVE_CALLBACK_STATES = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "
 
 
 def _extract_terminal_status(parcel: dict) -> str | None:
-    """Derive DELIVERED/RETURNED from a Noest tracking payload, else None."""
+    """
+    Derive DELIVERED/RETURNED from a Noest tracking payload, else None.
+
+    Shared by BOTH sync paths — the intelligent poll above (payload nested
+    under "OrderInfo", batch response from /trackings/info) AND the
+    real-time webhook (flat body straight from Noest's push notification,
+    see app.api.carriers.noest.webhook). Before this was shared, the webhook
+    used its own much thinner two-keyword map ("livré"/"retourné" only) and
+    silently missed every event_key-style return event
+    (livraison_echoue_recu, colis_retour_transmit_to_partner, etc.) — those
+    orders sat SHIPPED until the next 3-minute poll caught up, instead of
+    updating the instant Noest reported the return.
+    """
     info = parcel.get("OrderInfo") or {}
-    raw = (info.get("statut") or info.get("status") or "").strip().lower()
+    raw = (
+        info.get("statut") or info.get("status")
+        or parcel.get("statut") or parcel.get("status") or parcel.get("etat")
+        or ""
+    ).strip().lower()
     if not raw:
         activity = parcel.get("activity") or []
         if activity:

@@ -462,18 +462,17 @@ async def webhook(request: Request, db: Session = Depends(get_db)) -> Any:
     except Exception:
         raise HTTPException(400, "Invalid JSON")
 
-    STATUS_MAP = {
-        "livré":    "DELIVERED",
-        "livre":    "DELIVERED",
-        "retourné": "RETURNED",
-        "retourne": "RETURNED",
-        "en route": "SHIPPED",
-        "collecté": "SHIPPED",
-    }
+    # Uses the SAME canonical NOEST-wording map as the polling sync
+    # (app.services.noest_sync._TERMINAL_MAP) — covers every return-related
+    # event_key Noest can send (livraison_echoue_recu,
+    # colis_retour_transmit_to_partner, etc.), not just the two French
+    # keywords this used to hardcode locally. Without this, most real-world
+    # return notifications from Noest never matched here and the order only
+    # updated on the next 3-minute poll instead of instantly.
+    from app.services.noest_sync import _extract_terminal_status
 
     tracking    = body.get("tracking") or body.get("tracking_id") or body.get("barcode") or body.get("id")
-    status_raw  = (body.get("statut") or body.get("status") or body.get("etat") or "").lower()
-    new_status  = STATUS_MAP.get(status_raw)
+    new_status  = _extract_terminal_status(body)
 
     if tracking and new_status:
         order = db.query(Order).filter(Order.tracking_number == tracking, Order.is_deleted == False).first()
