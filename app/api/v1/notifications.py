@@ -22,7 +22,14 @@ router = APIRouter()
 ADMIN_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER")
 
 
-def _visible(query, user: User):
+def _visible(db: Session, user: User):
+    # Notification visibility is purely user-based (own + admin broadcasts).
+    # Bypass the SELECT tenant auto-filter: it adds store_id == X-Store-Id,
+    # which silently dropped every notification with store_id NULL (payday
+    # reminders SALARY_DUE / EMPLOYEE_PAYDAY, broadcasts…) and every
+    # notification belonging to another of the user's assigned stores.
+    db.info["skip_tenant_isolation"] = True
+    query = db.query(Notification)
     if user.role in ADMIN_ROLES:
         return query.filter(or_(Notification.user_id == user.id, Notification.user_id.is_(None)))
     return query.filter(Notification.user_id == user.id)
@@ -50,11 +57,11 @@ def list_notifications(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    base = _visible(db.query(Notification), current_user)
+    base = _visible(db, current_user)
     if unread_only:
         base = base.filter(Notification.is_read == False)
     items = base.order_by(Notification.created_at.desc()).limit(limit).all()
-    unread = _visible(db.query(Notification), current_user).filter(Notification.is_read == False).count()
+    unread = _visible(db, current_user).filter(Notification.is_read == False).count()
     return {"success": True, "data": [_serialize(n) for n in items], "unread": unread}
 
 
@@ -64,7 +71,7 @@ def mark_read(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    n = _visible(db.query(Notification), current_user).filter(Notification.id == id).first()
+    n = _visible(db, current_user).filter(Notification.id == id).first()
     if not n:
         raise HTTPException(status_code=404, detail="Notification introuvable.")
     n.is_read = True
@@ -78,7 +85,7 @@ def mark_all_read(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     updated = (
-        _visible(db.query(Notification), current_user)
+        _visible(db, current_user)
         .filter(Notification.is_read == False)
         .update({Notification.is_read: True}, synchronize_session=False)
     )
