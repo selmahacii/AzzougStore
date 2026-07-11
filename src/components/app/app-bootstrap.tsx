@@ -10,6 +10,7 @@ import { StorefrontApp } from './storefront-app';
 import { AdminApp } from './admin-app';
 import { AdminAuthPage } from '@/components/admin/admin-auth-page';
 import { ThemeInjector } from './theme-injector';
+import { BuildVersionWatcher } from './build-version-watcher';
 
 export function AppBootstrap() {
   const [isReady, setIsReady] = useState(false);
@@ -181,7 +182,7 @@ export function AppBootstrap() {
       {appView === 'storefront' ? (
         <StorefrontApp />
       ) : (
-        (isAuthenticated && isStaff) ? <AdminApp /> : <AdminAuthPage />
+        (isAuthenticated && isStaff) ? <><BuildVersionWatcher /><AdminApp /></> : <AdminAuthPage />
       )}
     </ErrorBoundary>
   );
