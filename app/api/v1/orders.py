@@ -133,6 +133,25 @@ def _assert_order_access(order: Order, current_user: User) -> None:
             raise PermissionError(message="Accès refusé : cette livraison ne vous est pas assignée.")
 
 
+def _sync_item_images_from_product(orders) -> None:
+    """
+    Order items store image_url as a one-time snapshot taken when the item
+    was added (see OrderItem model comment). Left as-is, replacing a
+    product's photo in the admin never reflects on ANY existing order —
+    every dashboard (admin, confirmatrice, livreur) keeps showing the old or
+    dead photo forever, which looks like a broken-sync bug even after the
+    photo is fixed. Overriding with the live product.main_image at read time
+    (in-memory only, never committed) makes every photo update visible
+    everywhere immediately, while still falling back to the snapshot for
+    items whose product was deleted.
+    """
+    for order in orders:
+        for item in (order.items or []):
+            product = getattr(item, "product", None)
+            if product is not None and getattr(product, "main_image", None):
+                item.image_url = product.main_image
+
+
 @router.get("/check-duplicate")
 def check_duplicate(
     request: Request,
@@ -677,7 +696,7 @@ def list_orders(
     skip = (page - 1) * pageSize
     
     final_query = query.options(
-            joinedload(Order.items),
+            joinedload(Order.items).joinedload(OrderItem.product),
             joinedload(Order.assignee),
             joinedload(Order.livreur),
             joinedload(Order.customer),
@@ -739,6 +758,24 @@ def list_orders(
         )
 
     orders = final_query.offset(skip).limit(pageSize).all()
+    _sync_item_images_from_product(orders)
+
+    # Attach a per-order event count so the UI can show "🕘 N événements" right
+    # in the list without opening the detail drawer for every order — one
+    # grouped query for the whole page, not one query per row. Works for
+    # orders created before this feature too: OrderEvent has always been
+    # populated on every status change (_log_event), only the visibility was
+    # missing. Plain attribute set on the ORM instance; OrderRead.events_count
+    # reads it via from_attributes just like any real column.
+    if orders:
+        _counts = dict(
+            db.query(OrderEvent.order_id, sqlfunc.count(OrderEvent.id))
+            .filter(OrderEvent.order_id.in_([o.id for o in orders]))
+            .group_by(OrderEvent.order_id)
+            .all()
+        )
+        for o in orders:
+            o.events_count = _counts.get(o.id, 0)  # type: ignore[attr-defined]
 
     return {
         "success": True,
@@ -1128,6 +1165,7 @@ def get_order(
         raise OrderNotFoundError()
 
     _assert_order_access(order, current_user)
+    _sync_item_images_from_product([order])
 
     # Attach merged duplicates for the duplication-history panel
     children = db.query(Order).filter(

@@ -138,6 +138,7 @@ class OrderRead(BaseModel):
     source:          Optional[str] = None
     notes:           Optional[str] = None
     internal_notes:  Optional[str] = None
+    events_count:    Optional[int] = None  # attached in list_orders — one grouped query per page
     created_at:      datetime
     updated_at:      Optional[datetime] = None
     tracking_number: Optional[str] = None

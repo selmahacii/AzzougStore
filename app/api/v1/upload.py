@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 import mimetypes
 import io
@@ -117,6 +118,31 @@ def _destroy_old_cloudinary_asset(old_url: Optional[str], resource_type: str = "
         logger.warning("Nettoyage de l'ancienne image Cloudinary échoué pour %s: %s", old_url, exc)
 
 
+def _upload_to_cloudinary_with_retry(
+    content: bytes, resource_type: str = "image", folder: str = "azzougshop/products", attempts: int = 3
+) -> dict:
+    """
+    Cloudinary upload with short-backoff retries. Most Cloudinary failures seen
+    in production here are transient network blips, not permanent outages —
+    without retrying, a single blip permanently drops the image to this
+    Space's ephemeral local disk, which is then wiped on the next redeploy
+    before the background migration sweep (every 7 min) can catch it. Retrying
+    a few times at upload-time closes that loss window instead of relying on
+    the sweep to win a race it can lose.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(attempts):
+        try:
+            return cloudinary.uploader.upload(
+                io.BytesIO(content), folder=folder, resource_type=resource_type
+            )
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+    raise last_exc
+
+
 @router.get("/storage-status", response_model=dict)
 def storage_status(current_user: Any = Depends(deps.get_current_active_user)) -> dict:
     """
@@ -204,11 +230,7 @@ async def upload_image(
     cloudinary_error = None
     if _CLOUDINARY_OK:
         try:
-            upload_result = cloudinary.uploader.upload(
-                io.BytesIO(content),
-                folder="azzougshop/products",
-                resource_type="image"
-            )
+            upload_result = _upload_to_cloudinary_with_retry(content, resource_type="image")
             url = upload_result.get("secure_url") or upload_result.get("url")
             _destroy_old_cloudinary_asset(old_url, resource_type="image")
             return {
@@ -220,7 +242,7 @@ async def upload_image(
             }
         except Exception as e:
             cloudinary_error = str(e)
-            print(f"WARNING: Cloudinary upload failed: {cloudinary_error}. Falling back to local storage.")
+            logger.warning("Upload Cloudinary échoué après plusieurs tentatives: %s. Repli sur stockage local.", cloudinary_error)
 
     # ── Determine extension ───────────────────────────────────
     ext = mimetypes.guess_extension(content_type) or ""
@@ -284,10 +306,8 @@ async def upload_media(
     cloudinary_error = None
     if _CLOUDINARY_OK:
         try:
-            upload_result = cloudinary.uploader.upload(
-                io.BytesIO(content),
-                folder="azzougshop/media",
-                resource_type="video" if is_video else "image"
+            upload_result = _upload_to_cloudinary_with_retry(
+                content, resource_type="video" if is_video else "image", folder="azzougshop/media"
             )
             url = upload_result.get("secure_url") or upload_result.get("url")
             _destroy_old_cloudinary_asset(old_url, resource_type="video" if is_video else "image")
@@ -301,7 +321,7 @@ async def upload_media(
             }
         except Exception as e:
             cloudinary_error = str(e)
-            print(f"WARNING: Cloudinary upload failed: {cloudinary_error}. Falling back to local storage.")
+            logger.warning("Upload Cloudinary échoué après plusieurs tentatives: %s. Repli sur stockage local.", cloudinary_error)
 
     video_ext_map = {
         "video/mp4": ".mp4",
