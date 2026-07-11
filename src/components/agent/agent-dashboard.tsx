@@ -1380,16 +1380,18 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `&end_date=${encodeURIComponent(d.toISOString())}`;
       }
-      // allStores: without it, the X-Store-Id tenant header silently restricts
-      // the query to the single active store server-side — "Toutes les boutiques"
-      // never actually returned the other assigned stores' orders. RBAC in
-      // list_orders still scopes a CONFIRMATEUR to her assigned stores/products.
+      // allStores: ALWAYS bypass the X-Store-Id tenant header on agent list
+      // queries. The header follows the Zustand "active store", which can
+      // desync from the store the agent is browsing (default store ≠ selected
+      // store) — the server then intersects everything with the wrong store
+      // and her real orders vanish (observed live: store_id=trustshop with
+      // X-Store-Id=azconfort → total=0). The explicit store_id param + the
+      // CONFIRMATEUR RBAC in list_orders do all the real scoping server-side.
       console.log('[AgentDebug] requête commandes →', url, {
         modeToutesBoutiques: showAllStores,
         boutiqueActive: activeStore?.name,
-        headerEnvoye: showAllStores ? 'SUPER_ADMIN_MODE' : activeStore?.id,
       });
-      return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: showAllStores });
+      return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     placeholderData: (prev) => prev,
@@ -1404,7 +1406,9 @@ export default function AgentDashboard() {
       if (!showAllStores && activeStore?.id) {
         url += `?store_id=${activeStore.id}`;
       }
-      return apiFetch<any>(url, { allStores: showAllStores });
+      // Same rationale as ordersQuery: never let the active-store tenant
+      // header intersect the results — explicit params + RBAC do the scoping.
+      return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id)
   });
@@ -1424,7 +1428,9 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `end_date=${encodeURIComponent(d.toISOString())}&`;
       }
-      return apiFetch<any>(url, { allStores: showAllStores });
+      // Same rationale as ordersQuery: never let the active-store tenant
+      // header intersect the results — explicit params + RBAC do the scoping.
+      return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     refetchInterval: 15000
@@ -1443,12 +1449,15 @@ export default function AgentDashboard() {
   const isDuplicatePhone = (phone: string) => (phoneCounts[phone] ?? 0) > 1;
 
   // Stores this agent is actually responsible for — nothing else is shown to her.
-  // Scope SPECIFIC: her fully-assigned stores, plus any store discovered in her
-  // visible orders (covers products assigned to her in OTHER stores). Scope ALL
-  // (or non-confirmateur roles): every store.
+  // Scope SPECIFIC: her fully-assigned stores + stores discovered in her visible
+  // orders (covers products assigned in OTHER stores). Scope ALL with assigned
+  // products = product-specialist: only the stores her orders actually come from.
+  // Scope ALL without products (or non-confirmateur roles): every store.
   const myStores = useMemo(() => {
-    if (user?.role !== 'CONFIRMATEUR' || user?.assigned_store_scope !== 'SPECIFIC') return allStores;
-    const ids = new Set<string>(user?.assigned_store_ids ?? []);
+    const nbProducts = (user?.assigned_product_ids ?? []).length;
+    const isScoped = user?.role === 'CONFIRMATEUR' && (user?.assigned_store_scope === 'SPECIFIC' || nbProducts > 0);
+    if (!isScoped) return allStores;
+    const ids = new Set<string>(user?.assigned_store_scope === 'SPECIFIC' ? (user?.assigned_store_ids ?? []) : []);
     for (const o of (ordersQuery.data?.data ?? []) as any[]) {
       if (o.store_id) ids.add(o.store_id);
     }
