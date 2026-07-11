@@ -39,13 +39,27 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = (time.monotonic() - start) * 1000
         user_id = request.headers.get("x-user-id", "-")
+        # host + client_ip: who actually reached the server and via which
+        # domain. A user who "can't access" whose device is stuck on stale DNS
+        # (still pointing at the old Namecheap parking IP) never gets a TCP
+        # connection to us at all — nothing appears in these logs for them.
+        # If her login attempt IS visible here, the problem is downstream of
+        # DNS (auth/network from here on); if it's absent, it's DNS/network
+        # on her device/carrier, not this server.
+        host = request.headers.get("host", "-")
+        client_ip = (
+            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            or (request.client.host if request.client else "-")
+        )
         access_logger.info(
-            "%s %s %d %.1fms user=%s req_id=%s",
+            "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s",
             request.method,
             request.url.path,
             response.status_code,
             duration_ms,
             user_id,
+            host,
+            client_ip,
             request_id,
         )
         # Propagate correlation ID back to client

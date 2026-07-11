@@ -210,6 +210,7 @@ def login_json(
         raise ValidationError(message="Email et mot de passe sont requis.")
 
     ip = _extract_ip(request)
+    host = request.headers.get("host", "-")
 
     # ── Brute-force check (Disabled) ─────────────────────────────
     # rate = check_auth_brute_force(ip, email)
@@ -223,7 +224,7 @@ def login_json(
     # ── Authenticate ─────────────────────────────────────────────
     user = user_service.authenticate(db, email=email, password=password)
     if not user:
-        logger.warning("Failed login attempt: ip=%s email=%s", ip, email)
+        logger.warning("Failed login attempt: ip=%s host=%s email=%s", ip, host, email)
         raise InvalidCredentialsError()
     if not user.is_active:
         raise AuthenticationError(
@@ -254,7 +255,7 @@ def login_json(
     # Clear brute-force counters (Disabled)
     # clear_auth_rate_limit(ip, email)
 
-    logger.info("Successful login: email=%s role=%s ip=%s", email, user.role, ip)
+    logger.info("Successful login: email=%s role=%s ip=%s host=%s", email, user.role, ip, host)
     return {"success": True, "data": {"user": _build_user_payload(user)}}
 
 
