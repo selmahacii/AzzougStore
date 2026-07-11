@@ -815,6 +815,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 2307, name: "الشرفة", nameAscii: "Cheurfa" },
     { id: 2305, name: "البوني", nameAscii: "El Bouni" },
     { id: 2303, name: "الحجار", nameAscii: "El Hadjar" },
+    { id: 2304, name: "العلمة", nameAscii: "Eulma" },
     { id: 2306, name: "واد العنب", nameAscii: "Oued El Aneb" },
     { id: 2308, name: "سرايدي", nameAscii: "Seraidi" },
     { id: 2311, name: "سيدي عمار", nameAscii: "Sidi Amar" },

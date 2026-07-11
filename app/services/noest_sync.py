@@ -80,6 +80,15 @@ _TERMINAL_MAP = {
     "return_dispatched_to_warehouse": "RETURNED",    # Retour transmis vers entrepôt
 }
 
+# Per NOEST's official event-key table: "annulation_dispatch_retour" and
+# "cancel_return_dispatched_to_partenaire" UNDO a return-in-progress — but
+# both contain "retour"/"return_dispatched_to_partenaire" as substrings, so
+# the naive `key in raw` check below would have wrongly classified a
+# CANCELLED return as a completed one (RETURNED). Checked before the
+# positive map — any of these appearing anywhere in the event means "ignore,
+# not terminal", regardless of what else matches.
+_CANCELLATION_MARKERS = ("annulation", "cancel_return", "canceled")
+
 _ACTIVE_CALLBACK_STATES = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"]
 
 
@@ -107,6 +116,8 @@ def _extract_terminal_status(parcel: dict) -> str | None:
         activity = parcel.get("activity") or []
         if activity:
             raw = (activity[-1].get("event_key") or activity[-1].get("event") or "").strip().lower()
+    if any(marker in raw for marker in _CANCELLATION_MARKERS):
+        return None
     for key, mapped in _TERMINAL_MAP.items():
         if key in raw:
             return mapped
