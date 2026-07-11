@@ -275,6 +275,8 @@ export default function TikTokAdsDashboard() {
           { label: 'CPM', value: formatPrice(summary.global_cpm || 0), hint: 'Coût / 1000 vues' },
           { label: 'Coût / Vente', value: formatPrice(summary.global_cost_per_order || 0), hint: `Taux conv. ${summary.global_conversion_rate || 0}%` },
           { label: 'Profit Net Pub', value: formatPrice(summary.global_profit || 0), hint: `Panier moyen ${formatPrice(summary.global_aov || 0)}`, highlight: (summary.global_profit || 0) >= 0 },
+          { label: 'Conversions déclarées par TikTok', value: (summary.global_tiktok_conversions || 0).toLocaleString(), hint: 'Attribution TikTok (pixel/events)' },
+          { label: 'Écart vs nos commandes', value: `${(summary.global_conversion_gap || 0) > 0 ? '+' : ''}${summary.global_conversion_gap || 0}`, hint: 'Fenêtres d\'attribution différentes', highlight: (summary.global_conversion_gap || 0) === 0 },
         ].map((m: any) => (
           <div key={m.label} className="bg-white p-3 rounded-2xl border shadow-sm">
             <p className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">{m.label}</p>
@@ -367,7 +369,16 @@ export default function TikTokAdsDashboard() {
                     {isExpanded && (
                       <tr className="bg-slate-50/60">
                         <td colSpan={7} className="px-8 py-5">
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+                            <div className="bg-white rounded-xl p-3 border-2 border-slate-300">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Conversions déclarées par TikTok</p>
+                              <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{c.tiktok_conversions || 0}</p>
+                              {c.conversion_gap !== 0 && (
+                                <p className={cn('text-[9px] font-bold mt-0.5', c.conversion_gap > 0 ? 'text-[#0984E3]' : 'text-[#E17055]')}>
+                                  {c.conversion_gap > 0 ? '+' : ''}{c.conversion_gap} vs nos commandes
+                                </p>
+                              )}
+                            </div>
                             <div className="bg-white rounded-xl p-3 border border-slate-100">
                               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Impressions</p>
                               <p className="text-sm font-black text-slate-700 mt-1 tabular-nums">{(c.impressions || 0).toLocaleString()}</p>

@@ -121,6 +121,14 @@ class TikTokAdsCampaign(Base):
     impressions = Column(Integer, default=0)
     clicks = Column(Integer, default=0)
     reach = Column(Integer, default=0)
+    # TikTok's OWN attributed conversion count/value, pulled from the Reporting
+    # API's "conversion"/"total_complete_payment_rate" style metrics — kept
+    # side-by-side with orders_count/revenue (our own utm_campaign-matched
+    # order table) for the same reason as Meta's meta_purchases/
+    # meta_purchase_value: different attribution methodology, will never be
+    # bit-for-bit identical, shown side-by-side instead of faked into one.
+    tiktok_conversions = Column(Integer, default=0, nullable=True)
+    tiktok_conversion_value = Column(Float, default=0.0, nullable=True)
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
     date_start = Column(DateTime, nullable=True)
     date_end = Column(DateTime, nullable=True)

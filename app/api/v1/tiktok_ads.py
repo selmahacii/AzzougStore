@@ -169,9 +169,22 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
     if is_simulated:
         campaigns_data = _simulated_campaigns(store_id)
     else:
-        try:
+        _BASE_METRICS = ["spend", "impressions", "clicks", "reach", "campaign_name"]
+        # TikTok's OWN attributed conversions (their pixel/events-API
+        # attribution) — never requested before, so the dashboard only ever
+        # showed our own utm_campaign-matched order count with no way to see
+        # TikTok's number or the gap between them. Requested as a SEPARATE,
+        # optional attempt: some ad accounts reject unknown/unsupported
+        # metric names with a non-zero `code` for the WHOLE call, which
+        # would otherwise wipe out spend/impressions/clicks/reach too and
+        # silently fall back to mock data — worse than just missing the
+        # conversion numbers.
+        _WITH_CONVERSIONS = _BASE_METRICS + ["conversion", "cost_per_conversion"]
+
+        def _fetch_report(metrics: list[str]):
             end = datetime.now(timezone.utc).date()
             start = end - timedelta(days=30)
+            import json as _json
             resp = httpx.get(
                 f"{TIKTOK_API_BASE}/report/integrated/get/",
                 params={
@@ -179,7 +192,7 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                     "report_type": "BASIC",
                     "data_level": "AUCTION_CAMPAIGN",
                     "dimensions": '["campaign_id"]',
-                    "metrics": '["spend","impressions","clicks","reach","campaign_name"]',
+                    "metrics": _json.dumps(metrics),
                     "start_date": start.isoformat(),
                     "end_date": end.isoformat(),
                     "page_size": 100,
@@ -187,7 +200,19 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                 headers={"Access-Token": config.access_token},
                 timeout=30.0,
             )
-            data = resp.json()
+            return resp.json()
+
+        try:
+            data = _fetch_report(_WITH_CONVERSIONS)
+            has_conversions = True
+            if data.get("code") != 0:
+                logger.warning(
+                    f"[TikTok Ads Sync] Métriques de conversion rejetées ({data.get('message')}), "
+                    f"nouvel essai sans elles."
+                )
+                data = _fetch_report(_BASE_METRICS)
+                has_conversions = False
+
             if data.get("code") != 0:
                 logger.warning(f"[TikTok Ads Sync] Erreur report: {data.get('message')}")
                 is_simulated = True
@@ -197,6 +222,7 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                 for row in data.get("data", {}).get("list", []):
                     dims = row.get("dimensions", {})
                     metrics = row.get("metrics", {})
+                    conversions = int(float(metrics.get("conversion", 0) or 0)) if has_conversions else 0
                     campaigns_data.append({
                         "campaign_id": dims.get("campaign_id"),
                         "campaign_name": metrics.get("campaign_name", "Sans nom"),
@@ -205,6 +231,12 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
                         "impressions": int(float(metrics.get("impressions", 0) or 0)),
                         "clicks": int(float(metrics.get("clicks", 0) or 0)),
                         "reach": int(float(metrics.get("reach", 0) or 0)),
+                        "tiktok_conversions": conversions,
+                        # No reliable revenue-value metric requested (only
+                        # cost_per_conversion exists, which reconstructs SPEND
+                        # not revenue — labeling that "value" would mislead).
+                        # Left at 0 until a confirmed value metric is added.
+                        "tiktok_conversion_value": 0.0,
                     })
                 logger.info(f"[TikTok Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées.")
         except Exception as e:
@@ -259,6 +291,8 @@ def sync_tiktok_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
         campaign.impressions = int(c.get("impressions", 0))
         campaign.clicks = int(c.get("clicks", 0))
         campaign.reach = int(c.get("reach", 0))
+        campaign.tiktok_conversions = int(c.get("tiktok_conversions", 0) or 0)
+        campaign.tiktok_conversion_value = float(c.get("tiktok_conversion_value", 0.0) or 0.0)
         synced += 1
 
     db.commit()
@@ -281,6 +315,11 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
     orders = db.query(Order).filter(
         Order.store_id == store_id,
         Order.status != "CANCELLED",
+        # MERGED = a same-phone duplicate submission auto-fused into its
+        # parent order. Without this exclusion a duplicate is counted TWICE
+        # (once as itself, once via its parent) — same fix already applied
+        # to Meta Ads' equivalent query.
+        Order.status != "MERGED",
         Order.is_deleted == False,
     ).all()
 
@@ -288,6 +327,7 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
     global_spend = 0.0
     global_revenue = 0.0
     global_orders_count = 0
+    global_tiktok_conversions = 0
 
     for camp in campaigns:
         camp_orders = [
@@ -314,9 +354,15 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
         aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
         profit = round(revenue - camp.spend, 2)
 
+        # TikTok's OWN reported conversions — deliberately separate from
+        # orders_count/revenue above (see Meta Ads' identical pattern).
+        tiktok_conversions = camp.tiktok_conversions or 0
+        conversion_gap = orders_count - tiktok_conversions
+
         global_spend += camp.spend
         global_revenue += revenue
         global_orders_count += orders_count
+        global_tiktok_conversions += tiktok_conversions
 
         data.append({
             "id": camp.id,
@@ -341,6 +387,8 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
             "conversion_rate": conversion_rate,
             "aov": aov,
             "profit": profit,
+            "tiktok_conversions": tiktok_conversions,
+            "conversion_gap": conversion_gap,
             "date_start": camp.date_start.isoformat() if camp.date_start else None,
             "date_end": camp.date_end.isoformat() if camp.date_end else None,
         })
@@ -373,5 +421,7 @@ def list_tiktok_campaigns(store_id: str = Query(...), db: Session = Depends(get_
             "global_conversion_rate": round(global_orders_count / total_clicks * 100, 3) if total_clicks > 0 else 0.0,
             "global_aov": round(global_revenue / global_orders_count, 2) if global_orders_count > 0 else 0.0,
             "global_profit": round(global_revenue - global_spend, 2),
+            "global_tiktok_conversions": global_tiktok_conversions,
+            "global_conversion_gap": global_orders_count - global_tiktok_conversions,
         },
     }
