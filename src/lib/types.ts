@@ -210,6 +210,7 @@ export interface Order {
   delivery_fee: number;
   delivery_type?: string | null;
   notes: string | null;
+  internal_notes?: string | null;
   source: string | null;
   customer_id: string | null;
   customer_tier: string | null;

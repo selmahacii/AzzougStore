@@ -341,6 +341,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     carrier_id: order.carrier_id || '',
     delivery_fee: order.delivery_fee || 0,
     notes: order.notes || '',
+    internal_notes: order.internal_notes || '',
     items: order.items ? order.items.map(item => ({
       id: item.id,
       product_id: item.product_id,
@@ -400,6 +401,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       carrier_id: order.carrier_id || '',
       delivery_fee: order.delivery_fee || 0,
       notes: order.notes || '',
+    internal_notes: order.internal_notes || '',
       items: order.items ? order.items.map(item => ({
         id: item.id,
         product_id: item.product_id,
@@ -708,11 +710,20 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500">Remarque (transmise à Noest lors de l'expédition)</label>
-                  <textarea 
-                    value={editData.notes} 
-                    onChange={e => setEditData({...editData, notes: e.target.value})} 
+                  <textarea
+                    value={editData.notes}
+                    onChange={e => setEditData({...editData, notes: e.target.value})}
                     className="w-full text-xs p-2 border rounded bg-white min-h-[60px]"
                     placeholder="Saisir une remarque pour cette commande..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-amber-700">🔒 Notes internes (jamais envoyées au transporteur)</label>
+                  <textarea
+                    value={editData.internal_notes}
+                    onChange={e => setEditData({...editData, internal_notes: e.target.value})}
+                    className="w-full text-xs p-2 border border-amber-200 bg-amber-50/40 rounded min-h-[60px]"
+                    placeholder="Ex: client difficile, rappeler après 18h — usage équipe uniquement"
                   />
                 </div>
 
@@ -2086,6 +2097,11 @@ export default function AgentDashboard() {
                                 {order.notes && (
                                   <p className="text-[9px] text-amber-700 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
                                     Note: {order.notes}
+                                  </p>
+                                )}
+                                {order.internal_notes && (
+                                  <p className="text-[9px] text-purple-700 bg-purple-50/70 border border-purple-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
+                                    🔒 Interne: {order.internal_notes}
                                   </p>
                                 )}
                                 {/* Items and variants summary */}
