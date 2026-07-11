@@ -392,16 +392,25 @@ def _auto_assign(
     """
     Pick the best confirmateur for a new order.
 
-    Eligibility rules:
+    Eligibility rules — UNION semantics, mirroring _confirmateur_scope_criterion
+    in orders.py so an agent is auto-assigned exactly what she can see:
       - Base: active role (CONFIRMATEUR | AGENT | AGENT_MANAGER), is_active == True
-      - Two assignment modes for each agent:
-        A) Agent has assigned_product_ids → matches any store's order that contains
-           at least one of their products (cross-store product specialist)
-        B) Agent has no assigned_product_ids → only matches orders from their own
-           employee_store_id, respecting assigned_store_scope/ids for further filtering
+      - Product match: order contains one of the agent's assigned_product_ids
+        (cross-store product specialist), OR
+      - Store match: the order's store is fully hers — employee_store_id,
+        or scope SPECIFIC with the store in assigned_store_ids, or scope ALL
+        without any product restriction.
+    Previously an agent WITH assigned_product_ids was strictly a specialist and
+    never received orders from her fully-assigned stores — a confirmatrice
+    responsible for two stores + some products silently stopped receiving one
+    store's orders entirely.
     """
     if not force:
         if not store.assignment_active or store.assignment_logic == "MANUAL":
+            logger.info(
+                "[AutoAssign] store=%s (%s) SKIPPED: assignment_active=%s, logic=%s — order stays unassigned",
+                store.id, getattr(store, "name", "?"), store.assignment_active, store.assignment_logic,
+            )
             return None
 
     order_pid_set: set = set(order_product_ids) if order_product_ids else set()
@@ -425,44 +434,51 @@ def _auto_assign(
 
         raw_products = getattr(agent, "assigned_product_ids", None)
         agent_product_ids: list = raw_products if isinstance(raw_products, list) else []
+        scope = getattr(agent, "assigned_store_scope", "ALL")
+        raw_stores = getattr(agent, "assigned_store_ids", None)
+        agent_store_ids: list = raw_stores if isinstance(raw_stores, list) else []
 
-        if agent_product_ids:
-            # Product-specialist: eligible for this order if products overlap
-            if order_pid_set and order_pid_set.intersection(agent_product_ids):
-                logger.info(f"Agent {agent.id} (specialist) matches products for order")
-                specialists.append(agent)
-            else:
-                logger.info(f"Agent {agent.id} (specialist) rejected: no product overlap")
-            # strictly a specialist, they do not fall back to store check
-        else:
-            # Store-based agent: must be authorized for this store
-            is_authorized = False
-            
-            # Primary store matches
-            if getattr(agent, "employee_store_id", None) == store.id:
-                is_authorized = True
-            
-            # Or scope matches
-            scope = getattr(agent, "assigned_store_scope", "ALL")
-            if scope == "ALL":
-                is_authorized = True
-            elif scope == "SPECIFIC":
-                raw_stores = getattr(agent, "assigned_store_ids", None)
-                store_ids: list = raw_stores if isinstance(raw_stores, list) else []
-                if store.id in store_ids:
-                    is_authorized = True
-                    
-            if is_authorized:
-                logger.info(f"Agent {agent.id} (store-based) matches store {store.id}")
-                store_agents.append(agent)
-            else:
-                logger.info(f"Agent {agent.id} (store-based) rejected: unauthorized for store {store.id}")
+        # Product side of the union
+        product_match = bool(order_pid_set and agent_product_ids and order_pid_set.intersection(agent_product_ids))
+
+        # Store side of the union — the order's store is FULLY hers
+        store_match = False
+        if getattr(agent, "employee_store_id", None) == store.id:
+            store_match = True
+        elif scope == "SPECIFIC":
+            store_match = store.id in agent_store_ids
+        elif scope == "ALL":
+            # ALL + products = product-specialist across all stores (no store side);
+            # ALL without products = responsible for every store.
+            store_match = not agent_product_ids
+
+        if product_match:
+            specialists.append(agent)
+        elif store_match:
+            store_agents.append(agent)
+
+        logger.info(
+            "[AutoAssign] eval agent=%s scope=%s assigned_stores=%s nb_produits=%d employee_store=%s → product_match=%s store_match=%s verdict=%s (order store=%s)",
+            getattr(agent, "email", agent.id), scope, agent_store_ids, len(agent_product_ids),
+            getattr(agent, "employee_store_id", None), product_match, store_match,
+            "SPECIALIST" if product_match else ("STORE" if store_match else "REJETÉ"),
+            store.id,
+        )
 
     # Prioritize specialists if any match
     eligible = specialists if specialists else store_agents
 
     if not eligible:
+        logger.info(
+            "[AutoAssign] store=%s (%s): AUCUN agent éligible parmi %d actifs — commande non assignée",
+            store.id, getattr(store, "name", "?"), len(all_agents),
+        )
         return None
+    logger.info(
+        "[AutoAssign] store=%s: %d spécialiste(s), %d agent(s) boutique → pool=%s, logique=%s",
+        store.id, len(specialists), len(store_agents),
+        "SPECIALISTES" if specialists else "BOUTIQUE", store.assignment_logic,
+    )
 
     logic = store.assignment_logic
     if logic == "MANUAL" or not logic:
@@ -501,6 +517,7 @@ def _auto_assign(
             )
             loads.append((count, agent.id))
         loads.sort()
+        logger.info("[AutoAssign] LEAST_LOADED → agent=%s (charges=%s)", loads[0][1], loads)
         return loads[0][1]
 
     return None

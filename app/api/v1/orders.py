@@ -673,6 +673,35 @@ def list_orders(
     
     logger.debug(f"[Orders] Query result: store_id={store_id!r}, total={total}, page={page}")
 
+    # Temporary diagnostic: full visibility trace for confirmatrices — logs
+    # exactly what she requested, her configured scope, the tenant header the
+    # frontend sent, and how many orders the final query returns PER STORE.
+    if current_user is not None and getattr(current_user, "role", None) == "CONFIRMATEUR":
+        try:
+            from sqlalchemy import func as _fn
+            _per_store = {
+                (sid or "sans-boutique"): cnt
+                for sid, cnt in final_query.order_by(None)
+                .with_entities(Order.store_id, _fn.count(Order.id))
+                .group_by(Order.store_id)
+                .all()
+            }
+        except Exception as _exc:  # never let the diagnostic break the endpoint
+            _per_store = {"erreur": str(_exc)[:120]}
+        try:
+            from app.core.tenant import tenant_store_id as _tenant_ctx
+            _tenant_val = _tenant_ctx.get()
+        except Exception:
+            _tenant_val = "?"
+        logger.info(
+            "[ConfirmatriceDebug] user=%s | config: scope=%s stores=%s nb_produits=%s | requête: store_id=%s status=%s page=%s | X-Store-Id=%s | résultat: total=%s par_boutique=%s",
+            getattr(current_user, "email", "?"),
+            getattr(current_user, "assigned_store_scope", None),
+            getattr(current_user, "assigned_store_ids", None),
+            len(getattr(current_user, "assigned_product_ids", None) or []),
+            store_id, status, page, _tenant_val, total, _per_store,
+        )
+
     orders = final_query.offset(skip).limit(pageSize).all()
 
     return {
