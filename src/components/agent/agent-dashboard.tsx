@@ -1384,6 +1384,11 @@ export default function AgentDashboard() {
       // the query to the single active store server-side — "Toutes les boutiques"
       // never actually returned the other assigned stores' orders. RBAC in
       // list_orders still scopes a CONFIRMATEUR to her assigned stores/products.
+      console.log('[AgentDebug] requête commandes →', url, {
+        modeToutesBoutiques: showAllStores,
+        boutiqueActive: activeStore?.name,
+        headerEnvoye: showAllStores ? 'SUPER_ADMIN_MODE' : activeStore?.id,
+      });
       return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: showAllStores });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
@@ -1450,6 +1455,29 @@ export default function AgentDashboard() {
     const filtered = allStores.filter(s => ids.has(s.id));
     return filtered.length > 0 ? filtered : allStores;
   }, [user, allStores, ordersQuery.data]);
+
+  // Diagnostic console (F12 → Console) : config réelle de l'agent + ce que le
+  // serveur renvoie, ventilé par boutique — miroir du [ConfirmatriceDebug] backend.
+  useEffect(() => {
+    const d: any = ordersQuery.data;
+    if (!d?.data) return;
+    const parBoutique: Record<string, number> = {};
+    for (const o of d.data as any[]) {
+      const k = o.store?.name || o.store_id || 'sans-boutique';
+      parBoutique[k] = (parBoutique[k] || 0) + 1;
+    }
+    console.log('[AgentDebug] réponse commandes ←', {
+      utilisateur: user?.email,
+      config: {
+        scope: user?.assigned_store_scope,
+        boutiquesAssignees: user?.assigned_store_ids,
+        nbProduitsAssignes: (user?.assigned_product_ids ?? []).length,
+      },
+      vue: { modeToutesBoutiques: showAllStores, boutiqueActive: activeStore?.name, filtre: currentFilter, page },
+      resultat: { total: d.total, totalPages: d.totalPages, surCettePage: d.data.length, parBoutique },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordersQuery.data]);
 
 
   if (currentFilter === 'ALL') {
