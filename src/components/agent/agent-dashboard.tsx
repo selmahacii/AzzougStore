@@ -496,6 +496,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           delivery_type: serverData.delivery_type ?? order.delivery_type,
           carrier_id: serverData.carrier_id ?? order.carrier_id,
           delivery_fee: serverData.delivery_fee ?? order.delivery_fee,
+          notes: serverData.notes ?? order.notes,
+          internal_notes: serverData.internal_notes ?? order.internal_notes,
           items: serverData.items ?? order.items,
           total: serverData.total ?? order.total,
         });
@@ -511,6 +513,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           delivery_type: editData.delivery_type,
           carrier_id: editData.carrier_id || null,
           delivery_fee: editData.delivery_fee,
+          notes: editData.notes,
+          internal_notes: editData.internal_notes,
           items: editData.items.map((it: any) => ({ ...it })),
           total: editData.items.reduce((acc: number, item: any) => acc + item.quantity * item.unit_price, 0) + editData.delivery_fee
         });

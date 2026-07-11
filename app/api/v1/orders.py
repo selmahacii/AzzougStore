@@ -1531,6 +1531,8 @@ def update_order_info(
             "carrier_id": order.carrier_id,
             "delivery_fee": float(order.delivery_fee) if order.delivery_fee else 0,
             "total": float(order.total) if order.total else 0,
+            "notes": order.notes,
+            "internal_notes": order.internal_notes,
             "items": updated_items,
         }
     }

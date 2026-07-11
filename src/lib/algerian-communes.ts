@@ -1061,6 +1061,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
   ],
   "Oran": [
     { id: 3126, name: "عين البية", nameAscii: "Ain Biya" },
+    { id: 3125, name: "عين الكرمة", nameAscii: "Ain El Kerma" },
     { id: 3109, name: "عين الترك", nameAscii: "Ain Turk" },
     { id: 3106, name: "أرزيو", nameAscii: "Arzew" },
     { id: 3120, name: "بن فريحة", nameAscii: "Ben Freha" },
