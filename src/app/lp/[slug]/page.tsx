@@ -112,6 +112,12 @@ export default async function LpPage({
         .then((json) => json?.data ?? null)
         .catch(() => null)
     : null;
+  const tiktokPromiseEarly = storeIdFromMiddleware
+    ? fetch(`${backendUrl}/api/v1/tiktok-ads/config?store_id=${storeIdFromMiddleware}`, { next: { revalidate: 60 } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => json?.data ?? null)
+        .catch(() => null)
+    : null;
 
   const stores = await storesPromise;
   console.log(`[LpPage] Fetched ${stores.length} stores from backend`);
@@ -138,10 +144,15 @@ export default async function LpPage({
 
   // Reuse the early parallel fetches when the store was known upfront;
   // otherwise (localhost fallback) fetch now that storeId is resolved.
-  const [lp, metaAdsConfig] = await Promise.all([
+  const [lp, metaAdsConfig, tiktokAdsConfig] = await Promise.all([
     lpPromise ?? fetchLandingPage(slug, storeId),
     metaPromiseEarly ??
       fetch(`${backendUrl}/api/v1/meta-ads/config?store_id=${storeId}`, { next: { revalidate: 60 } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json) => json?.data ?? null)
+        .catch(() => null),
+    tiktokPromiseEarly ??
+      fetch(`${backendUrl}/api/v1/tiktok-ads/config?store_id=${storeId}`, { next: { revalidate: 60 } })
         .then((res) => (res.ok ? res.json() : null))
         .then((json) => json?.data ?? null)
         .catch(() => null),
@@ -155,7 +166,7 @@ export default async function LpPage({
   return (
     <>
       <HydrateStore initialUser={null} initialStores={stores} activeStoreSlug={matchedStore?.slug} />
-      <StorefrontIntegrations config={metaAdsConfig} />
+      <StorefrontIntegrations config={metaAdsConfig} tiktokConfig={tiktokAdsConfig} />
       {lp.template === 'dz_cod' ? (
         <DzCodRenderer data={lp} />
       ) : (

@@ -15,6 +15,7 @@ async function fetchInitialData(slug: string) {
   let initialStores: Store[] = [];
   let initialUser: User | null = null;
   let metaAdsConfig: any = null;
+  let tiktokAdsConfig: any = null;
 
   try {
     const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
@@ -55,18 +56,27 @@ async function fetchInitialData(slug: string) {
     } catch {
       // meta ads config check failed gracefully
     }
+    try {
+      const res = await fetch(`${backendUrl}/api/v1/tiktok-ads/config?store_id=${activeStore.id}`, { next: { revalidate: 10 } });
+      if (res.ok) {
+        const json = await res.json();
+        tiktokAdsConfig = json.data;
+      }
+    } catch {
+      // tiktok ads config check failed gracefully
+    }
   }
 
-  return { initialStores, initialUser, metaAdsConfig };
+  return { initialStores, initialUser, metaAdsConfig, tiktokAdsConfig };
 }
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { initialStores, initialUser, metaAdsConfig } = await fetchInitialData(slug);
+  const { initialStores, initialUser, metaAdsConfig, tiktokAdsConfig } = await fetchInitialData(slug);
 
   return (
     <>
-      <StorefrontIntegrations config={metaAdsConfig} />
+      <StorefrontIntegrations config={metaAdsConfig} tiktokConfig={tiktokAdsConfig} />
       <ThemeInjector />
       <HydrateStore initialUser={initialUser} initialStores={initialStores} activeStoreSlug={slug} />
       <Suspense fallback={null}>
