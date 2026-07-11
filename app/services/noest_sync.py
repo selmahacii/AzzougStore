@@ -350,6 +350,70 @@ def sync_cloudinary_migration() -> None:
         db.close()
 
 
+def log_relay_domain_check() -> None:
+    """
+    [DomainCheck] — diagnostic périodique : vers QUOI pointe le nom de domaine
+    du relais Meta, vu depuis CE serveur (résolveur DNS de l'hébergeur inclus).
+    Détecte explicitement le cas 'domaine suspendu / cache DNS pas encore
+    propagé' (IP de parking Namecheap 198.54.117.x) vs 'pointage Vercel OK',
+    et teste la connexion TCP:443 réelle. Ne modifie rien — log uniquement.
+    """
+    import socket
+    import time as _time
+    from urllib.parse import urlparse
+    from app.core.config import settings as _settings
+
+    relay = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
+    if not relay:
+        return
+    host = urlparse(relay).hostname
+    if not host:
+        logger.warning("[DomainCheck] META_CAPI_RELAY_URL invalide: %r", relay)
+        return
+
+    t0 = _time.monotonic()
+    try:
+        infos = socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)
+        ips = sorted({sa[0] for _f, _t, _p, _c, sa in infos})
+        dns_ms = int((_time.monotonic() - t0) * 1000)
+    except Exception as exc:
+        logger.error("[DomainCheck] host=%s ÉCHEC DNS: %s", host, exc)
+        return
+
+    def _classify(ip: str) -> str:
+        if ip.startswith("198.54.117."):
+            return "PARKING NAMECHEAP — domaine suspendu OU cache DNS pas encore propagé"
+        if ip.startswith(("64.29.17.", "216.198.79.", "76.76.21.")):
+            return "VERCEL — pointage correct"
+        return "INCONNU"
+
+    verdicts = {ip: _classify(ip) for ip in ips}
+
+    tcp_status = "?"
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        sock.connect((ips[0], 443))
+        tcp_status = "ok"
+    except Exception as exc:
+        tcp_status = f"ÉCHEC: {type(exc).__name__}: {exc}"
+    finally:
+        if sock:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+    all_ok = tcp_status == "ok" and all("VERCEL" in v for v in verdicts.values())
+    log_fn = logger.info if all_ok else logger.warning
+    log_fn(
+        "[DomainCheck] relais=%s | DNS(%sms) → %s | TCP:443=%s%s",
+        host, dns_ms, verdicts, tcp_status,
+        "" if all_ok else " — les événements Meta restent en file d'attente et partiront automatiquement dès que le pointage redevient VERCEL",
+    )
+
+
 async def background_loop() -> None:
     """Main scheduler: reminders every tick, Noest poll every N minutes."""
     if os.getenv("DISABLE_BACKGROUND_SYNC") == "1":
@@ -392,6 +456,11 @@ async def background_loop() -> None:
                 logger.error("Meta CAPI retry sweep crashed: %s", exc)
         if seconds_since_meta_sync >= META_ADS_SYNC_INTERVAL_MINUTES * 60:
             seconds_since_meta_sync = 0
+            try:
+                # DNS/TCP diagnostic first (blocking socket calls → thread)
+                await asyncio.to_thread(log_relay_domain_check)
+            except Exception as exc:
+                logger.error("[DomainCheck] crashed: %s", exc)
             try:
                 # Blocking httpx calls inside — offload to a worker thread so it
                 # can't stall the event loop (same reasoning as the CAPI sweep).
