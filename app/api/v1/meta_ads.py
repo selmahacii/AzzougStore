@@ -1847,11 +1847,13 @@ def get_catalog_feed(store_id: str = Query(...), db: Session = Depends(get_db)):
 # ─── GET /meta-ads/connectivity-test — raw network diagnostic ─────────────────
 
 @router.get("/connectivity-test", response_model=dict)
-def connectivity_test():
+def connectivity_test(target: str = Query("graph", description="graph | relay")):
     """
     Standalone network probe — runs entirely outside CAPI business logic.
-    Tests several transport paths to graph.facebook.com so we can confirm
-    exactly which layer HuggingFace (or any other host) blocks.
+    Tests several transport paths to graph.facebook.com (target=graph, default)
+    or to the host of the configured META_CAPI_RELAY_URL (target=relay) so we
+    can confirm exactly which layer HuggingFace (or any other host) blocks.
+    Only these two fixed/configured hosts can be probed — no arbitrary host.
 
     Tests performed:
       1. Raw TCP + TLS (stdlib ssl) — same path our custom transport uses
@@ -1872,6 +1874,17 @@ def connectivity_test():
     import sys
 
     TARGET_HOST = "graph.facebook.com"
+    relay_url_configured = None
+    if target == "relay":
+        from urllib.parse import urlparse
+        from app.core.config import settings as _settings_ct
+        relay_url_configured = (getattr(_settings_ct, "META_CAPI_RELAY_URL", "") or "").strip()
+        if not relay_url_configured:
+            return {"error": "META_CAPI_RELAY_URL n'est pas configurée sur ce serveur."}
+        parsed_host = urlparse(relay_url_configured).hostname
+        if not parsed_host:
+            return {"error": f"META_CAPI_RELAY_URL invalide: {relay_url_configured!r}"}
+        TARGET_HOST = parsed_host
     TARGET_PORT = 443
     CONTROL_HOST = "httpbin.org"
     TIMEOUT = 8.0
@@ -2035,12 +2048,51 @@ def connectivity_test():
     # ── Run all probes ──────────────────────────────────────────────────────
     results: dict = {
         "target": TARGET_HOST,
+        "relay_url_configured": relay_url_configured,
         "python_version": sys.version,
     }
+
+    # 0. Full DNS picture (IPv4 + IPv6) — an AAAA record answered by a broken
+    # IPv6 path is a classic source of instant "Connection refused" while the
+    # same host works fine over IPv4 from elsewhere.
+    try:
+        _all_infos = socket.getaddrinfo(TARGET_HOST, TARGET_PORT, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        results["0_dns_all_records"] = {
+            "addresses": sorted({f"{'v6' if fam == socket.AF_INET6 else 'v4'}:{sa[0]}" for fam, _, _, _, sa in _all_infos}),
+            "first_tried_by_default": _all_infos[0][4][0] if _all_infos else None,
+        }
+    except Exception as exc:
+        results["0_dns_all_records"] = {"status": f"DNS FAIL: {exc}"}
 
     # 1. Raw stdlib TCP + TLS
     raw = _tcp_tls_probe(TARGET_HOST, TARGET_PORT, TIMEOUT)
     results["1_raw_stdlib_tls"] = {**raw, "verdict": _verdict(raw)}
+
+    # 1b. Same probe forced over IPv6 (if the host has an AAAA record)
+    try:
+        _v6_infos = socket.getaddrinfo(TARGET_HOST, TARGET_PORT, socket.AF_INET6, socket.SOCK_STREAM)
+        if _v6_infos:
+            v6: dict = {}
+            _fam, _st, _pr, _, _sa = _v6_infos[0]
+            v6["resolved_ip"] = _sa[0]
+            _s6 = None
+            _t6 = time.monotonic()
+            try:
+                _s6 = socket.socket(_fam, _st, _pr)
+                _s6.settimeout(TIMEOUT)
+                _s6.connect(_sa)
+                v6["tcp_ms"] = round((time.monotonic() - _t6) * 1000)
+                v6["tcp_status"] = "ok"
+            except Exception as exc:
+                v6["tcp_ms"] = round((time.monotonic() - _t6) * 1000)
+                v6["tcp_status"] = f"FAIL: {type(exc).__name__}: {exc}"
+            finally:
+                if _s6:
+                    try: _s6.close()
+                    except Exception: pass
+            results["1b_raw_tcp_ipv6"] = {**v6, "verdict": _verdict(v6)}
+    except Exception:
+        results["1b_raw_tcp_ipv6"] = {"verdict": "SKIPPED — no AAAA record / IPv6 unavailable"}
 
     # 2. httpx HTTP/1.1 (fresh client, no keep-alive pool reuse)
     hx1 = _httpx_probe(TARGET_HOST, TARGET_PORT, TIMEOUT, http2=False)
