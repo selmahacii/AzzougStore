@@ -485,13 +485,14 @@ export default function ProductsPage() {
 
       setIsUploading(true);
       try {
-         const form = new FormData();
-         form.append('file', file);
+         const fd = new FormData();
+         fd.append('file', file);
+         if (form.main_image) fd.append('old_url', form.main_image);
          const res = await fetch('/api/v1/upload/image', {
             method: 'POST',
             credentials: 'include',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: form,
+            body: fd,
          });
          if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -529,6 +530,7 @@ export default function ProductsPage() {
       try {
          const form = new FormData();
          form.append('file', file);
+         if (newSubProduct.main_image) form.append('old_url', newSubProduct.main_image);
          const res = await fetch('/api/v1/upload/image', {
             method: 'POST',
             credentials: 'include',
@@ -566,6 +568,8 @@ export default function ProductsPage() {
       try {
          const formData = new FormData();
          formData.append('file', file);
+         const oldVariantImg = form.variants[index]?.image;
+         if (oldVariantImg) formData.append('old_url', oldVariantImg);
          const res = await fetch('/api/v1/upload/image', {
             method: 'POST',
             credentials: 'include',

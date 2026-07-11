@@ -483,6 +483,7 @@ function LandingPageModal({
     try {
       const form = new FormData();
       form.append('file', file);
+      if (imageUrl) form.append('old_url', imageUrl);
       const res = await fetch('/api/v1/upload/image', {
         method: 'POST',
         credentials: 'include',
@@ -524,6 +525,7 @@ function LandingPageModal({
     try {
       const form = new FormData();
       form.append('file', file);
+      if (bannerImageUrl) form.append('old_url', bannerImageUrl);
       const res = await fetch('/api/v1/upload/image', {
         method: 'POST',
         credentials: 'include',
@@ -565,6 +567,8 @@ function LandingPageModal({
     try {
       const form = new FormData();
       form.append('file', file);
+      const oldVariantImg = prodVariants[index]?.image;
+      if (oldVariantImg) form.append('old_url', oldVariantImg);
       const res = await fetch('/api/v1/upload/image', {
         method: 'POST',
         credentials: 'include',

@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse
 
 try:
@@ -93,6 +93,30 @@ def get_base_url(request: Request = None) -> str:
     return "http://localhost:8003"
 
 
+def _destroy_old_cloudinary_asset(old_url: Optional[str], resource_type: str = "image") -> None:
+    """
+    Best-effort cleanup: when a photo is REPLACED (not added), delete the
+    previous Cloudinary asset so re-uploading the same product photo over and
+    over doesn't silently accumulate orphaned files and eat into the account's
+    storage/bandwidth quota forever. Never raises — a failed cleanup must not
+    block the new upload that already succeeded.
+    """
+    if not old_url or "res.cloudinary.com" not in old_url:
+        return
+    try:
+        # .../upload/v169.../folder/name.ext[?...]  → folder/name (no extension, no version, no query)
+        after_upload = old_url.split("/upload/", 1)[1]
+        after_upload = after_upload.split("?", 1)[0]
+        parts = after_upload.split("/")
+        if parts and parts[0].startswith("v") and parts[0][1:].isdigit():
+            parts = parts[1:]
+        public_id = "/".join(parts).rsplit(".", 1)[0]
+        if public_id:
+            cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+    except Exception as exc:
+        logger.warning("Nettoyage de l'ancienne image Cloudinary échoué pour %s: %s", old_url, exc)
+
+
 @router.get("/storage-status", response_model=dict)
 def storage_status(current_user: Any = Depends(deps.get_current_active_user)) -> dict:
     """
@@ -145,6 +169,7 @@ def storage_status(current_user: Any = Depends(deps.get_current_active_user)) ->
 async def upload_image(
     request: Request,
     file: UploadFile = File(...),
+    old_url: Optional[str] = Form(None),
     current_user: Any = Depends(deps.get_current_active_user),
 ) -> dict:
     """
@@ -152,6 +177,10 @@ async def upload_image(
     - Validates MIME type (jpeg/png/webp/gif/avif only)
     - Validates file size (≤ 10 MB)
     - Stores to Cloudinary if CLOUDINARY_URL is set, otherwise locally
+    - If old_url is provided (replacing an existing photo), the previous
+      Cloudinary asset is deleted after the new upload succeeds — a photo
+      once uploaded stays permanent, but replacing it doesn't pile up
+      orphaned storage forever.
     - Returns { url, filename, size }
     """
     # ── MIME validation ───────────────────────────────────────
@@ -181,6 +210,7 @@ async def upload_image(
                 resource_type="image"
             )
             url = upload_result.get("secure_url") or upload_result.get("url")
+            _destroy_old_cloudinary_asset(old_url, resource_type="image")
             return {
                 "success": True,
                 "url": url,
@@ -224,11 +254,14 @@ async def upload_image(
 async def upload_media(
     request: Request,
     file: UploadFile = File(...),
+    old_url: Optional[str] = Form(None),
     current_user: Any = Depends(deps.get_current_active_user),
 ) -> dict:
     """
     Upload an image or video (banner/hero section).
     Images: ≤ 10 MB. Videos: ≤ 100 MB.
+    old_url (if provided): previous Cloudinary asset deleted after success —
+    see upload_image for the rationale.
     """
     content_type = file.content_type or ""
     allowed = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES
@@ -257,6 +290,7 @@ async def upload_media(
                 resource_type="video" if is_video else "image"
             )
             url = upload_result.get("secure_url") or upload_result.get("url")
+            _destroy_old_cloudinary_asset(old_url, resource_type="video" if is_video else "image")
             return {
                 "success": True,
                 "url": url,

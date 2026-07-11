@@ -1454,10 +1454,13 @@ export default function AgentDashboard() {
   // products = product-specialist: only the stores her orders actually come from.
   // Scope ALL without products (or non-confirmateur roles): every store.
   const myStores = useMemo(() => {
+    // Independent of the legacy assigned_store_scope flag (same rationale as
+    // the backend fix): assigned_store_ids counts whenever it's non-empty.
+    const myStoreIds = user?.assigned_store_ids ?? [];
     const nbProducts = (user?.assigned_product_ids ?? []).length;
-    const isScoped = user?.role === 'CONFIRMATEUR' && (user?.assigned_store_scope === 'SPECIFIC' || nbProducts > 0);
+    const isScoped = user?.role === 'CONFIRMATEUR' && (myStoreIds.length > 0 || nbProducts > 0);
     if (!isScoped) return allStores;
-    const ids = new Set<string>(user?.assigned_store_scope === 'SPECIFIC' ? (user?.assigned_store_ids ?? []) : []);
+    const ids = new Set<string>(myStoreIds);
     for (const o of (ordersQuery.data?.data ?? []) as any[]) {
       if (o.store_id) ids.add(o.store_id);
     }
