@@ -770,7 +770,7 @@ function PartnerModal({
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">Grille Tarifaire par Wilaya (58 Wilayas)</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {['yalidine', 'zr_express'].includes(carrier.id) && savedPartnerId && (
+                    {['yalidine', 'zr_express', 'noest'].includes(carrier.id) && savedPartnerId && (
                       <Button
                         onClick={handleSyncWilayas}
                         disabled={syncing}
