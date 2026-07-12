@@ -816,6 +816,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColorVal);
                       const sizeVariants = selectedColorVar?.sub_variants || [];
 
+                      // Live per-variant availability, mirroring the backend's own
+                      // reserve/confirm check (v_stock - v_reserved on the matched
+                      // sub_variant/variant) — the dropdowns above previously gave
+                      // no stock feedback at all, so a confirmatrice could pick a
+                      // combo that's actually out of stock and only find out after
+                      // the save was rejected with "Stock insuffisant".
+                      const matchedSubVariant = selectedSizeVal ? sizeVariants.find((sv: any) => sv.value === selectedSizeVal) : null;
+                      const effectiveVariant = matchedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
+                      const variantAvailable = effectiveVariant
+                        ? Number(effectiveVariant.stock || 0) - Number(effectiveVariant.reserved || 0)
+                        : (!hasVariants ? Number(productQuery.data?.stock || 0) - Number(productQuery.data?.reserved_stock || 0) : null);
+
                       return (
                         <div key={idx} className="p-3 bg-white border rounded-xl space-y-2.5 shadow-sm">
                           <div className="flex justify-between items-start">
@@ -914,6 +926,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                               </div>
                             ) : (
                               <div className="text-[10px] text-slate-400 font-medium italic">Ce produit n'a pas de variantes configurées.</div>
+                            )}
+
+                            {variantAvailable !== null && (
+                              <div className={cn(
+                                "text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-lg inline-flex items-center gap-1 w-fit",
+                                variantAvailable > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                              )}>
+                                {variantAvailable > 0 ? `${variantAvailable} en stock` : "Rupture de stock — indisponible"}
+                              </div>
+                            )}
+                            {hasVariants && variantAvailable === null && (
+                              <div className="text-[10px] font-bold text-amber-600 italic">Choisissez la variante pour voir le stock disponible</div>
                             )}
 
                             <div className="grid grid-cols-2 gap-2">
