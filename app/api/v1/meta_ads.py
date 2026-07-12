@@ -497,17 +497,59 @@ def _extract_meta_purchases(raw_campaign: dict) -> tuple:
     return count, value
 
 
+_FX_CACHE: Dict[str, tuple] = {}  # {currency: (rate_to_dzd, fetched_at_epoch)}
+_FX_CACHE_TTL_SECONDS = 6 * 3600  # upstream source itself only refreshes once/day
+
+
+def _fetch_live_dzd_rate(currency: str) -> Optional[float]:
+    """
+    Live currency→DZD rate from a free, keyless FX API. Cached in-process for
+    a few hours since the upstream source only refreshes once a day anyway —
+    no point re-fetching on every 3-minute Meta Ads sync tick. Returns None on
+    any failure so the caller falls back to the static table below.
+    """
+    import time as _time
+    currency = (currency or "").upper()
+    if not currency or currency == "DZD":
+        return 1.0
+    cached = _FX_CACHE.get(currency)
+    if cached and (_time.time() - cached[1]) < _FX_CACHE_TTL_SECONDS:
+        return cached[0]
+    try:
+        import httpx as _httpx
+        r = _httpx.get(f"https://open.er-api.com/v6/latest/{currency}", timeout=8.0)
+        if r.status_code == 200:
+            rate = (r.json().get("rates") or {}).get("DZD")
+            if rate:
+                rate = float(rate)
+                _FX_CACHE[currency] = (rate, _time.time())
+                return rate
+    except Exception:
+        pass
+    return None
+
+
 def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> float:
     ad_curr = ad_currency.upper() if ad_currency else "USD"
     cfg_curr = (config_currency or "USD").upper()
     cfg_rate = config_rate if config_rate is not None else 1.0
-    
+
     if ad_curr == "DZD":
         return 1.0
-        
+
+    # Live rate first — the manually-entered config_rate AND the hardcoded
+    # fallback table below both go stale silently (real EUR/USD→DZD rates
+    # move every day; a rate typed in once and never revisited quietly drifts
+    # further from reality over time — exactly what was reported: costs
+    # displayed in DA didn't reflect the real, moving exchange rate). Only
+    # fall back to the static numbers if the live source is unreachable.
+    live_rate = _fetch_live_dzd_rate(ad_curr)
+    if live_rate is not None:
+        return round(live_rate, 4)
+
     if ad_curr == cfg_curr:
         return cfg_rate
-        
+
     fallbacks = {
         "USD": 220.0,
         "EUR": 240.0,
