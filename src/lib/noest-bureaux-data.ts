@@ -42,7 +42,7 @@ export const NOEST_BUREAUX: NoestBureau[] = [
   { code: '16B', name: 'Alger « Bab Ezzouar »', address: 'Devant clinique médicale, En face Ecole Hilal School', phones: ['0560301762', '0770608746', '0770615054'], wilayaId: 16 },
   { code: '16C', name: 'Alger « Chéraga »', address: 'Place Iben Badis N° 03 - RDC , Chéraga', phones: ['0560846037', '0560812936'], wilayaId: 16 },
   { code: '16D', name: 'Alger « Reghaia »', address: '822 Logmts LPP Amirouche Batiment A7 N°04 rez-de-chaussée ,Reghaia', phones: ['0560441770', '0560441926', '0561680248'], wilayaId: 16 },
-  { code: '16E', name: 'Alger « Centre - Sacré-Cœur »', address: '22 Rue Hocine BELADJEL, Sacré-Cœur, Alger Centre, (En face la banque BADR)', phones: ['0560181237', '0560181433', '0560181730', '0560181471'], wilayaId: 16 },
+  { code: '16E', name: 'Alger « Alger Centre »', address: '22 Rue Hocine BELADJEL, Sacré-Cœur, Alger Centre, (En face la banque BADR)', phones: ['0560181237', '0560181433', '0560181730', '0560181471'], wilayaId: 16 },
   { code: '16F', name: 'Alger « Baba Hassen »', address: 'Cité Cherchali Boualam, À côté de croissant rouge, Baba Hassen', phones: ['0560182594', '0560182915', '0560183036'], wilayaId: 16 },
   { code: '16G', name: 'Alger « Baraki »', address: 'Baraki, route de Larbaâ, entre la mosquée El Bachir El Ibrahimi et le commissariat de la circonscription administrative.', phones: ['0560158882', '0560158961', '0560158953'], wilayaId: 16 },
   { code: '16H', name: 'Alger « Bordj el bahri »', address: 'Cité Galoul, lotissement coopératif immobilier, n° 428 (A coté de la crèche IBN BAZ - طريق المرشي كوسيدار الجديدة )', phones: ['0563029129', '0563029128'], wilayaId: 16 },
