@@ -782,57 +782,6 @@ def list_orders(
     
     logger.debug(f"[Orders] Query result: store_id={store_id!r}, total={total}, page={page}")
 
-    # Temporary diagnostic: full visibility trace for confirmatrices — logs
-    # exactly what she requested, her configured scope, the tenant header the
-    # frontend sent, and how many orders the final query returns PER STORE.
-    if current_user is not None and getattr(current_user, "role", None) == "CONFIRMATEUR":
-        try:
-            from sqlalchemy import func as _fn
-            _per_store = {
-                (sid or "sans-boutique"): cnt
-                for sid, cnt in final_query.order_by(None)
-                .with_entities(Order.store_id, _fn.count(Order.id))
-                .group_by(Order.store_id)
-                .all()
-            }
-        except Exception as _exc:  # never let the diagnostic break the endpoint
-            _per_store = {"erreur": str(_exc)[:120]}
-        try:
-            from app.core.tenant import tenant_store_id as _tenant_ctx
-            _tenant_val = _tenant_ctx.get()
-        except Exception:
-            _tenant_val = "?"
-        # Ground truth, ignoring RBAC entirely: how many real orders exist per
-        # store right now (tenant filter bypassed) — lets us tell apart "her
-        # scope is hiding real orders" from "that store genuinely has none".
-        _prev_skip_tenant = db.info.get("skip_tenant_isolation")
-        try:
-            db.info["skip_tenant_isolation"] = True
-            _real_per_store = {
-                (sid or "sans-boutique"): cnt
-                for sid, cnt in db.query(Order.store_id, _fn.count(Order.id))
-                .filter(Order.is_deleted == False, Order.status != "MERGED")
-                .group_by(Order.store_id)
-                .all()
-            }
-        except Exception as _exc:
-            _real_per_store = {"erreur": str(_exc)[:120]}
-        finally:
-            # Never leave the bypass on for the rest of this request — the
-            # actual order fetch right below MUST stay tenant-isolated.
-            if _prev_skip_tenant is None:
-                db.info.pop("skip_tenant_isolation", None)
-            else:
-                db.info["skip_tenant_isolation"] = _prev_skip_tenant
-        logger.info(
-            "[ConfirmatriceDebug] user=%s | config: scope=%s stores=%s nb_produits=%s | requête: store_id=%s status=%s page=%s | X-Store-Id=%s | résultat: total=%s par_boutique=%s | RÉALITÉ (toutes commandes, RBAC ignoré)=%s",
-            getattr(current_user, "email", "?"),
-            getattr(current_user, "assigned_store_scope", None),
-            getattr(current_user, "assigned_store_ids", None),
-            len(getattr(current_user, "assigned_product_ids", None) or []),
-            store_id, status, page, _tenant_val, total, _per_store, _real_per_store,
-        )
-
     orders = final_query.offset(skip).limit(pageSize).all()
     _sync_item_images_from_product(orders)
 

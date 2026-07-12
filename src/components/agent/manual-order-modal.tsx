@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft } from 'lucide-react';
+import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -216,14 +216,22 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
+      <DialogContent showCloseButton={false} className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
         <div className="sticky top-0 px-4 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white" style={{ backgroundColor: primaryColor }}>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <DialogTitle className="text-xl font-black uppercase tracking-widest text-white shadow-sm">Saisie de Commande</DialogTitle>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">Création d'une nouvelle commande manuelle</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0 self-start sm:self-auto">
             <Badge variant="outline" className="border-white/30 text-white bg-white/10 uppercase text-[10px] font-black tracking-widest px-4 py-1.5 rounded-full backdrop-blur-sm">Saisie Manuelle (Confirmatrice)</Badge>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              aria-label="Fermer"
+              className="p-2 rounded-xl bg-white/15 hover:bg-white/25 transition-all shrink-0"
+            >
+              <X className="size-5 text-white" />
+            </button>
           </div>
         </div>
 
