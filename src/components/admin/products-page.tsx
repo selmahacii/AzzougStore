@@ -2378,7 +2378,10 @@ export default function ProductsPage() {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                                  <div className="space-y-3">
                                     <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Slug URL Personnalisé</label>
-                                    <Input value={form.slug} onChange={e => setF({ slug: e.target.value })} placeholder="basket-pro-v2" className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-mono text-sm" />
+                                    <Input value={form.slug} onChange={e => setF({ slug: e.target.value })} placeholder="chemise-riviera" className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-mono text-sm" />
+                                    <p className="text-[10px] text-slate-400 font-medium ml-1">
+                                       Sois précis(e) — le module Meta Ads s'en sert pour deviner à quel produit rattacher une campagne quand son nom ne le dit pas explicitement. Un slug trop générique (ex: "chemise") peut absorber par erreur le budget d'un autre produit similaire (ex: "chemise-riviera").
+                                    </p>
                                  </div>
                                  <div className="space-y-3">
                                     <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Marque / Brand</label>
