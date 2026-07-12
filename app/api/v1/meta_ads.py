@@ -497,36 +497,44 @@ def _extract_meta_purchases(raw_campaign: dict) -> tuple:
     return count, value
 
 
-_FX_CACHE: Dict[str, tuple] = {}  # {currency: (rate_to_dzd, fetched_at_epoch)}
-_FX_CACHE_TTL_SECONDS = 6 * 3600  # upstream source itself only refreshes once/day
+_FX_CACHE: Dict[str, tuple] = {}  # {currency: (rate_to_dzd_or_None, fetched_at_epoch)}
+_FX_CACHE_TTL_SECONDS = 6 * 3600       # successful fetch — upstream itself only refreshes once/day
+_FX_FAILURE_CACHE_TTL_SECONDS = 15 * 60  # failed fetch — retry occasionally, don't hammer a dead/blocked host
 
 
 def _fetch_live_dzd_rate(currency: str) -> Optional[float]:
     """
-    Live currency→DZD rate from a free, keyless FX API. Cached in-process for
-    a few hours since the upstream source only refreshes once a day anyway —
-    no point re-fetching on every 3-minute Meta Ads sync tick. Returns None on
-    any failure so the caller falls back to the static table below.
+    Live currency→DZD rate from a free, keyless FX API. Cached in-process —
+    successes for a few hours (the upstream source only refreshes once a day
+    anyway), FAILURES for 15 min too. Without caching failures, a network
+    path that can't reach this host (same class of restriction HF Space has
+    on graph.facebook.com, needing a Vercel relay) would retry-and-timeout on
+    every single campaign in the sync loop, adding many seconds of latency
+    per sync and risking the whole request failing outright. Returns None on
+    failure so the caller falls back to the static table below.
     """
     import time as _time
     currency = (currency or "").upper()
     if not currency or currency == "DZD":
         return 1.0
     cached = _FX_CACHE.get(currency)
-    if cached and (_time.time() - cached[1]) < _FX_CACHE_TTL_SECONDS:
-        return cached[0]
+    if cached:
+        rate, ts = cached
+        ttl = _FX_CACHE_TTL_SECONDS if rate is not None else _FX_FAILURE_CACHE_TTL_SECONDS
+        if (_time.time() - ts) < ttl:
+            return rate
     try:
         import httpx as _httpx
-        r = _httpx.get(f"https://open.er-api.com/v6/latest/{currency}", timeout=8.0)
+        r = _httpx.get(f"https://open.er-api.com/v6/latest/{currency}", timeout=4.0)
+        rate = None
         if r.status_code == 200:
-            rate = (r.json().get("rates") or {}).get("DZD")
-            if rate:
-                rate = float(rate)
-                _FX_CACHE[currency] = (rate, _time.time())
-                return rate
+            raw = (r.json().get("rates") or {}).get("DZD")
+            if raw:
+                rate = float(raw)
     except Exception:
-        pass
-    return None
+        rate = None
+    _FX_CACHE[currency] = (rate, _time.time())
+    return rate
 
 
 def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> float:
