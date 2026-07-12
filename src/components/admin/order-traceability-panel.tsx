@@ -6,7 +6,7 @@ import {
   CheckSquare, XCircle, RotateCcw, Clock, AlertTriangle,
   PhoneCall, PhoneMissed, PhoneOff, CalendarClock, Zap, ArrowRightLeft,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow, format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -261,7 +261,13 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
   const eventsQuery = useQuery<any>({
     queryKey: ['order-events', orderId],
     queryFn: () => apiFetch(`/api/v1/orders/${orderId}/events`),
-    refetchInterval: 10000,
+    // A 404 (order deleted/never existed) will never succeed on retry —
+    // without this, a stale drawer left open on a removed order hammered
+    // the API every 10s forever (seen live: repeated failed GETs in the
+    // console for an order deleted via a one-off cleanup script).
+    retry: (failureCount, error) =>
+      error instanceof ApiClientError && error.statusCode === 404 ? false : failureCount < 3,
+    refetchInterval: (query) => (query.state.error ? false : 10000),
     enabled: !!orderId,
   });
 
