@@ -345,6 +345,11 @@ def get_agent_counts(
         "confirmed": _count(Order.status == "CONFIRMED"),
         "shipped":   _count(Order.status == "SHIPPED"),
         "delivered": _count(Order.status == "DELIVERED"),
+        # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
+        # counts['returned'] — this key never existed, so that lookup was
+        # always undefined ?? 0, and the badge's `count > 0` render guard
+        # was permanently false. The badge wasn't wrong, it was invisible.
+        "returned":  _count(Order.status == "RETURNED"),
         "cancelled": _count(Order.status == "CANCELLED"),
         "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
         "nrp_abandoned": _count(Order.nrp_count > 0, Order.is_abandoned_cart == True,

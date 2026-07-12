@@ -175,6 +175,16 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
     for order in orders:
         parcel = data.get(str(order.tracking_number))
         if not isinstance(parcel, dict):
+            # Noest's own response has no entry for this tracking number at
+            # all — the order can NEVER resolve to DELIVERED/RETURNED until
+            # this is fixed (wrong/stale tracking_number, or Noest genuinely
+            # lost the parcel). Previously silent; this is exactly the class
+            # of "order stuck forever, nobody notices" bug reported live.
+            logger.warning(
+                "[NoestSync] Aucune donnée Noest pour tracking=%s order=%s (statut actuel=%s) — "
+                "vérifier que ce numéro de suivi existe bien côté Noest.",
+                order.tracking_number, order.order_number, order.status,
+            )
             continue
         new_status = _extract_terminal_status(parcel)
         if not new_status:
@@ -184,6 +194,21 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
             # the OrderEvent timeline, not the single-slot notes field.
             activity = parcel.get("activity") or []
             last_key = (activity[-1].get("event_key") or "").strip().lower() if activity else ""
+            info = parcel.get("OrderInfo") or {}
+            raw_statut = (info.get("statut") or info.get("status") or "").strip()
+            if last_key not in ("", "colis_suspendu") and last_key not in _TERMINAL_MAP and not any(
+                m in last_key for m in _CANCELLATION_MARKERS
+            ):
+                # An event_key we don't recognize at all — surfaces gaps in
+                # _TERMINAL_MAP's vocabulary (e.g. an order that's actually
+                # DELIVERED/RETURNED in reality per Noest, but under a status
+                # wording we've never seen and don't map, so it silently
+                # never transitions here).
+                logger.info(
+                    "[NoestSync] Événement non reconnu order=%s tracking=%s statut=%r dernier_event_key=%r "
+                    "— ni terminal ni suspendu, à vérifier si ça doit être ajouté à _TERMINAL_MAP.",
+                    order.order_number, order.tracking_number, raw_statut, last_key,
+                )
             if last_key == "colis_suspendu":
                 from app.services.order_service import _log_event as _log_order_event
                 from app.models.order import OrderEvent
