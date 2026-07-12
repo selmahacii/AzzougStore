@@ -2029,6 +2029,12 @@ export default function LandingPagesDashboard() {
       return apiFetch<any>(`/api/v1/landing-pages?${buildQueryStr()}`);
     },
     enabled:  !!storeId,
+    // Vues/Ordres/Conv. only refreshed on manual reload or after an edit —
+    // a landing page taking live traffic could sit on stale numbers for as
+    // long as the admin kept the tab open. Poll so the cards stay current
+    // without her having to refresh the page herself.
+    refetchInterval: 15000,
+    refetchIntervalInBackground: true,
   });
 
   const pages: LandingPage[] = raw?.data ?? raw ?? [];
