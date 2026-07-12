@@ -720,7 +720,7 @@ export default function OverviewPage() {
                         <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} rawValue={kpi?.confirmedOrders || 0} displayMode={displayMode} color={COLORS.primary} description="Taux de validation" />
                         <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.success} description="Taux de colis livrés" />
                         <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} rawValue={kpi?.returnedOrders || 0} displayMode={displayMode} color={COLORS.danger} description="Proportion d'échecs" />
-                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.orange} description="Visites devenues achats" />
+                        <PerformanceGauge label="Cde. Livrées" value={kpi?.conversionRate || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.orange} description="Commandes livrées sur le total" />
                      </div>
                   </div>
                </div>

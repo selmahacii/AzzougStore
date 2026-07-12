@@ -290,7 +290,7 @@ export default function AnalyticsPage() {
                      <div className="grid grid-cols-2 gap-4 sm:gap-6 place-items-center py-4">
                         <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color={C.primary} description="Commandes validées au tel (Obj: > 70%)" />
                         <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color={C.success} description="Colis arrivés au client (Obj: > 80%)" />
-                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color={C.orange} description="Visites devenues achats (Obj: > 3%)" />
+                        <PerformanceGauge label="Cde. Livrées" value={kpi?.conversionRate || 0} color={C.orange} description="Commandes livrées sur le total des commandes" />
                         <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color={C.danger} description="Commandes refusées (Obj: < 15%)" />
                      </div>
                   </SectionPanel>

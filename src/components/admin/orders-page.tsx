@@ -1094,7 +1094,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         <span className="text-base font-black text-slate-900 font-mono">{revenue.toLocaleString('fr-FR')} DA</span>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Taux Conversion</span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Cde. Livrées</span>
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-black text-[#4b7bec]">{conversionRate}%</span>
                           <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
