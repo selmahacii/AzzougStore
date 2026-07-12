@@ -4,8 +4,12 @@ Automatic carrier synchronization + reminder scheduler.
 A single background loop (started at FastAPI startup) does two things:
 
 1. NOEST intelligent polling
-   - Only stores with an active Noest partner AND at least one SHIPPED
-     order carrying a tracking number are polled — zero API calls otherwise.
+   - Only stores with an active Noest partner AND at least one non-terminal
+     order (not DELIVERED/RETURNED/CANCELLED/MERGED) carrying a real
+     tracking number are polled — zero API calls otherwise. Deliberately not
+     restricted to exactly "SHIPPED": an order that ended up with a tracking
+     number while sitting in some other status must still be checked, or it
+     never picks up its real-world outcome (see _sync_partner).
    - All trackings of a store are batched into ONE request
      (POST /api/public/get/trackings/info accepts a list).
    - Detected terminal states (livré / retourné) go through
@@ -125,12 +129,25 @@ def _extract_terminal_status(parcel: dict) -> str | None:
 
 
 async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
-    """Batch-sync every SHIPPED order of one store's Noest partner. Returns updates applied."""
+    """Batch-sync every order of one store's Noest partner that still has a
+    real tracking number and hasn't reached a terminal state yet.
+
+    Previously this only polled Order.status == "SHIPPED" exactly. Any order
+    that ended up with a real Noest tracking number while sitting in some
+    OTHER non-terminal status (e.g. the SHIPPED transition itself never
+    applied due to an earlier bug, or a manual correction left it at
+    CONFIRMED) was invisible to this loop FOREVER — it would never pick up
+    the real-world DELIVERED/RETURNED outcome no matter how long you waited.
+    Observed live: 4 of 8 real returns for one store never synced because the
+    orders weren't sitting at exactly "SHIPPED". The tracking_number
+    condition below already scopes this to orders that genuinely went out
+    with a carrier, so broadening the status side is safe.
+    """
     orders = (
         db.query(Order)
         .filter(
             Order.store_id == partner.store_id,
-            Order.status == "SHIPPED",
+            Order.status.notin_(["DELIVERED", "RETURNED", "CANCELLED", "MERGED"]),
             Order.tracking_number.isnot(None),
             Order.tracking_number != "",
             Order.is_deleted == False,
@@ -192,7 +209,7 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
         # status: a confirmatrice may have updated the order meanwhile.
         db.query(Order.id).filter(Order.id == order.id).with_for_update().first()
         db.refresh(order)
-        if str(order.status) != "SHIPPED" or new_status == str(order.status):
+        if str(order.status) in ("DELIVERED", "RETURNED", "CANCELLED", "MERGED") or new_status == str(order.status):
             continue
         try:
             order_service.update_order(
