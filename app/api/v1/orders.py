@@ -1208,6 +1208,13 @@ def get_order(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Get a single order with full details: items, events, assignee, customer."""
+    # This endpoint scopes access explicitly via _assert_order_access right
+    # below — the header-driven tenant auto-filter is redundant and, on a
+    # header/order store_id mismatch (e.g. browsing a user's profile whose
+    # active-store context differs from this specific order's store), it
+    # silently hides an order that genuinely exists, indistinguishable from
+    # "deleted". Same class of bug fixed earlier in list_orders/get_agent_counts.
+    db.info["skip_tenant_isolation"] = True
     order = (
         db.query(Order)
         .options(
@@ -1254,6 +1261,9 @@ def unmerge_order(
     import uuid as _uuid
     from app.models.events import OrderEvent as _OrderEvent
 
+    # See get_order for why this is redundant/harmful here — access is
+    # already explicitly checked below via _assert_order_access.
+    db.info["skip_tenant_isolation"] = True
     order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not order:
         raise OrderNotFoundError()
@@ -1326,6 +1336,9 @@ def update_order(
     Update order status/assignment with full state machine validation.
     Stock side effects are applied atomically.
     """
+    # See get_order for why this is redundant/harmful here — access is
+    # already explicitly checked below via _assert_order_access.
+    db.info["skip_tenant_isolation"] = True
     # Row-level lock on the order (separate query: FOR UPDATE is not allowed
     # with the OUTER JOIN produced by joinedload). Serializes concurrent
     # updates on the same order for the whole transaction.
@@ -1390,6 +1403,9 @@ def update_order_info(
     Update editable order fields (customer info, address, fees, tracking).
     Blocked once the order is SHIPPED, DELIVERED, RETURNED or CANCELLED.
     """
+    # See get_order for why this is redundant/harmful here — access is
+    # already explicitly checked below via _assert_order_access.
+    db.info["skip_tenant_isolation"] = True
     order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not order:
         raise OrderNotFoundError()
@@ -1613,6 +1629,9 @@ def delete_order(
     if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
         raise PermissionError(message="Seul un administrateur peut supprimer une commande.")
 
+    # See get_order for why this is redundant/harmful here — role check above
+    # already gates access.
+    db.info["skip_tenant_isolation"] = True
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
@@ -1641,6 +1660,12 @@ def get_order_events(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Full event/audit log for a specific order."""
+    # See get_order for why this is redundant/harmful here — access is
+    # already explicitly checked below via _assert_order_access. This was
+    # the one actually hit in production: an order confirmed to exist in
+    # Chic Outfit 404'd as "Commande introuvable" whenever the request's
+    # X-Store-Id header didn't match the order's own store_id.
+    db.info["skip_tenant_isolation"] = True
     order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
     if not order:
         raise OrderNotFoundError()
@@ -1728,6 +1753,9 @@ def merge_duplicate_orders(
     from datetime import datetime, timezone
     from app.models.events import OrderEvent
 
+    # See get_order for why this is redundant/harmful here — access is
+    # already explicitly checked below via _assert_order_access.
+    db.info["skip_tenant_isolation"] = True
     parent = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not parent:
         raise HTTPException(status_code=404, detail="Commande parente introuvable.")
@@ -1838,8 +1866,10 @@ async def dispatch_order(
     """
     from app.core.exceptions import OrderNotFoundError
     from app.models.delivery_partner import DeliveryPartner
-    
+
     from sqlalchemy.orm import joinedload
+    # See get_order for why this is redundant/harmful here.
+    db.info["skip_tenant_isolation"] = True
     # Serialize dispatches on the same order: two concurrent clicks must not
     # create two parcels at the carrier. The second transaction waits here,
     # then sees the tracking number already set.
