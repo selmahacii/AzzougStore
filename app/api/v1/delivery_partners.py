@@ -455,6 +455,35 @@ async def sync_fees(
                             "home_fee": item.get("to_home", item.get("home_fee", 0.0)),
                             "office_fee": item.get("to_desk", item.get("office_fee", 0.0)),
                         })
+
+            elif partner.carrier_id == "noest":
+                # CARRIER_API["noest"] above points at a placeholder host
+                # (api.noest.dz/v2) that was never the real integration —
+                # the actual working Noest client (correct base URL, Bearer
+                # token from api_config_encrypted) already lives in
+                # app.api.carriers.noest and is what carrier shipments/
+                # tracking already use. Reuse it instead of the wrong URL,
+                # and call Noest's own documented GET /api/public/fees,
+                # which was never wired into this generic sync-fees flow at
+                # all — "Synchroniser" for Noest silently did nothing,
+                # leaving checkout's delivery fee blank client-side.
+                from app.api.carriers.noest import _creds, _headers as _noest_headers, PROD_BASE
+                token, _guid, base = _creds(partner)
+                r = await client.get(f"{base}/api/public/fees", headers=_noest_headers(token))
+                if r.status_code >= 400:
+                    raise Exception(f"Noest API error: {r.text[:200]}")
+                data = r.json()
+                delivery_tarifs = (data.get("tarifs") or {}).get("delivery") or {}
+                for wid_str, entry in delivery_tarifs.items():
+                    try:
+                        wid = int(entry.get("wilaya_id") or wid_str)
+                    except (TypeError, ValueError):
+                        continue
+                    fee_entries.append({
+                        "wilaya_id": wid,
+                        "home_fee": float(entry.get("tarif", 0) or 0),
+                        "office_fee": float(entry.get("tarif_stopdesk", 0) or 0),
+                    })
             else:
                 raise HTTPException(400, "Synchronisation automatique non supportée pour ce transporteur.")
 
