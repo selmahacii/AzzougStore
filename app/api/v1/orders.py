@@ -338,30 +338,49 @@ def get_agent_counts(
     # per request, so this never leaks across requests.
     db.info["skip_tenant_isolation"] = True
 
-    base = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
+    base_query = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
 
-    # Same RBAC scoping as list_orders for confirmatrices (union store/product scope)
+    # Same RBAC scoping as list_orders for confirmatrices (union store/product
+    # scope). Two variants: `base` (her personal queue — assigned to her, or
+    # unassigned within her scope) for conversion-stage counts, and
+    # `base_wide` (her full store/product scope, regardless of who confirmed
+    # it) for logistics-stage counts. Once an order ships, tracking it is a
+    # store-wide concern — see the matching comment in list_orders. Using the
+    # narrow `base` for shipped/delivered/returned/cancelled/carrier_*/archived
+    # meant a colleague-confirmed order was invisible in those badges on any
+    # store with more than one confirmatrice; a single-confirmatrice store
+    # never showed the gap since everything happened to be assigned_to her.
     if current_user.role == "CONFIRMATEUR":
         scope_crit = _confirmateur_scope_criterion(current_user)
-        base = base.filter(or_(
+        base = base_query.filter(or_(
             Order.assigned_to == current_user.id,
             and_(Order.assigned_to == None, scope_crit),
         ))
+        base_wide = base_query.filter(scope_crit)
     elif current_user.role == "MANAGER" and current_user.employee_store_id:
-        base = base.filter(Order.store_id == current_user.employee_store_id)
+        base = base_query.filter(Order.store_id == current_user.employee_store_id)
+        base_wide = base
+    else:
+        base = base_query
+        base_wide = base_query
 
     if store_id:
         base = base.filter(Order.store_id == store_id)
+        base_wide = base_wide.filter(Order.store_id == store_id)
     for bound, op_gte in ((start_date, True), (end_date, False)):
         if bound:
             try:
                 dt = datetime.fromisoformat(bound.replace("Z", "+00:00")).replace(tzinfo=None)
                 base = base.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
+                base_wide = base_wide.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
             except ValueError:
                 pass
 
     def _count(*criteria):
         return base.filter(*criteria).count()
+
+    def _count_wide(*criteria):
+        return base_wide.filter(*criteria).count()
 
     counts = {
         "all":       base.filter(Order.status.notin_(["CANCELLED", "RETURNED"])).count(),
@@ -371,14 +390,14 @@ def get_agent_counts(
             or_(Order.nrp_count == None, Order.nrp_count == 0),
         ),
         "confirmed": _count(Order.status == "CONFIRMED"),
-        "shipped":   _count(Order.status == "SHIPPED"),
-        "delivered": _count(Order.status == "DELIVERED"),
+        "shipped":   _count_wide(Order.status == "SHIPPED"),
+        "delivered": _count_wide(Order.status == "DELIVERED"),
         # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
         # counts['returned'] — this key never existed, so that lookup was
         # always undefined ?? 0, and the badge's `count > 0` render guard
         # was permanently false. The badge wasn't wrong, it was invisible.
-        "returned":  _count(Order.status == "RETURNED"),
-        "cancelled": _count(Order.status == "CANCELLED"),
+        "returned":  _count_wide(Order.status == "RETURNED"),
+        "cancelled": _count_wide(Order.status == "CANCELLED"),
         "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
         "nrp_abandoned": _count(Order.nrp_count > 0, Order.is_abandoned_cart == True,
                                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
@@ -390,17 +409,18 @@ def get_agent_counts(
         # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
         # scoped to SHIPPED since that's the only state a carrier_stage is
         # meaningful for (before dispatch there's nothing to poll; after
-        # DELIVERED/RETURNED our own status already says so).
+        # DELIVERED/RETURNED our own status already says so). Store-wide
+        # (_count_wide) for the same reason as shipped/delivered/returned.
         **{
-            f"carrier_{bucket}": _count(Order.status == "SHIPPED", Order.carrier_stage.in_(keys))
+            f"carrier_{bucket}": _count_wide(Order.status == "SHIPPED", Order.carrier_stage.in_(keys))
             for bucket, keys in CARRIER_STAGE_BUCKETS.items()
         },
-        "internal_delivery": _count(
+        "internal_delivery": _count_wide(
             Order.livreur_id.isnot(None),
             or_(Order.tracking_number == None, Order.tracking_number == ""),
             Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
         ),
-        "archived":  _count(Order.status.in_(["CANCELLED", "RETURNED"])),
+        "archived":  _count_wide(Order.status.in_(["CANCELLED", "RETURNED"])),
         # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
         # sans heure de rappel programmée, ou dont l'heure est déjà passée.
         "recall": _count(
@@ -605,8 +625,23 @@ def list_orders(
             # to assigned_to_me/unassigned here silently hid orders confirmed by a colleague
             # from "Assignées Livreur" and the other delivery-tracking views. Still bounded by
             # her responsibility scope so one confirmatrice never sees another's stores.
-            _STORE_WIDE_STATUSES = {"ABANDONED", "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED", "RETURNED"}
-            if status and status.upper() in _STORE_WIDE_STATUSES:
+            # CARRIER_* (Noest's own granular stages — ready_to_ship,
+            # processing, in_transit, out_for_delivery, suspended) are exactly
+            # as store-wide as SHIPPED itself: they're just SHIPPED filtered
+            # by carrier_stage. Leaving them out of this set meant a colleague-
+            # confirmed order stuck at "colis_suspendu" or mid-transit was
+            # invisible in the logistics sub-modules — on a store with a single
+            # confirmatrice everything happens to be assigned_to her so the gap
+            # never showed, which is why "one store looked fine, the other
+            # didn't" for stores with more than one confirmatrice sharing it.
+            # CANCELLED/ARCHIVED are the same lifecycle outcome as RETURNED —
+            # once terminal, it's no longer "her queue" either.
+            _STORE_WIDE_STATUSES = {
+                "ABANDONED", "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED",
+                "RETURNED", "CANCELLED", "ARCHIVED",
+            }
+            _status_upper = status.upper() if status else ""
+            if status and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_")):
                 query = query.filter(or_(assigned_to_me, scope_crit))
             else:
                 query = query.filter(or_(assigned_to_me, unassigned_matching))
