@@ -93,6 +93,27 @@ _TERMINAL_MAP = {
 # not terminal", regardless of what else matches.
 _CANCELLATION_MARKERS = ("annulation", "cancel_return", "canceled")
 
+# Every event_key from NOEST's own documented "Liste des événements" table
+# that is legitimately INTERMEDIATE — expected, understood, and correctly
+# non-terminal. Without this, the diagnostic log below flagged these as
+# "événement non reconnu" even though they're perfectly normal in-transit
+# states (a return that's been asked for but not yet received back, a
+# delivery attempt still in progress, etc.) — noise that would drown out
+# genuinely unrecognized statuses that actually need attention.
+_KNOWN_INTERMEDIATE_KEYS = {
+    "upload", "customer_validation", "validation_collect_colis",
+    "validation_reception_admin", "validation_reception", "fdr_activated",
+    "sent_to_redispatch", "nouvel_tentative_asked_by_customer",
+    "return_asked_by_customer", "return_asked_by_hub",
+    "return_redispatched_to_livraison", "pickedup", "valid_return_pickup",
+    "pickup_picked_recu", "verssement_admin_cust",
+    "verssement_admin_cust_canceled", "verssement_hub_cust_canceled",
+    "validation_reception_cash_by_partener", "echange_valide",
+    "echange_valid_by_hub", "ask_to_delete_by_admin", "ask_to_delete_by_hub",
+    "edited_informations", "edit_price", "edit_wilaya", "extra_fee",
+    "mise_a_jour",
+}
+
 _ACTIVE_CALLBACK_STATES = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"]
 
 
@@ -196,8 +217,11 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
             last_key = (activity[-1].get("event_key") or "").strip().lower() if activity else ""
             info = parcel.get("OrderInfo") or {}
             raw_statut = (info.get("statut") or info.get("status") or "").strip()
-            if last_key not in ("", "colis_suspendu") and last_key not in _TERMINAL_MAP and not any(
-                m in last_key for m in _CANCELLATION_MARKERS
+            if (
+                last_key not in ("", "colis_suspendu")
+                and last_key not in _TERMINAL_MAP
+                and last_key not in _KNOWN_INTERMEDIATE_KEYS
+                and not any(m in last_key for m in _CANCELLATION_MARKERS)
             ):
                 # An event_key we don't recognize at all — surfaces gaps in
                 # _TERMINAL_MAP's vocabulary (e.g. an order that's actually
@@ -210,23 +234,39 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
                     order.order_number, order.tracking_number, raw_statut, last_key,
                 )
             if last_key == "colis_suspendu":
-                from app.services.order_service import _log_event as _log_order_event
-                from app.models.order import OrderEvent
-                already = (
-                    db.query(OrderEvent)
-                    .filter(
-                        OrderEvent.order_id == order.id,
-                        OrderEvent.note == "Colis suspendu par le transporteur.",
+                # This whole block is a nice-to-have diagnostic note, not
+                # core sync logic — an error here (like the wrong OrderEvent
+                # import path this used to have) must never be allowed to
+                # propagate out of _sync_partner and abort every remaining
+                # order in the batch for the rest of the cycle, which is
+                # exactly what was happening before: one "colis_suspendu"
+                # order anywhere in a store's batch silently killed real-time
+                # sync for every other order in that same store that cycle.
+                try:
+                    from app.services.order_service import _log_event as _log_order_event
+                    from app.models.events import OrderEvent  # lives here, not app.models.order
+                    already = (
+                        db.query(OrderEvent)
+                        .filter(
+                            OrderEvent.order_id == order.id,
+                            OrderEvent.note == "Colis suspendu par le transporteur.",
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if not already:
-                    _log_order_event(
-                        db, order_id=order.id, actor_id=None,
-                        from_status=str(order.status), to_status=str(order.status),
-                        note="Colis suspendu par le transporteur.",
+                    if not already:
+                        _log_order_event(
+                            db, order_id=order.id, actor_id=None,
+                            from_status=str(order.status), to_status=str(order.status),
+                            note="Colis suspendu par le transporteur.",
+                        )
+                        db.commit()
+                except Exception as exc:
+                    db.rollback()
+                    logger.warning(
+                        "[NoestSync] Échec de la note 'colis suspendu' pour order=%s: %s "
+                        "(non bloquant, la synchronisation continue).",
+                        order.order_number, exc,
                     )
-                    db.commit()
             continue
         if new_status == str(order.status):
             continue
