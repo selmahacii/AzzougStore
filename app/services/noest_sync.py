@@ -193,6 +193,7 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
 
     data = r.json() if isinstance(r.json(), dict) else {}
     updated = 0
+    stage_writes = 0
     for order in orders:
         parcel = data.get(str(order.tracking_number))
         if not isinstance(parcel, dict):
@@ -208,12 +209,28 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
             )
             continue
         new_status = _extract_terminal_status(parcel)
+
+        # Write Noest's own granular stage on EVERY poll, terminal or not —
+        # this is what lets a confirmatrice see real-time carrier progress
+        # (fdr_activated → "En livraison", etc.) instead of only our own
+        # coarse SHIPPED bucket, which never changes until DELIVERED/RETURNED.
+        _activity_all = parcel.get("activity") or []
+        if _activity_all:
+            _last_event = _activity_all[-1]
+            _stage_key = (_last_event.get("event_key") or "").strip().lower()
+            _stage_label = (_last_event.get("event") or "").strip()
+            if _stage_key and (order.carrier_stage != _stage_key or order.carrier_stage_label != _stage_label):
+                order.carrier_stage = _stage_key
+                order.carrier_stage_label = _stage_label or order.carrier_stage_label
+                db.add(order)
+                stage_writes += 1
+
         if not new_status:
             # Not yet a terminal event — still worth flagging "colis suspendu"
             # (carrier blocked the delivery, needs staff attention) even
             # though the order stays SHIPPED. Logged once per occurrence via
             # the OrderEvent timeline, not the single-slot notes field.
-            activity = parcel.get("activity") or []
+            activity = _activity_all
             last_key = (activity[-1].get("event_key") or "").strip().lower() if activity else ""
             info = parcel.get("OrderInfo") or {}
             raw_statut = (info.get("statut") or info.get("status") or "").strip()
@@ -291,7 +308,7 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
         except Exception as exc:
             logger.warning("Noest sync: transition %s → %s refused for %s: %s",
                            order.status, new_status, order.order_number, exc)
-    if updated:
+    if updated or stage_writes:
         db.commit()
     return updated
 

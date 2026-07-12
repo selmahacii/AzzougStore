@@ -39,6 +39,34 @@ router = APIRouter()
 logger = logging.getLogger("app.orders")
 
 
+# ─── Carrier stage buckets (Noest's own granular tracking) ───────────────────
+# Groups Noest's raw event_key (Order.carrier_stage, written by
+# app.services.noest_sync on every poll) into the 6 stages the confirmatrice
+# sees natively on Noest's own dashboard, so "Logistique" sub-modules can
+# filter by real carrier progress instead of only our coarse SHIPPED status.
+# Ordered roughly by pipeline progression; "delivered"/"suspended" mirror our
+# own DELIVERED status / colis_suspendu flag respectively, kept here too so
+# a single bucket lookup covers every stage consistently.
+CARRIER_STAGE_BUCKETS: dict = {
+    "ready_to_ship": {"upload", "customer_validation"},
+    "processing": {"validation_reception_admin", "validation_collect_colis"},
+    "in_transit": {"validation_reception", "sent_to_redispatch"},
+    "out_for_delivery": {"fdr_activated", "mise_a_jour"},
+    "suspended": {"colis_suspendu"},
+    "delivered": {"livre", "livred"},
+}
+
+
+def _carrier_stage_bucket(stage: Optional[str]) -> Optional[str]:
+    if not stage:
+        return None
+    s = stage.strip().lower()
+    for bucket, keys in CARRIER_STAGE_BUCKETS.items():
+        if s in keys:
+            return bucket
+    return None
+
+
 # ─── RBAC helpers ────────────────────────────────────────────────────────────
 
 # Confirmatrice responsibility scope — UNION semantics, STRICT ISOLATION by
@@ -359,6 +387,14 @@ def get_agent_counts(
         "abandoned_in_progress": _count(Order.is_abandoned_cart == True,
                                         Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
+        # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
+        # scoped to SHIPPED since that's the only state a carrier_stage is
+        # meaningful for (before dispatch there's nothing to poll; after
+        # DELIVERED/RETURNED our own status already says so).
+        **{
+            f"carrier_{bucket}": _count(Order.status == "SHIPPED", Order.carrier_stage.in_(keys))
+            for bucket, keys in CARRIER_STAGE_BUCKETS.items()
+        },
         "internal_delivery": _count(
             Order.livreur_id.isnot(None),
             or_(Order.tracking_number == None, Order.tracking_number == ""),
@@ -658,6 +694,16 @@ def list_orders(
             )
         elif status.upper() == "ARCHIVED":
             query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
+        elif status.upper().startswith("CARRIER_") and status.upper()[len("CARRIER_"):].lower() in CARRIER_STAGE_BUCKETS:
+            # Noest's own granular carrier stage (see CARRIER_STAGE_BUCKETS) —
+            # e.g. status=CARRIER_OUT_FOR_DELIVERY for the "En livraison"
+            # sub-module. Scoped to SHIPPED, the only state this is meaningful
+            # for (see get_agent_counts' identical scoping).
+            _bucket = status.upper()[len("CARRIER_"):].lower()
+            query = query.filter(
+                Order.status == "SHIPPED",
+                Order.carrier_stage.in_(CARRIER_STAGE_BUCKETS[_bucket]),
+            )
         elif status.upper() == "INTERNAL_DELIVERY":
             # Any order handed to an internal delivery agent, whatever its
             # current status (assignment is available from every stage now —

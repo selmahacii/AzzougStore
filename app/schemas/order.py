@@ -142,6 +142,12 @@ class OrderRead(BaseModel):
     created_at:      datetime
     updated_at:      Optional[datetime] = None
     tracking_number: Optional[str] = None
+    # Noest's own granular courier-side stage (raw event_key + their human
+    # label), written on every poll cycle — lets a confirmatrice see
+    # real-time carrier progress ("En livraison", etc.) instead of only our
+    # own coarse SHIPPED bucket, which never changes until DELIVERED/RETURNED.
+    carrier_stage:       Optional[str] = None
+    carrier_stage_label: Optional[str] = None
     assignee:        Optional[ActorRef] = None
     is_pack:         Optional[bool] = False
     is_upsell:       Optional[bool] = False

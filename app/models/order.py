@@ -32,6 +32,15 @@ class Order(Base):
     delivery_fee = Column(Integer, default=0)
     tracking_number = Column(String, nullable=True)
     carrier_id = Column(String, ForeignKey("delivery_partners.id"), nullable=True)
+    # Noest's own granular courier-side stage, written on every poll cycle
+    # (not just when a terminal DELIVERED/RETURNED is reached) so a
+    # confirmatrice can see real-time carrier progress, not just our own
+    # coarse SHIPPED bucket. carrier_stage is the raw event_key
+    # (e.g. "fdr_activated"); carrier_stage_label is Noest's own human label
+    # for it (e.g. "En livraison") straight from their activity log — shown
+    # as-is instead of a translation we could get wrong.
+    carrier_stage = Column(String, nullable=True)
+    carrier_stage_label = Column(String, nullable=True)
     
     # Financials (in DA)
     subtotal    = Column(Integer, default=0)
