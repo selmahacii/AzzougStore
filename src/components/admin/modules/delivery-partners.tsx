@@ -1160,7 +1160,16 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
                 </td>
               </tr>
             ) : orders.map((order: any) => {
-              const carrier = allCarriers.find(c => c.id === order.carrier_id) ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
+              // order.carrier_id is the DeliveryPartner ROW's id (a UUID, the
+              // FK column on Order) — allCarriers is keyed by carrier_id the
+              // SLUG ("noest", "yalidine", ...), a different field entirely.
+              // Comparing them directly could never match, so this always
+              // fell through to showing the raw UUID as if it were a name.
+              // Resolve the partner row first, then look up its slug.
+              const matchedPartner = partners.find(p => p.id === order.carrier_id);
+              const carrier = (matchedPartner && allCarriers.find(c => c.id === matchedPartner.carrier_id))
+                ?? (matchedPartner ? { name: matchedPartner.name, logo: '🚚', color: '#4b7bec' } : undefined)
+                ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
               const statusCfg = TRACKING_STATUS_CONFIG[order.delivery_status?.toUpperCase() ?? ''] ?? TRACKING_STATUS_CONFIG.PENDING;
               return (
                 <tr key={order.id} className="hover:bg-slate-50/60 transition-colors group">
@@ -1175,7 +1184,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
                     <span className="text-xs font-bold">{carrier.logo} {carrier.name}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className="text-xs font-medium text-slate-600">{order.wilaya ?? '—'}</span>
+                    <span className="text-xs font-medium text-slate-600">{order.customer_wilaya ?? '—'}</span>
                   </td>
                   <td className="px-5 py-3">
                     {order.tracking_number ? (

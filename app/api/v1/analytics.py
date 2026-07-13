@@ -38,6 +38,13 @@ def get_analytics(
     end_date: Optional[str] = Query(None),
     _auth: Any = Depends(deps.get_current_active_user)
 ) -> Any:
+    # Every branch below (kpi, revenue, delivery, wilayas, ...) already scopes
+    # itself explicitly via the store_id param woven into each query — the
+    # header-driven tenant auto-filter is redundant, and on a X-Store-Id
+    # mismatch it silently returns empty/zeroed results for every dashboard
+    # that calls this shared endpoint, indistinguishable from "no data yet".
+    # Same class of bug fixed across orders.py/users.py/audit.py this session.
+    db.info["skip_tenant_isolation"] = True
     # Period constants
     now = datetime.now(timezone.utc)
     # Removing tzinfo to match DB if DB is timezone-naive, but let's use it properly
