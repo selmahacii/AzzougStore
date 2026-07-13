@@ -382,14 +382,24 @@ def get_agent_counts(
     def _count_wide(*criteria):
         return base_wide.filter(*criteria).count()
 
+    # Mirror of list_orders' exclusion: an order handed to an internal
+    # delivery agent counts ONLY in internal_delivery, never in the
+    # confirmation-stage badges — else the sidebar numbers disagree with
+    # what each module actually lists.
+    _not_internal = or_(
+        Order.livreur_id.is_(None),
+        and_(Order.tracking_number.isnot(None), Order.tracking_number != ""),
+    )
+
     counts = {
         "all":       base.filter(Order.status.notin_(["CANCELLED", "RETURNED"])).count(),
-        "new":       _count(Order.status.in_(["NEW", "ASSIGNED"])),
+        "new":       _count(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])),
         "pending":   _count(
+            _not_internal,
             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
             or_(Order.nrp_count == None, Order.nrp_count == 0),
         ),
-        "confirmed": _count(Order.status == "CONFIRMED"),
+        "confirmed": _count(_not_internal, Order.status == "CONFIRMED"),
         "shipped":   _count_wide(Order.status == "SHIPPED"),
         "delivered": _count_wide(Order.status == "DELIVERED"),
         # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
@@ -398,12 +408,12 @@ def get_agent_counts(
         # was permanently false. The badge wasn't wrong, it was invisible.
         "returned":  _count_wide(Order.status == "RETURNED"),
         "cancelled": _count_wide(Order.status == "CANCELLED"),
-        "nrp":       _count(Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
-        "nrp_abandoned": _count(Order.nrp_count > 0, Order.is_abandoned_cart == True,
+        "nrp":       _count(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
+        "nrp_abandoned": _count(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
                                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
-        "nrp_normal": _count(Order.nrp_count > 0, Order.is_abandoned_cart == False,
+        "nrp_normal": _count(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
                              Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
-        "abandoned_in_progress": _count(Order.is_abandoned_cart == True,
+        "abandoned_in_progress": _count(_not_internal, Order.is_abandoned_cart == True,
                                         Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
         "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
         # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
@@ -424,6 +434,7 @@ def get_agent_counts(
         # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
         # sans heure de rappel programmée, ou dont l'heure est déjà passée.
         "recall": _count(
+            _not_internal,
             Order.nrp_count > 0,
             Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
             or_(Order.next_callback_time == None, Order.next_callback_time <= datetime.now(timezone.utc).replace(tzinfo=None)),
@@ -670,7 +681,32 @@ def list_orders(
         query = query.filter(Order.store_id == store_id)
     if customer_phone:
         query = query.filter(Order.customer_phone == customer_phone)
+    # An order handed to an internal delivery agent lives EXCLUSIVELY in the
+    # "Assignées Livreur" (INTERNAL_DELIVERY) view from that moment on — it
+    # used to keep showing in Nouvelles/En cours/NRP/Confirmées too, so the
+    # confirmatrice saw the same order in two places and could keep working
+    # a parcel that was already out with a driver. Excluded from every
+    # confirmation-stage filter below; DELIVERED/RETURNED/ARCHIVED views are
+    # untouched (terminal outcomes belong there whoever delivered them), and
+    # a carrier tracking number overrides livreur_id per existing rule.
+    from sqlalchemy import or_ as _or_nid, and_ as _and_nid
+    _not_internal_delivery = _or_nid(
+        Order.livreur_id.is_(None),
+        _and_nid(Order.tracking_number.isnot(None), Order.tracking_number != ""),
+    )
+    _CONFIRMATION_STAGE_FILTERS = {
+        "NEW", "PENDING_CONFIRMATION", "RECALL", "NRP", "NRP_ABANDONED",
+        "NRP_NORMAL", "ABANDONED_IN_PROGRESS", "ASSIGNED", "CALLED",
+        "IN_PROGRESS", "RESCHEDULED", "CONFIRMED",
+    }
+
+    _is_livreur = bool(current_user) and getattr(current_user, "role", None) == "LIVREUR"
+
     if status and status.upper() != "ALL":
+        # Never applied to the LIVREUR himself: his whole view IS the
+        # internal-delivery set, this exclusion would blank it out.
+        if status.upper() in _CONFIRMATION_STAGE_FILTERS and not _is_livreur:
+            query = query.filter(_not_internal_delivery)
         if status.upper() == "RECALL":
             from datetime import datetime, timezone
             from sqlalchemy import or_
