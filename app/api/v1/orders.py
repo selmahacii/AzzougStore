@@ -1113,6 +1113,54 @@ def create_order(
                 return existing
 
         from datetime import datetime, timezone, timedelta
+
+        # ── Idempotent submit: rapid multi-clicks on "Commander" ─────────────
+        # A customer hammering the order button (storefront or landing page)
+        # used to create one order per click; auto-merge then FUSED them by
+        # summing quantities — so 3 clicks for 1 item became quantity 3 on the
+        # surviving parent, and the confirmatrice saw an inflated basket plus
+        # a pile of "doublons". An IDENTICAL basket (same products, same
+        # variants, same quantities) resubmitted by the same phone within a
+        # short window is the same intent, not a new purchase → return the
+        # already-created order untouched. A basket that differs in ANY way
+        # (variant changed, quantity changed, product added) falls through to
+        # normal creation, where auto-merge handles it as a genuine addition.
+        def _items_signature(raw_items: list) -> tuple:
+            sig = []
+            for it in raw_items:
+                vd = it.get("variant_details") if isinstance(it, dict) else None
+                variant = (vd.get("variant") if isinstance(vd, dict) else str(vd or "")) or ""
+                sig.append((str(it.get("product_id") or ""), str(variant).strip().lower(), int(it.get("quantity") or 0)))
+            return tuple(sorted(sig))
+
+        if order_data.get("customer_phone") and order_data.get("store_id"):
+            _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
+            _incoming_sig = _items_signature(items)
+            _recent = (
+                db.query(Order)
+                .options(joinedload(Order.items))
+                .filter(
+                    Order.store_id == order_data["store_id"],
+                    Order.customer_phone == order_data["customer_phone"],
+                    Order.created_at >= _idem_window,
+                    Order.is_deleted == False,
+                    Order.status.notin_(["CANCELLED", "MERGED", "RETURNED"]),
+                )
+                .order_by(Order.created_at.desc())
+                .all()
+            )
+            for _prev in _recent:
+                _prev_sig = _items_signature([
+                    {"product_id": pi.product_id, "variant_details": pi.variant_details, "quantity": pi.quantity}
+                    for pi in (_prev.items or [])
+                ])
+                if _prev_sig == _incoming_sig:
+                    logger.info(
+                        "Idempotent submit: identical basket from %s within 15min → returning existing order %s instead of creating a duplicate",
+                        order_data["customer_phone"], _prev.order_number,
+                    )
+                    return _prev
+
         is_upsell = order_data.get("is_upsell", False)
         if not is_upsell and order_data.get("customer_phone"):
             fourteen_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)

@@ -224,6 +224,24 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
                 order.carrier_stage_label = _stage_label or order.carrier_stage_label
                 db.add(order)
                 stage_writes += 1
+                # Every carrier-transmitted stage change lands in the order's
+                # own action history (OrderEvent, actor=SYSTÈME) — previously
+                # only the terminal DELIVERED/RETURNED transition was logged,
+                # so the timeline showed nothing between "Expédiée" and the
+                # final outcome even though Noest reported every hop.
+                try:
+                    import uuid as _uuid_ce
+                    from app.models.events import OrderEvent as _OE
+                    db.add(_OE(
+                        id=str(_uuid_ce.uuid4()),
+                        order_id=order.id,
+                        actor_id=None,
+                        from_status=str(order.status),
+                        to_status=str(order.status),
+                        note=f"Mise à jour transporteur (Noest) : {_stage_label or _stage_key}.",
+                    ))
+                except Exception:
+                    logger.warning("Carrier-stage event log failed for order %s", order.id, exc_info=True)
 
         if not new_status:
             # Not yet a terminal event — still worth flagging "colis suspendu"
