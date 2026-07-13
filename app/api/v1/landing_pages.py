@@ -305,6 +305,103 @@ def get_landing_page(
     return {"success": True, "data": _serialize(lp)}
 
 
+# ─── Per-LP analytics: daily order breakdown for the detail panel ─────────────
+
+@router.get("/{lp_id}/analytics")
+def get_landing_page_analytics(
+    lp_id: str,
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _auth: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Daily orders/delivered/cancelled/revenue for THIS page's product, plus
+    period totals — powers the click-through detail dialog in the LP module.
+    Same counting rules as the list metrics: MERGED and soft-deleted orders
+    excluded, every order of the product in the store counts (source-agnostic).
+    Defaults to the last 30 days when no range is given.
+    """
+    from datetime import timedelta
+    from app.models.order import Order, OrderItem
+
+    db.info["skip_tenant_isolation"] = True  # explicit store scope below
+    lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
+    if not lp:
+        raise HTTPException(404, "Landing page introuvable")
+    if not lp.product_id:
+        return {"success": True, "data": {"daily": [], "totals": {}, "created_at": lp.created_at.isoformat() if lp.created_at else None}}
+
+    now = datetime.utcnow()
+    d_start = now - timedelta(days=30)
+    d_end = now
+    if start_date:
+        try:
+            d_start = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            d_end = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except ValueError:
+            pass
+
+    day = func.date(Order.created_at)
+    rows = (
+        db.query(
+            day.label("day"),
+            func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
+            func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
+            func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
+            func.count(distinct(case(
+                (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
+            ))).label("manual"),
+            func.coalesce(func.sum(case(
+                (Order.status != "MERGED", OrderItem.quantity * OrderItem.unit_price), else_=0
+            )), 0).label("revenue"),
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= d_start,
+            Order.created_at <= d_end,
+        )
+        .group_by(day)
+        .order_by(day)
+        .all()
+    )
+
+    daily = [
+        {
+            "date": str(r.day),
+            "orders": int(r.orders or 0),
+            "delivered": int(r.delivered or 0),
+            "cancelled": int(r.cancelled or 0),
+            "manual": int(r.manual or 0),
+            "revenue": float(r.revenue or 0),
+        }
+        for r in rows
+    ]
+    totals = {
+        "orders": sum(d["orders"] for d in daily),
+        "delivered": sum(d["delivered"] for d in daily),
+        "cancelled": sum(d["cancelled"] for d in daily),
+        "manual": sum(d["manual"] for d in daily),
+        "revenue": sum(d["revenue"] for d in daily),
+    }
+    return {
+        "success": True,
+        "data": {
+            "daily": daily,
+            "totals": totals,
+            "created_at": lp.created_at.isoformat() if lp.created_at else None,
+            "views": lp.views or 0,
+        },
+    }
+
+
 # ─── Create ───────────────────────────────────────────────────────────────────
 
 @router.post("/", status_code=201)

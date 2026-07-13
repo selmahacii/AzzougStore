@@ -152,7 +152,9 @@ export default function InventoryDashboard() {
    return (
      <div className="space-y-6 pb-32 animate-in fade-in duration-500">
          {/* KPI Cluster */}
-         <div className={`grid grid-cols-1 md:grid-cols-2 ${isConfirmateur ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-6`}>
+         {/* 2 per row on phones — a single stacked column pushed the module's
+             real content below four full-height cards of scrolling. */}
+         <div className={`grid grid-cols-2 ${isConfirmateur ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3 sm:gap-6`}>
             <KpiCard
                title="PRODUITS RÉFÉRENCÉS"
                value={(summary?.totalProducts ?? 0).toString()}

@@ -1201,7 +1201,10 @@ export default function ProductsPage() {
                   <Tabs defaultValue="base" className="flex-1 flex flex-col md:flex-row w-full h-full min-h-0 relative">
                      {/* ── Sidebar (TabsList) ── */}
                      <div className="shrink-0 md:w-[240px] lg:w-[280px] bg-white md:border-r border-slate-100 flex flex-col z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] relative">
-                        <TabsList className="h-auto p-4 md:p-6 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-max md:w-full min-w-full md:min-w-0">
+                        {/* Phones: wrap so EVERY tab stays visible at once —
+                            the old single-row horizontal scroll hid the last
+                            tabs entirely ("Livraison" was undiscoverable). */}
+                        <TabsList className="h-auto p-2.5 md:p-6 flex flex-row flex-wrap md:flex-col gap-1.5 md:gap-2 md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-full md:min-w-0">
                            {([
                               { value: 'base',      icon: Info,      label: 'Infos',     labelFull: 'Informations' },
                               ...(form.is_pack ? [{ value: 'pack', icon: Boxes, label: 'Pack', labelFull: 'Composition Pack' }] : []),
@@ -1210,7 +1213,7 @@ export default function ProductsPage() {
                               { value: 'logistics', icon: Truck,     label: 'Livraison', labelFull: 'Logistique' },
                            ] as any[]).map(({ value, icon: Icon, label, labelFull }) => (
                               <TabsTrigger key={value} value={value}
-                                 className="h-12 md:h-14 px-4 md:px-5 justify-start gap-3 rounded-[14px] data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-500 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-black uppercase tracking-[0.15em] text-[10px] sm:text-[11px] shadow-none border-none group"
+                                 className="h-10 md:h-14 px-3 md:px-5 justify-start gap-2 md:gap-3 rounded-[14px] data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-500 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-black uppercase tracking-[0.1em] md:tracking-[0.15em] text-[10px] sm:text-[11px] shadow-none border-none group grow md:grow-0"
                               >
                                  <Icon className="size-4 shrink-0 transition-colors group-data-[state=active]:text-white" />
                                  <span className="md:hidden">{label}</span>

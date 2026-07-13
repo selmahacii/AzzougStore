@@ -113,12 +113,123 @@ const TEMPLATES = [
 
 const PRESET_COLORS = ['#1e293b', '#475569', '#3b82f6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6'];
 
+// ─── LP Analytics detail dialog ──────────────────────────────────────────────
+// Opened by clicking a card's thumbnail/title: creation date, period totals
+// and a daily orders/revenue chart, filterable by date range.
+function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
+  const [dStart, setDStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [dEnd, setDEnd] = useState(() => new Date().toISOString().split('T')[0]);
+
+  const analyticsQuery = useQuery<any>({
+    queryKey: ['lp-analytics', lp.id, dStart, dEnd],
+    queryFn: () => apiFetch(
+      `/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`
+    ),
+    refetchInterval: 15000,
+  });
+
+  const data = analyticsQuery.data?.data;
+  const daily: any[] = data?.daily ?? [];
+  const totals = data?.totals ?? {};
+  const maxOrders = Math.max(1, ...daily.map(d => d.orders));
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-[94vw] max-w-[820px] max-h-[90dvh] overflow-y-auto custom-scrollbar bg-white rounded-[24px] p-0 border-none shadow-2xl">
+        <div className="px-6 py-5 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <DialogTitle className="text-base font-black text-slate-800 truncate pr-8">
+            {lp.headline || lp.product_name || lp.slug}
+          </DialogTitle>
+          <p className="text-[10px] font-bold text-slate-400 font-mono mt-1">
+            /lp/{lp.slug}
+            {data?.created_at && <> · créée le {new Date(data.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</>}
+          </p>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Date filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Calendar className="size-4 text-slate-400" />
+            <input type="date" value={dStart} onChange={e => setDStart(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none" />
+            <span className="text-slate-300">→</span>
+            <input type="date" value={dEnd} onChange={e => setDEnd(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none" />
+            {([['7j', 7], ['30j', 30], ['90j', 90]] as const).map(([label, days]) => (
+              <button key={label} type="button"
+                onClick={() => {
+                  const s = new Date(); s.setDate(s.getDate() - days);
+                  setDStart(s.toISOString().split('T')[0]);
+                  setDEnd(new Date().toISOString().split('T')[0]);
+                }}
+                className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] font-black uppercase text-slate-500 transition-colors">
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Period totals */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {[
+              { label: 'Commandes', value: totals.orders ?? 0, color: '#6C5CE7' },
+              { label: 'Livrées', value: totals.delivered ?? 0, color: '#00B894' },
+              { label: 'Annulées', value: totals.cancelled ?? 0, color: '#E17055' },
+              { label: 'Manuelles', value: totals.manual ?? 0, color: '#636E72' },
+              { label: 'CA', value: `${Math.round(totals.revenue ?? 0).toLocaleString('fr-FR')} DA`, color: '#0984E3' },
+            ].map(s => (
+              <div key={s.label} className="text-center p-3 rounded-2xl border"
+                style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Daily chart — CSS bars, no chart lib needed at this size */}
+          <div className="bg-slate-50 rounded-2xl p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Commandes par jour</p>
+            {analyticsQuery.isLoading ? (
+              <div className="h-36 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+            ) : daily.length === 0 ? (
+              <div className="h-36 flex items-center justify-center text-xs font-bold text-slate-300 uppercase tracking-widest">
+                Aucune commande sur cette période
+              </div>
+            ) : (
+              <div className="flex items-end gap-[3px] h-36 overflow-x-auto custom-scrollbar pb-1">
+                {daily.map(d => (
+                  <div key={d.date} className="flex flex-col items-center gap-1 min-w-[22px] flex-1 group"
+                    title={`${new Date(d.date).toLocaleDateString('fr-FR')} — ${d.orders} commande(s), ${d.delivered} livrée(s), ${d.cancelled} annulée(s), ${Math.round(d.revenue).toLocaleString('fr-FR')} DA`}>
+                    <span className="text-[8px] font-black text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">{d.orders}</span>
+                    <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden" style={{ height: `${Math.max(6, (d.orders / maxOrders) * 100)}%` }}>
+                      <div className="w-full bg-emerald-400" style={{ height: `${d.orders > 0 ? (d.delivered / d.orders) * 100 : 0}%` }} />
+                      <div className="w-full bg-[#6C5CE7] flex-1" />
+                    </div>
+                    <span className="text-[7px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-4 mt-3">
+              <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-[#6C5CE7] inline-block" /> Commandes</span>
+              <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-emerald-400 inline-block" /> dont livrées</span>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── LP Card ──────────────────────────────────────────────────────────────────
 function LandingPageCard({
-  lp, storeSlug, allStores, onEdit, onToggle, onDelete, onCopy,
+  lp, storeSlug, allStores, onEdit, onToggle, onDelete, onCopy, onShowAnalytics,
 }: {
   lp: LandingPage; storeSlug: string; allStores: any[];
   onEdit: () => void; onToggle: () => void; onDelete: () => void; onCopy: () => void;
+  onShowAnalytics: () => void;
 }) {
   // Always resolve from the LP's *own* store, never from the current admin store
   const matchingStore = allStores.find(s => s.id === lp.store_id);
@@ -166,8 +277,13 @@ function LandingPageCard({
       "bg-white rounded-[28px] border overflow-hidden transition-all hover:shadow-lg hover:shadow-slate-100 group",
       lp.is_active ? "border-slate-100" : "border-dashed border-slate-200 opacity-70"
     )}>
-      {/* Thumbnail */}
-      <div className="relative h-36 overflow-hidden" style={{ backgroundColor: lp.primary_color + '15' }}>
+      {/* Thumbnail — tap anywhere on it to open the full analytics panel */}
+      <div
+        className="relative h-36 overflow-hidden cursor-pointer"
+        style={{ backgroundColor: lp.primary_color + '15' }}
+        onClick={onShowAnalytics}
+        title="Voir les détails & analytics de cette page"
+      >
         {lp.image_url ? (
           <img src={lp.image_url} alt="" className="w-full h-full object-cover opacity-70" />
         ) : (
@@ -205,7 +321,7 @@ function LandingPageCard({
           )}
         </div>
 
-        <h3 className="text-sm font-black text-slate-800 truncate mb-1">{lp.headline || lp.product_name || '—'}</h3>
+        <h3 className="text-sm font-black text-slate-800 truncate mb-1 cursor-pointer hover:text-[#6C5CE7] transition-colors" onClick={onShowAnalytics}>{lp.headline || lp.product_name || '—'}</h3>
         <p className="text-[10px] text-slate-400 font-medium font-mono truncate mb-4">/lp/{lp.slug}</p>
 
         {/* Stats */}
@@ -2013,6 +2129,7 @@ export default function LandingPagesDashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingLP, setEditingLP]   = useState<LandingPage | null>(null);
   const [deletingLP, setDeletingLP] = useState<LandingPage | null>(null);
+  const [analyticsLP, setAnalyticsLP] = useState<LandingPage | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -2141,6 +2258,7 @@ export default function LandingPagesDashboard() {
               onToggle={() => toggleMutation.mutate(lp.id)}
               onDelete={() => setDeletingLP(lp)}
               onCopy={() => handleCopy(lp.slug)}
+              onShowAnalytics={() => setAnalyticsLP(lp)}
             />
           ))}
 
@@ -2172,6 +2290,10 @@ export default function LandingPagesDashboard() {
         />
       )}
       
+      {analyticsLP && (
+        <LandingPageAnalyticsDialog lp={analyticsLP} onClose={() => setAnalyticsLP(null)} />
+      )}
+
       <AlertDialog open={!!deletingLP} onOpenChange={(open) => !open && setDeletingLP(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
