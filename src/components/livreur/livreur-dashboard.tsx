@@ -32,6 +32,21 @@ export default function LivreurDashboard() {
   const [section, setSection] = useState<'deliveries' | 'products' | 'inventory'>('deliveries');
   const queryClient = useQueryClient();
 
+  // Same union semantics as the backend RBAC and app-bootstrap: the driver
+  // only ever switches between stores he's actually attached to
+  // (assigned_store_ids ∪ employee_store_id). Offering every store here let
+  // him land on one he has nothing to do with, and Produits/Inventaire
+  // below (activeStore-driven) then showed that store's catalog.
+  const myStores = useMemo(() => {
+    const ids = new Set([
+      ...((user?.assigned_store_ids as string[] | undefined) ?? []),
+      ...(user?.employee_store_id ? [user.employee_store_id] : []),
+    ]);
+    if (ids.size === 0) return allStores;
+    const filtered = allStores.filter(s => ids.has(s.id));
+    return filtered.length > 0 ? filtered : allStores;
+  }, [user, allStores]);
+
   const handleLogout = async () => {
     try { await apiFetch('/api/v1/auth', { method: 'DELETE' }); } catch { /* ignore */ }
     clearUser();
@@ -60,14 +75,14 @@ export default function LivreurDashboard() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {allStores.length > 1 && (
+            {myStores.length > 1 && (
               <select
                 value={activeStore?.id || ''}
-                onChange={e => { const s = allStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
+                onChange={e => { const s = myStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
                 className="text-xs font-bold bg-white/10 border border-white/10 rounded-lg px-2.5 py-1.5 text-white outline-none cursor-pointer max-w-[100px] sm:max-w-[160px] truncate"
                 title="Changer de boutique"
               >
-                {allStores.map(s => (
+                {myStores.map(s => (
                   <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
                 ))}
               </select>
@@ -104,8 +119,13 @@ export default function LivreurDashboard() {
       </header>
 
       {section === 'deliveries' && <LivreurDeliveries />}
-      {section === 'products'   && <div className="max-w-3xl mx-auto p-4 sm:p-6"><ProductsPage /></div>}
-      {section === 'inventory'  && <div className="max-w-3xl mx-auto p-4 sm:p-6"><InventoryDashboard /></div>}
+      {/* Products/Inventory are the full admin modules (dense tables, wide
+          dialogs) — squeezing them into the deliveries' phone-width max-w-3xl
+          column made them cramped and broken-looking on a laptop. They get
+          the full viewport width like in the admin app; only the deliveries
+          list keeps the narrow phone-first column. */}
+      {section === 'products'   && <div className="max-w-7xl mx-auto p-3 sm:p-6"><ProductsPage /></div>}
+      {section === 'inventory'  && <div className="max-w-7xl mx-auto p-3 sm:p-6"><InventoryDashboard /></div>}
     </div>
   );
 }

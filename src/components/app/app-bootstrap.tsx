@@ -84,26 +84,35 @@ export function AppBootstrap() {
         // was checked before, so refreshing the page while working in any store OTHER
         // than her single employee_store_id silently bounced her back to it (or store
         // #1), even though the store she was in is one she's genuinely assigned to.
+        // Union semantics, mirroring the backend's RBAC exactly:
+        // resolved stores = assigned_store_ids ∪ {employee_store_id}. When
+        // that set is non-empty it is the ONLY set of valid stores for this
+        // employee, INDEPENDENT of the legacy assigned_store_scope flag —
+        // trusting scope="ALL" here let a confirmatrice assigned to one
+        // store keep another store cached as active, so every activeStore-
+        // driven module (Produits, Stock, Inventaire) showed a store she
+        // isn't responsible for. Empty set (nothing configured) keeps the
+        // legacy any-store behaviour.
+        const resolvedStoreIds: string[] = Array.from(new Set([
+          ...(currentUser?.assigned_store_ids ?? []),
+          ...(currentUser?.employee_store_id ? [currentUser.employee_store_id] : []),
+        ]));
         const isStoreValidForUser = (storeId: string): boolean => {
           if (!currentUser) return true;
-          if (currentUser.role === 'SUPER_ADMIN') return true;
-          if (currentUser.employee_store_id === storeId) return true;
-          if (currentUser.assigned_store_scope === 'SPECIFIC') {
-            return (currentUser.assigned_store_ids ?? []).includes(storeId);
-          }
-          // scope "ALL" (or unset/legacy user without the field) — any store is fine
-          return true;
+          if (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN') return true;
+          if (resolvedStoreIds.length === 0) return true;
+          return resolvedStoreIds.includes(storeId);
         };
 
-        // Prioritize employee_store_id if they are an employee (CONFIRMATEUR, MANAGER, etc)
-        // This prevents an employee from getting stuck in a store they shouldn't focus on
+        // Prioritize the employee's own resolved stores — prevents an
+        // employee from getting stuck in a store they shouldn't focus on
         // just because the admin previously had it cached in the browser.
         let defaultStore = stores[0];
         if (currentUser && currentUser.employee_store_id) {
            const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
            if (assignedStore) defaultStore = assignedStore;
-        } else if (currentUser?.assigned_store_scope === 'SPECIFIC' && currentUser.assigned_store_ids?.length) {
-           const firstAssigned = stores.find(s => currentUser!.assigned_store_ids!.includes(s.id));
+        } else if (resolvedStoreIds.length > 0) {
+           const firstAssigned = stores.find(s => resolvedStoreIds.includes(s.id));
            if (firstAssigned) defaultStore = firstAssigned;
         }
 
