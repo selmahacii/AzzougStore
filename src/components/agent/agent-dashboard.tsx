@@ -379,6 +379,14 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     queryKey: ['product-details-agent', order.items?.[0]?.product_id],
     enabled: isEditing && !!order.items?.[0]?.product_id,
     queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`, { headers: { 'X-Store-Id': order.store_id } }),
+    // Stock moves in real time (other confirmatrices/orders reserve or confirm
+    // concurrently) but the global QueryClient default (staleTime 2min,
+    // refetchOnWindowFocus off) would otherwise let this go stale for minutes
+    // while the drawer sits open — the exact gap that let a confirmatrice see
+    // "3 en stock" and then get rejected with "Stock insuffisant" on save.
+    staleTime: 10_000,
+    refetchInterval: isEditing ? 10_000 : false,
+    refetchOnWindowFocus: true,
   });
 
   // Upsell: let the confirmatrice add a DIFFERENT existing product to this
@@ -388,6 +396,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // so the order gets flagged is_upsell only when that really happened.
   const originalProductIds = useState(() => new Set((order.items || []).map((i: any) => i.product_id)))[0];
   const [upsellProductId, setUpsellProductId] = useState('');
+  const [isCheckingStock, setIsCheckingStock] = useState(false);
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
@@ -931,9 +940,13 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                             {variantAvailable !== null && (
                               <div className={cn(
                                 "text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-lg inline-flex items-center gap-1 w-fit",
-                                variantAvailable > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                                variantAvailable >= item.quantity ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
                               )}>
-                                {variantAvailable > 0 ? `${variantAvailable} en stock` : "Rupture de stock — indisponible"}
+                                {variantAvailable <= 0
+                                  ? "Rupture de stock — indisponible"
+                                  : variantAvailable < item.quantity
+                                    ? `Seulement ${variantAvailable} en stock (quantité demandée: ${item.quantity})`
+                                    : `${variantAvailable} en stock`}
                               </div>
                             )}
                             {hasVariants && variantAvailable === null && (
@@ -1003,17 +1016,57 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
 
                 <div className="flex gap-2 pt-2">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      // Re-check against the freshest possible stock right before
+                      // saving, instead of trusting the badge above (which can still
+                      // be a few seconds stale). This is what used to let a
+                      // confirmatrice see "3 en stock", save, and only then get
+                      // rejected with "Stock insuffisant" — the badge showed a
+                      // snapshot from when the drawer opened while another order
+                      // consumed the same units in the meantime.
+                      setIsCheckingStock(true);
+                      try {
+                        const fresh = await productQuery.refetch();
+                        const freshProduct = fresh.data;
+                        if (freshProduct) {
+                          for (const it of editData.items) {
+                            if (it.product_id !== freshProduct.id) continue;
+                            const variantStr = it.variant_details?.variant;
+                            let available: number | null = null;
+                            if (variantStr && freshProduct.variants?.length) {
+                              const colorVal = it.variant_details?.Couleur || it.variant_details?.Color || '';
+                              const sizeVal = it.variant_details?.Taille || it.variant_details?.Size || '';
+                              const colorVar = freshProduct.variants.find((v: any) => v.value === colorVal);
+                              const subVar = sizeVal ? colorVar?.sub_variants?.find((sv: any) => sv.value === sizeVal) : null;
+                              const effective = subVar || (colorVar && (!colorVar.sub_variants || colorVar.sub_variants.length === 0) ? colorVar : null);
+                              if (effective) {
+                                available = Number(effective.stock || 0) - Number(effective.reserved || 0);
+                              }
+                            } else if (!freshProduct.variants?.length) {
+                              available = Number(freshProduct.stock || 0) - Number(freshProduct.reserved_stock || 0);
+                            }
+                            if (available !== null && available < it.quantity) {
+                              toast.error(
+                                `Stock insuffisant pour ${it.product_name}${variantStr ? ` (${variantStr})` : ''} : ${available} disponible(s), ${it.quantity} demandé(s). Le stock vient d'être mis à jour, ajustez la quantité ou choisissez une autre variante.`
+                              );
+                              return;
+                            }
+                          }
+                        }
+                      } finally {
+                        setIsCheckingStock(false);
+                      }
+
                       // A genuinely new product (not present when the drawer
                       // opened) means this save is an upsell — flag it so it
                       // shows the "Upsell" badge and counts in performance.
                       const addedNewProduct = editData.items.some((it: any) => !originalProductIds.has(it.product_id));
                       updateMutation.mutate(addedNewProduct ? { ...editData, is_upsell: true } as any : editData);
                     }}
-                    disabled={updateMutation.isPending}
-                    className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded"
+                    disabled={updateMutation.isPending || isCheckingStock}
+                    className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded disabled:opacity-60"
                   >
-                    {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                    {isCheckingStock ? 'Vérification du stock...' : updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
                   </button>
                   <button onClick={() => setIsEditing(false)} className="px-4 bg-slate-200 text-slate-700 text-xs font-bold rounded">
                     Annuler
