@@ -1443,8 +1443,11 @@ def update_order(
     # a note — never reassign or change anything else.
     if current_user.role == "LIVREUR":
         requested = (status_update.status or "").upper() if status_update.status else None
-        if requested and requested not in ("SHIPPED", "DELIVERED", "RETURNED", "CANCELLED"):
-            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur (En livraison, Livrée, Retour ou Annulée uniquement).")
+        # RESCHEDULED = "Reportée" — the driver couldn't deliver today (client
+        # absent, reporté à demain...) and hands the order back to the
+        # confirmation pipeline instead of forcing a terminal outcome.
+        if requested and requested not in ("SHIPPED", "DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED"):
+            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur (En livraison, Livrée, Retour, Reportée ou Annulée uniquement).")
         if status_update.assigned_to or status_update.livreur_id:
             raise HTTPException(status_code=403, detail="Un livreur ne peut pas réassigner une commande.")
 

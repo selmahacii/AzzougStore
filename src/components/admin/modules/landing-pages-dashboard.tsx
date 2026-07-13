@@ -230,6 +230,7 @@ function LandingPageCard({
             { label: 'Abandon.',  value: lp.metrics?.abandoned ?? 0, color: '#FDCB6E', title: 'Total des paniers abandonnés (récupérés ou non)' },
             { label: 'Récup.',    value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
             { label: 'Annulés',   value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
+            { label: 'Manuelles', value: (lp.metrics as any)?.manual ?? 0, color: '#636E72', title: 'Commandes créées manuellement (téléphone/admin) — comptées dans les ventes mais exclues du taux de conversion, car elles ne viennent pas du trafic de la page' },
             { label: 'Doublons',  value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
           ].map(s => (
             <div key={s.label} title={s.title}

@@ -468,6 +468,93 @@ export default function ProductsPage() {
 
    const handleDelete = (product: Product) => setDeleteTarget(product);
 
+   // Shared by the desktop table's edit button AND the mobile card grid
+   // (tapping a card opens the edit dialog directly) — fetches the fresh
+   // product first so the form never opens on stale list data.
+   const openEditProduct = async (product: Product) => {
+      setFetchingProductId(product.id);
+      let freshProduct = product;
+      try {
+         const res = await apiFetch<any>(`/api/v1/products/${product.id}`);
+         if (res && (res.data || res.id)) {
+            freshProduct = res.data || res;
+         }
+      } catch (err) {
+         console.error("Failed to fetch fresh product details", err);
+      } finally {
+         setFetchingProductId(null);
+      }
+
+      setEditingProduct(freshProduct);
+      setOriginalMainImage(freshProduct.main_image || '');
+      setForm({
+         name: freshProduct.name || '',
+         category: freshProduct.category || '',
+         sku: freshProduct.sku || '',
+         barcode: freshProduct.barcode || '',
+         brand: freshProduct.brand || '',
+         slug: freshProduct.slug || '',
+         description: freshProduct.description || '',
+         price: String(freshProduct.price ?? ''),
+         compare_price: String(freshProduct.compare_price ?? ''),
+         cost_price: String(freshProduct.cost_price ?? ''),
+         stock: String(freshProduct.stock ?? ''),
+         low_stock_threshold: String(freshProduct.low_stock_threshold ?? '5'),
+         tags: freshProduct.tags?.join(', ') || '',
+         images: freshProduct.images || [],
+         is_active: freshProduct.is_active !== false,
+         main_image: freshProduct.main_image || '',
+         store_id: (freshProduct as any).store_id || storeId,
+         variants: freshProduct.variants || [],
+         // Production fields
+         supplier_id: (freshProduct as any).supplier_id || '',
+         production_source: (freshProduct as any).production_source || EMPTY_FORM.production_source,
+         prod_supplier_name: (freshProduct as any).prod_supplier_name || EMPTY_FORM.prod_supplier_name,
+         prod_batch_qty: String((freshProduct as any).prod_batch_qty || EMPTY_FORM.prod_batch_qty),
+         prod_fabric_cost: String((freshProduct as any).prod_fabric_cost || EMPTY_FORM.prod_fabric_cost),
+         prod_fabric_supplier: (freshProduct as any).prod_fabric_supplier || EMPTY_FORM.prod_fabric_supplier,
+         prod_accessories_cost: String((freshProduct as any).prod_accessories_cost || EMPTY_FORM.prod_accessories_cost),
+         prod_accessories_supplier: (freshProduct as any).prod_accessories_supplier || EMPTY_FORM.prod_accessories_supplier,
+         prod_labor_cut_cost: String((freshProduct as any).prod_labor_cut_cost || EMPTY_FORM.prod_labor_cut_cost),
+         prod_labor_cut_supplier: (freshProduct as any).prod_labor_cut_supplier || EMPTY_FORM.prod_labor_cut_supplier,
+         prod_labor_sew_cost: String((freshProduct as any).prod_labor_sew_cost || EMPTY_FORM.prod_labor_sew_cost),
+         prod_labor_sew_supplier: (freshProduct as any).prod_labor_sew_supplier || EMPTY_FORM.prod_labor_sew_supplier,
+         prod_labor_finish_cost: String((freshProduct as any).prod_labor_finish_cost || EMPTY_FORM.prod_labor_finish_cost),
+         prod_labor_finish_supplier: (freshProduct as any).prod_labor_finish_supplier || EMPTY_FORM.prod_labor_finish_supplier,
+         prod_packaging_cost: String((freshProduct as any).prod_packaging_cost || EMPTY_FORM.prod_packaging_cost),
+         prod_packaging_supplier: (freshProduct as any).prod_packaging_supplier || EMPTY_FORM.prod_packaging_supplier,
+         prod_transport_cost: String((freshProduct as any).prod_transport_cost || EMPTY_FORM.prod_transport_cost),
+         prod_transport_supplier: (freshProduct as any).prod_transport_supplier || EMPTY_FORM.prod_transport_supplier,
+         prod_other_cost: String((freshProduct as any).prod_other_cost || EMPTY_FORM.prod_other_cost),
+         prod_other_supplier: (freshProduct as any).prod_other_supplier || EMPTY_FORM.prod_other_supplier,
+         prod_notes: (freshProduct as any).prod_notes || EMPTY_FORM.prod_notes,
+         allowed_carriers: Array.isArray((freshProduct as any).allowed_carriers)
+            ? (freshProduct as any).allowed_carriers
+            : (typeof (freshProduct as any).allowed_carriers === 'string'
+               ? (function() { try { return JSON.parse((freshProduct as any).allowed_carriers); } catch { return []; } })()
+               : []),
+         prod_custom_charges: Array.isArray((freshProduct as any).prod_custom_charges)
+            ? (freshProduct as any).prod_custom_charges
+            : (typeof (freshProduct as any).prod_custom_charges === 'string'
+               ? (function() { try { return JSON.parse((freshProduct as any).prod_custom_charges); } catch { return []; } })()
+               : []),
+         delivery_fees: (function() {
+            const raw = (freshProduct as any).delivery_fees || (freshProduct as any).deliveryFees;
+            if (!raw) return { is_free: false, fees: {} };
+            if (typeof raw === 'string') {
+               try { return JSON.parse(raw); } catch { return { is_free: false, fees: {} }; }
+            }
+            return raw;
+         })(),
+         // Pack options
+         is_pack: (freshProduct as any).is_pack || false,
+         pack_items: (freshProduct as any).pack_items || [],
+         pack_charges: (freshProduct as any).pack_charges || [],
+         pack_margin: String((freshProduct as any).pack_margin || '0.0'),
+         pack_options: (freshProduct as any).pack_options || [],
+      });
+   };
+
    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -912,7 +999,9 @@ export default function ProductsPage() {
 
          {/* ─── Data Table ─── */}
          <div className="bg-white rounded-[40px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            <div className="overflow-x-auto">
+            {/* Desktop table — on phones the card grid below replaces it
+                (a 1100px-wide table behind horizontal scroll was unusable). */}
+            <div className="hidden sm:block overflow-x-auto">
                <table className="w-full text-left min-w-[1100px]">
                   <thead>
                      <tr className="border-b bg-[#FAFBFD]" style={{ borderColor: C.border }}>
@@ -978,89 +1067,7 @@ export default function ProductsPage() {
                                  )}
                                  <button
                                      disabled={fetchingProductId === product.id}
-                                     onClick={async () => {
-                                        setFetchingProductId(product.id);
-                                        let freshProduct = product;
-                                        try {
-                                           const res = await apiFetch<any>(`/api/v1/products/${product.id}`);
-                                           if (res && (res.data || res.id)) {
-                                              freshProduct = res.data || res;
-                                           }
-                                        } catch (err) {
-                                           console.error("Failed to fetch fresh product details", err);
-                                        } finally {
-                                           setFetchingProductId(null);
-                                        }
-                                        
-                                        setEditingProduct(freshProduct);
-                                        setOriginalMainImage(freshProduct.main_image || '');
-                                        setForm({
-                                           name: freshProduct.name || '',
-                                           category: freshProduct.category || '',
-                                           sku: freshProduct.sku || '',
-                                           barcode: freshProduct.barcode || '',
-                                           brand: freshProduct.brand || '',
-                                           slug: freshProduct.slug || '',
-                                           description: freshProduct.description || '',
-                                           price: String(freshProduct.price ?? ''),
-                                           compare_price: String(freshProduct.compare_price ?? ''),
-                                           cost_price: String(freshProduct.cost_price ?? ''),
-                                           stock: String(freshProduct.stock ?? ''),
-                                           low_stock_threshold: String(freshProduct.low_stock_threshold ?? '5'),
-                                           tags: freshProduct.tags?.join(', ') || '',
-                                           images: freshProduct.images || [],
-                                           is_active: freshProduct.is_active !== false,
-                                           main_image: freshProduct.main_image || '',
-                                           store_id: (freshProduct as any).store_id || storeId,
-                                           variants: freshProduct.variants || [],
-                                           // Production fields
-                                           supplier_id: (freshProduct as any).supplier_id || '',
-                                           production_source: (freshProduct as any).production_source || EMPTY_FORM.production_source,
-                                           prod_supplier_name: (freshProduct as any).prod_supplier_name || EMPTY_FORM.prod_supplier_name,
-                                           prod_batch_qty: String((freshProduct as any).prod_batch_qty || EMPTY_FORM.prod_batch_qty),
-                                           prod_fabric_cost: String((freshProduct as any).prod_fabric_cost || EMPTY_FORM.prod_fabric_cost),
-                                           prod_fabric_supplier: (freshProduct as any).prod_fabric_supplier || EMPTY_FORM.prod_fabric_supplier,
-                                           prod_accessories_cost: String((freshProduct as any).prod_accessories_cost || EMPTY_FORM.prod_accessories_cost),
-                                           prod_accessories_supplier: (freshProduct as any).prod_accessories_supplier || EMPTY_FORM.prod_accessories_supplier,
-                                           prod_labor_cut_cost: String((freshProduct as any).prod_labor_cut_cost || EMPTY_FORM.prod_labor_cut_cost),
-                                           prod_labor_cut_supplier: (freshProduct as any).prod_labor_cut_supplier || EMPTY_FORM.prod_labor_cut_supplier,
-                                           prod_labor_sew_cost: String((freshProduct as any).prod_labor_sew_cost || EMPTY_FORM.prod_labor_sew_cost),
-                                           prod_labor_sew_supplier: (freshProduct as any).prod_labor_sew_supplier || EMPTY_FORM.prod_labor_sew_supplier,
-                                           prod_labor_finish_cost: String((freshProduct as any).prod_labor_finish_cost || EMPTY_FORM.prod_labor_finish_cost),
-                                           prod_labor_finish_supplier: (freshProduct as any).prod_labor_finish_supplier || EMPTY_FORM.prod_labor_finish_supplier,
-                                           prod_packaging_cost: String((freshProduct as any).prod_packaging_cost || EMPTY_FORM.prod_packaging_cost),
-                                           prod_packaging_supplier: (freshProduct as any).prod_packaging_supplier || EMPTY_FORM.prod_packaging_supplier,
-                                           prod_transport_cost: String((freshProduct as any).prod_transport_cost || EMPTY_FORM.prod_transport_cost),
-                                           prod_transport_supplier: (freshProduct as any).prod_transport_supplier || EMPTY_FORM.prod_transport_supplier,
-                                           prod_other_cost: String((freshProduct as any).prod_other_cost || EMPTY_FORM.prod_other_cost),
-                                           prod_other_supplier: (freshProduct as any).prod_other_supplier || EMPTY_FORM.prod_other_supplier,
-                                           prod_notes: (freshProduct as any).prod_notes || EMPTY_FORM.prod_notes,
-                                           allowed_carriers: Array.isArray((freshProduct as any).allowed_carriers) 
-                                              ? (freshProduct as any).allowed_carriers 
-                                              : (typeof (freshProduct as any).allowed_carriers === 'string' 
-                                                 ? (function() { try { return JSON.parse((freshProduct as any).allowed_carriers); } catch { return []; } })() 
-                                                 : []),
-                                           prod_custom_charges: Array.isArray((freshProduct as any).prod_custom_charges) 
-                                              ? (freshProduct as any).prod_custom_charges 
-                                              : (typeof (freshProduct as any).prod_custom_charges === 'string' 
-                                                 ? (function() { try { return JSON.parse((freshProduct as any).prod_custom_charges); } catch { return []; } })() 
-                                                 : []),
-                                           delivery_fees: (function() {
-                                              const raw = (freshProduct as any).delivery_fees || (freshProduct as any).deliveryFees;
-                                              if (!raw) return { is_free: false, fees: {} };
-                                              if (typeof raw === 'string') {
-                                                 try { return JSON.parse(raw); } catch { return { is_free: false, fees: {} }; }
-                                              }
-                                              return raw;
-                                           })(),
-                                           // Pack options
-                                           is_pack: (freshProduct as any).is_pack || false,
-                                           pack_items: (freshProduct as any).pack_items || [],
-                                           pack_charges: (freshProduct as any).pack_charges || [],
-                                           pack_margin: String((freshProduct as any).pack_margin || '0.0'),
-                                           pack_options: (freshProduct as any).pack_options || [],
-                                        });
-                                     }}
+                                     onClick={() => openEditProduct(product)}
                                      className="size-10 rounded-2xl flex items-center justify-center bg-white border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec]/20 hover:shadow-lg transition-all"
                                   >
                                      {fetchingProductId === product.id ? (
@@ -1078,6 +1085,58 @@ export default function ProductsPage() {
                      ))}
                   </tbody>
                </table>
+            </div>
+            {/* ── Mobile card grid — 2 per row, tap a card to edit ── */}
+            <div className="sm:hidden p-3">
+               {productsQuery.isLoading ? (
+                  <div className="grid grid-cols-2 gap-3">
+                     {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-2xl" />)}
+                  </div>
+               ) : products.length === 0 ? (
+                  <div className="py-20 text-center text-slate-300 font-bold uppercase tracking-widest">
+                     <Package className="size-14 mx-auto mb-3 opacity-40" /> Aucun produit
+                  </div>
+               ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                     {products.map((product) => (
+                        <button
+                           key={product.id}
+                           type="button"
+                           onClick={() => openEditProduct(product)}
+                           className="text-left bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm active:scale-[0.98] transition-transform"
+                        >
+                           <div className="h-24 bg-slate-50 flex items-center justify-center overflow-hidden relative">
+                              {product.main_image
+                                 ? <img src={product.main_image} alt={product.name} className="w-full h-full object-cover" />
+                                 : <Package className="size-8 text-slate-200" />}
+                              {fetchingProductId === product.id && (
+                                 <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                                    <Loader2 className="size-5 animate-spin text-[#4b7bec]" />
+                                 </div>
+                              )}
+                              <span className={cn(
+                                 "absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase",
+                                 product.is_active !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"
+                              )}>
+                                 {product.is_active !== false ? 'Actif' : 'Inactif'}
+                              </span>
+                           </div>
+                           <div className="p-2.5 space-y-1">
+                              <p className="text-[11px] font-black text-slate-800 leading-tight line-clamp-2">{product.name}</p>
+                              <div className="flex items-center justify-between gap-1">
+                                 <span className="text-[11px] font-black text-[#4b7bec] tabular-nums">{formatPrice(product.price)}</span>
+                                 <span className={cn(
+                                    "text-[9px] font-black px-1.5 py-0.5 rounded-md",
+                                    (product.stock ?? 0) > 0 ? "bg-slate-50 text-slate-500" : "bg-rose-50 text-rose-600"
+                                 )}>
+                                    Stock {product.stock ?? 0}
+                                 </span>
+                              </div>
+                           </div>
+                        </button>
+                     ))}
+                  </div>
+               )}
             </div>
 
             <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex items-center justify-between" style={{ borderColor: C.border }}>
@@ -1173,14 +1232,17 @@ export default function ProductsPage() {
                            {/* ── Type de Produit selector ── */}
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Type de Produit *</label>
-                              <div className="grid grid-cols-2 gap-4">
+                              {/* Stacked on phones: two side-by-side cards in the narrow
+                                  centered dialog wrapped their uppercase-tracked text
+                                  almost character-by-character. */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                  <button
                                     type="button"
                                     onClick={() => setF({ is_pack: false })}
                                     className={cn(
-                                       "p-5 rounded-[20px] border-2 text-left transition-all flex items-start gap-4",
-                                       !form.is_pack 
-                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]" 
+                                       "p-4 sm:p-5 rounded-[20px] border-2 text-left transition-all flex items-center sm:items-start gap-3 sm:gap-4",
+                                       !form.is_pack
+                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]"
                                           : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
                                     )}
                                  >
@@ -1190,18 +1252,18 @@ export default function ProductsPage() {
                                     )}>
                                        <Package className="size-5" />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                        <p className="text-sm font-black uppercase tracking-tight">Produit Simple</p>
-                                       <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Un article unique avec son propre stock & options</p>
+                                       <p className="text-[10px] font-bold text-slate-400 mt-1 normal-case sm:uppercase sm:tracking-wider">Un article unique avec son propre stock & options</p>
                                     </div>
                                  </button>
                                  <button
                                     type="button"
                                     onClick={() => setF({ is_pack: true })}
                                     className={cn(
-                                       "p-5 rounded-[20px] border-2 text-left transition-all flex items-start gap-4",
-                                       form.is_pack 
-                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]" 
+                                       "p-4 sm:p-5 rounded-[20px] border-2 text-left transition-all flex items-center sm:items-start gap-3 sm:gap-4",
+                                       form.is_pack
+                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]"
                                           : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
                                     )}
                                  >
@@ -1211,9 +1273,9 @@ export default function ProductsPage() {
                                     )}>
                                        <Boxes className="size-5" />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                        <p className="text-sm font-black uppercase tracking-tight">Pack / Upsell</p>
-                                       <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Un bundle regroupant plusieurs produits</p>
+                                       <p className="text-[10px] font-bold text-slate-400 mt-1 normal-case sm:uppercase sm:tracking-wider">Un bundle regroupant plusieurs produits</p>
                                     </div>
                                  </button>
                               </div>

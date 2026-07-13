@@ -76,6 +76,9 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/campaigns?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`
     ),
     enabled: !!activeStore?.id,
+    // The backend auto-syncs from Meta every 3 min — without a matching poll
+    // here, the numbers on screen only moved on a manual reload.
+    refetchInterval: 60_000,
   });
 
   // --- Query Integration Summary (cross-module) ---

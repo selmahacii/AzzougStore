@@ -179,6 +179,13 @@ def list_landing_pages(
                 ))).label("normal"),
                 func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
                 func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
+                # Admin/agent-created orders (source=MANUAL) — deliberately
+                # EXCLUDED from "purchases"/conversion (not landing-page
+                # traffic), but the client must still SEE them: without this
+                # figure they were invisible everywhere on this screen.
+                func.count(distinct(case(
+                    (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
+                ))).label("manual"),
             )
             .join(Order, Order.id == OrderItem.order_id)
             .filter(
@@ -215,6 +222,7 @@ def list_landing_pages(
                 "normal": int(r.normal or 0),
                 "cancelled": int(r.cancelled or 0),
                 "duplicates": int(r.duplicates or 0),
+                "manual": int(r.manual or 0),
             }
 
     # ── Remaining stock per product, broken down by variant ───────────────────

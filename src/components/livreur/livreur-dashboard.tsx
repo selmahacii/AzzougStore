@@ -65,12 +65,14 @@ export default function LivreurDashboard() {
       <header className="sticky top-0 z-40 bg-slate-900 text-white shadow-lg">
         <div className="px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="size-9 bg-cyan-500 rounded-xl flex items-center justify-center font-black shrink-0">
-              <Truck className="size-5" />
+            <div className="size-10 bg-white rounded-xl flex items-center justify-center shrink-0 p-1">
+              <img src="/azzougshop_logo.png" alt="AzzougShop" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-black tracking-tight leading-none">ESPACE LIVREUR</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-0.5 truncate">{user?.name}</p>
+              <p className="text-sm font-black tracking-tight leading-none truncate">{user?.name || 'Livreur'}</p>
+              <p className="text-[10px] font-bold text-cyan-400 mt-0.5 uppercase tracking-widest flex items-center gap-1">
+                <Truck className="size-3" /> Espace Livreur
+              </p>
             </div>
           </div>
 
@@ -165,6 +167,8 @@ function LivreurDeliveries() {
       toast.success(
         status === 'DELIVERED' ? 'Livraison confirmée ✅'
           : status === 'SHIPPED' ? 'Colis pris en charge — en route 🚚'
+          : status === 'RESCHEDULED' ? 'Livraison reportée — renvoyée à la confirmatrice 📅'
+          : status === 'CANCELLED' ? 'Commande annulée'
           : 'Retour enregistré',
       );
       setSelectedOrder(null);
@@ -469,10 +473,15 @@ interface DrawerProps {
 function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: DrawerProps) {
   const [note, setNote] = useState('');
 
-  const canShip    = order.status === 'CONFIRMED';
-  const canDeliver = order.status === 'SHIPPED';
-  const canReturn  = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED'].includes(order.status);
-  const hasActions = canShip || canDeliver || canReturn;
+  const canShip     = order.status === 'CONFIRMED';
+  const canDeliver  = order.status === 'SHIPPED';
+  const canReturn   = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED'].includes(order.status);
+  // Reportée: client absent / re-livraison plus tard — the order goes back
+  // to the confirmation pipeline (statuses where the backend state machine
+  // accepts RESCHEDULED). Annulée: any non-terminal stage.
+  const canPostpone = ['ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'IN_PROGRESS'].includes(order.status);
+  const canCancel   = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'IN_PROGRESS', 'RESCHEDULED'].includes(order.status);
+  const hasActions = canShip || canDeliver || canReturn || canPostpone || canCancel;
   const isTerminal = ['DELIVERED', 'RETURNED'].includes(order.status);
 
   // Build a Google Maps search URL from the customer address
@@ -730,6 +739,31 @@ function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: Drawer
                     {isPending ? <Loader2 className="size-5 animate-spin" /> : <RotateCcw className="size-5" />}
                     Échec — Marquer en retour
                   </button>
+                )}
+                {(canPostpone || canCancel) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {canPostpone && (
+                      <button
+                        onClick={() => handleStatus('RESCHEDULED')}
+                        className="flex items-center justify-center gap-2 h-12 rounded-2xl border-2 border-amber-200 bg-amber-50 text-amber-700 font-black text-xs uppercase tracking-wide hover:bg-amber-100 active:scale-[0.98] transition-all"
+                      >
+                        {isPending ? <Loader2 className="size-4 animate-spin" /> : <Calendar className="size-4" />}
+                        Reportée
+                      </button>
+                    )}
+                    {canCancel && (
+                      <button
+                        onClick={() => handleStatus('CANCELLED')}
+                        className={cn(
+                          "flex items-center justify-center gap-2 h-12 rounded-2xl border-2 border-slate-200 bg-slate-50 text-slate-500 font-black text-xs uppercase tracking-wide hover:bg-slate-100 active:scale-[0.98] transition-all",
+                          !canPostpone && "col-span-2"
+                        )}
+                      >
+                        {isPending ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+                        Annulée
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </section>

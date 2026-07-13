@@ -1799,14 +1799,12 @@ export default function AgentDashboard() {
         "fixed inset-y-0 left-0 z-50 bg-white flex flex-col shrink-0 border-r shadow-2xl lg:shadow-none transition-all duration-300",
         sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-[70px]" : "translate-x-0 w-[280px] sm:w-[260px]"
       )}>
-        <div className="h-16 px-4 border-b flex items-center justify-between bg-white shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-             <div className={cn("flex shrink-0 items-center justify-center", sidebarCollapsed ? "size-9" : "size-11")}>
-                <img src="/azzougshop_logo.png" alt="AzzougShop" className="w-full h-full object-contain" />
-             </div>
+        <div className="h-16 px-4 border-b flex items-center justify-center bg-white shrink-0 relative">
+          <div className={cn("flex shrink-0 items-center justify-center", sidebarCollapsed ? "size-9" : "size-12")}>
+             <img src="/azzougshop_logo.png" alt="AzzougShop" className="w-full h-full object-contain" />
           </div>
           {isMobile && (
-            <button onClick={() => setSidebarCollapsed(true)} className="p-1 lg:hidden hover:bg-slate-100 rounded">
+            <button onClick={() => setSidebarCollapsed(true)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 lg:hidden hover:bg-slate-100 rounded">
                <XCircle className="size-5 text-slate-400" />
             </button>
           )}

@@ -42,7 +42,10 @@ _VALID_TRANSITIONS: dict[str, list[str]] = {
     "IN_PROGRESS": ["CONFIRMED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS"],
     "RESCHEDULED": ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
     "CONFIRMED":   ["SHIPPED", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
-    "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED"],
+    # RESCHEDULED: an internal-delivery driver postpones ("Reportée" — client
+    # absent, re-livraison demain) and the order returns to the confirmation
+    # pipeline instead of being forced into a terminal outcome.
+    "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED"],
     "DELIVERED":   ["RETURNED"],
     "RETURNED":    [],
     # A confirmatrice can reopen a cancelled order (edit it) or confirm it
