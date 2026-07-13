@@ -146,7 +146,10 @@ export default function MetaAdsDashboard() {
   const syncMutation = useMutation({
     mutationFn: () => {
       console.log(`[Meta Ads Sync] Démarrage de la requête de synchronisation pour store_id: ${activeStore?.id}`);
-      return apiFetch(`/api/v1/meta-ads/sync?store_id=${activeStore?.id}`, {
+      // Without this, the sync always pulled Meta's fixed "last 30 days"
+      // regardless of the range picked above — spend/history older than
+      // that could never be fetched no matter what was selected here.
+      return apiFetch(`/api/v1/meta-ads/sync?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`, {
         method: 'POST'
       });
     },

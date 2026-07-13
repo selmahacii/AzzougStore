@@ -8,6 +8,7 @@ import uuid
 import random
 import logging
 import hashlib
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -575,7 +576,12 @@ def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: flo
     return cfg_rate
 
 @router.post("/sync", response_model=dict)
-def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
+def sync_meta_ads(
+    store_id: str = Query(...),
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
 
@@ -665,8 +671,18 @@ def sync_meta_ads(store_id: str = Query(...), db: Session = Depends(get_db)):
             # Ads Manager actually reports, only our own utm_campaign-matched
             # order count, which is a different methodology by construction.
             "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,actions,action_values,date_start,date_stop",
-            "date_preset": "last_30d",
         }
+        # A hardcoded "last_30d" here meant any campaign/spend older than 30
+        # days could never be fetched, no matter what range the dashboard's
+        # own date picker showed — the picker only filters what's ALREADY in
+        # our DB, it never controlled what got pulled FROM Meta. Use the
+        # caller's explicit range (Meta's time_range param) when the frontend
+        # passes one; the 3-minute background auto-sync doesn't pass dates,
+        # so it keeps the last_30d default for its lightweight recurring tick.
+        if date_start and date_end:
+            params["time_range"] = json.dumps({"since": date_start, "until": date_end})
+        else:
+            params["date_preset"] = "last_30d"
         try:
             from app.core.config import settings as _settings
             relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
