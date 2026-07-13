@@ -2,9 +2,19 @@
  * Campaign attribution — first-touch capture on the storefront.
  *
  * On the first page load we persist utm_* / fbclid / referrer / landing URL
- * in sessionStorage; the checkout attaches them to the order payload so the
+ * in localStorage; the checkout attaches them to the order payload so the
  * admin can trace campaign → order → revenue, and the server-side CAPI
  * Purchase carries fbp/fbc for maximum Event Match Quality.
+ *
+ * localStorage, NOT sessionStorage: a Meta ad click almost always opens the
+ * Facebook/Instagram in-app browser, not the phone's real browser. If the
+ * customer backs out or closes that in-app view and comes back later to
+ * finish checkout (very common — browsing on the bus, buying at home),
+ * sessionStorage is already gone by then and the order ships with zero
+ * attribution despite a correctly configured ad — this was confirmed live:
+ * real orders on a properly UTM-tagged campaign still showed "Aucune donnée
+ * UTM". localStorage survives across that gap; expires after 30 days so an
+ * old capture can't wrongly attribute an unrelated later purchase.
  *
  * Meta URL parameter template to configure on ads:
  *   utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}
@@ -13,6 +23,7 @@
  */
 
 const KEY = 'azg_attribution_v1';
+const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export interface Attribution {
   utm_source?: string;
@@ -54,7 +65,7 @@ export function captureAttribution(): void {
         landing_url: window.location.href.slice(0, 500),
         captured_at: new Date().toISOString(),
       };
-      sessionStorage.setItem(KEY, JSON.stringify(hasSignal ? merged : { ...existing, ...merged }));
+      localStorage.setItem(KEY, JSON.stringify(hasSignal ? merged : { ...existing, ...merged }));
     }
   } catch { /* storage unavailable — never break the storefront */ }
 }
@@ -62,7 +73,17 @@ export function captureAttribution(): void {
 export function getAttribution(): Attribution {
   if (typeof window === 'undefined') return {};
   try {
-    return JSON.parse(sessionStorage.getItem(KEY) || '{}');
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return {};
+    const parsed: Attribution = JSON.parse(raw);
+    if (parsed.captured_at) {
+      const age = Date.now() - new Date(parsed.captured_at).getTime();
+      if (age > MAX_AGE_MS) {
+        localStorage.removeItem(KEY);
+        return {};
+      }
+    }
+    return parsed;
   } catch {
     return {};
   }
