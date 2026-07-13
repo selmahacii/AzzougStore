@@ -47,17 +47,28 @@ def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
     tokens = [t.strip().lower() for t in re.split(r'[,/|:]', variant_str) if t.strip()]
     
     best_variant = None
-    # 1. First, search for a main variant matching one of the tokens or directly contained in the string
-    for v in variants:
-        if not isinstance(v, dict):
-            continue
+    # 1. First, search for a main variant matching one of the tokens EXACTLY.
+    # Exact-token matches must be exhausted across ALL variants before any
+    # substring fallback runs: short values like "L" are substrings of both
+    # "XL"/"XXL" and of color words containing an "l" ("Bleu Nuit"), so a
+    # first-match substring scan picked TAILLE L for an order that said
+    # "Bleu Nuit / XL" — then failed with "Stock insuffisant" on the wrong
+    # variant while the requested one had plenty of stock.
+    _clean_variants = [v for v in variants if isinstance(v, dict)]
+    for v in _clean_variants:
         v_val = str(v.get("value") or "").strip().lower()
         v_sku = str(v.get("sku") or "").strip().lower()
-        v_name = str(v.get("name") or "").strip().lower()
-        
-        if (v_val and v_val in tokens) or (v_val and v_val in variant_str_lower) or (v_sku and v_sku in tokens):
+        if (v_val and v_val in tokens) or (v_sku and v_sku in tokens):
             best_variant = v
             break
+    if not best_variant:
+        # Substring fallback, longest value first so "vert olive" wins over
+        # "vert" and "xl" can never lose to a stray "l".
+        for v in sorted(_clean_variants, key=lambda x: -len(str(x.get("value") or ""))):
+            v_val = str(v.get("value") or "").strip().lower()
+            if v_val and v_val in variant_str_lower:
+                best_variant = v
+                break
             
     if not best_variant:
         # Fallback to simple matching if name/value format was used
@@ -85,16 +96,24 @@ def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
                     best_variant = v
                     break
 
-    # 2. If a main variant was matched, check if we can match any nested sub_variants inside it
+    # 2. If a main variant was matched, check if we can match any nested
+    # sub_variants inside it. Same two-pass rule as above — this is where the
+    # real-world failure happened: sizes are iterated S, M, L, XL, XXL, and
+    # the old single-pass substring check returned TAILLE L for
+    # "Bleu Nuit / XL" because "l" is a substring of that string, so the
+    # order reserved/checked the L size (0 available) instead of XL (3).
     if best_variant and best_variant.get("sub_variants"):
-        for sv in best_variant["sub_variants"]:
-            if not isinstance(sv, dict):
-                continue
+        subs = [sv for sv in best_variant["sub_variants"] if isinstance(sv, dict)]
+        for sv in subs:
             sv_val = str(sv.get("value") or "").strip().lower()
             sv_sku = str(sv.get("sku") or "").strip().lower()
-            if (sv_val and sv_val in tokens) or (sv_val and sv_val in variant_str_lower) or (sv_sku and sv_sku in tokens):
+            if (sv_val and sv_val in tokens) or (sv_sku and sv_sku in tokens):
                 return sv
-                
+        for sv in sorted(subs, key=lambda s: -len(str(s.get("value") or ""))):
+            sv_val = str(sv.get("value") or "").strip().lower()
+            if sv_val and sv_val in variant_str_lower:
+                return sv
+
     return best_variant
 
 
