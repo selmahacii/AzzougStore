@@ -36,16 +36,24 @@ class AuditService:
     def record_change(
         self,
         db: Session,
-        actor_id: str,
+        actor_id: Optional[str],
         entity_name: str,
         entity_id: str,
         action: str, # CREATE, UPDATE, DELETE, STATUS_CHANGE
         before: Optional[Dict[str, Any]] = None,
         after: Optional[Dict[str, Any]] = None,
-        request: Optional[Request] = None
+        request: Optional[Request] = None,
+        store_id: Optional[str] = None,
     ) -> AuditLog:
         """
         Records an industrial-grade audit log.
+
+        store_id: pass the entity's OWN real store explicitly whenever it's
+        known (e.g. order.store_id) instead of relying on the ambient
+        tenant_store_id context var — that var reflects the request's
+        X-Store-Id header, which can legitimately differ from the specific
+        entity being changed and would silently mis-file the log entry
+        under the wrong store.
         """
         ip_address = None
         user_agent = None
@@ -58,7 +66,7 @@ class AuditService:
         log = AuditLog(
             id=str(uuid4()),
             actor_id=actor_id,
-            store_id=tenant_store_id.get(),
+            store_id=store_id if store_id is not None else tenant_store_id.get(),
             entity=entity_name,
             entity_id=entity_id,
             action=action,

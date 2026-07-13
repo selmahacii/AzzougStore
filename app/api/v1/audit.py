@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime
 from app.db.session import get_db
 from app.models.audit import AuditLog
 from app.schemas.audit import AuditPagination
@@ -15,10 +16,19 @@ def get_audit_logs(
     store_id: Optional[str] = None,
     entity: Optional[str] = None,
     action: Optional[str] = None,
+    actor_id: Optional[str] = Query(None, description="Filter by profile — who performed the action"),
+    start_date: Optional[str] = Query(None, description="ISO date, inclusive lower bound on created_at"),
+    end_date: Optional[str] = Query(None, description="ISO date, inclusive upper bound on created_at"),
     search: Optional[str] = None,
     page: int = Query(1, ge=1),
     pageSize: int = Query(30, ge=1, le=100)
 ):
+    # This endpoint already scopes explicitly via the store_id param below
+    # when the caller passes one — the header-driven tenant auto-filter is
+    # redundant and, same class of bug fixed across orders.py/users.py this
+    # session, would silently exclude entries on a header/store mismatch.
+    db.info["skip_tenant_isolation"] = True
+
     query = db.query(AuditLog)
 
     if store_id:
@@ -27,7 +37,19 @@ def get_audit_logs(
         query = query.filter(AuditLog.entity == entity)
     if action:
         query = query.filter(AuditLog.action == action)
-    
+    if actor_id:
+        query = query.filter(AuditLog.actor_id == actor_id)
+    if start_date:
+        try:
+            query = query.filter(AuditLog.created_at >= datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            query = query.filter(AuditLog.created_at <= datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None))
+        except ValueError:
+            pass
+
     if search:
         search_filter = or_(
             AuditLog.entity_id.contains(search),

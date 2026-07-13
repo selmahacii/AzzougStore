@@ -28,6 +28,7 @@ from app.models.store import Store
 from app.models.user import User
 from app.services.inventory_service import inventory_service
 from app.services.notification_service import notify
+from app.services.audit_service import audit_service
 
 logger = logging.getLogger("app.order_service")
 
@@ -548,6 +549,30 @@ def _log_event(
         call_attempt=call_attempt,
     )
     db.add(event)
+
+    # Mirror into the generic cross-entity audit trail ("Fil d'activité" /
+    # Team Activity) so order actions show up in the same searchable-by-
+    # profile/date feed as every other tracked action (stock, users,
+    # landing pages, ...) — this was the actual reported gap: OrderEvent
+    # already recorded everything correctly, it just never reached that
+    # feed because nothing wrote there for orders. store_id is looked up
+    # directly from the order row rather than trusted from the ambient
+    # tenant context var, which can legitimately differ from this specific
+    # order's real store and would silently mis-file the log entry.
+    try:
+        order_store_id = db.query(Order.store_id).filter(Order.id == order_id).scalar()
+        audit_service.record_change(
+            db,
+            actor_id=actor_id,
+            entity_name="Order",
+            entity_id=order_id,
+            action="CREATE" if from_status is None else "STATUS_CHANGE",
+            before={"status": from_status} if from_status is not None else None,
+            after={"status": to_status, "note": note, "call_result": call_result},
+            store_id=order_store_id,
+        )
+    except Exception:
+        logger.warning("Audit trail mirror failed for order %s", order_id, exc_info=True)
 
 
 # ─── Service ──────────────────────────────────────────────────────────────────
