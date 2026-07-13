@@ -75,9 +75,21 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColor);
   const sizeVariants = selectedColorVar?.sub_variants || [];
 
-  const selectedSku = selectedSize 
-    ? sizeVariants.find((sv: any) => sv.value === selectedSize)?.sku 
+  const selectedSku = selectedSize
+    ? sizeVariants.find((sv: any) => sv.value === selectedSize)?.sku
     : (selectedColorVar?.sku || selectedOrderProduct?.sku);
+
+  // Live per-variant availability, mirroring the backend's own reserve
+  // check (variant stock minus variant reserved) — showing the product's
+  // aggregate stock instead let a confirmatrice see e.g. "36 en stock" and
+  // pick a color/size combo that's actually at 0, only finding out after
+  // the save was rejected with "Stock insuffisant".
+  const hasVariants = colorVariants.length > 0;
+  const selectedSubVariant = selectedSize ? sizeVariants.find((sv: any) => sv.value === selectedSize) : null;
+  const effectiveVariant = selectedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
+  const variantAvailable = effectiveVariant
+    ? Number(effectiveVariant.stock || 0) - Number(effectiveVariant.reserved || 0)
+    : (!hasVariants ? Number(selectedOrderProduct?.stock || 0) - Number(selectedOrderProduct?.reserved_stock || 0) : null);
 
   useEffect(() => {
     if (selectedOrderProduct) {
@@ -95,6 +107,12 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     queryKey: ['admin-products-lite', storeId],
     enabled: isOpen && !!storeId,
     queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
+    // Stock moves in real time (other confirmatrices/orders reserve or
+    // confirm concurrently) — without this, a stock number fetched once when
+    // the modal opened could sit stale for the whole call, showing available
+    // when it no longer is by the time she hits save.
+    staleTime: 10_000,
+    refetchInterval: isOpen ? 10_000 : false,
   });
 
   const deliveryPartnersQuery = useQuery<any>({
@@ -443,9 +461,9 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                              <Input disabled value={selectedSku || selectedOrderProduct?.sku || '---'} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] italic text-xs h-12 rounded-xl" />
                           </div>
                           <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock</label>
-                             <div className={cn("h-12 border flex items-center px-4 font-black rounded-xl font-mono text-[10px] uppercase", (selectedOrderProduct?.stock ?? 0) > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
-                                {selectedOrderProduct?.stock ?? '—'} {selectedOrderProduct ? 'EN STOCK' : ''}
+                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock{hasVariants ? ' (variante)' : ''}</label>
+                             <div className={cn("h-12 border flex items-center px-4 font-black rounded-xl font-mono text-[10px] uppercase", variantAvailable === null ? "bg-amber-50 text-amber-600 border-amber-100" : variantAvailable > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
+                                {variantAvailable === null ? (selectedOrderProduct ? 'Choisir variante' : '—') : `${variantAvailable} ${variantAvailable > 0 ? 'EN STOCK' : '— RUPTURE'}`}
                              </div>
                           </div>
                           <div className="space-y-3">
