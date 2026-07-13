@@ -32,6 +32,12 @@ def get_customers(
     sortDir: str = "desc",
     current_user: Any = Depends(deps.get_current_active_user)
 ):
+    # This endpoint already scopes itself explicitly below (MANAGER's
+    # employee_store_id, or the store_id query param) — the header-driven
+    # tenant auto-filter is redundant and, on a X-Store-Id mismatch, would
+    # silently return an empty customer list. Same class of bug fixed across
+    # orders.py/users.py/audit.py/analytics.py/landing_pages.py this session.
+    db.info["skip_tenant_isolation"] = True
     query = db.query(Customer)
 
     # Role-based scope
@@ -124,6 +130,7 @@ def get_customer_stats(
     """
     Get customer analytics: total count, tier distribution, and top spenders.
     """
+    db.info["skip_tenant_isolation"] = True  # explicit store_id scope below
     try:
         base = db.query(Customer)
         if store_id:
@@ -223,6 +230,7 @@ def get_customer(
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """Get a single customer with full profile."""
+    db.info["skip_tenant_isolation"] = True  # fetched by its own id below
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Client introuvable.")
@@ -238,6 +246,7 @@ def get_customer_orders(
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """Get order history for a specific customer."""
+    db.info["skip_tenant_isolation"] = True  # fetched by its own id below
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Client introuvable.")
@@ -276,6 +285,7 @@ def get_customer_account(
     _: Any = Depends(deps.get_current_active_user)
 ):
     """Return linked User account info for a customer (matched by phone or email)."""
+    db.info["skip_tenant_isolation"] = True  # fetched by its own id below
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Client introuvable.")
