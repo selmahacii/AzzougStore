@@ -1,7 +1,7 @@
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, case
+from sqlalchemy import func, and_, case, or_
 from datetime import datetime, timedelta
 
 from app.api import deps
@@ -767,7 +767,24 @@ def get_analytics(
         total_shipped_all = 0
 
         for p in partners:
-            c_base = [Order.carrier_id == p.id, Order.is_deleted == False, Order.created_at >= start_date]
+            # An order dispatched through /dispatch always has carrier_id set
+            # (that endpoint requires it to know which carrier to call) — but
+            # a tracking number pasted directly into the order-info edit form
+            # never required picking a carrier at the same time, so a real
+            # chunk of delivered orders end up with a genuine tracking_number
+            # yet carrier_id left NULL. Strictly requiring carrier_id == p.id
+            # silently excluded every one of them — this store's daily chart
+            # (store-wide, no carrier filter) showed real deliveries while
+            # "Performance par Transporteur" showed 0 for the same period.
+            # When there's exactly ONE active carrier for the store there's no
+            # ambiguity: any tracked-but-unattributed order can only be theirs.
+            _carrier_match = Order.carrier_id == p.id
+            if len(partners) == 1:
+                _carrier_match = or_(
+                    Order.carrier_id == p.id,
+                    and_(Order.carrier_id.is_(None), Order.tracking_number.isnot(None), Order.tracking_number != ""),
+                )
+            c_base = [_carrier_match, Order.is_deleted == False, Order.created_at >= start_date]
             if store_id:
                 c_base.append(Order.store_id == store_id)
 

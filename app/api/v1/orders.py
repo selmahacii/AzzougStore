@@ -1653,6 +1653,23 @@ def update_order_info(
                 changed_fields.append(f"{label} ({old_val} -> {value})")
                 setattr(order, field, value)
 
+    # A tracking number pasted in without also picking a carrier left
+    # carrier_id NULL forever — that order becomes correctly DELIVERED (Noest
+    # auto-sync polls by tracking_number, not carrier_id) but invisible in
+    # "Performance par Transporteur" (which requires carrier_id == partner.id)
+    # even though the storewide delivery chart on the same screen counted it
+    # fine. When exactly one active carrier is configured for the store
+    # there's no ambiguity to resolve — backfill it automatically.
+    if "tracking_number" in data and data.get("tracking_number") and not order.carrier_id:
+        from app.models.delivery_partner import DeliveryPartner
+        _active_partners = db.query(DeliveryPartner).filter(
+            DeliveryPartner.store_id == order.store_id,
+            DeliveryPartner.is_active == True,
+        ).all()
+        if len(_active_partners) == 1:
+            order.carrier_id = _active_partners[0].id
+            changed_fields.append(f"transporteur (auto-déduit depuis le n° de suivi -> {_active_partners[0].name})")
+
     # Recalculate grand total: total = subtotal - discount + delivery_fee
     expected_total = (order.subtotal or 0) - (order.discount or 0) + (order.delivery_fee or 0)
     if order.total != expected_total:
