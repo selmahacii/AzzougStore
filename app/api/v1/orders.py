@@ -1434,29 +1434,39 @@ def update_order_info(
     if payload.items is not None:
         from app.services.inventory_service import InventoryService
         from app.models.order import OrderItem
+        from app.services.order_service import expand_combined_variant_items, _expand_order_item
         inv_svc = InventoryService()
-        
-        # Release stock for old items
+
+        # Release stock for old items. Expanded first: a legacy item can still
+        # carry a combined "P1: ... | P2: ..." variant string (e.g. absorbed
+        # from a merged duplicate before this was fixed there too) — releasing
+        # it as one unit would dump the whole quantity onto whichever variant
+        # _find_matching_variant happens to match first, leaving the other
+        # variant's reserved count stuck and permanently short.
         for old_item in order.items:
-            try:
-                if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
-                    inv_svc.return_restock(
-                        db,
-                        product_id=old_item.product_id,
-                        quantity=old_item.quantity,
-                        order_id=order.id,
-                        variant_details=old_item.variant_details
-                    )
-                elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
-                    inv_svc.release_reservation(
-                        db,
-                        product_id=old_item.product_id,
-                        quantity=old_item.quantity,
-                        order_id=order.id,
-                        variant_details=old_item.variant_details
-                    )
-            except Exception as exc:
-                logger.warning(f"Could not release old stock/reservation for item {old_item.id}: {exc}")
+            for sub in _expand_order_item(old_item):
+                qty = int(sub.get("quantity") or 0)
+                if qty <= 0:
+                    continue
+                try:
+                    if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
+                        inv_svc.return_restock(
+                            db,
+                            product_id=sub["product_id"],
+                            quantity=qty,
+                            order_id=order.id,
+                            variant_details=sub.get("variant_details")
+                        )
+                    elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
+                        inv_svc.release_reservation(
+                            db,
+                            product_id=sub["product_id"],
+                            quantity=qty,
+                            order_id=order.id,
+                            variant_details=sub.get("variant_details")
+                        )
+                except Exception as exc:
+                    logger.warning(f"Could not release old stock/reservation for item {old_item.id}: {exc}")
                 
         # Describe old items for traceability note
         old_items_desc = ", ".join([
@@ -1472,10 +1482,14 @@ def update_order_info(
         # Clear relationship list
         order.items = []
         
-        # Create new items and reserve/deduct stock
+        # Create new items and reserve/deduct stock. Expanded first: the edit
+        # drawer sends one line per selected variant already, but this also
+        # guards a stray combined "P1: ... | P2: ..." payload (e.g. replayed
+        # from a merged duplicate's item) from ever being persisted as one
+        # OrderItem again.
         total_amount = 0
         new_items_desc = []
-        for item_data in payload.items:
+        for item_data in expand_combined_variant_items(payload.items):
             new_item = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,

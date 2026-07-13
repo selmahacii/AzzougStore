@@ -103,12 +103,36 @@ _PARENT_STATUS_PRIORITY = {
 }
 
 
-def _variant_key(item) -> str:
-    """Merge key: same product line ⇔ same product_id AND same variant string."""
-    vd = item.variant_details
+def _variant_key_from_details(vd) -> str:
     if isinstance(vd, dict):
         return str(vd.get("variant") or "").strip().lower()
     return str(vd or "").strip().lower()
+
+
+def _variant_key(item) -> str:
+    """Merge key: same product line ⇔ same product_id AND same variant string."""
+    return _variant_key_from_details(item.variant_details)
+
+
+def _expand_order_item(item) -> list[dict]:
+    """
+    Convert a persisted OrderItem into one dict per underlying variant,
+    splitting any combined "P1: ... | P2: ..." variant string (see
+    expand_combined_variant_items). Used wherever a child order's already-
+    persisted items get re-applied to stock or copied into another order
+    (merge) — without this, a legacy combined line re-enters reserve/
+    release calls as one unit and the merge or edit that touches it next
+    corrupts the sibling variant's stock/reserved counters.
+    """
+    return expand_combined_variant_items([{
+        "product_id": item.product_id,
+        "product_name": item.product_name,
+        "quantity": item.quantity,
+        "unit_price": item.unit_price,
+        "variant_details": item.variant_details,
+        "image_url": item.image_url,
+        "sku": getattr(item, "sku", None),
+    }])
 
 
 def _recompute_totals(order: Order) -> None:
@@ -131,43 +155,45 @@ def _absorb_child_items(db: Session, parent: Order, child: Order, actor_id: Opti
     parent_confirmed = str(parent.status) in _CONFIRMED_STATES
     added: list[str] = []
     for c_item in list(child.items or []):
-        qty = int(c_item.quantity or 0)
-        if qty <= 0:
-            continue
-        try:
-            inventory_service.reserve_stock(
-                db, product_id=c_item.product_id, quantity=qty,
-                order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
-            )
-            if parent_confirmed:
-                inventory_service.confirm_stock(
-                    db, product_id=c_item.product_id, quantity=qty,
-                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
+        for sub in _expand_order_item(c_item):
+            qty = int(sub.get("quantity") or 0)
+            if qty <= 0:
+                continue
+            variant_details = sub.get("variant_details")
+            try:
+                inventory_service.reserve_stock(
+                    db, product_id=sub["product_id"], quantity=qty,
+                    order_id=parent.id, actor_id=actor_id, variant_details=variant_details,
                 )
-        except Exception as exc:
-            logger.warning("Merge: stock hold for absorbed item %s failed on parent %s: %s",
-                           c_item.product_id, parent.id, exc)
+                if parent_confirmed:
+                    inventory_service.confirm_stock(
+                        db, product_id=sub["product_id"], quantity=qty,
+                        order_id=parent.id, actor_id=actor_id, variant_details=variant_details,
+                    )
+            except Exception as exc:
+                logger.warning("Merge: stock hold for absorbed item %s failed on parent %s: %s",
+                               sub["product_id"], parent.id, exc)
 
-        match = next(
-            (p for p in (parent.items or [])
-             if p.product_id == c_item.product_id and _variant_key(p) == _variant_key(c_item)),
-            None,
-        )
-        if match:
-            match.quantity = int(match.quantity or 0) + qty
-        else:
-            parent.items.append(OrderItem(
-                id=str(uuid.uuid4()),
-                order_id=parent.id,
-                product_id=c_item.product_id,
-                product_name=c_item.product_name,
-                quantity=qty,
-                unit_price=c_item.unit_price,
-                variant_details=c_item.variant_details,
-                image_url=c_item.image_url,
-            ))
-        variant = _variant_key(c_item)
-        added.append(f"{c_item.product_name}{f' [{variant}]' if variant else ''} x{qty}")
+            match = next(
+                (p for p in (parent.items or [])
+                 if p.product_id == sub["product_id"] and _variant_key(p) == _variant_key_from_details(variant_details)),
+                None,
+            )
+            if match:
+                match.quantity = int(match.quantity or 0) + qty
+            else:
+                parent.items.append(OrderItem(
+                    id=str(uuid.uuid4()),
+                    order_id=parent.id,
+                    product_id=sub["product_id"],
+                    product_name=sub["product_name"],
+                    quantity=qty,
+                    unit_price=sub["unit_price"],
+                    variant_details=variant_details,
+                    image_url=sub.get("image_url"),
+                ))
+            variant = _variant_key_from_details(variant_details)
+            added.append(f"{sub['product_name']}{f' [{variant}]' if variant else ''} x{qty}")
 
     _recompute_totals(parent)
     if added:
@@ -184,38 +210,40 @@ def _remove_child_items(db: Session, parent: Order, child: Order, actor_id: Opti
     parent_confirmed = str(parent.status) in _CONFIRMED_STATES
     removed: list[str] = []
     for c_item in list(child.items or []):
-        qty = int(c_item.quantity or 0)
-        if qty <= 0:
-            continue
-        match = next(
-            (p for p in (parent.items or [])
-             if p.product_id == c_item.product_id and _variant_key(p) == _variant_key(c_item)),
-            None,
-        )
-        if not match:
-            continue
-        take = min(qty, int(match.quantity or 0))
-        if take <= 0:
-            continue
-        match.quantity = int(match.quantity or 0) - take
-        if match.quantity <= 0:
-            parent.items.remove(match)
-            db.delete(match)
-        try:
-            if parent_confirmed:
-                inventory_service.return_restock(
-                    db, product_id=c_item.product_id, quantity=take,
-                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
-                )
-            else:
-                inventory_service.release_reservation(
-                    db, product_id=c_item.product_id, quantity=take,
-                    order_id=parent.id, actor_id=actor_id, variant_details=c_item.variant_details,
-                )
-        except Exception as exc:
-            logger.warning("Unmerge: stock release for %s failed on parent %s: %s",
-                           c_item.product_id, parent.id, exc)
-        removed.append(f"{c_item.product_name} x{take}")
+        for sub in _expand_order_item(c_item):
+            qty = int(sub.get("quantity") or 0)
+            if qty <= 0:
+                continue
+            variant_details = sub.get("variant_details")
+            match = next(
+                (p for p in (parent.items or [])
+                 if p.product_id == sub["product_id"] and _variant_key(p) == _variant_key_from_details(variant_details)),
+                None,
+            )
+            if not match:
+                continue
+            take = min(qty, int(match.quantity or 0))
+            if take <= 0:
+                continue
+            match.quantity = int(match.quantity or 0) - take
+            if match.quantity <= 0:
+                parent.items.remove(match)
+                db.delete(match)
+            try:
+                if parent_confirmed:
+                    inventory_service.return_restock(
+                        db, product_id=sub["product_id"], quantity=take,
+                        order_id=parent.id, actor_id=actor_id, variant_details=variant_details,
+                    )
+                else:
+                    inventory_service.release_reservation(
+                        db, product_id=sub["product_id"], quantity=take,
+                        order_id=parent.id, actor_id=actor_id, variant_details=variant_details,
+                    )
+            except Exception as exc:
+                logger.warning("Unmerge: stock release for %s failed on parent %s: %s",
+                               sub["product_id"], parent.id, exc)
+            removed.append(f"{sub['product_name']} x{take}")
 
     _recompute_totals(parent)
     if removed:
@@ -250,19 +278,23 @@ def merge_child_into_parent(
     child.is_duplicate = True
 
     for item in list(child.items or []):
-        try:
-            if child_was_confirmed:
-                inventory_service.return_restock(
-                    db, product_id=item.product_id, quantity=item.quantity,
-                    order_id=child.id, actor_id=actor_id, variant_details=item.variant_details,
-                )
-            else:
-                inventory_service.release_reservation(
-                    db, product_id=item.product_id, quantity=item.quantity,
-                    order_id=child.id, actor_id=actor_id, variant_details=item.variant_details,
-                )
-        except Exception as exc:
-            logger.warning("Merge: stock release failed for child %s: %s", child.id, exc)
+        for sub in _expand_order_item(item):
+            qty = int(sub.get("quantity") or 0)
+            if qty <= 0:
+                continue
+            try:
+                if child_was_confirmed:
+                    inventory_service.return_restock(
+                        db, product_id=sub["product_id"], quantity=qty,
+                        order_id=child.id, actor_id=actor_id, variant_details=sub.get("variant_details"),
+                    )
+                else:
+                    inventory_service.release_reservation(
+                        db, product_id=sub["product_id"], quantity=qty,
+                        order_id=child.id, actor_id=actor_id, variant_details=sub.get("variant_details"),
+                    )
+            except Exception as exc:
+                logger.warning("Merge: stock release failed for child %s: %s", child.id, exc)
 
     _absorb_child_items(db, parent, child, actor_id)
 
@@ -575,6 +607,92 @@ def _log_event(
         logger.warning("Audit trail mirror failed for order %s", order_id, exc_info=True)
 
 
+def expand_combined_variant_items(items_data: List[dict]) -> List[dict]:
+    """
+    Split a single cart/order line that packs several distinct variant
+    selections into one combined string (built by the storefront's
+    dz-cod-renderer / landing-page-renderer as e.g.
+    "P1: Couleur: Vert, Taille: XL | P2: Couleur: Bleu Nuit, Taille: XL"
+    when a buyer picks more than one variant of the same product) into one
+    line PER variant, each with its own quantity.
+
+    Without this, a single OrderItem represents units of two DIFFERENT
+    variants under one variant_details.variant string. Every stock
+    operation (reserve/confirm/release/restock) matches that string against
+    ONE product variant via _find_matching_variant's token search, so the
+    whole item's quantity gets attributed to whichever variant matches
+    first while the other variant's stock/reserved count silently drifts
+    out of sync with what the order actually holds — the exact class of
+    bug behind "the UI shows it available, saving says insufficient".
+
+    Called both at order creation and whenever an order's items are
+    rewritten (PATCH /info, merge absorption) so a combined line can never
+    reach reserve_stock/confirm_stock/release_reservation as one unit.
+    """
+    expanded_items = []
+    for item in items_data:
+        variant_details = item.get("variant_details")
+        variant_str = ""
+        if isinstance(variant_details, dict):
+            variant_str = variant_details.get("variant") or ""
+        elif isinstance(variant_details, str):
+            variant_str = variant_details
+
+        if variant_str and ("P1:" in variant_str or "|" in variant_str):
+            parts = [p.strip() for p in variant_str.split("|")]
+            variant_groups = {}
+            for part in parts:
+                clean_part = part
+                if ":" in clean_part and (clean_part.startswith("P") or clean_part.split(":")[0].strip().startswith("P")):
+                    subparts = clean_part.split(":", 1)
+                    if len(subparts) > 1:
+                        clean_part = subparts[1].strip()
+
+                details = {}
+                pairs = [pr.strip() for pr in clean_part.split(",")]
+                for pair in pairs:
+                    if ":" in pair:
+                        k, v = pair.split(":", 1)
+                        details[k.strip()] = v.strip()
+
+                var_name_parts = []
+                if "Couleur" in details:
+                    var_name_parts.append(details["Couleur"])
+                elif "Color" in details:
+                    var_name_parts.append(details["Color"])
+                if "Taille" in details:
+                    var_name_parts.append(details["Taille"])
+                elif "Size" in details:
+                    var_name_parts.append(details["Size"])
+
+                if not var_name_parts and details:
+                    var_name_parts = list(details.values())
+
+                details["variant"] = " / ".join(var_name_parts)
+
+                variant_key = details["variant"]
+                if variant_key not in variant_groups:
+                    variant_groups[variant_key] = {
+                        "details": details,
+                        "count": 0
+                    }
+                variant_groups[variant_key]["count"] += 1
+
+            for var_key, group in variant_groups.items():
+                expanded_items.append({
+                    "product_id": item["product_id"],
+                    "product_name": item["product_name"],
+                    "quantity": group["count"],
+                    "unit_price": item["unit_price"],
+                    "variant_details": group["details"],
+                    "image_url": item.get("image_url"),
+                    "sku": item.get("sku"),
+                })
+        else:
+            expanded_items.append(item)
+    return expanded_items
+
+
 # ─── Service ──────────────────────────────────────────────────────────────────
 
 class OrderService:
@@ -671,68 +789,7 @@ class OrderService:
         db.flush()  # Get ID without committing
 
         # Expand combined variants if any (e.g. "P1: Couleur: Noir | P2: Couleur: Bordeaux")
-        expanded_items = []
-        for item in items_data:
-            variant_details = item.get("variant_details")
-            variant_str = ""
-            if isinstance(variant_details, dict):
-                variant_str = variant_details.get("variant") or ""
-            elif isinstance(variant_details, str):
-                variant_str = variant_details
-
-            if variant_str and ("P1:" in variant_str or "|" in variant_str):
-                parts = [p.strip() for p in variant_str.split("|")]
-                variant_groups = {}
-                for part in parts:
-                    clean_part = part
-                    if ":" in clean_part and (clean_part.startswith("P") or clean_part.split(":")[0].strip().startswith("P")):
-                        subparts = clean_part.split(":", 1)
-                        if len(subparts) > 1:
-                            clean_part = subparts[1].strip()
-                    
-                    details = {}
-                    pairs = [pr.strip() for pr in clean_part.split(",")]
-                    for pair in pairs:
-                        if ":" in pair:
-                            k, v = pair.split(":", 1)
-                            details[k.strip()] = v.strip()
-                    
-                    var_name_parts = []
-                    if "Couleur" in details:
-                        var_name_parts.append(details["Couleur"])
-                    elif "Color" in details:
-                        var_name_parts.append(details["Color"])
-                    if "Taille" in details:
-                        var_name_parts.append(details["Taille"])
-                    elif "Size" in details:
-                        var_name_parts.append(details["Size"])
-                    
-                    if not var_name_parts and details:
-                        var_name_parts = list(details.values())
-                        
-                    details["variant"] = " / ".join(var_name_parts)
-                    
-                    variant_key = details["variant"]
-                    if variant_key not in variant_groups:
-                        variant_groups[variant_key] = {
-                            "details": details,
-                            "count": 0
-                        }
-                    variant_groups[variant_key]["count"] += 1
-                
-                for var_key, group in variant_groups.items():
-                    expanded_items.append({
-                        "product_id": item["product_id"],
-                        "product_name": item["product_name"],
-                        "quantity": group["count"],
-                        "unit_price": item["unit_price"],
-                        "variant_details": group["details"],
-                        "image_url": item.get("image_url"),
-                        "sku": item.get("sku")
-                    })
-            else:
-                expanded_items.append(item)
-        items_data = expanded_items
+        items_data = expand_combined_variant_items(items_data)
 
         # Reserve stock for each line item
         for item in items_data:
