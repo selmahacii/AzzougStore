@@ -1957,24 +1957,36 @@ const [timeLeft, setTimeLeft] = useState('');
                            </span>
                          )}
                       </div>
-                      {/* Campaign attribution — which ad generated this order */}
-                      {((selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id || (selectedOrder as any).utm_source) && (
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5"
-                             title={[
-                               (selectedOrder as any).campaign_id && `Campagne ID: ${(selectedOrder as any).campaign_id}`,
-                               (selectedOrder as any).adset_id && `Adset: ${(selectedOrder as any).adset_id}`,
-                               (selectedOrder as any).ad_id && `Annonce: ${(selectedOrder as any).ad_id}`,
-                               (selectedOrder as any).referrer && `Referrer: ${(selectedOrder as any).referrer}`,
-                             ].filter(Boolean).join('\n')}>
-                           <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">📣 Campagne:</span>
-                           <span className="text-[10px] font-bold text-blue-300">
-                             {(selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id}
-                             {(selectedOrder as any).utm_source && ` · ${(selectedOrder as any).utm_source}`}
-                             {(selectedOrder as any).utm_medium && `/${(selectedOrder as any).utm_medium}`}
-                             {(selectedOrder as any).utm_content && ` · ${(selectedOrder as any).utm_content}`}
-                           </span>
-                        </div>
-                      )}
+                      {/* Campaign attribution — which ad generated this order.
+                          Always rendered now (was conditional on having a value)
+                          — hidden entirely, there was no way to know WHERE this
+                          info would even show up to check whether a fresh order
+                          actually captured its UTM or not. Empty state says so
+                          explicitly instead of just not appearing. */}
+                      {(() => {
+                        const hasUtm = (selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id || (selectedOrder as any).utm_source;
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5"
+                               title={[
+                                 (selectedOrder as any).campaign_id && `Campagne ID: ${(selectedOrder as any).campaign_id}`,
+                                 (selectedOrder as any).adset_id && `Adset: ${(selectedOrder as any).adset_id}`,
+                                 (selectedOrder as any).ad_id && `Annonce: ${(selectedOrder as any).ad_id}`,
+                                 (selectedOrder as any).referrer && `Referrer: ${(selectedOrder as any).referrer}`,
+                               ].filter(Boolean).join('\n') || 'Aucun paramètre UTM/campagne enregistré pour cette commande'}>
+                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">📣 Campagne:</span>
+                             {hasUtm ? (
+                               <span className="text-[10px] font-bold text-blue-300">
+                                 {(selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id}
+                                 {(selectedOrder as any).utm_source && ` · ${(selectedOrder as any).utm_source}`}
+                                 {(selectedOrder as any).utm_medium && `/${(selectedOrder as any).utm_medium}`}
+                                 {(selectedOrder as any).utm_content && ` · ${(selectedOrder as any).utm_content}`}
+                               </span>
+                             ) : (
+                               <span className="text-[10px] font-bold text-white/30 italic">Aucune donnée UTM</span>
+                             )}
+                          </div>
+                        );
+                      })()}
                    </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
