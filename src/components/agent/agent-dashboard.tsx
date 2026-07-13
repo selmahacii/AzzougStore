@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Phone, CheckCircle, XCircle, Clock, Package, Banknote,
   TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown,
@@ -375,19 +375,35 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`, { headers: { 'X-Store-Id': storeId } }),
   });
 
-  const productQuery = useQuery<any>({
-    queryKey: ['product-details-agent', order.items?.[0]?.product_id],
-    enabled: isEditing && !!order.items?.[0]?.product_id,
-    queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`, { headers: { 'X-Store-Id': order.store_id } }),
-    // Stock moves in real time (other confirmatrices/orders reserve or confirm
-    // concurrently) but the global QueryClient default (staleTime 2min,
-    // refetchOnWindowFocus off) would otherwise let this go stale for minutes
-    // while the drawer sits open — the exact gap that let a confirmatrice see
-    // "3 en stock" and then get rejected with "Stock insuffisant" on save.
-    staleTime: 10_000,
-    refetchInterval: isEditing ? 10_000 : false,
-    refetchOnWindowFocus: true,
+  // One live product query PER DISTINCT product in the order, not just the
+  // first item — a shared single query keyed to items[0] meant editing the
+  // variant/stock of the 2nd, 3rd, etc. product silently checked the WRONG
+  // product's stock (or none at all), so the on-screen badge could show
+  // nothing wrong while the backend still rejected the save with "Stock
+  // insuffisant" for that other item.
+  const editProductIds = Array.from(new Set((editData.items || []).map((it: any) => it.product_id).filter(Boolean)));
+  const productQueriesResult = useQueries({
+    queries: editProductIds.map((pid: string) => ({
+      queryKey: ['product-details-agent', pid],
+      enabled: isEditing,
+      queryFn: () => apiFetch(`/api/v1/products/${pid}`, { headers: { 'X-Store-Id': order.store_id } }),
+      // Stock moves in real time (other confirmatrices/orders reserve or
+      // confirm concurrently) but the global QueryClient default (staleTime
+      // 2min, refetchOnWindowFocus off) would otherwise let this go stale
+      // for minutes while the drawer sits open — the exact gap that let a
+      // confirmatrice see "3 en stock" and then get rejected with "Stock
+      // insuffisant" on save.
+      staleTime: 10_000,
+      refetchInterval: isEditing ? 10_000 : false,
+      refetchOnWindowFocus: true,
+    })),
   });
+  const productById: Record<string, any> = Object.fromEntries(
+    editProductIds.map((pid: string, idx: number) => [pid, productQueriesResult[idx]?.data])
+  );
+  // Kept for the "Ajouter une variante" button below, which intentionally
+  // duplicates the FIRST item's product as a new line.
+  const productQuery = { data: productById[order.items?.[0]?.product_id ?? ''] };
 
   // Upsell: let the confirmatrice add a DIFFERENT existing product to this
   // order during the call. originalProductIds is frozen to what the order
@@ -814,14 +830,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
 
                   <div className="space-y-2.5">
                     {editData.items.map((item: any, idx: number) => {
-                      const hasVariants = productQuery.data?.variants && productQuery.data.variants.length > 0;
-                      
+                      // Each item's OWN product — a shared single query keyed to
+                      // items[0] used to make every row (2nd, 3rd, ...) show the
+                      // first item's colors/sizes/stock instead of its own.
+                      const itemProduct = productById[item.product_id];
+                      const hasVariants = itemProduct?.variants && itemProduct.variants.length > 0;
+
                       // Resolve current selections
                       const selectedColorVal = item.variant_details?.Couleur || item.variant_details?.Color || '';
                       const selectedSizeVal = item.variant_details?.Taille || item.variant_details?.Size || '';
-                      
+
                       // Filter options
-                      const colorVariants = productQuery.data?.variants || [];
+                      const colorVariants = itemProduct?.variants || [];
                       const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColorVal);
                       const sizeVariants = selectedColorVar?.sub_variants || [];
 
@@ -835,7 +855,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       const effectiveVariant = matchedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
                       const variantAvailable = effectiveVariant
                         ? Number(effectiveVariant.stock || 0) - Number(effectiveVariant.reserved || 0)
-                        : (!hasVariants ? Number(productQuery.data?.stock || 0) - Number(productQuery.data?.reserved_stock || 0) : null);
+                        : (!hasVariants ? Number(itemProduct?.stock || 0) - Number(itemProduct?.reserved_stock || 0) : null);
 
                       return (
                         <div key={idx} className="p-3 bg-white border rounded-xl space-y-2.5 shadow-sm">
@@ -878,10 +898,10 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                                         const firstSize = matchedVar.sub_variants[0].value;
                                         updatedDetails.Taille = firstSize;
                                         updatedDetails.variant = `${val} / ${firstSize}`;
-                                        newItems[idx].sku = matchedVar.sub_variants[0].sku || matchedVar.sku || productQuery.data?.sku;
+                                        newItems[idx].sku = matchedVar.sub_variants[0].sku || matchedVar.sku || itemProduct?.sku;
                                       } else {
                                         delete updatedDetails.Taille;
-                                        newItems[idx].sku = matchedVar?.sku || productQuery.data?.sku;
+                                        newItems[idx].sku = matchedVar?.sku || itemProduct?.sku;
                                       }
                                       
                                       newItems[idx].variant_details = updatedDetails;
@@ -1026,31 +1046,37 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       // consumed the same units in the meantime.
                       setIsCheckingStock(true);
                       try {
-                        const fresh = await productQuery.refetch();
-                        const freshProduct = fresh.data;
-                        if (freshProduct) {
-                          for (const it of editData.items) {
-                            if (it.product_id !== freshProduct.id) continue;
-                            const variantStr = it.variant_details?.variant;
-                            let available: number | null = null;
-                            if (variantStr && freshProduct.variants?.length) {
-                              const colorVal = it.variant_details?.Couleur || it.variant_details?.Color || '';
-                              const sizeVal = it.variant_details?.Taille || it.variant_details?.Size || '';
-                              const colorVar = freshProduct.variants.find((v: any) => v.value === colorVal);
-                              const subVar = sizeVal ? colorVar?.sub_variants?.find((sv: any) => sv.value === sizeVal) : null;
-                              const effective = subVar || (colorVar && (!colorVar.sub_variants || colorVar.sub_variants.length === 0) ? colorVar : null);
-                              if (effective) {
-                                available = Number(effective.stock || 0) - Number(effective.reserved || 0);
-                              }
-                            } else if (!freshProduct.variants?.length) {
-                              available = Number(freshProduct.stock || 0) - Number(freshProduct.reserved_stock || 0);
+                        // Refetch EVERY distinct product in the order, not just
+                        // the first item — checking only items[0]'s product used
+                        // to silently skip validation for any 2nd/3rd item,
+                        // letting a bad save through the pre-check only to be
+                        // rejected by the backend with no clear on-screen reason.
+                        const freshResults = await Promise.all(productQueriesResult.map(q => q.refetch()));
+                        const freshById: Record<string, any> = Object.fromEntries(
+                          editProductIds.map((pid: string, idx: number) => [pid, freshResults[idx]?.data])
+                        );
+                        for (const it of editData.items) {
+                          const freshProduct = freshById[it.product_id];
+                          if (!freshProduct) continue;
+                          const variantStr = it.variant_details?.variant;
+                          let available: number | null = null;
+                          if (variantStr && freshProduct.variants?.length) {
+                            const colorVal = it.variant_details?.Couleur || it.variant_details?.Color || '';
+                            const sizeVal = it.variant_details?.Taille || it.variant_details?.Size || '';
+                            const colorVar = freshProduct.variants.find((v: any) => v.value === colorVal);
+                            const subVar = sizeVal ? colorVar?.sub_variants?.find((sv: any) => sv.value === sizeVal) : null;
+                            const effective = subVar || (colorVar && (!colorVar.sub_variants || colorVar.sub_variants.length === 0) ? colorVar : null);
+                            if (effective) {
+                              available = Number(effective.stock || 0) - Number(effective.reserved || 0);
                             }
-                            if (available !== null && available < it.quantity) {
-                              toast.error(
-                                `Stock insuffisant pour ${it.product_name}${variantStr ? ` (${variantStr})` : ''} : ${available} disponible(s), ${it.quantity} demandé(s). Le stock vient d'être mis à jour, ajustez la quantité ou choisissez une autre variante.`
-                              );
-                              return;
-                            }
+                          } else if (!freshProduct.variants?.length) {
+                            available = Number(freshProduct.stock || 0) - Number(freshProduct.reserved_stock || 0);
+                          }
+                          if (available !== null && available < it.quantity) {
+                            toast.error(
+                              `Stock insuffisant pour ${it.product_name}${variantStr ? ` (${variantStr})` : ''} : ${available} disponible(s), ${it.quantity} demandé(s). Le stock vient d'être mis à jour, ajustez la quantité ou choisissez une autre variante.`
+                            );
+                            return;
                           }
                         }
                       } finally {
