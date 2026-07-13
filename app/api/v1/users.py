@@ -553,6 +553,14 @@ def get_user_performance(
     only used for the daily chart), so the salary shown for a "confirmatrice"
     was always all-time regardless of any date range selected.
     """
+    # This endpoint scopes Order access itself below via `store_filter`
+    # (the employee's own assigned_store_scope/assigned_store_ids, or the
+    # store_id query param) — the header-driven tenant auto-filter is
+    # redundant, and on a X-Store-Id/expected-store mismatch it silently
+    # zeroes out confirmed_count/recent_orders/audit_logs, indistinguishable
+    # from "this employee has no activity". Same class of bug fixed earlier
+    # this session across every order-by-id endpoint in orders.py.
+    db.info["skip_tenant_isolation"] = True
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
