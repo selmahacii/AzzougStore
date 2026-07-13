@@ -1101,13 +1101,17 @@ export default function ProductsPage() {
 
          {/* ─── Detail Oriented Product Modal ─── */}
          <Dialog open={!!editingProduct || isCreating} onOpenChange={(open) => { if (!open) { setEditingProduct(null); setIsCreating(false); setForm({ ...EMPTY_FORM }); } }}>
+            {/* Centered card on every breakpoint — deliberately NOT fullscreen
+                (was w-[100vw] h-[100dvh] on phones): a fixed, capped height
+                keeps the dialog stable when switching tabs, and the body
+                below scrolls internally. */}
             <DialogContent className="
-               max-w-[1300px] w-[100vw] h-[100dvh] sm:w-[95vw] sm:h-[92dvh] 
-               p-0 flex flex-col bg-slate-50 border-none shadow-2xl 
-               rounded-none sm:rounded-[2rem] overflow-hidden !outline-none
+               w-[94vw] max-w-[1100px] h-[88dvh] max-h-[900px]
+               p-0 flex flex-col bg-slate-50 border-none shadow-2xl
+               rounded-[20px] sm:rounded-[2rem] overflow-hidden !outline-none
             ">
                {/* ── Header ── */}
-               <div className="shrink-0 h-[72px] sm:h-20 px-4 sm:px-8 bg-white border-b border-slate-100 flex items-center justify-between z-20 shadow-sm relative">
+               <div className="shrink-0 h-[64px] sm:h-20 px-4 sm:px-8 bg-white border-b border-slate-100 flex items-center justify-between z-20 shadow-sm relative">
                   <div className="flex items-center gap-3 sm:gap-4">
                      <div className="size-10 sm:size-12 rounded-[14px] bg-indigo-50 flex items-center justify-center text-[#4b7bec]">
                         {editingProduct ? <Edit3 className="size-5 sm:size-6" /> : <Plus className="size-5 sm:size-6" />}
