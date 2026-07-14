@@ -561,6 +561,18 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                                           <span className="text-xs font-black text-slate-700">{item.variantStr}</span>
                                           <span className="text-[10px] text-slate-400 font-bold mt-0.5">Actuel : {item.stock} units · {item.reserved} réservés</span>
                                        </div>
+                                       {/* Live label — she wants the direction of the movement spelled out
+                                           as it's typed, not just after the fact in the audit log, so
+                                           non-technical staff never wonder whether they're adding or
+                                           removing stock. */}
+                                       {currentAdj !== 0 && (
+                                          <span className={cn(
+                                             "text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg shrink-0",
+                                             currentAdj > 0 ? "bg-[#E6FFF8] text-[#00B894]" : "bg-[#FFEDE9] text-[#E17055]"
+                                          )}>
+                                             {currentAdj > 0 ? "↑ Bon d'Entrée" : "↓ Bon de Sortie"}
+                                          </span>
+                                       )}
                                     </div>
                                     <div className="flex items-center gap-3">
                                        <button
@@ -593,7 +605,17 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                         </div>
                      ) : (
                         <div className="space-y-2 text-start">
-                           <label className="text-[10px] font-black uppercase text-[#B2BEC3] tracking-widest">Modification de quantité (±)</label>
+                           <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-black uppercase text-[#B2BEC3] tracking-widest">Modification de quantité (±)</label>
+                              {adjustAmount !== 0 && (
+                                 <span className={cn(
+                                    "text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg",
+                                    adjustAmount > 0 ? "bg-[#E6FFF8] text-[#00B894]" : "bg-[#FFEDE9] text-[#E17055]"
+                                 )}>
+                                    {adjustAmount > 0 ? "↑ Bon d'Entrée" : "↓ Bon de Sortie"}
+                                 </span>
+                              )}
+                           </div>
                            <div className="flex items-center gap-4">
                               <button onClick={() => setAdjustAmount(a => a - 1)} className="size-12 rounded-xl border border-[#E9ECF0] flex items-center justify-center text-xl font-black hover:bg-slate-50">—</button>
                               <Input

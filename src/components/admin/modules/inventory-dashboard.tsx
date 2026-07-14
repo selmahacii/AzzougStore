@@ -497,10 +497,18 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                      </div>
                      <div>
                         <p className="text-xs font-extrabold text-[#2D3436]">
-                           {m.type === 'RESTOCK' ? 'Réapprovisionnement' : 
-                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' : 
+                           {/* RESTOCK/MANUAL_ADJUSTMENT are exactly "Bon d'Entrée"/"Bon de Sortie"
+                               under the hood (see stock-manager.tsx's adjustMutation, which picks
+                               the type from the +/- sign entered) — label them as such here too so
+                               the audit trail uses the same vocabulary staff already see live while
+                               filling the adjustment dialog, instead of a generic "Ajustement Manuel"
+                               that reads like a third, unrelated kind of operation. */}
+                           {m.type === 'RESTOCK' ? "Bon d'Entrée" :
+                            m.type === 'RETURN_RESTOCK' ? "Bon d'Entrée (Retour Client)" :
+                            m.type === 'MANUAL_ADJUSTMENT' ? 'Bon de Sortie' :
+                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' :
                             m.type === 'POS_SALE' ? 'Vente au Comptant (POS)' :
-                            'Ajustement Manuel'} : 
+                            m.type.replace(/_/g, ' ')} :
                            <span className="font-mono text-[#6C5CE7] ml-2">{m.id.split('-')[0].toUpperCase()}</span>
                         </p>
                         <div className="flex items-center gap-3 mt-1.5">
