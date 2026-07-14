@@ -841,10 +841,15 @@ def list_orders(
     skip = (page - 1) * pageSize
     
     final_query = query.options(
-            joinedload(Order.items).joinedload(OrderItem.product),
+            # OrderItemRead (schemas/order.py) never serializes item.product —
+            # it only exposes the denormalized product_id/product_name/
+            # unit_price/image_url already stored on OrderItem itself. Eagerly
+            # joining the full Product row (description, SEO fields, variants
+            # JSON...) for every item of every order was pure wasted transfer
+            # between the backend and Neon, never used downstream.
+            joinedload(Order.items),
             joinedload(Order.assignee),
             joinedload(Order.livreur),
-            joinedload(Order.customer),
             joinedload(Order.carrier),
             joinedload(Order.store),
         ).order_by(Order.created_at.desc())
@@ -1300,11 +1305,16 @@ def get_order(
     order = (
         db.query(Order)
         .options(
-            joinedload(Order.items).joinedload(OrderItem.product),
+            # OrderItemRead (schemas/order.py) never serializes item.product —
+            # it only exposes the denormalized product_id/product_name/
+            # unit_price/image_url already stored on OrderItem itself. Eagerly
+            # joining the full Product row (description, SEO fields, variants
+            # JSON...) for every item of every order was pure wasted transfer
+            # between the backend and Neon, never used downstream.
+            joinedload(Order.items),
             joinedload(Order.events).joinedload(OrderEvent.actor),
             joinedload(Order.assignee),
             joinedload(Order.livreur),
-            joinedload(Order.customer),
             joinedload(Order.carrier),
         )
         .filter(Order.id == id, Order.is_deleted == False)
