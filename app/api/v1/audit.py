@@ -40,13 +40,15 @@ def get_audit_logs(
     if actor_id:
         query = query.filter(AuditLog.actor_id == actor_id)
     if start_date:
+        from app.core.dates import parse_local_date_filter
         try:
-            query = query.filter(AuditLog.created_at >= datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None))
+            query = query.filter(AuditLog.created_at >= parse_local_date_filter(start_date))
         except ValueError:
             pass
     if end_date:
+        from app.core.dates import parse_local_date_filter
         try:
-            query = query.filter(AuditLog.created_at <= datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None))
+            query = query.filter(AuditLog.created_at <= parse_local_date_filter(end_date))
         except ValueError:
             pass
 

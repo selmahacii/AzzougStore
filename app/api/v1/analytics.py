@@ -123,13 +123,15 @@ def get_analytics(
 
     # Custom Date Range Override
     if start_date:
+        from app.core.dates import parse_local_date_filter
         try:
-            start_date_obj = datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            start_date_obj = parse_local_date_filter(start_date)
         except ValueError:
             pass
     if end_date:
+        from app.core.dates import parse_local_date_filter
         try:
-            end_date_obj = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            end_date_obj = parse_local_date_filter(end_date)
             # If start and end date are provided, we don't have a reliable "previous period", so we can set it to None
             prev_start_date = None
             prev_end_date = None

@@ -64,18 +64,16 @@ def get_customers(
         ))
 
     if start_date:
-        from datetime import datetime
+        from app.core.dates import parse_local_date_filter
         try:
-            sd = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            query = query.filter(Customer.created_at >= sd)
+            query = query.filter(Customer.created_at >= parse_local_date_filter(start_date))
         except ValueError:
             pass
-            
+
     if end_date:
-        from datetime import datetime
+        from app.core.dates import parse_local_date_filter
         try:
-            ed = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-            query = query.filter(Customer.created_at <= ed)
+            query = query.filter(Customer.created_at <= parse_local_date_filter(end_date))
         except ValueError:
             pass
 

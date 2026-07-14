@@ -147,15 +147,16 @@ def get_marketers_performance(
     if not marketers:
         return []
 
+    from app.core.dates import parse_local_date_filter
     date_filters = []
     if start_date:
         try:
-            date_filters.append(Order.created_at >= datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None))
+            date_filters.append(Order.created_at >= parse_local_date_filter(start_date))
         except ValueError:
             pass
     if end_date:
         try:
-            date_filters.append(Order.created_at <= datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None))
+            date_filters.append(Order.created_at <= parse_local_date_filter(end_date))
         except ValueError:
             pass
 
@@ -565,16 +566,17 @@ def get_user_performance(
     if not db_user:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
 
+    from app.core.dates import parse_local_date_filter
     since = None
     until = None
     if start_date:
         try:
-            since = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            since = parse_local_date_filter(start_date)
         except ValueError:
             pass
     if end_date:
         try:
-            until = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            until = parse_local_date_filter(end_date)
         except ValueError:
             pass
 

@@ -199,15 +199,15 @@ def list_landing_pages(
         # Livrées) to the selected period instead of always aggregating
         # all-time history.
         if start_date:
+            from app.core.dates import parse_local_date_filter
             try:
-                _sd = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                _metrics_query = _metrics_query.filter(Order.created_at >= _sd)
+                _metrics_query = _metrics_query.filter(Order.created_at >= parse_local_date_filter(start_date))
             except ValueError:
                 pass
         if end_date:
+            from app.core.dates import parse_local_date_filter
             try:
-                _ed = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                _metrics_query = _metrics_query.filter(Order.created_at <= _ed)
+                _metrics_query = _metrics_query.filter(Order.created_at <= parse_local_date_filter(end_date))
             except ValueError:
                 pass
         rows = _metrics_query.group_by(OrderItem.product_id).all()
@@ -332,21 +332,25 @@ def get_landing_page_analytics(
     if not lp.product_id:
         return {"success": True, "data": {"daily": [], "totals": {}, "created_at": lp.created_at.isoformat() if lp.created_at else None}}
 
+    from app.core.dates import parse_local_date_filter, ALGERIA_UTC_OFFSET_HOURS
     now = datetime.utcnow()
     d_start = now - timedelta(days=30)
     d_end = now
     if start_date:
         try:
-            d_start = datetime.fromisoformat(start_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            d_start = parse_local_date_filter(start_date)
         except ValueError:
             pass
     if end_date:
         try:
-            d_end = datetime.fromisoformat(end_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            d_end = parse_local_date_filter(end_date)
         except ValueError:
             pass
 
-    day = func.date(Order.created_at)
+    # Group by Algeria-local calendar day, not raw UTC — otherwise an order
+    # placed at 00:03 Algeria time (23:03 UTC the previous day) landed in
+    # the wrong day's bucket in the chart below.
+    day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
     rows = (
         db.query(
             day.label("day"),
