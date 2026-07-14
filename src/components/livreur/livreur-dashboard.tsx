@@ -78,22 +78,42 @@ export default function LivreurDashboard() {
 
           <div className="flex items-center gap-2 shrink-0">
             {myStores.length > 1 && (
-              <select
-                value={activeStore?.id || ''}
-                onChange={e => { const s = myStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
-                className="text-xs font-bold bg-white/10 border border-white/10 rounded-lg px-2.5 py-1.5 text-white outline-none cursor-pointer max-w-[100px] sm:max-w-[160px] truncate"
-                title="Changer de boutique"
-              >
-                {myStores.map(s => (
-                  <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
-                ))}
-              </select>
+              <div className="relative hidden sm:flex items-center">
+                <Warehouse className="absolute left-2.5 size-3.5 text-cyan-400 pointer-events-none" />
+                <select
+                  value={activeStore?.id || ''}
+                  onChange={e => { const s = myStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
+                  className="text-xs font-bold bg-white/10 border border-white/10 rounded-lg pl-7 pr-2.5 py-2 text-white outline-none cursor-pointer max-w-[180px] truncate appearance-none"
+                  title="Changer de boutique"
+                >
+                  {myStores.map(s => (
+                    <option key={s.id} value={s.id} className="text-slate-900">{s.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
             <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-400 transition-colors shrink-0" title="Déconnexion">
               <LogOut className="size-5" />
             </button>
           </div>
         </div>
+
+        {/* Store switcher — repeated as a full-width bar on mobile so it's an
+            obvious, easy tap target instead of a squeezed dropdown in the
+            header, matching the confirmatrice header's mobile affordance. */}
+        {myStores.length > 1 && (
+          <div className="sm:hidden px-4 pb-2 -mt-1">
+            <select
+              value={activeStore?.id || ''}
+              onChange={e => { const s = myStores.find(s => s.id === e.target.value); if (s) setActiveStore(s); }}
+              className="w-full text-xs font-black bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 text-white outline-none cursor-pointer"
+            >
+              {myStores.map(s => (
+                <option key={s.id} value={s.id} className="text-slate-900">📍 {s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* ── Section nav — same bar, no separate sticky element to keep in sync ── */}
         <nav className="bg-slate-800/60 border-t border-white/5">
@@ -137,18 +157,24 @@ export default function LivreurDashboard() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function LivreurDeliveries() {
-  const { user } = useAppStore();
+  const { user, activeStore } = useAppStore();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'todo' | 'done'>('todo');
   const [search, setSearch] = useState('');
   const [wilayaFilter, setWilayaFilter] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  // Poll every 5 s — confirmatrice dashboard also polls; any status change
-  // made by one side becomes visible to the other within ~5 s.
+  // Backend already scopes to livreur_id = me regardless of store — this
+  // store_id param is an additional narrowing so a driver working several
+  // boutiques can switch between them from the header, same as
+  // Produits/Inventaire below. Every order returned is still only ever his.
   const ordersQuery = useQuery<{ data: Order[] }>({
-    queryKey: ['livreur-orders', user?.id],
-    queryFn: () => apiFetch('/api/v1/orders?pageSize=200'),
+    queryKey: ['livreur-orders', user?.id, activeStore?.id],
+    queryFn: () => {
+      let url = '/api/v1/orders?pageSize=200';
+      if (activeStore?.id) url += `&store_id=${activeStore.id}`;
+      return apiFetch(url);
+    },
     enabled: !!user?.id,
     refetchInterval: 5 * 60 * 1000,
   });
