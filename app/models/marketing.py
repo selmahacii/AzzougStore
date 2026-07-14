@@ -161,6 +161,14 @@ class MetaAdsCampaign(Base):
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
     date_start = Column(DateTime, nullable=True)
     date_end = Column(DateTime, nullable=True)
+    # Manual override — lets a store owner explicitly link a campaign to a
+    # product regardless of ad naming or UTM completeness. Several ad sets
+    # split-testing the same product (arbitrary codenames like "vd jdid",
+    # "tyara"...) never match the product's name/slug, so the automatic
+    # fallback silently dropped their spend/purchases from that product's
+    # totals. When set, this takes priority over both the UTM-order match
+    # and the name-substring fallback in meta_ads.py's attribution loop.
+    product_id = Column(String, ForeignKey("products.id"), nullable=True, index=True)
 
     store = relationship("Store")
 

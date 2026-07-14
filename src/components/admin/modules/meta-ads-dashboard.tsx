@@ -82,6 +82,27 @@ export default function MetaAdsDashboard() {
     refetchInterval: 24 * 60 * 60 * 1000,
   });
 
+  // --- Products (for the manual campaign -> product link picker) ---
+  const { data: metaProductsData } = useQuery({
+    queryKey: ['admin-products-lite', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&minimal=true`),
+    enabled: !!activeStore?.id,
+  });
+  const metaProducts = metaProductsData?.data ?? [];
+
+  const linkProductMutation = useMutation({
+    mutationFn: ({ campaignId, productId }: { campaignId: string; productId: string | null }) =>
+      apiFetch(`/api/v1/meta-ads/campaigns/${campaignId}/product`, {
+        method: 'PATCH',
+        body: JSON.stringify({ product_id: productId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['meta_ads_campaigns'] });
+      toast.success('Campagne liée au produit');
+    },
+    onError: (err: any) => toast.error(err.message || 'Échec de la liaison produit'),
+  });
+
   // --- Query Integration Summary (cross-module) ---
   const { data: integrationData, isLoading: isLoadingIntegration } = useQuery({
     queryKey: ['meta_ads_integration', activeStore?.id],
@@ -902,20 +923,36 @@ export default function MetaAdsDashboard() {
                               </div>
                             </div>
                          </td>
-                         <td className="px-6 py-5">
-                            {c.product_name ? (
-                              <div className="flex items-center gap-2">
-                                {c.product_image && (
-                                  <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
-                                )}
-                                <div>
-                                  <p className="text-xs font-black text-slate-700 leading-tight">{c.product_name}</p>
-                                  {c.product_sku && <p className="text-[10px] text-slate-400 font-mono">{c.product_sku}</p>}
+                         <td className="px-6 py-5" onClick={e => e.stopPropagation()}>
+                            <div className="space-y-1.5">
+                              {c.product_name ? (
+                                <div className="flex items-center gap-2">
+                                  {c.product_image && (
+                                    <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="text-xs font-black text-slate-700 leading-tight">{c.product_name}</p>
+                                    {c.product_sku && <p className="text-[10px] text-slate-400 font-mono">{c.product_sku}</p>}
+                                  </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-300 italic">Non identifié</span>
-                            )}
+                              ) : (
+                                <span className="text-[10px] text-slate-300 italic">Non identifié</span>
+                              )}
+                              {/* Manual link — plusieurs ad sets peuvent cibler le même
+                                  produit sous des noms de campagne arbitraires ; l'attribution
+                                  automatique (UTM ou nom) rate ces cas, ce sélecteur force le
+                                  rattachement une bonne fois pour toutes. */}
+                              <select
+                                value={c.product_id || ''}
+                                onChange={ev => linkProductMutation.mutate({ campaignId: c.campaign_id || c.id, productId: ev.target.value || null })}
+                                className="text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 max-w-[160px] outline-none cursor-pointer text-slate-500"
+                              >
+                                <option value="">— Lier un produit —</option>
+                                {metaProducts.map((p: any) => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
                          </td>
                          <td className="px-6 py-5">
                             <div className="space-y-0.5">
