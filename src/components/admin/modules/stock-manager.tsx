@@ -57,6 +57,40 @@ const C = {
    text: '#2D3436', textLight: '#636E72', textDim: '#B2BEC3', border: '#E9ECF0', bg: '#F8F9FC',
 };
 
+// Module-scope so StockEntryModal/StockExitModal can offer per-variant
+// quantity entry too — Bon d'Entrée/Bon de Sortie used to only ever touch
+// the aggregate product.stock, which _update_product_stock_from_variants
+// (backend) silently overwrites back to sum-of-variants on the next
+// variant-scoped operation, making a manual restock look like it "didn't
+// stick" for any product that has variants.
+function getProductVariantItems(product: any) {
+  if (!product || !product.variants || product.variants.length === 0) return [];
+  const items: Array<{ variantStr: string; stock: number; reserved: number }> = [];
+
+  product.variants.forEach((v: any) => {
+    let vars = v;
+    if (typeof vars === 'string') {
+      try { vars = JSON.parse(vars); } catch { return; }
+    }
+    if (vars.sub_variants && vars.sub_variants.length > 0) {
+      vars.sub_variants.forEach((sv: any) => {
+        items.push({
+          variantStr: `${vars.name}: ${vars.value}, ${sv.name || 'Taille'}: ${sv.value}`,
+          stock: sv.stock || 0,
+          reserved: sv.reserved || 0
+        });
+      });
+    } else {
+      items.push({
+        variantStr: `${vars.name}: ${vars.value}`,
+        stock: vars.stock || 0,
+        reserved: vars.reserved || 0
+      });
+    }
+  });
+  return items;
+}
+
 export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'alerts' | 'history' }) {
   const { activeStore } = useAppStore();
   const storeId = activeStore?.id ?? '';
@@ -146,34 +180,6 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
   });
 
   const products = productsQuery.data?.data ?? [];
-
-  const getProductVariantItems = (product: any) => {
-    if (!product || !product.variants || product.variants.length === 0) return [];
-    const items: Array<{ variantStr: string; stock: number; reserved: number }> = [];
-
-    product.variants.forEach((v: any) => {
-      let vars = v;
-      if (typeof vars === 'string') {
-        try { vars = JSON.parse(vars); } catch { return; }
-      }
-      if (vars.sub_variants && vars.sub_variants.length > 0) {
-        vars.sub_variants.forEach((sv: any) => {
-          items.push({
-            variantStr: `${vars.name}: ${vars.value}, ${sv.name || 'Taille'}: ${sv.value}`,
-            stock: sv.stock || 0,
-            reserved: sv.reserved || 0
-          });
-        });
-      } else {
-        items.push({
-          variantStr: `${vars.name}: ${vars.value}`,
-          stock: vars.stock || 0,
-          reserved: vars.reserved || 0
-        });
-      }
-    });
-    return items;
-  };
 
   const handleAdjustClick = async (product: any) => {
     setFetchingProductId(product.id);
@@ -692,9 +698,22 @@ function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: 
       receiving_agent: '',
       note: ''
    });
+   // Per-variant quantities — a product with variants tracks stock on each
+   // variant, not on the aggregate product.stock. Entering a plain quantity
+   // here used to bump product.stock directly; the very next variant-scoped
+   // operation (an order, a manual variant adjustment…) recalculates
+   // product.stock as the sum of variants and silently wipes that addition
+   // out again, making the restock look like it never stuck.
+   const [variantQuantities, setVariantQuantities] = useState<Record<string, number>>({});
+
+   const activeProduct = products.find((p: any) => p.id === formData.product_id);
+   const variantItems = getProductVariantItems(activeProduct);
+   const hasValidQuantity = variantItems.length > 0
+      ? Object.values(variantQuantities).some(q => q > 0)
+      : formData.quantity > 0;
 
    const entryMutation = useMutation({
-      mutationFn: (data: any) => {
+      mutationFn: async (data: any) => {
          const richReason = [
             data.note.trim(),
             `--- SPECIFICATIONS DE RECEPTION (BON D'ENTREE) ---`,
@@ -708,24 +727,43 @@ function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: 
             `• Agent Réceptionnaire : ${data.receiving_agent.trim() || 'Système'}`
          ].filter(Boolean).join('\n');
 
-         return apiFetch('/api/v1/stock/', {
-            method: 'POST',
-            body: JSON.stringify({
-               product_id: data.product_id,
-               warehouse_id: data.warehouse_id,
-               quantity: data.quantity,
-               type: 'RESTOCK',
-               reason: richReason,
-               store_id: storeId
-            })
-         });
+         const adjustments = variantItems.length > 0
+            ? Object.entries(variantQuantities)
+                 .map(([variantStr, quantity]) => ({ variantStr, quantity }))
+                 .filter(adj => adj.quantity > 0)
+            : [{ quantity: data.quantity }];
+
+         if (adjustments.length === 0) {
+            throw new Error('Veuillez saisir une quantité pour au moins une variante.');
+         }
+
+         const results = await Promise.allSettled(
+            adjustments.map(adj => apiFetch('/api/v1/stock/', {
+               method: 'POST',
+               body: JSON.stringify({
+                  product_id: data.product_id,
+                  warehouse_id: data.warehouse_id,
+                  quantity: adj.quantity,
+                  type: 'RESTOCK',
+                  reason: richReason,
+                  store_id: storeId,
+                  ...(adj.variantStr ? { variant_details: { variant: adj.variantStr } } : {}),
+               })
+            }))
+         );
+         const failed = results.filter(r => r.status === 'rejected').length;
+         if (failed > 0) throw new Error(`${failed} entrée(s) sur ${adjustments.length} ont échoué`);
+         return results;
       },
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
+         qc.invalidateQueries({ queryKey: ['admin-products-lite'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'movements'] });
          toast.success("Bon d’Entrée validé avec succès ✓");
          onOpenChange(false);
+         setVariantQuantities({});
          setFormData({
             product_id: '',
             warehouse_id: '',
@@ -799,7 +837,31 @@ function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: 
                      </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {variantItems.length > 0 ? (
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">
+                           Quantités par Variante * <span className="text-slate-300 normal-case font-bold">— renseigne une ou plusieurs variantes</span>
+                        </label>
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                           {variantItems.map(vi => (
+                              <div key={vi.variantStr} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl">
+                                 <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-slate-700 truncate">{vi.variantStr}</p>
+                                    <p className="text-[10px] text-slate-400 font-semibold">Stock actuel : {vi.stock}</p>
+                                 </div>
+                                 <Input
+                                    type="number"
+                                    min={0}
+                                    value={variantQuantities[vi.variantStr] || ''}
+                                    onChange={e => setVariantQuantities(prev => ({ ...prev, [vi.variantStr]: parseInt(e.target.value) || 0 }))}
+                                    placeholder="0"
+                                    className="w-28 h-10 border-slate-100 bg-[#F8F9FC] rounded-lg text-xs font-black text-slate-800 text-center shrink-0"
+                                 />
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                  ) : (
                      <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Quantité à Entrer *</label>
                         <div className="relative">
@@ -815,6 +877,9 @@ function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: 
                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
                         </div>
                      </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">État de Qualité *</label>
                         <Select value={formData.quality_status} onValueChange={v => setFormData({...formData, quality_status: v})}>
@@ -933,7 +998,7 @@ function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: 
                <button onClick={() => onOpenChange(false)} className="h-12 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors">Fermer</button>
                <Button
                   onClick={() => entryMutation.mutate(formData)}
-                  disabled={entryMutation.isPending || !formData.product_id || !formData.warehouse_id || formData.quantity <= 0}
+                  disabled={entryMutation.isPending || !formData.product_id || !formData.warehouse_id || !hasValidQuantity}
                   className="h-12 px-10 rounded-xl bg-[#00B894] hover:bg-[#009b7c] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 transition-all active:scale-[0.98]"
                >
                   {entryMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "VALIDER L'ENTRÉE ✓"}
@@ -963,9 +1028,22 @@ function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: a
       shipping_agent: '',
       note: ''
    });
+   // Same rationale as StockEntryModal: a variant product's stock lives on
+   // each variant, not on the aggregate — a plain quantity here silently
+   // got wiped by the next variant-scoped stock operation.
+   const [variantQuantities, setVariantQuantities] = useState<Record<string, number>>({});
+
+   const activeProduct = products.find((p: any) => p.id === formData.product_id);
+   const variantItems = getProductVariantItems(activeProduct);
+   const activeProductAvailable = activeProduct ? Math.max(0, (activeProduct.stock || 0) - (activeProduct.reserved_stock || 0)) : 0;
+   const excessStock = variantItems.length === 0 && activeProduct && formData.quantity > activeProductAvailable;
+   const hasValidQuantity = variantItems.length > 0
+      ? Object.values(variantQuantities).some(q => q > 0)
+      : formData.quantity > 0;
+   const hasVariantExcess = variantItems.length > 0 && variantItems.some(vi => (variantQuantities[vi.variantStr] || 0) > Math.max(0, vi.stock - vi.reserved));
 
    const exitMutation = useMutation({
-      mutationFn: (data: any) => {
+      mutationFn: async (data: any) => {
          const richReason = [
             data.note.trim(),
             `--- SPECIFICATIONS D'EXPEDITION (BON DE SORTIE) ---`,
@@ -978,27 +1056,43 @@ function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: a
             `• Agent Expéditeur : ${data.shipping_agent.trim() || 'Système'}`
          ].filter(Boolean).join('\n');
 
-         // Exit quantities MUST be negative for withdrawal!
-         const negativeQty = -Math.abs(data.quantity);
+         const adjustments = variantItems.length > 0
+            ? Object.entries(variantQuantities)
+                 .map(([variantStr, quantity]) => ({ variantStr, quantity: -Math.abs(quantity) }))
+                 .filter(adj => adj.quantity < 0)
+            : [{ quantity: -Math.abs(data.quantity) }];
 
-         return apiFetch('/api/v1/stock/', {
-            method: 'POST',
-            body: JSON.stringify({
-               product_id: data.product_id,
-               warehouse_id: data.warehouse_id,
-               quantity: negativeQty,
-               type: 'MANUAL_ADJUSTMENT',
-               reason: richReason,
-               store_id: storeId
-            })
-         });
+         if (adjustments.length === 0) {
+            throw new Error('Veuillez saisir une quantité pour au moins une variante.');
+         }
+
+         const results = await Promise.allSettled(
+            adjustments.map(adj => apiFetch('/api/v1/stock/', {
+               method: 'POST',
+               body: JSON.stringify({
+                  product_id: data.product_id,
+                  warehouse_id: data.warehouse_id,
+                  quantity: adj.quantity,
+                  type: 'MANUAL_ADJUSTMENT',
+                  reason: richReason,
+                  store_id: storeId,
+                  ...(adj.variantStr ? { variant_details: { variant: adj.variantStr } } : {}),
+               })
+            }))
+         );
+         const failed = results.filter(r => r.status === 'rejected').length;
+         if (failed > 0) throw new Error(`${failed} sortie(s) sur ${adjustments.length} ont échoué`);
+         return results;
       },
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
+         qc.invalidateQueries({ queryKey: ['admin-products-lite'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'movements'] });
          toast.success("Bon de Sortie validé avec succès ✓");
          onOpenChange(false);
+         setVariantQuantities({});
          setFormData({
             product_id: '',
             warehouse_id: '',
@@ -1015,10 +1109,6 @@ function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: a
       },
       onError: (err: any) => toast.error(err.message || "Échec de validation du Bon de Sortie"),
    });
-
-   const activeProduct = products.find((p: any) => p.id === formData.product_id);
-   const activeProductAvailable = activeProduct ? Math.max(0, (activeProduct.stock || 0) - (activeProduct.reserved_stock || 0)) : 0;
-   const excessStock = activeProduct && formData.quantity > activeProductAvailable;
 
    return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1075,36 +1165,73 @@ function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: a
                      </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {variantItems.length > 0 ? (
                      <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Quantité à Sortir *</label>
-                        <div className="relative">
-                           <Input
-                              type="number"
-                              min={1}
-                              value={formData.quantity || ''}
-                              onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
-                              placeholder="Nombre d'unités"
-                              className="h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black text-slate-800"
-                           />
-                           <Box className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-rose-400" />
-                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">
+                           Quantités par Variante * <span className="text-slate-300 normal-case font-bold">— renseigne une ou plusieurs variantes</span>
+                        </label>
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                           {variantItems.map(vi => {
+                              const requested = variantQuantities[vi.variantStr] || 0;
+                              const vAvailable = Math.max(0, vi.stock - vi.reserved);
+                              const vExcess = requested > vAvailable;
+                              return (
+                                 <div key={vi.variantStr} className="space-y-1">
+                                    <div className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl">
+                                       <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-bold text-slate-700 truncate">{vi.variantStr}</p>
+                                          <p className="text-[10px] text-slate-400 font-semibold">Disponible : {vAvailable}</p>
+                                       </div>
+                                       <Input
+                                          type="number"
+                                          min={0}
+                                          value={variantQuantities[vi.variantStr] || ''}
+                                          onChange={e => setVariantQuantities(prev => ({ ...prev, [vi.variantStr]: parseInt(e.target.value) || 0 }))}
+                                          placeholder="0"
+                                          className="w-28 h-10 border-slate-100 bg-[#F8F9FC] rounded-lg text-xs font-black text-slate-800 text-center shrink-0"
+                                       />
+                                    </div>
+                                    {vExcess && (
+                                       <p className="text-[10px] text-rose-600 font-semibold pl-1">Dépasse le disponible ({vAvailable}) pour cette variante.</p>
+                                    )}
+                                 </div>
+                              );
+                           })}
                         </div>
                      </div>
-                     <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Conditionnement *</label>
-                        <Select value={formData.package_status} onValueChange={v => setFormData({...formData, package_status: v})}>
-                           <SelectTrigger className="h-12 border-slate-100 bg-white rounded-xl px-4 text-xs font-bold uppercase shadow-sm">
-                              <SelectValue placeholder="État" />
-                           </SelectTrigger>
-                           <SelectContent className="rounded-xl">
-                              <SelectItem value="parfait" className="font-bold text-xs">PARFAIT / SCELLÉ</SelectItem>
-                              <SelectItem value="standard" className="font-bold text-xs">CARTON STANDARD ACCORDÉ</SelectItem>
-                              <SelectItem value="fragile" className="font-bold text-xs text-amber-500">SIGNALÉ FRAGILE</SelectItem>
-                              <SelectItem value="abime" className="font-bold text-xs text-rose-500">ENVELOPPE ALTERÉE</SelectItem>
-                           </SelectContent>
-                        </Select>
+                  ) : (
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Quantité à Sortir *</label>
+                           <div className="relative">
+                              <Input
+                                 type="number"
+                                 min={1}
+                                 value={formData.quantity || ''}
+                                 onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
+                                 placeholder="Nombre d'unités"
+                                 className="h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black text-slate-800"
+                              />
+                              <Box className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-rose-400" />
+                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
+                           </div>
+                        </div>
                      </div>
+                  )}
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Conditionnement *</label>
+                     <Select value={formData.package_status} onValueChange={v => setFormData({...formData, package_status: v})}>
+                        <SelectTrigger className="h-12 border-slate-100 bg-white rounded-xl px-4 text-xs font-bold uppercase shadow-sm">
+                           <SelectValue placeholder="État" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                           <SelectItem value="parfait" className="font-bold text-xs">PARFAIT / SCELLÉ</SelectItem>
+                           <SelectItem value="standard" className="font-bold text-xs">CARTON STANDARD ACCORDÉ</SelectItem>
+                           <SelectItem value="fragile" className="font-bold text-xs text-amber-500">SIGNALÉ FRAGILE</SelectItem>
+                           <SelectItem value="abime" className="font-bold text-xs text-rose-500">ENVELOPPE ALTERÉE</SelectItem>
+                        </SelectContent>
+                     </Select>
                   </div>
 
                   {excessStock && (
@@ -1211,7 +1338,7 @@ function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: a
                <button onClick={() => onOpenChange(false)} className="h-12 px-6 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors">Fermer</button>
                <Button
                   onClick={() => exitMutation.mutate(formData)}
-                  disabled={exitMutation.isPending || !formData.product_id || !formData.warehouse_id || formData.quantity <= 0 || excessStock}
+                  disabled={exitMutation.isPending || !formData.product_id || !formData.warehouse_id || !hasValidQuantity || excessStock || hasVariantExcess}
                   className="h-12 px-10 rounded-xl bg-[#E17055] hover:bg-[#c9583d] text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-100 transition-all active:scale-[0.98]"
                >
                   {exitMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "VALIDER LA SORTIE ✓"}
