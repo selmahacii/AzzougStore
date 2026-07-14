@@ -83,6 +83,12 @@ def run_db_migrations():
     from app.db.session import engine
     from sqlalchemy import text
 
+    # Bracketing prints around the very first DB connection attempt — if the
+    # container hangs at startup, these pin down whether it's stuck waking
+    # Neon's compute (nothing printed after "Connecting") vs stuck later in
+    # one of the backfill queries below.
+    print("🔌 Connecting to database for startup migrations...")
+
     # Alterations for landing_pages.offers (JSON / JSONB)
     try:
         with engine.begin() as conn:
@@ -128,6 +134,8 @@ def run_db_migrations():
                 print("✅ Backfill sequence numbers completed.")
     except Exception as e:
         print(f"⚠️ Backfill sequence numbers failed: {e}")
+
+    print("✅ Startup migrations finished — database connection is live.")
 
 @app.on_event("startup")
 async def start_background_sync():
