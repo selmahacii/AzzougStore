@@ -55,8 +55,10 @@ SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "15"))
 # leaves a real idle gap between ticks.
 REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS", "600"))
 # Meta Ads spend/insights auto-sync cadence (fires on the next scheduler tick
-# once this many minutes have elapsed).
-META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "240"))
+# once this many minutes have elapsed). Matches the frontend's own 24h poll
+# on this data (meta-ads-dashboard.tsx) — syncing more often than the UI
+# ever reads it just burns compute/network for numbers nobody sees sooner.
+META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "1440"))
 # How often to sweep product images still stuck on the ephemeral local disk
 # and move them to Cloudinary. Images change far less often than orders/ads,
 # so this runs on a slower cadence — just needs to run before a Space restart
