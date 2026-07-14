@@ -128,7 +128,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
     queryFn: () => apiFetch(
       `/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`
     ),
-    refetchInterval: 15000,
+    refetchInterval: 45000,
   });
 
   const data = analyticsQuery.data?.data;
@@ -2151,8 +2151,7 @@ export default function LandingPagesDashboard() {
     // a landing page taking live traffic could sit on stale numbers for as
     // long as the admin kept the tab open. Poll so the cards stay current
     // without her having to refresh the page herself.
-    refetchInterval: 15000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 30000,
   });
 
   const pages: LandingPage[] = raw?.data ?? raw ?? [];

@@ -150,8 +150,7 @@ function LivreurDeliveries() {
     queryKey: ['livreur-orders', user?.id],
     queryFn: () => apiFetch('/api/v1/orders?pageSize=200'),
     enabled: !!user?.id,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 20_000,
   });
 
   const statusMutation = useMutation({

@@ -112,7 +112,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     // the modal opened could sit stale for the whole call, showing available
     // when it no longer is by the time she hits save.
     staleTime: 10_000,
-    refetchInterval: isOpen ? 10_000 : false,
+    refetchInterval: isOpen ? 20_000 : false,
   });
 
   const deliveryPartnersQuery = useQuery<any>({

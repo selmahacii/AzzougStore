@@ -98,8 +98,7 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
       return apiFetch<{ success: boolean; data: any[]; total: number }>(url);
     },
     enabled: !!storeId,
-    refetchInterval: 5_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 20_000,
     staleTime: 3_000,
   });
 

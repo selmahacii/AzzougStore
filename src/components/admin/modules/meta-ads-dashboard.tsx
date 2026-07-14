@@ -116,7 +116,7 @@ export default function MetaAdsDashboard() {
     queryKey: ['meta_ads_health', activeStore?.id],
     queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
     enabled: !!activeStore?.id && activeTab === 'diagnostics',
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 
   const retryNowMutation = useMutation({

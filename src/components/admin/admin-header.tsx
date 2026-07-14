@@ -118,7 +118,7 @@ export default function AdminHeader() {
       queryKey: ['orders', 'new-notifications', storeId],
       queryFn: () =>
          fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
-      refetchInterval: 30000,
+      refetchInterval: 60000,
    });
 
    const stockAlertsQuery = useQuery<{ data: Product[] }>({
@@ -135,7 +135,7 @@ export default function AdminHeader() {
    const feedQuery = useQuery<{ data: any[]; unread: number }>({
       queryKey: ['notifications', currentUser?.id],
       queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-      refetchInterval: 30000,
+      refetchInterval: 60000,
       enabled: isAuthenticated && !!currentUser?.id,
    });
    const markFeedRead = useMutation({
