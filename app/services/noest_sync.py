@@ -507,7 +507,21 @@ def sync_meta_ads_all() -> None:
             if not getattr(cfg, "access_token", None) or not getattr(cfg, "ad_account_id", None):
                 continue
             try:
-                sync_meta_ads(store_id=str(cfg.store_id), db=db)
+                # date_start/date_end MUST be passed explicitly as None here.
+                # sync_meta_ads's signature default is `Query(None)` — a
+                # FastAPI-only sentinel that's only ever resolved to a plain
+                # None by FastAPI's own request handling. Calling the function
+                # directly (as this background sweep does) leaves that
+                # fastapi.params.Query object as the actual argument value,
+                # which is truthy — every call below silently entered the
+                # custom-date-range branch and tried to JSON-encode a Query
+                # object as the time_range value, failing every single time
+                # ("Object of type Query is not JSON serializable"). The
+                # 24h auto-sync had therefore never actually succeeded once;
+                # every campaign shown so far came only from the manual
+                # "Synchroniser" button, which goes through real FastAPI
+                # request handling and gets a genuine None.
+                sync_meta_ads(store_id=str(cfg.store_id), date_start=None, date_end=None, db=db)
                 synced += 1
             except Exception as exc:
                 logger.warning("Meta Ads auto-sync failed for store %s: %s", cfg.store_id, exc)

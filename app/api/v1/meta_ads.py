@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
@@ -248,7 +248,13 @@ def list_campaigns(
     }
 
     # Calculate ROAS based on orders with utm_campaign
-    orders_query = db.query(Order).filter(
+    # joinedload(Order.items) — the product-attribution loop below iterates
+    # o.items for every order of every campaign; without eager-loading, each
+    # access is a separate round-trip to Neon (N+1), which is invisible on an
+    # empty/unsynced store but turned a real campaign's first sync into a
+    # ~19s response (one query per order, one network hop each) — slow
+    # enough that the frontend never got to render anything.
+    orders_query = db.query(Order).options(joinedload(Order.items)).filter(
         Order.store_id == store_id,
         Order.status != "CANCELLED",
         # MERGED = a same-phone duplicate submission auto-fused into its parent
