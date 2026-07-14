@@ -46,16 +46,22 @@ from app.services.order_service import order_service
 
 logger = logging.getLogger("app.noest_sync")
 
-SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "3"))
-REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS", "120"))
+SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "15"))
+# This is also the main scheduler tick (see background_loop) — every tick
+# hits the DB via scan_due_reminders() regardless of any of the cadences
+# below, which is what actually matters for Neon's free-tier autosuspend:
+# a 2-min tick never left a gap longer than the ~5-min idle threshold, so
+# the compute endpoint never suspended and stayed billed 24/7. 10 min
+# leaves a real idle gap between ticks.
+REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS", "600"))
 # Meta Ads spend/insights auto-sync cadence (fires on the next scheduler tick
 # once this many minutes have elapsed).
-META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "3"))
+META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "240"))
 # How often to sweep product images still stuck on the ephemeral local disk
 # and move them to Cloudinary. Images change far less often than orders/ads,
 # so this runs on a slower cadence — just needs to run before a Space restart
 # would otherwise wipe them.
-CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_INTERVAL_MINUTES", "7"))
+CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_INTERVAL_MINUTES", "60"))
 
 # NOEST wording → platform terminal statuses. Checked against BOTH
 # OrderInfo.statut (French human text) AND the last activity's event_key
