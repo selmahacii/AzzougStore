@@ -32,20 +32,15 @@ export default function LivreurDashboard() {
   const [section, setSection] = useState<'deliveries' | 'products' | 'inventory'>('deliveries');
   const queryClient = useQueryClient();
 
-  // Same union semantics as the backend RBAC and app-bootstrap: the driver
-  // only ever switches between stores he's actually attached to
-  // (assigned_store_ids ∪ employee_store_id). Offering every store here let
-  // him land on one he has nothing to do with, and Produits/Inventaire
-  // below (activeStore-driven) then showed that store's catalog.
-  const myStores = useMemo(() => {
-    const ids = new Set([
-      ...((user?.assigned_store_ids as string[] | undefined) ?? []),
-      ...(user?.employee_store_id ? [user.employee_store_id] : []),
-    ]);
-    if (ids.size === 0) return allStores;
-    const filtered = allStores.filter(s => ids.has(s.id));
-    return filtered.length > 0 ? filtered : allStores;
-  }, [user, allStores]);
+  // Unlike CONFIRMATEUR/MANAGER, a LIVREUR's access boundary is NOT governed
+  // by employee_store_id/assigned_store_ids — those are barely ever
+  // configured for a driver (just whichever store was active when the admin
+  // created his account), so filtering by them collapsed the switcher to a
+  // single store and hid the dropdown entirely. His real isolation is
+  // per-order (Order.livreur_id == his id, enforced server-side in
+  // orders.py) — he can safely browse every store's catalog/stock and switch
+  // freely, the orders list itself never shows anyone else's deliveries.
+  const myStores = allStores;
 
   const handleLogout = async () => {
     try { await apiFetch('/api/v1/auth', { method: 'DELETE' }); } catch { /* ignore */ }
