@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Minus, Plus, ShoppingCart, CheckCircle, Package,
   AlertTriangle, Truck, Heart, ShieldCheck, Star, ChevronRight, Zap,
@@ -18,6 +18,21 @@ import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
+
+// Mobile touch/click event synthesis occasionally double-fires a single tap
+// on the quantity +/- buttons — a customer tapping "+" a reasonable number
+// of times could end up with an absurd quantity with no way to tell it
+// happened. Collapsing any repeat within 250ms into a no-op blocks that
+// without affecting deliberate, normally-paced clicking.
+function useClickDebounce(ms = 250) {
+  const lastRef = useRef(0);
+  return () => {
+    const now = Date.now();
+    if (now - lastRef.current < ms) return false;
+    lastRef.current = now;
+    return true;
+  };
+}
 
 function useProductDetailData() {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -192,6 +207,7 @@ function CleanDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
+  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -222,6 +238,7 @@ function CleanDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
+    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);
@@ -467,6 +484,7 @@ function AthleticDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
+  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -497,6 +515,7 @@ function AthleticDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
+    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);
@@ -718,6 +737,7 @@ function LuxeDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
+  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -748,6 +768,7 @@ function LuxeDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
+    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);

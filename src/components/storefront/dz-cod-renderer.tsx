@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Truck, Package } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
@@ -74,6 +74,19 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
+  // Mobile touch/click event synthesis occasionally double-fires a single
+  // tap on the quantity +/- buttons — a customer tapping "+" a reasonable
+  // number of times could end up with an absurd quantity (e.g. 23) with no
+  // way to tell it happened. Collapsing any repeat within 250ms into a
+  // single step blocks that without affecting deliberate, normally-paced
+  // clicking.
+  const lastQtyClickRef = useRef(0);
+  const bumpQuantity = (delta: number) => {
+    const now = Date.now();
+    if (now - lastQtyClickRef.current < 250) return;
+    lastQtyClickRef.current = now;
+    setQuantity(q => Math.max(1, q + delta));
+  };
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
   const { t, dir } = useTranslation();
@@ -604,7 +617,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     <div className="flex items-center gap-3 bg-white p-2 rounded-xl border max-w-[140px] shadow-sm">
                       <button
                         type="button"
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                        onClick={() => bumpQuantity(-1)}
                         className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border"
                       >
                         -
@@ -612,7 +625,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                       <span className="flex-1 text-center font-bold text-sm">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => setQuantity(quantity + 1)}
+                        onClick={() => bumpQuantity(1)}
                         className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border"
                       >
                         +
