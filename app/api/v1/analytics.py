@@ -46,11 +46,18 @@ def get_analytics(
     # Same class of bug fixed across orders.py/users.py/audit.py this session.
     db.info["skip_tenant_isolation"] = True
     # Period constants
-    now = datetime.now(timezone.utc)
-    # Removing tzinfo to match DB if DB is timezone-naive, but let's use it properly
-    # If DB has naive datetimes, using utcnow() is safer:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Order.created_at is stored naive-UTC, but "aujourd'hui"/"hier" must mean
+    # the store's own calendar day (Algeria, UTC+1, no DST) — a raw UTC
+    # midnight boundary sits 1h AFTER the real Algeria midnight, so orders
+    # placed between 23:00 UTC (previous day) and 00:00 UTC were wrongly
+    # bucketed as "hier" even though it was already "aujourd'hui" in Algeria.
+    # Convert to Algeria wall-clock, snap to that day's midnight, then convert
+    # back to UTC — every period below (today/yesterday/7d/daily breakdown,
+    # …) derives from today_start so this one boundary fixes them all.
+    ALGERIA_UTC_OFFSET_HOURS = 1
+    _algeria_now = now + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)
+    today_start = _algeria_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)
     
     # Defaults
     start_date_obj = today_start - timedelta(days=30)
@@ -134,7 +141,12 @@ def get_analytics(
     end_date = end_date_obj
 
     # Base Filter
-    filters = [Order.is_deleted == False]
+    # A MERGED order is a duplicate submission absorbed into its parent
+    # (order_service.py's auto-merge) — nothing is deleted, items/timeline
+    # stay on the child, but it must never be counted as a separate order
+    # again: every count/KPI/cost-per-order metric below was still adding
+    # one per duplicate on top of the real total.
+    filters = [Order.is_deleted == False, Order.status != "MERGED"]
     if store_id:
         filters.append(Order.store_id == store_id)
 
