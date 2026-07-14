@@ -1420,7 +1420,7 @@ export default function AgentDashboard() {
   const notifQuery = useQuery<{ data: any[]; unread: number }>({
     queryKey: ['notifications', user?.id],
     queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-    refetchInterval: 60000,
+    refetchInterval: 2 * 60 * 60 * 1000,
     enabled: !!user?.id,
   });
   const notifItems = (notifQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);

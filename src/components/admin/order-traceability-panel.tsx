@@ -267,7 +267,7 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
     // console for an order deleted via a one-off cleanup script).
     retry: (failureCount, error) =>
       error instanceof ApiClientError && error.statusCode === 404 ? false : failureCount < 3,
-    refetchInterval: (query) => (query.state.error ? false : 20000),
+    refetchInterval: (query) => (query.state.error ? false : 5 * 60 * 1000),
     enabled: !!orderId,
   });
 

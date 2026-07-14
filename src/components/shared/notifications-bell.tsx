@@ -51,7 +51,7 @@ export function NotificationsBell({ onOpenOrder }: { onOpenOrder?: (orderId: str
     queryKey: ['notifications', userId],
     queryFn: () => apiFetch('/api/v1/notifications?limit=30'),
     enabled: !!userId,
-    refetchInterval: 60_000,
+    refetchInterval: 2 * 60 * 60 * 1000,
   });
 
   const markAllMutation = useMutation({

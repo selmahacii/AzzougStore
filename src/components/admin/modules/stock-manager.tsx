@@ -98,7 +98,9 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
       return apiFetch<{ success: boolean; data: any[]; total: number }>(url);
     },
     enabled: !!storeId,
-    refetchInterval: 20_000,
+    // Order/adjustment mutations already invalidate ['admin-products-stock']
+    // on success, so this slow interval only backstops changes made elsewhere.
+    refetchInterval: 2 * 60 * 60 * 1000,
     staleTime: 3_000,
   });
 

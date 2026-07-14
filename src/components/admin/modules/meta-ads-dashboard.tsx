@@ -76,9 +76,10 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/campaigns?store_id=${activeStore?.id}&date_start=${dateStart}&date_end=${dateEnd}`
     ),
     enabled: !!activeStore?.id,
-    // The backend auto-syncs from Meta every 3 min — without a matching poll
-    // here, the numbers on screen only moved on a manual reload.
-    refetchInterval: 60_000,
+    // 24h poll to conserve Neon free-tier compute — use the "Actualiser"
+    // button for an on-demand refresh; the backend auto-sync still runs
+    // every 3 min server-side, this just controls how often the browser polls.
+    refetchInterval: 24 * 60 * 60 * 1000,
   });
 
   // --- Query Integration Summary (cross-module) ---
@@ -98,7 +99,7 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/diagnostics?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 60_000,
+    refetchInterval: 24 * 60 * 60 * 1000,
   });
 
   // --- Rule-based optimization recommendations ---
@@ -108,7 +109,7 @@ export default function MetaAdsDashboard() {
       `/api/v1/meta-ads/recommendations?store_id=${activeStore?.id}`
     ),
     enabled: !!activeStore?.id,
-    refetchInterval: 120_000,
+    refetchInterval: 24 * 60 * 60 * 1000,
   });
 
   // --- Live connectivity/token/circuit-breaker diagnostic ---
@@ -116,7 +117,7 @@ export default function MetaAdsDashboard() {
     queryKey: ['meta_ads_health', activeStore?.id],
     queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
     enabled: !!activeStore?.id && activeTab === 'diagnostics',
-    refetchInterval: 60_000,
+    refetchInterval: 24 * 60 * 60 * 1000,
   });
 
   const retryNowMutation = useMutation({

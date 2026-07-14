@@ -1092,7 +1092,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
     },
     enabled: !!storeId,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const orders: any[] = (ordersQuery.data as any)?.data ?? [];
@@ -1332,7 +1332,7 @@ export default function DeliveryPartners() {
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
     enabled: !!activeStore?.id && activeTab === 'stats',
     retry: false,
-    refetchInterval: activeTab === 'stats' ? 60_000 : false,
+    refetchInterval: activeTab === 'stats' ? 2 * 60 * 60 * 1000 : false,
   });
 
   const deletePartner = useMutation({

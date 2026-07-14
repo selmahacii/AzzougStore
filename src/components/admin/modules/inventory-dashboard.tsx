@@ -108,14 +108,19 @@ export default function InventoryDashboard() {
       queryKey: ['inventory', 'summary', storeId],
       queryFn: () => apiFetch<InventorySummary>(`/api/v1/stock/summary?store_id=${storeId}`),
       enabled: !!storeId,
-      refetchInterval: 20000, // near-real-time so agents see stock move without a manual refresh
+      // Base poll is intentionally slow — every order that moves stock already
+      // invalidates ['inventory'] on mutation success (orders-page.tsx,
+      // stock-manager.tsx, agent-orders-page.tsx), so the actor's own screen
+      // updates instantly regardless of this interval. This interval only
+      // catches stock moved by someone else in another tab/session.
+      refetchInterval: 2 * 60 * 60 * 1000,
    });
 
    const movementsQuery = useQuery({
       queryKey: ['inventory', 'movements', storeId],
       queryFn: () => apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?store_id=${storeId}&pageSize=30`),
       enabled: !!storeId,
-      refetchInterval: 20000,
+      refetchInterval: 2 * 60 * 60 * 1000,
    });
 
 

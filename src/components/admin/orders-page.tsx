@@ -486,7 +486,7 @@ const [timeLeft, setTimeLeft] = useState('');
       }
       return apiFetch<any>(url);
     },
-    refetchInterval: 60000
+    refetchInterval: 2 * 60 * 60 * 1000
   });
 
   const clearAllFilters = () => {
@@ -613,7 +613,7 @@ const [timeLeft, setTimeLeft] = useState('');
      queryKey: ['orders', storeId, page, statusFilter, debouncedSearch, pageSize, filterWilaya, filterSource, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
-     refetchInterval: 30000,
+     refetchInterval: 5 * 60 * 1000,
    });
 
    // Counts per status tab (unfiltered by search for accurate badges)
@@ -622,7 +622,7 @@ const [timeLeft, setTimeLeft] = useState('');
      queryFn: () => apiFetch(`/api/v1/orders/counts?store_id=${storeId}`),
      enabled: !!storeId,
      staleTime: 30_000,
-     refetchInterval: 30_000,
+     refetchInterval: 5 * 60 * 1000,
    });
    const tabCounts: Record<string, number> = (countsQuery.data as any) ?? {};
 

@@ -118,14 +118,14 @@ export default function AdminHeader() {
       queryKey: ['orders', 'new-notifications', storeId],
       queryFn: () =>
          fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
-      refetchInterval: 60000,
+      refetchInterval: 5 * 60 * 1000,
    });
 
    const stockAlertsQuery = useQuery<{ data: Product[] }>({
       queryKey: ['stock', 'alerts', storeId],
       queryFn: () =>
          fetch(`/api/v1/stock/alerts?store_id=${storeId}`).then((r) => r.json()),
-      refetchInterval: 60000,
+      refetchInterval: 2 * 60 * 60 * 1000,
    });
 
    // Business activity feed (recovered carts, Noest errors, merges, deliveries…)
@@ -135,7 +135,7 @@ export default function AdminHeader() {
    const feedQuery = useQuery<{ data: any[]; unread: number }>({
       queryKey: ['notifications', currentUser?.id],
       queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-      refetchInterval: 60000,
+      refetchInterval: 2 * 60 * 60 * 1000,
       enabled: isAuthenticated && !!currentUser?.id,
    });
    const markFeedRead = useMutation({

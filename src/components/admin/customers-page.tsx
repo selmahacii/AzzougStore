@@ -656,7 +656,7 @@ export default function CustomersPage() {
       enabled: !!storeId,
       // A new order/manual add/invite acceptance elsewhere shouldn't require
       // reopening this page to show up here.
-      refetchInterval: 30000,
+      refetchInterval: 2 * 60 * 60 * 1000,
    });
 
    React.useEffect(() => {
@@ -667,7 +667,7 @@ export default function CustomersPage() {
       queryKey: ['customers-stats', storeId],
       queryFn: () => apiFetch<any>(`/api/v1/customers/stats?store_id=${storeId}`),
       enabled: !!storeId,
-      refetchInterval: 30000,
+      refetchInterval: 2 * 60 * 60 * 1000,
    });
 
    const toggleBlacklistMutation = useMutation({
