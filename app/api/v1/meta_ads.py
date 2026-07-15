@@ -196,6 +196,14 @@ def link_campaign_product(
     exists (ad sets named after internal codenames never match a product's
     name/slug, and orders may not carry a UTM yet).
     """
+    # This endpoint scopes itself explicitly via campaign_id (globally
+    # unique) — bypass the tenant auto-filter, or a stale/mismatched
+    # X-Store-Id header (e.g. left over from switching stores in the UI
+    # without a full reload) silently ANDs an incompatible store_id onto
+    # the query and the campaign "doesn't exist" even though it's right
+    # there. Same class of bug fixed earlier this session in customers.py/
+    # analytics.py/orders.py.
+    db.info["skip_tenant_isolation"] = True
     camp = db.query(MetaAdsCampaign).filter(MetaAdsCampaign.campaign_id == campaign_id).first()
     if not camp:
         raise HTTPException(status_code=404, detail="Campagne introuvable.")
