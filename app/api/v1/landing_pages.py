@@ -242,11 +242,18 @@ def list_landing_pages(
                 MetaAdsCampaign.product_id.in_(lp_product_ids),
             ).all()
         }
+        # Same source/fallback logic also surfaces Meta's own impressions per
+        # product — the LP card can then show "vues" (our storefront counter)
+        # side-by-side with "impressions" (Meta's ad delivery count), which
+        # answer different questions (page loads vs. ad served) and were
+        # previously conflated because only "vues" existed on the card.
         _meta_by_product: dict = {}
+        _meta_impressions_by_product: dict = {}
         if _campaign_product:
             _daily_q = db.query(
                 MetaAdsDailyInsight.campaign_id,
                 func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
             ).filter(MetaAdsDailyInsight.campaign_id.in_(list(_campaign_product.keys())))
             if start_date:
                 try:
@@ -260,10 +267,11 @@ def list_landing_pages(
                     pass
             _daily_rows = _daily_q.group_by(MetaAdsDailyInsight.campaign_id).all()
             if _daily_rows:
-                for _cid, _cnt in _daily_rows:
+                for _cid, _cnt, _impr in _daily_rows:
                     _pid = _campaign_product.get(_cid)
                     if _pid:
                         _meta_by_product[_pid] = _meta_by_product.get(_pid, 0) + int(_cnt or 0)
+                        _meta_impressions_by_product[_pid] = _meta_impressions_by_product.get(_pid, 0) + int(_impr or 0)
             else:
                 # Daily table empty (pre-first-sync) — snapshot fallback
                 for c in db.query(MetaAdsCampaign).filter(
@@ -271,14 +279,18 @@ def list_landing_pages(
                     MetaAdsCampaign.product_id.in_(lp_product_ids),
                 ).all():
                     _meta_by_product[c.product_id] = _meta_by_product.get(c.product_id, 0) + int(c.meta_purchases or 0)
-        for _pid, _meta_count in _meta_by_product.items():
+                    _meta_impressions_by_product[c.product_id] = _meta_impressions_by_product.get(c.product_id, 0) + int(c.impressions or 0)
+        _meta_products = set(_meta_by_product) | set(_meta_impressions_by_product)
+        for _pid in _meta_products:
             # A product can have a linked campaign but zero orders in the
             # selected period — still surface Meta's count on the card.
             metrics_by_product.setdefault(_pid, {
                 "orders": 0, "purchases": 0, "delivered": 0,
                 "confirmed_delivered": 0, "recovered": 0, "abandoned": 0,
                 "normal": 0, "cancelled": 0, "duplicates": 0, "manual": 0,
-            })["meta_purchases"] = _meta_count
+            })
+            metrics_by_product[_pid]["meta_purchases"] = _meta_by_product.get(_pid, 0)
+            metrics_by_product[_pid]["meta_impressions"] = _meta_impressions_by_product.get(_pid, 0)
 
     # ── Remaining stock per product, broken down by variant ───────────────────
     stock_by_product: dict = {}
@@ -472,6 +484,7 @@ def get_landing_page_analytics(
                 func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
             )
             .filter(
                 MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
@@ -481,20 +494,26 @@ def get_landing_page_analytics(
             .group_by(MetaAdsDailyInsight.date)
             .all()
         )
-        meta_daily_by_date = {str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0)} for r in _rows}
+        meta_daily_by_date = {
+            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0)}
+            for r in _rows
+        }
     if meta_daily_by_date:
         totals["meta_purchases"] = sum(v["purchases"] for v in meta_daily_by_date.values())
         totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
         totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
+        totals["meta_impressions"] = sum(v["impressions"] for v in meta_daily_by_date.values())
     else:
         totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
         totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
         totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
+        totals["meta_impressions"] = sum(c.impressions or 0 for c in meta_campaigns)
 
     # Per-day Meta count merged into the chart data — lets the dialog show
     # "Meta a déclaré X ce jour-là" next to our own daily order bars.
     for d in daily:
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
+        d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
 
     return {
         "success": True,

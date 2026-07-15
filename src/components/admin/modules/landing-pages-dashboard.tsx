@@ -64,6 +64,11 @@ interface LandingPage {
   offers?: any[];
   phone: string | null;
   banner_image_url?: string | null;
+  metrics?: {
+    meta_purchases?: number;
+    meta_impressions?: number;
+    [key: string]: any;
+  } | null;
 
   created_at: string;
   product: any;
@@ -166,7 +171,7 @@ function LandingPageCard({
         <p className="text-[10px] text-slate-400 font-medium font-mono truncate mb-4">/lp/{lp.slug}</p>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
           {[
             { label: 'Vues',    value: lp.views,  icon: Eye },
             { label: 'Ordres',  value: lp.orders, icon: ShoppingCart },
@@ -178,6 +183,23 @@ function LandingPageCard({
             </div>
           ))}
         </div>
+
+        {/* Meta Ads: impressions delivered + orders Meta itself detected —
+            distinct from "Vues" (our storefront page-load counter) and
+            "Ordres" (our real order table). Only shown when a Meta campaign
+            is actually linked to this page's product. */}
+        {lp.metrics && (lp.metrics.meta_impressions != null || lp.metrics.meta_purchases != null) && (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="text-center p-2 bg-[#1877F2]/5 rounded-xl border border-[#1877F2]/10">
+              <p className="text-sm font-black text-[#1877F2]">{(lp.metrics.meta_impressions ?? 0).toLocaleString('fr-FR')}</p>
+              <p className="text-[8px] font-bold text-[#1877F2]/70 uppercase tracking-wider">Impressions Meta</p>
+            </div>
+            <div className="text-center p-2 bg-[#1877F2]/5 rounded-xl border border-[#1877F2]/10">
+              <p className="text-sm font-black text-[#1877F2]">{lp.metrics.meta_purchases ?? 0}</p>
+              <p className="text-[8px] font-bold text-[#1877F2]/70 uppercase tracking-wider">Achats détectés Meta</p>
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-1.5 flex-wrap">
