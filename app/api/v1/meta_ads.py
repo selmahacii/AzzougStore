@@ -288,13 +288,43 @@ def list_campaigns(
     global_revenue = 0.0
     global_orders_count = 0
 
+    # How many campaigns in THIS list share each product_id — needed below to
+    # know when a product-based fallback match is unambiguous. A client who
+    # split-tests several ad sets against the same product (real case: "vd
+    # jdid", "tyara", "vd ai", "vd jdida" all pushing the same item) can link
+    # every one of them to that product — but if we then attributed the
+    # product's orders to EACH linked campaign, the same sale would be
+    # double-counted N times across siblings. Only apply the fallback when
+    # the product has exactly one linked campaign in this set.
+    _product_link_counts: dict = {}
     for camp in campaigns:
-        # Match order by campaign name (e.g. utm_campaign matches campaign_name or campaign_id)
-        camp_orders = [
-            o for o in orders
+        if camp.product_id:
+            _product_link_counts[camp.product_id] = _product_link_counts.get(camp.product_id, 0) + 1
+
+    for camp in campaigns:
+        # Primary signal: utm_campaign matches this campaign's name/id — most
+        # reliable when Meta's ad URL parameters are set correctly.
+        by_utm = {
+            o.id: o for o in orders
             if o.utm_campaign and (o.utm_campaign.lower() == camp.campaign_name.lower() or o.utm_campaign == camp.campaign_id)
-        ]
-        
+        }
+        # Fallback: manually-linked product (see link_campaign_product) — the
+        # SAME mechanism the LP/product dashboard already relies on, catching
+        # orders whose UTM never matched (missing, mistyped, or the ad set's
+        # dynamic URL parameters weren't configured on this particular
+        # campaign) — previously this meant a linked-but-unmatched campaign
+        # silently showed 0 orders while spend kept accruing, exactly the
+        # "only one ad set shows results" symptom. Skipped when the product
+        # is shared by more than one campaign — can't split ambiguous credit
+        # without double-counting the same sale on every sibling.
+        if camp.product_id and _product_link_counts.get(camp.product_id) == 1:
+            for o in orders:
+                if o.id in by_utm:
+                    continue
+                if any(item.product_id == camp.product_id for item in (o.items or [])):
+                    by_utm[o.id] = o
+        camp_orders = list(by_utm.values())
+
         # Calculate revenue in DZD from matched orders
         revenue = sum(o.total for o in camp_orders)
         orders_count = len(camp_orders)
