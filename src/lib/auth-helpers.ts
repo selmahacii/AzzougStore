@@ -18,7 +18,6 @@ const ROLE_HIERARCHY: Record<UserRole, number> = {
   ADMIN: 80,
   MANAGER: 50,
   CONFIRMATEUR: 10,
-  LIVREUR: 8,
   MARKETER: 5,
   CUSTOMER: 0,
 };

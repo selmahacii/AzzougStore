@@ -12,7 +12,6 @@ import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'framer-
 import type { Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
-import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 function getTheme(store: Store | null) {
   const tpl = (store?.template_id ?? 'clean') as 'clean' | 'athletic' | 'luxe' | 'landing';
@@ -269,7 +268,7 @@ export function StorefrontHeader() {
           <button onClick={() => handleNav('home')} className="flex items-center gap-3 group shrink-0 focus:outline-none">
             {logoSrc ? (
               <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center bg-transparent transition-colors">
-                <img src={optimizeCloudinaryUrl(logoSrc, 150)} alt={storeName} width={48} height={48} className="h-full w-full object-contain p-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               </div>
             ) : (
               <div className="size-10 sm:size-12 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 group-hover:brightness-110 transition-all" style={{ backgroundColor: T.primary }}>
@@ -428,7 +427,7 @@ export function StorefrontHeader() {
                 <div className="flex items-center gap-3">
                   {logoSrc ? (
                     <div className="size-9 rounded-lg overflow-hidden bg-black/10 flex items-center justify-center">
-                      <img src={optimizeCloudinaryUrl(logoSrc, 150)} alt={storeName} width={36} height={36} className="h-full w-full object-contain p-1" />
+                      <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-1" />
                     </div>
                   ) : (
                     <div className="size-9 rounded-lg flex items-center justify-center text-xs font-black text-white" style={{ backgroundColor: T.primary }}>

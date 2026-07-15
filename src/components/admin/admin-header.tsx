@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
-import { Menu, Bell, LogIn, LogOut, Moon, Sun, Maximize2, Search, ChevronDown, Globe, AlertTriangle, ShoppingCart, Wallet, PackageCheck, PhoneMissed, AlarmClock, Copy, UserPlus } from 'lucide-react';
+import { Menu, Bell, LogIn, LogOut, Moon, Sun, Maximize2, Search, ChevronDown, Globe, AlertTriangle, ShoppingCart, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,7 +62,6 @@ const PAGE_TITLES: Record<AdminView, string> = {
    visitors: 'Visiteurs',
    cost_calculator: 'Calculateur de Coût',
    meta_ads: 'Meta Ads & ROAS',
-   tiktok_ads: 'TikTok Ads & ROAS',
    upsell: 'Upsell & Commissions',
    purchase_vouchers: 'Achats & Entrées',
 };
@@ -118,48 +117,15 @@ export default function AdminHeader() {
       queryKey: ['orders', 'new-notifications', storeId],
       queryFn: () =>
          fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
-      refetchInterval: 5 * 60 * 1000,
+      refetchInterval: 30000,
    });
 
    const stockAlertsQuery = useQuery<{ data: Product[] }>({
       queryKey: ['stock', 'alerts', storeId],
       queryFn: () =>
          fetch(`/api/v1/stock/alerts?store_id=${storeId}`).then((r) => r.json()),
-      refetchInterval: 2 * 60 * 60 * 1000,
+      refetchInterval: 60000,
    });
-
-   // Business activity feed (recovered carts, Noest errors, merges, deliveries…)
-   // Query key scoped by user id — never serve one account's cached
-   // notifications to another after an in-tab account switch.
-   const queryClient = useQueryClient();
-   const feedQuery = useQuery<{ data: any[]; unread: number }>({
-      queryKey: ['notifications', currentUser?.id],
-      queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-      // Alert channel — must stay reasonably fresh (see notifications-bell).
-      refetchInterval: 5 * 60 * 1000,
-      enabled: isAuthenticated && !!currentUser?.id,
-   });
-   const markFeedRead = useMutation({
-      mutationFn: (id: string) => apiFetch(`/api/v1/notifications/${id}/read`, { method: 'PATCH' }),
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', currentUser?.id] }),
-   });
-   const markAllFeedRead = useMutation({
-      mutationFn: () => apiFetch('/api/v1/notifications/read-all', { method: 'POST' }),
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', currentUser?.id] }),
-   });
-   const feedItems = (feedQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);
-   const feedUnread = feedQuery.data?.unread ?? 0;
-   const FEED_ICONS: Record<string, { icon: any; bg: string }> = {
-      ORDER_ASSIGNED:   { icon: UserPlus,      bg: '#4b7bec' },
-      REMINDER_DUE:     { icon: AlarmClock,    bg: '#f7b731' },
-      NRP_FOLLOWUP:     { icon: PhoneMissed,   bg: '#eb4d4b' },
-      CART_RECOVERED:   { icon: ShoppingCart,  bg: '#20bf6b' },
-      ORDER_DELIVERED:  { icon: PackageCheck,  bg: '#26de81' },
-      NOEST_SYNC_ERROR: { icon: AlertTriangle, bg: '#eb3b5a' },
-      DUPLICATE_MERGED: { icon: Copy,          bg: '#fa8231' },
-      SALARY_DUE:       { icon: Wallet,        bg: '#6C5CE7' },
-      EMPLOYEE_PAYDAY:  { icon: Wallet,        bg: '#e17055' },
-   };
 
    const title = PAGE_TITLES[adminView] || 'AzzougStore';
 
@@ -167,12 +133,12 @@ export default function AdminHeader() {
    const newOrdersTotal = newOrdersQuery.data?.total ?? 0;
    const stockAlerts = stockAlertsQuery.data?.data ?? [];
    
-   // Payroll is now covered by the per-employee payday system (EMPLOYEE_PAYDAY
-   // notifications in the feed below) — this used to be a separate, purely
-   // date-based guess ("last 5 days of the month") unrelated to whether any
-   // employee actually had a payday or payroll was really due. Removed so
-   // there's exactly one payroll-alert mechanism, driven by real data.
-   const totalNotifications = newOrdersTotal + stockAlerts.length + feedUnread;
+   // Payroll alert (last 5 days of the month)
+   const today = new Date();
+   const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+   const showPayrollAlert = today.getDate() >= lastDayOfMonth - 5;
+
+   const totalNotifications = newOrdersTotal + stockAlerts.length + (showPayrollAlert ? 1 : 0);
 
    const handleLogout = async () => {
       try {
@@ -181,10 +147,6 @@ export default function AdminHeader() {
          // ignore
       }
       clearUser();
-      // Defense in depth: drop every cached query (notifications, orders,
-      // products…) so the next account to log in on this tab never renders
-      // a stale screen from the previous session before its own data loads.
-      queryClient.clear();
       toast.success('Déconnexion réussie', {
          description: 'Votre session a été terminée.',
       });
@@ -275,17 +237,7 @@ export default function AdminHeader() {
                )}
 
                {/* Notifications */}
-               <Popover
-                  open={showNotifications}
-                  onOpenChange={(open) => {
-                     setShowNotifications(open);
-                     // Clear the badge once the panel has actually been seen —
-                     // previously it only cleared per-item on click, so it kept
-                     // showing a stale unread count for anyone who just glanced
-                     // at the list without clicking into every single entry.
-                     if (open && feedUnread > 0) markAllFeedRead.mutate();
-                  }}
-               >
+               <Popover open={showNotifications} onOpenChange={setShowNotifications}>
                   <PopoverTrigger asChild>
                      <Button variant="ghost" size="icon" className="relative size-9 text-[#636E72] hover:text-[#2D3436] hover:bg-[#F8F9FC] rounded-lg">
                         <Bell className="size-[18px]" />
@@ -304,6 +256,8 @@ export default function AdminHeader() {
                               {newOrdersTotal > 0 && `${newOrdersTotal} nouvelle${newOrdersTotal > 1 ? 's' : ''} commande${newOrdersTotal > 1 ? 's' : ''}`}
                               {newOrdersTotal > 0 && stockAlerts.length > 0 && ' · '}
                               {stockAlerts.length > 0 && `${stockAlerts.length} alerte${stockAlerts.length > 1 ? 's' : ''} stock`}
+                              {(newOrdersTotal > 0 || stockAlerts.length > 0) && showPayrollAlert && ' · '}
+                              {showPayrollAlert && '1 alerte de paie'}
                               {totalNotifications === 0 && 'Aucune notification'}
                            </p>
                         </div>
@@ -319,33 +273,6 @@ export default function AdminHeader() {
                            </div>
                         ) : (
                            <div className="divide-y divide-[#F0F3F6]">
-                              {/* Business activity feed */}
-                              {feedItems.map((n: any) => {
-                                 const meta = FEED_ICONS[n.type] ?? { icon: Bell, bg: '#B2BEC3' };
-                                 const FeedIcon = meta.icon;
-                                 return (
-                                    <button
-                                       key={n.id}
-                                       onClick={() => {
-                                          markFeedRead.mutate(n.id);
-                                          if (n.order_id) {
-                                             setSelectedOrderId(n.order_id);
-                                             setAdminView('orders');
-                                          }
-                                          setShowNotifications(false);
-                                       }}
-                                       className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-[#FAFBFD] transition-colors"
-                                    >
-                                       <div className="size-9 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ backgroundColor: meta.bg }}>
-                                          <FeedIcon className="size-4" />
-                                       </div>
-                                       <div className="flex-1 min-w-0">
-                                          <span className="text-xs font-bold text-[#2D3436] block truncate">{n.title}</span>
-                                          {n.message && <p className="text-[10px] font-medium text-[#B2BEC3] line-clamp-2">{n.message}</p>}
-                                       </div>
-                                    </button>
-                                 );
-                              })}
                               {/* New orders */}
                               {newOrders.map((order) => (
                                  <button
@@ -369,6 +296,26 @@ export default function AdminHeader() {
                                     </div>
                                  </button>
                               ))}
+                              {/* Payroll alert */}
+                              {showPayrollAlert && (
+                                 <button
+                                    onClick={() => {
+                                       setAdminView('employees');
+                                       setShowNotifications(false);
+                                    }}
+                                    className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-[#F2F6FF] transition-colors"
+                                 >
+                                    <div className="size-9 rounded-lg flex items-center justify-center text-white text-[10px] font-bold shrink-0 bg-blue-500">
+                                       <Wallet className="size-4" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                       <div className="flex items-center justify-between gap-2">
+                                          <span className="text-xs font-bold text-[#2D3436] truncate">Rappel de paie</span>
+                                       </div>
+                                       <p className="text-[10px] font-medium text-[#B2BEC3]">C'est la fin du mois. N'oubliez pas de payer vos employés.</p>
+                                    </div>
+                                 </button>
+                              )}
                               {/* Stock alerts */}
                               {stockAlerts.map((product: any) => (
                                  <button

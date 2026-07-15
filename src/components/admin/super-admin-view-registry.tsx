@@ -23,7 +23,6 @@ import LandingPagesDashboard from './modules/landing-pages-dashboard';
 import { SettingsPlaceholder } from '../app/settings-placeholder';
 import VisitorsPage from './visitors-page';
 import MetaAdsDashboard from './modules/meta-ads-dashboard';
-import TikTokAdsDashboard from './modules/tiktok-ads-dashboard';
 import UpsellManager from './modules/upsell-manager';
 import PurchaseManager from './modules/purchase-manager';
 
@@ -34,10 +33,7 @@ export default function SuperAdminView() {
     case 'overview':
       return <OverviewPage key="overview" />;
     case 'orders':
-      {/* Stable key: OrdersPage syncs adminSubView internally. Keying on adminSubView
-          remounted the page on every tab click, ping-ponging with the localStorage
-          mode restore → infinite remount loop (React #185). */}
-      return <OrdersPage key="orders" />;
+      return <OrdersPage key={`orders-${adminSubView || 'all'}`} />;
     case 'products':
       return <ProductsPage key="products" />;
     case 'inventory':
@@ -78,8 +74,6 @@ export default function SuperAdminView() {
       return <LandingPagesDashboard key="landing_pages" />;
     case 'meta_ads':
       return <MetaAdsDashboard key="meta_ads" />;
-    case 'tiktok_ads':
-      return <TikTokAdsDashboard key="tiktok_ads" />;
     case 'upsell':
       return <UpsellManager key="upsell" />;
     case 'purchase_vouchers':

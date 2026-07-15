@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, Minus, Plus, ShoppingCart, CheckCircle, Package,
   AlertTriangle, Truck, Heart, ShieldCheck, Star, ChevronRight, Zap,
@@ -17,22 +17,7 @@ import { motion } from 'framer-motion';
 import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
-import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
-
-// Mobile touch/click event synthesis occasionally double-fires a single tap
-// on the quantity +/- buttons — a customer tapping "+" a reasonable number
-// of times could end up with an absurd quantity with no way to tell it
-// happened. Collapsing any repeat within 250ms into a no-op blocks that
-// without affecting deliberate, normally-paced clicking.
-function useClickDebounce(ms = 250) {
-  const lastRef = useRef(0);
-  return () => {
-    const now = Date.now();
-    if (now - lastRef.current < ms) return false;
-    lastRef.current = now;
-    return true;
-  };
-}
+import { trackMetaEvent } from '@/lib/meta-tracking';
 
 function useProductDetailData() {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -90,19 +75,119 @@ function useProductDetailData() {
   useEffect(() => { const c = new AbortController(); fetchProduct(c.signal); return () => c.abort(); }, [fetchProduct]);
   useEffect(() => { const c = new AbortController(); fetchRelated(c.signal); return () => c.abort(); }, [fetchRelated]);
 
-  // Meta Pixel + CAPI ViewContent — exactly once per product per session
   useEffect(() => {
-    if (!product?.id || !activeStore?.id) return;
-    if (!onceKey('ViewContent', product.id)) return;
-    trackMetaEvent('ViewContent', {
+    if (!product || typeof window === 'undefined') return;
+
+    const title = `${product.name} | ${activeStore?.name || 'Boutique'}`;
+    const description = product.description?.replace(/<[^>]+>/g, '').slice(0, 160) || `Découvrez ${product.name} avec livraison rapide.`;
+    const imageUrl = product.main_image || (Array.isArray(product.images) ? product.images[0] : undefined);
+    const canonicalUrl = `${window.location.origin}${window.location.pathname}`;
+
+    document.title = title;
+
+    const setMeta = (name: string, value: string) => {
+      let tag = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('name', name);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', value);
+    };
+
+    const setPropertyMeta = (property: string, value: string) => {
+      let tag = document.querySelector(`meta[property="${property}"]`) as HTMLMetaElement | null;
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('property', property);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', value);
+    };
+
+    const setLink = (rel: string, href: string) => {
+      let tag = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+      if (!tag) {
+        tag = document.createElement('link');
+        tag.setAttribute('rel', rel);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('href', href);
+    };
+
+    setMeta('description', description);
+    setPropertyMeta('og:title', title);
+    setPropertyMeta('og:description', description);
+    setPropertyMeta('og:type', 'product');
+    setPropertyMeta('og:image', imageUrl || '');
+    setPropertyMeta('twitter:title', title);
+    setPropertyMeta('twitter:description', description);
+    setPropertyMeta('twitter:image', imageUrl || '');
+    setPropertyMeta('twitter:card', 'summary_large_image');
+    setLink('canonical', canonicalUrl);
+
+    const existingScript = document.getElementById('meta-product-jsonld');
+    if (existingScript) existingScript.remove();
+
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      description,
+      image: imageUrl ? [imageUrl] : [],
+      sku: product.sku || product.id,
+      brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
+      category: product.category || 'General',
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: 'DZD',
+        price: product.price,
+        availability: product.stock && product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        url: canonicalUrl,
+      },
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: 4.8,
+        reviewCount: 12,
+      },
+      breadcrumb: {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Accueil', item: window.location.origin },
+          { '@type': 'ListItem', position: 2, name: product.category || 'Catégorie', item: canonicalUrl },
+        ],
+      },
+    };
+
+    const script = document.createElement('script');
+    script.id = 'meta-product-jsonld';
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(jsonLd);
+    document.head.appendChild(script);
+
+    void trackMetaEvent('ViewContent', {
       content_ids: [product.id],
       content_name: product.name,
       content_type: 'product',
-      content_category: product.category || undefined,
       value: product.price,
       currency: 'DZD',
-    }, { storeId: activeStore.id });
-  }, [product?.id, activeStore?.id]);
+      contents: [{ id: product.id, quantity: 1 }],
+    }, {
+      pixelId: undefined,
+      eventId: `viewcontent-${product.id}-${Date.now()}`,
+      contentName: product.name,
+      contentCategory: product.category ?? undefined,
+      contentType: 'product',
+      value: product.price,
+      currency: 'DZD',
+      contents: [{ id: product.id, quantity: 1 }],
+    });
+
+    return () => {
+      const tag = document.getElementById('meta-product-jsonld');
+      if (tag) tag.remove();
+    };
+  }, [activeStore?.name, product]);
 
   const allImages = useMemo(() => {
     if (!product) return [];
@@ -207,7 +292,6 @@ function CleanDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
-  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -238,7 +322,6 @@ function CleanDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
-    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);
@@ -484,7 +567,6 @@ function AthleticDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
-  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -515,7 +597,6 @@ function AthleticDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
-    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);
@@ -737,7 +818,6 @@ function LuxeDetail() {
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
-  const canBumpQuantity = useClickDebounce();
 
   // Group variants
   const colorVariants = p?.variants?.filter(v => (v.name && typeof v.name === 'string' && (v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color'))) || v.color) || [];
@@ -768,7 +848,6 @@ function LuxeDetail() {
   };
 
   const handleQuantityChange = (newQty: number) => {
-    if (!canBumpQuantity()) return;
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
       d.updateSelection(activeVariantVal, 'quantity', newQty);

@@ -770,7 +770,7 @@ function PartnerModal({
                     <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">Grille Tarifaire par Wilaya (58 Wilayas)</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    {['yalidine', 'zr_express', 'noest'].includes(carrier.id) && savedPartnerId && (
+                    {['yalidine', 'zr_express'].includes(carrier.id) && savedPartnerId && (
                       <Button
                         onClick={handleSyncWilayas}
                         disabled={syncing}
@@ -1092,7 +1092,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
     },
     enabled: !!storeId,
     staleTime: 30_000,
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 60_000,
   });
 
   const orders: any[] = (ordersQuery.data as any)?.data ?? [];
@@ -1160,16 +1160,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
                 </td>
               </tr>
             ) : orders.map((order: any) => {
-              // order.carrier_id is the DeliveryPartner ROW's id (a UUID, the
-              // FK column on Order) — allCarriers is keyed by carrier_id the
-              // SLUG ("noest", "yalidine", ...), a different field entirely.
-              // Comparing them directly could never match, so this always
-              // fell through to showing the raw UUID as if it were a name.
-              // Resolve the partner row first, then look up its slug.
-              const matchedPartner = partners.find(p => p.id === order.carrier_id);
-              const carrier = (matchedPartner && allCarriers.find(c => c.id === matchedPartner.carrier_id))
-                ?? (matchedPartner ? { name: matchedPartner.name, logo: '🚚', color: '#4b7bec' } : undefined)
-                ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
+              const carrier = allCarriers.find(c => c.id === order.carrier_id) ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
               const statusCfg = TRACKING_STATUS_CONFIG[order.delivery_status?.toUpperCase() ?? ''] ?? TRACKING_STATUS_CONFIG.PENDING;
               return (
                 <tr key={order.id} className="hover:bg-slate-50/60 transition-colors group">
@@ -1184,7 +1175,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
                     <span className="text-xs font-bold">{carrier.logo} {carrier.name}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className="text-xs font-medium text-slate-600">{order.customer_wilaya ?? '—'}</span>
+                    <span className="text-xs font-medium text-slate-600">{order.wilaya ?? '—'}</span>
                   </td>
                   <td className="px-5 py-3">
                     {order.tracking_number ? (
@@ -1332,7 +1323,7 @@ export default function DeliveryPartners() {
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
     enabled: !!activeStore?.id && activeTab === 'stats',
     retry: false,
-    refetchInterval: activeTab === 'stats' ? 2 * 60 * 60 * 1000 : false,
+    refetchInterval: activeTab === 'stats' ? 60_000 : false,
   });
 
   const deletePartner = useMutation({

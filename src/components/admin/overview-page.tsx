@@ -58,7 +58,6 @@ import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { apiFetch } from '@/lib/api-client';
 import { ALGERIA_MAP_WILAYAS } from './algeria-map-data';
-import { PayrollBanner } from './payroll-banner';
 import type {
    KpiData,
    ApiResponse,
@@ -371,9 +370,8 @@ function ConfirmateurPerformance({ user, kpi, storeId }: { user: any; kpi: any; 
 
    let estimatedSalary = 0;
    if (paymentType === 'PER_DELIVERED_ORDER') estimatedSalary = (kpi?.deliveredOrders || 0) * rate;
-   else if (paymentType === 'PER_CONFIRMED_ORDER') estimatedSalary = (kpi?.confirmedOrders || 0) * rate;
    else if (paymentType === 'MONTHLY_SALARY') estimatedSalary = rate;
-   else estimatedSalary = (kpi?.confirmedOrders || 0) * 100;
+   else estimatedSalary = (kpi?.deliveredOrders || 0) * 400;
 
    const dailyTarget = user?.dailyTarget || user?.daily_target || 10;
 
@@ -381,7 +379,7 @@ function ConfirmateurPerformance({ user, kpi, storeId }: { user: any; kpi: any; 
       queryKey: ['agent-recent-orders', user?.id, storeId],
       queryFn: () =>
          apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=5`),
-      refetchInterval: 5 * 60 * 1000,
+      refetchInterval: 30000,
       enabled: !!user?.id && !!storeId,
    });
 
@@ -527,9 +525,6 @@ export default function OverviewPage() {
 
    return (
       <div className="space-y-6 animate-in fade-in duration-500" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-
-         {/* ─── Rappel Paie Mensuelle (super-admin) ──────── */}
-         <PayrollBanner />
 
          {/* ─── Header & Filters ─────────────────────────── */}
          <div className="bg-white rounded-xl border border-[#E9ECF0] px-4 sm:px-6 py-5">
@@ -720,7 +715,7 @@ export default function OverviewPage() {
                         <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} rawValue={kpi?.confirmedOrders || 0} displayMode={displayMode} color={COLORS.primary} description="Taux de validation" />
                         <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.success} description="Taux de colis livrés" />
                         <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} rawValue={kpi?.returnedOrders || 0} displayMode={displayMode} color={COLORS.danger} description="Proportion d'échecs" />
-                        <PerformanceGauge label="Cde. Livrées" value={kpi?.conversionRate || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.orange} description="Commandes livrées sur le total" />
+                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} rawValue={kpi?.deliveredOrders || 0} displayMode={displayMode} color={COLORS.orange} description="Visites devenues achats" />
                      </div>
                   </div>
                </div>

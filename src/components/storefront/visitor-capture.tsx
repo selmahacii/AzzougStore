@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, User, Mail, Send, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { cn } from '@/lib/utils';
-import { trackMetaEvent } from '@/lib/meta-pixel';
 
 const SESSION_KEY = 'azzougshop_visitor_captured';
 const DELAY_MS = 4000; // show after 4 seconds
@@ -85,13 +84,6 @@ export function VisitorCapture() {
         }),
       });
       sessionStorage.setItem(`${SESSION_KEY}_${activeStore.id}`, 'submitted');
-      trackMetaEvent('Lead', {
-        content_name: 'visitor_capture',
-        content_category: form.source || undefined,
-      }, {
-        storeId: activeStore.id,
-        userData: { ph: form.phone, em: form.email || undefined, fn: form.name || undefined },
-      });
       setSubmitted(true);
       setTimeout(() => setVisible(false), 2500);
     } catch {

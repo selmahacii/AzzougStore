@@ -99,7 +99,6 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
    { value: 'MANAGER', label: ROLE_LABELS.MANAGER },
    { value: 'CONFIRMATEUR', label: ROLE_LABELS.CONFIRMATEUR },
    { value: 'MARKETER', label: ROLE_LABELS.MARKETER },
-   { value: 'LIVREUR', label: ROLE_LABELS.LIVREUR },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -701,8 +700,7 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
    const paymentAmount = agent.payment_amount ?? 0;
    const delivered = stats.delivered_count ?? 0;
    const salary = stats.salary ?? (
-      paymentType === 'PER_CONFIRMED_ORDER' ? confirmed * paymentAmount
-      : paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
+      paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
       : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
    );
 
@@ -748,7 +746,7 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
             <div className="flex flex-col items-center gap-1">
                <span className="text-sm font-black text-[#2D3436] font-mono">{Number(salary).toLocaleString()} DA</span>
                <span className="text-[9px] text-slate-400 uppercase tracking-wide font-bold">
-                  {paymentType === 'PER_CONFIRMED_ORDER' ? 'par confirm.' : paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
+                  {paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
                </span>
             </div>
          </td>
@@ -834,21 +832,19 @@ function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCr
 interface MarketerPerformance {
     id: string;
     name: string;
-    pixel: string | null;
+    pixel: string;
     product: string;
     roas: number;
     leads: number;
     is_active: boolean;
     budget: number;
-    revenue: number;
-    tracking_configured: boolean;
 }
 
-function MarketersView({ marketers, isLoading, onCreate, onEdit }: { marketers: MarketerPerformance[]; isLoading: boolean; onCreate: () => void; onEdit: (m: any) => void }) {
+function MarketersView({ marketers, isLoading, onCreate }: { marketers: MarketerPerformance[]; isLoading: boolean; onCreate: () => void }) {
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
    const totalLeads = marketers.reduce((acc, m) => acc + m.leads, 0);
-   const totalRevenue = marketers.reduce((acc, m) => acc + (m.revenue || 0), 0);
+   const avgRoas = marketers.length > 0 ? (marketers.reduce((acc, m) => acc + m.roas, 0) / marketers.length).toFixed(2) : '0';
    const totalBudget = marketers.reduce((acc, m) => acc + m.budget, 0);
 
    return (
@@ -869,11 +865,11 @@ function MarketersView({ marketers, isLoading, onCreate, onEdit }: { marketers: 
             </Button>
          </div>
 
-         {/* Distribution KPIs — computed live from attributed orders, no fabricated deltas */}
+         {/* Distribution KPIs */}
          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {[
-               { label: 'Leads générés (réel)', val: totalLeads.toLocaleString(), color: 'orange' },
-               { label: 'CA attribué (livré)', val: formatPrice(totalRevenue), dot: 'emerald' },
+               { label: 'Leads générés', val: totalLeads.toLocaleString(), diff: '+12%', color: 'orange' },
+               { label: 'ROAS moyen', val: `x${avgRoas}`, dot: 'emerald' },
                { label: 'Budget géré', val: formatPrice(totalBudget), dot: 'indigo' },
                { label: 'Partenaires actifs', val: marketers.filter(m => m.is_active).length.toString(), pulse: true },
             ].map((kpi, i) => (
@@ -881,6 +877,7 @@ function MarketersView({ marketers, isLoading, onCreate, onEdit }: { marketers: 
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{kpi.label}</p>
                   <div className="flex items-center justify-between">
                      <span className="text-2xl font-bold text-slate-900 tracking-tighter">{kpi.val}</span>
+                     {kpi.diff && <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 text-[10px] font-bold">+{kpi.diff}</span>}
                      {kpi.dot && <div className={`size-2 rounded-full bg-${kpi.dot}-500 shadow-[0_0_8px_currentColor]`} />}
                      {kpi.pulse && <Activity className="size-4 text-emerald-500 animate-pulse" />}
                   </div>
@@ -916,38 +913,28 @@ function MarketersView({ marketers, isLoading, onCreate, onEdit }: { marketers: 
                                  <div className="size-11 rounded-2xl flex items-center justify-center text-sm font-bold text-orange-500 bg-orange-50 active:scale-95 transition-transform">{m.name.charAt(0)}</div>
                                  <div className="flex flex-col">
                                     <span className="text-sm font-bold text-slate-900 group-hover:text-[#4b7bec] transition-colors">{m.name}</span>
-                                    <span className={cn("text-[10px] font-bold mt-1 uppercase tracking-wider", m.is_active ? "text-emerald-500" : "text-slate-300")}>
-                                       {m.is_active ? 'Actif' : 'Inactif'}
-                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Agence Certifiée</span>
                                  </div>
                               </div>
                            </td>
                            <td className="px-8 py-6">
-                              {m.tracking_configured ? (
-                                 <code className="text-[11px] font-bold font-mono text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 tracking-tight">{m.pixel}</code>
-                              ) : (
-                                 <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-xl uppercase tracking-wide">Non configuré</span>
-                              )}
+                              <code className="text-[11px] font-bold font-mono text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 tracking-tight">{m.pixel}</code>
                            </td>
                            <td className="px-8 py-6 text-center">
                               <div className="flex flex-col items-center">
                                  <span className="text-sm font-bold text-slate-900">{m.leads.toLocaleString()}</span>
-                                 <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tight">Leads réels</span>
+                                 <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tight">Leads générés</span>
                               </div>
                            </td>
                            <td className="px-8 py-6 text-center">
-                              {m.budget > 0 ? (
-                                 <div className="inline-flex flex-col items-center px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100">
-                                    <span className="text-xs font-bold text-indigo-600">x{m.roas.toFixed(2)}</span>
-                                    <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-tighter mt-1">{formatPrice(m.revenue)}</span>
-                                 </div>
-                              ) : (
-                                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">Budget non défini</span>
-                              )}
+                              <div className="inline-flex flex-col items-center px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100">
+                                 <span className="text-xs font-bold text-indigo-600">x{m.roas}</span>
+                                 <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-tighter mt-1">Efficiency</span>
+                              </div>
                            </td>
                            <td className="px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                 <button onClick={() => onEdit(m)} className="size-10 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm"><Pencil className="size-4" /></button>
+                                 <button className="size-10 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm"><Pencil className="size-4" /></button>
                               </div>
                            </td>
                         </tr>
@@ -986,16 +973,13 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
    const [formData, setFormData] = useState({
       name: '', email: '', password: '', phone: '',
       role: '' as UserRole | '', daily_target: 10, is_active: true,
-      payment_type: '' as 'PER_DELIVERED_ORDER' | 'PER_CONFIRMED_ORDER' | 'MONTHLY_SALARY' | '',
+      payment_type: '' as 'PER_DELIVERED_ORDER' | 'MONTHLY_SALARY' | '',
       payment_amount: '' as number | '',
       payment_recovered_cart: '' as number | '',
       payment_lost_cart: '' as number | '',
-      payday: '' as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
-      tracking_code: '',
-      marketing_budget: '' as number | '',
    });
    const [errors, setErrors] = useState<Record<string, string>>({});
    const isSubmitting = createMutation.isPending || updateMutation.isPending;
@@ -1018,15 +1002,12 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             payment_amount: editingEmployee.payment_amount ?? '',
             payment_recovered_cart: editingEmployee.payment_recovered_cart ?? '',
             payment_lost_cart: editingEmployee.payment_lost_cart ?? '',
-            payday: editingEmployee.payday ?? '',
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
-            tracking_code: editingEmployee.tracking_code || '',
-            marketing_budget: editingEmployee.marketing_budget ?? '',
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payday: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], tracking_code: '', marketing_budget: '' });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [] });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1045,7 +1026,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payment_amount: formData.payment_type ? (Number(formData.payment_amount) || 0) : null,
          payment_recovered_cart: Number(formData.payment_recovered_cart) || 0,
          payment_lost_cart: Number(formData.payment_lost_cart) || 0,
-         payday: formData.payday === '' ? null : Number(formData.payday),
       };
 
       const storePayload = formData.assigned_store_scope === 'SPECIFIC'
@@ -1053,11 +1033,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          : { assigned_store_ids: [] };
 
       const productsPayload = { assigned_product_ids: formData.assigned_product_ids };
-
-      const marketerPayload = formData.role === 'MARKETER' ? {
-         tracking_code: formData.tracking_code.trim() || null,
-         marketing_budget: formData.marketing_budget === '' ? null : Number(formData.marketing_budget),
-      } : {};
 
       if (isEditing && editingEmployee) {
          updateMutation.mutate({
@@ -1072,7 +1047,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                ...paymentPayload,
                ...storePayload,
                ...productsPayload,
-               ...marketerPayload,
             }
          }, { onSuccess: () => onOpenChange(false) });
       } else {
@@ -1087,7 +1061,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             ...storePayload,
             ...productsPayload,
             ...paymentPayload,
-            ...marketerPayload,
          }, {
             onSuccess: () => onOpenChange(false),
             onError: (err: any) => {
@@ -1209,7 +1182,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                            )}
                         </div>
                         <p className="text-[9px] text-slate-400 leading-tight">
-                           Produits <strong>en plus</strong> de ses boutiques complètes : le confirmateur reçoit aussi toute commande contenant l'un de ces produits, <strong>peu importe la boutique d'origine</strong>. Laisser vide s'il est responsable de boutiques entières uniquement.
+                           Le confirmateur reçoit les commandes de <strong>toutes les boutiques</strong> contenant ses produits assignés, peu importe la boutique d'origine.
                         </p>
                       </div>
 
@@ -1268,9 +1241,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                            </div>
                         )}
                         <p className="text-[10px] text-slate-400">
-                           {formData.assigned_store_scope === 'ALL'
-                              ? 'Responsable de toutes les boutiques'
-                              : `${formData.assigned_store_ids.length} boutique(s) complète(s) — il reçoit TOUTES les commandes de ces boutiques, + celles de ses produits assignés ailleurs`}
+                           {formData.assigned_store_scope === 'ALL' ? 'Accès à toutes les boutiques' : `${formData.assigned_store_ids.length} boutique(s) sélectionnée(s)`}
                         </p>
                      </div>
 
@@ -1279,21 +1250,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-700 flex items-center gap-2">
                            <Banknote className="size-3.5" /> Configuration de Rémunération
                         </h4>
-                        <div className="space-y-1.5 p-3 rounded-xl border-2 border-violet-200 bg-violet-50/70">
-                           <Label className="text-[11px] font-bold text-violet-700">📅 Jour de paie (date de salaire, chaque mois)</Label>
-                           <Input
-                              type="number"
-                              min={1}
-                              max={28}
-                              value={formData.payday}
-                              onChange={e => setFormData(p => ({ ...p, payday: e.target.value === '' ? '' : Number(e.target.value) }))}
-                              placeholder="Ex: 28 (entre 1 et 28)"
-                              className="h-10 border-violet-200 rounded-lg bg-white font-black"
-                           />
-                           <p className="text-[10px] text-violet-500 font-medium">
-                              Ce jour-là chaque mois : l'employé reçoit un rappel de sa date de salaire, et l'admin une alerte « vous devez payer cet employé ».
-                           </p>
-                        </div>
                         <div className="space-y-1.5">
                            <Label className="text-[11px] font-semibold text-[#636E72]">Mode de paiement</Label>
                            <Select
@@ -1304,7 +1260,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                  <SelectValue placeholder="Choisir un mode..." />
                               </SelectTrigger>
                               <SelectContent className="bg-white border-[#E9ECF0] rounded-xl">
-                                 <SelectItem value="PER_CONFIRMED_ORDER">Par confirmation (par commande confirmée)</SelectItem>
                                  <SelectItem value="PER_DELIVERED_ORDER">Par livraison (par commande livrée)</SelectItem>
                                  <SelectItem value="MONTHLY_SALARY">Salaire mensuel fixe</SelectItem>
                               </SelectContent>
@@ -1313,7 +1268,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         {formData.payment_type && (
                            <div className="space-y-1.5">
                               <Label className="text-[11px] font-semibold text-[#636E72]">
-                                 {formData.payment_type === 'PER_CONFIRMED_ORDER' ? 'Montant par commande confirmée (DA)' : formData.payment_type === 'PER_DELIVERED_ORDER' ? 'Montant par livraison (DA)' : 'Salaire mensuel (DA)'}
+                                 {formData.payment_type === 'PER_DELIVERED_ORDER' ? 'Montant par livraison (DA)' : 'Salaire mensuel (DA)'}
                               </Label>
                               <div className="relative">
                                  <Input
@@ -1327,9 +1282,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">DA</span>
                               </div>
                               <p className="text-[10px] text-slate-400">
-                                 {formData.payment_type === 'PER_CONFIRMED_ORDER'
-                                    ? `Ex: 400 DA × commandes confirmées = salaire variable`
-                                    : formData.payment_type === 'PER_DELIVERED_ORDER'
+                                 {formData.payment_type === 'PER_DELIVERED_ORDER'
                                     ? 'Calculé uniquement sur les commandes avec statut LIVRÉ'
                                     : 'Versé indépendamment du nombre de commandes traitées'}
                               </p>
@@ -1358,66 +1311,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                La commission panier récupéré s'applique sur les paniers abandonnés récupérés qui passent à Livré.
                             </p>
                         </div>
-
-                        <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
-                           <h5 className="text-[9px] font-black uppercase tracking-wider text-rose-700">
-                              Pénalité commande retournée
-                           </h5>
-                           <div className="space-y-1.5">
-                               <Label className="text-[10px] font-semibold text-[#636E72]">Montant déduit par retour (DA)</Label>
-                               <div className="relative">
-                                  <Input
-                                     type="number"
-                                     min={0}
-                                     value={formData.payment_lost_cart}
-                                     onChange={e => setFormData(p => ({ ...p, payment_lost_cart: e.target.value === '' ? '' : Number(e.target.value) }))}
-                                     placeholder="Ex: 200"
-                                     className="h-10 border-rose-100 rounded-lg bg-white pr-12 font-black text-xs"
-                                  />
-                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
-                               </div>
-                            </div>
-                            <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
-                               Déduit du salaire pour chaque commande passée au statut RETOURNÉ (la commande avait été confirmée, mais le transporteur ne l'a pas livrée). Laisser à 0 pour désactiver.
-                            </p>
-                        </div>
                      </div>
-
-                     {formData.role === 'MARKETER' && (
-                        <div className="space-y-3 p-4 rounded-xl border bg-orange-50/40" style={{ borderColor: '#fed7aa' }}>
-                           <h4 className="text-[10px] font-black uppercase tracking-widest text-orange-700 flex items-center gap-2">
-                              <Megaphone className="size-3.5" /> Tracking Affilié (Marketing)
-                           </h4>
-                           <div className="space-y-1.5">
-                              <Label className="text-[11px] font-semibold text-[#636E72]">Code de tracking</Label>
-                              <Input
-                                 value={formData.tracking_code}
-                                 onChange={e => setFormData(p => ({ ...p, tracking_code: e.target.value.toUpperCase() }))}
-                                 placeholder={isEditing ? 'Non configuré' : 'Généré automatiquement si laissé vide'}
-                                 className="h-10 border-orange-100 rounded-lg bg-white font-mono text-xs"
-                              />
-                              <p className="text-[10px] text-slate-400">
-                                 Ce code doit être utilisé comme <code>utm_source</code> ou <code>campaign_id</code> sur les liens
-                                 du partenaire — les leads et le CA ne s'affichent que pour les commandes qui le portent réellement.
-                              </p>
-                           </div>
-                           <div className="space-y-1.5">
-                              <Label className="text-[11px] font-semibold text-[#636E72]">Budget géré (DA)</Label>
-                              <div className="relative">
-                                 <Input
-                                    type="number"
-                                    min={0}
-                                    value={formData.marketing_budget}
-                                    onChange={e => setFormData(p => ({ ...p, marketing_budget: e.target.value === '' ? '' : Number(e.target.value) }))}
-                                    placeholder="Ex: 150000"
-                                    className="h-10 border-orange-100 rounded-lg bg-white pr-12 font-black"
-                                 />
-                                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">DA</span>
-                              </div>
-                              <p className="text-[10px] text-slate-400">Utilisé pour calculer le ROAS réel (CA livré attribué ÷ budget).</p>
-                           </div>
-                        </div>
-                     )}
 
                      <div className="flex flex-col gap-2 p-3 mt-4 rounded-lg border bg-[#F8F9FC]" style={{ borderColor: C.border }}>
                         <div className="flex items-center justify-between">
@@ -1625,7 +1519,7 @@ export default function EmployeesPage() {
             {activeTab === 'roles' && <RolesView roles={(Array.isArray(rolesQuery.data) ? rolesQuery.data : rolesQuery.data?.data) || []} isLoading={rolesQuery.isLoading} onRefresh={() => rolesQuery.refetch()} onNewRole={() => setNewRoleModalOpen(true)} />}
             {activeTab === 'admins' && <AdminsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
             {activeTab === 'agents' && <AgentsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onDelete={handleDelete} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
-            {activeTab === 'marketers' && <MarketersView marketers={(Array.isArray(marketersQuery.data) ? marketersQuery.data : marketersQuery.data?.data) || []} isLoading={marketersQuery.isLoading} onCreate={handleCreate} onEdit={(m) => handleEdit(employees.find((e: any) => e.id === m.id) || { ...m, role: 'MARKETER' })} />}
+            {activeTab === 'marketers' && <MarketersView marketers={(Array.isArray(marketersQuery.data) ? marketersQuery.data : marketersQuery.data?.data) || []} isLoading={marketersQuery.isLoading} onCreate={handleCreate} />}
          </div>
 
          {/* ── Employee Form Dialog ── */}
@@ -1702,17 +1596,10 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const storeId = activeStore?.id ?? '';
    const [activeProfileTab, setActiveProfileTab] = useState<'salary' | 'orders' | 'audit'>('salary');
    const [bonus, setBonus] = useState(0);
-   const [salaryStartDate, setSalaryStartDate] = useState('');
-   const [salaryEndDate, setSalaryEndDate] = useState('');
 
    const perfQuery = useQuery({
-      queryKey: ['employee-performance', employee?.id, storeId, salaryStartDate, salaryEndDate],
-      queryFn: () => {
-         const params = new URLSearchParams({ store_id: storeId });
-         if (salaryStartDate) params.set('start_date', salaryStartDate + 'T00:00:00.000Z');
-         if (salaryEndDate) params.set('end_date', salaryEndDate + 'T23:59:59.999Z');
-         return apiFetch<any>(`/api/v1/users/${employee.id}/performance?${params.toString()}`);
-      },
+      queryKey: ['employee-performance', employee?.id, storeId],
+      queryFn: () => apiFetch<any>(`/api/v1/users/${employee.id}/performance?store_id=${storeId}&period=30d`),
       enabled: open && !!employee?.id && !!storeId,
    });
 
@@ -1725,12 +1612,10 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const delivered = stats.delivered_count ?? 0;
    const cancelled = stats.cancelled_count ?? 0;
    const returned = stats.returned_count ?? 0;
-   const returnedPenalty = stats.returned_penalty ?? 0;
    const total_assigned = stats.total_assigned ?? 0;
 
    const computedSalary = stats.salary ?? (
-     paymentType === 'PER_CONFIRMED_ORDER' ? confirmed * paymentAmount
-     : paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
+     paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
      : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
    );
    const totalSalary = computedSalary + bonus;
@@ -1765,24 +1650,8 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                   </div>
                </div>
 
-               {/* Date range filter — scopes both the stats above and the salary computation */}
-               <div className="flex items-center gap-2 mt-4">
-                  <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Période</span>
-                  <input type="date" value={salaryStartDate} onChange={e => setSalaryStartDate(e.target.value)}
-                     className="h-8 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 outline-none" />
-                  <span className="text-slate-500 text-xs">→</span>
-                  <input type="date" value={salaryEndDate} onChange={e => setSalaryEndDate(e.target.value)}
-                     className="h-8 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 outline-none" />
-                  {(salaryStartDate || salaryEndDate) && (
-                     <button onClick={() => { setSalaryStartDate(''); setSalaryEndDate(''); }}
-                        className="text-[10px] font-black uppercase text-slate-400 hover:text-white underline">
-                        Réinitialiser
-                     </button>
-                  )}
-               </div>
-
                {/* Tabs */}
-               <div className="flex gap-2 mt-4 border-b border-slate-700">
+               <div className="flex gap-2 mt-8 border-b border-slate-700">
                   {([['salary', 'Bulletin de Paie', Banknote], ['orders', 'Commandes', Package], ['audit', 'Traçabilité', Activity]] as const).map(([id, label, Icon]) => (
                      <button key={id} onClick={() => setActiveProfileTab(id)}
                         className={cn(
@@ -1824,13 +1693,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      )}
 
                      {/* Stats grid */}
-                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
                            { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
                            { label: 'Confirmées', value: confirmed, color: '#20bf6b' },
                            { label: 'Livrées', value: delivered, color: '#26de81' },
-                           { label: 'Retournées', value: returned, color: '#eb4d4b' },
-                           { label: 'Annulées', value: cancelled, color: '#a5b1c2' },
+                           { label: 'Annulées', value: cancelled, color: '#eb4d4b' },
                         ].map(s => (
                            <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
                               <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{s.label}</p>
@@ -1845,12 +1713,6 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            <span>{paymentType === 'PER_DELIVERED_ORDER' ? 'Commandes livrées' : paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes confirmées'}</span>
                            <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${paymentType === 'PER_DELIVERED_ORDER' ? delivered : confirmed} × ${formatPrice(paymentAmount)}`}</span>
                         </div>
-                        {returnedPenalty > 0 && (
-                           <div className="flex justify-between items-center text-xs font-bold text-rose-500">
-                              <span>Pénalité retours ({returned} × {formatPrice((employee?.payment_lost_cart) || 0)})</span>
-                              <span>− {formatPrice(returnedPenalty)}</span>
-                           </div>
-                        )}
                         <div className="flex justify-between items-center text-xs font-bold text-[#20bf6b]">
                            <span>Total commissions</span>
                            <span>= {formatPrice(computedSalary)}</span>

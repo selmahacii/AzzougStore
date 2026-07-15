@@ -70,12 +70,10 @@ export async function apiFetch<T = unknown>(
     headers.set('X-Requested-With', 'XMLHttpRequest');
   }
 
-  // Tenant context — send store ID to FastAPI's TenantMiddleware.
-  // A caller-provided X-Store-Id wins: cross-store screens (agent multi-boutique)
-  // must target the ORDER's store, not whatever store happens to be active.
+  // Tenant context — send store ID to FastAPI's TenantMiddleware
   if (allStores) {
     headers.set('X-Store-Id', 'SUPER_ADMIN_MODE');
-  } else if (!headers.has('X-Store-Id')) {
+  } else {
     const activeStore = useAppStore.getState().activeStore;
     if (activeStore?.id) {
       headers.set('X-Store-Id', activeStore.id);

@@ -41,15 +41,6 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     const searchParams = request.nextUrl.searchParams.toString();
     const targetUrl = `${BACKEND_URL}/api/${subPath}${searchParams ? `?${searchParams}` : ''}`;
 
-    // Capture the REAL client IP before stripping x-forwarded-* below — Vercel's
-    // edge sets this correctly on the incoming request. Without re-adding it,
-    // the backend sees every single user's request as coming from the same
-    // Vercel serverless outbound IP, which turns per-IP rate limits (e.g. the
-    // /auth/refresh brute-force guard, 10 req/60s) into a bucket SHARED BY THE
-    // ENTIRE SITE — a handful of staff refreshing sessions around the same
-    // time exhausts it for everyone else, who then get silently logged out.
-    const realClientIp = request.headers.get('x-forwarded-for');
-
     // Filter headers to only pass essential ones, stripping Host/Origin/Referer
     const headers = new Headers();
     request.headers.forEach((value, key) => {
@@ -64,22 +55,9 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
         headers.set(key, value);
       }
     });
-    if (realClientIp) {
-      headers.set('x-forwarded-for', realClientIp);
-    }
 
-    // Internal API key is ONLY for genuinely sessionless server-to-server
-    // calls (no browser present, no user to authenticate as). Attaching it
-    // unconditionally here — as this proxy used to — made every browser
-    // request carry it, and the backend's internal-key bypass resolves to
-    // the SUPER_ADMIN account whenever x-user-id is absent (which it always
-    // is for /api/v1/* proxied calls: middleware never sets it there). That
-    // silently authenticated EVERY logged-in user as SUPER_ADMIN, bypassing
-    // all role-based scoping — e.g. a livreur's own session cookie was never
-    // even consulted, so GET /orders returned every order in the database.
-    // Only fall back to the internal key when there's no session cookie to
-    // authenticate with in the first place.
-    if (process.env.INTERNAL_API_KEY && !request.headers.get('cookie')) {
+    // Add internal API key if present
+    if (process.env.INTERNAL_API_KEY) {
       headers.set('x-internal-key', process.env.INTERNAL_API_KEY);
     }
 
@@ -101,25 +79,9 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     // Build the proxied response headers
     const resHeaders = new Headers();
     response.headers.forEach((value, key) => {
-      const lk = key.toLowerCase();
-      // fetch() auto-decompresses gzip — strip encoding headers so the browser
-      // doesn't try to decompress already-decompressed bytes (ERR_CONTENT_DECODING_FAILED)
-      if (lk === 'content-encoding' || lk === 'transfer-encoding') return;
+      // Forward Set-Cookie and other safe headers
       resHeaders.set(key, value);
     });
-
-    // Login/refresh/logout each set TWO cookies (__session + __refresh) via
-    // two separate Set-Cookie headers. The .set() loop above only keeps the
-    // last one — .set() overwrites same-name headers rather than
-    // accumulating them. Re-add every Set-Cookie individually via append()
-    // so both survive the proxy hop.
-    const setCookies = response.headers.getSetCookie?.() ?? [];
-    if (setCookies.length > 0) {
-      resHeaders.delete('set-cookie');
-      for (const cookie of setCookies) {
-        resHeaders.append('set-cookie', cookie);
-      }
-    }
 
     const responseData = await response.arrayBuffer();
 

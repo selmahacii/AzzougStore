@@ -22,9 +22,6 @@ export interface User {
   avatar: string | null;
   phone: string | null;
   employee_store_id: string | null;
-  assigned_store_scope?: 'ALL' | 'SPECIFIC';
-  assigned_store_ids?: string[];
-  assigned_product_ids?: string[];
   daily_target: number;
   created_at: string;
   employeeStore?: { id: string; name: string; slug: string } | null;

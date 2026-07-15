@@ -1,21 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Phone, CheckCircle, XCircle, Clock, Package, Banknote,
   TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown,
   BarChart3, Activity, FileText, AlertCircle, MapPin, User,
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
-  LayoutGrid, Search, Filter, ChevronRight, Menu,
-  List, Inbox, ShoppingCart, Home, Plus,
-  Warehouse, History, Bell, Wallet
+  LayoutGrid, Search, Filter, ChevronRight, Menu, Bell,
+  List, Inbox, PhoneCall, ShoppingCart, Home, Plus
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice, formatOrderRef } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 import { toast } from 'sonner';
@@ -25,8 +23,6 @@ import { Input } from '@/components/ui/input';
 import { ManualOrderModal } from '@/components/agent/manual-order-modal';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
-import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
-import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
@@ -36,11 +32,11 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string; nex
   IN_PROGRESS:  { label: 'En attente',       color: '#ea580c', bg: '#fff7ed', next: ['CONFIRMED', 'CANCELLED', 'RESCHEDULED'] },
   RESCHEDULED:  { label: 'Reportée',         color: '#d97706', bg: '#fef3c7', next: ['CONFIRMED', 'CANCELLED'] },
   CONFIRMED:    { label: 'Confirmée',        color: '#059669', bg: '#ecfdf5', next: ['SHIPPED', 'CANCELLED'] },
-  SHIPPED:      { label: 'En livraison',     color: '#0891b2', bg: '#ecfeff', next: ['DELIVERED', 'RETURNED', 'CANCELLED'] },
+  SHIPPED:      { label: 'Expédiée',         color: '#15803d', bg: '#f0fdf4', next: ['DELIVERED', 'RETURNED', 'CANCELLED'] },
   DELIVERED:    { label: 'Livrée',           color: '#059669', bg: '#ecfdf5', next: ['RETURNED'] },
-  CANCELLED:    { label: 'Annulée',          color: '#475569', bg: '#f1f5f9', next: ['CONFIRMED', 'IN_PROGRESS'] },
-  RETURNED:     { label: 'Retournée',        color: '#e11d48', bg: '#fff1f2', next: [] },
-  ABANDONED:    { label: 'Panier Abandonné', color: '#ea580c', bg: '#fff7ed', next: ['CONFIRMED', 'CANCELLED'] },
+  CANCELLED:    { label: 'Annulée',          color: '#dc2626', bg: '#fef2f2', next: [] },
+  RETURNED:     { label: 'Retournée',        color: '#64748b', bg: '#f8fafc', next: [] },
+  ABANDONED:    { label: 'Panier Abandonné', color: '#7c3aed', bg: '#f5f3ff', next: ['CONFIRMED', 'CANCELLED'] },
 };
 
 // ─── Types ──────────────────────────────────────────────────
@@ -52,20 +48,16 @@ const MODULES: Module[] = [
     id: 'orders',
     label: 'Commandes',
     icon: Package,
-    // Ordre = flux de travail de la confirmatrice : traiter les nouvelles,
-    // relancer les NRP, suivre les "En attente" (statut changé directement,
-    // sans passer par "Signaler NRP"), récupérer les paniers, confirmer.
-    // Livrées/Archives retirées : elles vivent uniquement sous Logistique
-    // pour ne pas dupliquer le module entre Commandes et Logistique.
     subModules: [
       { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
-      { id: 'orders-pending', label: 'En attente', filter: 'PENDING_CONFIRMATION', icon: Clock },
-      { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
-      { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
+      { id: 'orders-pending', label: 'À confirmer', filter: 'PENDING_CONFIRMATION', icon: Clock },
+      { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
+      { id: 'orders-delivered', label: 'Livrées', filter: 'DELIVERED', icon: Home },
+      { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
+      { id: 'orders-nrp', label: 'NRP', filter: 'NRP', icon: Phone },
       { id: 'orders-abandoned', label: 'Paniers Abandonnés', filter: 'ABANDONED_IN_PROGRESS', icon: ShoppingCart },
       { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
-      { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
-      { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
+      { id: 'orders-archived', label: 'Archives', filter: 'ARCHIVED', icon: List },
     ]
   },
   {
@@ -74,31 +66,8 @@ const MODULES: Module[] = [
     icon: Truck,
     subModules: [
       { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
-      { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
-      { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
-      // Noest's own real-time granular carrier stage (see backend
-      // CARRIER_STAGE_BUCKETS / Order.carrier_stage, updated every poll
-      // cycle) — breaks "En livraison" down the same way Noest's own
-      // dashboard does, instead of one coarse SHIPPED bucket.
-      { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
-      { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
-      { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
-      { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
-      { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
+      { id: 'delivery-in-progress', label: 'En livraison', filter: 'SHIPPED', icon: Truck },
       { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
-      { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
-    ]
-  },
-  {
-    // Vue allégée, lecture seule — la confirmatrice consulte le stock,
-    // elle ne gère ni fournisseurs, ni achats, ni entrepôts.
-    id: 'inventory',
-    label: 'Inventaire',
-    icon: Warehouse,
-    subModules: [
-      { id: 'inventory-stock', label: 'Stock Produits', icon: Package },
-      { id: 'inventory-history', label: 'Mouvements', icon: History },
-      { id: 'inventory-alerts', label: 'Alertes Rupture', icon: AlertCircle },
     ]
   },
   {
@@ -111,26 +80,6 @@ const MODULES: Module[] = [
     ]
   }
 ];
-
-// ─── Vue inventaire (réutilise le module admin) ─────────────
-// InventoryDashboard/StockManager already have built-in CONFIRMATEUR
-// support (hides purchase price/margin columns via isConfirmateur) and
-// let her actually adjust stock quantities — not just look at them.
-// InventoryDashboard chooses its internal tab via adminSubView (store
-// global) ; on le synchronise avec le sous-module choisi dans la sidebar.
-const INVENTORY_TAB: Record<string, string> = {
-  'inventory-stock': 'STOCK',
-  'inventory-history': 'HISTORY',
-  'inventory-alerts': 'ALERTS',
-};
-
-function AgentInventoryView({ subModuleId }: { subModuleId: string }) {
-  const setAdminSubView = useAppStore(s => s.setAdminSubView);
-  useEffect(() => {
-    setAdminSubView(INVENTORY_TAB[subModuleId] || 'STOCK');
-  }, [subModuleId, setAdminSubView]);
-  return <InventoryDashboard />;
-}
 
 // ─── Helpers ────────────────────────────────────────────────
 function useWorkTimer() {
@@ -178,23 +127,6 @@ function NrpBadge({ count }: { count: number }) {
   );
 }
 
-// Distinct from NrpBadge on purpose: an order moved directly to a pending
-// status (IN_PROGRESS/RESCHEDULED) without ever going through "Signaler
-// NRP" is a different situation for the confirmatrice (customer DID answer,
-// just asked for a callback / is still being worked) — different color
-// family (sky, not the NRP amber/orange/rose escalation) so it can't be
-// mistaken for an unanswered-call order at a glance.
-function PendingBadge({ order }: { order: Order }) {
-  const isPendingStatus = order.status === 'IN_PROGRESS' || order.status === 'RESCHEDULED';
-  if (!isPendingStatus || (order.nrp_count ?? 0) > 0) return null;
-
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border shrink-0 bg-sky-50 text-sky-700 border-sky-200">
-      <Clock className="size-2.5" /> En attente
-    </span>
-  );
-}
-
 function OrderTimer({ startTime }: { startTime?: string }) {
   const [elapsed, setElapsed] = useState('');
   useEffect(() => {
@@ -223,111 +155,29 @@ function OrderTimer({ startTime }: { startTime?: string }) {
 
 // ─── Components ─────────────────────────────────────────────
 
-function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void }) {
-  const queryClient = useQueryClient();
-  const livreursQuery = useQuery<any>({
-    queryKey: ['livreurs', order.store_id],
-    queryFn: () => apiFetch(`/api/v1/users/?store_id=${order.store_id}`, { headers: { 'X-Store-Id': order.store_id } }),
-    staleTime: 60_000,
-  });
-  const livreurs = ((Array.isArray(livreursQuery.data) ? livreursQuery.data : livreursQuery.data?.data) ?? [])
-    .filter((u: any) => u.role === 'LIVREUR' && u.is_active !== false);
-
-  const assignMutation = useMutation({
-    mutationFn: (livreurId: string) =>
-      apiFetch(`/api/v1/orders/${order.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ livreur_id: livreurId }),
-        headers: { 'X-Store-Id': order.store_id },
-      }),
-    onSuccess: (updated: any) => {
-      toast.success('Livreur assigné — il reçoit tous les détails de la commande');
-      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
-      if (onOrderUpdate && updated?.id) onOrderUpdate(updated);
-    },
-    onError: (err: any) => toast.error(err.message || "Impossible d'assigner le livreur"),
-  });
-
-  const current = livreurs.find((l: any) => l.id === order.livreur_id);
-  const hasCarrierParcel = !!order.tracking_number;
-
-  return (
-    <div className="space-y-3">
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">
-        🚚 Méthode de livraison
-      </p>
-
-      {/* Option 1 — transporteur (NOEST / Yalidine…) */}
-      <div className={cn(
-        'p-3 rounded-xl border space-y-1.5',
-        hasCarrierParcel ? 'border-cyan-200 bg-cyan-50/50' : 'border-slate-100 bg-slate-50/50'
-      )}>
-        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
-        {hasCarrierParcel ? (
-          <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
-        ) : order.status !== 'CONFIRMED' ? (
-          <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
-        ) : order.carrier_id ? (
-          <button
-            type="button"
-            onClick={() => onDispatch && onDispatch(order.id)}
-            className="w-full py-2 rounded-lg bg-cyan-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-cyan-700 transition-colors"
-          >
-            Créer le colis chez le transporteur
-          </button>
-        ) : (
-          <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
-        )}
-      </div>
-
-      {/* Option 2 — livreur interne */}
-      {livreurs.length > 0 && !livreursQuery.isLoading && (
-        <div className={cn(
-          'p-3 rounded-xl border space-y-1.5',
-          order.livreur_id ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50'
-        )}>
-          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 2 — Livreur interne</p>
-          <select
-            value={order.livreur_id || ''}
-            onChange={(e) => e.target.value && assignMutation.mutate(e.target.value)}
-            disabled={assignMutation.isPending}
-            className="w-full text-xs p-2.5 border rounded-lg bg-white font-bold"
-          >
-            <option value="">— Choisir un livreur —</option>
-            {livreurs.map((l: any) => (
-              <option key={l.id} value={l.id}>{l.name}{l.phone ? ` (${l.phone})` : ''}</option>
-            ))}
-          </select>
-          {current && (
-            <p className="text-[10px] font-bold text-emerald-600">
-              ✓ Assignée à {current.name} — il/elle voit le client, le téléphone, l'adresse, les articles et le montant à encaisser. Suivez sa progression dans la timeline ci-dessous.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
   const cfg = STATUS_CFG[order.status] ?? { next: [] };
   const queryClient = useQueryClient();
   const storeId = order.store_id;
-
-  // Per-store NRP ceilings (operations_config), with platform defaults
-  const { allStores: drawerStores } = useAppStore();
-  const opsCfg: any = drawerStores.find(s => s.id === order.store_id)?.operations_config || {};
-  const maxNrp = order.is_abandoned_cart
-    ? (opsCfg.max_nrp_abandoned ?? 12)
-    : (opsCfg.max_nrp_normal ?? 9);
 
   const [isEditing, setIsEditing] = useState(initialEdit || false);
   const [selectedBureauCode, setSelectedBureauCode] = useState('');
   const [yalidineCenters, setYalidineCenters] = useState<any[]>([]);
   const [loadingCenters, setLoadingCenters] = useState(false);
 
+  const deliveryPartnersQuery = useQuery<any>({
+    queryKey: ['delivery-partners-lite', storeId],
+    enabled: !!storeId,
+    staleTime: 5 * 60 * 1000,
+    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
+  });
+  const hasActiveYalidine = !!deliveryPartnersQuery.data?.data?.some((p: any) => p.code === 'yalidine' && p.is_active !== false);
+
   useEffect(() => {
-    if (!storeId) return;
+    if (!storeId || deliveryPartnersQuery.isLoading || !hasActiveYalidine) {
+      setYalidineCenters([]);
+      return;
+    }
     setLoadingCenters(true);
     fetch(`/api/yalidine/centers?store_id=${storeId}`)
       .then(res => res.json())
@@ -338,8 +188,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       })
       .catch(err => console.error('Error fetching Yalidine centers:', err))
       .finally(() => setLoadingCenters(false));
-  }, [storeId]);
-  
+  }, [storeId, hasActiveYalidine, deliveryPartnersQuery.isLoading]);
+
   const [editData, setEditData] = useState({
     customer_name: order.customer_name || '',
     customer_phone: order.customer_phone || '',
@@ -350,7 +200,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     carrier_id: order.carrier_id || '',
     delivery_fee: order.delivery_fee || 0,
     notes: order.notes || '',
-    internal_notes: order.internal_notes || '',
     items: order.items ? order.items.map(item => ({
       id: item.id,
       product_id: item.product_id,
@@ -369,58 +218,11 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     ? NOEST_BUREAUX.filter(b => b.wilayaId === wilayaId)
     : [];
 
-  const deliveryPartnersQuery = useQuery<any>({
-    queryKey: ['delivery-partners-lite', storeId],
-    enabled: isEditing && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`, { headers: { 'X-Store-Id': storeId } }),
+  const productQuery = useQuery<any>({
+    queryKey: ['product-details-agent', order.items?.[0]?.product_id],
+    enabled: isEditing && !!order.items?.[0]?.product_id,
+    queryFn: () => apiFetch(`/api/v1/products/${order.items?.[0]?.product_id}`),
   });
-
-  // One live product query PER DISTINCT product in the order, not just the
-  // first item — a shared single query keyed to items[0] meant editing the
-  // variant/stock of the 2nd, 3rd, etc. product silently checked the WRONG
-  // product's stock (or none at all), so the on-screen badge could show
-  // nothing wrong while the backend still rejected the save with "Stock
-  // insuffisant" for that other item.
-  const editProductIds = Array.from(new Set((editData.items || []).map((it: any) => it.product_id).filter(Boolean)));
-  const productQueriesResult = useQueries({
-    queries: editProductIds.map((pid: string) => ({
-      queryKey: ['product-details-agent', pid],
-      enabled: isEditing,
-      queryFn: () => apiFetch(`/api/v1/products/${pid}`, { headers: { 'X-Store-Id': order.store_id } }),
-      // Stock moves in real time (other confirmatrices/orders reserve or
-      // confirm concurrently) but the global QueryClient default (staleTime
-      // 2min, refetchOnWindowFocus off) would otherwise let this go stale
-      // for minutes while the drawer sits open — the exact gap that let a
-      // confirmatrice see "3 en stock" and then get rejected with "Stock
-      // insuffisant" on save.
-      staleTime: 10_000,
-      refetchInterval: isEditing ? 10_000 : false,
-      refetchOnWindowFocus: true,
-    })),
-  });
-  const productById: Record<string, any> = Object.fromEntries(
-    editProductIds.map((pid: string, idx: number) => [pid, productQueriesResult[idx]?.data])
-  );
-  // Kept for the "Ajouter une variante" button below, which intentionally
-  // duplicates the FIRST item's product as a new line.
-  const productQuery = { data: productById[order.items?.[0]?.product_id ?? ''] };
-
-  // Upsell: let the confirmatrice add a DIFFERENT existing product to this
-  // order during the call. originalProductIds is frozen to what the order
-  // actually had when the drawer opened — used to detect a genuinely new
-  // addition (vs. just editing quantity/variant of what was already there)
-  // so the order gets flagged is_upsell only when that really happened.
-  const originalProductIds = useState(() => new Set((order.items || []).map((i: any) => i.product_id)))[0];
-  const [upsellProductId, setUpsellProductId] = useState('');
-  const [isCheckingStock, setIsCheckingStock] = useState(false);
-  const storeProductsQuery = useQuery<any>({
-    queryKey: ['agent-store-products-upsell', order.store_id],
-    enabled: isEditing && !!order.store_id,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200`, { headers: { 'X-Store-Id': order.store_id } }),
-  });
-  const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
-    (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
-  );
 
   // Only reset editData when the ORDER ID changes (i.e. drawer opened for a different order)
   // NOT when the order object is updated after a successful save (would erase local edits)
@@ -435,7 +237,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       carrier_id: order.carrier_id || '',
       delivery_fee: order.delivery_fee || 0,
       notes: order.notes || '',
-    internal_notes: order.internal_notes || '',
       items: order.items ? order.items.map(item => ({
         id: item.id,
         product_id: item.product_id,
@@ -482,8 +283,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       try {
         const pId = order.items?.[0]?.product_id || '';
         const res = await apiFetch<any>(
-          `/api/v1/delivery-partners/calculate?partnerId=${editData.carrier_id}&wilayaId=${editData.customer_wilaya}&type=${editData.delivery_type}&productIds=${pId}`,
-          { headers: { 'X-Store-Id': order.store_id } }
+          `/api/v1/delivery-partners/calculate?partnerId=${editData.carrier_id}&wilayaId=${editData.customer_wilaya}&type=${editData.delivery_type}&productIds=${pId}`
         );
         if (res?.success && typeof res?.data?.fee === 'number') {
           setEditData(prev => ({ ...prev, delivery_fee: res.data.fee }));
@@ -501,8 +301,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       console.log("[DEBUG FRONTEND] updateMutation mutationFn triggered with editData:", JSON.parse(JSON.stringify(data)));
       return await apiFetch(`/api/v1/orders/${order.id}/info`, {
         method: 'PATCH',
-        body: JSON.stringify(data),
-        headers: { 'X-Store-Id': order.store_id },
+        body: JSON.stringify(data)
       });
     },
     onSuccess: (response: any) => {
@@ -530,8 +329,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           delivery_type: serverData.delivery_type ?? order.delivery_type,
           carrier_id: serverData.carrier_id ?? order.carrier_id,
           delivery_fee: serverData.delivery_fee ?? order.delivery_fee,
-          notes: serverData.notes ?? order.notes,
-          internal_notes: serverData.internal_notes ?? order.internal_notes,
           items: serverData.items ?? order.items,
           total: serverData.total ?? order.total,
         });
@@ -547,8 +344,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           delivery_type: editData.delivery_type,
           carrier_id: editData.carrier_id || null,
           delivery_fee: editData.delivery_fee,
-          notes: editData.notes,
-          internal_notes: editData.internal_notes,
           items: editData.items.map((it: any) => ({ ...it })),
           total: editData.items.reduce((acc: number, item: any) => acc + item.quantity * item.unit_price, 0) + editData.delivery_fee
         });
@@ -572,10 +367,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-               <OrderTypeBadge order={order} />
                <StatusBadge status={order.status} />
                <NrpBadge count={order.nrp_count || 0} />
-               <PendingBadge order={order} />
                <OrderTimer startTime={order.confirmation_start_time} />
                {order.tracking_number && (
                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
@@ -585,7 +378,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                {order.nrp_count !== undefined && order.nrp_count > 0 && (
                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 uppercase tracking-widest">
                    <Phone className="size-3" />
-                   NRP {order.nrp_count}/{maxNrp}
+                   NRP {order.nrp_count}/{order.is_abandoned_cart ? 15 : 9}
                  </div>
                )}
             </div>
@@ -747,21 +540,12 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500">Remarque (transmise à Noest lors de l'expédition)</label>
-                  <textarea
-                    value={editData.notes}
-                    onChange={e => setEditData({...editData, notes: e.target.value})}
+                  <label className="text-xs font-bold text-slate-500">Remarques / Note (Optionnel)</label>
+                  <textarea 
+                    value={editData.notes} 
+                    onChange={e => setEditData({...editData, notes: e.target.value})} 
                     className="w-full text-xs p-2 border rounded bg-white min-h-[60px]"
                     placeholder="Saisir une remarque pour cette commande..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-amber-700">🔒 Notes internes (jamais envoyées au transporteur)</label>
-                  <textarea
-                    value={editData.internal_notes}
-                    onChange={e => setEditData({...editData, internal_notes: e.target.value})}
-                    className="w-full text-xs p-2 border border-amber-200 bg-amber-50/40 rounded min-h-[60px]"
-                    placeholder="Ex: client difficile, rappeler après 18h — usage équipe uniquement"
                   />
                 </div>
 
@@ -790,72 +574,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       <Plus className="size-3" /> Ajouter une variante
                     </button>
                   </div>
-
-                  {/* Upsell: add a different existing product to this order */}
-                  <div className="flex items-center gap-2 p-2 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                    <select
-                      value={upsellProductId}
-                      onChange={(e) => setUpsellProductId(e.target.value)}
-                      className="flex-1 text-xs p-1.5 h-8 border rounded bg-white font-bold text-slate-700"
-                    >
-                      <option value="">🎁 Ajouter un produit existant (Upsell)...</option>
-                      {upsellCandidates.map((p: any) => (
-                        <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price)}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={!upsellProductId}
-                      onClick={() => {
-                        const p = upsellCandidates.find((c: any) => c.id === upsellProductId);
-                        if (!p) return;
-                        const newItem = {
-                          id: 'new-' + Date.now(),
-                          product_id: p.id,
-                          product_name: p.name,
-                          sku: p.sku || '',
-                          quantity: 1,
-                          unit_price: p.price,
-                          variant_details: {},
-                          image_url: p.main_image || ''
-                        };
-                        setEditData({ ...editData, items: [...editData.items, newItem] });
-                        setUpsellProductId('');
-                      }}
-                      className="h-8 px-3 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0"
-                    >
-                      Ajouter
-                    </button>
-                  </div>
-
                   <div className="space-y-2.5">
                     {editData.items.map((item: any, idx: number) => {
-                      // Each item's OWN product — a shared single query keyed to
-                      // items[0] used to make every row (2nd, 3rd, ...) show the
-                      // first item's colors/sizes/stock instead of its own.
-                      const itemProduct = productById[item.product_id];
-                      const hasVariants = itemProduct?.variants && itemProduct.variants.length > 0;
-
+                      const hasVariants = productQuery.data?.variants && productQuery.data.variants.length > 0;
+                      
                       // Resolve current selections
                       const selectedColorVal = item.variant_details?.Couleur || item.variant_details?.Color || '';
                       const selectedSizeVal = item.variant_details?.Taille || item.variant_details?.Size || '';
-
+                      
                       // Filter options
-                      const colorVariants = itemProduct?.variants || [];
+                      const colorVariants = productQuery.data?.variants || [];
                       const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColorVal);
                       const sizeVariants = selectedColorVar?.sub_variants || [];
-
-                      // Live per-variant availability, mirroring the backend's own
-                      // reserve/confirm check (v_stock - v_reserved on the matched
-                      // sub_variant/variant) — the dropdowns above previously gave
-                      // no stock feedback at all, so a confirmatrice could pick a
-                      // combo that's actually out of stock and only find out after
-                      // the save was rejected with "Stock insuffisant".
-                      const matchedSubVariant = selectedSizeVal ? sizeVariants.find((sv: any) => sv.value === selectedSizeVal) : null;
-                      const effectiveVariant = matchedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
-                      const variantAvailable = effectiveVariant
-                        ? Number(effectiveVariant.stock || 0) - Number(effectiveVariant.reserved || 0)
-                        : (!hasVariants ? Number(itemProduct?.stock || 0) - Number(itemProduct?.reserved_stock || 0) : null);
 
                       return (
                         <div key={idx} className="p-3 bg-white border rounded-xl space-y-2.5 shadow-sm">
@@ -898,10 +628,10 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                                         const firstSize = matchedVar.sub_variants[0].value;
                                         updatedDetails.Taille = firstSize;
                                         updatedDetails.variant = `${val} / ${firstSize}`;
-                                        newItems[idx].sku = matchedVar.sub_variants[0].sku || matchedVar.sku || itemProduct?.sku;
+                                        newItems[idx].sku = matchedVar.sub_variants[0].sku || matchedVar.sku || productQuery.data?.sku;
                                       } else {
                                         delete updatedDetails.Taille;
-                                        newItems[idx].sku = matchedVar?.sku || itemProduct?.sku;
+                                        newItems[idx].sku = matchedVar?.sku || productQuery.data?.sku;
                                       }
                                       
                                       newItems[idx].variant_details = updatedDetails;
@@ -955,22 +685,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                               </div>
                             ) : (
                               <div className="text-[10px] text-slate-400 font-medium italic">Ce produit n'a pas de variantes configurées.</div>
-                            )}
-
-                            {variantAvailable !== null && (
-                              <div className={cn(
-                                "text-[10px] font-black uppercase tracking-wide px-2 py-1 rounded-lg inline-flex items-center gap-1 w-fit",
-                                variantAvailable >= item.quantity ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                              )}>
-                                {variantAvailable <= 0
-                                  ? "Rupture de stock — indisponible"
-                                  : variantAvailable < item.quantity
-                                    ? `Seulement ${variantAvailable} en stock (quantité demandée: ${item.quantity})`
-                                    : `${variantAvailable} en stock`}
-                              </div>
-                            )}
-                            {hasVariants && variantAvailable === null && (
-                              <div className="text-[10px] font-bold text-amber-600 italic">Choisissez la variante pour voir le stock disponible</div>
                             )}
 
                             <div className="grid grid-cols-2 gap-2">
@@ -1035,64 +749,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={async () => {
-                      // Re-check against the freshest possible stock right before
-                      // saving, instead of trusting the badge above (which can still
-                      // be a few seconds stale). This is what used to let a
-                      // confirmatrice see "3 en stock", save, and only then get
-                      // rejected with "Stock insuffisant" — the badge showed a
-                      // snapshot from when the drawer opened while another order
-                      // consumed the same units in the meantime.
-                      setIsCheckingStock(true);
-                      try {
-                        // Refetch EVERY distinct product in the order, not just
-                        // the first item — checking only items[0]'s product used
-                        // to silently skip validation for any 2nd/3rd item,
-                        // letting a bad save through the pre-check only to be
-                        // rejected by the backend with no clear on-screen reason.
-                        const freshResults = await Promise.all(productQueriesResult.map(q => q.refetch()));
-                        const freshById: Record<string, any> = Object.fromEntries(
-                          editProductIds.map((pid: string, idx: number) => [pid, freshResults[idx]?.data])
-                        );
-                        for (const it of editData.items) {
-                          const freshProduct = freshById[it.product_id];
-                          if (!freshProduct) continue;
-                          const variantStr = it.variant_details?.variant;
-                          let available: number | null = null;
-                          if (variantStr && freshProduct.variants?.length) {
-                            const colorVal = it.variant_details?.Couleur || it.variant_details?.Color || '';
-                            const sizeVal = it.variant_details?.Taille || it.variant_details?.Size || '';
-                            const colorVar = freshProduct.variants.find((v: any) => v.value === colorVal);
-                            const subVar = sizeVal ? colorVar?.sub_variants?.find((sv: any) => sv.value === sizeVal) : null;
-                            const effective = subVar || (colorVar && (!colorVar.sub_variants || colorVar.sub_variants.length === 0) ? colorVar : null);
-                            if (effective) {
-                              available = Number(effective.stock || 0) - Number(effective.reserved || 0);
-                            }
-                          } else if (!freshProduct.variants?.length) {
-                            available = Number(freshProduct.stock || 0) - Number(freshProduct.reserved_stock || 0);
-                          }
-                          if (available !== null && available < it.quantity) {
-                            toast.error(
-                              `Stock insuffisant pour ${it.product_name}${variantStr ? ` (${variantStr})` : ''} : ${available} disponible(s), ${it.quantity} demandé(s). Le stock vient d'être mis à jour, ajustez la quantité ou choisissez une autre variante.`
-                            );
-                            return;
-                          }
-                        }
-                      } finally {
-                        setIsCheckingStock(false);
-                      }
-
-                      // A genuinely new product (not present when the drawer
-                      // opened) means this save is an upsell — flag it so it
-                      // shows the "Upsell" badge and counts in performance.
-                      const addedNewProduct = editData.items.some((it: any) => !originalProductIds.has(it.product_id));
-                      updateMutation.mutate(addedNewProduct ? { ...editData, is_upsell: true } as any : editData);
-                    }}
-                    disabled={updateMutation.isPending || isCheckingStock}
-                    className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded disabled:opacity-60"
-                  >
-                    {isCheckingStock ? 'Vérification du stock...' : updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                  <button onClick={() => updateMutation.mutate(editData)} disabled={updateMutation.isPending} className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded">
+                    {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
                   </button>
                   <button onClick={() => setIsEditing(false)} className="px-4 bg-slate-200 text-slate-700 text-xs font-bold rounded">
                     Annuler
@@ -1116,16 +774,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <div className="flex items-center gap-3">
                   <Phone className="size-4 text-slate-400" />
                   <a href={`tel:${order.customer_phone}`} className="text-xs font-bold text-blue-600 underline">{order.customer_phone}</a>
-                  {order.customer_phone2 && (
-                    <a href={`tel:${order.customer_phone2}`} className="text-xs font-bold text-blue-500 underline">
-                      / {order.customer_phone2}
-                    </a>
-                  )}
-                  {order.customer_tier && (
-                    <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-violet-200 bg-violet-50 text-violet-700">
-                      {order.customer_tier}
-                    </span>
-                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <MapPin className="size-4 text-slate-400" />
@@ -1148,47 +796,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     </div>
                   </div>
                 )}
-                {/* Micro-détails commande */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Reçue le</p>
-                    <p className="text-[11px] font-bold text-slate-600">
-                      {order.created_at ? new Date(order.created_at).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                    </p>
-                    {order.created_at && (() => {
-                      const mins = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
-                      const label = mins < 60 ? `il y a ${mins} min` : mins < 1440 ? `il y a ${Math.floor(mins / 60)}h` : `il y a ${Math.floor(mins / 1440)}j`;
-                      return <p className={cn("text-[9px] font-bold", mins > 1440 ? "text-rose-500" : mins > 240 ? "text-amber-500" : "text-emerald-500")}>{label}</p>;
-                    })()}
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Source</p>
-                    <p className="text-[11px] font-bold text-slate-600">{order.source || 'Direct'}</p>
-                    <div className="flex gap-1 mt-0.5">
-                      {order.is_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">Upsell</span>}
-                      {order.is_pack && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 uppercase">Pack</span>}
-                      {order.is_abandoned_cart && (
-                        ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(order.status)
-                          ? <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">🟩 Panier récupéré</span>
-                          : <span className="text-[8px] font-black px-1 py-0.5 rounded bg-violet-50 text-violet-600 border border-violet-100 uppercase">🟪 Panier abandonné</span>
-                      )}
-                    </div>
-                  </div>
-                  {order.promo_code && (
-                    <div>
-                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Code Promo</p>
-                      <p className="text-[11px] font-bold text-emerald-600">{order.promo_code} (−{formatPrice(order.discount || 0)})</p>
-                    </div>
-                  )}
-                  {order.next_callback_time && (
-                    <div>
-                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Rappel programmé</p>
-                      <p className="text-[11px] font-bold text-blue-600">
-                        {new Date(order.next_callback_time).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>
@@ -1217,37 +824,12 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                    <span className="font-bold">{formatPrice(item.quantity * item.unit_price)}</span>
                  </div>
                ))}
-               <div className="p-3 bg-slate-50 space-y-1.5 text-xs">
-                 <div className="flex justify-between text-slate-500">
-                   <span>Sous-total produits</span>
-                   <span className="tabular-nums">{formatPrice(order.items?.reduce((acc, it) => acc + it.quantity * it.unit_price, 0) ?? (order.subtotal || 0))}</span>
-                 </div>
-                 {(order.discount || 0) > 0 && (
-                   <div className="flex justify-between text-emerald-600">
-                     <span>Remise{order.promo_code ? ` (${order.promo_code})` : ''}</span>
-                     <span className="tabular-nums">−{formatPrice(order.discount)}</span>
-                   </div>
-                 )}
-                 <div className="flex justify-between text-slate-500">
-                   <span>Livraison ({order.delivery_type === 'stop_desk' ? 'Bureau' : 'Domicile'})</span>
-                   <span className="tabular-nums">{formatPrice(order.delivery_fee || 0)}</span>
-                 </div>
-                 <div className="flex justify-between font-bold border-t border-slate-200 pt-1.5 text-sm">
-                   <span>Total à encaisser</span>
-                   <span className="tabular-nums">{formatPrice(order.total)} DA</span>
-                 </div>
+               <div className="p-3 bg-slate-50 flex justify-between font-bold">
+                 <span>Total</span>
+                 <span>{formatPrice(order.total)} DA</span>
                </div>
              </div>
           </div>
-
-          {/* ── Choix de la méthode de livraison (transporteur / livreur interne) ──
-              Toujours visible (même Annulée/NRP/Abandonnée) : la confirmatrice doit
-              pouvoir préparer ou corriger l'assignation à tout moment. Seules les
-              commandes fusionnées (MERGED, gérées via leur parent) n'ont pas de
-              livraison propre. */}
-          {order.status !== 'MERGED' && (
-            <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} />
-          )}
 
           {cfg.next.length > 0 && (
             <div className="space-y-3">
@@ -1258,6 +840,13 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                           className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
                     <span>Signaler Ne Répond Pas (NRP)</span>
                     <Phone className="size-4" />
+                  </button>
+                )}
+                {(order.status === 'CONFIRMED' || order.status === 'SHIPPED') && !order.tracking_number && order.carrier_id && (
+                  <button onClick={() => { if(onDispatch) onDispatch(order.id); }}
+                          className="flex items-center justify-between p-3 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold">
+                    <span>Renvoyer au transporteur (Créer Colis)</span>
+                    <Package className="size-4" />
                   </button>
                 )}
                 {cfg.next.map(ns => {
@@ -1408,46 +997,10 @@ function SalaryView({ perf, user }: any) {
 // ─── Main Dashboard ──────────────────────────────────────────
 
 export default function AgentDashboard() {
-  const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar, clearUser } = useAppStore();
+  const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar } = useAppStore();
   const queryClient = useQueryClient();
   const workTimer = useWorkTimer();
   const [showAllStores, setShowAllStores] = useState(true);
-
-  // Personal notifications (salary date, assignments…) — the confirmatrice
-  // previously had no way to see these at all; admin-header.tsx has the
-  // same feed for admins, this is the employee-facing equivalent.
-  const [showNotifications, setShowNotifications] = useState(false);
-  const notifQuery = useQuery<{ data: any[]; unread: number }>({
-    queryKey: ['notifications', user?.id],
-    queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-    // Alert channel — must stay reasonably fresh (see notifications-bell).
-    refetchInterval: 5 * 60 * 1000,
-    enabled: !!user?.id,
-  });
-  const notifItems = (notifQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);
-  const notifUnread = notifQuery.data?.unread ?? 0;
-  const markAllNotifRead = useMutation({
-    mutationFn: () => apiFetch('/api/v1/notifications/read-all', { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] }),
-  });
-  const NOTIF_ICONS: Record<string, any> = {
-    SALARY_DUE: Wallet,
-    REMINDER_DUE: Clock,
-    ORDER_ASSIGNED: Package,
-  };
-
-  const handleLogout = async () => {
-    try {
-      await apiFetch('/api/v1/auth', { method: 'DELETE' });
-    } catch {
-      // ignore — clear local state regardless
-    }
-    clearUser();
-    // Defense in depth: never let the next account on this device inherit
-    // this confirmatrice's cached orders/notifications before its own data loads.
-    queryClient.clear();
-    setAppView('storefront');
-  };
   
   const [isMobile, setIsMobile] = useState(false);
 
@@ -1473,30 +1026,23 @@ export default function AgentDashboard() {
   const [isAutoRotate, setIsAutoRotate] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [drawerInitialEdit, setDrawerInitialEdit] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const currentFilter = useMemo(() => {
     const sub = MODULES.flatMap(m => m.subModules).find(s => s.id === activeSubModule);
     return sub?.filter || 'ALL';
   }, [activeSubModule]);
 
-  const PAGE_SIZE = 50;
-  const [page, setPage] = useState(1);
-  // Any change of store / filter / period restarts from the first page
-  useEffect(() => {
-    setPage(1);
-  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
-
   const ordersQuery = useQuery({
-    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
+    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate],
     queryFn: () => {
-      let url = `/api/v1/orders?page=${page}&pageSize=${PAGE_SIZE}`;
-
+      const isConfirmateur = user?.role === 'CONFIRMATEUR';
+      let url = `/api/v1/orders?pageSize=100`;
+      
       // If we are not showing all stores, filter by activeStore
       if (!showAllStores && activeStore?.id) {
         url += `&store_id=${activeStore.id}`;
       }
-
+      
       if (currentFilter !== 'ALL') {
         url += `&status=${encodeURIComponent(currentFilter)}`;
       }
@@ -1508,22 +1054,10 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `&end_date=${encodeURIComponent(d.toISOString())}`;
       }
-      // allStores: ALWAYS bypass the X-Store-Id tenant header on agent list
-      // queries. The header follows the Zustand "active store", which can
-      // desync from the store the agent is browsing (default store ≠ selected
-      // store) — the server then intersects everything with the wrong store
-      // and her real orders vanish (observed live: store_id=trustshop with
-      // X-Store-Id=azconfort → total=0). The explicit store_id param + the
-      // CONFIRMATEUR RBAC in list_orders do all the real scoping server-side.
-      console.log('[AgentDebug] requête commandes →', url, {
-        modeToutesBoutiques: showAllStores,
-        boutiqueActive: activeStore?.name,
-      });
-      return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: true });
+      return apiFetch<{ data: Order[] }>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    placeholderData: (prev) => prev,
-    refetchInterval: 30000,
+    refetchInterval: 30000
   });
 
   const perfQuery = useQuery({
@@ -1533,9 +1067,7 @@ export default function AgentDashboard() {
       if (!showAllStores && activeStore?.id) {
         url += `?store_id=${activeStore.id}`;
       }
-      // Same rationale as ordersQuery: never let the active-store tenant
-      // header intersect the results — explicit params + RBAC do the scoping.
-      return apiFetch<any>(url, { allStores: true });
+      return apiFetch<any>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id)
   });
@@ -1555,12 +1087,10 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         url += `end_date=${encodeURIComponent(d.toISOString())}&`;
       }
-      // Same rationale as ordersQuery: never let the active-store tenant
-      // header intersect the results — explicit params + RBAC do the scoping.
-      return apiFetch<any>(url, { allStores: true });
+      return apiFetch<any>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 30000
+    refetchInterval: 15000
   });
 
   let filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 
@@ -1575,105 +1105,10 @@ export default function AgentDashboard() {
   }, {});
   const isDuplicatePhone = (phone: string) => (phoneCounts[phone] ?? 0) > 1;
 
-  // Stores this agent is actually responsible for — nothing else is shown to her.
-  // Scope SPECIFIC: her fully-assigned stores + stores discovered in her visible
-  // orders (covers products assigned in OTHER stores). Scope ALL with assigned
-  // products = product-specialist: only the stores her orders actually come from.
-  // Scope ALL without products (or non-confirmateur roles): every store.
-  const myStores = useMemo(() => {
-    // Independent of the legacy assigned_store_scope flag (same rationale as
-    // the backend fix): assigned_store_ids counts whenever it's non-empty.
-    const myStoreIds = user?.assigned_store_ids ?? [];
-    const nbProducts = (user?.assigned_product_ids ?? []).length;
-    const isScoped = user?.role === 'CONFIRMATEUR' && (myStoreIds.length > 0 || nbProducts > 0);
-    if (!isScoped) return allStores;
-    const ids = new Set<string>(myStoreIds);
-    for (const o of (ordersQuery.data?.data ?? []) as any[]) {
-      if (o.store_id) ids.add(o.store_id);
-    }
-    const filtered = allStores.filter(s => ids.has(s.id));
-    return filtered.length > 0 ? filtered : allStores;
-  }, [user, allStores, ordersQuery.data]);
-
-  // Diagnostic console (F12 → Console) : config réelle de l'agent + ce que le
-  // serveur renvoie, ventilé par boutique — miroir du [ConfirmatriceDebug] backend.
-  useEffect(() => {
-    const d: any = ordersQuery.data;
-    if (!d?.data) return;
-    const parBoutique: Record<string, number> = {};
-    for (const o of d.data as any[]) {
-      const k = o.store?.name || o.store_id || 'sans-boutique';
-      parBoutique[k] = (parBoutique[k] || 0) + 1;
-    }
-    console.log('[AgentDebug] réponse commandes ←', {
-      utilisateur: user?.email,
-      config: {
-        scope: user?.assigned_store_scope,
-        boutiquesAssignees: user?.assigned_store_ids,
-        nbProduitsAssignes: (user?.assigned_product_ids ?? []).length,
-      },
-      vue: { modeToutesBoutiques: showAllStores, boutiqueActive: activeStore?.name, filtre: currentFilter, page },
-      resultat: { total: d.total, totalPages: d.totalPages, surCettePage: d.data.length, parBoutique },
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordersQuery.data]);
-
 
   if (currentFilter === 'ALL') {
      filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
   }
-
-  // ─── Fusion visuelle des doublons : un client (même téléphone) = une seule ligne ───
-  // La commande "principale" est celle que la confirmatrice doit traiter :
-  // commande normale avant panier abandonné, puis statut le plus avancé, puis la plus ancienne.
-  const STATUS_WEIGHT: Record<string, number> = {
-    DELIVERED: 7, SHIPPED: 6, CONFIRMED: 5, RESCHEDULED: 4, IN_PROGRESS: 4,
-    CALLED: 4, ASSIGNED: 3, NEW: 2, ABANDONED: 1, CANCELLED: 0, RETURNED: 0,
-  };
-  const groupedOrders: { primary: Order; related: Order[] }[] = (() => {
-    const phoneKey = (o: Order) => (o.customer_phone || '').replace(/\D/g, '') || o.id;
-    const byPhone = new Map<string, Order[]>();
-    for (const o of filteredOrders) {
-      const key = phoneKey(o);
-      if (!byPhone.has(key)) byPhone.set(key, []);
-      byPhone.get(key)!.push(o);
-    }
-    const seen = new Set<string>();
-    const groups: { primary: Order; related: Order[] }[] = [];
-    for (const o of filteredOrders) {
-      const key = phoneKey(o);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const members = byPhone.get(key)!;
-      const primary = [...members].sort((a, b) =>
-        (Number(!!a.is_abandoned_cart) - Number(!!b.is_abandoned_cart)) ||
-        ((STATUS_WEIGHT[b.status] ?? 0) - (STATUS_WEIGHT[a.status] ?? 0)) ||
-        (new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-      )[0];
-      groups.push({ primary, related: members.filter(m => m.id !== primary.id) });
-    }
-    return groups;
-  })();
-
-  // "Toutes les boutiques" mixed every store's orders into one interleaved
-  // list — hard to work with for a confirmatrice covering several stores,
-  // since a store's own volume of commandes was never visible as its own
-  // section. Group by store (each with its own header + count) whenever more
-  // than one store's orders are actually present in this result set; a
-  // single-store view (dropdown set to one store) stays a plain flat list.
-  const storeSections: { storeId: string; storeName: string; groups: typeof groupedOrders }[] = (() => {
-    const byStore = new Map<string, { storeName: string; groups: typeof groupedOrders }>();
-    for (const g of groupedOrders) {
-      const sid = g.primary.store_id || 'unknown';
-      const sname = (g.primary as any).store?.name || 'Boutique';
-      if (!byStore.has(sid)) byStore.set(sid, { storeName: sname, groups: [] });
-      byStore.get(sid)!.groups.push(g);
-    }
-    return Array.from(byStore.entries())
-      .map(([storeId, v]) => ({ storeId, storeName: v.storeName, groups: v.groups }))
-      .sort((a, b) => a.storeName.localeCompare(b.storeName));
-  })();
-  const showStoreSections = showAllStores && storeSections.length > 1;
 
   useEffect(() => {
     if (selectedOrder) {
@@ -1704,13 +1139,11 @@ export default function AgentDashboard() {
       if (assigned_to) payload.assigned_to = assigned_to;
       if (call_result) payload.call_result = call_result;
       
-      // allStores: the order may belong to another of the agent's assigned stores
-      // than the currently active one — the endpoint's own access check still applies.
-      const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload), allStores: true });
-
+      const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      
       if (status === 'CONFIRMED') {
         try {
-          const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST', allStores: true });
+          const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
           return { ...res, dispatch: dispatchRes };
         } catch (dispatchErr: any) {
           return { ...res, dispatch_error: dispatchErr.message || 'Erreur transporteur' };
@@ -1755,7 +1188,7 @@ export default function AgentDashboard() {
 
   const dispatchMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      return await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST', allStores: true });
+      return await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' });
     },
     onSuccess: (data: any, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
@@ -1799,13 +1232,14 @@ export default function AgentDashboard() {
         "fixed inset-y-0 left-0 z-50 bg-white flex flex-col shrink-0 border-r shadow-2xl lg:shadow-none transition-all duration-300",
         sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-[70px]" : "translate-x-0 w-[280px] sm:w-[260px]"
       )}>
-        <div className="h-16 px-4 border-b flex items-center justify-center bg-white shrink-0 relative">
-          <div className={cn("flex shrink-0 items-center justify-center", sidebarCollapsed ? "size-9" : "size-12")}>
-             <img src="/azzougshop_logo.png" alt="AzzougShop" className="w-full h-full object-contain" />
+        <div className="h-16 px-4 border-b flex items-center justify-between bg-slate-900 text-white shrink-0">
+          <div className="flex items-center gap-3">
+             <div className="size-8 bg-blue-600 rounded flex items-center justify-center font-bold">A</div>
+             {!sidebarCollapsed && <span className="text-sm font-bold tracking-tight">AGENT HUB</span>}
           </div>
           {isMobile && (
-            <button onClick={() => setSidebarCollapsed(true)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 lg:hidden hover:bg-slate-100 rounded">
-               <XCircle className="size-5 text-slate-400" />
+            <button onClick={() => setSidebarCollapsed(true)} className="p-1 lg:hidden hover:bg-slate-800 rounded">
+               <XCircle className="size-5 text-slate-300" />
             </button>
           )}
         </div>
@@ -1869,7 +1303,7 @@ export default function AgentDashboard() {
                </div>
              )}
              {!sidebarCollapsed && (
-               <button onClick={handleLogout} className="p-2 shrink-0 text-slate-400 hover:text-red-500">
+               <button onClick={() => setAppView('storefront')} className="p-2 shrink-0 text-slate-400 hover:text-red-500">
                  <LogOut className="size-4" />
                </button>
              )}
@@ -1898,7 +1332,7 @@ export default function AgentDashboard() {
                 </div>
                 
                 {/* On Desktop, show the toggle here */}
-                {myStores.length > 1 && (
+                {allStores.length > 1 && (
                   <div className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
                     <button
                       type="button"
@@ -1933,71 +1367,14 @@ export default function AgentDashboard() {
                        <span>Nouvelle Commande</span>
                      </button>
                 </div>
-
-                <Popover
-                  open={showNotifications}
-                  onOpenChange={(open) => {
-                    setShowNotifications(open);
-                    if (open && notifUnread > 0) markAllNotifRead.mutate();
-                  }}
-                >
-                  <PopoverTrigger asChild>
-                    <button className="relative p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0">
-                      <Bell className="size-5" />
-                      {notifUnread > 0 && (
-                        <span className="absolute top-0.5 right-0.5 flex size-4 items-center justify-center rounded-full text-[9px] font-bold text-white bg-[#6C5CE7]">
-                          {notifUnread > 9 ? '9+' : notifUnread}
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-[340px] p-0 rounded-xl shadow-2xl">
-                    <div className="px-4 py-3 border-b">
-                      <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
-                    </div>
-                    <div className="max-h-[380px] overflow-y-auto divide-y">
-                      {notifItems.length === 0 ? (
-                        <div className="py-12 text-center">
-                          <Bell className="size-7 text-slate-200 mx-auto mb-2" />
-                          <p className="text-xs font-semibold text-slate-400">Aucune notification</p>
-                        </div>
-                      ) : notifItems.map((n: any) => {
-                        const Icon = NOTIF_ICONS[n.type] || Bell;
-                        return (
-                          <div key={n.id} className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50">
-                            <div className="size-8 rounded-lg bg-[#6C5CE7]/10 text-[#6C5CE7] flex items-center justify-center shrink-0">
-                              <Icon className="size-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800">{n.title}</p>
-                              <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-
+                
                 <div className="flex flex-col items-end">
                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hidden sm:inline">Boutique active</span>
-                   {myStores.length > 1 ? (
+                   {allStores.length > 1 ? (
                      <select
-                       value={showAllStores ? '__ALL__' : (activeStore?.id || '')}
+                       value={activeStore?.id || ''}
                        onChange={(e) => {
-                         if (e.target.value === '__ALL__') {
-                           // Picking a store here used to silently force
-                           // showAllStores=false with no way back from this
-                           // same menu — a confirmatrice switching stores via
-                           // this dropdown (the only switcher she used) got
-                           // permanently narrowed to one store and its orders
-                           // in every OTHER assigned store appeared to vanish,
-                           // even though they were still correctly assigned to
-                           // her server-side. This option is the way back.
-                           setShowAllStores(true);
-                           return;
-                         }
-                         const selected = myStores.find(s => s.id === e.target.value);
+                         const selected = allStores.find(s => s.id === e.target.value);
                          if (selected) {
                            setActiveStore(selected);
                            setShowAllStores(false);
@@ -2005,8 +1382,7 @@ export default function AgentDashboard() {
                        }}
                        className="text-xs font-bold bg-transparent border-none outline-none text-right cursor-pointer text-indigo-600 hover:underline font-sans max-w-[120px] truncate"
                      >
-                       <option value="__ALL__">Toutes mes boutiques</option>
-                       {myStores.map(store => (
+                       {allStores.map(store => (
                          <option key={store.id} value={store.id}>
                            {store.name}
                          </option>
@@ -2018,7 +1394,11 @@ export default function AgentDashboard() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })}
+                  <div className="size-10 border rounded-xl flex items-center justify-center relative shrink-0">
+                    <Bell className="size-5 text-slate-400" />
+                    <div className="absolute top-0 right-0 size-2 bg-red-500 rounded-full border-2 border-white" />
+                  </div>
+                  <button onClick={() => queryClient.invalidateQueries({ queryKey: ['agent-orders'] })} 
                           className="p-2 border rounded-xl hover:bg-slate-50 transition-colors shrink-0">
                     <RefreshCw className={cn("size-4 text-slate-500", ordersQuery.isFetching && "animate-spin")} />
                   </button>
@@ -2026,15 +1406,9 @@ export default function AgentDashboard() {
              </div>
            </div>
            
-           {/* Row 1.5: Mobile-only search bar */}
-           <div className="relative w-full sm:hidden">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-             <Input placeholder="Rechercher (nom, n° commande, téléphone)..." className="pl-10 h-9 bg-slate-50 border-none shadow-none text-xs rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
-           </div>
-
            {/* Row 2: Mobile-only controls (Toggles & Plus button) */}
            <div className="flex items-center justify-between gap-2 w-full md:hidden border-t pt-2 mt-1">
-              {myStores.length > 1 ? (
+              {allStores.length > 1 ? (
                 <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border shrink-0">
                   <button
                     type="button"
@@ -2074,8 +1448,6 @@ export default function AgentDashboard() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-24 sm:pb-8 custom-scrollbar bg-slate-50/50">
           {activeSubModule === 'salary-details' ? (
             <SalaryView perf={perfQuery.data} user={user} />
-          ) : activeSubModule.startsWith('inventory-') ? (
-            <AgentInventoryView subModuleId={activeSubModule} />
           ) : activeSubModule === 'tracking-search' ? (
             <div className="max-w-2xl mx-auto space-y-6">
                <div className="p-8 bg-white border rounded-2xl shadow-sm space-y-4">
@@ -2124,9 +1496,7 @@ export default function AgentDashboard() {
                        </button>
                      )}
                      <span className="text-xs font-bold text-slate-400 border-l pl-3 ml-1 shrink-0">
-                       {groupedOrders.length !== filteredOrders.length
-                         ? `${groupedOrders.length} clients · ${filteredOrders.length} commandes`
-                         : `${filteredOrders.length} résultats`}
+                       {filteredOrders.length} résultats
                      </span>
                   </div>
                </div>
@@ -2143,77 +1513,30 @@ export default function AgentDashboard() {
                  </div>
                ) : (
                  <div className="grid grid-cols-1 gap-3">
-                    {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
+                    {filteredOrders.map(order => {
                       const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
-                      const isExpanded = expandedGroups.has(order.id);
-                      const isFirstOfStore = showStoreSections && (idx === 0 || arr[idx - 1].primary.store_id !== order.store_id);
-                      const storeSection = isFirstOfStore ? storeSections.find(s => s.storeId === (order.store_id || 'unknown')) : null;
                       return (
-                       <>
-                       {storeSection && (
-                         <div key={`section-${storeSection.storeId}`} className="flex items-center gap-2 pt-2 first:pt-0">
-                           <span className="text-xs font-black uppercase tracking-wider text-slate-500">🏪 {storeSection.storeName}</span>
-                           <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{storeSection.groups.length} client{storeSection.groups.length > 1 ? 's' : ''}</span>
-                           <div className="h-px flex-1 bg-slate-200" />
-                         </div>
-                       )}
-                       <div key={order.id} className="space-y-0">
-                       <button onClick={() => { setSelectedOrder(order); setDrawerInitialEdit(false); }}
-                               className={cn(
-                                 "w-full border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all group text-left",
-                                 related.length > 0 && isExpanded && "rounded-b-none border-b-0"
-                               )}
+                       <button key={order.id} onClick={() => { setSelectedOrder(order); setDrawerInitialEdit(false); }}
+                               className="w-full border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all group text-left"
                                style={{ backgroundColor: statusBg }}>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                              <div className="flex items-center gap-2 flex-wrap">
-                               {/* Origin (never changes) + status (evolves) — always both */}
-                               <OrderTypeBadge order={order} />
                                <StatusBadge status={order.status} />
                                <NrpBadge count={order.nrp_count || 0} />
-               <PendingBadge order={order} />
-                               {related.length > 0 ? (
-                                 <RelatedOrdersBadge
-                                   count={related.length}
-                                   expanded={isExpanded}
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     setExpandedGroups(prev => {
-                                       const next = new Set(prev);
-                                       if (next.has(order.id)) next.delete(order.id);
-                                       else next.add(order.id);
-                                       return next;
-                                     });
-                                   }}
-                                 />
-                               ) : order.is_duplicate && (
+                               {order.is_abandoned_cart && order.status !== 'ABANDONED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && (
                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0">
-                                   🟣 Doublon
+                                   Panier Récupéré
+                                 </span>
+                               )}
+                               {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
+                                 <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700 shrink-0">
+                                   Doublon
                                  </span>
                                )}
                                {order.store?.name && (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
                                     🏪 {order.store.name}
                                   </span>
-                                )}
-                               {order.livreur_id && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
-                                    🚴 {order.livreur?.name || 'Livreur assigné'}
-                                  </span>
-                                )}
-                               {order.tracking_number && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
-                                    📦 {order.tracking_number}
-                                  </span>
-                                )}
-                               {!!order.events_count && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
-                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
-                                    title="Voir l'historique complet de cette commande"
-                                  >
-                                    🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
-                                  </button>
                                 )}
                              </div>
                              <div>
@@ -2222,11 +1545,6 @@ export default function AgentDashboard() {
                                 {order.notes && (
                                   <p className="text-[9px] text-amber-700 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
                                     Note: {order.notes}
-                                  </p>
-                                )}
-                                {order.internal_notes && (
-                                  <p className="text-[9px] text-purple-700 bg-purple-50/70 border border-purple-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
-                                    🔒 Interne: {order.internal_notes}
                                   </p>
                                 )}
                                 {/* Items and variants summary */}
@@ -2276,61 +1594,7 @@ export default function AgentDashboard() {
                              </div>
                           </div>
                        </button>
-                       {/* Commandes liées du même client, repliées sous la ligne principale */}
-                       {related.length > 0 && isExpanded && (
-                         <div className="border border-t-0 border-purple-200 rounded-b-xl bg-purple-50/40 divide-y divide-purple-100">
-                           {related.map(rel => (
-                             <div key={rel.id} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                               <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                 <span className="text-[9px] font-black uppercase tracking-wider text-purple-600 shrink-0">↳ 🟣 Liée</span>
-                                 <OrderTypeBadge order={rel} size="xs" short />
-                                 <StatusBadge status={rel.status} />
-                                 <span className="text-[10px] font-bold text-slate-500 truncate">{formatOrderRef(rel, 'admin')}</span>
-                               </div>
-                               <div className="flex items-center gap-3 shrink-0">
-                                 <span className="text-[10px] font-bold text-slate-600">{formatPrice(rel.total)}</span>
-                                 <span className="text-[9px] font-bold text-slate-400 uppercase">
-                                   {new Date(rel.created_at).toLocaleDateString('fr-FR')} · {new Date(rel.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                                 </span>
-                                 <button
-                                   type="button"
-                                   onClick={() => { setSelectedOrder(rel); setDrawerInitialEdit(false); }}
-                                   className="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider text-amber-800 bg-amber-100 border border-amber-200 hover:bg-amber-200 transition-colors"
-                                 >
-                                   Ouvrir
-                                 </button>
-                               </div>
-                             </div>
-                           ))}
-                         </div>
-                       )}
-                       </div>
-                       </>
                      );})}
-                 </div>
-               )}
-               {/* Pagination — server-side, keeps older orders reachable */}
-               {((ordersQuery.data as any)?.totalPages ?? 1) > 1 && (
-                 <div className="flex flex-wrap items-center justify-center gap-3 mt-5 pb-2">
-                    <button
-                      type="button"
-                      disabled={page <= 1 || ordersQuery.isFetching}
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ← Précédent
-                    </button>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-3 py-2 bg-slate-100 rounded-xl">
-                      Page {page} / {(ordersQuery.data as any)?.totalPages} · {(ordersQuery.data as any)?.total} commandes
-                    </span>
-                    <button
-                      type="button"
-                      disabled={page >= ((ordersQuery.data as any)?.totalPages ?? 1) || ordersQuery.isFetching}
-                      onClick={() => setPage(p => p + 1)}
-                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Suivant →
-                    </button>
                  </div>
                )}
             </div>
@@ -2342,8 +1606,8 @@ export default function AgentDashboard() {
         <div className="fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur-md border-t flex items-center justify-around px-4 z-[40] shadow-lg">
           {[
             { id: 'orders-all', label: 'Toutes', icon: List },
-            { id: 'orders-new', label: 'Nouvelles', icon: Inbox },
-            { id: 'inventory-stock', label: 'Stock', icon: Warehouse },
+            { id: 'orders-pending', label: 'À confirmer', icon: Clock },
+            { id: 'orders-recall', label: 'Rappels', icon: PhoneCall },
             { id: 'salary-details', label: 'Salaire', icon: Banknote },
           ].map((tab) => {
             const isActive = activeSubModule === tab.id;
@@ -2354,8 +1618,6 @@ export default function AgentDashboard() {
                   setActiveSubModule(tab.id);
                   if (tab.id === 'salary-details') {
                     setActiveModule('performance');
-                  } else if (tab.id === 'inventory-stock') {
-                    setActiveModule('inventory');
                   } else {
                     setActiveModule('orders');
                   }

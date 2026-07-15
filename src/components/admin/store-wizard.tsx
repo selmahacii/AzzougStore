@@ -80,10 +80,6 @@ interface FormData {
   hero_font: 'bold' | 'normal' | 'light' | 'serif';
   assignment_active: boolean;
   assignment_logic: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
-  max_nrp_normal: number;
-  max_nrp_abandoned: number;
-  nrp_callback_hours: number;
-  auto_merge_duplicates: boolean;
 }
 
 const DEFAULT_FORM: FormData = {
@@ -112,10 +108,6 @@ const DEFAULT_FORM: FormData = {
   hero_font: 'bold',
   assignment_active: false,
   assignment_logic: 'MANUAL',
-  max_nrp_normal: 9,
-  max_nrp_abandoned: 12,
-  nrp_callback_hours: 2,
-  auto_merge_duplicates: true,
 };
 
 
@@ -170,10 +162,6 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           hero_font: initialData.theme_config?.heroFont || 'bold',
           assignment_active: initialData.assignment_active || false,
           assignment_logic: initialData.assignment_logic || 'MANUAL',
-          max_nrp_normal: initialData.operations_config?.max_nrp_normal ?? 9,
-          max_nrp_abandoned: initialData.operations_config?.max_nrp_abandoned ?? 12,
-          nrp_callback_hours: initialData.operations_config?.nrp_callback_hours ?? 2,
-          auto_merge_duplicates: initialData.operations_config?.auto_merge_duplicates ?? true,
         });
       } else {
         setForm(DEFAULT_FORM);
@@ -267,12 +255,6 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
       },
       assignment_active: form.assignment_active,
       assignment_logic: form.assignment_logic,
-      operations_config: {
-        max_nrp_normal: form.max_nrp_normal,
-        max_nrp_abandoned: form.max_nrp_abandoned,
-        nrp_callback_hours: form.nrp_callback_hours,
-        auto_merge_duplicates: form.auto_merge_duplicates,
-      },
     });
   };
 
@@ -386,224 +368,205 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
 
               {/* STEP 1 — Identité */}
               {step === 1 && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div>
                     <h3 className="text-base font-black text-slate-900 mb-1">Identité de votre boutique</h3>
                     <p className="text-sm text-slate-400 font-medium">Ces informations définissent votre marque. Prenez le temps d'être précis.</p>
                   </div>
 
-                  {/* CARD 1: NOM & ADRESSAGE */}
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-indigo-500" /> Nom & Adressage
-                    </h4>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom de la boutique *</label>
+                    <Input
+                      placeholder="Ex: Azzoug Sport, La Belle Maison..."
+                      value={form.name}
+                      onChange={e => {
+                        const name = e.target.value;
+                        setForm(f => ({ ...f, name, slug: f.slug || slugify(name) }));
+                      }}
+                      className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 text-sm font-bold px-5 focus-visible:ring-2"
+                    />
+                  </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom de la boutique *</label>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Slug URL *</label>
+                    <div className="flex overflow-hidden rounded-2xl border border-slate-100">
+                      <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100 whitespace-nowrap">azghub.com/</span>
                       <Input
-                        placeholder="Ex: Azzoug Sport, La Belle Maison..."
-                        value={form.name}
-                        onChange={e => {
-                          const name = e.target.value;
-                          setForm(f => ({ ...f, name, slug: f.slug || slugify(name) }));
-                        }}
-                        className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 text-sm font-bold px-5 focus-visible:ring-2"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Slug URL *</label>
-                      <div className="flex overflow-hidden rounded-2xl border border-slate-100">
-                        <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100 whitespace-nowrap">azghub.com/</span>
-                        <Input
-                          placeholder="ma-boutique"
-                          value={form.slug}
-                          onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
-                          className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Domaine personnalisé</label>
-                      <div className="flex overflow-hidden rounded-2xl border border-slate-100">
-                        <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100">https://</span>
-                        <Input
-                          placeholder="maboutique.dz (optionnel)"
-                          value={form.domain}
-                          onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
-                          className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
-                        />
-                      </div>
-                      <p className="text-[10px] text-slate-400 ml-1">En dev, un domaine test sera auto-généré: <span className="font-mono font-bold">{form.slug || 'slug'}.azghub.com</span></p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Description</label>
-                      <textarea
-                        value={form.description}
-                        onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                        placeholder="Décrivez votre boutique en 2-3 phrases..."
-                        className="w-full min-h-[80px] p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-sm font-medium resize-none outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                        placeholder="ma-boutique"
+                        value={form.slug}
+                        onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                        className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
                       />
                     </div>
                   </div>
 
-                  {/* CARD 2: MÉDIAS */}
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" /> Médias
-                    </h4>
-
-                    {/* Logo upload */}
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo de la boutique</label>
-                      <input
-                        ref={logoInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); }}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Domaine personnalisé</label>
+                    <div className="flex overflow-hidden rounded-2xl border border-slate-100">
+                      <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100">https://</span>
+                      <Input
+                        placeholder="maboutique.dz (optionnel)"
+                        value={form.domain}
+                        onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
+                        className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
                       />
-                      {form.logo_url ? (
-                        <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div className="size-16 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
-                            <img src={form.logo_url} alt="logo" className="size-full object-contain" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-slate-700 truncate">Logo uploadé</p>
-                            <p className="text-[10px] text-slate-400 truncate font-mono">{form.logo_url.split('/').pop()}</p>
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => logoInputRef.current?.click()}
-                              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border border-slate-200 rounded-xl hover:bg-slate-100 transition-all"
-                            >
-                              Changer
-                            </button>
-                            <button
-                              onClick={() => setForm(f => ({ ...f, logo_url: '' }))}
-                              className="size-7 rounded-xl border border-rose-100 hover:bg-rose-50 transition-all flex items-center justify-center text-rose-400"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => logoInputRef.current?.click()}
-                          disabled={uploadingLogo}
-                          className="w-full h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-1.5 group"
-                        >
-                          {uploadingLogo ? (
-                            <Loader2 className="size-5 animate-spin text-slate-400" />
-                          ) : (
-                            <>
-                              <div className="size-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                <Upload className="size-4 text-slate-400" />
-                              </div>
-                              <span className="text-[10px] font-bold text-slate-400">Cliquer pour uploader le logo</span>
-                              <span className="text-[9px] text-slate-300">PNG, JPG, WebP · max 10 MB</span>
-                            </>
-                          )}
-                        </button>
-                      )}
                     </div>
+                    <p className="text-[10px] text-slate-400 ml-1">En dev, un domaine test sera auto-généré: <span className="font-mono font-bold">{form.slug || 'slug'}.azghub.com</span></p>
+                  </div>
 
-                    {/* Banner / Hero media */}
-                    <div className="space-y-2 pt-4 border-t border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image ou vidéo Hero (bannière)</label>
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${selectedTemplate.accent}20`, color: selectedTemplate.accent }}>Grande section</span>
-                      </div>
-                      <input
-                        ref={bannerInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleBannerUpload(f); }}
-                      />
-                      {form.banner_url ? (
-                        <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
-                          {form.banner_is_video ? (
-                            <video src={form.banner_url} className="w-full h-36 object-cover" muted loop autoPlay />
-                          ) : (
-                            <img src={form.banner_url} alt="banner" className="w-full h-36 object-cover" />
-                          )}
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-all">
-                            <button
-                              onClick={() => bannerInputRef.current?.click()}
-                              className="px-4 py-2 text-[10px] font-black uppercase tracking-wider bg-white text-slate-900 rounded-xl hover:bg-slate-100 transition-all"
-                            >
-                              Changer
-                            </button>
-                            <button
-                              onClick={() => setForm(f => ({ ...f, banner_url: '', banner_is_video: false }))}
-                              className="size-8 rounded-xl bg-rose-500 text-white flex items-center justify-center"
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
-                          <div className="absolute top-2 right-2">
-                            <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/60 text-white text-[9px] font-bold">
-                              {form.banner_is_video ? <Video className="size-2.5" /> : <FileImage className="size-2.5" />}
-                              {form.banner_is_video ? 'Vidéo' : 'Image'}
-                            </span>
-                          </div>
+                  {/* Logo upload */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo de la boutique</label>
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); }}
+                    />
+                    {form.logo_url ? (
+                      <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="size-16 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
+                          <img src={form.logo_url} alt="logo" className="size-full object-contain" />
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => bannerInputRef.current?.click()}
-                          disabled={uploadingBanner}
-                          className="w-full h-32 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-2 group"
-                        >
-                          {uploadingBanner ? (
-                            <Loader2 className="size-5 animate-spin text-slate-400" />
-                          ) : (
-                            <>
-                              <div className="flex gap-2">
-                                <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                  <FileImage className="size-4 text-slate-400" />
-                                </div>
-                                <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                  <Video className="size-4 text-slate-400" />
-                                </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-700 truncate">Logo uploadé</p>
+                          <p className="text-[10px] text-slate-400 truncate font-mono">{form.logo_url.split('/').pop()}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => logoInputRef.current?.click()}
+                            className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border border-slate-200 rounded-xl hover:bg-slate-100 transition-all"
+                          >
+                            Changer
+                          </button>
+                          <button
+                            onClick={() => setForm(f => ({ ...f, logo_url: '' }))}
+                            className="size-7 rounded-xl border border-rose-100 hover:bg-rose-50 transition-all flex items-center justify-center text-rose-400"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => logoInputRef.current?.click()}
+                        disabled={uploadingLogo}
+                        className="w-full h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-1.5 group"
+                      >
+                        {uploadingLogo ? (
+                          <Loader2 className="size-5 animate-spin text-slate-400" />
+                        ) : (
+                          <>
+                            <div className="size-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                              <Upload className="size-4 text-slate-400" />
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-400">Cliquer pour uploader le logo</span>
+                            <span className="text-[9px] text-slate-300">PNG, JPG, WebP · max 10 MB</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Banner / Hero media */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image ou vidéo Hero (bannière)</label>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${selectedTemplate.accent}20`, color: selectedTemplate.accent }}>Grande section</span>
+                    </div>
+                    <input
+                      ref={bannerInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
+                      className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleBannerUpload(f); }}
+                    />
+                    {form.banner_url ? (
+                      <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
+                        {form.banner_is_video ? (
+                          <video src={form.banner_url} className="w-full h-36 object-cover" muted loop autoPlay />
+                        ) : (
+                          <img src={form.banner_url} alt="banner" className="w-full h-36 object-cover" />
+                        )}
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-all">
+                          <button
+                            onClick={() => bannerInputRef.current?.click()}
+                            className="px-4 py-2 text-[10px] font-black uppercase tracking-wider bg-white text-slate-900 rounded-xl hover:bg-slate-100 transition-all"
+                          >
+                            Changer
+                          </button>
+                          <button
+                            onClick={() => setForm(f => ({ ...f, banner_url: '', banner_is_video: false }))}
+                            className="size-8 rounded-xl bg-rose-500 text-white flex items-center justify-center"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                        <div className="absolute top-2 right-2">
+                          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/60 text-white text-[9px] font-bold">
+                            {form.banner_is_video ? <Video className="size-2.5" /> : <FileImage className="size-2.5" />}
+                            {form.banner_is_video ? 'Vidéo' : 'Image'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => bannerInputRef.current?.click()}
+                        disabled={uploadingBanner}
+                        className="w-full h-32 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-2 group"
+                      >
+                        {uploadingBanner ? (
+                          <Loader2 className="size-5 animate-spin text-slate-400" />
+                        ) : (
+                          <>
+                            <div className="flex gap-2">
+                              <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                                <FileImage className="size-4 text-slate-400" />
                               </div>
-                              <span className="text-[10px] font-bold text-slate-400">Photo ou vidéo hero</span>
-                              <span className="text-[9px] text-slate-300">JPG, PNG, MP4, WebM · Image 10 MB · Vidéo 100 MB</span>
-                            </>
-                          )}
-                        </button>
-                      )}
+                              <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
+                                <Video className="size-4 text-slate-400" />
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-slate-400">Photo ou vidéo hero</span>
+                            <span className="text-[9px] text-slate-300">JPG, PNG, MP4, WebM · Image 10 MB · Vidéo 100 MB</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Description</label>
+                    <textarea
+                      value={form.description}
+                      onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Décrivez votre boutique en 2-3 phrases..."
+                      className="w-full min-h-[80px] p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-sm font-medium resize-none outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
+                    />
+                  </div>
+
+                  {/* Contact */}
+                  <div className="space-y-3 pt-2 border-t border-slate-100">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contact & Réseaux</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input placeholder="Téléphone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
+                      <Input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
+                    </div>
+                    <Input placeholder="Adresse physique" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
+                    <div className="grid grid-cols-3 gap-3">
+                      <Input placeholder="Facebook URL" value={form.facebook} onChange={e => setForm(f => ({ ...f, facebook: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
+                      <Input placeholder="Instagram @" value={form.instagram} onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
+                      <Input placeholder="TikTok @" value={form.tiktok} onChange={e => setForm(f => ({ ...f, tiktok: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
                     </div>
                   </div>
 
-                  {/* CARD 3: CONTACT, RÉSEAUX & FOOTER */}
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500" /> Contact, Réseaux & Footer
-                    </h4>
-
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contact</label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Input placeholder="Téléphone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                        <Input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                      </div>
-                      <Input placeholder="Adresse physique" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                    </div>
-
-                    <div className="space-y-3 pt-4 border-t border-slate-100">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Réseaux sociaux</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        <Input placeholder="Facebook URL" value={form.facebook} onChange={e => setForm(f => ({ ...f, facebook: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                        <Input placeholder="Instagram @" value={form.instagram} onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                        <Input placeholder="TikTok @" value={form.tiktok} onChange={e => setForm(f => ({ ...f, tiktok: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 pt-4 border-t border-slate-100">
+                  {/* Footer */}
+                  <div className="space-y-3 pt-2 border-t border-slate-100">
+                    <div className="flex items-center gap-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pied de page (Footer)</label>
+                    </div>
+                    <div className="space-y-2">
                       <div className="relative">
                         <Type className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-300" />
                         <Input
@@ -897,68 +860,6 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                         </div>
                       </div>
                     )}
-                  </div>
-
-                  {/* ── Règles opérationnelles (NRP, rappels, doublons) ── */}
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-                    <div>
-                      <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-rose-500" /> Règles NRP & Rappels
-                      </h4>
-                      <p className="text-[10px] text-slate-400 mt-1">Plafonds de tentatives sans réponse et délai de rappel automatique, propres à cette boutique.</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Max NRP — commandes</label>
-                        <input
-                          type="number" min={1} max={50}
-                          value={form.max_nrp_normal}
-                          onChange={e => setForm(f => ({ ...f, max_nrp_normal: Math.max(1, parseInt(e.target.value) || 9) }))}
-                          className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400"
-                        />
-                        <p className="text-[9px] text-slate-400">Annulation auto après N tentatives</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Max NRP — paniers aband.</label>
-                        <input
-                          type="number" min={1} max={50}
-                          value={form.max_nrp_abandoned}
-                          onChange={e => setForm(f => ({ ...f, max_nrp_abandoned: Math.max(1, parseInt(e.target.value) || 12) }))}
-                          className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400"
-                        />
-                        <p className="text-[9px] text-slate-400">Plafond dédié aux paniers abandonnés</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Délai de rappel (heures)</label>
-                        <input
-                          type="number" min={0.5} max={72} step={0.5}
-                          value={form.nrp_callback_hours}
-                          onChange={e => setForm(f => ({ ...f, nrp_callback_hours: Math.max(0.5, parseFloat(e.target.value) || 2) }))}
-                          className="w-full h-11 px-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400"
-                        />
-                        <p className="text-[9px] text-slate-400">Rappel auto planifié après chaque NRP</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-amber-500" /> Fusion automatique des doublons
-                        </h4>
-                        <p className="text-[10px] text-slate-400 mt-1">Regroupe automatiquement les commandes du même téléphone en une seule commande opérationnelle (historique conservé).</p>
-                      </div>
-                      <button
-                        onClick={() => setForm(f => ({ ...f, auto_merge_duplicates: !f.auto_merge_duplicates }))}
-                        className={cn(
-                          "w-12 h-6 rounded-full transition-colors relative shrink-0",
-                          form.auto_merge_duplicates ? "bg-emerald-500" : "bg-slate-200"
-                        )}
-                      >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white absolute top-0.5 transition-all shadow-sm",
-                          form.auto_merge_duplicates ? "left-6" : "left-0.5"
-                        )} />
-                      </button>
-                    </div>
                   </div>
                 </div>
               )}

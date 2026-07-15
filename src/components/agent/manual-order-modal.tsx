@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft, X } from 'lucide-react';
+import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -43,53 +43,18 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
 
-  // Multi-line cart: each line = product + variant + qty + unit price.
-  // The selectors above act as the "line being composed".
-  type OrderLine = {
-    product_id: string; product_name: string; sku?: string;
-    quantity: number; unit_price: number;
-    color?: string; size?: string;
-  };
-  const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
-
   useEffect(() => {
     setSelectedColor('');
     setSelectedSize('');
   }, [selectedOrderProduct]);
 
-  // Fresh state each time the modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setOrderLines([]);
-      setSelectedOrderProduct(null);
-      setSelectedColor('');
-      setSelectedSize('');
-      setOrderQty(1);
-      setOrderPrice(0);
-      setOrderDiscount(0);
-      setDuplicateWarning(null);
-    }
-  }, [isOpen]);
-
   const colorVariants = selectedOrderProduct?.variants || [];
   const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColor);
   const sizeVariants = selectedColorVar?.sub_variants || [];
 
-  const selectedSku = selectedSize
-    ? sizeVariants.find((sv: any) => sv.value === selectedSize)?.sku
+  const selectedSku = selectedSize 
+    ? sizeVariants.find((sv: any) => sv.value === selectedSize)?.sku 
     : (selectedColorVar?.sku || selectedOrderProduct?.sku);
-
-  // Live per-variant availability, mirroring the backend's own reserve
-  // check (variant stock minus variant reserved) — showing the product's
-  // aggregate stock instead let a confirmatrice see e.g. "36 en stock" and
-  // pick a color/size combo that's actually at 0, only finding out after
-  // the save was rejected with "Stock insuffisant".
-  const hasVariants = colorVariants.length > 0;
-  const selectedSubVariant = selectedSize ? sizeVariants.find((sv: any) => sv.value === selectedSize) : null;
-  const effectiveVariant = selectedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
-  const variantAvailable = effectiveVariant
-    ? Number(effectiveVariant.stock || 0) - Number(effectiveVariant.reserved || 0)
-    : (!hasVariants ? Number(selectedOrderProduct?.stock || 0) - Number(selectedOrderProduct?.reserved_stock || 0) : null);
 
   useEffect(() => {
     if (selectedOrderProduct) {
@@ -107,12 +72,6 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     queryKey: ['admin-products-lite', storeId],
     enabled: isOpen && !!storeId,
     queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
-    // Stock moves in real time (other confirmatrices/orders reserve or
-    // confirm concurrently) — without this, a stock number fetched once when
-    // the modal opened could sit stale for the whole call, showing available
-    // when it no longer is by the time she hits save.
-    staleTime: 10_000,
-    refetchInterval: isOpen ? 20_000 : false,
   });
 
   const deliveryPartnersQuery = useQuery<any>({
@@ -124,9 +83,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     if (!selectedPartnerId || !orderWilaya) return;
     const fetchFee = async () => {
       try {
-        const pId = Array.from(new Set(
-          [selectedOrderProduct?.id, ...orderLines.map(l => l.product_id)].filter(Boolean)
-        )).join(',');
+        const pId = selectedOrderProduct?.id || '';
         const res = await apiFetch<any>(
           `/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${orderWilaya}&type=${deliveryType}&productIds=${pId}`
         );
@@ -139,76 +96,11 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
       }
     };
     fetchFee();
-  }, [selectedPartnerId, orderWilaya, deliveryType, selectedOrderProduct, orderLines]);
+  }, [selectedPartnerId, orderWilaya, deliveryType, selectedOrderProduct]);
 
   const checkDuplicatePhone = async (phone: string) => {
     // simplified or skipped
   };
-
-  // ── Cart line helpers ──────────────────────────────────────
-  const addCurrentLine = (): boolean => {
-    if (!selectedOrderProduct) {
-      toast.error('Sélectionnez un produit avant de l\'ajouter');
-      return false;
-    }
-    if ((selectedOrderProduct.variants?.length ?? 0) > 0 && !selectedColor) {
-      toast.error('Choisissez la variante (couleur / modèle) de ce produit');
-      return false;
-    }
-    if (selectedColor && sizeVariants.length > 0 && !selectedSize) {
-      toast.error('Choisissez la taille / option de cette variante');
-      return false;
-    }
-    const newLine: OrderLine = {
-      product_id: selectedOrderProduct.id,
-      product_name: selectedOrderProduct.name,
-      sku: selectedSku || selectedOrderProduct.sku,
-      quantity: orderQty,
-      unit_price: orderPrice,
-      color: selectedColor || undefined,
-      size: selectedSize || undefined,
-    };
-    setOrderLines(prev => {
-      // Same product + same variant → merge quantities instead of duplicating
-      const idx = prev.findIndex(l =>
-        l.product_id === newLine.product_id && l.color === newLine.color && l.size === newLine.size
-      );
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], quantity: next[idx].quantity + newLine.quantity, unit_price: newLine.unit_price };
-        return next;
-      }
-      return [...prev, newLine];
-    });
-    // Reset the composer for the next variant/product
-    setSelectedColor('');
-    setSelectedSize('');
-    setOrderQty(1);
-    return true;
-  };
-
-  const removeLine = (idx: number) => setOrderLines(prev => prev.filter((_, i) => i !== idx));
-
-  const lineToItem = (l: OrderLine) => ({
-    product_id: l.product_id,
-    product_name: l.product_name,
-    quantity: l.quantity,
-    unit_price: l.unit_price,
-    sku: l.sku,
-    variant_details: {
-      ...(l.color ? { Couleur: l.color, Color: l.color } : {}),
-      ...(l.size ? { Taille: l.size, Size: l.size } : {}),
-      ...(l.color || l.size ? { variant: [l.color, l.size].filter(Boolean).join(' / ') } : {}),
-    },
-  });
-
-  const linesSubtotal = orderLines.reduce((acc, l) => acc + l.quantity * l.unit_price, 0);
-  // The composed line counts toward the live total once it is complete
-  // (variant chosen when the product has variants) — matching what submit does.
-  const composerComplete = !!selectedOrderProduct
-    && !(((selectedOrderProduct?.variants?.length ?? 0) > 0) && !selectedColor)
-    && !(selectedColor && sizeVariants.length > 0 && !selectedSize);
-  const grandSubtotal = linesSubtotal + (composerComplete ? orderPrice * orderQty : 0);
 
   const createOrderMutation = useMutation({
     mutationFn: async (payload: any) => {
@@ -234,22 +126,14 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent showCloseButton={false} className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
-        <div className="sticky top-0 px-4 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white" style={{ backgroundColor: primaryColor }}>
-          <div className="space-y-1 min-w-0">
+      <DialogContent className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
+        <div className="sticky top-0 px-12 py-8 z-20 flex items-center justify-between text-white" style={{ backgroundColor: primaryColor }}>
+          <div className="space-y-1">
             <DialogTitle className="text-xl font-black uppercase tracking-widest text-white shadow-sm">Saisie de Commande</DialogTitle>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">Création d'une nouvelle commande manuelle</p>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0 self-start sm:self-auto">
+          <div className="flex items-center gap-4">
             <Badge variant="outline" className="border-white/30 text-white bg-white/10 uppercase text-[10px] font-black tracking-widest px-4 py-1.5 rounded-full backdrop-blur-sm">Saisie Manuelle (Confirmatrice)</Badge>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Fermer"
-              className="p-2 rounded-xl bg-white/15 hover:bg-white/25 transition-all shrink-0"
-            >
-              <X className="size-5 text-white" />
-            </button>
           </div>
         </div>
 
@@ -257,44 +141,13 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
           onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
-
-            // Build the final item list: added lines + the line still in the
-            // composer (auto-included when complete, so nothing gets lost).
-            const finalLines: OrderLine[] = [...orderLines];
-            if (selectedOrderProduct) {
-              const needsColor = (selectedOrderProduct.variants?.length ?? 0) > 0 && !selectedColor;
-              const needsSize = !!selectedColor && sizeVariants.length > 0 && !selectedSize;
-              if (needsColor || needsSize) {
-                if (finalLines.length === 0) {
-                  toast.error(needsColor ? 'Choisissez la variante (couleur / modèle) du produit' : 'Choisissez la taille / option de la variante');
-                  return;
-                }
-                // Composer incomplete but cart already has lines → ignore it
-              } else {
-                const composed: OrderLine = {
-                  product_id: selectedOrderProduct.id,
-                  product_name: selectedOrderProduct.name,
-                  sku: selectedSku || selectedOrderProduct.sku,
-                  quantity: orderQty,
-                  unit_price: orderPrice,
-                  color: selectedColor || undefined,
-                  size: selectedSize || undefined,
-                };
-                const idx = finalLines.findIndex(l =>
-                  l.product_id === composed.product_id && l.color === composed.color && l.size === composed.size
-                );
-                if (idx >= 0) finalLines[idx] = { ...finalLines[idx], quantity: finalLines[idx].quantity + composed.quantity };
-                else finalLines.push(composed);
-              }
-            }
-            if (finalLines.length === 0) {
-              toast.error('Veuillez sélectionner au moins un produit');
+            if (!selectedOrderProduct) {
+              toast.error('Veuillez selectionner un produit');
               return;
             }
-
             const commune = (formData.get('commune') as string) || '';
             const address = (formData.get('address') as string) || '';
-            const lineTotal = finalLines.reduce((acc, l) => acc + l.quantity * l.unit_price, 0);
+            const lineTotal = orderPrice * orderQty;
             const total = Math.max(0, lineTotal + deliveryFee - orderDiscount);
             const payload = {
               store_id: storeId,
@@ -312,16 +165,27 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
               source: orderSource,
                   carrier_id: selectedPartnerId || undefined,
                   assigned_to: user?.id || undefined, // Assigned directly to this agent
-                  items: finalLines.map(lineToItem),
+                  items: [{
+                    product_id: selectedOrderProduct.id,
+                    product_name: selectedOrderProduct.name,
+                    quantity: orderQty,
+                    unit_price: orderPrice,
+                    sku: selectedSku || selectedOrderProduct.sku,
+                    variant_details: {
+                      ...(selectedColor ? { Couleur: selectedColor, Color: selectedColor } : {}),
+                      ...(selectedSize ? { Taille: selectedSize, Size: selectedSize } : {}),
+                      ...(selectedColor || selectedSize ? { variant: [selectedColor, selectedSize].filter(Boolean).join(' / ') } : {})
+                    }
+                  }],
                   is_pack: isPack,
                   is_upsell: isUpsell,
                 };
                 createOrderMutation.mutate(payload);
               }}
-              className="p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white"
+              className="p-12 space-y-12 bg-white"
             >
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 text-slate-800">
-                 <div className="space-y-6 sm:space-y-10">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 lg:gap-12 text-slate-800">
+                 <div className="space-y-10">
                     <div className="flex items-center gap-4 border-l-2 pl-4" style={{ borderColor: primaryColor }}>
                        <span className="text-sm font-bold uppercase tracking-widest text-[#2D3436]">01. Coordonnées du Client</span>
                     </div>
@@ -341,7 +205,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                   const phone = e.target.value.trim();
                                   if (!phone || phone.length < 9) { setDuplicateWarning(null); return; }
                                   try {
-                                    const res = await apiFetch(`/api/v1/orders/check-duplicate?phone=${encodeURIComponent(phone)}&store_id=${storeId}`) as any;
+                                    const res = await apiFetch(`/orders/check-duplicate?phone=${encodeURIComponent(phone)}&store_id=${storeId}`) as any;
                                     if (res.is_duplicate) setDuplicateWarning(`Attention : Ce client a déjà commandé récemment (${res.order_number}) !`);
                                     else setDuplicateWarning(null);
                                   } catch(e) {}
@@ -455,15 +319,15 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           )}
                        </div>
 
-                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                       <div className="grid grid-cols-3 gap-4">
                           <div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">SKU</label>
                              <Input disabled value={selectedSku || selectedOrderProduct?.sku || '---'} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] italic text-xs h-12 rounded-xl" />
                           </div>
                           <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock{hasVariants ? ' (variante)' : ''}</label>
-                             <div className={cn("h-12 border flex items-center px-4 font-black rounded-xl font-mono text-[10px] uppercase", variantAvailable === null ? "bg-amber-50 text-amber-600 border-amber-100" : variantAvailable > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
-                                {variantAvailable === null ? (selectedOrderProduct ? 'Choisir variante' : '—') : `${variantAvailable} ${variantAvailable > 0 ? 'EN STOCK' : '— RUPTURE'}`}
+                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock</label>
+                             <div className={cn("h-12 border flex items-center px-4 font-black rounded-xl font-mono text-[10px] uppercase", (selectedOrderProduct?.stock ?? 0) > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
+                                {selectedOrderProduct?.stock ?? '—'} {selectedOrderProduct ? 'EN STOCK' : ''}
                              </div>
                           </div>
                           <div className="space-y-3">
@@ -472,7 +336,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           </div>
                        </div>
 
-                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                       <div className="grid grid-cols-3 gap-4">
                           <div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Prix Unitaire (DA) *</label>
                              <Input type="number" step="1" value={orderPrice} onChange={e => setOrderPrice(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4" />
@@ -485,46 +349,6 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Remise (DA)</label>
                              <Input name="discount" type="number" step="1" value={orderDiscount} onChange={e => setOrderDiscount(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4 text-[#2D3436]" />
                           </div>
-                       </div>
-
-                       {/* ── Panier multi-articles ── */}
-                       <div className="space-y-3">
-                          <button
-                            type="button"
-                            onClick={() => addCurrentLine()}
-                            className="w-full h-12 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 text-[#6C5CE7] text-xs font-black uppercase tracking-widest hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
-                          >
-                            <ShoppingCart className="size-4" />
-                            Ajouter cet article au panier {orderLines.length > 0 && `(${orderLines.length} article${orderLines.length > 1 ? 's' : ''})`}
-                          </button>
-                          {orderLines.length > 0 && (
-                            <div className="border border-slate-100 rounded-xl divide-y divide-slate-50 bg-slate-50/40">
-                              {orderLines.map((l, idx) => (
-                                <div key={idx} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-slate-800 truncate">
-                                      {l.product_name}
-                                      {(l.color || l.size) && (
-                                        <span className="ml-1.5 text-[10px] font-black text-[#6C5CE7]">
-                                          [{[l.color, l.size].filter(Boolean).join(' / ')}]
-                                        </span>
-                                      )}
-                                    </p>
-                                    <p className="text-[10px] font-bold text-slate-400">
-                                      {l.quantity} × {formatPrice(l.unit_price)} = {formatPrice(l.quantity * l.unit_price)}
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeLine(idx)}
-                                    className="text-[10px] font-black uppercase text-rose-500 hover:text-rose-700 shrink-0 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
-                                  >
-                                    Retirer
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                        </div>
 
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -575,20 +399,18 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                  </div>
               </div>
 
-              <div className="pt-6 sm:pt-8 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white">
+              <div className="pt-8 border-t flex items-center justify-between bg-white">
                  <div className="space-y-1 text-slate-800">
                     <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
                     <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
-                       {formatPrice(Math.max(0, grandSubtotal + deliveryFee - orderDiscount))}
+                       {formatPrice(Math.max(0, (orderPrice * orderQty) + deliveryFee - orderDiscount))}
                     </div>
                     <p className="text-[10px] text-neutral-400 font-bold">
-                      {orderLines.length > 0
-                        ? <>{orderLines.reduce((a, l) => a + l.quantity, 0)} article(s) au panier · </>
-                        : orderQty > 1 && <>{orderQty} × {formatPrice(orderPrice)} · </>}
+                      {orderQty > 1 && <>{orderQty} × {formatPrice(orderPrice)} · </>}
                       + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
                     </p>
                  </div>
-                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-6 sm:px-10 w-full sm:w-auto text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
+                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
                     {createOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : <>Enregistrer la Commande <ArrowRightLeft className="ml-3 size-4 group-hover:translate-x-1 transition-transform" /></>}
                  </Button>
               </div>

@@ -6,7 +6,7 @@ import {
   Phone, CheckCircle2, Truck, Package, Clock, AlertCircle,
   ChevronDown, MessageSquare, X, Bell, BellRing, Loader2,
   PhoneCall, PhoneMissed, PhoneOff, CalendarClock, User as UserIcon,
-  MapPin, Hash, RotateCcw, Eye, ClipboardList, Zap, Plus, ArrowRightLeft, Calendar, Search,
+  MapPin, Hash, RotateCcw, Eye, ClipboardList, Zap, Plus, ArrowRightLeft, Calendar,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { apiFetch } from '@/lib/api-client';
@@ -602,7 +602,6 @@ export default function AgentOrdersPage() {
   const qc = useQueryClient();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [filter, setFilter] = useState<'active' | 'reminder' | 'done'>('active');
-  const [search, setSearch] = useState('');
   const prevCountRef = useRef(0);
   const [hasNew, setHasNew] = useState(false);
 
@@ -624,7 +623,7 @@ export default function AgentOrdersPage() {
   const ordersQuery = useQuery<any>({
     queryKey: ['agent-orders', storeId, user?.id],
     queryFn: () => apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=100`),
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15000,
     enabled: !!storeId,
   });
 
@@ -737,17 +736,7 @@ export default function AgentOrdersPage() {
     return new Date(o.next_callback_time).getTime() <= Date.now();
   });
 
-  const baseDisplayOrders = filter === 'active' ? activeOrders : filter === 'reminder' ? reminderOrders : doneOrders;
-
-  const displayOrders = (() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return baseDisplayOrders;
-    return baseDisplayOrders.filter(o =>
-      o.order_number?.toLowerCase().includes(q) ||
-      o.customer_name?.toLowerCase().includes(q) ||
-      o.customer_phone?.includes(q),
-    );
-  })();
+  const displayOrders = filter === 'active' ? activeOrders : filter === 'reminder' ? reminderOrders : doneOrders;
 
   const newCount = orders.filter(o => o.status === 'NEW' || o.status === 'ASSIGNED').length;
   const confirmedToday = orders.filter(o => {
@@ -879,27 +868,6 @@ export default function AgentOrdersPage() {
         ))}
       </div>
 
-      {/* ── Search ── */}
-      <div className="px-6 pt-3 shrink-0">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-300 pointer-events-none" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher par n° de commande, nom ou téléphone..."
-            className="w-full h-10 pl-9 pr-9 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:border-slate-400 transition-colors"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
-            >
-              <X className="size-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* ── Orders List ── */}
       <div className="flex-1 overflow-y-auto px-6 pb-6 pt-3 space-y-3">
         {ordersQuery.isLoading && (
@@ -914,13 +882,9 @@ export default function AgentOrdersPage() {
               <Package className="size-8 text-slate-300" />
             </div>
             <p className="text-sm font-bold text-slate-400">
-              {search
-                ? 'Aucun résultat pour cette recherche'
-                : filter === 'active' ? 'Aucune commande en cours' : filter === 'reminder' ? 'Aucun rappel prévu pour le moment' : 'Aucune commande terminée'}
+              {filter === 'active' ? 'Aucune commande en cours' : filter === 'reminder' ? 'Aucun rappel prévu pour le moment' : 'Aucune commande terminée'}
             </p>
-            <p className="text-xs text-slate-300 mt-1">
-              {search ? 'Essayez un autre numéro, nom ou téléphone' : 'Les nouvelles commandes apparaîtront ici automatiquement'}
-            </p>
+            <p className="text-xs text-slate-300 mt-1">Les nouvelles commandes apparaîtront ici automatiquement</p>
           </div>
         )}
 

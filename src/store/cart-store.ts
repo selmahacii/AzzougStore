@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { CartItem, Product } from '@/lib/types';
-import { trackMetaEvent } from '@/lib/meta-pixel';
-import { useAppStore } from '@/store/app-store';
+import { trackMetaEvent } from '@/lib/meta-tracking';
 
 interface CartState {
   items: CartItem[];
@@ -56,18 +55,26 @@ export const useCartStore = create<CartState>()(
           });
         }
 
-        // Meta Pixel + CAPI AddToCart (shared event_id — Meta deduplicates)
-        try {
-          const storeId = useAppStore.getState().activeStore?.id;
-          trackMetaEvent('AddToCart', {
-            content_ids: [product.id],
-            content_name: product.name,
-            content_type: 'product',
-            contents: [{ id: product.id, quantity, item_price: customPrice ?? product.price }],
-            value: (customPrice ?? product.price) * quantity,
-            currency: 'DZD',
-          }, { storeId });
-        } catch { /* never break the cart */ }
+        void trackMetaEvent('AddToCart', {
+          content_ids: [product.id],
+          content_name: product.name,
+          content_type: 'product',
+          value: customPrice ?? product.price,
+          currency: 'DZD',
+          contents: [{ id: product.id, quantity }],
+        }, {
+          eventId: `addtocart-${product.id}-${Date.now()}`,
+          userData: {
+            email: typeof window !== 'undefined' ? window.localStorage.getItem('meta-email') || undefined : undefined,
+            phone: typeof window !== 'undefined' ? window.localStorage.getItem('meta-phone') || undefined : undefined,
+          },
+          contentName: product.name,
+          contentCategory: product.category ?? undefined,
+          contentType: 'product',
+          value: customPrice ?? product.price,
+          currency: 'DZD',
+          contents: [{ id: product.id, quantity }],
+        });
 
         set({ items });
       },
@@ -126,10 +133,17 @@ export const useCartStore = create<CartState>()(
 
       toggleWishlist: (productId) => {
         const current = get().wishlistItems;
-        if (current.includes(productId)) {
-          set({ wishlistItems: current.filter((id) => id !== productId) });
-        } else {
+        const willAdd = !current.includes(productId);
+        if (willAdd) {
           set({ wishlistItems: [...current, productId] });
+          void trackMetaEvent('AddToWishlist', {
+            content_ids: [productId],
+            content_type: 'product',
+          }, {
+            eventId: `addtowishlist-${productId}-${Date.now()}`,
+          });
+        } else {
+          set({ wishlistItems: current.filter((id) => id !== productId) });
         }
       },
 

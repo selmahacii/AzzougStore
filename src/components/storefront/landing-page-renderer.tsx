@@ -14,8 +14,6 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
-import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
-import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface LpData {
   id: string;
@@ -130,26 +128,19 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
-  const { t, dir } = useTranslation('ar');
+  const { t, dir, setLocale } = useTranslation();
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
 
-  // Meta Pixel + CAPI ViewContent — once per landing page product
   useEffect(() => {
-    const pid = data?.product?.id || (data as any)?.product_id;
-    if (!pid || !activeStore?.id) return;
-    if (!onceKey('ViewContent', String(pid))) return;
-    trackMetaEvent('ViewContent', {
-      content_ids: [String(pid)],
-      content_name: data.product_name || data.product?.name || data.headline,
-      content_type: 'product',
-      value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-      currency: 'DZD',
-    }, { storeId: activeStore.id });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.product?.id, activeStore?.id]);
+    setMounted(true);
+    if (setLocale) {
+      setLocale('ar');
+    }
+  }, [setLocale]);
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -356,6 +347,16 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers]);
 
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] text-slate-900 font-sans">
+        <div className="flex flex-col items-center gap-4">
+          <div className="size-8 rounded-full border-2 border-slate-200 border-t-slate-800 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
     if (el) {
@@ -534,13 +535,10 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     }}
                     onMouseLeave={() => setIsZoomed(false)}
                   >
-                    <img
-                      src={optimizeCloudinaryUrl(mainImgSrc, 800)}
-                      alt={productName || ''}
-                      loading="eager"
-                      fetchPriority="high"
-                      decoding="async"
-                      className="w-full h-auto transition-transform duration-100 ease-out"
+                    <img 
+                      src={mainImgSrc} 
+                      alt={productName || ''} 
+                      className="w-full h-auto transition-transform duration-100 ease-out" 
                       style={{
                         transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                         transform: isZoomed ? 'scale(2)' : 'scale(1)'
@@ -583,7 +581,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                     title={v.value}
                                   >
                                     {imgStyle ? (
-                                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} loading="lazy" decoding="async" />
+                                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} />
                                     ) : (
                                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                                     )}
@@ -649,7 +647,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       type="button"
                       className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
                     >
-                      <img src={optimizeCloudinaryUrl(url, 100)} className="size-full object-cover" alt={`Gallery ${i}`} loading="lazy" decoding="async" />
+                      <img src={url} className="size-full object-cover" alt={`Gallery ${i}`} />
                     </button>
                   ))}
                 </div>
@@ -763,7 +761,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
+                                                    <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )
@@ -889,7 +887,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {/* Publicity Banner */}
                 {data.banner_image_url && (
                   <div className="mt-6">
-                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 580)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                    <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
                   </div>
                 )}
 

@@ -8,16 +8,13 @@ import AdminSidebar from '@/components/admin/admin-sidebar';
 import SuperAdminSidebar from '@/components/admin/super-admin-sidebar';
 import AdminHeader from '@/components/admin/admin-header';
 import AgentDashboard from '@/components/agent/agent-dashboard';
-import LivreurDashboard from '@/components/livreur/livreur-dashboard';
 
 import SuperAdminViewRegistry from '@/components/admin/super-admin-view-registry';
 
 export function AdminApp() {
    const { sidebarCollapsed, setSidebarCollapsed, user: currentUser, activeStore, setAdminView, setQuickAdjustProduct } = useAppStore();
    const [isMobile, setIsMobile] = useState(false);
-   // Managers get the full operational interface — same as the super-admin.
-   // Platform-level administration stays super-admin-only on the backend.
-   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MANAGER';
+   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
    const isAgent = currentUser?.role === 'CONFIRMATEUR';
    const notifiedIdsRef = useRef<Set<string>>(new Set());
 
@@ -126,8 +123,6 @@ export function AdminApp() {
 
    // Confirmateur gets their own focused dashboard — no sidebar/header clutter
    if (isAgent) return <AgentDashboard />;
-   // Livreur: dedicated delivery view (his assigned parcels only)
-   if (currentUser?.role === 'LIVREUR') return <LivreurDashboard />;
 
    return (
       <div className="min-h-screen flex bg-[#F8F9FC]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>

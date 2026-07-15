@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
-import { GoogleFontsLoader } from "@/components/google-fonts-loader";
 
 // System fonts only — no Google Fonts network request
 const geistSans = { variable: "--font-geist-sans" };
@@ -14,7 +13,7 @@ export const metadata: Metadata = {
   title: "Azzougshop",
   description: "Gérez plusieurs boutiques en ligne depuis une seule interface",
   icons: {
-    icon: "/azzougshop_logo.png",
+    icon: "/iazzougshop_logo.png",
   },
 };
 
@@ -28,7 +27,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${outfit.variable} antialiased bg-background text-foreground`}
       >
-        <GoogleFontsLoader />
         <Providers>
           {children}
         </Providers>

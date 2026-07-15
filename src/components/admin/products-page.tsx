@@ -24,13 +24,13 @@ import {
    Boxes,
    Tag,
    Info,
-   FileText,
    CheckCircle2,
    ExternalLink,
    Image as ImageIcon,
    Settings2,
    Zap,
    Upload,
+   Link as LinkIcon,
    BarChart2,
    TrendingUp,
    TrendingDown,
@@ -218,10 +218,6 @@ export default function ProductsPage() {
    const { activeStore, user, allStores } = useAppStore();
    const storeId = activeStore?.id ?? '';
    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
-   // A delivery driver manages the catalog (create/edit/stock) but must never
-   // see cost price, margin or supplier purchase price — sensitive financial
-   // data unrelated to his job.
-   const canSeeFinancials = user?.role !== 'LIVREUR';
 
    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
    const [isCreating, setIsCreating] = useState(false);
@@ -248,7 +244,6 @@ export default function ProductsPage() {
 
    const [subProductSearch, setSubProductSearch] = useState('');
    const [isNewSubProductOpen, setIsNewSubProductOpen] = useState(false);
-   const [isUploadingSubProduct, setIsUploadingSubProduct] = useState(false);
    const [newSubProduct, setNewSubProduct] = useState({
       name: '', price: '', cost_price: '', sku: '', stock: '100', main_image: ''
    });
@@ -424,136 +419,7 @@ export default function ProductsPage() {
    const suppliers: any[] = suppliersQuery.data?.data ?? suppliersQuery.data?.suppliers ?? [];
    const carriers: any[] = carriersQuery.data?.data ?? carriersQuery.data?.partners ?? [];
 
-   // ── Quick supplier creation, inline, without leaving the product modal ──
-   // Uses the exact same POST /api/v1/suppliers/ the Fournisseurs module
-   // itself uses, so the new supplier is immediately real and shows up there
-   // too — not a product-local stand-in. Invalidating both the ['suppliers']
-   // family (Fournisseurs module + Finance sub-modules that list suppliers)
-   // and this modal's own ['suppliers-select'] keeps every screen in sync.
-   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
-   const [quickSupplierName, setQuickSupplierName] = useState('');
-   const [quickSupplierPhone, setQuickSupplierPhone] = useState('');
-   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
-
-   const handleQuickCreateSupplier = async () => {
-      if (!quickSupplierName.trim()) {
-         toast.error('Le nom du fournisseur est obligatoire');
-         return;
-      }
-      setIsCreatingSupplier(true);
-      try {
-         const res = await apiFetch<any>('/api/v1/suppliers/', {
-            method: 'POST',
-            body: JSON.stringify({
-               store_id: storeId,
-               name: quickSupplierName.trim(),
-               phone: quickSupplierPhone.trim() || undefined,
-            }),
-         });
-         const created = res?.data;
-         if (!created?.id) throw new Error('Réponse inattendue du serveur');
-         qc.invalidateQueries({ queryKey: ['suppliers-select'] });
-         qc.invalidateQueries({ queryKey: ['suppliers'] });
-         setF({ supplier_id: created.id, prod_supplier_name: created.name });
-         toast.success(`Fournisseur "${created.name}" créé et sélectionné`);
-         setIsAddingSupplier(false);
-         setQuickSupplierName('');
-         setQuickSupplierPhone('');
-      } catch (err: any) {
-         toast.error(err?.message || 'Échec de la création du fournisseur');
-      } finally {
-         setIsCreatingSupplier(false);
-      }
-   };
-
    const handleDelete = (product: Product) => setDeleteTarget(product);
-
-   // Shared by the desktop table's edit button AND the mobile card grid
-   // (tapping a card opens the edit dialog directly) — fetches the fresh
-   // product first so the form never opens on stale list data.
-   const openEditProduct = async (product: Product) => {
-      setFetchingProductId(product.id);
-      let freshProduct = product;
-      try {
-         const res = await apiFetch<any>(`/api/v1/products/${product.id}`);
-         if (res && (res.data || res.id)) {
-            freshProduct = res.data || res;
-         }
-      } catch (err) {
-         console.error("Failed to fetch fresh product details", err);
-      } finally {
-         setFetchingProductId(null);
-      }
-
-      setEditingProduct(freshProduct);
-      setOriginalMainImage(freshProduct.main_image || '');
-      setForm({
-         name: freshProduct.name || '',
-         category: freshProduct.category || '',
-         sku: freshProduct.sku || '',
-         barcode: freshProduct.barcode || '',
-         brand: freshProduct.brand || '',
-         slug: freshProduct.slug || '',
-         description: freshProduct.description || '',
-         price: String(freshProduct.price ?? ''),
-         compare_price: String(freshProduct.compare_price ?? ''),
-         cost_price: String(freshProduct.cost_price ?? ''),
-         stock: String(freshProduct.stock ?? ''),
-         low_stock_threshold: String(freshProduct.low_stock_threshold ?? '5'),
-         tags: freshProduct.tags?.join(', ') || '',
-         images: freshProduct.images || [],
-         is_active: freshProduct.is_active !== false,
-         main_image: freshProduct.main_image || '',
-         store_id: (freshProduct as any).store_id || storeId,
-         variants: freshProduct.variants || [],
-         // Production fields
-         supplier_id: (freshProduct as any).supplier_id || '',
-         production_source: (freshProduct as any).production_source || EMPTY_FORM.production_source,
-         prod_supplier_name: (freshProduct as any).prod_supplier_name || EMPTY_FORM.prod_supplier_name,
-         prod_batch_qty: String((freshProduct as any).prod_batch_qty || EMPTY_FORM.prod_batch_qty),
-         prod_fabric_cost: String((freshProduct as any).prod_fabric_cost || EMPTY_FORM.prod_fabric_cost),
-         prod_fabric_supplier: (freshProduct as any).prod_fabric_supplier || EMPTY_FORM.prod_fabric_supplier,
-         prod_accessories_cost: String((freshProduct as any).prod_accessories_cost || EMPTY_FORM.prod_accessories_cost),
-         prod_accessories_supplier: (freshProduct as any).prod_accessories_supplier || EMPTY_FORM.prod_accessories_supplier,
-         prod_labor_cut_cost: String((freshProduct as any).prod_labor_cut_cost || EMPTY_FORM.prod_labor_cut_cost),
-         prod_labor_cut_supplier: (freshProduct as any).prod_labor_cut_supplier || EMPTY_FORM.prod_labor_cut_supplier,
-         prod_labor_sew_cost: String((freshProduct as any).prod_labor_sew_cost || EMPTY_FORM.prod_labor_sew_cost),
-         prod_labor_sew_supplier: (freshProduct as any).prod_labor_sew_supplier || EMPTY_FORM.prod_labor_sew_supplier,
-         prod_labor_finish_cost: String((freshProduct as any).prod_labor_finish_cost || EMPTY_FORM.prod_labor_finish_cost),
-         prod_labor_finish_supplier: (freshProduct as any).prod_labor_finish_supplier || EMPTY_FORM.prod_labor_finish_supplier,
-         prod_packaging_cost: String((freshProduct as any).prod_packaging_cost || EMPTY_FORM.prod_packaging_cost),
-         prod_packaging_supplier: (freshProduct as any).prod_packaging_supplier || EMPTY_FORM.prod_packaging_supplier,
-         prod_transport_cost: String((freshProduct as any).prod_transport_cost || EMPTY_FORM.prod_transport_cost),
-         prod_transport_supplier: (freshProduct as any).prod_transport_supplier || EMPTY_FORM.prod_transport_supplier,
-         prod_other_cost: String((freshProduct as any).prod_other_cost || EMPTY_FORM.prod_other_cost),
-         prod_other_supplier: (freshProduct as any).prod_other_supplier || EMPTY_FORM.prod_other_supplier,
-         prod_notes: (freshProduct as any).prod_notes || EMPTY_FORM.prod_notes,
-         allowed_carriers: Array.isArray((freshProduct as any).allowed_carriers)
-            ? (freshProduct as any).allowed_carriers
-            : (typeof (freshProduct as any).allowed_carriers === 'string'
-               ? (function() { try { return JSON.parse((freshProduct as any).allowed_carriers); } catch { return []; } })()
-               : []),
-         prod_custom_charges: Array.isArray((freshProduct as any).prod_custom_charges)
-            ? (freshProduct as any).prod_custom_charges
-            : (typeof (freshProduct as any).prod_custom_charges === 'string'
-               ? (function() { try { return JSON.parse((freshProduct as any).prod_custom_charges); } catch { return []; } })()
-               : []),
-         delivery_fees: (function() {
-            const raw = (freshProduct as any).delivery_fees || (freshProduct as any).deliveryFees;
-            if (!raw) return { is_free: false, fees: {} };
-            if (typeof raw === 'string') {
-               try { return JSON.parse(raw); } catch { return { is_free: false, fees: {} }; }
-            }
-            return raw;
-         })(),
-         // Pack options
-         is_pack: (freshProduct as any).is_pack || false,
-         pack_items: (freshProduct as any).pack_items || [],
-         pack_charges: (freshProduct as any).pack_charges || [],
-         pack_margin: String((freshProduct as any).pack_margin || '0.0'),
-         pack_options: (freshProduct as any).pack_options || [],
-      });
-   };
 
    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -572,14 +438,13 @@ export default function ProductsPage() {
 
       setIsUploading(true);
       try {
-         const fd = new FormData();
-         fd.append('file', file);
-         if (form.main_image) fd.append('old_url', form.main_image);
+         const form = new FormData();
+         form.append('file', file);
          const res = await fetch('/api/v1/upload/image', {
             method: 'POST',
             credentials: 'include',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: fd,
+            body: form,
          });
          if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -599,48 +464,6 @@ export default function ProductsPage() {
       }
    };
 
-   const handleSubProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
-      if (!allowedTypes.includes(file.type)) {
-         toast.error('Type non supporté. Utilisez JPEG, PNG, WebP, GIF ou AVIF.');
-         return;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-         toast.error('Image trop volumineuse. Limite: 20 MB.');
-         return;
-      }
-
-      setIsUploadingSubProduct(true);
-      try {
-         const form = new FormData();
-         form.append('file', file);
-         if (newSubProduct.main_image) form.append('old_url', newSubProduct.main_image);
-         const res = await fetch('/api/v1/upload/image', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: form,
-         });
-         if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error((err as any)?.detail || 'Échec du téléversement');
-         }
-         const text = await res.text();
-         const data = text ? JSON.parse(text) : {};
-         if (!data.url) throw new Error('Le serveur n\'a pas renvoyé d\'URL d\'image');
-         setNewSubProduct(prev => ({ ...prev, main_image: data.url }));
-         toast.success('Image téléversée avec succès');
-      } catch (err: any) {
-         toast.error(err.message || 'Erreur lors du téléversement');
-      } finally {
-         setIsUploadingSubProduct(false);
-         e.target.value = '';
-      }
-   };
-
    const handleVariantImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -655,8 +478,6 @@ export default function ProductsPage() {
       try {
          const formData = new FormData();
          formData.append('file', file);
-         const oldVariantImg = form.variants[index]?.image;
-         if (oldVariantImg) formData.append('old_url', oldVariantImg);
          const res = await fetch('/api/v1/upload/image', {
             method: 'POST',
             credentials: 'include',
@@ -905,26 +726,6 @@ export default function ProductsPage() {
                   </div>
                </div>
                <div className="flex items-center gap-2 sm:gap-3">
-                  {isSuperAdmin && (
-                     <button
-                        onClick={async () => {
-                           try {
-                              const res = await apiFetch<any>('/api/v1/upload/migrate-to-cloudinary', { method: 'POST' });
-                              toast.success(res?.message || 'Images déjà à jour — rien à sécuriser.');
-                           } catch (err: any) {
-                              toast.error(err?.message || 'Échec de la sécurisation des images.');
-                           }
-                        }}
-                        // This now runs automatically every few minutes in the background
-                        // (see app/services/noest_sync.py sync_cloudinary_migration) — this
-                        // button just forces an immediate pass instead of waiting.
-                        title="Sécurise immédiatement les photos encore temporaires (normalement déjà fait automatiquement en arrière-plan)"
-                        className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white"
-                        style={{ borderColor: C.border }}
-                     >
-                        <Upload className="size-4 mr-1.5 mb-0.5 inline-block" /> Sécuriser les images
-                     </button>
-                  )}
                   <button onClick={() => toast.success('Export en cours...')} className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white" style={{ borderColor: C.border }}>
                      <Download className="size-4 mr-1.5 mb-0.5 inline-block" /> Exporter
                   </button>
@@ -999,9 +800,7 @@ export default function ProductsPage() {
 
          {/* ─── Data Table ─── */}
          <div className="bg-white rounded-[40px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            {/* Desktop table — on phones the card grid below replaces it
-                (a 1100px-wide table behind horizontal scroll was unusable). */}
-            <div className="hidden sm:block overflow-x-auto">
+            <div className="overflow-x-auto">
                <table className="w-full text-left min-w-[1100px]">
                   <thead>
                      <tr className="border-b bg-[#FAFBFD]" style={{ borderColor: C.border }}>
@@ -1056,7 +855,6 @@ export default function ProductsPage() {
                            </td>
                            <td className="px-4 sm:px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-1.5 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
-                                 {canSeeFinancials && (
                                  <button
                                     onClick={() => { setAnalyticsProduct(product); setAnalyticsPeriod('30d'); }}
                                     className="size-10 rounded-2xl flex items-center justify-center bg-white border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec]/20 hover:shadow-lg transition-all"
@@ -1064,10 +862,91 @@ export default function ProductsPage() {
                                  >
                                     <BarChart2 className="size-5" />
                                  </button>
-                                 )}
                                  <button
                                      disabled={fetchingProductId === product.id}
-                                     onClick={() => openEditProduct(product)}
+                                     onClick={async () => {
+                                        setFetchingProductId(product.id);
+                                        let freshProduct = product;
+                                        try {
+                                           const res = await apiFetch<any>(`/api/v1/products/${product.id}`);
+                                           if (res && (res.data || res.id)) {
+                                              freshProduct = res.data || res;
+                                           }
+                                        } catch (err) {
+                                           console.error("Failed to fetch fresh product details", err);
+                                        } finally {
+                                           setFetchingProductId(null);
+                                        }
+                                        
+                                        setEditingProduct(freshProduct);
+                                        setOriginalMainImage(freshProduct.main_image || '');
+                                        setForm({
+                                           name: freshProduct.name || '',
+                                           category: freshProduct.category || '',
+                                           sku: freshProduct.sku || '',
+                                           barcode: freshProduct.barcode || '',
+                                           brand: freshProduct.brand || '',
+                                           slug: freshProduct.slug || '',
+                                           description: freshProduct.description || '',
+                                           price: String(freshProduct.price ?? ''),
+                                           compare_price: String(freshProduct.compare_price ?? ''),
+                                           cost_price: String(freshProduct.cost_price ?? ''),
+                                           stock: String(freshProduct.stock ?? ''),
+                                           low_stock_threshold: String(freshProduct.low_stock_threshold ?? '5'),
+                                           tags: freshProduct.tags?.join(', ') || '',
+                                           images: freshProduct.images || [],
+                                           is_active: freshProduct.is_active !== false,
+                                           main_image: freshProduct.main_image || '',
+                                           store_id: (freshProduct as any).store_id || storeId,
+                                           variants: freshProduct.variants || [],
+                                           // Production fields
+                                           supplier_id: (freshProduct as any).supplier_id || '',
+                                           production_source: (freshProduct as any).production_source || EMPTY_FORM.production_source,
+                                           prod_supplier_name: (freshProduct as any).prod_supplier_name || EMPTY_FORM.prod_supplier_name,
+                                           prod_batch_qty: String((freshProduct as any).prod_batch_qty || EMPTY_FORM.prod_batch_qty),
+                                           prod_fabric_cost: String((freshProduct as any).prod_fabric_cost || EMPTY_FORM.prod_fabric_cost),
+                                           prod_fabric_supplier: (freshProduct as any).prod_fabric_supplier || EMPTY_FORM.prod_fabric_supplier,
+                                           prod_accessories_cost: String((freshProduct as any).prod_accessories_cost || EMPTY_FORM.prod_accessories_cost),
+                                           prod_accessories_supplier: (freshProduct as any).prod_accessories_supplier || EMPTY_FORM.prod_accessories_supplier,
+                                           prod_labor_cut_cost: String((freshProduct as any).prod_labor_cut_cost || EMPTY_FORM.prod_labor_cut_cost),
+                                           prod_labor_cut_supplier: (freshProduct as any).prod_labor_cut_supplier || EMPTY_FORM.prod_labor_cut_supplier,
+                                           prod_labor_sew_cost: String((freshProduct as any).prod_labor_sew_cost || EMPTY_FORM.prod_labor_sew_cost),
+                                           prod_labor_sew_supplier: (freshProduct as any).prod_labor_sew_supplier || EMPTY_FORM.prod_labor_sew_supplier,
+                                           prod_labor_finish_cost: String((freshProduct as any).prod_labor_finish_cost || EMPTY_FORM.prod_labor_finish_cost),
+                                           prod_labor_finish_supplier: (freshProduct as any).prod_labor_finish_supplier || EMPTY_FORM.prod_labor_finish_supplier,
+                                           prod_packaging_cost: String((freshProduct as any).prod_packaging_cost || EMPTY_FORM.prod_packaging_cost),
+                                           prod_packaging_supplier: (freshProduct as any).prod_packaging_supplier || EMPTY_FORM.prod_packaging_supplier,
+                                           prod_transport_cost: String((freshProduct as any).prod_transport_cost || EMPTY_FORM.prod_transport_cost),
+                                           prod_transport_supplier: (freshProduct as any).prod_transport_supplier || EMPTY_FORM.prod_transport_supplier,
+                                           prod_other_cost: String((freshProduct as any).prod_other_cost || EMPTY_FORM.prod_other_cost),
+                                           prod_other_supplier: (freshProduct as any).prod_other_supplier || EMPTY_FORM.prod_other_supplier,
+                                           prod_notes: (freshProduct as any).prod_notes || EMPTY_FORM.prod_notes,
+                                           allowed_carriers: Array.isArray((freshProduct as any).allowed_carriers) 
+                                              ? (freshProduct as any).allowed_carriers 
+                                              : (typeof (freshProduct as any).allowed_carriers === 'string' 
+                                                 ? (function() { try { return JSON.parse((freshProduct as any).allowed_carriers); } catch { return []; } })() 
+                                                 : []),
+                                           prod_custom_charges: Array.isArray((freshProduct as any).prod_custom_charges) 
+                                              ? (freshProduct as any).prod_custom_charges 
+                                              : (typeof (freshProduct as any).prod_custom_charges === 'string' 
+                                                 ? (function() { try { return JSON.parse((freshProduct as any).prod_custom_charges); } catch { return []; } })() 
+                                                 : []),
+                                           delivery_fees: (function() {
+                                              const raw = (freshProduct as any).delivery_fees || (freshProduct as any).deliveryFees;
+                                              if (!raw) return { is_free: false, fees: {} };
+                                              if (typeof raw === 'string') {
+                                                 try { return JSON.parse(raw); } catch { return { is_free: false, fees: {} }; }
+                                              }
+                                              return raw;
+                                           })(),
+                                           // Pack options
+                                           is_pack: (freshProduct as any).is_pack || false,
+                                           pack_items: (freshProduct as any).pack_items || [],
+                                           pack_charges: (freshProduct as any).pack_charges || [],
+                                           pack_margin: String((freshProduct as any).pack_margin || '0.0'),
+                                           pack_options: (freshProduct as any).pack_options || [],
+                                        });
+                                     }}
                                      className="size-10 rounded-2xl flex items-center justify-center bg-white border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec]/20 hover:shadow-lg transition-all"
                                   >
                                      {fetchingProductId === product.id ? (
@@ -1085,58 +964,6 @@ export default function ProductsPage() {
                      ))}
                   </tbody>
                </table>
-            </div>
-            {/* ── Mobile card grid — 2 per row, tap a card to edit ── */}
-            <div className="sm:hidden p-3">
-               {productsQuery.isLoading ? (
-                  <div className="grid grid-cols-2 gap-3">
-                     {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-44 rounded-2xl" />)}
-                  </div>
-               ) : products.length === 0 ? (
-                  <div className="py-20 text-center text-slate-300 font-bold uppercase tracking-widest">
-                     <Package className="size-14 mx-auto mb-3 opacity-40" /> Aucun produit
-                  </div>
-               ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                     {products.map((product) => (
-                        <button
-                           key={product.id}
-                           type="button"
-                           onClick={() => openEditProduct(product)}
-                           className="text-left bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm active:scale-[0.98] transition-transform"
-                        >
-                           <div className="h-24 bg-slate-50 flex items-center justify-center overflow-hidden relative">
-                              {product.main_image
-                                 ? <img src={product.main_image} alt={product.name} className="w-full h-full object-cover" />
-                                 : <Package className="size-8 text-slate-200" />}
-                              {fetchingProductId === product.id && (
-                                 <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-                                    <Loader2 className="size-5 animate-spin text-[#4b7bec]" />
-                                 </div>
-                              )}
-                              <span className={cn(
-                                 "absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase",
-                                 product.is_active !== false ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"
-                              )}>
-                                 {product.is_active !== false ? 'Actif' : 'Inactif'}
-                              </span>
-                           </div>
-                           <div className="p-2.5 space-y-1">
-                              <p className="text-[11px] font-black text-slate-800 leading-tight line-clamp-2">{product.name}</p>
-                              <div className="flex items-center justify-between gap-1">
-                                 <span className="text-[11px] font-black text-[#4b7bec] tabular-nums">{formatPrice(product.price)}</span>
-                                 <span className={cn(
-                                    "text-[9px] font-black px-1.5 py-0.5 rounded-md",
-                                    (product.stock ?? 0) > 0 ? "bg-slate-50 text-slate-500" : "bg-rose-50 text-rose-600"
-                                 )}>
-                                    Stock {product.stock ?? 0}
-                                 </span>
-                              </div>
-                           </div>
-                        </button>
-                     ))}
-                  </div>
-               )}
             </div>
 
             <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex items-center justify-between" style={{ borderColor: C.border }}>
@@ -1160,17 +987,13 @@ export default function ProductsPage() {
 
          {/* ─── Detail Oriented Product Modal ─── */}
          <Dialog open={!!editingProduct || isCreating} onOpenChange={(open) => { if (!open) { setEditingProduct(null); setIsCreating(false); setForm({ ...EMPTY_FORM }); } }}>
-            {/* Centered card on every breakpoint — deliberately NOT fullscreen
-                (was w-[100vw] h-[100dvh] on phones): a fixed, capped height
-                keeps the dialog stable when switching tabs, and the body
-                below scrolls internally. */}
             <DialogContent className="
-               w-[94vw] max-w-[1100px] h-[88dvh] max-h-[900px]
-               p-0 flex flex-col bg-slate-50 border-none shadow-2xl
-               rounded-[20px] sm:rounded-[2rem] overflow-hidden !outline-none
+               max-w-[1300px] w-[100vw] h-[100dvh] sm:w-[95vw] sm:h-[92dvh] 
+               p-0 flex flex-col bg-slate-50 border-none shadow-2xl 
+               rounded-none sm:rounded-[2rem] overflow-hidden !outline-none
             ">
                {/* ── Header ── */}
-               <div className="shrink-0 h-[64px] sm:h-20 px-4 sm:px-8 bg-white border-b border-slate-100 flex items-center justify-between z-20 shadow-sm relative">
+               <div className="shrink-0 h-[72px] sm:h-20 px-4 sm:px-8 bg-white border-b border-slate-100 flex items-center justify-between z-20 shadow-sm relative">
                   <div className="flex items-center gap-3 sm:gap-4">
                      <div className="size-10 sm:size-12 rounded-[14px] bg-indigo-50 flex items-center justify-center text-[#4b7bec]">
                         {editingProduct ? <Edit3 className="size-5 sm:size-6" /> : <Plus className="size-5 sm:size-6" />}
@@ -1185,7 +1008,7 @@ export default function ProductsPage() {
                      </div>
                   </div>
                   <div className="flex items-center gap-4">
-                     {editingProduct && canSeeFinancials && (
+                     {editingProduct && (
                         <div className="hidden sm:block px-4 py-1.5 bg-slate-50 rounded-xl border border-slate-100 shrink-0">
                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Marge Nette</p>
                            <p className="text-sm font-black text-[#20bf6b] mt-0.5">+{editingProduct.price > 0 ? ((editingProduct.price - (editingProduct.cost_price || 0)) / editingProduct.price * 100).toFixed(1) : '0.0'}%</p>
@@ -1201,10 +1024,7 @@ export default function ProductsPage() {
                   <Tabs defaultValue="base" className="flex-1 flex flex-col md:flex-row w-full h-full min-h-0 relative">
                      {/* ── Sidebar (TabsList) ── */}
                      <div className="shrink-0 md:w-[240px] lg:w-[280px] bg-white md:border-r border-slate-100 flex flex-col z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] relative">
-                        {/* Phones: wrap so EVERY tab stays visible at once —
-                            the old single-row horizontal scroll hid the last
-                            tabs entirely ("Livraison" was undiscoverable). */}
-                        <TabsList className="h-auto p-2.5 md:p-6 flex flex-row flex-wrap md:flex-col gap-1.5 md:gap-2 md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-full md:min-w-0">
+                        <TabsList className="h-auto p-4 md:p-6 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-max md:w-full min-w-full md:min-w-0">
                            {([
                               { value: 'base',      icon: Info,      label: 'Infos',     labelFull: 'Informations' },
                               ...(form.is_pack ? [{ value: 'pack', icon: Boxes, label: 'Pack', labelFull: 'Composition Pack' }] : []),
@@ -1213,7 +1033,7 @@ export default function ProductsPage() {
                               { value: 'logistics', icon: Truck,     label: 'Livraison', labelFull: 'Logistique' },
                            ] as any[]).map(({ value, icon: Icon, label, labelFull }) => (
                               <TabsTrigger key={value} value={value}
-                                 className="h-10 md:h-14 px-3 md:px-5 justify-start gap-2 md:gap-3 rounded-[14px] data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-500 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-black uppercase tracking-[0.1em] md:tracking-[0.15em] text-[10px] sm:text-[11px] shadow-none border-none group grow md:grow-0"
+                                 className="h-12 md:h-14 px-4 md:px-5 justify-start gap-3 rounded-[14px] data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-500 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-black uppercase tracking-[0.15em] text-[10px] sm:text-[11px] shadow-none border-none group"
                               >
                                  <Icon className="size-4 shrink-0 transition-colors group-data-[state=active]:text-white" />
                                  <span className="md:hidden">{label}</span>
@@ -1226,26 +1046,18 @@ export default function ProductsPage() {
                      {/* ── Main Scrollable Content ── */}
                      <div className="flex-1 flex flex-col min-h-0 bg-[#F8FAFC] relative">
                         <div className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-10 custom-scrollbar relative">
-                        <TabsContent value="base" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
-                           {/* CARD 1: CLASSIFICATION */}
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
-                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                              <Package className="size-4 text-[#4b7bec]" /> Classification & Boutique
-                           </h4>
+                        <TabsContent value="base" forceMount className="mt-0 space-y-6 sm:space-y-8 data-[state=inactive]:hidden">
                            {/* ── Type de Produit selector ── */}
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Type de Produit *</label>
-                              {/* Stacked on phones: two side-by-side cards in the narrow
-                                  centered dialog wrapped their uppercase-tracked text
-                                  almost character-by-character. */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                              <div className="grid grid-cols-2 gap-4">
                                  <button
                                     type="button"
                                     onClick={() => setF({ is_pack: false })}
                                     className={cn(
-                                       "p-4 sm:p-5 rounded-[20px] border-2 text-left transition-all flex items-center sm:items-start gap-3 sm:gap-4",
-                                       !form.is_pack
-                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]"
+                                       "p-5 rounded-[20px] border-2 text-left transition-all flex items-start gap-4",
+                                       !form.is_pack 
+                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]" 
                                           : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
                                     )}
                                  >
@@ -1255,18 +1067,18 @@ export default function ProductsPage() {
                                     )}>
                                        <Package className="size-5" />
                                     </div>
-                                    <div className="min-w-0">
+                                    <div>
                                        <p className="text-sm font-black uppercase tracking-tight">Produit Simple</p>
-                                       <p className="text-[10px] font-bold text-slate-400 mt-1 normal-case sm:uppercase sm:tracking-wider">Un article unique avec son propre stock & options</p>
+                                       <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Un article unique avec son propre stock & options</p>
                                     </div>
                                  </button>
                                  <button
                                     type="button"
                                     onClick={() => setF({ is_pack: true })}
                                     className={cn(
-                                       "p-4 sm:p-5 rounded-[20px] border-2 text-left transition-all flex items-center sm:items-start gap-3 sm:gap-4",
-                                       form.is_pack
-                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]"
+                                       "p-5 rounded-[20px] border-2 text-left transition-all flex items-start gap-4",
+                                       form.is_pack 
+                                          ? "border-[#4b7bec] bg-[#4b7bec]/5 text-[#4b7bec]" 
                                           : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
                                     )}
                                  >
@@ -1276,9 +1088,9 @@ export default function ProductsPage() {
                                     )}>
                                        <Boxes className="size-5" />
                                     </div>
-                                    <div className="min-w-0">
+                                    <div>
                                        <p className="text-sm font-black uppercase tracking-tight">Pack / Upsell</p>
-                                       <p className="text-[10px] font-bold text-slate-400 mt-1 normal-case sm:uppercase sm:tracking-wider">Un bundle regroupant plusieurs produits</p>
+                                       <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Un bundle regroupant plusieurs produits</p>
                                     </div>
                                  </button>
                               </div>
@@ -1321,13 +1133,7 @@ export default function ProductsPage() {
                                  )}
                               </div>
                            )}
-                           </div>
 
-                           {/* CARD 2: INFORMATIONS PRODUIT */}
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
-                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                              <FileText className="size-4 text-[#4b7bec]" /> Identité Produit
-                           </h4>
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                               <div className="space-y-3">
                                  <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Nom commercial de l'article *</label>
@@ -1441,15 +1247,9 @@ export default function ProductsPage() {
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Description Technique & Marketing</label>
                               <textarea value={form.description} onChange={e => setF({ description: e.target.value })} placeholder="Décrivez les fonctionnalités clés, matières et avantages..." className="w-full min-h-[160px] p-6 rounded-[24px] border border-slate-100 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-50 text-sm font-medium transition-all outline-none resize-none" />
                            </div>
-                           </div>
 
-                           {/* CARD 3: MÉDIA */}
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
-                           <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                              <ImageIcon className="size-4 text-[#4b7bec]" /> Médias
-                           </h4>
                            {/* ── Image principale ── */}
-                           <div className="space-y-4">
+                           <div className="space-y-4 pt-8 border-t border-slate-100">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Image Principale (HD) (Photo de couverture) *</label>
 
                               {/* Preview */}
@@ -1506,14 +1306,28 @@ export default function ProductsPage() {
                                        />
                                     </label>
 
+                                    {/* OR: URL input */}
+                                    <div className="flex items-center gap-2">
+                                       <div className="h-px flex-1 bg-slate-100" />
+                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ou</span>
+                                       <div className="h-px flex-1 bg-slate-100" />
+                                    </div>
+                                    <div className="relative">
+                                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+                                       <Input
+                                          value={form.main_image}
+                                          placeholder="https://example.com/image.jpg"
+                                          className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-12 font-mono text-xs"
+                                          onChange={(e) => setF({ main_image: e.target.value })}
+                                       />
+                                    </div>
                                     <p className="text-[10px] text-slate-400 ml-1">JPEG, PNG, WebP, GIF, AVIF — max 20 MB</p>
                                  </div>
                               </div>
                            </div>
-                           </div>
 
                            {/* ── Variantes & Précision ── */}
-                           <div className="space-y-6">
+                           <div className="pt-8 border-t border-slate-100 space-y-6">
                               <div className="p-6 bg-[#F0F5FF] rounded-[32px] border border-[#4b7bec]/10 flex items-start gap-4">
                                  <div className="size-12 rounded-2xl bg-[#4b7bec] flex items-center justify-center shrink-0 shadow-lg shadow-indigo-200">
                                     <Zap className="size-6 text-white" />
@@ -1532,43 +1346,13 @@ export default function ProductsPage() {
                                              <Badge className="bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest px-3 py-1">Variante #{i + 1}</Badge>
                                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{v.name}: {v.value}</span>
                                           </div>
-                                          <div className="flex items-center gap-1.5">
-                                             {/* Order shown here drives display order everywhere this
-                                                 product renders (storefront, landing page, admin). */}
-                                             <button
-                                               type="button"
-                                               disabled={i === 0}
-                                               title="Déplacer avant"
-                                               onClick={() => {
-                                                  const next = [...form.variants];
-                                                  [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                                                  setF({ variants: next });
-                                               }}
-                                               className="size-8 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                                             >
-                                                <ChevronLeft className="size-4" />
-                                             </button>
-                                             <button
-                                               type="button"
-                                               disabled={i === form.variants.length - 1}
-                                               title="Déplacer après"
-                                               onClick={() => {
-                                                  const next = [...form.variants];
-                                                  [next[i], next[i + 1]] = [next[i + 1], next[i]];
-                                                  setF({ variants: next });
-                                               }}
-                                               className="size-8 rounded-xl bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                                             >
-                                                <ChevronRight className="size-4" />
-                                             </button>
-                                             <button
-                                               type="button"
-                                               onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
-                                               className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
-                                             >
-                                                <Trash2 className="size-4" />
-                                             </button>
-                                          </div>
+                                          <button 
+                                            type="button"
+                                            onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
+                                            className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
+                                          >
+                                             <Trash2 className="size-4" />
+                                          </button>
                                        </div>
                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                           <div className="space-y-1.5">
@@ -1836,6 +1620,16 @@ export default function ProductsPage() {
                                                   disabled={uploadingVariantIdx !== null}
                                                 />
                                              </label>
+                                             <Input
+                                                value={v.image || ''}
+                                                onChange={e => {
+                                                   const next = [...form.variants];
+                                                   next[i].image = e.target.value;
+                                                   setF({ variants: next });
+                                                }}
+                                                placeholder="Ou coller une URL image"
+                                                className="h-11 rounded-xl border-slate-100 bg-slate-50/30 font-mono text-[9px] flex-1 min-w-0"
+                                             />
                                           </div>
                                        </div>
                                     </div>
@@ -1863,55 +1657,21 @@ export default function ProductsPage() {
                                     )}
                                  </div>
 
-                                 {/* Thumbnails grid — first photo is the main/cover image shown
-                                     everywhere (storefront, landing page, listings). Reorder with
-                                     the arrows to control display order without re-uploading. */}
+                                 {/* Thumbnails grid */}
                                  {form.images.length > 0 && (
                                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                                       {form.images.map((url, i) => {
-                                          const moveImage = (from: number, to: number) => {
-                                             if (to < 0 || to >= form.images.length) return;
-                                             const next = [...form.images];
-                                             const [moved] = next.splice(from, 1);
-                                             next.splice(to, 0, moved);
-                                             setF({ images: next });
-                                          };
-                                          return (
-                                             <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                                                <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
-                                                {i === 0 && (
-                                                   <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md bg-slate-900/70 text-white text-[8px] font-black uppercase tracking-wider">Principale</span>
-                                                )}
-                                                <div className="absolute top-1 left-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                                                   <button
-                                                      type="button"
-                                                      disabled={i === 0}
-                                                      onClick={() => moveImage(i, i - 1)}
-                                                      title="Déplacer avant"
-                                                      className="size-5 rounded-full bg-slate-900/70 text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                                                   >
-                                                      <ChevronLeft className="size-3" />
-                                                   </button>
-                                                   <button
-                                                      type="button"
-                                                      disabled={i === form.images.length - 1}
-                                                      onClick={() => moveImage(i, i + 1)}
-                                                      title="Déplacer après"
-                                                      className="size-5 rounded-full bg-slate-900/70 text-white flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                                                   >
-                                                      <ChevronRight className="size-3" />
-                                                   </button>
-                                                </div>
-                                                <button
-                                                   type="button"
-                                                   onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
-                                                   className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
-                                                >
-                                                   <X className="size-3" />
-                                                </button>
-                                             </div>
-                                          );
-                                       })}
+                                       {form.images.map((url, i) => (
+                                          <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                                             <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
+                                             <button
+                                                type="button"
+                                                onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
+                                                className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
+                                             >
+                                                <X className="size-3" />
+                                             </button>
+                                          </div>
+                                       ))}
                                     </div>
                                  )}
 
@@ -1938,8 +1698,8 @@ export default function ProductsPage() {
                            )}
                         </TabsContent>
 
-                        <TabsContent value="pricing" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm">
+                        <TabsContent value="pricing" forceMount className="mt-0 space-y-6 sm:space-y-8 data-[state=inactive]:hidden">
+                           <div className="bg-[#F8F9FC] rounded-2xl sm:rounded-[32px] p-4 sm:p-8 border border-slate-100">
                               <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-4 sm:mb-6 flex items-center gap-2">
                                  <DollarSign className="size-4 text-[#4b7bec]" /> Ingénierie Financière
                               </h4>
@@ -1965,11 +1725,8 @@ export default function ProductsPage() {
                               </div>
                            </div>
 
-                           {/* ── Source de fabrication (coûts, marges, fournisseurs) ──
-                               Entièrement masqué pour le livreur : ce sont des données
-                               financières internes sans rapport avec la livraison. ── */}
-                           {canSeeFinancials && (
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
+                           {/* ── Source de fabrication ── */}
+                           <div className="bg-[#F8F9FC] rounded-2xl sm:rounded-[32px] p-4 sm:p-8 border border-slate-100 space-y-6">
                               <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
                                  <Factory className="size-4 text-[#e17055]" /> Source de fabrication
                               </h4>
@@ -2030,55 +1787,6 @@ export default function ProductsPage() {
                                              ))}
                                           </SelectContent>
                                        </Select>
-
-                                       {!isAddingSupplier ? (
-                                          <button
-                                             type="button"
-                                             onClick={() => setIsAddingSupplier(true)}
-                                             className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-[#4b7bec] hover:text-[#3867d6] transition-colors"
-                                          >
-                                             <Plus className="size-3.5" /> Nouveau fournisseur
-                                          </button>
-                                       ) : (
-                                          <div className="p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100 space-y-3">
-                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                <Input
-                                                   value={quickSupplierName}
-                                                   onChange={e => setQuickSupplierName(e.target.value)}
-                                                   placeholder="Nom du fournisseur *"
-                                                   className="h-11 rounded-xl border-slate-100 bg-white font-bold text-sm"
-                                                   autoFocus
-                                                />
-                                                <Input
-                                                   value={quickSupplierPhone}
-                                                   onChange={e => setQuickSupplierPhone(e.target.value)}
-                                                   placeholder="Téléphone (optionnel)"
-                                                   className="h-11 rounded-xl border-slate-100 bg-white font-bold text-sm"
-                                                />
-                                             </div>
-                                             <div className="flex items-center gap-2">
-                                                <Button
-                                                   type="button"
-                                                   onClick={handleQuickCreateSupplier}
-                                                   disabled={isCreatingSupplier}
-                                                   className="h-10 px-5 rounded-xl bg-[#4b7bec] hover:bg-[#3867d6] text-white text-[11px] font-black uppercase tracking-widest"
-                                                >
-                                                   {isCreatingSupplier ? <Loader2 className="size-4 animate-spin" /> : 'Créer et sélectionner'}
-                                                </Button>
-                                                <button
-                                                   type="button"
-                                                   onClick={() => { setIsAddingSupplier(false); setQuickSupplierName(''); setQuickSupplierPhone(''); }}
-                                                   className="h-10 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"
-                                                >
-                                                   Annuler
-                                                </button>
-                                             </div>
-                                             <p className="text-[10px] text-slate-400 font-medium">
-                                                Créé instantanément et synchronisé avec le module Fournisseurs — pour les détails complets (adresse, conditions de paiement...), modifiez-le ensuite depuis ce module.
-                                             </p>
-                                          </div>
-                                       )}
-
                                        {form.supplier_id && suppliers.find((s: any) => s.id === form.supplier_id) && (() => {
                                           const sup = suppliers.find((s: any) => s.id === form.supplier_id);
                                           return (
@@ -2092,9 +1800,7 @@ export default function ProductsPage() {
                                        })()}
                                     </div>
 
-                                    {/* PAF input + marge — masqués pour le livreur (données financières
-                                        sans rapport avec son rôle) */}
-                                    {canSeeFinancials && (
+                                    {/* PAF input */}
                                     <div className="space-y-2">
                                        <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em]">Prix d'Achat Fournisseur (PAF)</label>
                                        <div className="relative">
@@ -2104,17 +1810,16 @@ export default function ProductsPage() {
                                           <span className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-rose-200">DA</span>
                                        </div>
                                     </div>
-                                    )}
 
                                     {/* Live margin card for imported mode */}
-                                    {canSeeFinancials && (() => {
+                                    {(() => {
                                        const sellPrice = parseInt(form.price || '0');
                                        const costPrice = parseInt(form.cost_price || '0');
                                        const margin = sellPrice - costPrice;
                                        const marginPct = sellPrice > 0 ? ((margin / sellPrice) * 100).toFixed(1) : '—';
                                        if (!sellPrice && !costPrice) return null;
                                        return (
-                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm">
+                                          <div className="grid grid-cols-3 gap-3 p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm">
                                              <div className="text-center">
                                                 <p className="text-xl font-black text-rose-500">{costPrice.toLocaleString()} DA</p>
                                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-1">Coût d'achat (PAF)</p>
@@ -2370,7 +2075,7 @@ export default function ProductsPage() {
                                        const marginPct = parseInt(form.price || '0') > 0
                                           ? ((margin / parseInt(form.price)) * 100).toFixed(1) : '—';
                                        return (
-                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 sm:p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm mt-4">
+                                          <div className="grid grid-cols-3 gap-3 p-5 bg-white rounded-3xl border-2 border-slate-100 shadow-sm mt-4">
                                              <div className="text-center">
                                                 <p className="text-xl font-black text-rose-500">{total.toLocaleString()} DA</p>
                                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-1">Coût total du lot</p>
@@ -2403,9 +2108,8 @@ export default function ProductsPage() {
                                  </div>
                               )}
                            </div>
-                           )}
 
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm">
+                           <div className="bg-white rounded-2xl sm:rounded-[32px] p-4 sm:p-8 border border-slate-100 shadow-sm">
                               <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight mb-4 sm:mb-6 flex items-center gap-2">
                                  <Boxes className="size-4 text-[#20bf6b]" /> Logistique & Stock
                               </h4>
@@ -2438,47 +2142,38 @@ export default function ProductsPage() {
 
 
 
-                        <TabsContent value="advanced" forceMount className="mt-0 space-y-8 data-[state=inactive]:hidden">
-                           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-sm space-y-6">
-                              <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                                 <Zap className="size-4 text-[#4b7bec]" /> Référencement & Options
-                              </h4>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                                 <div className="space-y-3">
-                                    <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Slug URL Personnalisé</label>
-                                    <Input value={form.slug} onChange={e => setF({ slug: e.target.value })} placeholder="chemise-riviera" className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-mono text-sm" />
-                                    <p className="text-[10px] text-slate-400 font-medium ml-1">
-                                       Sois précis(e) — le module Meta Ads s'en sert pour deviner à quel produit rattacher une campagne quand son nom ne le dit pas explicitement. Un slug trop générique (ex: "chemise") peut absorber par erreur le budget d'un autre produit similaire (ex: "chemise-riviera").
-                                    </p>
-                                 </div>
-                                 <div className="space-y-3">
-                                    <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Marque / Brand</label>
-                                    <Input value={form.brand} onChange={e => setF({ brand: e.target.value })} placeholder="Ex: Nike, Heritage..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-black px-6" />
-                                 </div>
-                              </div>
-
+                        <TabsContent value="advanced" forceMount className="mt-0 space-y-6 sm:space-y-8 data-[state=inactive]:hidden">
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                               <div className="space-y-3">
-                                 <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Tags & Mots-clés (Recherche)</label>
-                                 <Input value={form.tags} onChange={e => setF({ tags: e.target.value })} placeholder="Promo, Nouvelle Collection, Waterproof..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 px-6 font-bold" />
+                                 <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Slug URL Personnalisé</label>
+                                 <Input value={form.slug} onChange={e => setF({ slug: e.target.value })} placeholder="basket-pro-v2" className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-mono text-sm" />
                               </div>
+                              <div className="space-y-3">
+                                 <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Marque / Brand</label>
+                                 <Input value={form.brand} onChange={e => setF({ brand: e.target.value })} placeholder="Ex: Nike, Heritage..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 font-black px-6" />
+                              </div>
+                           </div>
 
-                              <div className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                                 <div className="flex items-center gap-4">
-                                    <div className="size-10 rounded-xl bg-white border flex items-center justify-center text-[#4b7bec]">
-                                       <Zap className="size-5" />
-                                    </div>
-                                    <div>
-                                       <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Visibilité Publique</p>
-                                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activer pour afficher sur la vitrine</p>
-                                    </div>
+                           <div className="space-y-3">
+                              <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Tags & Mots-clés (Recherche)</label>
+                              <Input value={form.tags} onChange={e => setF({ tags: e.target.value })} placeholder="Promo, Nouvelle Collection, Waterproof..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 px-6 font-bold" />
+                           </div>
+
+                           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-[24px] border border-slate-100">
+                              <div className="flex items-center gap-4">
+                                 <div className="size-10 rounded-xl bg-white border flex items-center justify-center text-[#4b7bec]">
+                                    <Zap className="size-5" />
                                  </div>
-                                 <div className="flex items-center gap-3">
-                                    <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_active ? "text-[#20bf6b]" : "text-slate-300")}>
-                                       {form.is_active ? 'En Ligne' : 'Hors Ligne'}
-                                    </span>
-                                    <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec]" />
+                                 <div>
+                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Visibilité Publique</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activer pour afficher sur la vitrine</p>
                                  </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_active ? "text-[#20bf6b]" : "text-slate-300")}>
+                                    {form.is_active ? 'En Ligne' : 'Hors Ligne'}
+                                 </span>
+                                 <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec]" />
                               </div>
                            </div>
                         </TabsContent>
@@ -2486,7 +2181,7 @@ export default function ProductsPage() {
                         <TabsContent value="logistics" className="mt-0 space-y-8 data-[state=inactive]:hidden">
                            <div className="space-y-6">
                               {/* Part 1: Allowed Carriers */}
-                              <div className="p-6 bg-white rounded-3xl border border-slate-100 space-y-4 shadow-sm">
+                              <div className="p-6 bg-white rounded-[24px] border border-slate-150 space-y-4 shadow-sm">
                                  <div className="flex items-start gap-4 border-b border-slate-100 pb-4">
                                     <div className="size-12 rounded-2xl bg-indigo-100 flex items-center justify-center shrink-0">
                                        <Truck className="size-6 text-indigo-600" />
@@ -2580,7 +2275,7 @@ export default function ProductsPage() {
                               </div>
 
                               {/* Part 2: Custom Shipping Fees / Exceptions */}
-                              <div className="p-6 bg-white rounded-3xl border border-slate-100 space-y-6 shadow-sm">
+                              <div className="p-6 bg-white rounded-[24px] border border-slate-150 space-y-6 shadow-sm">
                                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                                     <div className="flex items-start gap-4">
                                        <div className="size-12 rounded-2xl bg-emerald-100 flex items-center justify-center shrink-0">
@@ -3083,7 +2778,7 @@ export default function ProductsPage() {
                            {/* Financials row */}
                            <div>
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Analyse Financière · Livraisons</p>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="grid grid-cols-3 gap-3">
                                  {financialCards.map(({ label, value, sub, color }) => (
                                     <div key={label} className="rounded-2xl bg-slate-50 border border-slate-100 p-5">
                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{label}</p>
@@ -3185,7 +2880,6 @@ export default function ProductsPage() {
                            className="h-11 rounded-xl border-slate-100 font-black"
                         />
                      </div>
-                     {canSeeFinancials && (
                      <div className="space-y-1.5">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Coût production/achat (DA)</label>
                         <Input
@@ -3196,8 +2890,6 @@ export default function ProductsPage() {
                            className="h-11 rounded-xl border-slate-100 font-black text-rose-500 bg-rose-50/20"
                         />
                      </div>
-                     )}
-                     {!canSeeFinancials && <div />}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                      <div className="space-y-1.5">
@@ -3221,34 +2913,13 @@ export default function ProductsPage() {
                      </div>
                   </div>
                   <div className="space-y-1.5">
-                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Photo (Optionnel)</label>
-                     <div className="flex items-center gap-2">
-                        {newSubProduct.main_image && (
-                           <div className="relative size-11 shrink-0 rounded-xl overflow-hidden border border-slate-200 bg-white">
-                              <img src={newSubProduct.main_image} alt="" className="size-full object-cover" />
-                              <button
-                                 type="button"
-                                 onClick={() => setNewSubProduct(prev => ({ ...prev, main_image: '' }))}
-                                 className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 flex items-center justify-center transition-all"
-                              >
-                                 <X className="size-4 text-white" />
-                              </button>
-                           </div>
-                        )}
-                        <label className={cn("flex-1 flex items-center justify-center gap-2 h-11 rounded-xl border-2 border-dashed cursor-pointer transition-all text-xs font-bold uppercase tracking-wider",
-                           isUploadingSubProduct ? "border-indigo-300 bg-indigo-50 text-indigo-400" : "border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/50 text-slate-500"
-                        )}>
-                           {isUploadingSubProduct ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-                           {isUploadingSubProduct ? 'Téléversement...' : (newSubProduct.main_image ? 'Changer' : 'Téléverser')}
-                           <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                              className="sr-only"
-                              onChange={handleSubProductImageUpload}
-                              disabled={isUploadingSubProduct}
-                           />
-                        </label>
-                     </div>
+                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Image URL (Optionnel)</label>
+                     <Input
+                        value={newSubProduct.main_image}
+                        onChange={e => setNewSubProduct(prev => ({ ...prev, main_image: e.target.value }))}
+                        placeholder="https://..."
+                        className="h-11 rounded-xl border-slate-100"
+                     />
                   </div>
                </div>
                <DialogFooter className="bg-slate-50 p-4 border-t flex gap-2 shrink-0">

@@ -44,7 +44,6 @@ import { Button as UIButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MetaAdsDashboard from './meta-ads-dashboard';
-import TikTokAdsDashboard from './tiktok-ads-dashboard';
 
 export default function PartnersDashboard() {
   const { activeStore } = useAppStore();
@@ -141,9 +140,6 @@ export default function PartnersDashboard() {
             </TabsTrigger>
             <TabsTrigger value="meta" className="rounded-xl px-8 h-11 font-black uppercase tracking-widest text-[11px] data-[state=active]:bg-[#1877F2] data-[state=active]:text-white transition-all">
               Meta Ads & Marketing
-            </TabsTrigger>
-            <TabsTrigger value="tiktok" className="rounded-xl px-8 h-11 font-black uppercase tracking-widest text-[11px] data-[state=active]:bg-black data-[state=active]:text-white transition-all">
-              TikTok Ads
             </TabsTrigger>
           </TabsList>
         </div>
@@ -413,12 +409,6 @@ export default function PartnersDashboard() {
       <TabsContent value="meta" className="outline-none">
         <div className="mt-2">
           <MetaAdsDashboard />
-        </div>
-      </TabsContent>
-
-      <TabsContent value="tiktok" className="outline-none">
-        <div className="mt-2">
-          <TikTokAdsDashboard />
         </div>
       </TabsContent>
       </Tabs>

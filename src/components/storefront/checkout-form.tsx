@@ -17,11 +17,10 @@ import { useCartStore } from '@/store/cart-store';
 import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
 import { cn } from '@/lib/utils';
+import { trackMetaEvent } from '@/lib/meta-tracking';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
 import type { CartItem, ApiResponse } from '@/lib/types';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
-import { trackMetaEvent, onceKey } from '@/lib/meta-pixel';
-import { attributionPayload } from '@/lib/attribution';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 
 const primary = 'var(--store-primary, #4b7bec)';
@@ -110,6 +109,31 @@ function useCheckoutTheme(activeStore: any) {
   };
 }
 
+async function sha256(message: string): Promise<string> {
+  try {
+    const msgBuffer = new TextEncoder().encode(message.trim().toLowerCase());
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    console.error('SHA-256 hash failed, falling back to plaintext representation or empty', e);
+    return '';
+  }
+}
+
+function formatAlgerianPhone(ph: string): string {
+  const digits = ph.replace(/\D/g, '');
+  if (digits.startsWith('213') && digits.length >= 11) {
+    return digits;
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return '213' + digits.substring(1);
+  }
+  if (digits.length === 9 && ['5', '6', '7'].includes(digits[0])) {
+    return '213' + digits;
+  }
+  return digits;
+}
 
 interface SearchableCommuneSelectProps {
   wilaya: string;
@@ -220,13 +244,9 @@ export function SearchableCommuneSelect({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
-              className="w-full bg-transparent border-none outline-none focus:ring-0 focus:outline-none"
-              // 16px minimum : iOS Safari zoome automatiquement sur tout champ
-              // focalisé < 16px — c'était le "zoom" au clic sur le dropdown
-              // commune sur téléphone. autoFocus est aussi limité au desktop :
-              // sur écran tactile il déclenchait le clavier + le zoom d'un coup.
-              style={{ color: T.inputText, fontSize: 16 }}
-              autoFocus={typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches}
+              className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
+              style={{ color: T.inputText }}
+              autoFocus
             />
           </div>
 
@@ -334,22 +354,20 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
-  // Meta Pixel + CAPI InitiateCheckout (shared event_id, fired once)
   useEffect(() => {
-    if (!activeStore?.id) return;
-    if (!onceKey('InitiateCheckout', activeStore.id)) return;
-    trackMetaEvent('InitiateCheckout', {
+    if (!items.length) return;
+    void trackMetaEvent('InitiateCheckout', {
+      content_type: 'product',
+      contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
       value: finalTotal,
       currency: 'DZD',
-      content_type: 'product',
-      content_ids: items.map(i => i.product?.id || '').filter(Boolean),
-      contents: items
-        .filter(i => i.product?.id)
-        .map(i => ({ id: i.product!.id, quantity: i.quantity, item_price: i.product?.price })),
-      num_items: items.reduce((a, i) => a + i.quantity, 0),
-    }, { storeId: activeStore.id });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStore?.id]);
+    }, {
+      eventId: `initiatecheckout-${Date.now()}`,
+      value: finalTotal,
+      currency: 'DZD',
+      contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
+    });
+  }, [finalTotal, items]);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -549,8 +567,6 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         total: finalTotal,
         discount: discountAmount,
         abandoned_cart_id: abandonedCartId,
-        // Campaign attribution + Meta identifiers (fbp/fbc) captured at first touch
-        ...attributionPayload(),
       };
       
       console.log('Sending order payload:', payload);
@@ -565,29 +581,27 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       console.log('Order response status:', res.status, 'data:', json);
       // FastAPI returns the order object directly (not wrapped in { success, data })
       if (res.ok && (json.id || json.order_number || json.orderNumber)) {
-        // Meta Pixel Purchase — browser half only: the backend emits the CAPI
-        // half on order creation with the SAME event_id (purchase-{order.id}),
-        // fully normalized user_data, so Meta deduplicates the pair.
-        // NOTE: the 4th fbq argument only reads `eventID` (camelCase).
-        try {
-          trackMetaEvent('Purchase', {
-            value: finalTotal,
-            currency: 'DZD',
-            content_type: 'product',
-            content_ids: orderItems.map(item => item.product_id),
-            contents: orderItems.map(item => ({
-              id: item.product_id,
-              quantity: item.quantity,
-              item_price: item.unit_price,
-            })),
-            num_items: orderItems.reduce((a, i) => a + i.quantity, 0),
-          }, {
-            eventId: `purchase-${json.id}`,
-            mirrorToCapi: false,
-          });
-        } catch (err) {
-          console.error('Meta Pixel Purchase Error:', err);
-        }
+        const orderNum = json.order_number ?? json.orderNumber ?? json.id ?? '';
+        void trackMetaEvent('Purchase', {
+          value: finalTotal,
+          currency: 'DZD',
+          content_type: 'product',
+          content_ids: orderItems.map(item => item.product_id),
+          contents: orderItems.map(item => ({ id: item.product_id, quantity: item.quantity })),
+          order_id: String(orderNum),
+        }, {
+          eventId: `purchase-${orderNum}`,
+          value: finalTotal,
+          currency: 'DZD',
+          contents: orderItems.map(item => ({ id: item.product_id, quantity: item.quantity })),
+          userData: {
+            first_name: customerInfo.firstName.trim(),
+            last_name: customerInfo.lastName.trim(),
+            city: customerInfo.commune.trim(),
+            wilaya: customerInfo.wilaya,
+            phone: customerInfo.phone.trim(),
+          },
+        });
         setOrderNumber(json.order_number ?? json.orderNumber ?? json.id ?? '');
         setOrderDiscount(json.discount ?? 0);
         clearCart();

@@ -88,8 +88,6 @@ export default function AuditPage() {
    const [actionFilter, setActionFilter] = useState('all');
    const [search, setSearch] = useState(adminSearchTerm || '');
    const [expandedRow, setExpandedRow] = useState<string | null>(null);
-   const [dateStart, setDateStart] = useState('');
-   const [dateEnd, setDateEnd] = useState('');
 
    useEffect(() => {
       if (adminSearchTerm) {
@@ -102,14 +100,12 @@ export default function AuditPage() {
    const pageSize = 30;
 
    const auditQuery = useQuery<PaginatedResponse<AuditLog>>({
-      queryKey: ['audit', storeId, page, entityFilter, actionFilter, search, dateStart, dateEnd],
+      queryKey: ['audit', storeId, page, entityFilter, actionFilter, search],
       queryFn: () => {
          const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString() });
          if (entityFilter !== 'all') params.set('entity', entityFilter);
          if (actionFilter !== 'all') params.set('action', actionFilter);
          if (search) params.set('search', search);
-         if (dateStart) params.set('start_date', dateStart + 'T00:00:00.000Z');
-         if (dateEnd) params.set('end_date', dateEnd + 'T23:59:59.999Z');
          return apiFetch(`/api/v1/audit?${params.toString()}`);
       },
    });
@@ -201,11 +197,6 @@ export default function AuditPage() {
                      {ACTION_TYPES.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
                   </SelectContent>
                </Select>
-               <div className="flex items-center gap-2 h-10 px-3 rounded-lg border bg-[#F8F9FC]" style={{ borderColor: C.border }}>
-                  <input type="date" value={dateStart} onChange={(e) => { setDateStart(e.target.value); setPage(1); }} className="bg-transparent text-xs font-semibold text-[#636E72] outline-none w-[110px]" />
-                  <span className="text-[#B2BEC3]">-</span>
-                  <input type="date" value={dateEnd} onChange={(e) => { setDateEnd(e.target.value); setPage(1); }} className="bg-transparent text-xs font-semibold text-[#636E72] outline-none w-[110px]" />
-               </div>
                <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold border" style={{ borderColor: C.border, color: C.textLight }}>
                   <RefreshCw className="size-3.5" />
                </button>

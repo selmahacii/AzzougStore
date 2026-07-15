@@ -154,7 +154,7 @@ function CleanCart() {
         {items.length > 0 && (
           <div className="shrink-0 border-t border-slate-100 bg-slate-50/50 px-5 py-5 space-y-4">
             <div className="space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-slate-500 font-medium">{t('subtotal')}</span><span className="font-bold text-slate-800 tabular-nums">{formatPrice(cartTotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-slate-500 font-medium">{t('subtotal')}</span><span className="font-bold text-slate-880 tabular-nums">{formatPrice(cartTotal)}</span></div>
               <div className="flex items-center justify-between text-xs text-slate-400"><span className="flex items-center gap-1.5"><Truck className="size-3.5 text-emerald-500"/>{t('carrierEstimated')}</span></div>
             </div>
             <div className="flex items-center gap-4 py-2 border-t border-slate-100">
@@ -258,8 +258,7 @@ function LuxeCart() {
         <div className="px-6 py-5 border-b border-white/5 shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              {/* Eyebrow = nom de la maison (affichait par erreur « Wishlist » au-dessus du panier) */}
-              <p className="text-[9px] tracking-[0.4em] uppercase text-white/20 mb-1">{activeStore?.name || ''}</p>
+              <p className="text-[9px] tracking-[0.4em] uppercase text-white/20 mb-1">{t('wishlist')}</p>
               <p className="text-sm font-light tracking-wide text-white" style={{ fontFamily: '"Playfair Display", serif' }}>{t('cart')}{itemCount > 0 && <span className="ml-2 text-xs font-light" style={{ color: primary }}>({itemCount})</span>}</p>
             </div>
           </div>
@@ -291,7 +290,7 @@ function LuxeCart() {
               <Truck className="size-3" style={{ color: primary }}/> {t('carrierEstimated')}
             </div>
             <button onClick={() => { closeCart(); setStorefrontView('checkout'); }}
-              className="w-full h-12 text-[10px] tracking-[0.35em] uppercase font-light text-black transition-all hover:brightness-95 active:scale-[0.99] flex items-center justify-center gap-2"
+              className="w-full h-13 text-[10px] tracking-[0.35em] uppercase font-light text-black transition-all hover:brightness-95 active:scale-[0.99] flex items-center justify-center gap-2 h-12"
               style={{ backgroundColor: primary }}>
               {t('checkoutNow')}
             </button>

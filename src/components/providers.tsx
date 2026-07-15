@@ -10,13 +10,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Most lists (stores, products, orders) don't change second-to-second —
-            // pages that need fresher data (e.g. the orders list) already set their
-            // own shorter staleTime/refetchInterval. Raising the default means
-            // navigating back to an already-visited page renders instantly from
-            // cache instead of re-fetching and showing a spinner.
-            staleTime: 2 * 60 * 1000,
-            gcTime: 10 * 60 * 1000,
+            staleTime: 30 * 1000,
             retry: (failureCount, error: any) => {
               if (error?.statusCode === 401 || (error?.name === 'ApiClientError' && error.statusCode === 401)) {
                 return false;

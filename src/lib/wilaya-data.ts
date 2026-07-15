@@ -4,6 +4,8 @@
 // Data sourced from the WilayaDeliveryFee DB table.
 // ═══════════════════════════════════════════════════════════════
 
+import { db } from '@/lib/db';
+
 export type DeliveryType = 'HOME' | 'OFFICE';
 
 export interface DeliveryFeeResult {
@@ -24,9 +26,9 @@ export const WILAYAS = [
   'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
   'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
   'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-  'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
-  'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
-  'El M\'Ghair', 'El Meniaa'
+  'Ghardaïa', 'Relizane', 'El M\'Ghair', 'El Meniaa', 'Ouled Djellal',
+  'Bordj Baji Mokhtar', 'Béni Abbès', 'Timimoun', 'Touggourt', 'Djanet',
+  'In Salah', 'In Guezzam'
 ] as const;
 
 export const DEFAULT_DELIVERY_FEE = { home: 700, office: 400 };
@@ -38,14 +40,33 @@ export async function getDeliveryFee(
   wilayaId: number,
   type: 'home' | 'office' = 'home'
 ): Promise<DeliveryFeeResult> {
-  return {
-    wilayaId,
-    wilayaName: WILAYAS[wilayaId - 1] || null,
-    homeFee: DEFAULT_DELIVERY_FEE.home,
-    officeFee: DEFAULT_DELIVERY_FEE.office,
-    type: type.toUpperCase() as DeliveryType,
-    fee: type === 'home' ? DEFAULT_DELIVERY_FEE.home : DEFAULT_DELIVERY_FEE.office,
-  };
+  try {
+    const record = await db.wilayaDeliveryFee.findUnique({
+      where: { wilayaId },
+    });
+
+    const homeFee: number = record?.homeFee ?? DEFAULT_DELIVERY_FEE.home;
+    const officeFee: number = record?.officeFee ?? DEFAULT_DELIVERY_FEE.office;
+    const fee: number = type === 'home' ? homeFee : officeFee;
+
+    return {
+      wilayaId,
+      wilayaName: record?.wilayaName ?? (WILAYAS[wilayaId - 1] || null),
+      homeFee,
+      officeFee,
+      type: type.toUpperCase() as DeliveryType,
+      fee,
+    };
+  } catch {
+    return {
+      wilayaId,
+      wilayaName: WILAYAS[wilayaId - 1] || null,
+      homeFee: DEFAULT_DELIVERY_FEE.home,
+      officeFee: DEFAULT_DELIVERY_FEE.office,
+      type: type.toUpperCase() as DeliveryType,
+      fee: type === 'home' ? DEFAULT_DELIVERY_FEE.home : DEFAULT_DELIVERY_FEE.office,
+    };
+  }
 }
 
 /**

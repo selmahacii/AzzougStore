@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Truck, Package } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
@@ -9,7 +9,6 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
-import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface DzCodRendererProps {
   data: any;
@@ -74,19 +73,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
-  // Mobile touch/click event synthesis occasionally double-fires a single
-  // tap on the quantity +/- buttons — a customer tapping "+" a reasonable
-  // number of times could end up with an absurd quantity (e.g. 23) with no
-  // way to tell it happened. Collapsing any repeat within 250ms into a
-  // single step blocks that without affecting deliberate, normally-paced
-  // clicking.
-  const lastQtyClickRef = useRef(0);
-  const bumpQuantity = (delta: number) => {
-    const now = Date.now();
-    if (now - lastQtyClickRef.current < 250) return;
-    lastQtyClickRef.current = now;
-    setQuantity(q => Math.max(1, q + delta));
-  };
+  const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
   const { t, dir } = useTranslation();
@@ -104,6 +91,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
+
+  useEffect(() => { 
+    setMounted(true); 
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -258,6 +249,14 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity]);
 
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] text-slate-900">
+        <div className="size-8 rounded-full border-2 border-slate-200 border-t-red-600 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-12" dir={dir}>
       <FloatingLanguageSwitcher primaryColor={primary} />
@@ -274,10 +273,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         <header className="w-full py-4 border-b flex items-center justify-center bg-white border-slate-100 relative shrink-0">
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || data.product?.store?.logo_url) ? (
-              <img
-                src={optimizeCloudinaryUrl(data.store?.logo_url || data.product?.store?.logo_url || '', 150)}
-                alt={data.headline || 'Logo'}
-                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all"
+              <img 
+                src={data.store?.logo_url || data.product?.store?.logo_url || ''} 
+                alt={data.headline || 'Logo'} 
+                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
                 onError={(e) => { 
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -316,28 +315,22 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
               }}
               onMouseLeave={() => setIsZoomed(false)}
             >
-              <img
-                src={optimizeCloudinaryUrl(mainImgSrc, 800)}
-                alt={productName || ''}
-                className="w-full h-auto transition-transform duration-100 ease-out"
+              <img 
+                src={mainImgSrc} 
+                alt={productName || ''} 
+                className="w-full h-auto transition-transform duration-100 ease-out" 
                 style={{
                   transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                   transform: isZoomed ? 'scale(2)' : 'scale(1)'
                 }}
-                // This is the LCP element on the landing page — fetch it eagerly
-                // and at high priority instead of the browser's default
-                // discovery order (Lighthouse: "Requêtes de blocage du rendu").
-                loading="eager"
-                fetchPriority="high"
-                decoding="async"
               />
-
+              
               {/* Circular Inset Badge on Top-Right */}
               {insetImgSrc && (
                 <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
                   <span className="text-sm font-bold text-slate-800">+</span>
                   <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                    <img src={optimizeCloudinaryUrl(insetImgSrc, 100)} className="size-full object-cover" alt="detail" loading="lazy" decoding="async" />
+                    <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
                   </div>
                 </div>
               )}
@@ -396,7 +389,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     title={v.value}
                   >
                     {imgStyle ? (
-                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} loading="lazy" decoding="async" />
+                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} />
                     ) : (
                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                     )}
@@ -527,7 +520,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
+                                                 <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -617,7 +610,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     <div className="flex items-center gap-3 bg-white p-2 rounded-xl border max-w-[140px] shadow-sm">
                       <button
                         type="button"
-                        onClick={() => bumpQuantity(-1)}
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
                         className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border"
                       >
                         -
@@ -625,7 +618,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                       <span className="flex-1 text-center font-bold text-sm">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => bumpQuantity(1)}
+                        onClick={() => setQuantity(quantity + 1)}
                         className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border"
                       >
                         +
@@ -690,10 +683,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
              {/* Publicity Banner */}
              {data.banner_image_url && (
                <div className="mt-6">
-                 {/* Lighthouse measured this rendering at exactly 578px wide
-                     inside its max-w-[700px] container (padding eats the
-                     rest) — matches the display width with a hair of margin. */}
-                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 580)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" loading="lazy" decoding="async" />
+                 <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
                </div>
              )}
           </div>

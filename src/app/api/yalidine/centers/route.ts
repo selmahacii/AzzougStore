@@ -1,19 +1,47 @@
 import { NextResponse } from 'next/server';
-import { getBackendUrl } from '@/lib/utils';
+import { db } from '@/lib/db';
 
-const BACKEND_URL = getBackendUrl();
+const YALIDINE_BASE = 'https://api.yalidine.app/v1';
 
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const storeId = searchParams.get('store_id');
-  if (!storeId) return NextResponse.json({ error: 'store_id requis' }, { status: 400 });
   try {
-    const res = await fetch(`${BACKEND_URL}/api/yalidine/stations?store_id=${storeId}`, {
-      headers: { 'x-internal-key': process.env.INTERNAL_API_KEY || '' },
+    const { searchParams } = new URL(req.url);
+    const storeId = searchParams.get('store_id');
+    if (!storeId) {
+      return NextResponse.json({ error: 'store_id requis' }, { status: 400 });
+    }
+
+    const partner = await db.deliveryPartner.findFirst({
+      where: { storeId, code: 'yalidine', isActive: true },
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    if (!partner) {
+      return NextResponse.json({ error: 'Yalidine non configuré ou inactif' }, { status: 404 });
+    }
+
+    const cfg = partner.apiConfig as Record<string, string>;
+    const apiId = cfg.api_id;
+    const apiToken = cfg.api_token;
+    if (!apiId || !apiToken) {
+      return NextResponse.json({ error: 'Identifiants Yalidine manquants' }, { status: 400 });
+    }
+
+    const res = await fetch(`${YALIDINE_BASE}/centers/`, {
+      headers: {
+        'X-API-ID': apiId,
+        'X-API-TOKEN': apiToken,
+      },
+    });
+
+    if (!res.ok) {
+      return NextResponse.json({ error: `Yalidine API: HTTP ${res.status}` }, { status: 502 });
+    }
+
+    const body = await res.json();
+    const centers = body?.data ?? body ?? [];
+
+    return NextResponse.json({ data: centers });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[GET /api/yalidine/centers]', err);
+    return NextResponse.json({ error: err.message ?? 'Erreur serveur' }, { status: 500 });
   }
 }

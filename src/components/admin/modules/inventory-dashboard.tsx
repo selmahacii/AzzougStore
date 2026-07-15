@@ -101,26 +101,19 @@ function KpiCard({ title, value, icon: Icon, color, bgColor, change, status }: a
 export default function InventoryDashboard() {
    const { activeStore, adminSubView } = useAppStore();
    const storeId = activeStore?.id ?? '';
-   const user = useAppStore(s => s.user);
-   const isConfirmateur = user?.role === 'CONFIRMATEUR';
    
    const summaryQuery = useQuery({
       queryKey: ['inventory', 'summary', storeId],
       queryFn: () => apiFetch<InventorySummary>(`/api/v1/stock/summary?store_id=${storeId}`),
       enabled: !!storeId,
-      // Base poll is intentionally slow — every order that moves stock already
-      // invalidates ['inventory'] on mutation success (orders-page.tsx,
-      // stock-manager.tsx, agent-orders-page.tsx), so the actor's own screen
-      // updates instantly regardless of this interval. This interval only
-      // catches stock moved by someone else in another tab/session.
-      refetchInterval: 2 * 60 * 60 * 1000,
+      refetchInterval: 10000, // 10s for real-time feel
    });
 
    const movementsQuery = useQuery({
       queryKey: ['inventory', 'movements', storeId],
       queryFn: () => apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?store_id=${storeId}&pageSize=30`),
       enabled: !!storeId,
-      refetchInterval: 2 * 60 * 60 * 1000,
+      refetchInterval: 10000,
    });
 
 
@@ -155,40 +148,36 @@ export default function InventoryDashboard() {
    return (
      <div className="space-y-6 pb-32 animate-in fade-in duration-500">
          {/* KPI Cluster */}
-         {/* 2 per row on phones — a single stacked column pushed the module's
-             real content below four full-height cards of scrolling. */}
-         <div className={`grid grid-cols-2 ${isConfirmateur ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-3 sm:gap-6`}>
-            <KpiCard
-               title="PRODUITS RÉFÉRENCÉS"
-               value={(summary?.totalProducts ?? 0).toString()}
-               icon={Database}
-               color={C.primary}
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <KpiCard 
+               title="PRODUITS RÉFÉRENCÉS" 
+               value={(summary?.totalProducts ?? 0).toString()} 
+               icon={Database} 
+               color={C.primary} 
                bgColor={C.primaryBg}
                status="nominal"
             />
-            <KpiCard
-               title="STOCK TOTAL DISPONIBLE"
-               value={(summary?.totalAvailableStock ?? 0).toLocaleString()}
-               icon={Package}
-               color={C.success}
+            <KpiCard 
+               title="STOCK TOTAL DISPONIBLE" 
+               value={(summary?.totalAvailableStock ?? 0).toLocaleString()} 
+               icon={Package} 
+               color={C.success} 
                bgColor={C.successBg}
             />
-            <KpiCard
-               title="RÉSERVES CRITIQUES"
-               value={(summary?.lowStockCount ?? 0).toString()}
-               icon={AlertCircle}
-               color={C.danger}
+            <KpiCard 
+               title="RÉSERVES CRITIQUES" 
+               value={(summary?.lowStockCount ?? 0).toString()} 
+               icon={AlertCircle} 
+               color={C.danger} 
                bgColor={C.dangerBg}
             />
-            {!isConfirmateur && (
-               <KpiCard
-                  title="VALEUR INVENTAIRE (COUT)"
-                  value={formatPrice(summary?.totalStockValue ?? 0)}
-                  icon={TrendingUp}
-                  color={C.warning}
-                  bgColor={C.warningBg}
-               />
-            )}
+            <KpiCard 
+               title="VALEUR INVENTAIRE (COUT)" 
+               value={formatPrice(summary?.totalStockValue ?? 0)} 
+               icon={TrendingUp} 
+               color={C.warning} 
+               bgColor={C.warningBg}
+            />
          </div>
 
          <ActiveView 
@@ -497,18 +486,10 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                      </div>
                      <div>
                         <p className="text-xs font-extrabold text-[#2D3436]">
-                           {/* RESTOCK/MANUAL_ADJUSTMENT are exactly "Bon d'Entrée"/"Bon de Sortie"
-                               under the hood (see stock-manager.tsx's adjustMutation, which picks
-                               the type from the +/- sign entered) — label them as such here too so
-                               the audit trail uses the same vocabulary staff already see live while
-                               filling the adjustment dialog, instead of a generic "Ajustement Manuel"
-                               that reads like a third, unrelated kind of operation. */}
-                           {m.type === 'RESTOCK' ? "Bon d'Entrée" :
-                            m.type === 'RETURN_RESTOCK' ? "Bon d'Entrée (Retour Client)" :
-                            m.type === 'MANUAL_ADJUSTMENT' ? 'Bon de Sortie' :
-                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' :
+                           {m.type === 'RESTOCK' ? 'Réapprovisionnement' : 
+                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' : 
                             m.type === 'POS_SALE' ? 'Vente au Comptant (POS)' :
-                            m.type.replace(/_/g, ' ')} :
+                            'Ajustement Manuel'} : 
                            <span className="font-mono text-[#6C5CE7] ml-2">{m.id.split('-')[0].toUpperCase()}</span>
                         </p>
                         <div className="flex items-center gap-3 mt-1.5">
