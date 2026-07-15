@@ -105,6 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
          { label: 'Télémétrie Agents', icon: UserCheck, view: 'analytics', subView: 'agents' },
          { label: 'Ventes Marketers', icon: Megaphone, view: 'analytics', subView: 'marketers' },
          { label: 'Meta Ads & ROAS', icon: Megaphone, view: 'meta_ads' },
+         { label: 'TikTok Ads & ROAS', icon: Megaphone, view: 'tiktok_ads' },
       ],
    },
    {
@@ -243,9 +244,22 @@ export default function AdminSidebar() {
          };
       }
       if (section.title === 'Commercial') {
+         const CONFIRMATEUR_INVENTORY_VIEWS = new Set(['STOCK', 'ALERTS', 'MONITOR']);
          return {
             ...section,
-            items: section.items.filter(item => item.view === 'orders' || item.view === 'inventory' && item.subView === 'MONITOR')
+            items: section.items
+               .filter(item => item.view === 'orders' || item.view === 'inventory')
+               .map(item => {
+                  if (item.view === 'inventory' && item.items) {
+                     return {
+                        ...item,
+                        items: item.items.filter((sub: any) =>
+                           CONFIRMATEUR_INVENTORY_VIEWS.has(sub.subView ?? '')
+                        ),
+                     };
+                  }
+                  return item;
+               })
          };
       }
       if (section.title === 'Opérations') {
@@ -560,7 +574,8 @@ export default function AdminSidebar() {
             )}
             <button
                onClick={toggleSidebar}
-               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-semibold text-[#B2BEC3] hover:text-[#636E72] transition-all"
+               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-all"
+               style={{ color: S.active, backgroundColor: S.activeBg }}
             >
                {sidebarCollapsed
                   ? <ChevronRight className="size-[18px]" />
