@@ -53,3 +53,14 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+venv/
+.venv/
+backend/venv/
+*.egg-info/
+.pytest_cache/
