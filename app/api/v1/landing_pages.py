@@ -225,6 +225,34 @@ def list_landing_pages(
                 "manual": int(r.manual or 0),
             }
 
+        # "Achats déclarés par Meta" per product — shown as a badge right on
+        # the LP card so the client sees Meta's own received-orders count next
+        # to the ERP's real counts without opening the Meta Ads module.
+        # Campaign snapshot totals (Meta's number for the campaign's last
+        # synced range), not date-sliced by the picker above — Meta's Insights
+        # result isn't stored per-day.
+        from app.models.marketing import MetaAdsCampaign
+        _meta_rows = (
+            db.query(
+                MetaAdsCampaign.product_id,
+                func.coalesce(func.sum(MetaAdsCampaign.meta_purchases), 0),
+            )
+            .filter(
+                MetaAdsCampaign.store_id == store_id,
+                MetaAdsCampaign.product_id.in_(lp_product_ids),
+            )
+            .group_by(MetaAdsCampaign.product_id)
+            .all()
+        )
+        for _pid, _meta_count in _meta_rows:
+            # A product can have a linked campaign but zero orders in the
+            # selected period — still surface Meta's count on the card.
+            metrics_by_product.setdefault(_pid, {
+                "orders": 0, "purchases": 0, "delivered": 0,
+                "confirmed_delivered": 0, "recovered": 0, "abandoned": 0,
+                "normal": 0, "cancelled": 0, "duplicates": 0, "manual": 0,
+            })["meta_purchases"] = int(_meta_count or 0)
+
     # ── Remaining stock per product, broken down by variant ───────────────────
     stock_by_product: dict = {}
     if lp_product_ids:

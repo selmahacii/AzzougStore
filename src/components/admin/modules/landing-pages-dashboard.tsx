@@ -353,6 +353,12 @@ function LandingPageCard({
             { label: 'Annulés',   value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
             { label: 'Manuelles', value: (lp.metrics as any)?.manual ?? 0, color: '#636E72', title: 'Commandes créées manuellement (téléphone/admin) — comptées dans les ventes mais exclues du taux de conversion, car elles ne viennent pas du trafic de la page' },
             { label: 'Doublons',  value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
+            // Ce que Meta lui-même déclare avoir reçu pour ce produit (via la
+            // campagne liée) — affiché directement sur la carte pour comparer
+            // d'un coup d'œil avec nos vraies commandes ci-dessus, sans
+            // ouvrir le module Meta Ads. Total de la dernière synchro de la
+            // campagne, pas découpé par la période sélectionnée.
+            { label: 'Détectés Meta', value: (lp.metrics as any)?.meta_purchases ?? 0, color: '#F7B731', title: "Achats déclarés par Meta pour la campagne liée à ce produit (fenêtre d'attribution Meta — un léger écart avec nos commandes est normal)" },
           ].map(s => (
             <div key={s.label} title={s.title}
               className="flex-1 text-center p-2 rounded-xl border"
