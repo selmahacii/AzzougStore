@@ -499,10 +499,16 @@ def list_campaigns(
 
     # Calculate ROAS and filter down to products with activity
     breakdown_list = []
-    for pid, data in product_attribution.items():
-        data["roas"] = round(data["revenue"] / data["spend"], 2) if data["spend"] > 0 else 0.0
-        if data["spend"] > 0 or data["revenue"] > 0 or data["impressions"] > 0 or data["orders_count"] > 0:
-            breakdown_list.append(data)
+    # NEVER name this loop variable "data" — the campaigns list built above
+    # is also called `data`, and Python for-loops don't scope their variable
+    # to the loop body: reusing the name here silently overwrote the whole
+    # campaigns list with whichever product was processed last, so the
+    # "Historique des Campagnes" table always rendered empty as soon as a
+    # store had at least one product with ad spend attributed to it.
+    for pid, prod_attr in product_attribution.items():
+        prod_attr["roas"] = round(prod_attr["revenue"] / prod_attr["spend"], 2) if prod_attr["spend"] > 0 else 0.0
+        if prod_attr["spend"] > 0 or prod_attr["revenue"] > 0 or prod_attr["impressions"] > 0 or prod_attr["orders_count"] > 0:
+            breakdown_list.append(prod_attr)
 
     return {
         "success": True,
