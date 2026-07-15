@@ -14,6 +14,8 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
+import { trackMetaEvent } from '@/lib/meta-tracking';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface LpData {
   id: string;
@@ -141,6 +143,21 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       setLocale('ar');
     }
   }, [setLocale]);
+
+  // Meta Pixel + CAPI ViewContent — once per landing page product. A stable
+  // eventId (not time-based) so meta-tracking.ts's own sessionStorage dedup
+  // catches a re-render/refresh instead of re-firing.
+  useEffect(() => {
+    const pid = data?.product?.id || (data as any)?.product_id;
+    if (!pid || !activeStore?.id) return;
+    void trackMetaEvent('ViewContent', {
+      content_ids: [String(pid)],
+      content_name: data.product_name || data.product?.name || data.headline,
+      content_type: 'product',
+      value: Number(data.price ?? data.product?.price ?? 0) || undefined,
+    }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}` });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.product?.id, activeStore?.id]);
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -535,10 +552,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     }}
                     onMouseLeave={() => setIsZoomed(false)}
                   >
-                    <img 
-                      src={mainImgSrc} 
-                      alt={productName || ''} 
-                      className="w-full h-auto transition-transform duration-100 ease-out" 
+                    <img
+                      src={optimizeCloudinaryUrl(mainImgSrc, 800)}
+                      alt={productName || ''}
+                      loading="eager"
+                      fetchPriority="high"
+                      decoding="async"
+                      className="w-full h-auto transition-transform duration-100 ease-out"
                       style={{
                         transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                         transform: isZoomed ? 'scale(2)' : 'scale(1)'

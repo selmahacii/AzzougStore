@@ -62,6 +62,7 @@ const PAGE_TITLES: Record<AdminView, string> = {
    visitors: 'Visiteurs',
    cost_calculator: 'Calculateur de Coût',
    meta_ads: 'Meta Ads & ROAS',
+   tiktok_ads: 'TikTok Ads & ROAS',
    upsell: 'Upsell & Commissions',
    purchase_vouchers: 'Achats & Entrées',
 };
