@@ -1513,6 +1513,166 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
     }
 
 
+# ─── GET /meta-ads/events/diagnostics — per-event-type CAPI health table ─────
+# The frontend's "Diagnostics" tab (meta-ads-dashboard.tsx) calls this exact
+# path expecting one row per event type (Purchase, AddToCart, ...) with a
+# match/success rate and last-send timestamps — a different shape than
+# /diagnostics below (one aggregated health report). This route never
+# existed, so every load 404'd; the tab silently showed "0 événements".
+
+@router.get("/events/diagnostics", response_model=dict)
+def get_meta_events_diagnostics(store_id: str = Query(...), db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    week_ago = now - timedelta(days=7)
+
+    rows = (
+        db.query(
+            MetaCapiLog.event_name,
+            MetaCapiLog.status,
+            func.count(MetaCapiLog.id),
+            func.max(MetaCapiLog.created_at),
+        )
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.created_at >= week_ago)
+        .group_by(MetaCapiLog.event_name, MetaCapiLog.status)
+        .all()
+    )
+
+    by_event: Dict[str, Dict[str, Any]] = {}
+    for event_name, status, cnt, last_at in rows:
+        bucket = by_event.setdefault(event_name, {
+            "success": 0, "failures": 0,
+            "last_successful_send": None, "last_failure": None,
+        })
+        if status == "success":
+            bucket["success"] += cnt
+            if last_at and (not bucket["last_successful_send"] or last_at > bucket["last_successful_send"]):
+                bucket["last_successful_send"] = last_at
+        else:
+            bucket["failures"] += cnt
+            if last_at and (not bucket["last_failure"] or last_at > bucket["last_failure"]):
+                bucket["last_failure"] = last_at
+
+    events = []
+    total_success, total_failures = 0, 0
+    for event_name, b in sorted(by_event.items()):
+        total = b["success"] + b["failures"]
+        match_quality = round(b["success"] / total * 100, 1) if total else 0.0
+        total_success += b["success"]
+        total_failures += b["failures"]
+        events.append({
+            "event_name": event_name,
+            "match_quality": match_quality,
+            "failures": b["failures"],
+            "last_successful_send": b["last_successful_send"].isoformat() if b["last_successful_send"] else None,
+            "last_failure": b["last_failure"].isoformat() if b["last_failure"] else None,
+        })
+
+    return {
+        "success": True,
+        "data": {
+            "events": events,
+            "summary": {
+                "total_events": total_success + total_failures,
+                "successful_events": total_success,
+                "failed_events": total_failures,
+            },
+        },
+        "count": len(events),
+    }
+
+
+# ─── GET /meta-ads/funnel — acquisition-to-delivery conversion funnel ────────
+# The frontend's "Entonnoir de Conversion" tab expects
+# { stages: [{name, count}], summary: {ctr, cr, delivery_rate} }. Never
+# implemented on the backend — every load 404'd, the tab was permanently
+# stuck on "Calcul de l'entonnoir en cours...".
+
+@router.get("/funnel", response_model=dict)
+def get_meta_funnel(
+    store_id: str = Query(...),
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import func
+    from app.core.dates import parse_local_date_filter
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    d_start = now - timedelta(days=30)
+    d_end = now
+    if date_start:
+        try:
+            d_start = parse_local_date_filter(date_start)
+        except ValueError:
+            pass
+    if date_end:
+        try:
+            d_end = parse_local_date_filter(date_end)
+        except ValueError:
+            pass
+
+    # Impressions/clicks: Meta's own numbers for this store's campaigns —
+    # these already cover the requested window (campaign rows are a single
+    # running snapshot from the last sync, not per-day, so this is the best
+    # available approximation without querying Meta live on every page load).
+    camp_totals = db.query(
+        func.coalesce(func.sum(MetaAdsCampaign.impressions), 0),
+        func.coalesce(func.sum(MetaAdsCampaign.clicks), 0),
+    ).filter(MetaAdsCampaign.store_id == store_id).first()
+    impressions, clicks = int(camp_totals[0] or 0), int(camp_totals[1] or 0)
+
+    # ViewContent / InitiateCheckout: our own CAPI send counts — the real
+    # count of shoppers who reached each step, browser + server combined.
+    from app.models.marketing import MetaCapiLog
+    view_content = db.query(func.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "ViewContent",
+        MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
+    ).scalar() or 0
+    initiate_checkout = db.query(func.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "InitiateCheckout",
+        MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
+    ).scalar() or 0
+
+    # Purchase / Recovered / Delivered: real orders — same exclusions used
+    # everywhere else in the ERP (MERGED duplicates, MANUAL agent orders).
+    base_filters = [
+        Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED",
+        func.coalesce(Order.source, "") != "MANUAL",
+        Order.created_at >= d_start, Order.created_at <= d_end,
+    ]
+    purchases = db.query(func.count(Order.id)).filter(*base_filters).scalar() or 0
+    recovered = db.query(func.count(Order.id)).filter(
+        *base_filters, Order.is_abandoned_cart == True,
+        Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]),
+    ).scalar() or 0
+    delivered = db.query(func.count(Order.id)).filter(*base_filters, Order.status == "DELIVERED").scalar() or 0
+
+    stages = [
+        {"name": "Impressions", "count": impressions},
+        {"name": "Clics", "count": clicks},
+        {"name": "Vues Produit", "count": view_content},
+        {"name": "Paiement Initié", "count": initiate_checkout},
+        {"name": "Achats", "count": purchases},
+        {"name": "Paniers Récupérés", "count": recovered},
+        {"name": "Livrées", "count": delivered},
+    ]
+
+    ctr = round(clicks / impressions * 100, 2) if impressions > 0 else 0.0
+    cr = round(purchases / clicks * 100, 2) if clicks > 0 else 0.0
+    delivery_rate = round(delivered / purchases * 100, 2) if purchases > 0 else 0.0
+
+    return {
+        "success": True,
+        "stages": stages,
+        "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate},
+    }
+
+
 # ─── GET /meta-ads/diagnostics — tracking health for the dashboard ───────────
 
 @router.get("/diagnostics", response_model=dict)
