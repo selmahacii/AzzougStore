@@ -135,7 +135,8 @@ export default function AdminHeader() {
    const feedQuery = useQuery<{ data: any[]; unread: number }>({
       queryKey: ['notifications', currentUser?.id],
       queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
-      refetchInterval: 2 * 60 * 60 * 1000,
+      // Alert channel — must stay reasonably fresh (see notifications-bell).
+      refetchInterval: 5 * 60 * 1000,
       enabled: isAuthenticated && !!currentUser?.id,
    });
    const markFeedRead = useMutation({

@@ -51,7 +51,11 @@ export function NotificationsBell({ onOpenOrder }: { onOpenOrder?: (orderId: str
     queryKey: ['notifications', userId],
     queryFn: () => apiFetch('/api/v1/notifications?limit=30'),
     enabled: !!userId,
-    refetchInterval: 2 * 60 * 60 * 1000,
+    // 5 min, not the 2h used by the heavy dashboards: this is the alert
+    // channel (commande assignée, rappel NRP, paie...) — a 2h delay makes
+    // alerts useless, and one small notifications read every 5 min is a
+    // negligible share of Neon compute next to the dashboards.
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const markAllMutation = useMutation({
