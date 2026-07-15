@@ -309,6 +309,16 @@ def calculate_delivery_fee(
 
 # ─── Public Availability ─────────────────────────────────────
 
+# Availability cache — this public endpoint fires from every storefront
+# visitor's checkout flow (visible over and over in the HF access logs) yet
+# its answer only changes when the admin edits carriers or a product's
+# allowed_carriers. 60s TTL keeps admin edits near-real-time while cutting
+# the per-visitor DB reads that keep Neon's compute awake.
+import time as _avail_time
+_availability_cache: dict = {}   # {(store_id, product_ids): (payload, cached_at)}
+_AVAILABILITY_TTL = 60.0
+
+
 @router.get("/availability")
 def get_partners_availability(
     store_id: str = Query(..., alias="storeId"),
@@ -319,6 +329,11 @@ def get_partners_availability(
     Public endpoint for the storefront to check which carriers are active for a store.
     No authentication required.
     """
+    _cache_key = (store_id, product_ids or "")
+    _hit = _availability_cache.get(_cache_key)
+    if _hit is not None and _avail_time.monotonic() - _hit[1] < _AVAILABILITY_TTL:
+        return _hit[0]
+
     partners = db.query(DeliveryPartner).filter(
         DeliveryPartner.store_id == store_id,
         DeliveryPartner.is_active == True
@@ -343,7 +358,10 @@ def get_partners_availability(
                     if p.id in common_carriers or p.carrier_id in common_carriers or p.name in common_carriers
                 ]
 
-    return {"success": True, "data": [_serialize(p) for p in partners]}
+    _payload = {"success": True, "data": [_serialize(p) for p in partners]}
+    if len(_availability_cache) < 500:
+        _availability_cache[_cache_key] = (_payload, _avail_time.monotonic())
+    return _payload
 
 
 # ─── Fee Grid ────────────────────────────────────────────────

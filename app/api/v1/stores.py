@@ -21,6 +21,17 @@ router = APIRouter()
 _guest_stores_cache: dict = {"data": None, "at": 0.0}
 _GUEST_STORES_TTL = 10.0
 
+# Domain→store routing cache. This endpoint fires on EVERY storefront page
+# load, from every visitor — it was one of the most frequent DB hits in the
+# HF access logs, keeping Neon's compute awake with reads whose answer
+# almost never changes (a store's domain/slug mapping changes at most when
+# the admin edits store settings). 5-minute TTL: a domain change takes at
+# most 5 min to propagate, which is negligible next to DNS itself. Negative
+# results are cached too (unknown Vercel preview domains were re-querying
+# the DB on every hit, 4-5 times in a row in the logs).
+_domain_lookup_cache: dict = {}   # {domain: (payload_or_None, cached_at_monotonic)}
+_DOMAIN_LOOKUP_TTL = 300.0
+
 
 STORE_TEMPLATES = {
     "modern": {
@@ -278,19 +289,33 @@ def lookup_domain(
     """
     import logging
     logger = logging.getLogger("app.stores")
+
+    cached = _domain_lookup_cache.get(domain)
+    if cached is not None and _time.monotonic() - cached[1] < _DOMAIN_LOOKUP_TTL:
+        payload = cached[0]
+        if payload is None:
+            raise HTTPException(status_code=404, detail="Store not found for this domain")
+        return payload
+
     logger.info(f"[LookupDomain] Query: domain={domain!r}")
-    
+
     store = db.query(Store).filter(
         (Store.domain == domain) | (Store.slug == domain),
         Store.is_deleted == False
     ).first()
-    
+
     if not store:
         logger.warning(f"[LookupDomain] Store NOT found for domain={domain!r}")
+        # Bound the cache so junk domains can't grow it without limit
+        if len(_domain_lookup_cache) < 500:
+            _domain_lookup_cache[domain] = (None, _time.monotonic())
         raise HTTPException(status_code=404, detail="Store not found for this domain")
-        
+
     logger.info(f"[LookupDomain] Found store: id={store.id!r}, slug={store.slug!r}, domain={store.domain!r}")
-    return {"storeId": store.id, "storeSlug": store.slug}
+    payload = {"storeId": store.id, "storeSlug": store.slug}
+    if len(_domain_lookup_cache) < 500:
+        _domain_lookup_cache[domain] = (payload, _time.monotonic())
+    return payload
 
 
 @router.get("/{id}", response_model=dict)
@@ -403,6 +428,9 @@ def update_store(
 
     db.commit()
     db.refresh(store)
+    # A store edit may have changed domain/slug — drop the routing cache so
+    # the new mapping is served immediately instead of after the 5-min TTL.
+    _domain_lookup_cache.clear()
     return _enrich_store_with_counts(db, store)
 
 
