@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, Boolean, JSON, DateTime, Float
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, Boolean, JSON, DateTime, Date, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base_class import Base
@@ -171,6 +171,34 @@ class MetaAdsCampaign(Base):
     product_id = Column(String, ForeignKey("products.id"), nullable=True, index=True)
 
     store = relationship("Store")
+
+
+class MetaAdsDailyInsight(Base):
+    """
+    One row per campaign per calendar day — Meta's own daily figures, pulled
+    with time_increment=1 during sync and upserted by (campaign_id, date).
+
+    MetaAdsCampaign above only holds ONE running snapshot per campaign,
+    overwritten on every sync with whatever date range was requested — so
+    "Achats déclarés par Meta" could never answer "combien aujourd'hui ?"
+    and always disagreed with Ads Manager whenever the two sides were
+    looking at different ranges. This table makes Meta's numbers sliceable
+    by any date range, exactly like our own orders.
+    """
+    __tablename__ = "meta_ads_daily_insights"
+    __table_args__ = (UniqueConstraint("campaign_id", "date", name="uq_meta_daily_campaign_date"),)
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    campaign_id = Column(String, nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    spend = Column(Float, default=0.0)          # converted to DZD
+    raw_spend = Column(Float, default=0.0)      # ad-account currency
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    reach = Column(Integer, default=0)
+    meta_purchases = Column(Integer, default=0)
+    meta_purchase_value = Column(Float, default=0.0)
 
 
 class MetaCapiLog(Base):

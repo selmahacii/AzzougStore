@@ -228,30 +228,57 @@ def list_landing_pages(
         # "Achats déclarés par Meta" per product — shown as a badge right on
         # the LP card so the client sees Meta's own received-orders count next
         # to the ERP's real counts without opening the Meta Ads module.
-        # Campaign snapshot totals (Meta's number for the campaign's last
-        # synced range), not date-sliced by the picker above — Meta's Insights
-        # result isn't stored per-day.
-        from app.models.marketing import MetaAdsCampaign
-        _meta_rows = (
-            db.query(
-                MetaAdsCampaign.product_id,
-                func.coalesce(func.sum(MetaAdsCampaign.meta_purchases), 0),
-            )
-            .filter(
+        # Sourced from the per-day insights table (time_increment=1 sync) and
+        # sliced by the SAME date range as the order metrics above, so both
+        # sides of the comparison finally cover the same period. Falls back
+        # to the campaign snapshot totals until the daily table has data
+        # (first sync after this feature ships).
+        from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
+        from app.core.dates import parse_local_date_filter
+        _campaign_product = {
+            c.campaign_id: c.product_id
+            for c in db.query(MetaAdsCampaign).filter(
                 MetaAdsCampaign.store_id == store_id,
                 MetaAdsCampaign.product_id.in_(lp_product_ids),
-            )
-            .group_by(MetaAdsCampaign.product_id)
-            .all()
-        )
-        for _pid, _meta_count in _meta_rows:
+            ).all()
+        }
+        _meta_by_product: dict = {}
+        if _campaign_product:
+            _daily_q = db.query(
+                MetaAdsDailyInsight.campaign_id,
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+            ).filter(MetaAdsDailyInsight.campaign_id.in_(list(_campaign_product.keys())))
+            if start_date:
+                try:
+                    _daily_q = _daily_q.filter(MetaAdsDailyInsight.date >= parse_local_date_filter(start_date).date())
+                except ValueError:
+                    pass
+            if end_date:
+                try:
+                    _daily_q = _daily_q.filter(MetaAdsDailyInsight.date <= parse_local_date_filter(end_date).date())
+                except ValueError:
+                    pass
+            _daily_rows = _daily_q.group_by(MetaAdsDailyInsight.campaign_id).all()
+            if _daily_rows:
+                for _cid, _cnt in _daily_rows:
+                    _pid = _campaign_product.get(_cid)
+                    if _pid:
+                        _meta_by_product[_pid] = _meta_by_product.get(_pid, 0) + int(_cnt or 0)
+            else:
+                # Daily table empty (pre-first-sync) — snapshot fallback
+                for c in db.query(MetaAdsCampaign).filter(
+                    MetaAdsCampaign.store_id == store_id,
+                    MetaAdsCampaign.product_id.in_(lp_product_ids),
+                ).all():
+                    _meta_by_product[c.product_id] = _meta_by_product.get(c.product_id, 0) + int(c.meta_purchases or 0)
+        for _pid, _meta_count in _meta_by_product.items():
             # A product can have a linked campaign but zero orders in the
             # selected period — still surface Meta's count on the card.
             metrics_by_product.setdefault(_pid, {
                 "orders": 0, "purchases": 0, "delivered": 0,
                 "confirmed_delivered": 0, "recovered": 0, "abandoned": 0,
                 "normal": 0, "cancelled": 0, "duplicates": 0, "manual": 0,
-            })["meta_purchases"] = int(_meta_count or 0)
+            })["meta_purchases"] = _meta_count
 
     # ── Remaining stock per product, broken down by variant ───────────────────
     stock_by_product: dict = {}
@@ -426,20 +453,48 @@ def get_landing_page_analytics(
 
     # "Achats déclarés par Meta" for this exact product — client's main ask
     # was to see, right on the landing page card, what Meta itself reports
-    # having received, next to the real order count above. Sourced from any
-    # campaign explicitly linked to this product (manual link or UTM/name
-    # match already resolved at sync time) — this is Meta's own snapshot
-    # total for the campaign, not date-sliced daily (Meta's Insights API
-    # result we store isn't kept per-day), so it reflects the campaign's own
-    # synced period rather than the picker's exact range.
-    from app.models.marketing import MetaAdsCampaign
+    # having received, next to the real order count above. Sourced from the
+    # per-day insights table and sliced by the SAME d_start..d_end as the
+    # order metrics above, so both sides finally cover the same period —
+    # this was the reported "décalage". Falls back to the campaign snapshot
+    # totals until the daily table has data (first sync after this ships).
+    from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
     meta_campaigns = db.query(MetaAdsCampaign).filter(
         MetaAdsCampaign.store_id == lp.store_id,
         MetaAdsCampaign.product_id == lp.product_id,
     ).all()
-    totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
-    totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
-    totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
+    _camp_ids = [c.campaign_id for c in meta_campaigns]
+    meta_daily_by_date: dict = {}
+    if _camp_ids:
+        _rows = (
+            db.query(
+                MetaAdsDailyInsight.date,
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
+            )
+            .filter(
+                MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
+                MetaAdsDailyInsight.date >= d_start.date(),
+                MetaAdsDailyInsight.date <= d_end.date(),
+            )
+            .group_by(MetaAdsDailyInsight.date)
+            .all()
+        )
+        meta_daily_by_date = {str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0)} for r in _rows}
+    if meta_daily_by_date:
+        totals["meta_purchases"] = sum(v["purchases"] for v in meta_daily_by_date.values())
+        totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
+        totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
+    else:
+        totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
+        totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
+        totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
+
+    # Per-day Meta count merged into the chart data — lets the dialog show
+    # "Meta a déclaré X ce jour-là" next to our own daily order bars.
+    for d in daily:
+        d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
 
     return {
         "success": True,

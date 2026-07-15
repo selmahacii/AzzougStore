@@ -764,6 +764,13 @@ def sync_meta_ads(
             # Ads Manager actually reports, only our own utm_campaign-matched
             # order count, which is a different methodology by construction.
             "fields": "campaign_id,campaign_name,spend,impressions,clicks,reach,actions,action_values,date_start,date_stop",
+            # Without this, the Insights API applies the account's default
+            # attribution window to conversions, while Ads Manager's columns
+            # use each AD SET's own attribution setting — the two can
+            # legitimately disagree on the same campaign/date range. Meta's
+            # documented flag to make API numbers match what Ads Manager
+            # displays (docs: Insights API > Parameters).
+            "use_unified_attribution_setting": "true",
         }
         # A hardcoded "last_30d" here meant any campaign/spend older than 30
         # days could never be fetched, no matter what range the dashboard's
@@ -1046,6 +1053,81 @@ def sync_meta_ads(
                     db.add(wallet)
 
     db.commit()
+
+    # ── Daily insights (time_increment=1) — makes Meta's numbers sliceable
+    # by date. The campaign rows above are a single running snapshot that
+    # gets overwritten with whatever range was synced; without per-day rows
+    # the ERP could never answer "combien Meta a déclaré AUJOURD'HUI ?" and
+    # always disagreed with Ads Manager whenever the two compared different
+    # ranges. One extra API call per sync; failure here never fails the sync.
+    if not is_simulated:
+        try:
+            from app.models.marketing import MetaAdsDailyInsight
+            from datetime import date as _date_cls
+            daily_params = {**params, "time_increment": "1"}
+            if relay_url:
+                daily_response = httpx.post(
+                    relay_url,
+                    json={
+                        "kind": "insights",
+                        "ad_account_id": ad_account_id,
+                        "graph_version": META_GRAPH_VERSION,
+                        "access_token": config.access_token,
+                        "params": daily_params,
+                    },
+                    headers={"x-internal-key": _settings.INTERNAL_API_KEY},
+                    timeout=30.0,
+                    follow_redirects=True,
+                )
+            else:
+                daily_response = httpx.get(
+                    f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights",
+                    params={**daily_params, "access_token": config.access_token},
+                    timeout=30.0,
+                )
+            daily_data = daily_response.json()
+            if "error" not in daily_data:
+                upserted = 0
+                for rc in daily_data.get("data", []):
+                    day_str = rc.get("date_start")
+                    camp_id = rc.get("campaign_id")
+                    if not day_str or not camp_id:
+                        continue
+                    try:
+                        day_val = _date_cls.fromisoformat(day_str)
+                    except ValueError:
+                        continue
+                    d_purchases, d_purchase_value = _extract_meta_purchases(rc)
+                    d_raw_spend = float(rc.get("spend", 0.0) or 0.0)
+                    rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
+                    row = db.query(MetaAdsDailyInsight).filter(
+                        MetaAdsDailyInsight.campaign_id == camp_id,
+                        MetaAdsDailyInsight.date == day_val,
+                    ).first()
+                    if not row:
+                        row = MetaAdsDailyInsight(
+                            id=str(uuid.uuid4()),
+                            store_id=store_id,
+                            campaign_id=camp_id,
+                            date=day_val,
+                        )
+                        db.add(row)
+                    row.raw_spend = d_raw_spend
+                    row.spend = d_raw_spend * rate
+                    row.impressions = int(rc.get("impressions", 0) or 0)
+                    row.clicks = int(rc.get("clicks", 0) or 0)
+                    row.reach = int(rc.get("reach", 0) or 0)
+                    row.meta_purchases = d_purchases
+                    row.meta_purchase_value = d_purchase_value
+                    upserted += 1
+                db.commit()
+                logger.info(f"[Meta Ads Sync] Insights quotidiens: {upserted} jour(s)-campagne upsertés.")
+            else:
+                logger.warning(f"[Meta Ads Sync] Insights quotidiens indisponibles: {daily_data['error']}")
+        except Exception as exc:
+            db.rollback()
+            logger.warning(f"[Meta Ads Sync] Échec insights quotidiens (non bloquant): {exc}")
+
     msg = f"{len(created_campaigns)} campagnes Meta Ads synchronisées avec succès."
     if is_simulated:
         msg += " (Simulation/Fallback)"
