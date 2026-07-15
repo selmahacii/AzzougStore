@@ -217,6 +217,49 @@ def link_campaign_product(
     return {"success": True, "data": {"campaign_id": camp.campaign_id, "product_id": camp.product_id}}
 
 
+@router.get("/campaigns/{campaign_id}/ads", response_model=dict)
+def list_campaign_ads(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Per-ad breakdown for one campaign — same rollup Meta's own "Publicité"
+    table shows (each split-tested ad with its own spend/achats), instead of
+    the single combined row the "Campagnes" table necessarily shows.
+    """
+    from app.models.marketing import MetaAdsAdInsight
+    db.info["skip_tenant_isolation"] = True
+    rows = (
+        db.query(MetaAdsAdInsight)
+        .filter(MetaAdsAdInsight.campaign_id == campaign_id)
+        .order_by(MetaAdsAdInsight.spend.desc())
+        .all()
+    )
+    data = []
+    for r in rows:
+        cpc = round(r.spend / r.clicks, 2) if r.clicks > 0 else 0.0
+        cpm = round(r.spend / r.impressions * 1000, 2) if r.impressions > 0 else 0.0
+        cost_per_purchase = round(r.spend / r.meta_purchases, 2) if r.meta_purchases > 0 else 0.0
+        data.append({
+            "ad_id": r.ad_id,
+            "ad_name": r.ad_name,
+            "adset_id": r.adset_id,
+            "adset_name": r.adset_name,
+            "spend": r.spend,
+            "raw_spend": r.raw_spend,
+            "currency": r.currency,
+            "impressions": r.impressions,
+            "clicks": r.clicks,
+            "reach": r.reach,
+            "meta_purchases": r.meta_purchases,
+            "meta_purchase_value": r.meta_purchase_value,
+            "cpc": cpc,
+            "cpm": cpm,
+            "cost_per_purchase": cost_per_purchase,
+        })
+    return {"success": True, "data": data}
+
+
 @router.get("/campaigns", response_model=dict)
 def list_campaigns(
     store_id: str = Query(...),
@@ -1079,6 +1122,82 @@ def sync_meta_ads(
         except Exception as exc:
             db.rollback()
             logger.warning(f"[Meta Ads Sync] Échec insights quotidiens (non bloquant): {exc}")
+
+    # ── Per-ad breakdown (level="ad") — MetaAdsCampaign above is a single
+    # rollup per campaign; a client running several split-tested ads under
+    # one campaign (e.g. "tyara"/"vd jdid"/"vd jdida"/"vd ai") could only
+    # ever see the combined total here, with no way to tell which specific
+    # ad drove 239 achats vs 1. One extra API call per sync, same pattern as
+    # the daily-insights block above; failure here never fails the sync.
+    if not is_simulated:
+        try:
+            from app.models.marketing import MetaAdsAdInsight
+            ad_params = {
+                "level": "ad",
+                "fields": "ad_id,ad_name,adset_id,adset_name,campaign_id,spend,impressions,clicks,reach,actions,action_values",
+                "use_unified_attribution_setting": "true",
+                "limit": "500",
+            }
+            if date_start and date_end:
+                ad_params["time_range"] = json.dumps({"since": date_start, "until": date_end})
+            else:
+                ad_params["date_preset"] = "last_30d"
+            if relay_url:
+                ad_response = httpx.post(
+                    relay_url,
+                    json={
+                        "kind": "insights",
+                        "ad_account_id": ad_account_id,
+                        "graph_version": META_GRAPH_VERSION,
+                        "access_token": config.access_token,
+                        "params": ad_params,
+                    },
+                    headers={"x-internal-key": _settings.INTERNAL_API_KEY},
+                    timeout=30.0,
+                    follow_redirects=True,
+                )
+            else:
+                ad_response = httpx.get(
+                    f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights",
+                    params={**ad_params, "access_token": config.access_token},
+                    timeout=30.0,
+                )
+            ad_data = ad_response.json()
+            if "error" not in ad_data:
+                ad_upserted = 0
+                for rc in ad_data.get("data", []):
+                    ad_id = rc.get("ad_id")
+                    if not ad_id:
+                        continue
+                    a_purchases, a_purchase_value = _extract_meta_purchases(rc)
+                    a_raw_spend = float(rc.get("spend", 0.0) or 0.0)
+                    a_rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
+                    row = db.query(MetaAdsAdInsight).filter(MetaAdsAdInsight.ad_id == ad_id).first()
+                    if not row:
+                        row = MetaAdsAdInsight(id=str(uuid.uuid4()), store_id=store_id, ad_id=ad_id)
+                        db.add(row)
+                    row.campaign_id = rc.get("campaign_id") or row.campaign_id
+                    row.ad_name = rc.get("ad_name") or "Sans nom"
+                    row.adset_id = rc.get("adset_id")
+                    row.adset_name = rc.get("adset_name")
+                    row.raw_spend = a_raw_spend
+                    row.spend = a_raw_spend * a_rate
+                    row.currency = ad_currency
+                    row.impressions = int(rc.get("impressions", 0) or 0)
+                    row.clicks = int(rc.get("clicks", 0) or 0)
+                    row.reach = int(rc.get("reach", 0) or 0)
+                    row.meta_purchases = a_purchases
+                    row.meta_purchase_value = a_purchase_value
+                    row.date_start = now - timedelta(days=30)
+                    row.date_end = now
+                    ad_upserted += 1
+                db.commit()
+                logger.info(f"[Meta Ads Sync] Détail par publicité: {ad_upserted} publicité(s) upsertée(s).")
+            else:
+                logger.warning(f"[Meta Ads Sync] Détail par publicité indisponible: {ad_data['error']}")
+        except Exception as exc:
+            db.rollback()
+            logger.warning(f"[Meta Ads Sync] Échec détail par publicité (non bloquant): {exc}")
 
     msg = f"{len(created_campaigns)} campagnes Meta Ads synchronisées avec succès."
     if is_simulated:

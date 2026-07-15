@@ -149,6 +149,22 @@ export default function MetaAdsDashboard() {
   const config = configData?.data || { is_connected: false, access_token: '', ad_account_id: '', exchange_rate: 1.0, currency: 'USD' };
   const campaigns = Array.isArray(campaignsData?.data) ? campaignsData.data : [];
   const productsBreakdown = Array.isArray(campaignsData?.products_breakdown) ? campaignsData.products_breakdown : [];
+
+  // --- Per-ad breakdown for the currently expanded campaign — a campaign
+  // row is Meta's own rollup of every ad underneath it (real case: "tyara",
+  // "vd jdid", "vd jdida", "vd ai" split-tested under one campaign, wildly
+  // different performance) so this only fetches once a row is expanded.
+  // expandedCampaign holds OUR row id (c.id), not Meta's campaign_id — the
+  // ads endpoint needs Meta's own id, looked up from the loaded campaigns.
+  const expandedMetaCampaignId = campaigns.find((c: any) => c.id === expandedCampaign)?.campaign_id;
+  const { data: campaignAdsData, isLoading: isLoadingCampaignAds } = useQuery({
+    queryKey: ['meta_ads_campaign_ads', expandedMetaCampaignId],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
+      `/api/v1/meta-ads/campaigns/${expandedMetaCampaignId}/ads`
+    ),
+    enabled: !!expandedMetaCampaignId,
+  });
+  const campaignAds = campaignAdsData?.data || [];
   const summary = campaignsData?.summary || { total_spend: 0, total_revenue: 0, total_orders: 0, global_roas: 0 };
 
   // Integration data shortcuts
@@ -748,6 +764,54 @@ export default function MetaAdsDashboard() {
                                 Attribution : produit «{c.product_name}» identifié {c.product_sku ? `(SKU: ${c.product_sku})` : 'par correspondance du nom de campagne'}
                               </div>
                             )}
+
+                            {/* Per-ad breakdown — this campaign row is Meta's own
+                                rollup of every ad underneath it; several
+                                split-tested ads under one campaign show up here
+                                individually instead of only as one combined
+                                total above. */}
+                            <div className="mt-4 pt-4 border-t border-[#E9ECF0]">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5">
+                                <Layers className="size-3" /> Détail par publicité
+                              </p>
+                              {isLoadingCampaignAds ? (
+                                <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
+                              ) : campaignAds.length === 0 ? (
+                                <p className="text-[10px] text-slate-300 italic">Aucun détail par publicité disponible pour cette campagne — resynchronisez pour le récupérer.</p>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left border-collapse min-w-[700px]">
+                                    <thead>
+                                      <tr>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Publicité</th>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Dépenses</th>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Impressions</th>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Achats (Meta)</th>
+                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Coût / achat</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#E9ECF0]/60">
+                                      {campaignAds.map((ad: any) => (
+                                        <tr key={ad.ad_id} className="text-xs font-bold bg-white">
+                                          <td className="px-3 py-2.5">
+                                            <p className="text-[11px] font-black text-[#2D3436]">{ad.ad_name}</p>
+                                            {ad.adset_name && <p className="text-[9px] text-slate-400">{ad.adset_name}</p>}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right tabular-nums">{formatPrice(ad.spend)}</td>
+                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.impressions || 0).toLocaleString()}</td>
+                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.clicks || 0).toLocaleString()}</td>
+                                          <td className="px-3 py-2.5 text-center">
+                                            <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{ad.meta_purchases || 0}</span>
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right tabular-nums font-mono">{ad.cost_per_purchase ? formatPrice(ad.cost_per_purchase) : '—'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )}
