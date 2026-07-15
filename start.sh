@@ -4,15 +4,23 @@ set -e
 echo "===== Application Startup at $(date -u '+%Y-%m-%d %H:%M:%S') ====="
 echo "--- AzzougShop Backend Booting ---"
 
-# Wait for Postgres to be ready using Python + SQLAlchemy (works with any DATABASE_URL incl. Neon)
+# Wait for Postgres to be ready using Python + SQLAlchemy (works with any DATABASE_URL incl. Neon/Supabase)
 until python -c "
 import os, sys
-url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL_NON_POOLING') or os.environ.get('POSTGRES_URL')
+url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL') or os.environ.get('POSTGRES_URL_NON_POOLING')
 if not url:
     print('No DATABASE_URL set', file=sys.stderr)
     sys.exit(1)
 if url.startswith('postgres://'):
     url = url.replace('postgres://', 'postgresql://', 1)
+# Supabase/Prisma-style URLs carry ?pgbouncer=true — libpq/psycopg2 doesn't
+# recognize it and rejects the whole DSN, which looked like the DB being
+# permanently unreachable (infinite 'Database is unavailable' retry loop).
+if 'pgbouncer=' in url:
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    parts = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(parts.query) if k.lower() != 'pgbouncer']
+    url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 from sqlalchemy import create_engine, text
 try:
     engine = create_engine(url, connect_args={'connect_timeout': 5})
@@ -32,9 +40,14 @@ echo "Database is UP"
 # Check schema state via Python (avoids hardcoded psql -h db)
 SCHEMA_STATE=$(python -c "
 import os, sys
-url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL_NON_POOLING') or os.environ.get('POSTGRES_URL', '')
+url = os.environ.get('DATABASE_URL') or os.environ.get('POSTGRES_URL') or os.environ.get('POSTGRES_URL_NON_POOLING', '')
 if url.startswith('postgres://'):
     url = url.replace('postgres://', 'postgresql://', 1)
+if 'pgbouncer=' in url:
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    parts = urlsplit(url)
+    q = [(k, v) for k, v in parse_qsl(parts.query) if k.lower() != 'pgbouncer']
+    url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 from sqlalchemy import create_engine, text
 engine = create_engine(url)
 with engine.connect() as conn:
