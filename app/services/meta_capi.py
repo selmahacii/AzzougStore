@@ -586,7 +586,13 @@ def build_purchase_event(order, *, client_ip: Optional[str], user_agent: Optiona
     event: Dict[str, Any] = {
         "event_name": "Purchase",
         "event_time": int(time.time()),
-        "event_id": purchase_event_id(str(order.id)),
+        # MUST be keyed by order_number, not order.id: the browser Pixel
+        # fires `purchase-${order_number}` (checkout-form.tsx — orderNum is
+        # json.order_number), so keying this on the UUID produced two
+        # DIFFERENT event_ids for the same purchase and Meta's dedup never
+        # matched — every web order was counted twice (Pixel + this CAPI),
+        # the root cause of "Meta affiche 12, l'ERP affiche 9".
+        "event_id": purchase_event_id(str(order.order_number or order.id)),
         "action_source": "website",
         "user_data": build_user_data(
             phone=order.customer_phone,
@@ -945,6 +951,16 @@ def send_purchase_for_order(
     try:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
+            return
+        # Never report a Purchase Meta shouldn't count:
+        # - MANUAL/POS: created by an agent/admin, no ad click, no Pixel ever
+        #   fired — sending CAPI made Meta count sales the LP module
+        #   deliberately excludes from conversion, widening the Meta-vs-ERP gap
+        #   with every phone order.
+        # - MERGED: duplicate submission absorbed into its parent (the parent
+        #   already sent its own Purchase); by the time this background task
+        #   runs, auto-merge may have already reclassified the order.
+        if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
             return
         config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
         if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:

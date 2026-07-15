@@ -582,10 +582,19 @@ export default function OrdersPage() {
      refetchInterval: 30000,
    });
 
-   // Counts per status tab (unfiltered by search for accurate badges)
+   // Counts per status tab — filtered by the SAME date range as the list,
+   // otherwise picking "aujourd'hui" filtered the list but the badges kept
+   // showing all-time totals, which read as yesterday's orders leaking into
+   // today's view. (Still unfiltered by text search: badges answer "how many
+   // in this period", not "how many match my search".)
    const countsQuery = useQuery<Record<string, number>>({
-     queryKey: ['orders-counts', storeId],
-     queryFn: () => apiFetch(`/api/v1/orders/counts?store_id=${storeId}`),
+     queryKey: ['orders-counts', storeId, startDate, endDate],
+     queryFn: () => {
+       let url = `/api/v1/orders/counts?store_id=${storeId}`;
+       if (startDate) url += `&start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}`;
+       if (endDate) url += `&end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}`;
+       return apiFetch(url);
+     },
      enabled: !!storeId,
      staleTime: 30_000,
      refetchInterval: 30_000,

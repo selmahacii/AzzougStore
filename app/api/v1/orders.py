@@ -299,16 +299,38 @@ def check_vigilance(
 @router.get("/counts")
 def get_order_counts(
     store_id: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     db: Session = Depends(deps.get_db),
     _: User = Depends(deps.get_current_active_user),
 ):
-    """Returns order counts per status for the tab badge display."""
-    rows = (
+    """
+    Returns order counts per status for the tab badge display.
+
+    Honors the same start_date/end_date the list itself is filtered by —
+    without this, picking "aujourd'hui" filtered the LIST to today but the
+    tab badges kept showing all-time totals, so the admin saw e.g. a badge
+    "NEW 14" above a list of 3 orders: yesterday's orders appeared "mixed
+    into" today's view. MERGED excluded for the same reason it's excluded
+    everywhere else (a duplicate absorbed into its parent isn't an order).
+    """
+    q = (
         db.query(Order.status, sqlfunc.count(Order.id).label("cnt"))
-        .filter(Order.store_id == store_id, Order.is_deleted == False)
-        .group_by(Order.status)
-        .all()
+        .filter(Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED")
     )
+    if start_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            q = q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            q = q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    rows = q.group_by(Order.status).all()
     return {r.status: r.cnt for r in rows}
 
 
