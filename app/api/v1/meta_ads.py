@@ -544,39 +544,51 @@ def list_campaigns(
         }
     }
 
-# Every action_type Meta uses across pixel/CAPI/onsite for a completed
-# purchase — Ads Manager's "Purchases" column sums all of these, so we must
-# too or we'll silently undercount vs. what the user sees in Meta's own UI.
-_META_PURCHASE_ACTION_TYPES = {
-    "purchase",
+# Meta reports the SAME purchase under several overlapping action_type
+# aliases (legacy pixel event, unified omni-channel rollup, app event...) —
+# they are NOT independent counts. Summing all of them (as this used to do)
+# multiplied every real purchase by ~5x: a campaign with 277 real purchases
+# (matching Ads Manager's own "Achats sur site Web" column, ad-by-ad) showed
+# 1438 in the ERP. Ads Manager itself picks ONE authoritative action type per
+# result column — omni_purchase when present (Meta's own deduplicated
+# cross-channel metric), falling back through the others only when it's
+# absent — so we must pick, not sum, to match what the user sees in Meta's
+# own UI.
+_META_PURCHASE_ACTION_PRIORITY = [
     "omni_purchase",
+    "purchase",
     "offsite_conversion.fb_pixel_purchase",
-    "onsite_web_purchase",
     "onsite_web_app_purchase",
+    "onsite_web_purchase",
     "app_custom_event.fb_mobile_purchase",
-}
+]
 
 
 def _extract_meta_purchases(raw_campaign: dict) -> tuple:
-    """Sum Meta's own attributed purchase count/value from an Insights API
-    row's `actions`/`action_values` arrays (see _META_PURCHASE_ACTION_TYPES).
-    Returns (count, value) — both 0 if Meta reports no purchase actions for
-    this campaign/date range."""
-    count = 0
-    value = 0.0
-    for action in (raw_campaign.get("actions") or []):
-        if action.get("action_type") in _META_PURCHASE_ACTION_TYPES:
+    """Pick Meta's own attributed purchase count/value from an Insights API
+    row's `actions`/`action_values` arrays — the first match in
+    _META_PURCHASE_ACTION_PRIORITY, never a sum across aliases. Returns
+    (count, value) — both 0 if Meta reports no purchase action for this
+    campaign/date range."""
+    actions_by_type = {a.get("action_type"): a for a in (raw_campaign.get("actions") or [])}
+    values_by_type = {a.get("action_type"): a for a in (raw_campaign.get("action_values") or [])}
+
+    for action_type in _META_PURCHASE_ACTION_PRIORITY:
+        if action_type not in actions_by_type:
+            continue
+        try:
+            count = int(float(actions_by_type[action_type].get("value", 0)))
+        except (TypeError, ValueError):
+            count = 0
+        value = 0.0
+        if action_type in values_by_type:
             try:
-                count += int(float(action.get("value", 0)))
+                value = float(values_by_type[action_type].get("value", 0))
             except (TypeError, ValueError):
-                pass
-    for action_value in (raw_campaign.get("action_values") or []):
-        if action_value.get("action_type") in _META_PURCHASE_ACTION_TYPES:
-            try:
-                value += float(action_value.get("value", 0))
-            except (TypeError, ValueError):
-                pass
-    return count, value
+                value = 0.0
+        return count, value
+
+    return 0, 0.0
 
 
 _FX_CACHE: Dict[str, tuple] = {}  # {currency: (rate_to_dzd_or_None, fetched_at_epoch)}
