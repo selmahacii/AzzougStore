@@ -47,7 +47,7 @@ declare global {
   interface Window {
     fbq?: (...args: unknown[]) => void;
     __metaPixelId?: string;
-    __metaTrackingConfig?: { pixelId?: string; storeId?: string };
+    __metaTrackingConfig?: { pixelId?: string; storeId?: string; currency?: string; exchangeRate?: number };
   }
 }
 
@@ -173,14 +173,28 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
   const dedupIds = readStorage();
   if (dedupIds.includes(eventId)) return;
 
+  // The ad account's OWN configured currency (meta_ads_configs.currency, e.g.
+  // "USD" for azconfort) — never hardcode "DZD": Meta Pixel logged
+  // "Parameter 'currency' is invalid for event 'Purchase'" for exactly this
+  // account, because it's actually billed/reported in USD. `value` callers
+  // pass is always in DZD (the ERP's native currency); convert it here using
+  // the same DZD-per-unit rate meta_ads.py already uses for campaign spend,
+  // so Pixel and CAPI never disagree on currency for the same event_id.
+  const adCurrency = (window.__metaTrackingConfig?.currency || 'DZD').toUpperCase();
+  const adRate = window.__metaTrackingConfig?.exchangeRate || 1;
+  const rawValue = options.value ?? payload.value;
+  const convertedValue = typeof rawValue === 'number' && adCurrency !== 'DZD'
+    ? Math.round((rawValue / adRate) * 100) / 100
+    : rawValue;
+
   const contentPayload = {
     content_name: options.contentName || payload.content_name,
     content_category: options.contentCategory || payload.content_category,
     content_type: options.contentType || payload.content_type || 'product',
-    currency: options.currency || payload.currency || 'DZD',
-    value: options.value ?? payload.value,
     contents: options.contents || payload.contents,
     ...payload,
+    currency: adCurrency,
+    value: convertedValue,
   };
 
   if (typeof window.fbq === 'function' && pixelId) {
@@ -211,7 +225,13 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     client_user_agent: options.clientUserAgent || window.navigator.userAgent,
     fbp: options.fbp || pickCookie('_fbp'),
     fbc: options.fbc || pickCookie('_fbc'),
-    event_data: contentPayload,
+    // MUST be named custom_data — MetaEventPayload (meta_ads.py) has no
+    // "event_data" field, and Pydantic silently drops unrecognized keys by
+    // default. This was named event_data, so custom_data was always None
+    // server-side: send_meta_event never crashed (nothing to prove it was
+    // broken), but Meta never received value/currency/content_ids through
+    // this relay for ANY event, on top of the keepalive issue above.
+    custom_data: contentPayload,
     pixel_event_fired: true,
   };
 
@@ -238,8 +258,8 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
   writeStorage(nextIds);
 }
 
-export function setMetaPixelId(pixelId?: string, storeId?: string) {
+export function setMetaPixelId(pixelId?: string, storeId?: string, currency?: string, exchangeRate?: number) {
   if (typeof window === 'undefined') return;
   window.__metaPixelId = pixelId;
-  window.__metaTrackingConfig = { pixelId, storeId };
+  window.__metaTrackingConfig = { pixelId, storeId, currency, exchangeRate };
 }

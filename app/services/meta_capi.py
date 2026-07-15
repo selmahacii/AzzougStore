@@ -575,8 +575,24 @@ def purchase_event_id(order_id: str) -> str:
     return f"purchase-{order_id}"
 
 
-def build_purchase_event(order, *, client_ip: Optional[str], user_agent: Optional[str]) -> Dict[str, Any]:
-    """Full Graph-compliant Purchase event from an Order ORM object."""
+def build_purchase_event(
+    order, *, client_ip: Optional[str], user_agent: Optional[str],
+    ad_currency: str = "DZD", exchange_rate: float = 1.0,
+) -> Dict[str, Any]:
+    """
+    Full Graph-compliant Purchase event from an Order ORM object.
+
+    ad_currency/exchange_rate: the store's OWN meta_ads_configs.currency and
+    exchange_rate (DZD per 1 unit of that currency, same convention as
+    get_conversion_rate in meta_ads.py). order.total is always stored in
+    DZD — sending "DZD" unconditionally to an ad account actually configured
+    in USD/EUR (verified: azconfort's ad account currency is USD) is a real
+    mismatch, and matches the exact pixel/account (456734346750846) where
+    Meta Pixel logged "Parameter 'currency' is invalid for event 'Purchase'"
+    in a live test. Converting to the account's own currency, the same way
+    campaign spend is already converted elsewhere in this codebase, sends
+    Meta a currency it actually expects for that account.
+    """
     items = list(order.items or [])
     contents = [
         {"id": str(i.product_id), "quantity": int(i.quantity or 1),
@@ -607,8 +623,8 @@ def build_purchase_event(order, *, client_ip: Optional[str], user_agent: Optiona
             fbclid=getattr(order, "fbclid", None),
         ),
         "custom_data": {
-            "value": float(order.total or 0),
-            "currency": "DZD",
+            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
+            "currency": (ad_currency or "DZD").upper(),
             "content_type": "product",
             "content_ids": [str(i.product_id) for i in items],
             "contents": contents,
@@ -983,7 +999,11 @@ def send_purchase_for_order(
         if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
             return
 
-        event = build_purchase_event(order, client_ip=client_ip, user_agent=user_agent)
+        event = build_purchase_event(
+            order, client_ip=client_ip, user_agent=user_agent,
+            ad_currency=config.currency or "DZD",
+            exchange_rate=config.exchange_rate if config.exchange_rate else 1.0,
+        )
         result = send_events(
             config.pixel_id, config.access_token, [event],
             store_label=order.store.name if order.store else str(order.store_id),

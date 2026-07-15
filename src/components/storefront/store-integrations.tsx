@@ -15,7 +15,7 @@ export function StorefrontIntegrations({ config }: { config: any }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setMetaPixelId(pixelId, config?.store_id);
+    setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
     if (!pixelId) return;
 
     const initialize = async () => {
