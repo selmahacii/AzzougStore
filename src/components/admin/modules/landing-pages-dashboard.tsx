@@ -172,13 +172,18 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
           </div>
 
           {/* Period totals */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
             {[
               { label: 'Commandes', value: totals.orders ?? 0, color: '#6C5CE7' },
               { label: 'Livrées', value: totals.delivered ?? 0, color: '#00B894' },
               { label: 'Annulées', value: totals.cancelled ?? 0, color: '#E17055' },
               { label: 'Manuelles', value: totals.manual ?? 0, color: '#636E72' },
               { label: 'CA', value: `${Math.round(totals.revenue ?? 0).toLocaleString('fr-FR')} DA`, color: '#0984E3' },
+              // Ce que Meta déclare avoir reçu pour ce produit, affiché juste
+              // à côté de nos vraies commandes — c'était le besoin principal
+              // du client : voir directement "voilà ce qu'on a reçu" sans
+              // devoir aller chercher dans le module Meta Ads séparément.
+              { label: 'Achats déclarés par Meta', value: totals.meta_purchases ?? 0, color: '#F7B731' },
             ].map(s => (
               <div key={s.label} className="text-center p-3 rounded-2xl border"
                 style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>

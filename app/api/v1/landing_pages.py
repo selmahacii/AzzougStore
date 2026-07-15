@@ -395,6 +395,24 @@ def get_landing_page_analytics(
         "manual": sum(d["manual"] for d in daily),
         "revenue": sum(d["revenue"] for d in daily),
     }
+
+    # "Achats déclarés par Meta" for this exact product — client's main ask
+    # was to see, right on the landing page card, what Meta itself reports
+    # having received, next to the real order count above. Sourced from any
+    # campaign explicitly linked to this product (manual link or UTM/name
+    # match already resolved at sync time) — this is Meta's own snapshot
+    # total for the campaign, not date-sliced daily (Meta's Insights API
+    # result we store isn't kept per-day), so it reflects the campaign's own
+    # synced period rather than the picker's exact range.
+    from app.models.marketing import MetaAdsCampaign
+    meta_campaigns = db.query(MetaAdsCampaign).filter(
+        MetaAdsCampaign.store_id == lp.store_id,
+        MetaAdsCampaign.product_id == lp.product_id,
+    ).all()
+    totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
+    totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
+    totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
+
     return {
         "success": True,
         "data": {
