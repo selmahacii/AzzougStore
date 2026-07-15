@@ -201,6 +201,40 @@ class MetaAdsDailyInsight(Base):
     meta_purchase_value = Column(Float, default=0.0)
 
 
+class MetaAdsAdInsight(Base):
+    """
+    One row per individual AD (Meta hierarchy: Campaign > Ad Set > Ad) —
+    MetaAdsCampaign only stores one row per CAMPAIGN, which is Meta's own
+    Insights API rollup of every ad/ad-set underneath it. A client running
+    several split-tested ads under the same campaign (real case: "tyara",
+    "vd jdid", "vd jdida", "vd ai" — Meta's own Ads Manager showed each with
+    its own achats/coût-par-achat) only ever saw ONE combined row in the ERP,
+    with no way to tell "vd jdid" (239 achats) apart from "vd ai" (1 achat).
+    This table makes that same per-ad breakdown available here, upserted by
+    ad_id on every sync — purely additive, campaign-level totals unchanged.
+    """
+    __tablename__ = "meta_ads_ad_insights"
+    __table_args__ = (UniqueConstraint("ad_id", name="uq_meta_ad_insight_ad_id"),)
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    campaign_id = Column(String, nullable=False, index=True)
+    ad_id = Column(String, nullable=False, index=True)
+    ad_name = Column(String, nullable=False)
+    adset_id = Column(String, nullable=True, index=True)
+    adset_name = Column(String, nullable=True)
+    spend = Column(Float, default=0.0)          # converted to DZD
+    raw_spend = Column(Float, default=0.0)      # ad-account currency
+    currency = Column(String, default="USD", nullable=True)
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    reach = Column(Integer, default=0)
+    meta_purchases = Column(Integer, default=0)
+    meta_purchase_value = Column(Float, default=0.0)
+    date_start = Column(DateTime, nullable=True)
+    date_end = Column(DateTime, nullable=True)
+
+
 class MetaCapiLog(Base):
     """
     One row per server-side Conversions API send — powers the diagnostics
