@@ -2230,9 +2230,52 @@ async def dispatch_order(
                         headers=_headers(token),
                         json=body,
                     )
-            
+
+                # 403-with-HTML = Noest's WAF rejected the request BODY, not
+                # our access: the tracking poll POSTs to the same host with
+                # the same token and passes (see noest_sync logs), so the
+                # block is payload-content-triggered (URLs/emojis/special
+                # chars in product names, notes or address commonly trip
+                # mod_security-style rules). Retry ONCE with the free-text
+                # fields sanitized to plain letters/digits before giving up.
+                if r.status_code == 403 and "<html" in (r.text or "").lower():
+                    _waf_re = re.compile(r"[^0-9A-Za-zÀ-ÿ؀-ۿ\s,.\-()/]")
+                    def _waf_safe(s: str, max_len: int = 250) -> str:
+                        return _waf_re.sub(" ", s or "").strip()[:max_len]
+                    body["produit"] = _waf_safe(body.get("produit", "")) or "Colis"
+                    body["remarque"] = _waf_safe(body.get("remarque", ""))
+                    body["adresse"] = _waf_safe(body.get("adresse", "")) or "Adresse communiquée par téléphone"
+                    body["client"] = _waf_safe(body.get("client", ""), 100) or "Client"
+                    r = await client.post(
+                        f"{base}/api/public/create/order",
+                        headers=_headers(token),
+                        json=body,
+                    )
+
             if r.status_code not in (200, 201):
-                raise HTTPException(r.status_code, f"Erreur Noest: {r.text[:300]}")
+                # Noest fronts its API with a WAF that answers blocked/refused
+                # requests with a raw HTML error page — dumping that HTML at
+                # the confirmatrice ("Erreur Noest: <html>...") tells her
+                # nothing. Map the common cases to actionable French instead.
+                _body_txt = r.text or ""
+                _is_html = "<html" in _body_txt.lower()
+                if r.status_code == 403:
+                    _msg = (
+                        "Noest a refusé la requête (403 Forbidden) — c'est un blocage côté Noest "
+                        "(pare-feu ou token API invalide/expiré), pas un problème de la commande. "
+                        "Réessayez dans quelques minutes ; si ça persiste, vérifiez le token Noest "
+                        "dans Transporteurs ou contactez le support Noest."
+                    )
+                elif r.status_code in (500, 502, 503, 504):
+                    _msg = (
+                        f"Le serveur Noest est momentanément indisponible ({r.status_code}). "
+                        "Réessayez dans quelques minutes."
+                    )
+                elif _is_html:
+                    _msg = f"Noest a renvoyé une page d'erreur ({r.status_code}). Réessayez plus tard."
+                else:
+                    _msg = f"Erreur Noest: {_body_txt[:300]}"
+                raise HTTPException(r.status_code, _msg)
                 
             res = r.json()
             if not res.get("success"):
