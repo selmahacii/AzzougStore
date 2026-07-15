@@ -1171,6 +1171,29 @@ def create_order(
                     db.rollback()
                     logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
 
+                # The customer just completed checkout THEMSELVES from an
+                # abandoned-cart link — this is a genuine sale, exactly like a
+                # brand-new order, so it must fire Purchase CAPI exactly once
+                # (send_purchase_for_order's own idempotency guard protects
+                # against ever double-firing if a confirmatrice later also
+                # touches this order's status).
+                if str(existing.status) != "MERGED":
+                    try:
+                        from app.models.marketing import MetaAdsConfig
+                        meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == existing.store_id).first()
+                        if meta_config and meta_config.pixel_id and meta_config.access_token:
+                            from app.services.meta_capi import send_purchase_for_order
+                            client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+                            user_agent = request.headers.get("user-agent")
+                            background_tasks.add_task(
+                                send_purchase_for_order,
+                                order_id=str(existing.id),
+                                client_ip=client_ip,
+                                user_agent=user_agent
+                            )
+                    except Exception as capi_err:
+                        logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
+
                 return existing
 
         from datetime import datetime, timezone, timedelta
@@ -1443,6 +1466,8 @@ def unmerge_order(
 def update_order(
     id: str,
     status_update: OrderUpdateStatus,
+    request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -1465,6 +1490,12 @@ def update_order(
     )
     if not order:
         raise OrderNotFoundError()
+
+    # Captured BEFORE order_service.update_order() mutates `order` in place —
+    # needed below to detect a genuine "recovered abandoned cart" transition
+    # (ABANDONED is a dead-end status per _VALID_TRANSITIONS once left, so
+    # this condition can only be true once per order's lifetime).
+    _was_abandoned = str(order.status) == "ABANDONED"
 
     _assert_order_access(order, current_user)
 
@@ -1492,6 +1523,32 @@ def update_order(
         )
         db.commit()
         db.refresh(updated)
+
+        # A confirmatrice just phoned the customer back and confirmed a cart
+        # that was previously abandoned — this is a genuine sale Meta never
+        # heard about (nothing fires CAPI on a plain status change), and the
+        # customer's browser session is long gone so no Pixel/relay can cover
+        # it either. Fire it exactly once here; send_purchase_for_order's own
+        # idempotency guard covers the (structurally impossible per
+        # _VALID_TRANSITIONS, but defended anyway) case of double-firing.
+        _REAL_SALE_STATUSES = {"CONFIRMED", "SHIPPED", "DELIVERED"}
+        if _was_abandoned and str(updated.status) in _REAL_SALE_STATUSES:
+            try:
+                from app.models.marketing import MetaAdsConfig
+                meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
+                if meta_config and meta_config.pixel_id and meta_config.access_token:
+                    from app.services.meta_capi import send_purchase_for_order
+                    client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+                    user_agent = request.headers.get("user-agent")
+                    background_tasks.add_task(
+                        send_purchase_for_order,
+                        order_id=str(updated.id),
+                        client_ip=client_ip,
+                        user_agent=user_agent
+                    )
+            except Exception as capi_err:
+                logger.warning(f"Failed to queue Meta CAPI event for phone-confirmed cart {updated.id}: {capi_err}")
+
         return updated
     except Exception as e:
         db.rollback()

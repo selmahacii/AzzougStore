@@ -944,7 +944,7 @@ def send_purchase_for_order(
     builds a fully-normalized Purchase event and ships it, logging the result.
     """
     from app.db.session import SessionLocal
-    from app.models.marketing import MetaAdsConfig
+    from app.models.marketing import MetaAdsConfig, MetaCapiLog
     from app.models.order import Order
 
     db = SessionLocal()
@@ -962,6 +962,23 @@ def send_purchase_for_order(
         #   runs, auto-merge may have already reclassified the order.
         if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
             return
+
+        # Idempotency guard: this function now has TWO call sites for the
+        # same order — the original creation-time trigger, and the recovered-
+        # abandoned-cart trigger (fired once, whichever transition happens
+        # first: customer self-checkout or confirmatrice phone confirmation).
+        # A retried request, a race between the two triggers, or a future
+        # third call site must never produce a second real send for the same
+        # order — Meta itself dedupes by event_id, but we skip the network
+        # call entirely rather than rely on that alone.
+        already_sent = db.query(MetaCapiLog).filter(
+            MetaCapiLog.order_id == str(order.id),
+            MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.status.in_(("success", "pending_retry")),
+        ).first()
+        if already_sent:
+            return
+
         config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
         if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
             return

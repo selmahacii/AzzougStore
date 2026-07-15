@@ -217,10 +217,17 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
 
   if (options.shouldSendToServer !== false && pixelId) {
     try {
+      // keepalive: without it, the browser can cancel this fetch the instant
+      // checkout completes and the page starts unloading/navigating right
+      // after — silently dropping the Purchase relay call (this is the
+      // suspected cause of meta_capi_logs never showing a relay-side row
+      // even for successful checkouts; keepalive lets the request survive
+      // past the point that triggered it).
       await fetch('/api/v1/meta-ads/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(eventPayload),
+        keepalive: true,
       });
     } catch {
       // ignore server failures for tracking
