@@ -1,0 +1,2 @@
+import requests
+print(requests.post("http://localhost:8000/api/v1/noest/test?store_id=2f47870d-b0ef-48b3-a16e-4286cb9588e2").json())

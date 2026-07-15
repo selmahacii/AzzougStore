@@ -1,0 +1,219 @@
+"""
+Commission Engine Migration Script
+====================================
+Migrates all users with payment_type = "PER_CONFIRMED_ORDER"
+to payment_type = "PER_DELIVERED_ORDER".
+
+This is required because the PER_CONFIRMED_ORDER commission type
+has been removed from the system. Commissions are now exclusively
+generated on DELIVERED orders only.
+
+Usage
+-----
+    cd backend
+    python scripts/recalculate_commissions.py
+
+    # Dry-run (report only, no changes saved):
+    python scripts/recalculate_commissions.py --dry-run
+
+Safety
+------
+- Idempotent: safe to run multiple times (skips already-migrated users)
+- Runs inside a single database transaction (rolled back on any error)
+- Produces a detailed before/after report
+- Never inserts or deletes any rows — only updates payment_type
+- Never touches order data
+"""
+
+import argparse
+import sys
+import os
+
+# Allow running from the backend/ directory directly
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from datetime import datetime
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
+from app.models.user import User
+from app.models.order import Order
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+SEPARATOR = "=" * 70
+OLD_TYPE  = "PER_CONFIRMED_ORDER"
+NEW_TYPE  = "PER_DELIVERED_ORDER"
+
+
+def _divider(char="-"):
+    print(char * 70)
+
+
+def _fmt_dt(dt):
+    return dt.isoformat() if dt else "N/A"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Report helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_affected_users(db):
+    """Return all users currently using PER_CONFIRMED_ORDER."""
+    return db.query(User).filter(User.payment_type == OLD_TYPE).all()
+
+
+def _count_orders_for_user(db, user_id: str, status: str) -> int:
+    return (
+        db.query(Order)
+        .filter(
+            Order.assigned_to == user_id,
+            Order.status      == status,
+            Order.is_deleted  == False,
+        )
+        .count()
+    )
+
+
+def _print_pre_report(db, affected_users: list):
+    print()
+    print(SEPARATOR)
+    print("  COMMISSION ENGINE MIGRATION — PRE-MIGRATION REPORT")
+    print(f"  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(SEPARATOR)
+    print()
+
+    if not affected_users:
+        print("  ✅  No users found with payment_type = 'PER_CONFIRMED_ORDER'.")
+        print("      Nothing to migrate. The system is already up to date.")
+        print()
+        return
+
+    print(f"  Found {len(affected_users)} user(s) to migrate:\n")
+    _divider()
+
+    for u in affected_users:
+        confirmed_orders = _count_orders_for_user(db, u.id, "CONFIRMED")
+        delivered_orders = _count_orders_for_user(db, u.id, "DELIVERED")
+        shipped_orders   = _count_orders_for_user(db, u.id, "SHIPPED")
+
+        print(f"  Agent   : {u.name} ({u.email})")
+        print(f"  ID      : {u.id}")
+        print(f"  Role    : {u.role}")
+        print(f"  Store   : {u.employee_store_id or '(cross-store)'}")
+        print(f"  Type    : {u.payment_type}  →  will become: {NEW_TYPE}")
+        print(f"  Rate    : {u.payment_amount} DA / order")
+        print(f"  Recovery: {u.payment_recovered_cart} DA / recovered cart")
+        print()
+        print(f"  Orders assigned to this agent:")
+        print(f"    - CONFIRMED (non-delivered, previously earning commission): {confirmed_orders}")
+        print(f"    - SHIPPED   : {shipped_orders}")
+        print(f"    - DELIVERED : {delivered_orders}")
+        print()
+        if confirmed_orders > 0:
+            phantom = confirmed_orders * (u.payment_amount or 0)
+            print(f"  ⚠️  Phantom commission previously earned from CONFIRMED status:")
+            print(f"      {confirmed_orders} orders × {u.payment_amount or 0} DA = {phantom:,} DA")
+            print(f"      These will NO LONGER be counted after migration.")
+        _divider()
+
+    print()
+
+
+def _print_post_report(db, migrated_users: list, dry_run: bool):
+    print()
+    print(SEPARATOR)
+    print("  COMMISSION ENGINE MIGRATION — POST-MIGRATION REPORT")
+    print(SEPARATOR)
+    print()
+
+    if dry_run:
+        print("  ⚠️  DRY-RUN MODE — no changes were saved to the database.")
+        print()
+
+    if not migrated_users:
+        print("  ✅  No changes were necessary. All users are already migrated.")
+        print()
+        return
+
+    action = "Would be updated" if dry_run else "Updated"
+    print(f"  {action}: {len(migrated_users)} user(s)\n")
+
+    for u in migrated_users:
+        delivered = _count_orders_for_user(db, u.id, "DELIVERED")
+        commission = delivered * (u.payment_amount or 0)
+        print(f"  ✅ {u.name} ({u.email})")
+        print(f"     New type    : {NEW_TYPE}")
+        print(f"     Salary now  : {delivered} delivered × {u.payment_amount or 0} DA = {commission:,} DA")
+        print()
+
+    _divider()
+    print()
+    if dry_run:
+        print("  Run without --dry-run to apply these changes.")
+    else:
+        print("  Migration complete. All salary calculations now use DELIVERED status only.")
+    print()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run(dry_run: bool = False):
+    # Connect to the database
+    engine = create_engine(settings.DATABASE_URL)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+
+    try:
+        affected_users = _get_affected_users(db)
+
+        # ── Pre-migration report ────────────────────────────────────────────
+        _print_pre_report(db, affected_users)
+
+        if not affected_users:
+            return  # Nothing to do
+
+        if dry_run:
+            # In dry-run we just show what would happen, then exit cleanly
+            _print_post_report(db, affected_users, dry_run=True)
+            return
+
+        # ── Apply changes inside a transaction ──────────────────────────────
+        migrated = []
+        for u in affected_users:
+            u.payment_type = NEW_TYPE  # type: ignore[assignment]
+            migrated.append(u)
+
+        db.commit()
+
+        # ── Post-migration report ───────────────────────────────────────────
+        _print_post_report(db, migrated, dry_run=False)
+
+    except Exception as exc:
+        db.rollback()
+        print()
+        print("  ❌  ERROR — transaction rolled back. No changes were saved.")
+        print(f"      {exc}")
+        print()
+        sys.exit(1)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Migrate PER_CONFIRMED_ORDER users to PER_DELIVERED_ORDER."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the migration report without saving any changes.",
+    )
+    args = parser.parse_args()
+    run(dry_run=args.dry_run)

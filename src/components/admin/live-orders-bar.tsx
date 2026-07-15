@@ -1,0 +1,281 @@
+'use client';
+
+import { useEffect, useState, useCallback, useRef } from 'react';
+// AnimatePresence removed for clean design
+import { ShoppingBag, Package, X, Eye, Wifi, WifiOff, Activity } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/store/app-store';
+import { ORDER_STATUS_LABELS } from '@/lib/types';
+import type { OrderStatus } from '@/lib/types';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface OrderNotification {
+  id: string;
+  type: 'new-order' | 'order-updated';
+  orderId: string;
+  orderNumber: string;
+  storeId: string;
+  customerName: string;
+  total: number;
+  fromStatus?: string;
+  toStatus?: string;
+  updatedBy?: string;
+  timestamp: string;
+}
+
+interface VisibleNotification extends OrderNotification {
+  dismissAt: number; // epoch ms when it should auto-dismiss
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MAX_VISIBLE = 3;
+const AUTO_DISMISS_MS = 8_000;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function LiveOrdersBar() {
+  const activeStore = useAppStore((s) => s.activeStore);
+  const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const setAdminView = useAppStore((s) => s.setAdminView);
+  const setSelectedOrderId = useAppStore((s) => s.setSelectedOrderId);
+
+  // Socket removed — no live connection anymore; the bar only renders
+  // notifications that other parts of the app may push into it.
+  const [hasEverConnected] = useState(false);
+  const [isConnected] = useState(false);
+  const [notifications, setNotifications] = useState<VisibleNotification[]>([]);
+  const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // ---- Helpers ----
+
+  const dismissNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    const timer = dismissTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      dismissTimersRef.current.delete(id);
+    }
+  }, []);
+
+  const addNotification = useCallback(
+    (n: OrderNotification) => {
+      const visible: VisibleNotification = {
+        ...n,
+        dismissAt: Date.now() + AUTO_DISMISS_MS,
+      };
+
+      setNotifications((prev) => {
+        // Deduplicate by id
+        if (prev.some((p) => p.id === n.id)) return prev;
+        const next = [...prev, visible];
+        // Keep only the most recent MAX_VISIBLE
+        const trimmed = next.slice(-MAX_VISIBLE);
+        // Clean up dismissed ones
+        for (const removed of prev) {
+          if (!trimmed.some((t) => t.id === removed.id)) {
+            const timer = dismissTimersRef.current.get(removed.id);
+            if (timer) {
+              clearTimeout(timer);
+              dismissTimersRef.current.delete(removed.id);
+            }
+          }
+        }
+        return trimmed;
+      });
+
+      // Set auto-dismiss timer
+      const timer = setTimeout(() => dismissNotification(n.id), AUTO_DISMISS_MS);
+      dismissTimersRef.current.set(n.id, timer);
+    },
+    [dismissNotification]
+  );
+
+  const handleViewOrder = useCallback(
+    (n: VisibleNotification) => {
+      setSelectedOrderId(n.orderId);
+      setAdminView('orders');
+      dismissNotification(n.id);
+    },
+    [setSelectedOrderId, setAdminView, dismissNotification]
+  );
+
+  // ---- Socket lifecycle ----
+  // Removed: the app connected to a socket.io server on port 3003 that no
+  // longer exists (FastAPI backend has no socket.io endpoint). In production
+  // this failed and retried in a loop — pure network noise, zero data. New
+  // order notifications already arrive via the admin-header polling query.
+
+  useEffect(() => {
+    return () => {
+      // Clear all timers on unmount
+      for (const timer of dismissTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      dismissTimersRef.current.clear();
+    };
+  }, []);
+
+  // ---- Don't render if not authenticated or if real-time service is unavailable ----
+
+  if (!isAuthenticated) return null;
+  // If we've never connected and are currently disconnected, the service is not running — hide the bar
+  if (!hasEverConnected && !isConnected) return null;
+
+  // ---- Render ----
+
+  return (
+    <div className="relative">
+      {/* Connection indicator */}
+      <div className="flex items-center gap-6 px-10 py-3 bg-white border-b border-neutral-100 shadow-sm">
+        <div className="flex items-center gap-3">
+          {isConnected ? (
+            <Wifi className="size-3.5 text-emerald-500" />
+          ) : (
+            <WifiOff className="size-3.5 text-rose-500" />
+          )}
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-black leading-none">
+              {isConnected ? 'Real-Time Sync active' : 'Signal Loss Detected'}
+            </span>
+            <span className="text-[8px] font-black text-neutral-300 uppercase mt-0.5 tracking-widest">
+              AzzougSystem // Core Uplink
+            </span>
+          </div>
+        </div>
+
+        <Badge
+          className={`text-[8px] px-3 py-0.5 font-black uppercase tracking-widest rounded-[1px] ${
+            isConnected
+              ? 'bg-emerald-50 text-emerald-600'
+              : 'bg-rose-50 text-rose-600'
+          }`}
+        >
+          {isConnected ? 'Operational' : 'Disconnected'}
+        </Badge>
+        
+        {isConnected && (
+           <div className="ml-auto flex items-center gap-2">
+              <span className="text-[8px] font-black text-neutral-200 uppercase tracking-widest">Latency: 12ms</span>
+              <div className="size-1 bg-emerald-500 rounded-full animate-pulse" />
+           </div>
+        )}
+      </div>
+
+      {/* Notifications area */}
+      <div className="fixed bottom-8 right-8 z-[100] pointer-events-none">
+        <div className="flex flex-col items-end gap-3">
+          {notifications.map((n) => (
+            <NotificationCard
+              key={n.id}
+              notification={n}
+              onDismiss={() => dismissNotification(n.id)}
+              onView={() => handleViewOrder(n)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Notification Card
+// ---------------------------------------------------------------------------
+
+function NotificationCard({
+  notification: n,
+  onDismiss,
+  onView,
+}: {
+  notification: VisibleNotification;
+  onDismiss: () => void;
+  onView: () => void;
+}) {
+  const isNew = n.type === 'new-order';
+
+  return (
+    <div
+      className="pointer-events-auto w-[400px] border border-neutral-200 bg-white shadow-2xl rounded-[1px] animate-in slide-in-from-right-8 duration-500"
+    >
+      <div className="flex flex-col overflow-hidden">
+        {/* Header Ribbon */}
+        <div className={cn("h-1 w-full", isNew ? "bg-black" : "bg-ekster-whiskey")} />
+        
+        <div className="flex items-start gap-5 p-6">
+          {/* Icon */}
+          <div
+            className={cn(
+              "flex size-12 shrink-0 items-center justify-center rounded-[1px] border shadow-inner",
+              isNew ? "bg-neutral-50 border-neutral-100 text-black" : "bg-white border-neutral-100 text-ekster-whiskey"
+            )}
+          >
+            {isNew ? (
+              <ShoppingBag className="size-6" />
+            ) : (
+              <Activity className="size-6" />
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="flex items-center justify-between">
+               <p className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.4em]">
+                 {isNew ? 'Incoming Order' : 'Registry Update'}
+               </p>
+               <span className="text-[8px] font-black text-neutral-200 uppercase tracking-widest">
+                  {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+               </span>
+            </div>
+
+            <h4 className="text-sm font-black text-black uppercase tracking-widest leading-none">
+              {n.orderNumber} // {isNew ? n.customerName : 'Status Transition'}
+            </h4>
+
+            {!isNew && (
+              <div className="flex items-center gap-3 mt-1">
+                <Badge className="text-[8px] font-black uppercase tracking-widest bg-neutral-50 text-neutral-400 border-none px-2 rounded-[1px]">
+                  {ORDER_STATUS_LABELS[n.fromStatus as OrderStatus] ?? n.fromStatus}
+                </Badge>
+                <div className="size-1 rounded-full bg-neutral-200" />
+                <Badge className="text-[8px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 border-none px-2 rounded-[1px]">
+                  {ORDER_STATUS_LABELS[n.toStatus as OrderStatus] ?? n.toStatus}
+                </Badge>
+              </div>
+            )}
+            
+            {isNew && (
+               <p className="text-[14px] font-black text-black tabular-nums">{n.total.toLocaleString('fr-FR')} DZD</p>
+            )}
+          </div>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex divide-x divide-neutral-100 border-t border-neutral-100 h-14">
+           <button 
+              onClick={onView}
+              className="flex-1 flex items-center justify-center gap-3 text-[9px] font-black uppercase tracking-[0.3em] text-black hover:bg-neutral-50 transition-all group"
+           >
+              <Eye className="size-3.5 group-hover:scale-110 transition-transform" />
+              Intercept Registry
+           </button>
+           <button 
+              onClick={onDismiss}
+              className="w-14 flex items-center justify-center text-neutral-200 hover:text-rose-500 hover:bg-rose-50 transition-all"
+           >
+              <X className="size-4" />
+           </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,14 @@
+id,title,description,link,image_link,availability,price,brand,condition,google_product_category,sku,inventory,sale_price
+200e991f-2964-449e-b521-87090d26c893,Coussin de Voyage Ergonomique - Nuage de Velours,"Redéfinissez le confort de vos trajets avec l'oreiller de voyage AZ Confort.
+
+Spécialement conçu pour éliminer les tensions cervicales lors de vos longs déplacements (avion, voiture, train) ou vos moments de pause au bureau, ce coussin ergonomique en forme de U offre un maintien parfait à 360° de votre tête et de votre nuque. 
+
+Le compagnon indispensable pour voyager en première classe, même au quotidien.",http://127.0.0.1:3000/products/coussin-voyage-ergonomique-velours,http://localhost:8003/api/v1/upload/files/fb49f3d335e142a1b6abafa57dd5ee1c.jpg,in stock,3500.00 DZD,AZ Confort,new,Coussins de Voyage,COU-DXALLI,215,4500.00 DZD
+0e37211e-f2e8-4a26-8807-4e96e1d2f8b1,Mini Projecteur LED 4K,Projecteur portable haute résolution avec haut-parleurs intégrés.,http://127.0.0.1:3000/products/mini-projecteur-led-4k,https://images.unsplash.com/photo-1535016120720-40c646be5580?w=500,in stock,8500.00 DZD,AzConfort,new,Apparel & Accessories,0e37211e-f2e8-4a26-8807-4e96e1d2f8b1,1,12000.00 DZD
+5f8fdb7d-eb3b-4002-867c-9c328b5feb61,Masque de Sommeil Occultant 3D,"Plongez dans l'obscurité totale, où que vous soyez.
+Le masque de sommeil 3D d'AZ Confort redéfinit vos moments de repos en voyage ou à la maison. Sa conception ergonomique unique intègre des cavités bombées pour les yeux, éliminant toute pression inconfortable sur vos paupières et vos cils tout en bloquant 100% de la lumière extérieure. 
+
+Technologie Occultante 3D : Forme moulée qui épouse parfaitement les contours du visage et du nez sans laisser passer un seul rayon de lumière.
+Confort Thermorégulateur : Tissu ultra-doux, respirant et léger, idéal pour les peaux sensibles. 
+ Ajustement Personnalisé : Sangle élastique réglable de haute qualité qui s'adapte sans serrer et ne tire pas les cheveux.
+Complément parfait de notre gamme de coussins ergonomiques pour un sommeil réparateur en avion, train ou à la maison.",http://127.0.0.1:3000/products/masque-sommeil-occultant-3d,http://localhost:8003/api/v1/upload/files/4f2238c6e8ac46cd9f232b5cafd31d59.jpg,in stock,1200.00 DZD,AZ Confort,new,Accessoires de Confort,ACC-L7KQXM,233,1700.00 DZD

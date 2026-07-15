@@ -1,0 +1,934 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String          @id @default(cuid()) @db.VarChar
+  email            String          @unique(map: "ix_users_email") @db.VarChar
+  name             String          @db.VarChar
+  passwordHash     String          @map("hashed_password") @db.VarChar
+  role             String?         @db.VarChar
+  avatar           String?         @map("avatar") @db.VarChar
+  phone            String?         @db.VarChar
+  isActive         Boolean?        @map("is_active")
+  dailyTarget      Int?            @map("daily_target")
+  employeeStoreId  String?         @map("employee_store_id") @db.VarChar
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  payment_type     String?         @db.VarChar
+  payment_amount   Int?
+  payment_recovered_cart Int?            @default(0)
+  payment_lost_cart      Int?            @default(0)
+  auditLogs        AuditLog[]
+  createdExpenses  Expense[]       @relation("ExpenseCreator")
+  assignedOrders   Order[]         @relation("AssignedOrders")
+  pos_sessions     pos_sessions[]
+  createdPurchases Purchase[]      @relation("PurchaseCreator")
+  createdReturns   Return[]        @relation("ReturnCreator")
+  stockMovements   StockMovement[]
+  ownedStores      Store[]         @relation("StoreOwner")
+  employeeStore    Store?          @relation("StoreEmployees", fields: [employeeStoreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_users_id")
+  @@map("users")
+}
+
+model Store {
+  id                    String                  @id @default(cuid()) @db.VarChar
+  name                  String                  @db.VarChar
+  slug                  String                  @unique(map: "ix_stores_slug") @db.VarChar
+  domain                String?                 @unique(map: "ix_stores_domain") @db.VarChar
+  description           String?                 @db.VarChar
+  logo                  String?                 @map("logo_url") @db.VarChar
+  templateId            String?                 @map("template_id") @db.VarChar
+  themeConfig           Json?                   @map("theme_config") @db.Json
+  socialLinks           Json?                   @map("social_links") @db.Json
+  currency              String?                 @map("currency") @db.VarChar
+  language              String?                 @map("language") @db.VarChar
+  timezone              String?                 @map("timezone") @db.VarChar
+  isActive              Boolean?                @map("is_active")
+  isDeleted             Boolean?                @map("is_deleted")
+  deletedAt             DateTime?               @map("deleted_at") @db.Timestamp(6)
+  ownerId               String                  @map("owner_id") @db.VarChar
+  assignmentLogic       String?                 @map("assignment_logic") @db.VarChar
+  autoReassignMin       Int?                    @map("auto_reassign_minutes")
+  assignmentActive      Boolean?                @map("assignment_active")
+  createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt             DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  banner_url            String?                 @db.VarChar
+  auditLogs             AuditLog[]
+  customers             Customer[]
+  deliveryPartners      DeliveryPartner[]
+  expenses              Expense[]
+  financialTransactions FinancialTransaction[]
+  marketing_automations marketing_automations[]
+  marketing_channels    marketing_channels[]
+  marketing_logs        marketing_logs[]
+  message_templates     message_templates[]
+  order_statuses        order_statuses[]
+  orders                Order[]
+  partner_api_keys      partner_api_keys[]
+  partner_webhooks      partner_webhooks[]
+  pos_sales             pos_sales[]
+  pos_sessions          pos_sessions[]
+  products              Product[]
+  promotions            Promotion[]
+  purchases             Purchase[]
+  returns               Return[]
+  reviews               Review[]
+  store_visitors        store_visitors[]
+  owner                 User                    @relation("StoreOwner", fields: [ownerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  suppliers             Supplier[]
+  employees             User[]                  @relation("StoreEmployees")
+  wallets               Wallet[]
+  warehouses            Warehouse[]
+
+  @@index([id], map: "ix_stores_id")
+  @@index([name], map: "ix_stores_name")
+  @@index([ownerId], map: "ix_stores_owner_id")
+  @@map("stores")
+}
+
+model Product {
+  id                  String           @id @default(cuid()) @db.VarChar
+  storeId             String           @map("store_id") @db.VarChar
+  name                String           @db.VarChar
+  slug                String           @db.VarChar
+  sku                 String?          @map("sku") @db.VarChar
+  barcode             String?          @map("barcode") @db.VarChar
+  external_id         String?          @db.VarChar
+  description         String?          @db.VarChar
+  price               Int
+  comparePrice        Int?             @map("compare_price")
+  costPrice           Int?             @map("cost_price")
+  stock               Int?
+  reservedStock       Int?             @map("reserved_stock")
+  lowStockThreshold   Int?             @map("low_stock_threshold")
+  main_image          String?          @db.VarChar
+  images              Json?            @map("images") @db.Json
+  variants            Json?            @db.Json
+  brand               String?          @map("brand") @db.VarChar
+  category            String?          @db.VarChar
+  tags                Json?            @db.Json
+  isActive            Boolean?         @map("is_active")
+  featured            Boolean?         @map("is_featured")
+  is_pack             Boolean?
+  marketer_percentage Float?
+  shipping_model      String?          @db.VarChar
+  page_url            String?          @db.VarChar
+  deliveryFees        Json?            @map("delivery_fees") @db.Json
+  createdAt           DateTime?        @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime?        @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  orderItems          OrderItem[]
+  pos_sale_items      pos_sale_items[]
+  store               Store            @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  purchaseItems     PurchaseItem[]
+  returnItems       ReturnItem[]
+  reviews           Review[]
+  stockMovements      StockMovement[]
+  deliveryPartners  ProductDeliveryPartner[]
+
+  @@unique([storeId, slug], map: "uq_store_product_slug")
+  @@index([barcode], map: "ix_products_barcode")
+  @@index([category], map: "ix_products_category")
+  @@index([id], map: "ix_products_id")
+  @@index([sku], map: "ix_products_sku")
+  @@index([storeId], map: "ix_products_store_id")
+  @@map("products")
+}
+
+model Order {
+  id              String               @id @default(cuid()) @db.VarChar
+  storeId         String               @map("store_id") @db.VarChar
+  orderNumber     String               @unique(map: "ix_orders_order_number") @map("order_number") @db.VarChar
+  customerName    String               @map("customer_name") @db.VarChar
+  customerPhone   String               @map("customer_phone") @db.VarChar
+  customerPhone2  String?              @map("customer_phone2") @db.VarChar
+  customerEmail   String?              @map("customer_email") @db.VarChar
+  customerAddress String               @map("customer_address")
+  customerWilaya  String               @map("customer_wilaya") @db.VarChar
+  customerCommune String?              @map("customer_commune") @db.VarChar
+  deliveryType    String?              @map("delivery_type") @db.VarChar
+  deliveryFee     Int?                 @map("delivery_fee")
+  trackingNumber  String?              @map("tracking_number") @db.VarChar
+  carrierId       String?              @map("carrier_id") @db.VarChar
+  subtotal        Int?                 @map("subtotal")
+  discount        Int?                 @map("discount")
+  total           Int
+  status          String?              @db.VarChar
+  assignedTo      String?              @map("assigned_to") @db.VarChar
+  customerId      String?              @map("customer_id") @db.VarChar
+  source          String?              @db.VarChar
+  utmSource       String?              @map("utm_source") @db.VarChar
+  utmMedium       String?              @map("utm_medium") @db.VarChar
+  utmCampaign     String?              @map("utm_campaign") @db.VarChar
+  notes           String?
+  isDeleted       Boolean?             @map("is_deleted")
+  deletedAt       DateTime?            @map("deleted_at") @db.Timestamp(6)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  promoCode       String?              @map("promo_code") @db.VarChar
+  confirmation_start_time DateTime? @map("confirmation_start_time") @db.Timestamp(6)
+  nrp_count               Int?      @default(0) @map("nrp_count")
+  next_callback_time      DateTime? @map("next_callback_time") @db.Timestamp(6)
+  is_pack                 Boolean?  @map("is_pack")
+  is_upsell               Boolean?  @map("is_upsell")
+  is_abandoned_cart       Boolean?  @map("is_abandoned_cart")
+  abandoned_cart_recovery_fee Int?  @default(0) @map("abandoned_cart_recovery_fee")
+  is_duplicate            Boolean?  @map("is_duplicate")
+  parent_order_id         String?   @map("parent_order_id") @db.VarChar
+  merged_by               String?   @map("merged_by") @db.VarChar
+  merged_at               DateTime? @map("merged_at") @db.Timestamp(6)
+  status_before_merge     String?   @map("status_before_merge") @db.VarChar
+  parent_order            Order?    @relation("OrderMerge", fields: [parent_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  child_orders            Order[]   @relation("OrderMerge")
+  noestEvents     NoestTrackingEvent[]
+  events          OrderEvent[]
+  items           OrderItem[]
+  assignee        User?                @relation("AssignedOrders", fields: [assignedTo], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customer        Customer?            @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store           Store                @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  carrier         DeliveryPartner?     @relation("OrderCarrier", fields: [carrierId], references: [id])
+  stock_movements StockMovement[]
+
+  @@index([customerPhone], map: "ix_orders_customer_phone")
+  @@index([customerWilaya], map: "ix_orders_customer_wilaya")
+  @@index([id], map: "ix_orders_id")
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(cuid()) @db.VarChar
+  orderId     String   @map("order_id") @db.VarChar
+  productId   String   @map("product_id") @db.VarChar
+  productName String   @map("product_name") @db.VarChar
+  quantity    Int
+  unitPrice   Int      @map("unit_price")
+  variant     Json?    @map("variant_details") @db.Json
+  image       String?  @map("image_url") @db.VarChar
+  createdAt   DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([id], map: "ix_order_items_id")
+  @@map("order_items")
+}
+
+model OrderEvent {
+  id           String    @id @default(cuid()) @db.VarChar
+  orderId      String    @map("order_id") @db.VarChar
+  actorId      String?   @map("actor_id") @db.VarChar
+  fromStatus   String?   @map("from_status") @db.VarChar
+  toStatus     String    @map("to_status") @db.VarChar
+  note         String?
+  callResult   String?   @map("call_result") @db.VarChar
+  call_attempt Int?
+  scheduled_at DateTime? @db.Timestamp(6)
+  createdAt    DateTime  @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_order_events_id")
+  @@map("order_events")
+}
+
+model Customer {
+  id             String      @id @default(cuid()) @db.VarChar
+  storeId        String      @map("store_id") @db.VarChar
+  phone          String      @db.VarChar
+  secondaryPhone String?     @map("secondary_phone") @db.VarChar
+  name           String      @db.VarChar
+  email          String?     @db.VarChar
+  wilaya         String?     @db.VarChar
+  address        String?     @db.VarChar
+  tier           String?     @db.VarChar
+  totalOrders    Int?        @map("total_orders")
+  totalSpent     Int?        @map("total_spent")
+  totalReturned  Int?        @map("total_returned")
+  isBlacklisted  Boolean?    @map("is_blacklisted")
+  blacklistNote  String?     @map("blacklist_note") @db.VarChar
+  lastOrderAt    DateTime?   @map("last_order_at") @db.Timestamp(6)
+  createdAt      DateTime?   @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime?   @updatedAt @map("updated_at") @db.Timestamp(6)
+  store          Store       @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders         Order[]
+  pos_sales      pos_sales[]
+
+  @@index([id], map: "ix_customers_id")
+  @@index([phone], map: "ix_customers_phone")
+  @@index([wilaya], map: "ix_customers_wilaya")
+  @@map("customers")
+}
+
+model Promotion {
+  id                   String    @id @default(cuid()) @db.VarChar
+  storeId              String    @map("store_id") @db.VarChar
+  code                 String    @db.VarChar
+  type                 String?   @db.VarChar
+  value                Int?
+  minOrderAmount       Int?      @map("min_order_amount")
+  maxUses              Int?      @map("max_uses")
+  usedCount            Int?      @map("used_count")
+  startsAt             DateTime? @map("starts_at") @db.Timestamp(6)
+  endsAt               DateTime? @map("ends_at") @db.Timestamp(6)
+  isActive             Boolean?  @map("is_active")
+  description          String?   @db.VarChar
+  applicableCategories String?   @map("applicable_categories") @db.VarChar
+  firstPurchaseOnly    Boolean?  @map("first_purchase_only")
+  isFlashSale          Boolean?  @map("is_flash_sale")
+  flashSaleEndsAt      DateTime? @map("flash_sale_ends_at") @db.Timestamp(6)
+  createdAt            DateTime? @map("created_at") @db.Timestamp(6)
+  updatedAt            DateTime? @updatedAt @map("updated_at") @db.Timestamp(6)
+  store                Store     @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([code], map: "ix_promotions_code")
+  @@index([id], map: "ix_promotions_id")
+  @@map("promotions")
+}
+
+model StockMovement {
+  id              String    @id @default(cuid()) @db.VarChar
+  productId       String    @map("product_id") @db.VarChar
+  type            String    @db.VarChar
+  quantity        Int
+  orderId         String?   @map("order_id") @db.VarChar
+  actorId         String?   @map("actor_id") @db.VarChar
+  reason          String?
+  createdAt       DateTime  @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  warehouse_id    String?   @db.VarChar
+  batch_id        String?   @db.VarChar
+  expiration_date DateTime? @db.Timestamp(6)
+  actor           User?     @relation(fields: [actorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders          Order?    @relation(fields: [orderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([id], map: "ix_stock_movements_id")
+  @@index([type], map: "ix_stock_movements_type")
+  @@map("stock_movements")
+}
+
+model NoestTrackingEvent {
+  id             String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  orderId        String   @map("order_id")
+  trackingNumber String   @map("tracking_number")
+  eventKey       String   @map("event_key")
+  eventLabel     String   @map("event_label")
+  causer         String?
+  eventDate      String?  @map("event_date")
+  rawData        Json?    @map("raw_data")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([orderId, eventKey])
+  @@index([orderId])
+  @@index([trackingNumber])
+  @@map("noest_tracking_events")
+}
+
+model WilayaDeliveryFee {
+  wilayaId   Int      @id @default(autoincrement()) @map("wilaya_id")
+  wilayaName String   @unique(map: "ix_wilaya_delivery_fees_wilaya_name") @map("wilaya_name") @db.VarChar
+  homeFee    Float?   @map("home_fee")
+  officeFee  Float?   @map("office_fee")
+  createdAt  DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  @@index([wilayaId], map: "ix_wilaya_delivery_fees_wilaya_id")
+  @@map("wilaya_delivery_fees")
+}
+
+model DeliveryPartner {
+  id              String   @id @default(cuid()) @db.VarChar
+  storeId         String   @map("store_id") @db.VarChar
+  name            String   @db.VarChar
+  code            String   @db.VarChar
+  logoUrl         String?  @map("logo_url") @db.VarChar
+  apiConfig       Json     @default("{}") @map("api_config")
+  isApiEnabled    Boolean  @default(false) @map("is_api_enabled")
+  isActive        Boolean  @default(true) @map("is_active")
+  
+  pricingGrid     DeliveryFeeGrid[]
+  allowedProducts ProductDeliveryPartner[]
+  orders          Order[] @relation("OrderCarrier")
+  store           Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, code])
+  @@index([storeId])
+  @@map("delivery_partners")
+}
+
+model DeliveryFeeGrid {
+  id                String  @id @default(cuid()) @db.VarChar
+  partnerId         String  @map("partner_id") @db.VarChar
+  wilayaId          Int     @map("wilaya_id")
+  homeFee           Int     @default(0) @map("home_fee")
+  officeFee         Int     @default(0) @map("office_fee")
+
+  partner           DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  @@unique([partnerId, wilayaId])
+  @@map("delivery_fee_grids")
+}
+
+model ProductDeliveryPartner {
+  productId         String @map("product_id") @db.VarChar
+  partnerId         String @map("partner_id") @db.VarChar
+
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  partner           DeliveryPartner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@id([productId, partnerId])
+  @@map("product_delivery_partners")
+}
+
+model AuditLog {
+  id         String    @id @default(cuid()) @db.VarChar
+  actorId    String?   @map("actor_id") @db.VarChar
+  storeId    String?   @map("store_id") @db.VarChar
+  entity     String    @db.VarChar
+  entityId   String    @map("entity_id") @db.VarChar
+  action     String    @db.VarChar
+  diff       Json?     @db.Json
+  ipAddress  String?   @map("ip_address") @db.VarChar
+  userAgent  String?   @map("user_agent") @db.VarChar
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updated_at DateTime  @default(now()) @updatedAt @db.Timestamp(6)
+  actor      User?     @relation(fields: [actorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store      Store?    @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_audit_logs_id")
+  @@map("audit_logs")
+}
+
+model Review {
+  id           String   @id @default(cuid()) @db.VarChar
+  productId    String   @map("product_id") @db.VarChar
+  storeId      String   @map("store_id") @db.VarChar
+  customerName String   @map("customer_name") @db.VarChar
+  rating       Int
+  title        String?  @db.VarChar
+  comment      String   @db.VarChar
+  isVerified   Boolean? @map("is_verified")
+  isApproved   Boolean? @map("is_approved")
+  createdAt    DateTime @map("created_at") @db.Timestamp(6)
+  updated_at   DateTime @db.Timestamp(6)
+  product      Product  @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_reviews_id")
+  @@index([productId], map: "ix_reviews_product_id")
+  @@index([storeId], map: "ix_reviews_store_id")
+  @@map("reviews")
+}
+
+model Warehouse {
+  id           String     @id @default(cuid()) @db.VarChar
+  storeId      String     @map("store_id") @db.VarChar
+  code         String     @unique(map: "ix_warehouses_code") @db.VarChar
+  name         String     @db.VarChar
+  phone        String?    @db.VarChar
+  address      String?
+  wilaya       String?    @db.VarChar
+  capacity     Int?
+  currentLoad  Int?       @map("current_load")
+  manager_name String?    @db.VarChar
+  note         String?
+  isActive     Boolean?   @map("is_active")
+  createdAt    DateTime   @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamp(6)
+  purchases    Purchase[]
+  returns      Return[]
+  store        Store      @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_warehouses_id")
+  @@index([storeId], map: "ix_warehouses_store_id")
+  @@index([wilaya], map: "ix_warehouses_wilaya")
+  @@map("warehouses")
+}
+
+model Supplier {
+  id                 String     @id @default(cuid()) @db.VarChar
+  storeId            String     @map("store_id") @db.VarChar
+  name               String     @db.VarChar
+  code               String?    @unique(map: "ix_suppliers_code") @db.VarChar
+  phone              String?    @db.VarChar
+  email              String?    @db.VarChar
+  address            String?
+  city               String?    @db.VarChar
+  taxId              String?    @map("tax_id") @db.VarChar
+  totalDue           Int?       @map("total_due")
+  totalPaid          Int?       @map("total_paid")
+  totalRemaining     Int?       @map("total_remaining")
+  reliabilityScore   Float?     @map("reliability_score")
+  note               String?
+  payment_terms_days Int?
+  lead_time_days     Int?
+  min_order_qty      Int?
+  min_order_amount   Int?
+  credit_limit       Int?
+  discount_rate      Float?
+  currency           String?    @db.VarChar
+  delivery_method    String?    @db.VarChar
+  return_policy      String?
+  bank_account       String?    @db.VarChar
+  supply_category    String?    @db.VarChar
+  fees               Json?      @db.Json
+  isActive           Boolean?   @map("is_active")
+  isVerified         Boolean?   @map("is_verified")
+  createdAt          DateTime   @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamp(6)
+  purchases          Purchase[]
+  returns            Return[]
+  store              Store      @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_suppliers_id")
+  @@index([name], map: "ix_suppliers_name")
+  @@index([storeId], map: "ix_suppliers_store_id")
+  @@map("suppliers")
+}
+
+model Purchase {
+  id              String           @id @default(cuid()) @db.VarChar
+  storeId         String           @map("store_id") @db.VarChar
+  supplierId      String           @map("supplier_id") @db.VarChar
+  warehouseId     String           @map("warehouse_id") @db.VarChar
+  reference       String           @unique(map: "ix_purchases_reference") @db.VarChar
+  subtotal        Int?
+  taxAmount       Int?             @map("tax_amount")
+  shippingCost    Int?             @map("shipping_cost")
+  total           Int?
+  amountPaid      Int?             @map("amount_paid")
+  paymentStatus   paymentstatus?   @map("payment_status")
+  receptionStatus receptionstatus? @map("reception_status")
+  note            String?
+  receivedAt      DateTime?        @map("received_at") @db.Timestamp(6)
+  createdBy       String?          @map("created_by") @db.VarChar
+  createdAt       DateTime         @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamp(6)
+  items           PurchaseItem[]
+  creator         User?            @relation("PurchaseCreator", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  returns         Return[]
+
+  @@index([id], map: "ix_purchases_id")
+  @@index([storeId], map: "ix_purchases_store_id")
+  @@index([supplierId], map: "ix_purchases_supplier_id")
+  @@index([warehouseId], map: "ix_purchases_warehouse_id")
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id               String   @id @default(cuid()) @db.VarChar
+  purchaseId       String   @map("purchase_id") @db.VarChar
+  productId        String   @map("product_id") @db.VarChar
+  productName      String   @map("product_name") @db.VarChar
+  sku              String?  @db.VarChar
+  quantity         Int
+  unitCost         Int      @map("unit_cost")
+  totalCost        Int      @map("total_cost")
+  receivedQuantity Int?     @map("received_quantity")
+  createdAt        DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  product          Product  @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  purchase         Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([id], map: "ix_purchase_items_id")
+  @@index([productId], map: "ix_purchase_items_product_id")
+  @@index([purchaseId], map: "ix_purchase_items_purchase_id")
+  @@map("purchase_items")
+}
+
+model Return {
+  id             String        @id @default(cuid()) @db.VarChar
+  storeId        String        @map("store_id") @db.VarChar
+  supplierId     String        @map("supplier_id") @db.VarChar
+  warehouseId    String        @map("warehouse_id") @db.VarChar
+  purchaseId     String?       @map("purchase_id") @db.VarChar
+  reference      String        @unique(map: "ix_returns_reference") @db.VarChar
+  totalCredit    Int?          @map("total_credit")
+  amountRefunded Int?          @map("amount_refunded")
+  reason         returnreason?
+  refundStatus   refundstatus? @map("refund_status")
+  status         returnstatus?
+  note           String?
+  shippedAt      DateTime?     @map("shipped_at") @db.Timestamp(6)
+  closedAt       DateTime?     @map("closed_at") @db.Timestamp(6)
+  createdBy      String?       @map("created_by") @db.VarChar
+  createdAt      DateTime      @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamp(6)
+  items          ReturnItem[]
+  creator        User?         @relation("ReturnCreator", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sourcePurchase Purchase?     @relation(fields: [purchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store          Store         @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supplier       Supplier      @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouse      Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_returns_id")
+  @@index([purchaseId], map: "ix_returns_purchase_id")
+  @@index([storeId], map: "ix_returns_store_id")
+  @@index([supplierId], map: "ix_returns_supplier_id")
+  @@index([warehouseId], map: "ix_returns_warehouse_id")
+  @@map("returns")
+}
+
+model ReturnItem {
+  id          String   @id @default(cuid()) @db.VarChar
+  returnId    String   @map("return_id") @db.VarChar
+  productId   String   @map("product_id") @db.VarChar
+  productName String   @map("product_name") @db.VarChar
+  sku         String?  @db.VarChar
+  quantity    Int
+  unitCredit  Int      @map("unit_credit")
+  totalCredit Int      @map("total_credit")
+  createdAt   DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  returnEntry Return   @relation(fields: [returnId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([id], map: "ix_return_items_id")
+  @@index([productId], map: "ix_return_items_product_id")
+  @@index([returnId], map: "ix_return_items_return_id")
+  @@map("return_items")
+}
+
+model Expense {
+  id               String          @id @default(cuid()) @db.VarChar
+  storeId          String          @map("store_id") @db.VarChar
+  category         expensecategory
+  label            String          @db.VarChar
+  description      String?
+  amount           Int
+  taxAmount        Int?            @map("tax_amount")
+  totalAmount      Int             @map("total_amount")
+  status           expensestatus?
+  expenseDate      DateTime        @map("expense_date") @db.Date
+  isRecurring      Boolean?        @map("is_recurring")
+  recurrencePeriod String?         @map("recurrence_period") @db.VarChar
+  walletId         String?         @map("wallet_id") @db.VarChar
+  receiptUrl       String?         @map("receipt_url") @db.VarChar
+  beneficiary      String?         @db.VarChar
+  createdBy        String?         @map("created_by") @db.VarChar
+  createdAt        DateTime        @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  creator          User?           @relation("ExpenseCreator", fields: [createdBy], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store            Store           @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  wallets          Wallet?         @relation(fields: [walletId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([category], map: "ix_expenses_category")
+  @@index([id], map: "ix_expenses_id")
+  @@index([storeId], map: "ix_expenses_store_id")
+  @@map("expenses")
+}
+
+model Wallet {
+  id           String                 @id @default(cuid()) @db.VarChar
+  storeId      String                 @map("store_id") @db.VarChar
+  name         String                 @db.VarChar
+  type         wallettype?
+  balance      Int?
+  totalIn      Int?                   @map("total_in")
+  totalOut     Int?                   @map("total_out")
+  description  String?                @db.VarChar
+  isActive     Boolean?               @map("is_active")
+  createdAt    DateTime?              @map("created_at") @db.Timestamp(6)
+  updatedAt    DateTime?              @updatedAt @map("updated_at") @db.Timestamp(6)
+  expenses     Expense[]
+  transactions FinancialTransaction[]
+  store        Store                  @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_wallets_id")
+  @@map("wallets")
+}
+
+model FinancialTransaction {
+  id              String          @id @default(cuid()) @db.VarChar
+  storeId         String          @map("store_id") @db.VarChar
+  walletId        String          @map("wallet_id") @db.VarChar
+  reference       String?         @unique(map: "ix_financial_transactions_reference") @db.VarChar
+  type            transactiontype
+  category        String?         @db.VarChar
+  amount          Int
+  beneficiary     String?         @db.VarChar
+  description     String?         @db.VarChar
+  transactionDate DateTime?       @map("transaction_date") @db.Timestamp(6)
+  createdBy       String?         @map("created_by") @db.VarChar
+  createdAt       DateTime?       @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamp(6)
+  store           Store           @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  wallet          Wallet          @relation(fields: [walletId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_financial_transactions_id")
+  @@map("financial_transactions")
+}
+
+model alembic_version {
+  version_num String @id(map: "alembic_version_pkc") @db.VarChar(32)
+}
+
+model marketing_automations {
+  id                String             @id @db.VarChar
+  name              String             @db.VarChar
+  trigger           String             @db.VarChar
+  action            String             @db.VarChar
+  template_id       String?            @db.VarChar
+  is_active         Boolean?
+  store_id          String             @db.VarChar
+  created_at        DateTime           @db.Timestamp(6)
+  updated_at        DateTime           @db.Timestamp(6)
+  stores            Store              @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  message_templates message_templates? @relation(fields: [template_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  marketing_logs    marketing_logs[]
+
+  @@index([id], map: "ix_marketing_automations_id")
+}
+
+model marketing_channels {
+  id           String   @id @db.VarChar
+  name         String   @db.VarChar
+  type         String   @db.VarChar
+  status       String?  @db.VarChar
+  health_score Int?
+  config       Json?    @db.Json
+  store_id     String   @db.VarChar
+  created_at   DateTime @db.Timestamp(6)
+  updated_at   DateTime @db.Timestamp(6)
+  stores       Store    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_marketing_channels_id")
+}
+
+model marketing_logs {
+  id                    String                 @id @db.VarChar
+  automation_id         String?                @db.VarChar
+  channel_type          String                 @db.VarChar
+  recipient             String                 @db.VarChar
+  status                String?                @db.VarChar
+  error_message         String?
+  store_id              String                 @db.VarChar
+  created_at            DateTime               @db.Timestamp(6)
+  updated_at            DateTime               @db.Timestamp(6)
+  marketing_automations marketing_automations? @relation(fields: [automation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stores                Store                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_marketing_logs_id")
+}
+
+model message_templates {
+  id                    String                  @id @db.VarChar
+  name                  String                  @db.VarChar
+  type                  String                  @db.VarChar
+  language              String?                 @db.VarChar
+  content               String
+  store_id              String                  @db.VarChar
+  created_at            DateTime                @db.Timestamp(6)
+  updated_at            DateTime                @db.Timestamp(6)
+  marketing_automations marketing_automations[]
+  stores                Store                   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_message_templates_id")
+}
+
+model order_statuses {
+  id          String   @id @db.VarChar
+  store_id    String   @db.VarChar
+  code        String   @db.VarChar
+  label       String   @db.VarChar
+  color       String?  @db.VarChar
+  is_system   Boolean?
+  order_index Int?
+  description String?
+  created_at  DateTime @db.Timestamp(6)
+  updated_at  DateTime @db.Timestamp(6)
+  stores      Store    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_order_statuses_id")
+  @@index([store_id], map: "ix_order_statuses_store_id")
+}
+
+model partner_api_keys {
+  id              String    @id @db.VarChar
+  store_id        String    @db.VarChar
+  name            String    @db.VarChar
+  hashed_key      String    @db.VarChar
+  key_preview     String    @db.VarChar
+  is_active       Boolean?
+  last_rotated_at DateTime? @db.Timestamp(6)
+  created_at      DateTime? @db.Timestamp(6)
+  updated_at      DateTime  @db.Timestamp(6)
+  stores          Store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_partner_api_keys_id")
+}
+
+model partner_webhooks {
+  id         String    @id @db.VarChar
+  store_id   String    @db.VarChar
+  url        String    @db.VarChar
+  is_active  Boolean?
+  events     Json      @db.Json
+  created_at DateTime? @db.Timestamp(6)
+  updated_at DateTime  @db.Timestamp(6)
+  stores     Store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_partner_webhooks_id")
+}
+
+model pos_sale_items {
+  id              String    @id @db.VarChar
+  sale_id         String    @db.VarChar
+  product_id      String    @db.VarChar
+  product_name    String    @db.VarChar
+  quantity        Int
+  unit_price      Int
+  total_price     Int
+  variant_details Json?     @db.Json
+  created_at      DateTime  @db.Timestamp(6)
+  updated_at      DateTime  @db.Timestamp(6)
+  products        Product   @relation(fields: [product_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  pos_sales       pos_sales @relation(fields: [sale_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_pos_sale_items_id")
+}
+
+model pos_sales {
+  id              String           @id @db.VarChar
+  session_id      String           @db.VarChar
+  store_id        String           @db.VarChar
+  customer_id     String?          @db.VarChar
+  receipt_number  String           @unique(map: "ix_pos_sales_receipt_number") @db.VarChar
+  subtotal        Int?
+  tax             Int?
+  discount        Int?
+  total           Int
+  payment_method  String?          @db.VarChar
+  payment_details Json?            @db.Json
+  created_at      DateTime?        @db.Timestamp(6)
+  updated_at      DateTime         @db.Timestamp(6)
+  pos_sale_items  pos_sale_items[]
+  customers       Customer?        @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pos_sessions    pos_sessions     @relation(fields: [session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stores          Store            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_pos_sales_id")
+}
+
+model pos_sessions {
+  id                   String      @id @db.VarChar
+  store_id             String      @db.VarChar
+  user_id              String      @db.VarChar
+  start_at             DateTime?   @db.Timestamp(6)
+  end_at               DateTime?   @db.Timestamp(6)
+  opening_balance      Int?
+  closing_balance      Int?
+  real_closing_balance Int?
+  status               String?     @db.VarChar
+  notes                String?
+  created_at           DateTime    @db.Timestamp(6)
+  updated_at           DateTime    @db.Timestamp(6)
+  pos_sales            pos_sales[]
+  stores               Store       @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                User        @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([id], map: "ix_pos_sessions_id")
+}
+
+model store_visitors {
+  id                  String    @id @db.VarChar
+  store_id            String    @db.VarChar
+  name                String?   @db.VarChar
+  phone               String?   @db.VarChar
+  email               String?   @db.VarChar
+  source              String?   @db.VarChar
+  page                String?   @db.VarChar
+  user_agent          String?
+  converted           Boolean?  @default(false)
+  conversion_order_id String?   @db.VarChar
+  session_id          String?   @db.VarChar
+  visited_at          DateTime? @default(now()) @db.Timestamp(6)
+  stores              Store     @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id], map: "ix_store_visitors_session_id")
+  @@index([store_id], map: "ix_store_visitors_store_id")
+}
+
+enum expensecategory {
+  ADVERTISING
+  SHIPPING
+  RENT
+  SALARY
+  COMMISSION
+  PACKAGING
+  SOFTWARE
+  MAINTENANCE
+  TAXES
+  SUPPLIER
+  FUEL
+  OTHER
+}
+
+enum expensestatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum paymentstatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum receptionstatus {
+  PENDING
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+
+enum refundstatus {
+  PENDING
+  PARTIAL
+  REFUNDED
+  CREDIT_NOTE
+  REJECTED
+}
+
+enum returnreason {
+  DEFECTIVE
+  WRONG_ITEM
+  DAMAGED
+  QUALITY_ISSUE
+  OVERSTOCK
+  OTHER
+}
+
+enum returnstatus {
+  PENDING
+  IN_TRANSIT
+  RECEIVED_BY_SUPPLIER
+  CLOSED
+  CANCELLED
+}
+
+enum transactiontype {
+  DISBURSEMENT
+  CHARGE
+  PAYMENT
+  TRANSFER
+}
+
+enum wallettype {
+  BANK
+  CASH
+  MOBILE
+  COD
+}
