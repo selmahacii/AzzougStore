@@ -77,6 +77,7 @@ export interface ProductVariant {
   value: string;     // e.g. "Rouge"
   sku?: string;      // Specific SKU for this variant
   stock?: number;    // Specific stock for this variant
+  reserved?: number; // Units reserved by pending orders (from stock summary)
   price?: number;    // Specific price (optional, overrides base)
   image?: string;    // Specific image for this variant
   color?: string;    // Hex code for color swatches

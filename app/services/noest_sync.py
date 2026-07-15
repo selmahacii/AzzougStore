@@ -640,6 +640,20 @@ async def background_loop() -> None:
     seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
     seconds_since_cloudinary_sync = CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60  # migrate immediately at boot
     while True:
+        # Night idle (01:00–06:59 Algeria, UTC+1): skip every DB/network sweep
+        # so the serverless Postgres compute can autosuspend — nobody confirms
+        # orders at 3am, but this loop was waking the database every 10 min
+        # around the clock. Interval counters keep accumulating, so all due
+        # syncs fire on the first morning tick.
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _tdelta
+        _algeria_hour = (_dt.now(_tz.utc) + _tdelta(hours=1)).hour
+        if 1 <= _algeria_hour < 7:
+            _night_sleep = 1800.0
+            await asyncio.sleep(_night_sleep)
+            seconds_since_sync += _night_sleep
+            seconds_since_meta_sync += _night_sleep
+            seconds_since_cloudinary_sync += _night_sleep
+            continue
         try:
             scan_due_reminders()
         except Exception as exc:

@@ -261,7 +261,7 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
   const eventsQuery = useQuery<any>({
     queryKey: ['order-events', orderId],
     queryFn: () => apiFetch(`/api/v1/orders/${orderId}/events`),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
     enabled: !!orderId,
   });
 

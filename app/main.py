@@ -89,52 +89,33 @@ def run_db_migrations():
     # one of the backfill queries below.
     print("🔌 Connecting to database for startup migrations...")
 
-    # Alterations for landing_pages.offers (JSON / JSONB)
+    # One information_schema round-trip instead of blindly firing ALTER TABLE
+    # statements (DDL) at every container boot — each failed ALTER still costs
+    # a network round-trip and wakes the database compute.
     try:
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE landing_pages ADD COLUMN offers JSON"))
-            print("✅ landing_pages table altered: added offers column (JSON)")
-    except Exception:
-        try:
-            with engine.begin() as conn:
+            existing = {
+                (r[0], r[1]) for r in conn.execute(text(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND (table_name, column_name) IN "
+                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'))"
+                ))
+            }
+            if ("landing_pages", "offers") not in existing:
                 conn.execute(text("ALTER TABLE landing_pages ADD COLUMN offers JSONB"))
-                print("✅ landing_pages table altered: added offers column (JSONB)")
-        except Exception:
-            pass
-
-    # Alterations for landing_pages.banner_image_url
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE landing_pages ADD COLUMN banner_image_url VARCHAR"))
-            print("✅ landing_pages table altered: added banner_image_url column")
-    except Exception:
-        pass
-
-    # Alterations for products.delivery_fees
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE products ADD COLUMN delivery_fees JSON"))
-            print("✅ products table altered: added delivery_fees column")
-    except Exception:
-        pass
-
-    # Backfill missing store_sequence_number
-    try:
-        from sqlalchemy.orm import Session
-        from app.models.order import Order
-        from sqlalchemy import func
-        with Session(engine) as db:
-            null_orders = db.query(Order).filter(Order.store_sequence_number == None).order_by(Order.created_at).all()
-            if null_orders:
-                print(f"Backfilling {len(null_orders)} orders with missing sequence numbers...")
-                for order in null_orders:
-                    max_seq = db.query(func.max(Order.store_sequence_number)).filter(Order.store_id == order.store_id).scalar()
-                    order.store_sequence_number = (max_seq or 0) + 1
-                    db.commit()
-                print("✅ Backfill sequence numbers completed.")
+                print("✅ landing_pages: added offers column")
+            if ("landing_pages", "banner_image_url") not in existing:
+                conn.execute(text("ALTER TABLE landing_pages ADD COLUMN banner_image_url VARCHAR"))
+                print("✅ landing_pages: added banner_image_url column")
+            if ("products", "delivery_fees") not in existing:
+                conn.execute(text("ALTER TABLE products ADD COLUMN delivery_fees JSONB"))
+                print("✅ products: added delivery_fees column")
     except Exception as e:
-        print(f"⚠️ Backfill sequence numbers failed: {e}")
+        print(f"⚠️ Startup column check failed: {e}")
 
+    # store_sequence_number backfill: handled by the single SQL UPDATE in
+    # create_initial_superadmin (one statement, set-based) — the old per-order
+    # Python loop (1 MAX + 1 COMMIT per row) was removed.
     print("✅ Startup migrations finished — database connection is live.")
 
 @app.on_event("startup")
@@ -240,40 +221,9 @@ def create_initial_superadmin():
     finally:
         db.close()
 
-@app.on_event("startup")
-def log_database_stores():
-    from app.db.session import SessionLocal
-    from app.models.store import Store
-    from app.models.product import Product
-    from app.models.landing_page import LandingPage
-    from app.core.tenant import tenant_store_id
-    import logging
-
-    startup_logger = logging.getLogger("app.startup")
-    tenant_store_id.set("SUPER_ADMIN_MODE")
-
-    db = SessionLocal()
-    try:
-        stores = db.query(Store).all()
-        startup_logger.info(f"[StartupDiag] --- DATABASE STORES REPORT ({len(stores)} stores found) ---")
-        for s in stores:
-            p_count = db.query(Product).filter(Product.store_id == s.id).count()
-            lp_count = db.query(LandingPage).filter(LandingPage.store_id == s.id).count()
-            startup_logger.info(
-                f"[StartupDiag] Store: {s.name!r} | ID: {s.id} | Slug: {s.slug!r} | Domain: {s.domain!r} | "
-                f"Active: {s.is_active} | Deleted: {s.is_deleted} | Products: {p_count} | LPs: {lp_count}"
-            )
-            products = db.query(Product).filter(Product.store_id == s.id).all()
-            for p in products:
-                startup_logger.info(f"  [StartupDiag]   -> Product: {p.name!r} | Slug: {p.slug!r} | SKU: {p.sku!r} | Active: {p.is_active}")
-            lps = db.query(LandingPage).filter(LandingPage.store_id == s.id).all()
-            for lp in lps:
-                startup_logger.info(f"  [StartupDiag]   -> LP: ID: {lp.id!r} | Slug: {lp.slug!r} | Active: {lp.is_active}")
-        startup_logger.info("[StartupDiag] --- END DATABASE STORES REPORT ---")
-    except Exception as e:
-        startup_logger.error(f"[StartupDiag] Failed to run stores report: {e}")
-    finally:
-        db.close()
+# (Removed: [StartupDiag] full stores/products/LPs report — it ran a complete
+# N+1 scan of every store × products × landing pages at every container boot,
+# purely for logging. HF Spaces restarts made this a recurring DB cost.)
 
 @app.get("/api/v1/routes-debug")
 def list_routes(current_user: Any = Depends(deps.get_current_active_user)):

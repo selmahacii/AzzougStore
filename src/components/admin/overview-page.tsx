@@ -379,7 +379,7 @@ function ConfirmateurPerformance({ user, kpi, storeId }: { user: any; kpi: any; 
       queryKey: ['agent-recent-orders', user?.id, storeId],
       queryFn: () =>
          apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=5`),
-      refetchInterval: 30000,
+      refetchInterval: 60000,
       enabled: !!user?.id && !!storeId,
    });
 

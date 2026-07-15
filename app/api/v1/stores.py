@@ -1,6 +1,6 @@
 import time as _time
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from uuid import uuid4
@@ -99,6 +99,7 @@ def _enrich_store_with_counts(db: Session, store: Store) -> dict:
 
 @router.get("/", response_model=List[dict])
 def read_stores(
+    response: Response,
     db: Session = Depends(deps.get_db),
     skip: int = 0,
     limit: int = 100,
@@ -111,6 +112,8 @@ def read_stores(
     """
     is_guest_default = current_user is None and skip == 0 and limit == 100 and not search
     if is_guest_default:
+        # Let browsers/CDN reuse the guest payload instead of re-hitting us
+        response.headers["Cache-Control"] = "public, max-age=30"
         cached = _guest_stores_cache["data"]
         if cached is not None and _time.monotonic() - _guest_stores_cache["at"] < _GUEST_STORES_TTL:
             return cached
@@ -246,26 +249,33 @@ def stores_analytics(
     prev_start = start - timedelta(days=days)
 
     stores = db.query(Store).filter(Store.is_deleted == False, Store.is_active == True).all()
-    result = []
-    for s in stores:
-        # Current period
-        current_rev = db.query(func.sum(Order.total)).filter(
-            Order.store_id == s.id,
+    store_ids = [s.id for s in stores]
+    if not store_ids:
+        return {"success": True, "data": []}
+
+    # 2 grouped queries instead of 3 per store (was N+1 on every dashboard load)
+    current_by_store = {
+        row[0]: (row[1] or 0, row[2] or 0)
+        for row in db.query(Order.store_id, func.sum(Order.total), func.count(Order.id)).filter(
+            Order.store_id.in_(store_ids),
             Order.is_deleted == False,
             Order.created_at >= start,
-        ).scalar() or 0
-        orders_count = db.query(func.count(Order.id)).filter(
-            Order.store_id == s.id,
-            Order.is_deleted == False,
-            Order.created_at >= start,
-        ).scalar() or 0
-        # Previous period (for % change)
-        prev_rev = db.query(func.sum(Order.total)).filter(
-            Order.store_id == s.id,
+        ).group_by(Order.store_id).all()
+    }
+    prev_by_store = {
+        row[0]: row[1] or 0
+        for row in db.query(Order.store_id, func.sum(Order.total)).filter(
+            Order.store_id.in_(store_ids),
             Order.is_deleted == False,
             Order.created_at >= prev_start,
             Order.created_at < start,
-        ).scalar() or 0
+        ).group_by(Order.store_id).all()
+    }
+
+    result = []
+    for s in stores:
+        current_rev, orders_count = current_by_store.get(s.id, (0, 0))
+        prev_rev = prev_by_store.get(s.id, 0)
         change = round(((current_rev - prev_rev) / (prev_rev or 1)) * 100, 2) if prev_rev else 0.0
         result.append({
             "storeId": s.id,

@@ -26,7 +26,7 @@ export function AdminApp() {
 
       const checkLowStock = async () => {
          try {
-            const res = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&low_stock=true&pageSize=100`);
+            const res = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&low_stock=true&pageSize=30`);
             const items = res?.data || res || [];
 
             items.forEach((p: any) => {
@@ -98,8 +98,9 @@ export function AdminApp() {
       // Initial check
       checkLowStock();
 
-      // Check every 25 seconds
-      const interval = setInterval(checkLowStock, 25000);
+      // Check every 2 minutes — low-stock alerts don't need near-real-time
+      // polling, and this ran against the DB from every open admin tab.
+      const interval = setInterval(checkLowStock, 120000);
       return () => clearInterval(interval);
    }, [activeStore?.id, isAgent, setAdminView, setQuickAdjustProduct]);
 

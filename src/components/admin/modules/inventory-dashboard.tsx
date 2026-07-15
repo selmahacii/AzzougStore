@@ -106,14 +106,14 @@ export default function InventoryDashboard() {
       queryKey: ['inventory', 'summary', storeId],
       queryFn: () => apiFetch<InventorySummary>(`/api/v1/stock/summary?store_id=${storeId}`),
       enabled: !!storeId,
-      refetchInterval: 10000, // 10s for real-time feel
+      refetchInterval: 60000,
    });
 
    const movementsQuery = useQuery({
       queryKey: ['inventory', 'movements', storeId],
       queryFn: () => apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?store_id=${storeId}&pageSize=30`),
       enabled: !!storeId,
-      refetchInterval: 10000,
+      refetchInterval: 60000,
    });
 
 

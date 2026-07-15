@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { io } from 'socket.io-client';
 // AnimatePresence removed for clean design
 import { ShoppingBag, Package, X, Eye, Wifi, WifiOff, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -10,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app-store';
 import { ORDER_STATUS_LABELS } from '@/lib/types';
 import type { OrderStatus } from '@/lib/types';
-import type { Socket } from 'socket.io-client';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,10 +49,11 @@ export default function LiveOrdersBar() {
   const setAdminView = useAppStore((s) => s.setAdminView);
   const setSelectedOrderId = useAppStore((s) => s.setSelectedOrderId);
 
-  const [hasEverConnected, setHasEverConnected] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  // Socket removed — no live connection anymore; the bar only renders
+  // notifications that other parts of the app may push into it.
+  const [hasEverConnected] = useState(false);
+  const [isConnected] = useState(false);
   const [notifications, setNotifications] = useState<VisibleNotification[]>([]);
-  const socketRef = useRef<Socket | null>(null);
   const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // ---- Helpers ----
@@ -111,61 +110,20 @@ export default function LiveOrdersBar() {
   );
 
   // ---- Socket lifecycle ----
+  // Removed: the app connected to a socket.io server on port 3003 that no
+  // longer exists (FastAPI backend has no socket.io endpoint). In production
+  // this failed and retried in a loop — pure network noise, zero data. New
+  // order notifications already arrive via the admin-header polling query.
 
   useEffect(() => {
-    if (!isAuthenticated || !activeStore) return;
-
-    const socket = io('/?XTransformPort=3003', {
-      transports: ['websocket', 'polling'],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 3,
-      reconnectionDelay: 2000,
-      timeout: 5000,
-    });
-
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      setIsConnected(true);
-      setHasEverConnected(true);
-      // Join the active store room
-      if (activeStore.id) {
-        socket.emit('join-store', activeStore.id);
-      }
-    });
-
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    socket.on('new-order', (data: OrderNotification) => {
-      // Only show if it matches the active store (or show all for SUPER_ADMIN)
-      addNotification(data);
-    });
-
-    socket.on('order-updated', (data: OrderNotification) => {
-      addNotification(data);
-    });
-
-    // Respond to heartbeat
-    socket.on('ping', () => {
-      socket.emit('pong');
-    });
-
     return () => {
-      if (socket.connected && activeStore.id) {
-        socket.emit('leave-store', activeStore.id);
-      }
-      socket.disconnect();
-      socketRef.current = null;
-      // Clear all timers
+      // Clear all timers on unmount
       for (const timer of dismissTimersRef.current.values()) {
         clearTimeout(timer);
       }
       dismissTimersRef.current.clear();
     };
-  }, [isAuthenticated, activeStore?.id, addNotification]);
+  }, []);
 
   // ---- Don't render if not authenticated or if real-time service is unavailable ----
 

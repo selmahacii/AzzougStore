@@ -14,6 +14,34 @@ from datetime import timezone
 
 router = APIRouter()
 
+# ── Micro-cache (in-process, TTL) ─────────────────────────────
+# The overview dashboard polls this endpoint every 30–120s per open tab and
+# each call fans out into dozens of aggregate queries (COUNT/SUM/GROUP BY over
+# orders). Results are identical for everyone on the same store+period, so a
+# short TTL absorbs the polling without making dashboards feel stale.
+import time as _time
+import functools as _functools
+
+_analytics_cache: dict = {}
+_ANALYTICS_TTL = 60.0
+
+def _cached_analytics(fn):
+    @_functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        key = (
+            kwargs.get("store_id"), kwargs.get("type"), kwargs.get("period"),
+            kwargs.get("start_date"), kwargs.get("end_date"),
+        )
+        hit = _analytics_cache.get(key)
+        if hit is not None and _time.monotonic() - hit[1] < _ANALYTICS_TTL:
+            return hit[0]
+        result = fn(*args, **kwargs)
+        if len(_analytics_cache) > 500:
+            _analytics_cache.clear()
+        _analytics_cache[key] = (result, _time.monotonic())
+        return result
+    return wrapper
+
 def get_funnel_rates(new: int, assigned: int, called: int, confirmed: int, delivered: int, returned: int) -> FunnelRate:
     assign_rate = round((assigned / new * 100), 2) if new > 0 else 0
     call_rate = round((called / (assigned or 1) * 100), 2) if assigned > 0 else 0
@@ -29,6 +57,7 @@ def get_funnel_rates(new: int, assigned: int, called: int, confirmed: int, deliv
     )
 
 @router.get("/", response_model=AnalyticsResponse)
+@_cached_analytics
 def get_analytics(
     db: Session = Depends(deps.get_db),
     store_id: Optional[str] = Query(None, description="ID de la boutique (requis pour kpi, revenue, products, store-stats)"),

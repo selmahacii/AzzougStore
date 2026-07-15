@@ -117,14 +117,14 @@ export default function AdminHeader() {
       queryKey: ['orders', 'new-notifications', storeId],
       queryFn: () =>
          fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
-      refetchInterval: 30000,
+      refetchInterval: 120000,
    });
 
    const stockAlertsQuery = useQuery<{ data: Product[] }>({
       queryKey: ['stock', 'alerts', storeId],
       queryFn: () =>
          fetch(`/api/v1/stock/alerts?store_id=${storeId}`).then((r) => r.json()),
-      refetchInterval: 60000,
+      refetchInterval: 300000,
    });
 
    const title = PAGE_TITLES[adminView] || 'AzzougStore';

@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate && patch-package",
     "dev": "next dev -p 3016",
     "build": "prisma generate && next build && node copy-assets.js",
     "start": "NODE_ENV=production bun .next/standalone/server.js ",
@@ -99,6 +100,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.15",
     "geoalgeria": "^1.1.2",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
     "typescript": "^5"

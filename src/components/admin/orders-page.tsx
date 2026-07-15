@@ -579,7 +579,7 @@ export default function OrdersPage() {
      queryKey: ['orders', storeId, page, statusFilter, debouncedSearch, pageSize, filterWilaya, filterSource, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
-     refetchInterval: 10000,
+     refetchInterval: 30000,
    });
 
    // Counts per status tab (unfiltered by search for accurate badges)

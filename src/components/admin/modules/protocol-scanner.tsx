@@ -26,7 +26,7 @@ export default function ProtocolScanner() {
   const { data: auditRes } = useQuery<PaginatedResponse<AuditLog>>({
      queryKey: ['audit-telemetry', storeId],
      queryFn: () => apiFetch(`/api/v1/audit?storeId=${storeId}&pageSize=10`),
-     refetchInterval: 10000, // Refresh every 10s for live feel
+     refetchInterval: 30000,
      enabled: !!storeId
   });
 

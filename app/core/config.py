@@ -19,13 +19,23 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_db_url(cls, v: str | None, info: Any) -> Any:
         import os
-        v = v or os.environ.get("POSTGRES_URL_NON_POOLING") or os.environ.get("POSTGRES_URL")
+        # Prefer the POOLED url (PgBouncer) — direct/non-pooled connections hold
+        # the Neon/Supabase compute awake and count against connection limits.
+        v = v or os.environ.get("POSTGRES_URL") or os.environ.get("POSTGRES_URL_NON_POOLING")
         if isinstance(v, str) and v:
             if v.startswith("postgres://"):
                 v = v.replace("postgres://", "postgresql://", 1)
             if v.startswith("file:"):
                 path = v.replace("file:", "")
                 return f"sqlite:///{path}"
+            # Supabase/Prisma-style URLs carry ?pgbouncer=true — an option libpq
+            # doesn't know, so psycopg2 refuses the whole connection. Strip it;
+            # SQLAlchemy manages its own pool.
+            if "pgbouncer=" in v:
+                from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+                parts = urlsplit(v)
+                q = [(k, val) for k, val in parse_qsl(parts.query) if k.lower() != "pgbouncer"]
+                v = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
             return v
 
         user = info.data.get("POSTGRES_USER")

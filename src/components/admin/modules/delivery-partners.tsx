@@ -160,7 +160,7 @@ function TrackingLookup({ storeId }: { storeId: string }) {
       }
     },
     enabled: !!trackingNum && !!storeId,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     retry: false,
   });
@@ -1091,8 +1091,8 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
       return apiFetch(`/api/v1/orders?${params}`);
     },
     enabled: !!storeId,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   });
 
   const orders: any[] = (ordersQuery.data as any)?.data ?? [];
@@ -1323,7 +1323,7 @@ export default function DeliveryPartners() {
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
     enabled: !!activeStore?.id && activeTab === 'stats',
     retry: false,
-    refetchInterval: activeTab === 'stats' ? 60_000 : false,
+    refetchInterval: activeTab === 'stats' ? 120_000 : false,
   });
 
   const deletePartner = useMutation({

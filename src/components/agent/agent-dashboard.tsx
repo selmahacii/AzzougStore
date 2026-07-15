@@ -1057,7 +1057,7 @@ export default function AgentDashboard() {
       return apiFetch<{ data: Order[] }>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 30000
+    refetchInterval: 60000
   });
 
   const perfQuery = useQuery({
@@ -1090,7 +1090,7 @@ export default function AgentDashboard() {
       return apiFetch<any>(url);
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 15000
+    refetchInterval: 60000
   });
 
   let filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 
