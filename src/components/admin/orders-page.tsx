@@ -99,6 +99,7 @@ import { NoestTrackingPanel } from '@/components/admin/noest-tracking-panel';
 import { YalidineTrackingPanel } from '@/components/admin/yalidine-tracking-panel';
 import { ZRExpressTrackingPanel } from '@/components/admin/zr-express-tracking-panel';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
+import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
 const ALL_STATUSES: { value: string; label: string }[] = [
   { value: 'all', label: 'All Statuses' },
@@ -141,22 +142,33 @@ const PERIODS = [
   { value: 'prev_month', label: 'Mois Dernier' },
 ];
 
+// hideBelow: columns that fold away below that breakpoint instead of
+// forcing the whole table into a fixed min-width (which always produced a
+// horizontal scrollbar on anything narrower than ~1200px, even on a normal
+// laptop screen). Source/Agent/Date are the least essential for an
+// at-a-glance registry — they're still one click away in the order drawer.
 const REGISTRY_COLUMNS = [
-  { key: 'source', label: 'Source' },
+  { key: 'source', label: 'Source', hideBelow: '2xl' as const },
   { key: 'order_number', label: 'N° Commande' },
   { key: 'customer', label: 'Client & Contact' },
-  { key: 'customer_wilaya', label: 'Wilaya' },
-  { key: 'items', label: 'Articles' },
+  { key: 'customer_wilaya', label: 'Wilaya', hideBelow: 'lg' as const },
+  { key: 'items', label: 'Articles', hideBelow: 'xl' as const },
   { key: 'total', label: 'Finances' },
   { key: 'status', label: 'Statut' },
-  { key: 'assignee', label: 'Agent' },
-  { key: 'created_at', label: 'Date & Heure' },
+  { key: 'assignee', label: 'Agent', hideBelow: '2xl' as const },
+  { key: 'created_at', label: 'Date & Heure', hideBelow: 'xl' as const },
 ];
 
+const HIDE_BELOW_CLASS: Record<string, string> = {
+  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',
+  '2xl': 'hidden 2xl:table-cell',
+};
+
 function CallbackCountdown({ nextCallbackTime }: { nextCallbackTime: string }) {
-  const [timeLeft, setTimeLeft] = useState('');
-  
-useEffect(() => {
+  const [timeLeft, setTimeLeft] = useState('...');
+
+  useEffect(() => {
     const target = new Date(nextCallbackTime).getTime();
     
     function update() {
@@ -208,15 +220,18 @@ export default function OrdersPage() {
   const [loadingEditCommunes, setLoadingEditCommunes] = useState(false);
   const [createCommune, setCreateCommune] = useState('');
   const [editCommuneState, setEditCommuneState] = useState('');
-
-
+const [timeLeft, setTimeLeft] = useState('');
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     const m: Record<string, string> = {
       NEW: 'NEW', 'EN ATTENTE': 'ASSIGNED', CONFIRMED: 'CONFIRMED',
-      FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED', CANCELLED: 'CANCELLED',
+      FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED',
+      // 'CANCELLED' tab is labeled "Annulations & Retours" — it must include
+      // RETURNED orders too, not just CANCELLED, or returned orders are
+      // invisible everywhere in the ERP despite the tab claiming to show them.
+      CANCELLED: 'ARCHIVED',
       ABANDONED: 'ABANDONED', ALL: 'all',
     };
     return m[(adminSubView as string) || 'NEW'] ?? 'NEW';
@@ -240,6 +255,7 @@ export default function OrdersPage() {
   }, [startDate, endDate]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [cancelConfirmOrder, setCancelConfirmOrder] = useState<{ orderId: string; orderNumber?: string | number } | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
@@ -278,14 +294,8 @@ export default function OrdersPage() {
   const [editDeliveryType, setEditDeliveryType] = useState('home');
   const [editWilaya, setEditWilaya] = useState('');
 
-  const [yalidineCenters, setYalidineCenters] = useState<any[]>([]);
-  const [loadingCenters, setLoadingCenters] = useState(false);
-
   useEffect(() => {
-    if (!orderWilaya) {
-      setCreateCommunes([]);
-      return;
-    }
+    if (!orderWilaya) { setCreateCommunes([]); return; }
     const wid = WILAYAS.indexOf(orderWilaya as any) + 1;
     if (wid > 0) {
       setLoadingCreateCommunes(true);
@@ -297,10 +307,7 @@ export default function OrdersPage() {
   }, [orderWilaya, activeStore?.id]);
 
   useEffect(() => {
-    if (!editWilaya) {
-      setEditCommunes([]);
-      return;
-    }
+    if (!editWilaya) { setEditCommunes([]); return; }
     const wid = WILAYAS.indexOf(editWilaya as any) + 1;
     if (wid > 0) {
       setLoadingEditCommunes(true);
@@ -311,19 +318,12 @@ export default function OrdersPage() {
     }
   }, [editWilaya, activeStore?.id]);
 
-  const deliveryPartnersQuery = useQuery<any>({
-    queryKey: ['delivery-partners-lite', storeId],
-    enabled: !!storeId,
-    staleTime: 5 * 60 * 1000,
-    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
-  });
-  const hasActiveYalidine = !!deliveryPartnersQuery.data?.data?.some((p: any) => p.code === 'yalidine' && p.is_active !== false);
+
+  const [yalidineCenters, setYalidineCenters] = useState<any[]>([]);
+  const [loadingCenters, setLoadingCenters] = useState(false);
 
   useEffect(() => {
-    if (!storeId || deliveryPartnersQuery.isLoading || !hasActiveYalidine) {
-      setYalidineCenters([]);
-      return;
-    }
+    if (!storeId) return;
     setLoadingCenters(true);
     fetch(`/api/yalidine/centers?store_id=${storeId}`)
       .then(res => res.json())
@@ -334,7 +334,7 @@ export default function OrdersPage() {
       })
       .catch(err => console.error('Error fetching Yalidine centers:', err))
       .finally(() => setLoadingCenters(false));
-  }, [storeId, hasActiveYalidine, deliveryPartnersQuery.isLoading]);
+  }, [storeId]);
 
   useEffect(() => {
     if (editOrderData) {
@@ -381,7 +381,9 @@ export default function OrdersPage() {
       if (savedSource) setFilterSource(savedSource);
       if (savedStart) setStartDate(savedStart);
       if (savedEnd) setEndDate(savedEnd);
-      if (savedMode) {
+      // Only restore the saved mode when no explicit sub-view was requested
+      // (sidebar deep-links set adminSubView and must win over localStorage)
+      if (savedMode && !adminSubView) {
         setViewMode(savedMode as any);
         setAdminSubView(savedMode);
         setStatusFilter(MODE_TO_STATUS[savedMode] ?? 'all');
@@ -484,7 +486,7 @@ export default function OrdersPage() {
       }
       return apiFetch<any>(url);
     },
-    refetchInterval: 60000
+    refetchInterval: 2 * 60 * 60 * 1000
   });
 
   const clearAllFilters = () => {
@@ -514,6 +516,8 @@ export default function OrdersPage() {
   useEffect(() => {
     if (adminSubView && adminSubView !== viewMode) {
       setViewMode(adminSubView as any);
+      setStatusFilter(MODE_TO_STATUS[adminSubView] ?? 'all');
+      setPage(1);
     }
   }, [adminSubView, viewMode]);
 
@@ -523,7 +527,10 @@ export default function OrdersPage() {
     CONFIRMED: 'CONFIRMED',
     FOLLOWUP: 'SHIPPED',
     COMPLETED: 'DELIVERED',
-    CANCELLED: 'CANCELLED',
+    // Same reasoning as the statusFilter initializer above: this tab shows
+    // both cancelled AND returned orders, so it must request the backend's
+    // ARCHIVED bucket (CANCELLED + RETURNED), not CANCELLED alone.
+    CANCELLED: 'ARCHIVED',
     ABANDONED: 'ABANDONED',
     ALL: 'all',
   };
@@ -532,6 +539,33 @@ export default function OrdersPage() {
     setViewMode(mode as any);
     setAdminSubView(mode);
     setStatusFilter(MODE_TO_STATUS[mode] ?? 'all');
+    setPage(1);
+  };
+
+  // Status → view tab (statuses without a dedicated tab land on 'ALL' with a direct status filter)
+  const STATUS_TO_MODE: Record<string, string> = {
+    NEW: 'NEW',
+    ASSIGNED: 'EN ATTENTE',
+    CONFIRMED: 'CONFIRMED',
+    SHIPPED: 'FOLLOWUP',
+    DELIVERED: 'COMPLETED',
+    CANCELLED: 'CANCELLED',
+    RETURNED: 'CANCELLED',
+    ABANDONED: 'ABANDONED',
+  };
+
+  // KPI widget click → filter the list by that status (click again to clear)
+  const handleKpiClick = (status: string) => {
+    if (statusFilter === status) {
+      setStatusFilter('all');
+      setViewMode('ALL');
+      setAdminSubView('ALL');
+    } else {
+      setStatusFilter(status);
+      const mode = STATUS_TO_MODE[status] ?? 'ALL';
+      setViewMode(mode as any);
+      setAdminSubView(mode);
+    }
     setPage(1);
   };
 
@@ -579,25 +613,16 @@ export default function OrdersPage() {
      queryKey: ['orders', storeId, page, statusFilter, debouncedSearch, pageSize, filterWilaya, filterSource, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
-     refetchInterval: 30000,
+     refetchInterval: 5 * 60 * 1000,
    });
 
-   // Counts per status tab — filtered by the SAME date range as the list,
-   // otherwise picking "aujourd'hui" filtered the list but the badges kept
-   // showing all-time totals, which read as yesterday's orders leaking into
-   // today's view. (Still unfiltered by text search: badges answer "how many
-   // in this period", not "how many match my search".)
+   // Counts per status tab (unfiltered by search for accurate badges)
    const countsQuery = useQuery<Record<string, number>>({
-     queryKey: ['orders-counts', storeId, startDate, endDate],
-     queryFn: () => {
-       let url = `/api/v1/orders/counts?store_id=${storeId}`;
-       if (startDate) url += `&start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}`;
-       if (endDate) url += `&end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}`;
-       return apiFetch(url);
-     },
+     queryKey: ['orders-counts', storeId],
+     queryFn: () => apiFetch(`/api/v1/orders/counts?store_id=${storeId}`),
      enabled: !!storeId,
      staleTime: 30_000,
-     refetchInterval: 30_000,
+     refetchInterval: 5 * 60 * 1000,
    });
    const tabCounts: Record<string, number> = (countsQuery.data as any) ?? {};
 
@@ -605,6 +630,12 @@ export default function OrdersPage() {
     queryKey: ['admin-products-lite', storeId],
     enabled: isCreatingOrder && !!storeId,
     queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
+   });
+
+   const deliveryPartnersQuery = useQuery<any>({
+    queryKey: ['delivery-partners-lite', storeId],
+    enabled: isCreatingOrder && !!storeId,
+    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
    });
 
    const employeesQuery = useQuery<ApiResponse<User[]>>({
@@ -696,6 +727,25 @@ export default function OrdersPage() {
      onError: () => { toast.error("Échec de l'affectation opérationnelle"); },
    });
 
+   // Internal delivery driver assignment — available from the order detail
+   // modal regardless of status (essential info/action in every modal).
+   const livreursForOrderQuery = useQuery<any>({
+     queryKey: ['livreurs-for-order', selectedOrder?.store_id],
+     queryFn: () => apiFetch(`/api/v1/users/?store_id=${selectedOrder?.store_id}`),
+     enabled: !!selectedOrder?.store_id && detailDialogOpen,
+     staleTime: 60_000,
+   });
+   const assignLivreurMutation = useMutation({
+     mutationFn: ({ orderId, livreurId }: { orderId: string; livreurId: string }) =>
+       apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify({ livreur_id: livreurId }) }),
+     onSuccess: (updated: any) => {
+       toast.success('Livreur assigné à la commande');
+       queryClient.invalidateQueries({ queryKey: ['orders'] });
+       if (updated?.id) setSelectedOrder(updated);
+     },
+     onError: (err: any) => toast.error(err.message || "Impossible d'assigner le livreur"),
+   });
+
   // Edit order mutation
   const editOrderMutation = useMutation({
     mutationFn: (data: any) => apiFetch(`/api/v1/orders/${data.id}/info`, {
@@ -772,6 +822,26 @@ export default function OrdersPage() {
   }, {});
   const isDuplicatePhone = (phone: string) => (phoneCounts[phone] ?? 0) > 1;
 
+  // ─── Micro-detail order type filters (client-side, over the loaded page) ───
+  const ORDER_TYPE_FILTERS: { id: string; label: string; color: string; match: (o: Order) => boolean }[] = [
+    { id: 'ALL',       label: 'Toutes',            color: 'bg-slate-100 text-slate-700 border-slate-200',      match: () => true },
+    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
+    { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
+    { id: 'DUPLICATE', label: '🟣 Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => !!o.is_duplicate || isDuplicatePhone(o.customer_phone) },
+    { id: 'PARENTS',   label: '🟣 Parents (groupes)', color: 'bg-purple-50 text-purple-700 border-purple-200',  match: (o) => !!(o as any).child_orders?.length },
+    { id: 'MERGED',    label: '🟣 Fusionnées',      color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => !!(o.child_orders && o.child_orders.length > 0) },
+    { id: 'NRP',       label: '🟥 NRP',             color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
+    { id: 'UPSELL',    label: '💸 Upsell',          color: 'bg-green-50 text-green-700 border-green-200',       match: (o) => !!o.is_upsell },
+    { id: 'PACK',      label: '📦 Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
+    { id: 'TRACKED',   label: '🔵 NOEST/Transporteur', color: 'bg-cyan-50 text-cyan-700 border-cyan-200',       match: (o) => !!o.tracking_number },
+    { id: 'INTERNAL',  label: '🚴 Livraison interne',  color: 'bg-sky-50 text-sky-700 border-sky-200',          match: (o) => !!o.livreur_id },
+    { id: 'PROMO',     label: '🏷️ Avec promo',      color: 'bg-pink-50 text-pink-700 border-pink-200',          match: (o) => !!o.promo_code },
+  ];
+  const displayOrders = typeFilter === 'ALL'
+    ? orders
+    : orders.filter(ORDER_TYPE_FILTERS.find((f) => f.id === typeFilter)?.match ?? (() => true));
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => { 
       const next = new Set(prev); 
@@ -826,7 +896,7 @@ export default function OrdersPage() {
     }
     
     try {
-      const res = await apiFetch<any>(`/api/orders/${childId}/unmerge`, {
+      const res = await apiFetch<any>(`/api/v1/orders/${childId}/unmerge`, {
         method: 'POST'
       });
       if (res && (res.success || res.status === 200)) {
@@ -837,6 +907,26 @@ export default function OrdersPage() {
       }
     } catch (err: any) {
       toast.error(err?.message || "Erreur réseau lors de la séparation de la commande.");
+    }
+  };
+
+  const handleMergeDuplicates = async (order: Order) => {
+    if (!window.confirm(`Fusionner tous les doublons (même téléphone, en cours de confirmation) dans la commande ${order.order_number} ? Les doublons seront conservés avec un historique complet mais une seule commande sera expédiée.`)) {
+      return;
+    }
+    try {
+      const res = await apiFetch<any>(`/api/v1/orders/${order.id}/merge-duplicates`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      if (res?.success) {
+        toast.success(res.message || `${res.merged} doublon(s) fusionné(s).`);
+        ordersQuery.refetch();
+      } else {
+        toast.error(res?.message || 'Erreur lors de la fusion.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Erreur réseau lors de la fusion.');
     }
   };
 
@@ -1004,7 +1094,7 @@ export default function OrdersPage() {
                         <span className="text-base font-black text-slate-900 font-mono">{revenue.toLocaleString('fr-FR')} DA</span>
                       </div>
                       <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Taux Conversion</span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Cde. Livrées</span>
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm font-black text-[#4b7bec]">{conversionRate}%</span>
                           <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -1047,16 +1137,119 @@ export default function OrdersPage() {
           </div>
         </div>
 
+        {/* ─── KPI Statuts des commandes (cliquer pour filtrer) ─── */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <Activity className="size-4 text-[#4b7bec]" />
+              Statuts des commandes
+            </h2>
+            {statusFilter !== 'all' && (
+              <button
+                onClick={() => handleKpiClick(statusFilter)}
+                className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-600 transition-colors"
+              >
+                <X className="size-3" /> Retirer le filtre statut
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3">
+            {/* Total card — operational orders (physical orders minus merged duplicates) */}
+            <button
+              type="button"
+              onClick={() => handleModeChange('ALL')}
+              className={cn(
+                'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
+                statusFilter === 'all' ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+              )}
+              style={{ borderColor: statusFilter === 'all' ? undefined : C.border }}
+              title="Afficher toutes les commandes opérationnelles"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-[#4b7bec]" />
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total</span>
+              </div>
+              <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                {countsQuery.isLoading ? '…' : Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)}
+              </div>
+              {(tabCounts['MERGED'] ?? 0) > 0 && (
+                <p className="text-[9px] font-bold text-slate-400 mt-0.5">
+                  {Object.values(tabCounts).reduce((a, b) => a + b, 0)} physiques
+                </p>
+              )}
+            </button>
+            {/* Merged duplicates card — physical orders fused into a parent */}
+            {(tabCounts['MERGED'] ?? 0) > 0 && (() => {
+              const mergedCount = tabCounts['MERGED'] ?? 0;
+              const physicalTotal = Object.values(tabCounts).reduce((a, b) => a + b, 0);
+              const dupRate = physicalTotal > 0 ? ((mergedCount / physicalTotal) * 100).toFixed(1) : '0';
+              const active = statusFilter === 'MERGED';
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleKpiClick('MERGED')}
+                  className={cn(
+                    'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
+                    active ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+                  )}
+                  style={{ borderColor: active ? undefined : C.border }}
+                  title={active ? 'Cliquer pour retirer le filtre' : 'Voir les doublons fusionnés'}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="size-2 rounded-full bg-amber-500" />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 truncate">Doublons fusionnés</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                    {countsQuery.isLoading ? '…' : mergedCount}
+                  </div>
+                  <p className="text-[9px] font-bold text-amber-600 mt-0.5">
+                    Taux : {dupRate}% · {mergedCount} expédition{mergedCount > 1 ? 's' : ''} évitée{mergedCount > 1 ? 's' : ''}
+                  </p>
+                </button>
+              );
+            })()}
+            {(['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED', 'ABANDONED'] as OrderStatus[]).map((status) => {
+              const active = statusFilter === status;
+              const count = tabCounts[status] ?? 0;
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => handleKpiClick(status)}
+                  className={cn(
+                    'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
+                    active ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+                  )}
+                  style={{ borderColor: active ? undefined : C.border }}
+                  title={active ? 'Cliquer pour retirer le filtre' : `Filtrer : ${ORDER_STATUS_LABELS[status]}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={cn('size-2 rounded-full', ORDER_STATUS_DOT[status])} />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 truncate">{ORDER_STATUS_LABELS[status]}</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                    {countsQuery.isLoading ? '…' : count}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Tactical Filter Rack */}
         <div className="bg-white rounded-2xl sm:rounded-[32px] border px-4 sm:px-8 py-4 sm:py-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 sm:gap-6 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/90" style={{ borderColor: C.border }}>
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 flex-1">
-            <div className="relative flex-1">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 flex-1 min-w-0">
+            {/* min-w on the input itself (not just its wrapper) so it can never
+                get squeezed to near-zero width by the tab list next to it — that
+                was the actual "search bar isn't visible" bug on medium/laptop
+                viewports where both siblings shared flex-1 with no floor. */}
+            <div className="relative w-full md:w-auto md:flex-1 md:min-w-[220px] shrink-0">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-              <Input 
-                placeholder="Rechercher client, téléphone ou ID..." 
+              <Input
+                placeholder="Rechercher client, téléphone ou ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-11 h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-medium focus-visible:ring-[#4b7bec]" 
+                className="pl-11 h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-medium focus-visible:ring-[#4b7bec] w-full"
               />
             </div>
             
@@ -1071,12 +1264,17 @@ export default function OrdersPage() {
                     { id: 'CONFIRMED',  label: 'Confirmées', statusKey: 'CONFIRMED' },
                     { id: 'FOLLOWUP',   label: 'Suivi',      statusKey: 'SHIPPED' },
                     { id: 'COMPLETED',  label: 'Terminées',  statusKey: 'DELIVERED' },
-                    { id: 'CANCELLED',  label: 'Annulées',   statusKey: 'CANCELLED' },
+                    { id: 'CANCELLED',  label: 'Annulées & Retours', statusKey: 'CANCELLED' },
                     { id: 'ABANDONED',  label: 'Abandonnés', statusKey: 'ABANDONED' },
                     { id: 'ALL',        label: 'Tous',       statusKey: 'ALL' },
                   ].map(tab => {
                     const count = tab.statusKey === 'ALL'
-                      ? Object.values(tabCounts).reduce((a, b) => a + b, 0)
+                      ? Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)
+                      // CANCELLED tab is also RETURNED's home (see MODE_TO_STATUS →
+                      // 'ARCHIVED') — its badge count must include both or it
+                      // undercounts vs. what the tab actually displays when clicked.
+                      : tab.statusKey === 'CANCELLED'
+                      ? (tabCounts['CANCELLED'] ?? 0) + (tabCounts['RETURNED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
                     return (
                       <TabsTrigger key={tab.id} value={tab.id} className="rounded-lg sm:rounded-xl px-3 sm:px-5 py-2 text-[10px] sm:text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-[#4b7bec] data-[state=active]:shadow-sm transition-all focus-visible:ring-0 whitespace-nowrap">
@@ -1119,17 +1317,46 @@ export default function OrdersPage() {
           </div>
         </div>
 
+        {/* ─── Filtres par type de commande (micro-détails) ─── */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {ORDER_TYPE_FILTERS.map((f) => {
+            const count = f.id === 'ALL' ? orders.length : orders.filter(f.match).length;
+            if (f.id !== 'ALL' && count === 0) return null;
+            const active = typeFilter === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setTypeFilter(active ? 'ALL' : f.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-black transition-all',
+                  f.color,
+                  active ? 'ring-2 ring-offset-1 ring-slate-400 shadow-sm' : 'opacity-75 hover:opacity-100',
+                )}
+                title={active ? 'Cliquer pour retirer le filtre' : `Filtrer : ${f.label}`}
+              >
+                {f.label}
+                <span className="px-1.5 py-0.5 rounded-full bg-white/70 text-[9px] font-black tabular-nums">{count}</span>
+              </button>
+            );
+          })}
+          {typeFilter !== 'ALL' && (
+            <span className="text-[10px] font-bold text-slate-400 ml-1">
+              {displayOrders.length} / {orders.length} commandes affichées (page courante)
+            </span>
+          )}
+        </div>
+
         {/* Performance Ledger Table */}
         <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left min-w-[1200px]">
+          <div className="hidden md:block">
+            <table className="w-full text-left table-fixed">
               <thead>
                 <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                  <th className="px-8 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
+                  <th className="px-3 xl:px-4 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
                   {REGISTRY_COLUMNS.map(col => (
-                    <th key={col.key} className="px-8 py-5 text-xs font-bold text-slate-500">{col.label}</th>
+                    <th key={col.key} className={cn("px-3 xl:px-4 py-5 text-xs font-bold text-slate-500 truncate", col.hideBelow && HIDE_BELOW_CLASS[col.hideBelow])}>{col.label}</th>
                   ))}
-                  <th className="px-8 py-5 text-right text-xs font-bold text-slate-500 w-32">Actions</th>
+                  <th className="px-3 xl:px-4 py-5 text-right text-xs font-bold text-slate-500 w-32">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: C.border }}>
@@ -1137,13 +1364,13 @@ export default function OrdersPage() {
                   Array.from({ length: 10 }).map((_, i) => (
                     <tr key={i}><td colSpan={10} className="px-10 py-5"><Skeleton className="h-14 w-full rounded-2xl" /></td></tr>
                   ))
-                ) : orders.length === 0 ? (
-                  <tr><td colSpan={10} className="px-8 py-20 text-center text-slate-400 font-medium">Aucune commande trouvée</td></tr>
-                ) : orders.map((order) => (
+                ) : displayOrders.length === 0 ? (
+                  <tr><td colSpan={10} className="px-3 xl:px-4 py-20 text-center text-slate-400 font-medium">Aucune commande trouvée</td></tr>
+                ) : displayOrders.map((order) => (
                   <React.Fragment key={order.id}>
                     <tr className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-8 py-6"><Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></td>
-                    <td className="px-8 py-6">
+                      <td className="px-3 xl:px-4 py-6"><Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></td>
+                    <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
                       {order.source === 'MANUAL' ? (
                         <Badge className="bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-black shadow-none px-2 py-1 uppercase tracking-wider">
                           Manuel
@@ -1158,7 +1385,7 @@ export default function OrdersPage() {
                         </Badge>
                       )}
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors">{formatOrderRef(order, 'admin')}</span>
@@ -1169,15 +1396,50 @@ export default function OrdersPage() {
                         <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">ID: {order.id.split('-')[0]}</span>
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
                           {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
-                            <Badge className="bg-amber-100 text-amber-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5">Doublon</Badge>
+                            <Badge className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5">🟣 Doublon</Badge>
                           )}
                         </div>
                         <span className="text-[10px] font-bold text-[#4b7bec] mt-0.5">{order.customer_phone}</span>
+                        {/* Origine métier (ne change jamais) + micro-badges */}
+                        <div className="flex items-center gap-1 flex-wrap mt-1">
+                          <OrderTypeBadge order={order} size="xs" short />
+                          {(order.nrp_count || 0) > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-100 text-rose-700 border border-rose-200 uppercase">🟥 NRP {order.nrp_count}</span>
+                          )}
+                          {order.next_callback_time && new Date(order.next_callback_time).getTime() <= Date.now() && !['CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'MERGED'].includes(order.status) && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-100 text-red-700 border border-red-200 uppercase animate-pulse">⏰ Rappel échu</span>
+                          )}
+                          {order.is_upsell && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-green-100 text-green-700 border border-green-200 uppercase">💸 Upsell</span>
+                          )}
+                          {order.is_pack && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">📦 Pack</span>
+                          )}
+                          {order.tracking_number && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase" title={`NOEST — ${order.tracking_number}`}>🚚 {order.tracking_number.slice(0, 12)}</span>
+                          )}
+                          {order.livreur_id && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">🚴 {order.livreur?.name || 'Livreur'}</span>
+                          )}
+                          {order.utm_campaign && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase" title={`Campagne : ${order.utm_campaign}`}>📣 {String(order.utm_campaign).slice(0, 18)}</span>
+                          )}
+                          {!!order.events_count && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDetailClick(order); }}
+                              className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase hover:bg-slate-200 transition-colors"
+                              title="Voir l'historique complet de cette commande"
+                            >
+                              🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                            </button>
+                          )}
+                        </div>
                         {order.child_orders && order.child_orders.length > 0 && (
                           <button
                             onClick={() => toggleExpandMerged(order.id)}
@@ -1194,12 +1456,12 @@ export default function OrdersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden lg:table-cell">
                       <Badge className="bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold shadow-none px-2.5 py-1 truncate max-w-[120px]">
                         {order.customer_wilaya}
                       </Badge>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden xl:table-cell">
                       <div className="flex flex-col gap-1.5 max-w-[200px]">
                         {order.items && order.items.length > 0 ? (
                           order.items.slice(0, 3).map((item: any, i: number) => (
@@ -1222,7 +1484,7 @@ export default function OrdersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(order.total)}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest tabular-nums">
@@ -1235,7 +1497,7 @@ export default function OrdersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col gap-1.5 items-start">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -1282,7 +1544,7 @@ export default function OrdersPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
                       {order.assignee ? (
                         <div className="flex items-center gap-2">
                           <div className="size-6 rounded-lg bg-indigo-50 flex items-center justify-center text-[10px] font-black text-[#4b7bec]">{order.assignee.name.charAt(0)}</div>
@@ -1292,7 +1554,7 @@ export default function OrdersPage() {
                         <span className="text-[10px] font-bold text-slate-300 italic">Non assigné</span>
                       )}
                     </td>
-                    <td className="px-8 py-6 text-xs font-medium text-slate-400">
+                    <td className="px-3 xl:px-4 py-6 text-xs font-medium text-slate-400 hidden xl:table-cell">
                       {(() => {
                         const createdAt = order.created_at ? new Date(order.created_at) : null;
                         const isReturn = order.status === 'RETURNED' || order.status === 'CANCELLED';
@@ -1315,7 +1577,7 @@ export default function OrdersPage() {
                         );
                       })()}
                     </td>
-                    <td className="px-8 py-6 text-right">
+                    <td className="px-3 xl:px-4 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => handleDetailClick(order)} className="size-10 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all">
                           <Eye className="size-5" />
@@ -1349,7 +1611,7 @@ export default function OrdersPage() {
                   </tr>
                   {order.child_orders && order.child_orders.length > 0 && expandedMergedOrders.has(order.id) && (
                     <tr className="bg-purple-50/10 border-l-4 border-purple-400">
-                      <td colSpan={10} className="px-8 py-5">
+                      <td colSpan={10} className="px-3 xl:px-4 py-5">
                         <div className="flex flex-col gap-4">
                           <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-purple-600">Historique des commandes doublons fusionnées</h4>
                           <div className="divide-y divide-purple-100/50 bg-white/70 backdrop-blur-md rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
@@ -1437,10 +1699,10 @@ export default function OrdersPage() {
                   </div>
                 </div>
               ))
-            ) : orders.length === 0 ? (
+            ) : displayOrders.length === 0 ? (
               <div className="p-8 text-center text-slate-400 font-medium">Aucune commande trouvée</div>
             ) : (
-              orders.map((order) => (
+              displayOrders.map((order) => (
                 <div key={order.id} className="p-5 space-y-4 hover:bg-slate-50/50 transition-colors group">
                   {/* Top Bar: Checkbox + Order Number + Source */}
                   <div className="flex items-center justify-between gap-2">
@@ -1477,7 +1739,16 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
                         {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 text-amber-700 uppercase tracking-wide border border-amber-200">Doublon</span>
+                          <>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 text-amber-700 uppercase tracking-wide border border-amber-200">Doublon</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleMergeDuplicates(order); }}
+                              className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 hover:bg-purple-200 text-purple-700 uppercase tracking-wide border border-purple-200 transition-colors"
+                              title="Fusionner tous les doublons de ce client dans cette commande"
+                            >
+                              Fusionner
+                            </button>
+                          </>
                         )}
                       </div>
                       <p className="text-xs text-slate-500 flex items-center gap-2">
@@ -1675,14 +1946,64 @@ export default function OrdersPage() {
                          <span className="text-[10px] font-bold text-white/60 uppercase">{selectedOrder.source === 'landing_page' ? 'Landing Page' : selectedOrder.source === 'MANUAL' ? 'Manuel' : (selectedOrder.source || 'MANUAL')}</span>
                          <span className="h-3 w-px bg-white/20" />
                          <span className="text-[10px] font-mono text-white/60">{selectedOrder.id.split('-')[0]}</span>
-                         {(selectedOrder.is_pack || selectedOrder.is_upsell || selectedOrder.is_abandoned_cart) && <span className="h-3 w-px bg-white/20 mx-1" />}
+                         <span className="h-3 w-px bg-white/20 mx-1" />
+                         {/* Origine métier — ne change jamais avec le statut */}
+                         <OrderTypeBadge order={selectedOrder} size="xs" short />
                          {selectedOrder.is_pack && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-[#6C5CE7]/20 text-indigo-200 border border-[#6C5CE7]/30 uppercase tracking-wide">Pack</span>}
                          {selectedOrder.is_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 uppercase tracking-wide">Upsell</span>}
-                         {selectedOrder.is_abandoned_cart && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-500/20 text-amber-200 border border-amber-500/30 uppercase tracking-wide">Récupération Panier</span>}
+                         {selectedOrder.livreur_id && (
+                           <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-500/20 text-sky-200 border border-sky-500/30 uppercase tracking-wide">
+                             🚴 {selectedOrder.livreur?.name || 'Livreur assigné'}
+                           </span>
+                         )}
                       </div>
+                      {/* Campaign attribution — which ad generated this order.
+                          Always rendered now (was conditional on having a value)
+                          — hidden entirely, there was no way to know WHERE this
+                          info would even show up to check whether a fresh order
+                          actually captured its UTM or not. Empty state says so
+                          explicitly instead of just not appearing. */}
+                      {(() => {
+                        const hasUtm = (selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id || (selectedOrder as any).utm_source;
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5"
+                               title={[
+                                 (selectedOrder as any).campaign_id && `Campagne ID: ${(selectedOrder as any).campaign_id}`,
+                                 (selectedOrder as any).adset_id && `Adset: ${(selectedOrder as any).adset_id}`,
+                                 (selectedOrder as any).ad_id && `Annonce: ${(selectedOrder as any).ad_id}`,
+                                 (selectedOrder as any).referrer && `Referrer: ${(selectedOrder as any).referrer}`,
+                               ].filter(Boolean).join('\n') || 'Aucun paramètre UTM/campagne enregistré pour cette commande'}>
+                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">📣 Campagne:</span>
+                             {hasUtm ? (
+                               <span className="text-[10px] font-bold text-blue-300">
+                                 {(selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id}
+                                 {(selectedOrder as any).utm_source && ` · ${(selectedOrder as any).utm_source}`}
+                                 {(selectedOrder as any).utm_medium && `/${(selectedOrder as any).utm_medium}`}
+                                 {(selectedOrder as any).utm_content && ` · ${(selectedOrder as any).utm_content}`}
+                               </span>
+                             ) : (
+                               <span className="text-[10px] font-bold text-white/30 italic">Aucune donnée UTM</span>
+                             )}
+                          </div>
+                        );
+                      })()}
                    </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                  {selectedOrder.parent_order_id && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res: any = await apiFetch(`/api/v1/orders/${selectedOrder.parent_order_id}`);
+                          const parent = res?.data ?? res;
+                          if (parent?.id) setSelectedOrder(parent);
+                        } catch { toast.error('Commande parente introuvable'); }
+                      }}
+                      className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 border border-purple-400/30"
+                    >
+                      🟣 Ouvrir la commande parente
+                    </button>
+                  )}
                   {!['DELIVERED','RETURNED','CANCELLED'].includes(selectedOrder.status) && (
                     <button
                       onClick={() => { 
@@ -1702,11 +2023,17 @@ export default function OrdersPage() {
                   <Badge className={cn("text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none rounded-xl", ORDER_STATUS_COLORS[selectedOrder.status])}>
                     {ORDER_STATUS_LABELS[selectedOrder.status]}
                   </Badge>
-                  {selectedOrder.status === 'CANCELLED' && selectedOrder.nrp_count && selectedOrder.nrp_count >= (selectedOrder.is_abandoned_cart ? 15 : 9) ? (
-                    <Badge className="bg-red-500 hover:bg-red-600 text-white text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none shadow-lg shadow-red-200 rounded-xl">NRP (Annulée)</Badge>
-                  ) : selectedOrder.nrp_count && selectedOrder.nrp_count > 0 ? (
-                    <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none shadow-lg shadow-amber-200 rounded-xl">NRP {selectedOrder.nrp_count}/{selectedOrder.is_abandoned_cart ? 15 : 9}</Badge>
-                  ) : null}
+                  {(() => {
+                    const opsCfg: any = allStores.find(s => s.id === selectedOrder.store_id)?.operations_config || {};
+                    const maxNrp = selectedOrder.is_abandoned_cart ? (opsCfg.max_nrp_abandoned ?? 12) : (opsCfg.max_nrp_normal ?? 9);
+                    if (selectedOrder.status === 'CANCELLED' && selectedOrder.nrp_count && selectedOrder.nrp_count >= maxNrp) {
+                      return <Badge className="bg-red-500 hover:bg-red-600 text-white text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none shadow-lg shadow-red-200 rounded-xl">NRP (Annulée)</Badge>;
+                    }
+                    if (selectedOrder.nrp_count && selectedOrder.nrp_count > 0) {
+                      return <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none shadow-lg shadow-amber-200 rounded-xl">NRP {selectedOrder.nrp_count}/{maxNrp}</Badge>;
+                    }
+                    return null;
+                  })()}
                 </div>
              </div>
 
@@ -1886,6 +2213,42 @@ export default function OrdersPage() {
                              </div>
                          </div>
                       </div>
+
+                      {/* Livreur interne — assignation disponible dans toute modale,
+                          quel que soit le statut (y compris Annulée) */}
+                      {selectedOrder.status !== 'MERGED' && (
+                        <div className="space-y-3">
+                           <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Truck className="size-3.5" /> Livreur Interne</h3>
+                           <div className="bg-sky-50/60 border border-sky-100 rounded-2xl p-5 space-y-3">
+                              {(() => {
+                                const livreurs = ((Array.isArray(livreursForOrderQuery.data) ? livreursForOrderQuery.data : livreursForOrderQuery.data?.data) ?? [])
+                                  .filter((u: any) => u.role === 'LIVREUR' && u.is_active !== false);
+                                if (livreursForOrderQuery.isLoading) return <p className="text-xs font-bold text-slate-400">Chargement…</p>;
+                                if (livreurs.length === 0) return <p className="text-xs font-bold text-slate-400 italic">Aucun livreur configuré pour cette boutique.</p>;
+                                return (
+                                  <>
+                                    <select
+                                      value={selectedOrder.livreur_id || ''}
+                                      onChange={(e) => e.target.value && assignLivreurMutation.mutate({ orderId: selectedOrder.id, livreurId: e.target.value })}
+                                      disabled={assignLivreurMutation.isPending}
+                                      className="w-full h-11 px-3 rounded-xl border border-sky-200 bg-white text-sm font-bold"
+                                    >
+                                      <option value="">— Choisir un livreur —</option>
+                                      {livreurs.map((l: any) => (
+                                        <option key={l.id} value={l.id}>{l.name}{l.phone ? ` (${l.phone})` : ''}</option>
+                                      ))}
+                                    </select>
+                                    {selectedOrder.livreur_id && (
+                                      <p className="text-[10px] font-bold text-sky-700">
+                                        ✓ Assignée à {selectedOrder.livreur?.name || 'ce livreur'} — visible immédiatement dans son espace.
+                                      </p>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                           </div>
+                        </div>
+                      )}
 
                       {/* Assigned agent */}
                       <div className="space-y-3">
