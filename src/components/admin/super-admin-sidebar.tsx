@@ -114,6 +114,13 @@ const NAV: NavSection[] = [
     ],
   },
   {
+    title: 'Publicité',
+    items: [
+      { label: 'Meta Ads & ROAS',   icon: BarChart3, view: 'meta_ads' },
+      { label: 'TikTok Ads & ROAS', icon: BarChart3, view: 'tiktok_ads' },
+    ],
+  },
+  {
     title: 'Opérations',
     items: [
       { label: 'Personnel',  icon: Users,      view: 'employees' },
