@@ -726,35 +726,9 @@ def sync_meta_ads(
 
     # 2. Get Campaign Insights
     if is_simulated:
-        campaigns_data = [
-            {
-                "campaign_id": f"camp_mock_1_{store_id[:8]}",
-                "campaign_name": "Campagne Hiver - Algérie (USD)",
-                "spend": 145.50,
-                "currency": "USD",
-                "impressions": 150000,
-                "clicks": 4200,
-                "reach": 98000
-            },
-            {
-                "campaign_id": f"camp_mock_2_{store_id[:8]}",
-                "campaign_name": "Promo Printemps (EUR)",
-                "spend": 88.00,
-                "currency": "EUR",
-                "impressions": 120000,
-                "clicks": 3100,
-                "reach": 81000
-            },
-            {
-                "campaign_id": f"camp_mock_3_{store_id[:8]}",
-                "campaign_name": "Fidélisation Clients (DZD)",
-                "spend": 15000.00,
-                "currency": "DZD",
-                "impressions": 85000,
-                "clicks": 1800,
-                "reach": 64000
-            }
-        ]
+        # NO mock data, ever — the is_simulated early-return below reports the
+        # connection problem to the user without fabricating campaigns.
+        campaigns_data = []
     else:
         params = {
             "level": "campaign",
@@ -816,35 +790,7 @@ def sync_meta_ads(
             if "error" in res_data:
                 logger.warning(f"[Meta Ads Sync] L'API Meta a retourné une erreur d'insights: {res_data['error']}")
                 is_simulated = True
-                campaigns_data = [
-                    {
-                        "campaign_id": f"camp_mock_1_{store_id[:8]}",
-                        "campaign_name": "Campagne Hiver - Algérie (USD)",
-                        "spend": 145.50,
-                        "currency": "USD",
-                        "impressions": 150000,
-                        "clicks": 4200,
-                        "reach": 98000
-                    },
-                    {
-                        "campaign_id": f"camp_mock_2_{store_id[:8]}",
-                        "campaign_name": "Promo Printemps (EUR)",
-                        "spend": 88.00,
-                        "currency": "EUR",
-                        "impressions": 120000,
-                        "clicks": 3100,
-                        "reach": 81000
-                    },
-                    {
-                        "campaign_id": f"camp_mock_3_{store_id[:8]}",
-                        "campaign_name": "Fidélisation Clients (DZD)",
-                        "spend": 15000.00,
-                        "currency": "DZD",
-                        "impressions": 85000,
-                        "clicks": 1800,
-                        "reach": 64000
-                    }
-                ]
+                campaigns_data = []  # no mock data — early-return below explains the error
             else:
                 raw_camps = res_data.get("data", [])
                 campaigns_data = []
@@ -866,35 +812,7 @@ def sync_meta_ads(
             logger.error(f"[Meta Ads Sync] Exception lors de la récupération des insights: {e}")
             is_simulated = True
             is_network_error = True
-            campaigns_data = [
-                {
-                    "campaign_id": f"camp_mock_1_{store_id[:8]}",
-                    "campaign_name": "Campagne Hiver - Algérie (USD)",
-                    "spend": 145.50,
-                    "currency": "USD",
-                    "impressions": 150000,
-                    "clicks": 4200,
-                    "reach": 98000
-                },
-                {
-                    "campaign_id": f"camp_mock_2_{store_id[:8]}",
-                    "campaign_name": "Promo Printemps (EUR)",
-                    "spend": 88.00,
-                    "currency": "EUR",
-                    "impressions": 120000,
-                    "clicks": 3100,
-                    "reach": 81000
-                },
-                {
-                    "campaign_id": f"camp_mock_3_{store_id[:8]}",
-                    "campaign_name": "Fidélisation Clients (DZD)",
-                    "spend": 15000.00,
-                    "currency": "DZD",
-                    "impressions": 85000,
-                    "clicks": 1800,
-                    "reach": 64000
-                }
-            ]
+            campaigns_data = []  # no mock data — early-return below explains the outage
 
     now = datetime.now()
 

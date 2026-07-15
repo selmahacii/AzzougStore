@@ -123,20 +123,9 @@ def _get_conversion_rate(ad_currency: str, config_currency: str, config_rate: fl
 
 
 def _simulated_campaigns(store_id: str) -> list:
-    return [
-        {
-            "campaign_id": f"tt_mock_1_{store_id[:8]}",
-            "campaign_name": "TikTok - Lancement Produit (USD)",
-            "spend": 95.30, "currency": "USD",
-            "impressions": 210000, "clicks": 5600, "reach": 130000,
-        },
-        {
-            "campaign_id": f"tt_mock_2_{store_id[:8]}",
-            "campaign_name": "TikTok - Spark Ads Vidéo (USD)",
-            "spend": 60.00, "currency": "USD",
-            "impressions": 145000, "clicks": 3900, "reach": 92000,
-        },
-    ]
+    # NO mock data, ever — a failed/unconfigured TikTok connection returns an
+    # empty list and the is_simulated early-return explains the problem.
+    return []
 
 
 @router.post("/sync", response_model=dict)
