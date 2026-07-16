@@ -229,7 +229,7 @@ function OrderTimer({ startTime }: { startTime?: string }) {
 
 // ─── Components ─────────────────────────────────────────────
 
-function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void }) {
+function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string) => void; isPending?: boolean }) {
   const queryClient = useQueryClient();
   const livreursQuery = useQuery<any>({
     queryKey: ['livreurs', order.store_id],
@@ -272,7 +272,24 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onO
         {hasCarrierParcel ? (
           <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
         ) : order.status !== 'CONFIRMED' ? (
-          <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
+            {/* Same transition a manual order goes through like any other
+                (NEW/ASSIGNED/CALLED -> CONFIRMED is already valid per the
+                state machine) — just a one-click shortcut right where the
+                confirmatrice is trying to dispatch, instead of making her
+                hunt for the "Confirmer" action elsewhere in the drawer. */}
+            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED'].includes(order.status) && onStatusChange && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => onStatusChange(order.id, 'CONFIRMED')}
+                className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                ✓ Confirmer la commande maintenant
+              </button>
+            )}
+          </div>
         ) : order.carrier_id ? (
           <button
             type="button"
@@ -286,31 +303,39 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onO
         )}
       </div>
 
-      {/* Option 2 — livreur interne */}
-      {livreurs.length > 0 && !livreursQuery.isLoading && (
-        <div className={cn(
-          'p-3 rounded-xl border space-y-1.5',
-          order.livreur_id ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50'
-        )}>
-          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 2 — Livreur interne</p>
-          <select
-            value={order.livreur_id || ''}
-            onChange={(e) => e.target.value && assignMutation.mutate(e.target.value)}
-            disabled={assignMutation.isPending}
-            className="w-full text-xs p-2.5 border rounded-lg bg-white font-bold"
-          >
-            <option value="">— Choisir un livreur —</option>
-            {livreurs.map((l: any) => (
-              <option key={l.id} value={l.id}>{l.name}{l.phone ? ` (${l.phone})` : ''}</option>
-            ))}
-          </select>
-          {current && (
-            <p className="text-[10px] font-bold text-emerald-600">
-              ✓ Assignée à {current.name} — il/elle voit le client, le téléphone, l'adresse, les articles et le montant à encaisser. Suivez sa progression dans la timeline ci-dessous.
-            </p>
-          )}
-        </div>
-      )}
+      {/* Option 2 — livreur interne — always rendered (was silently absent
+          when livreurs.length === 0 / still loading, which read as "the
+          whole feature is missing" rather than "no livreur configured yet"). */}
+      <div className={cn(
+        'p-3 rounded-xl border space-y-1.5',
+        order.livreur_id ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50'
+      )}>
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 2 — Livreur interne</p>
+        {livreursQuery.isLoading ? (
+          <p className="text-[10px] font-bold text-slate-400">Chargement des livreurs...</p>
+        ) : livreurs.length === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400">Aucun livreur actif configuré pour cette boutique.</p>
+        ) : (
+          <>
+            <select
+              value={order.livreur_id || ''}
+              onChange={(e) => e.target.value && assignMutation.mutate(e.target.value)}
+              disabled={assignMutation.isPending}
+              className="w-full text-xs p-2.5 border rounded-lg bg-white font-bold"
+            >
+              <option value="">— Choisir un livreur —</option>
+              {livreurs.map((l: any) => (
+                <option key={l.id} value={l.id}>{l.name}{l.phone ? ` (${l.phone})` : ''}</option>
+              ))}
+            </select>
+            {current && (
+              <p className="text-[10px] font-bold text-emerald-600">
+                ✓ Assignée à {current.name} — il/elle voit le client, le téléphone, l'adresse, les articles et le montant à encaisser. Suivez sa progression dans la timeline ci-dessous.
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -1252,7 +1277,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               commandes fusionnées (MERGED, gérées via leur parent) n'ont pas de
               livraison propre. */}
           {order.status !== 'MERGED' && (
-            <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} />
+            <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} />
           )}
 
           {cfg.next.length > 0 && (
