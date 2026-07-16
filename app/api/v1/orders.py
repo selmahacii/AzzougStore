@@ -787,6 +787,14 @@ def list_orders(
             )
         elif status.upper() == "ARCHIVED":
             query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
+        elif status.upper() == "MANUAL":
+            # "Commandes Manuelles" — every order an agent/admin typed in
+            # directly (phone order, in-store, etc.) rather than the
+            # customer submitting it themselves through a storefront/LP.
+            # Whatever its current status, not scoped to the confirmation
+            # stage like the filters above: a manually-entered order is
+            # still "manual" whether it's still NEW or already DELIVERED.
+            query = query.filter(sqlfunc.coalesce(Order.source, "") == "MANUAL")
         elif status.upper().startswith("CARRIER_") and status.upper()[len("CARRIER_"):].lower() in CARRIER_STAGE_BUCKETS:
             # Noest's own granular carrier stage (see CARRIER_STAGE_BUCKETS) —
             # e.g. status=CARRIER_OUT_FOR_DELIVERY for the "En livraison"
