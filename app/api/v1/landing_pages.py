@@ -242,6 +242,18 @@ def list_landing_pages(
                 MetaAdsCampaign.product_id.in_(lp_product_ids),
             ).all()
         }
+        # Last-synced timestamp per product — the numbers below are always a
+        # snapshot from the last backend sync (auto-sync runs every
+        # META_ADS_SYNC_INTERVAL_MINUTES, default 24h), not live. Without
+        # this on the card, a real gap with Meta's own live UI reads as a
+        # bug instead of the explainable staleness it actually is.
+        _synced_at_by_product: dict = {}
+        for c in db.query(MetaAdsCampaign).filter(
+            MetaAdsCampaign.store_id == store_id,
+            MetaAdsCampaign.product_id.in_(lp_product_ids),
+        ).all():
+            if c.updated_at and (c.product_id not in _synced_at_by_product or c.updated_at > _synced_at_by_product[c.product_id]):
+                _synced_at_by_product[c.product_id] = c.updated_at
         # Same source/fallback logic also surfaces Meta's own impressions per
         # product — the LP card can then show "vues" (our storefront counter)
         # side-by-side with "impressions" (Meta's ad delivery count), which
@@ -291,6 +303,8 @@ def list_landing_pages(
             })
             metrics_by_product[_pid]["meta_purchases"] = _meta_by_product.get(_pid, 0)
             metrics_by_product[_pid]["meta_impressions"] = _meta_impressions_by_product.get(_pid, 0)
+            _synced_at = _synced_at_by_product.get(_pid)
+            metrics_by_product[_pid]["meta_last_synced_at"] = _synced_at.isoformat() if _synced_at else None
 
     # ── Remaining stock per product, broken down by variant ───────────────────
     stock_by_product: dict = {}

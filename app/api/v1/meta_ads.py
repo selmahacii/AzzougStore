@@ -256,6 +256,7 @@ def list_campaign_ads(
             "cpc": cpc,
             "cpm": cpm,
             "cost_per_purchase": cost_per_purchase,
+            "last_synced_at": r.updated_at.isoformat() if r.updated_at else None,
         })
     return {"success": True, "data": data}
 
@@ -440,7 +441,13 @@ def list_campaigns(
             "meta_roas": meta_roas,
             "conversion_gap": conversion_gap,
             "date_start": camp.date_start.isoformat() if camp.date_start else None,
-            "date_end": camp.date_end.isoformat() if camp.date_end else None
+            "date_end": camp.date_end.isoformat() if camp.date_end else None,
+            # When this row was actually last synced from Meta — the numbers
+            # above are always a snapshot, not live; without this, a real gap
+            # between our count and Meta's own live UI (auto-sync only runs
+            # every META_ADS_SYNC_INTERVAL_MINUTES, default 24h) reads as a
+            # bug instead of the explainable staleness it actually is.
+            "last_synced_at": camp.updated_at.isoformat() if camp.updated_at else None,
         })
 
     global_roas = round(global_revenue / global_spend, 2) if global_spend > 0 else 0.0

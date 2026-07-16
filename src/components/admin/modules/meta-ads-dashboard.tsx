@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -31,6 +31,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -166,6 +168,30 @@ export default function MetaAdsDashboard() {
   });
   const campaignAds = campaignAdsData?.data || [];
   const summary = campaignsData?.summary || { total_spend: 0, total_revenue: 0, total_orders: 0, global_roas: 0 };
+
+  // Most recent sync across all loaded campaigns — shown near the "Historique
+  // des Campagnes" header so a gap with Meta's own live count (12 achats one
+  // moment, 239 the next — Ads Manager updates continuously, this dashboard
+  // only refreshes every META_ADS_SYNC_INTERVAL_MINUTES on the backend,
+  // default 24h) reads as ordinary staleness instead of a bug.
+  const lastSyncedAt = campaigns.reduce((latest: string | null, c: any) => {
+    if (!c.last_synced_at) return latest;
+    return !latest || c.last_synced_at > latest ? c.last_synced_at : latest;
+  }, null as string | null);
+
+  // Auto-refresh Meta's numbers when the dashboard is actually being looked
+  // at, instead of only once every 24h in the background — fires once per
+  // mount, only when the last sync is already stale (>30min), so opening
+  // this tab doesn't itself become a new source of constant polling cost.
+  const autoSyncTriggered = useRef(false);
+  useEffect(() => {
+    if (autoSyncTriggered.current || !activeStore?.id || isLoadingCampaigns) return;
+    const staleMs = lastSyncedAt ? Date.now() - new Date(lastSyncedAt).getTime() : Infinity;
+    if (staleMs > 30 * 60 * 1000) {
+      autoSyncTriggered.current = true;
+      syncMutation.mutate();
+    }
+  }, [activeStore?.id, isLoadingCampaigns, lastSyncedAt]);
 
   // Integration data shortcuts
   const intData = integrationData?.data;
@@ -620,6 +646,14 @@ export default function MetaAdsDashboard() {
                 <Sparkles className="size-4 text-[#6C5CE7]" /> Historique des Campagnes — {activeStore?.name || 'Boutique'}
               </h3>
               <p className="text-[10px] text-slate-400 mt-1">Données isolées par boutique • Attribution UTM automatique • Cliquez sur une ligne pour les détails</p>
+              {lastSyncedAt && (
+                <p className="text-[9px] text-slate-400 font-bold mt-1 flex items-center gap-1">
+                  <RefreshCw className={cn("size-2.5", syncMutation.isPending && "animate-spin")} />
+                  {syncMutation.isPending
+                    ? 'Resynchronisation avec Meta en cours…'
+                    : <>Synchronisé {formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true, locale: fr })} — Meta Ads Manager peut afficher des chiffres légèrement plus récents entre deux synchros</>}
+                </p>
+              )}
             </div>
             <Badge className="bg-slate-100 text-slate-600 border-none font-black">{campaigns.length} campagnes</Badge>
           </div>
@@ -771,9 +805,16 @@ export default function MetaAdsDashboard() {
                                 individually instead of only as one combined
                                 total above. */}
                             <div className="mt-4 pt-4 border-t border-[#E9ECF0]">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5">
-                                <Layers className="size-3" /> Détail par publicité
-                              </p>
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                                  <Layers className="size-3" /> Détail par publicité
+                                </p>
+                                {campaignAds.length > 0 && campaignAds[0]?.last_synced_at && (
+                                  <p className="text-[9px] text-slate-300 font-bold">
+                                    Chiffres Meta au dernier sync — {formatDistanceToNow(new Date(campaignAds[0].last_synced_at), { addSuffix: true, locale: fr })}
+                                  </p>
+                                )}
+                              </div>
                               {isLoadingCampaignAds ? (
                                 <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
                               ) : campaignAds.length === 0 ? (
