@@ -236,21 +236,27 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
   };
 
   if (options.shouldSendToServer !== false && pixelId) {
-    try {
-      // keepalive: without it, the browser can cancel this fetch the instant
-      // checkout completes and the page starts unloading/navigating right
-      // after — silently dropping the Purchase relay call (this is the
-      // suspected cause of meta_capi_logs never showing a relay-side row
-      // even for successful checkouts; keepalive lets the request survive
-      // past the point that triggered it).
-      await fetch('/api/v1/meta-ads/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(eventPayload),
-        keepalive: true,
-      });
-    } catch {
-      // ignore server failures for tracking
+    const body = JSON.stringify(eventPayload);
+    // sendBeacon is purpose-built for exactly this — "fire this request even
+    // if the page is about to unload" — and the browser guarantees delivery
+    // attempts survive navigation, unlike fetch+keepalive which is still a
+    // best-effort promise some browsers cancel under load. A JSON-typed Blob
+    // preserves the Content-Type FastAPI needs to parse the body correctly.
+    // Falls back to fetch+keepalive only when sendBeacon is unavailable or
+    // refuses to queue the request (e.g. payload over its ~64KB cap).
+    const beaconOk = typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function'
+      && navigator.sendBeacon('/api/v1/meta-ads/events', new Blob([body], { type: 'application/json' }));
+    if (!beaconOk) {
+      try {
+        await fetch('/api/v1/meta-ads/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          keepalive: true,
+        });
+      } catch {
+        // ignore server failures for tracking
+      }
     }
   }
 
