@@ -328,6 +328,17 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     Returns the number of orders merged.
     """
     phone = (order.customer_phone or "").strip()
+    # A MANUAL order is deliberately entered by staff who already know the
+    # situation (e.g. a genuine second sale to a repeat customer, or a
+    # follow-up they intentionally typed in) — auto-merge exists to catch
+    # ACCIDENTAL duplicate submissions from self-service checkout (double-
+    # click, page refresh), not a staff member's deliberate action. A manual
+    # order must behave as an ordinary standalone order (visible in
+    # "Nouvelles Commandes", dispatchable/assignable) rather than silently
+    # disappear into a MERGED/DOUBLON state. Never triggers a merge as the
+    # entry point here...
+    if str(order.source or "").upper() == "MANUAL":
+        return 0
     # Entry status: any order still in the confirmation stage, OR already
     # CONFIRMED-without-tracking (it can still legitimately absorb a late
     # duplicate — e.g. reopened from CANCELLED, or a sibling created after).
@@ -342,7 +353,10 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
 
     # Active candidates: confirmation-stage orders + CONFIRMED ones not yet at
     # the carrier (a confirmed parent can still absorb a late duplicate).
+    # ...and never swept up as a sibling into someone else's merge either —
+    # same reasoning, both directions.
     candidate_states = list(_MERGEABLE_STATES) + ["CONFIRMED"]
+    from sqlalchemy import or_ as _or_manual
     siblings = (
         db.query(Order)
         .filter(
@@ -351,6 +365,7 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             Order.id != order.id,
             Order.is_deleted == False,
             Order.status.in_(candidate_states),
+            _or_manual(Order.source.is_(None), Order.source != "MANUAL"),
         )
         .with_for_update()  # serialize concurrent merges on the same client
         .all()
