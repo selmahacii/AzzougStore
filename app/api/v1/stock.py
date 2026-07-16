@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc
+from sqlalchemy import desc, func as sqlfunc, case
 from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
@@ -45,12 +45,19 @@ def list_movements(
     product_id: Optional[str] = None,
     movement_type: Optional[str] = None,
     warehouse_id: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Paginated stock movement log, optionally filtered."""
+    """Paginated stock movement log, optionally filtered — powers the
+    inventory 'Historique' / 'Timeline' views (traçabilité complète : qui,
+    quand, depuis quelle commande, quel entrepôt)."""
+    from app.core.dates import parse_local_date_filter
+
     query = db.query(StockMovement)
 
     if product_id:
@@ -61,6 +68,18 @@ def list_movements(
         query = query.filter(StockMovement.type == movement_type)
     if warehouse_id:
         query = query.filter(StockMovement.warehouse_id == warehouse_id)
+    if actor_id:
+        query = query.filter(StockMovement.actor_id == actor_id)
+    if date_from:
+        try:
+            query = query.filter(StockMovement.created_at >= parse_local_date_filter(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            query = query.filter(StockMovement.created_at <= parse_local_date_filter(date_to))
+        except ValueError:
+            pass
 
     query = query.options(joinedload(StockMovement.actor))
 
@@ -73,6 +92,32 @@ def list_movements(
         .all()
     )
 
+    # Enrich with human-readable labels (order number, warehouse name,
+    # product name) in 3 grouped lookups for the whole page — never a
+    # query per row — so the UI never has to show a raw order_id/UUID.
+    order_ids = {m.order_id for m in movements if m.order_id}
+    warehouse_ids = {m.warehouse_id for m in movements if m.warehouse_id}
+    product_ids = {m.product_id for m in movements if m.product_id}
+
+    order_numbers = {}
+    if order_ids:
+        from app.models.order import Order
+        order_numbers = dict(db.query(Order.id, Order.order_number).filter(Order.id.in_(order_ids)).all())
+
+    warehouse_names = {}
+    if warehouse_ids:
+        from app.models.warehouse import Warehouse
+        warehouse_names = dict(db.query(Warehouse.id, Warehouse.name).filter(Warehouse.id.in_(warehouse_ids)).all())
+
+    product_names = {}
+    if product_ids:
+        product_names = dict(db.query(Product.id, Product.name).filter(Product.id.in_(product_ids)).all())
+
+    for m in movements:
+        m.order_number = order_numbers.get(m.order_id)
+        m.warehouse_name = warehouse_names.get(m.warehouse_id)
+        m.product_name = product_names.get(m.product_id)
+
     return {
         "success": True,
         "data": movements,
@@ -80,6 +125,160 @@ def list_movements(
         "page": page,
         "pageSize": pageSize,
         "totalPages": (total + pageSize - 1) // pageSize,
+    }
+
+
+# ─── GET /stock/livreurs — per-courier inventory comparison ─────────────────
+
+@router.get("/livreurs", response_model=dict)
+def get_livreur_inventory(
+    store_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Section "Inventaire des livreurs". AzzougShop's livreurs are internal
+    users assigned to an order (Order.livreur_id), not a separate stock
+    ledger — there is no dedicated "stock handed to courier" movement type
+    yet (that's a real gap, flagged below rather than faked). So this is
+    built honestly from what IS provable: orders currently assigned to each
+    livreur (stock physically in their possession right now), delivered
+    (sold), and returned — each a single grouped query, no N+1.
+    """
+    from app.models.order import Order
+
+    db.info["skip_tenant_isolation"] = True
+
+    _IN_HAND = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "CONFIRMED", "SHIPPED"]
+
+    rows = (
+        db.query(
+            User.id, User.name,
+            sqlfunc.count(sqlfunc.distinct(Order.id)).label("total_orders"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status.in_(_IN_HAND), 1), else_=0)), 0).label("in_hand"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status == "DELIVERED", 1), else_=0)), 0).label("delivered"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status == "RETURNED", 1), else_=0)), 0).label("returned"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status.in_(_IN_HAND), Order.total), else_=0)), 0).label("value_in_hand"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("value_delivered"),
+            sqlfunc.coalesce(sqlfunc.sum(case((Order.status == "RETURNED", Order.total), else_=0)), 0).label("value_returned"),
+        )
+        .join(Order, Order.livreur_id == User.id)
+        .filter(Order.store_id == store_id, Order.is_deleted == False)
+        .group_by(User.id, User.name)
+        .order_by(sqlfunc.count(sqlfunc.distinct(Order.id)).desc())
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "livreur_id": r[0], "name": r[1],
+                "total_orders": int(r[2]), "stock_en_main": int(r[3]),
+                "stock_vendu": int(r[4]), "stock_retourne": int(r[5]),
+                "valeur_en_main": float(r[6]), "valeur_vendue": float(r[7]), "valeur_retournee": float(r[8]),
+                # Honest placeholders: no movement type distinguishes casse/perte
+                # from a normal return today, so these are not computable —
+                # showing a fabricated number would be worse than admitting the gap.
+                "produits_perdus": None, "produits_casses": None,
+            }
+            for r in rows
+        ],
+        "note": "Casse/perte non trackées séparément — aucun type de mouvement dédié n'existe encore pour les distinguer d'un retour normal.",
+    }
+
+
+# ─── GET /stock/discrepancies — automated anomaly detection ────────────────
+
+@router.get("/discrepancies", response_model=dict)
+def get_stock_discrepancies(
+    store_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Section "Analyse des écarts". Every check below is a provable SQL
+    signature (existence/non-existence of a movement row), the same pattern
+    already used by /orders/returns/audit — never a heuristic guess.
+    """
+    from sqlalchemy import exists as sa_exists
+    from app.models.order import Order
+
+    db.info["skip_tenant_isolation"] = True
+
+    findings = []
+
+    # 1. Stock négatif — jamais censé arriver, signe d'une race condition
+    #    ou d'un ajustement manuel erroné.
+    negative = (
+        db.query(Product.id, Product.name, Product.stock)
+        .filter(Product.store_id == store_id, Product.stock < 0)
+        .limit(50).all()
+    )
+    for p in negative:
+        findings.append({"type": "STOCK_NEGATIF", "severity": "high", "product_id": p.id, "product_name": p.name, "detail": f"Stock = {p.stock}"})
+
+    # 2. Commande livrée sans sortie de stock (aucun mouvement ORDER_CONFIRM)
+    confirm_exists = sa_exists().where(StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM")
+    delivered_no_exit = (
+        db.query(Order.id, Order.order_number)
+        .filter(Order.store_id == store_id, Order.status == "DELIVERED", Order.is_deleted == False, ~confirm_exists)
+        .limit(50).all()
+    )
+    for o in delivered_no_exit:
+        findings.append({"type": "LIVREE_SANS_SORTIE_STOCK", "severity": "high", "order_id": o.id, "order_number": o.order_number, "detail": "Livrée sans mouvement ORDER_CONFIRM"})
+
+    # 3. Commande retournée sans réintégration (même signature que /orders/returns/audit)
+    restock_exists = sa_exists().where(StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK")
+    returned_no_restock = (
+        db.query(Order.id, Order.order_number)
+        .filter(Order.store_id == store_id, Order.status == "RETURNED", Order.is_deleted == False, confirm_exists, ~restock_exists)
+        .limit(50).all()
+    )
+    for o in returned_no_restock:
+        findings.append({"type": "RETOUR_SANS_REINTEGRATION", "severity": "high", "order_id": o.id, "order_number": o.order_number, "detail": "Retournée mais jamais réintégrée en stock"})
+
+    # 4. Retour de stock sans commande associée (order_id NULL sur un RETURN_RESTOCK)
+    orphan_restock = (
+        db.query(sqlfunc.count(StockMovement.id))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "RETURN_RESTOCK", StockMovement.order_id.is_(None))
+        .scalar() or 0
+    )
+    if orphan_restock > 0:
+        findings.append({"type": "REINTEGRATION_SANS_COMMANDE", "severity": "medium", "detail": f"{orphan_restock} mouvement(s) RETURN_RESTOCK sans commande liée"})
+
+    # 5. Double confirmation — plus d'un ORDER_CONFIRM pour la même commande
+    #    (signature exacte d'une double déduction de stock pour un seul achat)
+    dup_confirms = (
+        db.query(StockMovement.order_id, sqlfunc.count(StockMovement.id).label("cnt"))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "ORDER_CONFIRM", StockMovement.order_id.isnot(None))
+        .group_by(StockMovement.order_id, StockMovement.product_id)
+        .having(sqlfunc.count(StockMovement.id) > 1)
+        .limit(50).all()
+    )
+    order_ids_dup = list({r[0] for r in dup_confirms})
+    dup_numbers = {}
+    if order_ids_dup:
+        dup_numbers = dict(db.query(Order.id, Order.order_number).filter(Order.id.in_(order_ids_dup)).all())
+    for r in dup_confirms:
+        findings.append({"type": "DOUBLE_MOUVEMENT", "severity": "high", "order_id": r[0], "order_number": dup_numbers.get(r[0]), "detail": f"{r[1]} sorties ORDER_CONFIRM pour la même commande/produit"})
+
+    # 6. Produit orphelin — mouvement référençant un produit qui n'existe plus
+    orphan_products = (
+        db.query(sqlfunc.count(StockMovement.id))
+        .filter(~sa_exists().where(Product.id == StockMovement.product_id))
+        .scalar() or 0
+    )
+    if orphan_products > 0:
+        findings.append({"type": "PRODUIT_ORPHELIN", "severity": "medium", "detail": f"{orphan_products} mouvement(s) référencent un produit supprimé"})
+
+    return {
+        "success": True,
+        "data": findings,
+        "total": len(findings),
+        "high_severity": len([f for f in findings if f["severity"] == "high"]),
     }
 
 

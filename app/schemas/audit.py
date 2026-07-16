@@ -6,6 +6,7 @@ class AuditActor(BaseModel):
     id: str
     name: str
     avatar: Optional[str] = None
+    role: Optional[str] = None
 
     class Config:
         from_attributes = True

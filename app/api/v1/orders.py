@@ -2847,3 +2847,224 @@ def get_returns_kpis(
             ],
         },
     }
+
+
+@router.get("/returns/analysis", response_model=dict)
+def get_returns_analysis(
+    store_id: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Section "Analyse des retours" — top livreurs / causes / clients, taux de
+    retour, valeur perdue (jamais réintégrée). Complète get_returns_kpis
+    (qui couvre déjà top_products) sans dupliquer son calcul. Chaque
+    agrégat est un GROUP BY unique, aucune boucle Python par ligne.
+    """
+    from app.core.dates import parse_local_date_filter
+    from app.models.stock import StockMovement
+
+    db.info["skip_tenant_isolation"] = True
+
+    base = db.query(Order).filter(Order.status == "RETURNED", Order.is_deleted == False)
+    if store_id:
+        base = base.filter(Order.store_id == store_id)
+    if date_from:
+        try:
+            base = base.filter(Order.updated_at >= parse_local_date_filter(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            base = base.filter(Order.updated_at <= parse_local_date_filter(date_to))
+        except ValueError:
+            pass
+
+    total_returned = base.with_entities(sqlfunc.count(Order.id)).scalar() or 0
+
+    delivered_base = db.query(Order).filter(Order.status == "DELIVERED", Order.is_deleted == False)
+    if store_id:
+        delivered_base = delivered_base.filter(Order.store_id == store_id)
+    total_delivered = delivered_base.with_entities(sqlfunc.count(Order.id)).scalar() or 0
+    return_rate = round((total_returned / (total_returned + total_delivered)) * 100, 1) if (total_returned + total_delivered) > 0 else 0.0
+
+    top_livreurs = (
+        base.filter(Order.livreur_id.isnot(None))
+        .join(User, User.id == Order.livreur_id)
+        .with_entities(User.id, User.name, sqlfunc.count(Order.id).label("cnt"))
+        .group_by(User.id, User.name)
+        .order_by(sqlfunc.count(Order.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    top_clients = (
+        base.with_entities(Order.customer_phone, Order.customer_name, sqlfunc.count(Order.id).label("cnt"))
+        .group_by(Order.customer_phone, Order.customer_name)
+        .order_by(sqlfunc.count(Order.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    # Cause = le texte libre saisi sur l'événement de transition vers
+    # RETURNED (terminal, donc au plus un par commande) — pas de nouvelle
+    # colonne, on réutilise ce qui est déjà tapé par l'agent/livreur.
+    top_causes = (
+        db.query(OrderEvent.note, sqlfunc.count(OrderEvent.id).label("cnt"))
+        .filter(
+            OrderEvent.to_status == "RETURNED",
+            OrderEvent.order_id.in_(base.with_entities(Order.id)),
+            OrderEvent.note.isnot(None),
+            OrderEvent.note != "",
+        )
+        .group_by(OrderEvent.note)
+        .order_by(sqlfunc.count(OrderEvent.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    # Valeur perdue = commandes retournées jamais réintégrées en stock
+    # (même signature que /returns/audit : ORDER_CONFIRM existe, aucun
+    # RETURN_RESTOCK n'a suivi) — le montant total de ces commandes.
+    from sqlalchemy import exists as sa_exists
+    confirm_exists = sa_exists().where(StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM")
+    restock_exists = sa_exists().where(StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK")
+    lost_value = (
+        base.filter(confirm_exists, ~restock_exists)
+        .with_entities(sqlfunc.coalesce(sqlfunc.sum(Order.total), 0))
+        .scalar() or 0
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "total_returned": total_returned,
+            "total_delivered": total_delivered,
+            "return_rate_pct": return_rate,
+            "top_livreurs": [{"livreur_id": r[0], "name": r[1], "returns": int(r[2])} for r in top_livreurs],
+            "top_clients": [{"phone": r[0], "name": r[1], "returns": int(r[2])} for r in top_clients],
+            "top_causes": [{"cause": r[0], "count": int(r[1])} for r in top_causes],
+            "valeur_perdue": float(lost_value),
+        },
+    }
+
+
+@router.get("/returns/list", response_model=dict)
+def list_returned_orders(
+    store_id: Optional[str] = Query(None),
+    livreur_id: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Section "Analyse des commandes retournées" — une ligne par commande
+    RETURNED avec client, livreur, date de livraison, date du retour,
+    produits, montant, cause, statut de réintégration, validé par, date
+    de réintégration. Toutes les jointures/aggrégats sont faits en 3
+    requêtes pour la page entière (commandes+items, événements DELIVERED/
+    RETURNED, mouvements RETURN_RESTOCK) — jamais une requête par ligne.
+    """
+    from app.core.dates import parse_local_date_filter
+    from app.models.stock import StockMovement
+
+    db.info["skip_tenant_isolation"] = True
+
+    q = db.query(Order).filter(Order.status == "RETURNED", Order.is_deleted == False)
+    if store_id:
+        q = q.filter(Order.store_id == store_id)
+    if livreur_id:
+        q = q.filter(Order.livreur_id == livreur_id)
+    if date_from:
+        try:
+            q = q.filter(Order.updated_at >= parse_local_date_filter(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(Order.updated_at <= parse_local_date_filter(date_to))
+        except ValueError:
+            pass
+
+    total = q.with_entities(sqlfunc.count(Order.id)).scalar() or 0
+    orders = (
+        q.options(joinedload(Order.items), joinedload(Order.livreur))
+        .order_by(Order.updated_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    order_ids = [o.id for o in orders]
+
+    delivered_events = {}
+    return_events = {}
+    if order_ids:
+        for oid, ts in (
+            db.query(OrderEvent.order_id, sqlfunc.max(OrderEvent.created_at))
+            .filter(OrderEvent.order_id.in_(order_ids), OrderEvent.to_status == "DELIVERED")
+            .group_by(OrderEvent.order_id)
+            .all()
+        ):
+            delivered_events[oid] = ts
+        for ev in (
+            db.query(OrderEvent.order_id, OrderEvent.note, OrderEvent.created_at)
+            .filter(OrderEvent.order_id.in_(order_ids), OrderEvent.to_status == "RETURNED")
+            .all()
+        ):
+            return_events[ev.order_id] = {"cause": ev.note, "returned_at": ev.created_at}
+
+    reintegration = {}
+    if order_ids:
+        rows = (
+            db.query(
+                StockMovement.order_id,
+                sqlfunc.min(StockMovement.created_at).label("reintegrated_at"),
+                sqlfunc.max(StockMovement.actor_id).label("actor_id"),
+            )
+            .filter(StockMovement.order_id.in_(order_ids), StockMovement.type == "RETURN_RESTOCK")
+            .group_by(StockMovement.order_id)
+            .all()
+        )
+        actor_ids = [r.actor_id for r in rows if r.actor_id]
+        actors = {}
+        if actor_ids:
+            actors = {u.id: u.name for u in db.query(User.id, User.name).filter(User.id.in_(actor_ids)).all()}
+        for r in rows:
+            reintegration[r.order_id] = {
+                "reintegrated_at": r.reintegrated_at.isoformat() if r.reintegrated_at else None,
+                "validated_by": actors.get(r.actor_id),
+            }
+
+    data = []
+    for o in orders:
+        reint = reintegration.get(o.id)
+        ret_ev = return_events.get(o.id)
+        data.append({
+            "order_id": o.id,
+            "order_number": o.order_number,
+            "customer_name": o.customer_name,
+            "customer_phone": o.customer_phone,
+            "livreur": o.livreur.name if o.livreur else None,
+            "delivered_at": delivered_events[o.id].isoformat() if o.id in delivered_events else None,
+            "returned_at": ret_ev["returned_at"].isoformat() if ret_ev and ret_ev["returned_at"] else (o.updated_at.isoformat() if o.updated_at else None),
+            "cause": ret_ev["cause"] if ret_ev else None,
+            "products": [
+                {"product_id": it.product_id, "product_name": it.product_name, "quantity": it.quantity}
+                for it in o.items
+            ],
+            "total": o.total,
+            "reintegration_status": "reintegrated" if reint else "pending",
+            "validated_by": reint["validated_by"] if reint else None,
+            "reintegrated_at": reint["reintegrated_at"] if reint else None,
+        })
+
+    return {
+        "success": True,
+        "data": data,
+        "pagination": {"page": page, "page_size": page_size, "total": total, "pages": (total + page_size - 1) // page_size},
+    }

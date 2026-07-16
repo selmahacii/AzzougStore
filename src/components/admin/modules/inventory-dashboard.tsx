@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Warehouse, 
-  Truck, 
+import {
+  Warehouse,
+  Truck,
   AlertCircle,
   Activity,
   History,
@@ -16,7 +16,13 @@ import {
   Download,
   Clock,
   Loader2,
-  FileText
+  FileText,
+  ShoppingCart,
+  RotateCcw,
+  Sliders,
+  ChevronLeft,
+  ChevronRight,
+  GitBranch
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
@@ -30,6 +36,7 @@ import StockTracker from './stock-tracker';
 import SupplierManager from './supplier-manager';
 import PurchaseManager from './purchase-manager';
 import ReturnManager from './return-manager';
+import { LivreursInventoryView, TracabilityView, DiscrepanciesView } from './inventory-tracability';
 
 interface InventorySummary {
   data: {
@@ -48,6 +55,11 @@ interface InventoryMovement {
   quantity: number;
   reason: string | null;
   created_at: string;
+  order_id?: string | null;
+  order_number?: string | null;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  product_name?: string | null;
   actor?: {
     id: string;
     name: string;
@@ -58,7 +70,41 @@ interface InventoryMovement {
 
 interface InventoryMovementsResponse {
   data: InventoryMovement[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
+
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  RESTOCK: 'Réapprovisionnement fournisseur',
+  ORDER_CONFIRM: 'Confirmation commande',
+  ORDER_RESERVE: 'Réservation commande',
+  ORDER_RELEASE: 'Libération réservation',
+  RETURN_RESTOCK: 'Retour client réintégré',
+  POS_SALE: 'Vente au comptoir (POS)',
+  MANUAL_ADJUSTMENT: 'Ajustement manuel',
+};
+
+const MOVEMENT_TYPE_ICON: Record<string, any> = {
+  RESTOCK: Package,
+  ORDER_CONFIRM: ShoppingCart,
+  ORDER_RESERVE: ShoppingCart,
+  ORDER_RELEASE: RotateCcw,
+  RETURN_RESTOCK: RotateCcw,
+  POS_SALE: ShoppingCart,
+  MANUAL_ADJUSTMENT: Sliders,
+};
+
+const MOVEMENT_TYPE_COLOR: Record<string, string> = {
+  RESTOCK: '#00B894',
+  ORDER_CONFIRM: '#E17055',
+  ORDER_RESERVE: '#FDCB6E',
+  ORDER_RELEASE: '#0984E3',
+  RETURN_RESTOCK: '#6C5CE7',
+  POS_SALE: '#E17055',
+  MANUAL_ADJUSTMENT: '#636E72',
+};
 
 
 // ─── CODpilot Styling ─────────────────────────────────────
@@ -136,6 +182,10 @@ export default function InventoryDashboard() {
       if (['Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS';
       if (['Surveillance', 'MONITOR'].includes(sv)) return 'MONITOR';
       if (['Historique', 'HISTORY'].includes(sv)) return 'HISTORY';
+      if (['Timeline', 'Chronologie', 'TIMELINE'].includes(sv)) return 'TIMELINE';
+      if (['Livreurs', 'Inventaire Livreurs', 'LIVREURS'].includes(sv)) return 'LIVREURS';
+      if (['Traçabilité', 'Tracabilite', 'TRACABILITE'].includes(sv)) return 'TRACABILITE';
+      if (['Écarts', 'Ecarts', 'ECARTS'].includes(sv)) return 'ECARTS';
       return 'STOCK';
    };
 
@@ -202,8 +252,12 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    if (activeTab === 'ALERTS') return <AlertsView />;
    if (activeTab === 'PURCHASES') return <PurchaseManager />;
    if (activeTab === 'PARTNERS') return <SupplierManager />;
-   if (activeTab === 'HISTORY') return <HistoryView movements={movements} isLoading={isLoadingMovements} />;
-   return <StockView />; 
+   if (activeTab === 'HISTORY') return <HistoryView />;
+   if (activeTab === 'TIMELINE') return <TimelineView />;
+   if (activeTab === 'LIVREURS') return <LivreursInventoryView />;
+   if (activeTab === 'TRACABILITE') return <TracabilityView />;
+   if (activeTab === 'ECARTS') return <DiscrepanciesView />;
+   return <StockView />;
 }
 
 function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading: boolean }) {
@@ -429,24 +483,102 @@ function AlertsView() {
    );
 }
 
-function HistoryView({ movements, isLoading }: { movements: InventoryMovement[]; isLoading: boolean }) {
+function useFilteredMovements(pageSize: number) {
+   const activeStore = useAppStore(s => s.activeStore);
+   const [page, setPage] = useState(1);
+   const [movementType, setMovementType] = useState('');
+   const [dateFrom, setDateFrom] = useState('');
+   const [dateTo, setDateTo] = useState('');
+
+   const query = useQuery({
+      queryKey: ['inventory', 'movements-full', activeStore?.id, page, movementType, dateFrom, dateTo],
+      queryFn: () => {
+         const params = new URLSearchParams({ store_id: activeStore?.id || '', page: String(page), pageSize: String(pageSize) });
+         if (movementType) params.set('movement_type', movementType);
+         if (dateFrom) params.set('date_from', `${dateFrom}T00:00:00.000Z`);
+         if (dateTo) params.set('date_to', `${dateTo}T23:59:59.999Z`);
+         return apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?${params.toString()}`);
+      },
+      enabled: !!activeStore?.id,
+   });
+
+   return {
+      movements: query.data?.data || [],
+      total: query.data?.total || 0,
+      totalPages: query.data?.totalPages || 1,
+      isLoading: query.isLoading,
+      page, setPage,
+      movementType, setMovementType,
+      dateFrom, setDateFrom,
+      dateTo, setDateTo,
+   };
+}
+
+function MovementFilterBar({ f }: { f: ReturnType<typeof useFilteredMovements> }) {
+   return (
+      <div className="flex flex-wrap items-center gap-2 px-6 py-3 bg-[#F8F9FC] border-b" style={{ borderColor: C.border }}>
+         <select
+            value={f.movementType}
+            onChange={e => { f.setMovementType(e.target.value); f.setPage(1); }}
+            className="h-8 rounded-lg border bg-white px-2 text-[11px] font-bold text-[#2D3436]" style={{ borderColor: C.border }}>
+            <option value="">Tous les types</option>
+            {Object.entries(MOVEMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+         </select>
+         <input type="date" value={f.dateFrom} onChange={e => { f.setDateFrom(e.target.value); f.setPage(1); }}
+            className="h-8 rounded-lg border bg-white px-2 text-[11px] font-bold text-[#2D3436]" style={{ borderColor: C.border }} />
+         <span className="text-[11px] text-[#B2BEC3]">→</span>
+         <input type="date" value={f.dateTo} onChange={e => { f.setDateTo(e.target.value); f.setPage(1); }}
+            className="h-8 rounded-lg border bg-white px-2 text-[11px] font-bold text-[#2D3436]" style={{ borderColor: C.border }} />
+         {(f.movementType || f.dateFrom || f.dateTo) && (
+            <button
+               onClick={() => { f.setMovementType(''); f.setDateFrom(''); f.setDateTo(''); f.setPage(1); }}
+               className="text-[10px] font-bold text-rose-500 hover:underline ml-1">Réinitialiser</button>
+         )}
+         <span className="ml-auto text-[10px] font-bold text-[#B2BEC3]">{f.total} mouvement{f.total > 1 ? 's' : ''}</span>
+      </div>
+   );
+}
+
+function MovementPager({ f }: { f: ReturnType<typeof useFilteredMovements> }) {
+   if (f.totalPages <= 1) return null;
+   return (
+      <div className="p-4 bg-[#F8F9FC] border-t flex items-center justify-between" style={{ borderColor: C.border }}>
+         <span className="text-[10px] font-bold text-[#B2BEC3]">Page {f.page} / {f.totalPages}</span>
+         <div className="flex items-center gap-2">
+            <button onClick={() => f.setPage(p => Math.max(1, p - 1))} disabled={f.page <= 1}
+               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-[10px] font-bold disabled:opacity-40 hover:bg-white" style={{ borderColor: C.border }}>
+               <ChevronLeft className="size-3" /> Précédent
+            </button>
+            <button onClick={() => f.setPage(p => Math.min(f.totalPages, p + 1))} disabled={f.page >= f.totalPages}
+               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-[10px] font-bold disabled:opacity-40 hover:bg-white" style={{ borderColor: C.border }}>
+               Suivant <ChevronRight className="size-3" />
+            </button>
+         </div>
+      </div>
+   );
+}
+
+function HistoryView() {
+   const f = useFilteredMovements(30);
 
    const handleExport = () => {
-      if (movements.length === 0) return toast.error("Aucune donnée à exporter");
+      if (f.movements.length === 0) return toast.error("Aucune donnée à exporter sur cette page");
       const csv = [
-         ["Date", "ID", "Produit", "Type", "Quantité", "Acteur", "Rôle", "Raison"],
-         ...movements.map(m => [
+         ["Date", "ID", "Produit", "Type", "Quantité", "Acteur", "Rôle", "Commande", "Entrepôt", "Raison"],
+         ...f.movements.map(m => [
             new Date(m.created_at).toLocaleString(),
             m.id,
-            m.product_id,
+            m.product_name || m.product_id,
             m.type,
             m.quantity,
-            (m as any).actor?.name || 'Système',
-            (m as any).actor?.role || 'N/A',
+            m.actor?.name || 'Système',
+            m.actor?.role || 'N/A',
+            m.order_number || '',
+            m.warehouse_name || '',
             m.reason || ""
          ])
       ].map(e => e.join(",")).join("\n");
-      
+
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -464,44 +596,33 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
          <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: C.border }}>
             <div>
                <h3 className="text-sm font-extrabold text-[#2D3436] uppercase tracking-wider">Journal d'Audit Opérationnel</h3>
-               <p className="text-[10px] font-bold text-[#B2BEC3] uppercase tracking-widest mt-1">Traçabilité complète des flux</p>
+               <p className="text-[10px] font-bold text-[#B2BEC3] uppercase tracking-widest mt-1">Traçabilité complète des flux — qui, quand, depuis quelle commande</p>
             </div>
-            <button 
+            <button
                onClick={handleExport}
                className="px-4 py-2 rounded-xl text-xs font-bold border hover:bg-[#F8F9FC] transition-all flex items-center gap-2" style={{ borderColor: C.border }}>
                <Download className="size-3.5 text-[#B2BEC3]" /> Exporter (.CSV)
             </button>
          </div>
+         <MovementFilterBar f={f} />
          <div className="divide-y" style={{ borderColor: C.border }}>
-            {isLoading ? (
+            {f.isLoading ? (
                <div className="p-10 flex flex-col items-center gap-3">
                   <Loader2 className="size-6 animate-spin text-[#6C5CE7]" />
                   <span className="text-[10px] font-bold text-[#B2BEC3] uppercase">Synchronisation du journal...</span>
                </div>
-            ) : movements.length > 0 ? movements.map((m, i) => (
-               <div key={m.id} className="p-5 flex items-center justify-between hover:bg-[#FAFBFD] transition-colors group cursor-pointer">
+            ) : f.movements.length > 0 ? f.movements.map((m) => (
+               <div key={m.id} className="p-5 flex items-center justify-between hover:bg-[#FAFBFD] transition-colors group">
                   <div className="flex items-center gap-4">
-                     <div className="size-10 rounded-xl bg-[#F8F9FC] border flex items-center justify-center text-[#B2BEC3] group-hover:text-[#6C5CE7] group-hover:bg-[#F0EDFF] transition-all" style={{ borderColor: C.border }}>
+                     <div className="size-10 rounded-xl bg-[#F8F9FC] border flex items-center justify-center shrink-0" style={{ borderColor: C.border, color: MOVEMENT_TYPE_COLOR[m.type] || C.textDim }}>
                         <FileText className="size-4.5" />
                      </div>
                      <div>
                         <p className="text-xs font-extrabold text-[#2D3436]">
-                           {m.type === 'RESTOCK' ? 'Réapprovisionnement' :
-                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' :
-                            m.type === 'ORDER_RESERVE' ? 'Réservation Commande' :
-                            m.type === 'ORDER_RELEASE' ? 'Libération Réservation' :
-                            // RETURN_RESTOCK: the exact movement type
-                            // send_purchase_for_order/return_restock() writes
-                            // when a RETURNED order's stock is reintegrated —
-                            // this fell through to the generic "Ajustement
-                            // Manuel" label before, indistinguishable from an
-                            // admin manually correcting stock for any reason.
-                            m.type === 'RETURN_RESTOCK' ? 'Retour Client' :
-                            m.type === 'POS_SALE' ? 'Vente au Comptant (POS)' :
-                            'Ajustement Manuel'} :
+                           {MOVEMENT_TYPE_LABELS[m.type] || 'Ajustement Manuel'}
                            <span className="font-mono text-[#6C5CE7] ml-2">{m.id.split('-')[0].toUpperCase()}</span>
                         </p>
-                        <div className="flex items-center gap-3 mt-1.5">
+                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                            <span className={cn(
                               "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase",
                               m.quantity > 0 ? "text-[#00B894] bg-[#E6FFF8]" : "text-[#E17055] bg-[#FFEDE9]"
@@ -509,17 +630,16 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                               {m.quantity > 0 ? '+' : ''}{m.quantity} Unités
                            </span>
                            <span className="text-[10px] font-bold text-[#B2BEC3] flex items-center gap-1"><Clock className="size-3" /> {new Date(m.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                           <span className="text-[10px] font-bold text-[#636E72] uppercase tracking-tighter">— Ref: {m.product_id.split('-')[0]}</span>
-                           {m.actor?.name && (
-                              <span className="text-[10px] font-bold text-[#636E72]">— {m.actor.name}</span>
-                           )}
+                           <span className="text-[10px] font-bold text-[#636E72]">— {m.product_name || `Ref: ${m.product_id.split('-')[0]}`}</span>
+                           {m.actor?.name && <span className="text-[10px] font-bold text-[#636E72]">— {m.actor.name}</span>}
+                           {m.order_number && <span className="text-[10px] font-bold text-[#0984E3]">— Cmd #{m.order_number}</span>}
+                           {m.warehouse_name && <span className="text-[10px] font-bold text-[#6C5CE7]">— {m.warehouse_name}</span>}
                         </div>
                         {m.reason && (
                            <p className="text-[10px] text-[#B2BEC3] mt-1 max-w-md truncate" title={m.reason}>{m.reason}</p>
                         )}
                      </div>
                   </div>
-                  <button className="text-[10px] font-black uppercase bg-[#F8F9FC] border px-4 py-2 rounded-xl hover:bg-black hover:text-white transition-all opacity-0 group-hover:opacity-100" style={{ borderColor: C.border }}>Détails</button>
                </div>
             )) : (
                <div className="p-20 text-center">
@@ -528,9 +648,80 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                </div>
             )}
          </div>
-         <div className="p-4 bg-[#F8F9FC] border-t flex justify-center" style={{ borderColor: C.border }}>
-            <button className="text-[10px] font-bold text-[#6C5CE7] hover:underline uppercase tracking-widest">Accéder aux archives complètes</button>
+         <MovementPager f={f} />
+      </div>
+   );
+}
+
+function TimelineView() {
+   const f = useFilteredMovements(50);
+
+   const groups = (() => {
+      const byDay: Record<string, InventoryMovement[]> = {};
+      f.movements.forEach(m => {
+         const day = new Date(m.created_at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+         (byDay[day] ||= []).push(m);
+      });
+      return Object.entries(byDay);
+   })();
+
+   return (
+      <div className="bg-white border rounded-2xl overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
+         <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: C.border }}>
+            <div>
+               <h3 className="text-sm font-extrabold text-[#2D3436] uppercase tracking-wider flex items-center gap-2">
+                  <GitBranch className="size-4 text-[#6C5CE7]" /> Timeline Chronologique
+               </h3>
+               <p className="text-[10px] font-bold text-[#B2BEC3] uppercase tracking-widest mt-1">Chaque événement, identifiable immédiatement par type</p>
+            </div>
          </div>
+         <MovementFilterBar f={f} />
+         <div className="p-6">
+            {f.isLoading ? (
+               <div className="p-10 flex flex-col items-center gap-3">
+                  <Loader2 className="size-6 animate-spin text-[#6C5CE7]" />
+               </div>
+            ) : groups.length === 0 ? (
+               <div className="p-20 text-center">
+                  <GitBranch className="size-12 text-[#B2BEC3] mx-auto mb-4 opacity-20" />
+                  <p className="text-xs font-bold text-[#B2BEC3] uppercase">Aucun événement sur cette période</p>
+               </div>
+            ) : groups.map(([day, evts]) => (
+               <div key={day} className="mb-8 last:mb-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3] mb-4">{day}</p>
+                  <div className="space-y-0">
+                     {evts.map((m, i) => {
+                        const Icon = MOVEMENT_TYPE_ICON[m.type] || Sliders;
+                        const color = MOVEMENT_TYPE_COLOR[m.type] || C.textDim;
+                        return (
+                           <div key={m.id} className={cn(
+                              "flex gap-4 relative pb-6",
+                              i !== evts.length - 1 && "before:absolute before:left-[15px] before:top-8 before:bottom-0 before:w-[2px] before:bg-[#E9ECF0]"
+                           )}>
+                              <div className="size-8 rounded-full border-2 border-white shrink-0 flex items-center justify-center z-10" style={{ backgroundColor: color + '22' }}>
+                                 <Icon className="size-4" style={{ color }} />
+                              </div>
+                              <div className="flex-1 pt-0.5">
+                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[10px] font-black text-[#2D3436] font-mono">{new Date(m.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className={cn("text-[10px] font-black", m.quantity >= 0 ? "text-[#00B894]" : "text-[#E17055]")}>{m.quantity >= 0 ? '+' : ''}{m.quantity}</span>
+                                    <span className="text-xs font-bold text-[#2D3436]">{MOVEMENT_TYPE_LABELS[m.type] || 'Ajustement Manuel'}</span>
+                                 </div>
+                                 <p className="text-[11px] text-[#636E72] mt-0.5">
+                                    {m.product_name || m.product_id}
+                                    {m.order_number && <> · Commande #{m.order_number}</>}
+                                    {m.warehouse_name && <> · {m.warehouse_name}</>}
+                                    {m.actor?.name && <> · {m.actor.name}</>}
+                                 </p>
+                              </div>
+                           </div>
+                        );
+                     })}
+                  </div>
+               </div>
+            ))}
+         </div>
+         <MovementPager f={f} />
       </div>
    );
 }

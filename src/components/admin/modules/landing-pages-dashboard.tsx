@@ -385,36 +385,9 @@ function LandingPageCard({
     window.location.hostname.includes('hf.space') ||
     window.location.hostname.includes('huggingface.co')
   );
-  const url = isLocal 
+  const url = isLocal
     ? `${window.location.origin}/lp/${lp.slug}?store=${lpStoreSlug}`
     : `https://${storeDomain}/lp/${lp.slug}`;
-  const realOrders = lp.metrics?.orders ?? lp.orders;
-  // Conversion, Meta-Ads style: "Purchases" ÷ landing-page views. The numerator
-  // (purchases) is the count of real orders placed at checkout — duplicates and
-  // admin-created manual orders excluded — mirroring how Meta counts an Achat.
-  const purchases = lp.metrics?.purchases ?? realOrders;
-  const delivered = lp.metrics?.delivered ?? 0;
-  const convRate = lp.views > 0 ? ((purchases / lp.views) * 100).toFixed(1) : '0.0';
-
-  // Remaining-stock color: red = nothing left, amber = low, green = healthy.
-  const sd = lp.stock_detail;
-  const hasVariants = (sd?.variants_total ?? 0) > 0;
-  const stockDisplay = hasVariants
-    ? `${sd?.variants_in_stock ?? 0}/${sd?.variants_total ?? 0}`
-    : `${sd?.stock ?? 0}`;
-  const stockColor = (() => {
-    if (hasVariants) {
-      const inStock = sd?.variants_in_stock ?? 0;
-      const total = sd?.variants_total ?? 0;
-      if (inStock === 0) return '#E17055';
-      if (inStock <= Math.ceil(total / 2)) return '#FDCB6E';
-      return '#00B894';
-    }
-    const raw = sd?.stock ?? 0;
-    if (raw === 0) return '#E17055';
-    if (raw < 10) return '#FDCB6E';
-    return '#00B894';
-  })();
 
   return (
     <div className={cn(
@@ -468,81 +441,12 @@ function LandingPageCard({
         <h3 className="text-sm font-black text-slate-800 truncate mb-1 cursor-pointer hover:text-[#6C5CE7] transition-colors" onClick={onShowAnalytics}>{lp.headline || lp.product_name || '—'}</h3>
         <p className="text-[10px] text-slate-400 font-medium font-mono truncate mb-4">/lp/{lp.slug}</p>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
-          {[
-            { label: 'Vues',    value: lp.views,  icon: Eye },
-            { label: 'Ordres',  value: realOrders, icon: ShoppingCart },
-            { label: 'Conv.',   value: `${convRate}%`, icon: TrendingUp },
-          ].map(s => (
-            <div key={s.label} className="text-center p-2 bg-slate-50 rounded-xl">
-              <p className="text-sm font-black text-slate-800">{s.value}</p>
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Performance breakdown — recovered / abandoned / normal / cancelled / duplicates / stock, same row */}
-        <div className="flex items-stretch gap-1.5 mb-4 flex-wrap">
-          {[
-            { label: 'Livrées',   value: delivered, color: '#0984E3', title: 'Commandes effectivement livrées' },
-            { label: 'Normales',  value: lp.metrics?.normal ?? 0, color: '#6C5CE7', title: 'Commandes passées normalement (hors panier abandonné)' },
-            { label: 'Abandon.',  value: lp.metrics?.abandoned ?? 0, color: '#FDCB6E', title: 'Total des paniers abandonnés (récupérés ou non)' },
-            { label: 'Récup.',    value: lp.metrics?.recovered ?? 0, color: '#00B894', title: 'Paniers abandonnés confirmés & livrés' },
-            { label: 'Annulés',   value: lp.metrics?.cancelled ?? 0, color: '#E17055', title: 'Commandes annulées' },
-            { label: 'Manuelles', value: (lp.metrics as any)?.manual ?? 0, color: '#636E72', title: 'Commandes créées manuellement (téléphone/admin) — comptées dans les ventes mais exclues du taux de conversion, car elles ne viennent pas du trafic de la page' },
-            { label: 'Doublons',  value: lp.metrics?.duplicates ?? 0, color: '#B2BEC3', title: 'Doublons détectés (fusionnés automatiquement)' },
-            // Ce que Meta lui-même déclare avoir reçu pour ce produit (via la
-            // campagne liée) — affiché directement sur la carte pour comparer
-            // d'un coup d'œil avec nos vraies commandes ci-dessus, sans
-            // ouvrir le module Meta Ads. Total de la dernière synchro de la
-            // campagne, pas découpé par la période sélectionnée.
-            { label: 'Détectés Meta', value: (lp.metrics as any)?.meta_purchases ?? 0, color: '#F7B731', title: "Achats déclarés par Meta pour la campagne liée à ce produit (fenêtre d'attribution Meta — un léger écart avec nos commandes est normal)" },
-          ].map(s => (
-            <div key={s.label} title={s.title}
-              className="flex-1 text-center p-2 rounded-xl border"
-              style={{ borderColor: s.color + '33', backgroundColor: s.color + '0F' }}>
-              <p className="text-sm font-black" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider" style={{ color: s.color }}>{s.label}</p>
-            </div>
-          ))}
-          <div title={hasVariants ? 'Variétés encore en stock / total des variétés' : 'Stock restant'}
-            className="flex-1 text-center p-2 rounded-xl border"
-            style={{ borderColor: stockColor + '44', backgroundColor: stockColor + '14' }}>
-            <p className="text-sm font-black" style={{ color: stockColor }}>{stockDisplay}</p>
-            <p className="text-[8px] font-bold uppercase tracking-wider" style={{ color: stockColor }}>
-              {hasVariants ? 'Var. Stock' : 'Stock'}
-            </p>
-          </div>
-        </div>
-
-        {/* Meta Ads: impressions delivered + orders Meta itself detected —
-            distinct from "Vues" (our storefront page-load counter) and
-            "Ordres" (our real order table). Only shown when a Meta campaign
-            is actually linked to this page's product. */}
-        {lp.metrics && (lp.metrics.meta_impressions != null || lp.metrics.meta_purchases != null) && (
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            <div className="text-center p-2 bg-[#1877F2]/5 rounded-xl border border-[#1877F2]/10">
-              <p className="text-sm font-black text-[#1877F2]">{(lp.metrics.meta_impressions ?? 0).toLocaleString('fr-FR')}</p>
-              <p className="text-[8px] font-bold text-[#1877F2]/70 uppercase tracking-wider">Impressions Meta</p>
-            </div>
-            <div className="text-center p-2 bg-[#1877F2]/5 rounded-xl border border-[#1877F2]/10">
-              <p className="text-sm font-black text-[#1877F2]">{lp.metrics.meta_purchases ?? 0}</p>
-              <p className="text-[8px] font-bold text-[#1877F2]/70 uppercase tracking-wider">Achats détectés Meta</p>
-            </div>
-          </div>
-        )}
-        {lp.metrics?.meta_last_synced_at && (
-          // Meta's own numbers above are a SNAPSHOT from the last backend
-          // sync (auto-sync runs every ~24h), never live — without this
-          // timestamp, any gap with Meta Ads Manager's real-time count
-          // (which keeps ticking up between syncs) reads as a bug instead
-          // of ordinary staleness.
-          <p className="text-[9px] text-slate-400 font-bold -mt-2 mb-4 flex items-center gap-1">
-            <RefreshCw className="size-2.5" />
-            Meta synchronisé {formatDistanceToNow(new Date(lp.metrics.meta_last_synced_at), { addSuffix: true, locale: fr })}
-          </p>
-        )}
+        {/* KPIs live in the analytics modal (onShowAnalytics) only — the
+            card stays a lightweight launcher, not a duplicate dashboard. */}
+        <button onClick={onShowAnalytics}
+          className="w-full h-9 rounded-xl border border-dashed border-slate-200 text-slate-500 text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 hover:bg-slate-50 hover:border-slate-300 transition-all mb-4">
+          <TrendingUp className="size-3.5" /> Voir les statistiques
+        </button>
 
         {/* Actions */}
         <div className="flex items-center gap-1.5 flex-wrap">

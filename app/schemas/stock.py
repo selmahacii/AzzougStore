@@ -38,6 +38,9 @@ class ActorBase(BaseModel):
 class StockMovement(StockMovementInDB):
     # Optional nested product or actor info
     actor: Optional[ActorBase] = None
+    order_number: Optional[str] = None
+    warehouse_name: Optional[str] = None
+    product_name: Optional[str] = None
 
 class MovementPagination(BaseModel):
     success: bool

@@ -1154,58 +1154,48 @@ const [timeLeft, setTimeLeft] = useState('');
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-1.5">
             {/* Total card — operational orders (physical orders minus merged duplicates) */}
             <button
               type="button"
               onClick={() => handleModeChange('ALL')}
               className={cn(
-                'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
-                statusFilter === 'all' ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+                'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
+                statusFilter === 'all' ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
               )}
               style={{ borderColor: statusFilter === 'all' ? undefined : C.border }}
               title="Afficher toutes les commandes opérationnelles"
             >
-              <div className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-[#4b7bec]" />
-                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Total</span>
+              <div className="flex items-center gap-1">
+                <span className="size-1.5 rounded-full bg-[#4b7bec] shrink-0" />
+                <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">Total</span>
               </div>
-              <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+              <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
                 {countsQuery.isLoading ? '…' : Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)}
               </div>
-              {(tabCounts['MERGED'] ?? 0) > 0 && (
-                <p className="text-[9px] font-bold text-slate-400 mt-0.5">
-                  {Object.values(tabCounts).reduce((a, b) => a + b, 0)} physiques
-                </p>
-              )}
             </button>
             {/* Merged duplicates card — physical orders fused into a parent */}
             {(tabCounts['MERGED'] ?? 0) > 0 && (() => {
               const mergedCount = tabCounts['MERGED'] ?? 0;
-              const physicalTotal = Object.values(tabCounts).reduce((a, b) => a + b, 0);
-              const dupRate = physicalTotal > 0 ? ((mergedCount / physicalTotal) * 100).toFixed(1) : '0';
               const active = statusFilter === 'MERGED';
               return (
                 <button
                   type="button"
                   onClick={() => handleKpiClick('MERGED')}
                   className={cn(
-                    'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
-                    active ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+                    'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
+                    active ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
                   )}
                   style={{ borderColor: active ? undefined : C.border }}
                   title={active ? 'Cliquer pour retirer le filtre' : 'Voir les doublons fusionnés'}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full bg-amber-500" />
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 truncate">Doublons fusionnés</span>
+                  <div className="flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">Doublons</span>
                   </div>
-                  <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                  <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
                     {countsQuery.isLoading ? '…' : mergedCount}
                   </div>
-                  <p className="text-[9px] font-bold text-amber-600 mt-0.5">
-                    Taux : {dupRate}% · {mergedCount} expédition{mergedCount > 1 ? 's' : ''} évitée{mergedCount > 1 ? 's' : ''}
-                  </p>
                 </button>
               );
             })()}
@@ -1218,17 +1208,17 @@ const [timeLeft, setTimeLeft] = useState('');
                   type="button"
                   onClick={() => handleKpiClick(status)}
                   className={cn(
-                    'bg-white rounded-2xl border p-3 sm:p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5',
-                    active ? 'ring-2 ring-[#4b7bec] border-transparent shadow-sm' : ''
+                    'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
+                    active ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
                   )}
                   style={{ borderColor: active ? undefined : C.border }}
                   title={active ? 'Cliquer pour retirer le filtre' : `Filtrer : ${ORDER_STATUS_LABELS[status]}`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className={cn('size-2 rounded-full', ORDER_STATUS_DOT[status])} />
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 truncate">{ORDER_STATUS_LABELS[status]}</span>
+                  <div className="flex items-center gap-1">
+                    <span className={cn('size-1.5 rounded-full shrink-0', ORDER_STATUS_DOT[status])} />
+                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">{ORDER_STATUS_LABELS[status]}</span>
                   </div>
-                  <div className="text-xl sm:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                  <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
                     {countsQuery.isLoading ? '…' : count}
                   </div>
                 </button>

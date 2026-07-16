@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, List
 from datetime import datetime
 from app.db.session import get_db
@@ -29,7 +29,7 @@ def get_audit_logs(
     # session, would silently exclude entries on a header/store mismatch.
     db.info["skip_tenant_isolation"] = True
 
-    query = db.query(AuditLog)
+    query = db.query(AuditLog).options(joinedload(AuditLog.actor))
 
     if store_id:
         query = query.filter(AuditLog.store_id == store_id)
