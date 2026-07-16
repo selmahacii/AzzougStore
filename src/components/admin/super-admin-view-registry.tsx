@@ -23,6 +23,7 @@ import LandingPagesDashboard from './modules/landing-pages-dashboard';
 import { SettingsPlaceholder } from '../app/settings-placeholder';
 import VisitorsPage from './visitors-page';
 import MetaAdsDashboard from './modules/meta-ads-dashboard';
+import MetaQueueDashboard from './modules/meta-queue-dashboard';
 import UpsellManager from './modules/upsell-manager';
 import PurchaseManager from './modules/purchase-manager';
 
@@ -74,6 +75,8 @@ export default function SuperAdminView() {
       return <LandingPagesDashboard key="landing_pages" />;
     case 'meta_ads':
       return <MetaAdsDashboard key="meta_ads" />;
+    case 'meta_queue':
+      return <MetaQueueDashboard key="meta_queue" />;
     case 'upsell':
       return <UpsellManager key="upsell" />;
     case 'purchase_vouchers':

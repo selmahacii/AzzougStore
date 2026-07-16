@@ -1182,7 +1182,16 @@ def create_order(
                         from app.models.marketing import MetaAdsConfig
                         meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == existing.store_id).first()
                         if meta_config and meta_config.pixel_id and meta_config.access_token:
-                            from app.services.meta_capi import send_purchase_for_order
+                            from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                            # Durable queue: write status='queued' and COMMIT it
+                            # before scheduling the background task. If the
+                            # process dies right after this commit (HF
+                            # redeploy), the row survives and is replayed by
+                            # app.main.resume_pending_queues on the next boot —
+                            # this is what closes the exact gap that silently
+                            # lost 22 real ORD-* Purchases in production.
+                            enqueue_purchase_for_order(db, existing)
+                            db.commit()
                             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                             user_agent = request.headers.get("user-agent")
                             background_tasks.add_task(
@@ -1309,7 +1318,19 @@ def create_order(
             from app.models.marketing import MetaAdsConfig
             meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
             if meta_config and meta_config.pixel_id and meta_config.access_token:
-                from app.services.meta_capi import send_purchase_for_order
+                from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                # Durable queue: the 'queued' row is written and COMMITTED
+                # here, before add_task is even scheduled — not inside the
+                # background task itself. If the HF container is killed
+                # anywhere after this commit (mid-request, between response
+                # and task execution, whenever), the row already exists on
+                # disk and app.main.resume_pending_queues replays it on the
+                # next boot. This is the fix for the proven gap: 22 real
+                # ORD-* orders got ZERO CAPI attempt (not even a failed one)
+                # because nothing was ever written before the old
+                # BackgroundTasks callback started running.
+                enqueue_purchase_for_order(db, order)
+                db.commit()
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 background_tasks.add_task(
@@ -1537,7 +1558,9 @@ def update_order(
                 from app.models.marketing import MetaAdsConfig
                 meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
                 if meta_config and meta_config.pixel_id and meta_config.access_token:
-                    from app.services.meta_capi import send_purchase_for_order
+                    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                    enqueue_purchase_for_order(db, updated)
+                    db.commit()
                     client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                     user_agent = request.headers.get("user-agent")
                     background_tasks.add_task(

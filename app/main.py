@@ -144,8 +144,15 @@ async def resume_pending_queues():
             from datetime import datetime, timezone
             db = SessionLocal()
             try:
+                # 'queued': written before the background task ran, never
+                # attempted — this is the exact class of row a container
+                # kill leaves behind (see app.services.meta_capi module
+                # docstring / migration f6a7b8c9d0e1). 'processing': a
+                # worker that died mid-send; the sweep itself reclaims rows
+                # stuck >15min back to 'retry'. 'retry'/'pending_retry':
+                # already-failed sends still eligible for another attempt.
                 pending = db.query(MetaCapiLog).filter(
-                    MetaCapiLog.status == "pending_retry"
+                    MetaCapiLog.status.in_(("queued", "processing", "retry", "pending_retry"))
                 ).count()
             finally:
                 db.close()

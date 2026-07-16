@@ -630,7 +630,7 @@ export interface CartItem {
 // ─── Navigation ─────────────────────────────────────────────
 export type AppView = 'storefront' | 'admin';
 export type StorefrontView = 'home' | 'shop' | 'product' | 'cart' | 'checkout' | 'order-tracking' | 'wishlist';
-export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'stores_menu' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages' | 'cost_calculator' | 'meta_ads' | 'tiktok_ads' | 'upsell' | 'purchase_vouchers';
+export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'stores_menu' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages' | 'cost_calculator' | 'meta_ads' | 'meta_queue' | 'tiktok_ads' | 'upsell' | 'purchase_vouchers';
 
 // ─── API Response ───────────────────────────────────────────
 export interface ApiResponse<T> {

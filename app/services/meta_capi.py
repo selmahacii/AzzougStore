@@ -795,6 +795,7 @@ def send_events(
         }
 
     last_error: Optional[str] = None
+    last_status_code: Optional[int] = None
     retryable = True
     for attempt in range(1 + _IMMEDIATE_RETRIES):
         # Re-fetch on every attempt rather than once before the loop: if a
@@ -851,9 +852,10 @@ def send_events(
                 return {
                     "success": True, "events_received": received, "error": None,
                     "fbtrace_id": data.get("fbtrace_id"), "retryable": False,
-                    "latency_ms": total_ms,
+                    "latency_ms": total_ms, "http_status": resp.status_code,
                 }
 
+            last_status_code = resp.status_code
             err = (data.get("error") or {})
             last_error = f"HTTP {resp.status_code}: {err.get('message') or resp.text[:200]}"
             failure_category = f"HTTP {resp.status_code}"
@@ -946,7 +948,77 @@ def send_events(
         "success": False, "events_received": None, "error": last_error,
         "fbtrace_id": None, "retryable": retryable,
         "error_category": _coarse_error_category(failure_category),
+        "http_status": last_status_code,
     }
+
+
+def _worker_id() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
+    """
+    Durable-queue entry point — call this from the SAME db session/
+    transaction as the order's own commit, BEFORE background_tasks.add_task
+    is scheduled. Writes a status='queued' meta_capi_logs row that survives
+    a process crash between "order committed" and "background task ran":
+    on restart, app.main.resume_pending_queues picks up any row still
+    'queued' and replays it. Does NOT commit — the caller commits together
+    with the order so both succeed or both roll back atomically.
+
+    Returns the new log row id, or None if a Purchase row already exists
+    for this order (idempotent no-op; also enforced at the DB level by
+    uq_meta_capi_purchase_per_order).
+    """
+    from app.models.marketing import MetaCapiLog
+
+    existing = (
+        db.query(MetaCapiLog.id)
+        .filter(MetaCapiLog.order_id == str(order.id), MetaCapiLog.event_name == "Purchase")
+        .first()
+    )
+    if existing:
+        return None
+
+    log_id = str(uuid.uuid4())
+    db.add(MetaCapiLog(
+        id=log_id,
+        store_id=str(order.store_id),
+        order_id=str(order.id),
+        event_name="Purchase",
+        event_id=purchase_event_id(str(order.order_number or order.id)),
+        status="queued",
+        retry_count=0,
+    ))
+    return log_id
+
+
+def _claim_queue_row(db: Session, order_id: str) -> "Optional[Any]":
+    """
+    Atomically claims the Purchase row for this order: queued/retry ->
+    processing, in a single UPDATE ... WHERE status IN (...) statement.
+    Returns the claimed row (already committed as 'processing') if THIS
+    call won the claim, or None if it's already being handled (by another
+    worker, another concurrent trigger, or already finished) — the caller
+    must then skip sending, which is what makes concurrent triggers/workers
+    safe without relying on the Meta-side dedup alone.
+    """
+    from sqlalchemy import update as sa_update
+    from app.models.marketing import MetaCapiLog
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = db.execute(
+        sa_update(MetaCapiLog.__table__)
+        .where(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
+               MetaCapiLog.status.in_(("queued", "retry")))
+        .values(status="processing", processing_started_at=now, processing_worker=_worker_id())
+    )
+    db.commit()
+    if result.rowcount != 1:
+        return None
+    return db.query(MetaCapiLog).filter(
+        MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
+    ).first()
 
 
 def send_purchase_for_order(
@@ -956,47 +1028,60 @@ def send_purchase_for_order(
     user_agent: Optional[str],
 ) -> None:
     """
-    Background task entry point: loads the order in a fresh session,
-    builds a fully-normalized Purchase event and ships it, logging the result.
+    Worker entry point (called from BackgroundTasks OR from the startup/
+    periodic recovery sweep — same function either way, so behavior is
+    identical regardless of who triggers it).
+
+    queued/retry -> processing -> success | retry | failed | skipped
+
+    Every branch is logged BEFORE any Meta network call, so a crash mid-send
+    still leaves a 'processing' row on disk (reclaimed as stuck after 15min
+    by the sweep) rather than nothing at all.
     """
     from app.db.session import SessionLocal
-    from app.models.marketing import MetaAdsConfig, MetaCapiLog
+    from app.models.marketing import MetaAdsConfig
     from app.models.order import Order
 
     db = SessionLocal()
     try:
+        logger.info("[MetaCAPI] queue: claim attempt order=%s worker=%s", order_id, _worker_id())
+        row = _claim_queue_row(db, order_id)
+        if row is None:
+            logger.info("[MetaCAPI] queue: order=%s not claimable (already processing/finished elsewhere) — skipped", order_id)
+            return
+
+        logger.info("[MetaCAPI] queue: processing order=%s log_id=%s", order_id, row.id)
+
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
+            row.status = "failed"
+            row.error_message = "order not found"
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            logger.warning("[MetaCAPI] queue: order=%s failed — order row missing", order_id)
             return
+
         # Never report a Purchase Meta shouldn't count:
         # - MANUAL/POS: created by an agent/admin, no ad click, no Pixel ever
         #   fired — sending CAPI made Meta count sales the LP module
-        #   deliberately excludes from conversion, widening the Meta-vs-ERP gap
-        #   with every phone order.
+        #   deliberately excludes from conversion, widening the Meta-vs-ERP gap.
         # - MERGED: duplicate submission absorbed into its parent (the parent
-        #   already sent its own Purchase); by the time this background task
-        #   runs, auto-merge may have already reclassified the order.
+        #   already sent its own Purchase).
         if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
-            return
-
-        # Idempotency guard: this function now has TWO call sites for the
-        # same order — the original creation-time trigger, and the recovered-
-        # abandoned-cart trigger (fired once, whichever transition happens
-        # first: customer self-checkout or confirmatrice phone confirmation).
-        # A retried request, a race between the two triggers, or a future
-        # third call site must never produce a second real send for the same
-        # order — Meta itself dedupes by event_id, but we skip the network
-        # call entirely rather than rely on that alone.
-        already_sent = db.query(MetaCapiLog).filter(
-            MetaCapiLog.order_id == str(order.id),
-            MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.status.in_(("success", "pending_retry")),
-        ).first()
-        if already_sent:
+            row.status = "skipped"
+            row.error_message = f"source={order.source} status={order.status}"
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            logger.info("[MetaCAPI] queue: order=%s skipped (source=%s status=%s)", order_id, order.source, order.status)
             return
 
         config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
         if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
+            row.status = "skipped"
+            row.error_message = "no valid meta config"
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            logger.warning("[MetaCAPI] queue: order=%s skipped — no valid Meta config", order_id)
             return
 
         event = build_purchase_event(
@@ -1011,48 +1096,51 @@ def send_purchase_for_order(
         )
 
         if result["success"]:
-            _log_send(
-                db,
-                store_id=str(order.store_id),
-                order_id=str(order.id),
-                event_name="Purchase",
-                event_id=event["event_id"],
-                status="success",
-                events_received=result["events_received"],
-                latency_ms=result.get("latency_ms"),
-            )
+            row.status = "success"
+            row.events_received = result["events_received"]
+            row.latency_ms = result.get("latency_ms")
+            row.last_http_status = result.get("http_status")
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            row.error_message = None
+            db.commit()
             logger.info(
-                "Meta CAPI Purchase sent for %s (event_id=%s, received=%s)",
+                "[MetaCAPI] queue: order=%s SUCCESS event_id=%s received=%s",
                 order.order_number, event["event_id"], result["events_received"],
             )
         elif result.get("retryable"):
-            _log_send(
-                db,
-                store_id=str(order.store_id),
-                order_id=str(order.id),
-                event_name="Purchase",
-                event_id=event["event_id"],
-                status="pending_retry",
-                error_message=result["error"],
-                error_category=result.get("error_category"),
-                payload=event,
-                retry_count=0,
-                next_retry_at=datetime.now(timezone.utc) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[0]),
-            )
-            logger.warning(
-                "Meta CAPI Purchase queued for retry for %s (event_id=%s): %s",
-                order.order_number, event["event_id"], result["error"],
-            )
+            row.error_message = result["error"]
+            row.error_category = result.get("error_category")
+            row.last_http_status = result.get("http_status")
+            row.payload = event
+            row.retry_count = (row.retry_count or 0) + 1
+            if row.retry_count >= _MAX_QUEUE_RETRIES:
+                row.status = "failed"
+                row.next_retry_at = None
+                row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                db.commit()
+                logger.error(
+                    "[MetaCAPI] queue: order=%s retry budget exhausted (%d attempts) — FAILED event_id=%s: %s",
+                    order.order_number, row.retry_count, event["event_id"], result["error"],
+                )
+            else:
+                row.status = "retry"
+                idx = min(row.retry_count - 1, len(_QUEUE_BACKOFF_MINUTES) - 1)
+                row.next_retry_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
+                db.commit()
+                logger.warning(
+                    "[MetaCAPI] queue: order=%s RETRY (%d/%d) event_id=%s next_retry_at=%s: %s",
+                    order.order_number, row.retry_count, _MAX_QUEUE_RETRIES, event["event_id"], row.next_retry_at, result["error"],
+                )
         else:
-            _log_send(
-                db,
-                store_id=str(order.store_id),
-                order_id=str(order.id),
-                event_name="Purchase",
-                event_id=event["event_id"],
-                status="error",
-                error_message=result["error"],
-                error_category=result.get("error_category"),
+            row.status = "failed"
+            row.error_message = result["error"]
+            row.error_category = result.get("error_category")
+            row.last_http_status = result.get("http_status")
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+            logger.error(
+                "[MetaCAPI] queue: order=%s FAILED event_id=%s: %s",
+                order.order_number, event["event_id"], result["error"],
             )
     finally:
         db.close()
@@ -1078,7 +1166,7 @@ def _check_queue_backlog(db) -> None:
 
     counts = (
         db.query(MetaCapiLog.store_id, func.count(MetaCapiLog.id))
-        .filter(MetaCapiLog.status == "pending_retry")
+        .filter(MetaCapiLog.status.in_(("pending_retry", "retry")))
         .group_by(MetaCapiLog.store_id)
         .all()
     )
@@ -1134,18 +1222,55 @@ def retry_pending_events() -> None:
         _sweep_lock.release()
 
 
+_STUCK_PROCESSING_MINUTES = 15
+
+
+def _reclaim_stuck_processing(db: "Session") -> int:
+    """
+    A worker that dies mid-send (container killed by a redeploy) leaves its
+    row stuck at status='processing' forever — nothing else would ever pick
+    it back up, since the claim query only matches 'queued'/'retry'. One
+    batched UPDATE (no N+1: not one row fetched then one UPDATE per row)
+    puts every row stuck beyond _STUCK_PROCESSING_MINUTES back into 'retry'
+    so the normal sweep picks it up next.
+    """
+    from sqlalchemy import update as sa_update
+    from app.models.marketing import MetaCapiLog
+
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=_STUCK_PROCESSING_MINUTES)
+    result = db.execute(
+        sa_update(MetaCapiLog.__table__)
+        .where(MetaCapiLog.status == "processing", MetaCapiLog.processing_started_at < cutoff)
+        .values(status="retry", error_message="reclaimed: stuck in processing > 15min (worker likely died mid-send)",
+                next_retry_at=datetime.now(timezone.utc).replace(tzinfo=None))
+    )
+    db.commit()
+    if result.rowcount:
+        logger.warning("[MetaCAPI] reclaimed %d row(s) stuck in 'processing' beyond %dmin", result.rowcount, _STUCK_PROCESSING_MINUTES)
+    return result.rowcount
+
+
 def _retry_pending_events_inner() -> None:
     from app.db.session import SessionLocal
-    from app.models.marketing import MetaAdsConfig, MetaCapiLog
+    from app.models.marketing import MetaCapiLog
 
     db = SessionLocal()
     try:
         _check_queue_backlog(db)
+        _reclaim_stuck_processing(db)
 
         now = datetime.now(timezone.utc)
+        # 'queued'/'retry' are the durable-queue statuses this sweep now
+        # owns end-to-end; 'pending_retry' is kept for backward
+        # compatibility with rows written by the pre-durable-queue pipeline
+        # (never backfilled — see the migration docstring) so they still
+        # get drained instead of sitting orphaned forever.
         due = (
             db.query(MetaCapiLog)
-            .filter(MetaCapiLog.status == "pending_retry", MetaCapiLog.next_retry_at <= now)
+            .filter(
+                MetaCapiLog.status.in_(("queued", "retry", "pending_retry")),
+                (MetaCapiLog.next_retry_at.is_(None)) | (MetaCapiLog.next_retry_at <= now),
+            )
             .limit(200)
             .all()
         )
@@ -1205,82 +1330,122 @@ def _retry_pending_events_inner() -> None:
             )
             return
 
+        # Every due row is replayed through send_purchase_for_order — the
+        # SAME claim/build/send/log path the live creation trigger uses.
+        # This is deliberate: a frozen row.payload can go stale (order total
+        # edited, Meta config's currency changed) between the original
+        # attempt and a retry hours later, and having two independent send
+        # implementations is exactly how the claim/idempotency guarantee
+        # could silently drift out of sync between them. One code path,
+        # always rebuilt fresh from the order at send time.
+        order_ids = [row.order_id for row in due if row.order_id]
         deferred_bulk = 0
-        for i, row in enumerate(due):
-            # If the circuit opened mid-sweep (after the first few TLS failures),
-            # bulk-defer all remaining events instead of logging one line each.
+        for i, order_id in enumerate(order_ids):
             if _circuit_is_open():
                 deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
-                for remaining in due[i:]:
-                    remaining.next_retry_at = deferred_until
-                    remaining.error_message = "circuit breaker open: bulk deferred"
-                deferred_bulk = len(due) - i
+                from sqlalchemy import update as sa_update
+                db.execute(
+                    sa_update(MetaCapiLog.__table__)
+                    .where(MetaCapiLog.order_id.in_(order_ids[i:]),
+                           MetaCapiLog.status.in_(("queued", "retry", "pending_retry")))
+                    .values(next_retry_at=deferred_until, error_message="circuit breaker open: bulk deferred")
+                )
+                deferred_bulk = len(order_ids) - i
                 db.commit()
                 logger.warning(
                     "[MetaCAPI] circuit opened mid-sweep — %d remaining event(s) bulk deferred to %s UTC",
                     deferred_bulk, deferred_until.strftime("%H:%M:%S"),
                 )
                 return
-
-            if not row.payload:
-                row.status = "failed"
-                row.error_message = "no payload persisted, cannot retry"
-                db.commit()
-                continue
-
-            config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == row.store_id).first()
-            if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
-                row.status = "failed"
-                row.error_message = "meta ads config no longer available"
-                db.commit()
-                continue
-
-            result = send_events(
-                config.pixel_id, config.access_token, [row.payload],
-                store_label=str(row.store_id), order_label=row.order_id,
-                queue_retry_count=row.retry_count, queue_max_retries=_MAX_QUEUE_RETRIES,
-            )
-            if result["success"]:
-                row.status = "success"
-                row.error_message = None
-                row.events_received = result["events_received"]
-                row.latency_ms = result.get("latency_ms")
-                row.next_retry_at = None
-                logger.info(
-                    "[MetaCAPI] retry succeeded event=%s order=%s retry_count=%d",
-                    row.event_name, row.order_id, row.retry_count,
-                )
-            else:
-                circuit_blocked = "circuit breaker open" in (result.get("error") or "")
-                row.error_message = result["error"]
-                row.error_category = result.get("error_category")
-                if circuit_blocked:
-                    # Circuit was detected open inside send_events — no real attempt.
-                    # Do NOT burn a retry slot.
-                    row.next_retry_at = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
-                    logger.warning(
-                        "[MetaCAPI] circuit OPEN — retry deferred (no count burn) event=%s order=%s retry_count=%d",
-                        row.event_name, row.order_id, row.retry_count,
-                    )
-                else:
-                    row.retry_count += 1
-                    if not result.get("retryable") or row.retry_count >= _MAX_QUEUE_RETRIES:
-                        row.status = "failed"
-                        row.next_retry_at = None
-                        logger.error(
-                            "[MetaCAPI] retry exhausted event=%s order=%s retry_count=%d error=%s",
-                            row.event_name, row.order_id, row.retry_count, result["error"],
-                        )
-                    else:
-                        idx = min(row.retry_count, len(_QUEUE_BACKOFF_MINUTES) - 1)
-                        row.next_retry_at = now + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
-                        logger.warning(
-                            "[MetaCAPI] retry failed again event=%s order=%s retry_count=%d next_retry_at=%s error=%s",
-                            row.event_name, row.order_id, row.retry_count, row.next_retry_at, result["error"],
-                        )
-            db.commit()
+            send_purchase_for_order(order_id, client_ip=None, user_agent=None)
     except Exception:
         db.rollback()
         logger.exception("[MetaCAPI] retry sweep crashed")
     finally:
         db.close()
+
+
+# ─── Admin dashboard + cleanup ────────────────────────────────────────────────
+
+def get_queue_stats(db: "Session") -> Dict[str, Any]:
+    """
+    Powers the 'Meta Queue' admin page. Deliberately built as ONE grouped
+    aggregate query plus a handful of scalar aggregates — no per-row fetch,
+    no N+1 — to stay cheap on Supabase Free even if the table grows to
+    thousands of rows.
+    """
+    from sqlalchemy import func as _f
+    from app.models.marketing import MetaCapiLog
+
+    by_status = dict(
+        db.query(MetaCapiLog.status, _f.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.event_name == "Purchase")
+        .group_by(MetaCapiLog.status)
+        .all()
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    thirty_days_ago = now - timedelta(days=30)
+
+    success_today = db.query(_f.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+        MetaCapiLog.completed_at >= today_start,
+    ).scalar() or 0
+    success_30d = db.query(_f.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+        MetaCapiLog.completed_at >= thirty_days_ago,
+    ).scalar() or 0
+    avg_latency_ms, avg_attempts = db.query(
+        _f.avg(MetaCapiLog.latency_ms), _f.avg(MetaCapiLog.retry_count),
+    ).filter(
+        MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+        MetaCapiLog.completed_at >= thirty_days_ago,
+    ).first() or (None, None)
+
+    last_success = db.query(_f.max(MetaCapiLog.completed_at)).filter(
+        MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+    ).scalar()
+    last_error_row = (
+        db.query(MetaCapiLog.error_message, MetaCapiLog.completed_at)
+        .filter(MetaCapiLog.event_name == "Purchase", MetaCapiLog.status.in_(("failed", "retry")))
+        .order_by(_f.coalesce(MetaCapiLog.completed_at, MetaCapiLog.created_at).desc())
+        .first()
+    )
+
+    return {
+        "queued": by_status.get("queued", 0),
+        "processing": by_status.get("processing", 0),
+        "retry": by_status.get("retry", 0) + by_status.get("pending_retry", 0),
+        "failed": by_status.get("failed", 0),
+        "success_today": success_today,
+        "success_30d": success_30d,
+        "avg_latency_ms": round(avg_latency_ms, 0) if avg_latency_ms else None,
+        "avg_attempts": round(avg_attempts, 2) if avg_attempts else None,
+        "last_success_at": last_success.isoformat() if last_success else None,
+        "last_error": last_error_row[0] if last_error_row else None,
+        "last_error_at": (last_error_row[1].isoformat() if last_error_row and last_error_row[1] else None),
+    }
+
+
+_CLEANUP_RETENTION_DAYS = int(os.getenv("META_CAPI_CLEANUP_RETENTION_DAYS", "90"))
+
+
+def cleanup_old_capi_logs(db: "Session") -> int:
+    """
+    Deletes 'success' rows older than _CLEANUP_RETENTION_DAYS in one batched
+    DELETE — never touches 'failed'/'retry' (kept indefinitely, they're the
+    only rows worth investigating later). Called from the same background
+    scheduler loop as the Noest sync, at most once/day (see noest_sync.py).
+    """
+    from sqlalchemy import delete as sa_delete
+    from app.models.marketing import MetaCapiLog
+
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=_CLEANUP_RETENTION_DAYS)
+    result = db.execute(
+        sa_delete(MetaCapiLog.__table__)
+        .where(MetaCapiLog.status == "success", MetaCapiLog.completed_at < cutoff)
+    )
+    db.commit()
+    if result.rowcount:
+        logger.info("[MetaCAPI] cleanup: deleted %d success row(s) older than %dd", result.rowcount, _CLEANUP_RETENTION_DAYS)
+    return result.rowcount

@@ -261,9 +261,18 @@ class MetaCapiLog(Base):
 
     # Retry queue
     payload = Column(JSON, nullable=True)          # full event dict, replayable as-is
-    retry_count = Column(Integer, nullable=False, default=0)
+    retry_count = Column(Integer, nullable=False, default=0)  # doubles as attempt_count
     next_retry_at = Column(DateTime, nullable=True, index=True)
-    latency_ms = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)     # doubles as processing_duration_ms
+
+    # Durable-queue fields (status now also takes: queued | processing | retry).
+    # A row is written with status='queued' in the SAME transaction/commit as
+    # the order itself (see orders.py) — so even if the process dies right
+    # after commit, the row already exists and is picked up on restart.
+    processing_started_at = Column(DateTime, nullable=True)  # set on claim; >15min = stuck
+    completed_at = Column(DateTime, nullable=True)
+    last_http_status = Column(Integer, nullable=True)
+    processing_worker = Column(String, nullable=True)  # hostname:pid, diagnostic only
 
     store = relationship("Store")
 

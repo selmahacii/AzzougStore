@@ -13,6 +13,8 @@ import json
 logger = logging.getLogger(__name__)
 
 from app.api.deps import get_db
+from app.api import deps
+from app.models.user import User
 from app.models.marketing import MetaAdsConfig, MetaAdsCampaign
 from app.models.order import Order
 from app.models.expense import Expense, ExpenseCategory, ExpenseStatus
@@ -2745,5 +2747,86 @@ def connectivity_test(target: str = Query("graph", description="graph | relay"))
     else:
         summary = "All probes failed — no outbound HTTPS to graph.facebook.com from this host."
     results["summary"] = summary
+    return results
+
+
+# ─── GET /meta-ads/queue — "Meta Queue" admin dashboard ──────────────────────
+# Store-agnostic (SUPER_ADMIN-only): the durable Purchase queue in
+# meta_capi_logs spans every store, and a stuck/backed-up queue on ANY store
+# is an ops concern, not a per-store metric.
+
+@router.get("/queue/stats", response_model=dict)
+def get_meta_queue_stats(
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.services.meta_capi import get_queue_stats
+    db.info["skip_tenant_isolation"] = True
+    return {"success": True, "data": get_queue_stats(db)}
+
+
+@router.post("/queue/retry/{log_id}", response_model=dict)
+def retry_meta_queue_item(
+    log_id: str,
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """Force one row back to 'retry' with next_retry_at=now, regardless of
+    its current backoff — only from failed/retry/pending_retry (never
+    touches a row genuinely 'processing' right now, to avoid racing a live
+    worker)."""
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.models.marketing import MetaCapiLog
+    db.info["skip_tenant_isolation"] = True
+    row = db.query(MetaCapiLog).filter(MetaCapiLog.id == log_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+    if row.status not in ("failed", "retry", "pending_retry"):
+        raise HTTPException(status_code=409, detail=f"Cannot retry a row in status '{row.status}'")
+    row.status = "retry"
+    row.next_retry_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    row.error_message = (row.error_message or "") + " [manual retry requested]"
+    db.commit()
+    return {"success": True, "message": "Queued for immediate retry"}
+
+
+@router.post("/queue/retry-all", response_model=dict)
+def retry_all_meta_queue(
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """Bulk version of the above — one UPDATE, not a loop, to avoid N+1 on
+    Supabase Free."""
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from sqlalchemy import update as sa_update
+    from app.models.marketing import MetaCapiLog
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    result = db.execute(
+        sa_update(MetaCapiLog.__table__)
+        .where(MetaCapiLog.status.in_(("failed", "retry", "pending_retry")))
+        .values(status="retry", next_retry_at=now)
+    )
+    db.commit()
+    return {"success": True, "message": f"{result.rowcount} row(s) queued for immediate retry", "count": result.rowcount}
+
+
+@router.post("/queue/cleanup", response_model=dict)
+def cleanup_meta_queue(
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """Manual trigger for the same cleanup the daily scheduler runs
+    (success > 90 days deleted; failed/retry never touched)."""
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.services.meta_capi import cleanup_old_capi_logs
+    db.info["skip_tenant_isolation"] = True
+    deleted = cleanup_old_capi_logs(db)
+    return {"success": True, "message": f"{deleted} old success row(s) deleted", "count": deleted}
 
     return results

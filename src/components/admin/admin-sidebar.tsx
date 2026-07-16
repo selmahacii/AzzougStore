@@ -105,6 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
          { label: 'Télémétrie Agents', icon: UserCheck, view: 'analytics', subView: 'agents' },
          { label: 'Ventes Marketers', icon: Megaphone, view: 'analytics', subView: 'marketers' },
          { label: 'Meta Ads & ROAS', icon: Megaphone, view: 'meta_ads' },
+         { label: 'Meta Queue', icon: Megaphone, view: 'meta_queue' },
          { label: 'TikTok Ads & ROAS', icon: Megaphone, view: 'tiktok_ads' },
       ],
    },
