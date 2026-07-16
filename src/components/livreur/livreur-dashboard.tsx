@@ -141,8 +141,8 @@ export default function LivreurDashboard() {
           column made them cramped and broken-looking on a laptop. They get
           the full viewport width like in the admin app; only the deliveries
           list keeps the narrow phone-first column. */}
-      {section === 'products'   && <div className="max-w-7xl mx-auto p-3 sm:p-6"><ProductsPage /></div>}
-      {section === 'inventory'  && <div className="max-w-7xl mx-auto p-3 sm:p-6"><InventoryDashboard /></div>}
+      {section === 'products'   && <div className="max-w-7xl mx-auto p-2 sm:p-6 overflow-x-hidden"><ProductsPage /></div>}
+      {section === 'inventory'  && <div className="max-w-7xl mx-auto p-2 sm:p-6 overflow-x-hidden"><InventoryDashboard /></div>}
     </div>
   );
 }

@@ -320,7 +320,21 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                             </div>
                          </td>
                          <td className="px-6 py-4">
-                            <p className="text-sm font-black text-[#2D3436] tracking-tight line-clamp-1 uppercase">{p.name}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                               <p className="text-sm font-black text-[#2D3436] tracking-tight line-clamp-1 uppercase">{p.name}</p>
+                               {/* Availability badge repeated here (not just in the
+                                   far-right column) so it's visible without
+                                   horizontal scroll on narrow screens — the
+                                   livreur's Produits/Inventaire tabs run this
+                                   same table on mobile. */}
+                               {variant !== 'alerts' && (
+                                  available <= 0
+                                     ? <Badge className="bg-[#FFEDE9] text-[#E17055] border-none text-[8px] font-black tracking-widest uppercase shrink-0">RUPTURE</Badge>
+                                     : isLow
+                                        ? <Badge className="bg-[#FFF8E6] text-[#FDCB6E] border-none text-[8px] font-black tracking-widest uppercase shrink-0">FAIBLE</Badge>
+                                        : <Badge className="bg-[#E6FFF8] text-[#00B894] border-none text-[8px] font-black tracking-widest uppercase shrink-0">DISPONIBLE</Badge>
+                               )}
+                            </div>
                             <p className="text-[10px] font-black text-[#6C5CE7] font-mono mt-0.5 tracking-wider">SKU: {p.slug || 'N/A'}</p>
                          </td>
                          {variant === 'alerts' ? (
