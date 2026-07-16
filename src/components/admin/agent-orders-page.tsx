@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
+import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import type { Order, OrderEvent } from '@/lib/types';
 
 const formatVariantDetails = (variantDetails: any): string => {
@@ -468,8 +469,9 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
               {showTrace ? "Masquer l'historique" : "Voir l'historique & SLA"}
             </button>
             {showTrace && (
-              <div className="mt-3 bg-slate-50 rounded-xl p-4 border border-slate-100 text-left">
+              <div className="mt-3 bg-slate-50 rounded-xl p-4 border border-slate-100 text-left space-y-4">
                 <OrderTraceabilityPanel orderId={order.id} />
+                <OrderTrackingReport orderId={order.id} />
               </div>
             )}
           </div>

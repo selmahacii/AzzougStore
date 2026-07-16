@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { ManualOrderModal } from '@/components/agent/manual-order-modal';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
+import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
 import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 
@@ -1288,6 +1289,14 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
               <OrderTraceabilityPanel orderId={order.id} />
             </div>
+          </div>
+          {/* Rapport d'attribution marketing */}
+          <div className="space-y-3 pt-4 border-t">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+              <Activity className="size-3.5" />
+              Rapport d'Attribution Marketing
+            </p>
+            <OrderTrackingReport orderId={order.id} />
           </div>
         </div>
       </div>

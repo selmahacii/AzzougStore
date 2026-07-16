@@ -540,6 +540,347 @@ def get_landing_page_analytics(
     }
 
 
+# ─── GET /{lp_id}/tracking-quality — ERP vs Meta CAPI gap, per Landing Page ──
+# Every number here comes from a row that exists in OUR OWN database.
+# Deliberately does NOT claim to know: Pixel fires (browser-only, never
+# reaches this backend), or Meta's internal Received/Deduplicated/Discarded
+# accounting (lives exclusively on Meta's platform, no API credential setup
+# in this environment queries it). Those fields are returned as `null` with
+# an explicit "unavailable" reason string — never fabricated.
+
+@router.get("/{lp_id}/tracking-quality")
+def get_landing_page_tracking_quality(
+    lp_id: str,
+    range_days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Single-page "why doesn't Meta match my ERP" dashboard. Every metric is
+    ONE grouped/aggregated SQL query (no per-order Python loop, no N+1) so
+    opening this tab costs a fixed, small number of queries regardless of
+    how many orders the landing page has.
+    """
+    from datetime import timedelta
+    from app.models.order import Order, OrderItem
+    from app.models.marketing import MetaCapiLog, MetaAdsCampaign, MetaAdsDailyInsight
+
+    db.info["skip_tenant_isolation"] = True
+    lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
+    if not lp:
+        raise HTTPException(404, "Landing page introuvable")
+    if not lp.product_id:
+        return {"success": True, "data": {"available": False, "reason": "no_product_linked"}}
+
+    now = datetime.utcnow()
+    since = now - timedelta(days=range_days)
+
+    # ── 1. ERP KPIs — ONE grouped query, every count via conditional COUNT(DISTINCT) ──
+    erp_row = (
+        db.query(
+            func.count(distinct(Order.id)).label("total"),
+            func.count(distinct(case((Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.id)))).label("confirmed"),
+            func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
+            func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("merged"),
+            func.count(distinct(case((func.coalesce(Order.source, "") == "MANUAL", Order.id)))).label("manual"),
+            func.count(distinct(case((func.coalesce(Order.source, "") == "landing_page", Order.id)))).label("landing_page_only"),
+        )
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+        )
+        .first()
+    )
+    erp = {
+        "total_orders": int(erp_row.total or 0),
+        "confirmed": int(erp_row.confirmed or 0),
+        "cancelled": int(erp_row.cancelled or 0),
+        "merged": int(erp_row.merged or 0),
+        "manual": int(erp_row.manual or 0),
+        "landing_page_only": int(erp_row.landing_page_only or 0),
+    }
+    # CAPI is only ever attempted for non-MERGED, non-MANUAL/POS orders (see
+    # send_purchase_for_order's own skip logic) — that subset is the honest
+    # denominator for the gap analysis below, not total_orders.
+    eligible_order_ids_subq = (
+        db.query(Order.id)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+            Order.status != "MERGED",
+            func.coalesce(Order.source, "") != "MANUAL",
+        )
+        .distinct()
+    )
+    eligible_count = eligible_order_ids_subq.count()
+
+    # ── 2. Meta CAPI status breakdown — ONE grouped query joined on order_id ──
+    capi_rows = (
+        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .filter(
+            OrderItem.product_id == lp.product_id,
+            Order.store_id == lp.store_id,
+            MetaCapiLog.event_name == "Purchase",
+            Order.created_at >= since,
+        )
+        .group_by(MetaCapiLog.status)
+        .all()
+    )
+    capi_by_status = {status: count for status, count in capi_rows}
+    capi = {
+        "sent_total": sum(capi_by_status.values()),
+        "success": capi_by_status.get("success", 0),
+        "failed": capi_by_status.get("failed", 0),
+        "retry": capi_by_status.get("retry", 0) + capi_by_status.get("pending_retry", 0),
+        "queued": capi_by_status.get("queued", 0),
+        "processing": capi_by_status.get("processing", 0),
+        "skipped": capi_by_status.get("skipped", 0),
+    }
+    no_capi_row_at_all = max(0, eligible_count - capi["sent_total"])
+
+    # ── 3. Meta Ads Manager's OWN reported purchases for this product,
+    # already-synced totals (NOT real-time, NOT Meta's internal dedup math —
+    # just what the last sync copied from Meta's Insights API) ──
+    meta_campaigns = db.query(MetaAdsCampaign).filter(
+        MetaAdsCampaign.store_id == lp.store_id, MetaAdsCampaign.product_id == lp.product_id,
+    ).all()
+    _camp_ids = [c.campaign_id for c in meta_campaigns]
+    meta_ads_purchases = None
+    if _camp_ids:
+        meta_ads_purchases = db.query(func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0)).filter(
+            MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
+            MetaAdsDailyInsight.date >= since.date(),
+        ).scalar()
+        meta_ads_purchases = int(meta_ads_purchases or 0)
+
+    # ── 4. Gap analysis — honest breakdown of OUR OWN recorded reasons only.
+    # "cause inconnue" covers what we genuinely cannot explain from our data,
+    # rather than inventing a plausible-sounding cause. Each bucket carries
+    # its own count, percentage of the gap, and a short factual explanation
+    # — never a guess about WHY the underlying state occurred (e.g. "failed"
+    # doesn't speculate on WHY Meta rejected it, that's in error_message).
+    gap_total = max(0, eligible_count - capi["success"])
+    _gap_counts = {
+        "en_attente_queue": capi["queued"],
+        "en_cours": capi["processing"],
+        "en_retry": capi["retry"],
+        "echec_definitif": capi["failed"],
+        "exclu_intentionnellement": capi["skipped"],
+        "jamais_tente": no_capi_row_at_all,
+    }
+    _explained = sum(_gap_counts.values())
+    _gap_counts["cause_inconnue"] = max(0, gap_total - _explained)
+    _gap_explanations = {
+        "en_attente_queue": "Commande en file d'attente, pas encore traitée par le worker.",
+        "en_cours": "Envoi en cours vers Meta au moment de la mesure.",
+        "en_retry": "Premier envoi échoué (réseau/timeout), nouvelle tentative programmée.",
+        "echec_definitif": "Budget de tentatives épuisé ou erreur Meta non récupérable (ex: token invalide).",
+        "exclu_intentionnellement": "Commande manuelle, fusionnée, ou config Meta absente — exclusion volontaire.",
+        "jamais_tente": "Aucune ligne de suivi trouvée pour cette commande — cause à investiguer.",
+        "cause_inconnue": "Écart non expliqué par les données actuellement enregistrées.",
+    }
+    gap_breakdown = {
+        key: {
+            "count": count,
+            "percent": round(count / gap_total * 100, 1) if gap_total else 0.0,
+            "explanation": _gap_explanations[key],
+        }
+        for key, count in _gap_counts.items()
+    }
+
+    # ── Score de santé du tracking (par landing page) ──
+    # Basé directement sur success/eligible (donc déjà l'inverse de
+    # gap_total/eligible) — pas de pondération inventée pour retries/échecs,
+    # puisque success_rate encode déjà leur effet final (un retry qui finit
+    # par réussir ne pénalise pas le score; un échec définitif si).
+    if eligible_count > 0:
+        health_score = round(capi["success"] / eligible_count * 100, 1)
+        if health_score >= 98:
+            health_label, health_color = "Excellent", "green"
+        elif health_score >= 95:
+            health_label, health_color = "Bon", "yellow"
+        elif health_score >= 90:
+            health_label, health_color = "À surveiller", "orange"
+        else:
+            health_label, health_color = "Action requise", "red"
+    else:
+        health_score, health_label, health_color = None, "Aucune donnée", "gray"
+
+    # ── 5. Problematic orders — capped list, one JOIN query, no N+1 ──
+    problem_rows = (
+        db.query(Order.order_number, Order.status, MetaCapiLog.status, MetaCapiLog.error_message, MetaCapiLog.error_category, Order.id)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+            Order.status != "MERGED",
+            func.coalesce(Order.source, "") != "MANUAL",
+            func.coalesce(MetaCapiLog.status, "none") != "success",
+        )
+        .order_by(Order.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    problematic_orders = [
+        {
+            "order_number": r[0], "erp_status": r[1],
+            "capi_status": r[2] or "jamais_tente",
+            "cause": r[3] or (r[2] or "Aucune ligne CAPI — jamais tenté"),
+            "error_category": r[4],
+            "order_id": r[5],
+        }
+        for r in problem_rows
+    ]
+
+    # ── 6. Daily history for the chart (7/30/90 chosen by range_days) ──
+    day = func.date(Order.created_at)
+    history_rows = (
+        db.query(
+            day.label("day"),
+            func.count(distinct(Order.id)).label("erp_orders"),
+            func.count(distinct(case((MetaCapiLog.status == "success", Order.id)))).label("capi_success"),
+        )
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+            Order.status != "MERGED",
+            func.coalesce(Order.source, "") != "MANUAL",
+        )
+        .group_by(day)
+        .order_by(day)
+        .all()
+    )
+    history = [{"date": str(r.day), "erp_orders": int(r.erp_orders or 0), "capi_success": int(r.capi_success or 0)} for r in history_rows]
+
+    return {
+        "success": True,
+        "data": {
+            "available": True,
+            "range_days": range_days,
+            "erp": erp,
+            "eligible_for_capi": eligible_count,
+            "capi": capi,
+            "meta_ads_purchases": meta_ads_purchases,
+            "gap_total": gap_total,
+            "gap_total_percent": round(gap_total / eligible_count * 100, 1) if eligible_count else None,
+            "gap_breakdown": gap_breakdown,
+            "health_score": health_score,
+            "health_label": health_label,
+            "health_color": health_color,
+            "problematic_orders": problematic_orders,
+            "history": history,
+            "unavailable_metrics": {
+                "pixel_purchases": "Non disponible — le Pixel s'exécute uniquement dans le navigateur du client et n'atteint jamais ce backend.",
+                "meta_ads_deduplicated": "Non disponible — la logique de déduplication est interne à Meta (Events Manager), aucune API ne l'expose.",
+                "meta_ads_rejected": "Non disponible — Meta ne fournit pas le détail des événements rejetés via l'API Graph standard.",
+            },
+        },
+    }
+
+
+# ─── GET /{lp_id}/tracking-quality/export — diagnostic export (JSON/CSV) ────
+# One row per eligible order, every field that exists in OUR database for
+# it — no fabricated Pixel/Meta-side columns. Same query shape/limit as the
+# problematic-orders table above but without the "!= success" filter (this
+# is a full diagnostic dump, not just the problems).
+
+@router.get("/{lp_id}/tracking-quality/export")
+def export_landing_page_tracking_diagnostic(
+    lp_id: str,
+    range_days: int = Query(30, ge=1, le=90),
+    format: str = Query("json", pattern="^(json|csv)$"),
+    db: Session = Depends(get_db),
+    _auth: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    from datetime import timedelta
+    from app.models.order import Order, OrderItem
+    from app.models.marketing import MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
+    if not lp:
+        raise HTTPException(404, "Landing page introuvable")
+    if not lp.product_id:
+        raise HTTPException(400, "Aucun produit lié à cette page")
+
+    since = datetime.utcnow() - timedelta(days=range_days)
+    rows = (
+        db.query(
+            Order.order_number, Order.id, Order.status, Order.source, Order.created_at,
+            MetaCapiLog.event_id, MetaCapiLog.status, MetaCapiLog.error_message,
+            MetaCapiLog.error_category, MetaCapiLog.last_http_status, MetaCapiLog.retry_count,
+            MetaCapiLog.created_at, MetaCapiLog.processing_started_at, MetaCapiLog.completed_at,
+            MetaCapiLog.latency_ms,
+        )
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+        )
+        .order_by(Order.created_at.desc())
+        .limit(2000)
+        .all()
+    )
+
+    records = [
+        {
+            "order_number": r[0], "order_id": r[1], "erp_status": r[2], "source": r[3],
+            "order_created_at": r[4].isoformat() if r[4] else None,
+            "event_id": r[5],
+            # Pixel/Relay are frontend-only — never recorded in this table, so
+            # never claimed here either. capi_* is the only stage this
+            # backend can actually attest to.
+            "pixel_fired": "non_disponible",
+            "relay_received": "non_disponible",
+            "capi_status": r[6] or "jamais_tente",
+            "capi_error_message": r[7],
+            "capi_error_category": r[8],
+            "capi_http_status": r[9],
+            "capi_retry_count": r[10],
+            "capi_log_created_at": r[11].isoformat() if r[11] else None,
+            "capi_processing_started_at": r[12].isoformat() if r[12] else None,
+            "capi_completed_at": r[13].isoformat() if r[13] else None,
+            "capi_latency_ms": r[14],
+        }
+        for r in rows
+    ]
+
+    if format == "csv":
+        import csv
+        import io
+        from fastapi.responses import StreamingResponse
+        buf = io.StringIO()
+        if records:
+            writer = csv.DictWriter(buf, fieldnames=list(records[0].keys()))
+            writer.writeheader()
+            writer.writerows(records)
+        buf.seek(0)
+        return StreamingResponse(
+            iter([buf.getvalue()]), media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=diagnostic-{lp.slug}-{range_days}j.csv"},
+        )
+
+    return {"success": True, "data": {"range_days": range_days, "count": len(records), "orders": records}}
+
+
 # ─── Create ───────────────────────────────────────────────────────────────────
 
 @router.post("/", status_code=201)

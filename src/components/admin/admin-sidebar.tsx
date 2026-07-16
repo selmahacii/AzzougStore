@@ -105,6 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
          { label: 'Télémétrie Agents', icon: UserCheck, view: 'analytics', subView: 'agents' },
          { label: 'Ventes Marketers', icon: Megaphone, view: 'analytics', subView: 'marketers' },
          { label: 'Meta Ads & ROAS', icon: Megaphone, view: 'meta_ads' },
+         { label: 'Meta Queue', icon: Megaphone, view: 'meta_queue' },
          { label: 'TikTok Ads & ROAS', icon: Megaphone, view: 'tiktok_ads' },
       ],
    },
@@ -139,9 +140,10 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Alertes rupture', view: 'inventory', subView: 'ALERTS' },
                { label: 'Achats', view: 'inventory', subView: 'PURCHASES' },
                { label: 'Bons d\'Achat & d\'Entrée', view: 'purchase_vouchers' },
-               { label: 'Retours', view: 'inventory', subView: 'RETURNS' },
+               { label: 'Retours (fournisseurs)', view: 'inventory', subView: 'RETURNS' },
                { label: 'Fournisseurs', view: 'inventory', subView: 'PARTNERS' },
-               { label: 'Historique', view: 'inventory', subView: 'HISTORY' }
+               { label: 'Historique', view: 'inventory', subView: 'HISTORY' },
+               { label: 'Retours Commandes', view: 'returns' }
             ]
          },
          {

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Script from 'next/script';
 import { setMetaPixelId, trackMetaEvent } from '@/lib/meta-tracking';
+import { captureAttribution } from '@/lib/attribution';
 
 export function StorefrontIntegrations({ config }: { config: any }) {
   const pixelId = config?.pixel_id;
@@ -15,6 +16,13 @@ export function StorefrontIntegrations({ config }: { config: any }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Mounted on EVERY storefront page (not just landing pages) — a visitor
+    // can also land on a plain product/category page from an ad. First
+    // touch wins internally (captureAttribution no-ops once real utm_*
+    // signal is already stored), so calling this here too is safe and
+    // covers the non-LP entry path that landing-page-renderer.tsx's own
+    // capture call can't.
+    captureAttribution();
     setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
     if (!pixelId) return;
 

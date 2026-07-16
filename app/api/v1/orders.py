@@ -10,7 +10,7 @@ import logging
 from typing import Any, List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session, joinedload
 
@@ -1182,7 +1182,16 @@ def create_order(
                         from app.models.marketing import MetaAdsConfig
                         meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == existing.store_id).first()
                         if meta_config and meta_config.pixel_id and meta_config.access_token:
-                            from app.services.meta_capi import send_purchase_for_order
+                            from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                            # Durable queue: write status='queued' and COMMIT it
+                            # before scheduling the background task. If the
+                            # process dies right after this commit (HF
+                            # redeploy), the row survives and is replayed by
+                            # app.main.resume_pending_queues on the next boot —
+                            # this is what closes the exact gap that silently
+                            # lost 22 real ORD-* Purchases in production.
+                            enqueue_purchase_for_order(db, existing)
+                            db.commit()
                             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                             user_agent = request.headers.get("user-agent")
                             background_tasks.add_task(
@@ -1192,6 +1201,7 @@ def create_order(
                                 user_agent=user_agent
                             )
                     except Exception as capi_err:
+                        db.rollback()
                         logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
 
                 return existing
@@ -1309,7 +1319,19 @@ def create_order(
             from app.models.marketing import MetaAdsConfig
             meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
             if meta_config and meta_config.pixel_id and meta_config.access_token:
-                from app.services.meta_capi import send_purchase_for_order
+                from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                # Durable queue: the 'queued' row is written and COMMITTED
+                # here, before add_task is even scheduled — not inside the
+                # background task itself. If the HF container is killed
+                # anywhere after this commit (mid-request, between response
+                # and task execution, whenever), the row already exists on
+                # disk and app.main.resume_pending_queues replays it on the
+                # next boot. This is the fix for the proven gap: 22 real
+                # ORD-* orders got ZERO CAPI attempt (not even a failed one)
+                # because nothing was ever written before the old
+                # BackgroundTasks callback started running.
+                enqueue_purchase_for_order(db, order)
+                db.commit()
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 background_tasks.add_task(
@@ -1319,6 +1341,7 @@ def create_order(
                     user_agent=user_agent
                 )
         except Exception as capi_err:
+            db.rollback()
             logger.warning(f"Failed to queue Meta CAPI event: {capi_err}")
 
         return order
@@ -1381,6 +1404,184 @@ def get_order(
     result = _OrderReadFull.model_validate(order)
     result.child_orders = [_OrderRead.model_validate(c) for c in children]
     return result
+
+
+# ─── GET /orders/{id}/tracking — marketing attribution report ───────────────
+# Everything here comes from data already stored on the order + 3 cheap
+# lookups by primary/unique key (MetaAdsConfig by store_id, MetaAdsCampaign
+# by campaign_id, MetaAdsAdInsight by ad_id) + meta_capi_logs by order_id.
+# No Meta API call is ever made here — opening this tab costs 0 network
+# requests to Meta, only already-synced local data.
+
+@router.get("/{id}/tracking", response_model=dict)
+def get_order_tracking(
+    id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.marketing import MetaAdsConfig, MetaAdsCampaign, MetaAdsAdInsight, MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not order:
+        raise OrderNotFoundError()
+    _assert_order_access(order, current_user)
+
+    def _or_na(v):
+        return v if v not in (None, "") else None
+
+    # ── 1. Origine du trafic — 100% depuis les colonnes déjà stockées sur order ──
+    traffic_origin = {
+        "source": _or_na(order.source),
+        "utm_source": _or_na(order.utm_source),
+        "utm_medium": _or_na(order.utm_medium),
+        "utm_campaign": _or_na(order.utm_campaign),
+        "utm_content": _or_na(order.utm_content),
+        "utm_term": _or_na(order.utm_term),
+        "referrer": _or_na(order.referrer),
+        "landing_page_url": _or_na(order.event_source_url),
+        "full_url": _or_na(order.event_source_url),
+        "order_time": order.created_at.isoformat() if order.created_at else None,
+        # Genuinely not captured anywhere in this system today — no page-view
+        # history mechanism exists client-side. Not fabricated.
+        "first_page_visited": None,
+        "last_page_before_purchase": None,
+        "arrival_time": None,
+    }
+
+    # ── 2. Informations Meta — order columns + store-level MetaAdsConfig (1 query) ──
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
+    capi_log = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.order_id == order.id, MetaCapiLog.event_name == "Purchase")
+        .first()
+    )
+    meta_info = {
+        "pixel_id": _or_na(config.pixel_id) if config else None,
+        "event_id": _or_na(capi_log.event_id) if capi_log else None,
+        "event_name": _or_na(capi_log.event_name) if capi_log else None,
+        "event_time": capi_log.completed_at.isoformat() if capi_log and capi_log.completed_at else None,
+        "fbp": _or_na(order.fbp),
+        "fbc": _or_na(order.fbc),
+        "fbclid": _or_na(order.fbclid),
+        "click_id": _or_na(order.fbclid),
+        "event_source_url": _or_na(order.event_source_url),
+    }
+
+    # ── 3. Campagne Meta — noms résolus par 2 lookups par clé unique, pas de scan ──
+    campaign_name = adset_name = ad_name = None
+    if order.campaign_id:
+        camp = db.query(MetaAdsCampaign.campaign_name).filter(MetaAdsCampaign.campaign_id == order.campaign_id).first()
+        campaign_name = camp[0] if camp else None
+    if order.ad_id:
+        ad_row = db.query(MetaAdsAdInsight.adset_name, MetaAdsAdInsight.ad_name).filter(MetaAdsAdInsight.ad_id == order.ad_id).first()
+        if ad_row:
+            adset_name, ad_name = ad_row[0], ad_row[1]
+    campaign_info = {
+        "campaign_name": _or_na(campaign_name),
+        "adset_name": _or_na(adset_name),
+        "ad_name": _or_na(ad_name),
+        "campaign_id": _or_na(order.campaign_id),
+        "adset_id": _or_na(order.adset_id),
+        "ad_id": _or_na(order.ad_id),
+    }
+
+    # ── 4. Qualité du tracking — étapes VÉRIFIABLES seulement. Pixel/Relay/Ads
+    # Manager ne sont jamais observables depuis ce backend (voir explication
+    # dans chaque champ) — jamais affichés comme ✅/❌ pour ne pas fabriquer
+    # une preuve qu'on n'a pas. ──
+    erp_ok = True  # la commande existe, trivialement vrai
+    queue_ok = capi_log is not None
+    capi_ok = capi_log.status == "success" if capi_log else False
+    # "Meta accepté" : un statut success signifie que Meta a répondu 200 à
+    # notre envoi — c'est une preuve réelle (le code HTTP), pas une supposition.
+    meta_accepted = capi_log.status == "success" if capi_log else False
+
+    verifiable_steps = {
+        "erp": {"status": "ok" if erp_ok else "fail", "verifiable": True},
+        "pixel": {"status": "non_verifiable", "verifiable": False, "reason": "Le Pixel s'exécute uniquement dans le navigateur du client, jamais observable depuis ce backend."},
+        "relay": {"status": "non_verifiable", "verifiable": False, "reason": "Le relais frontend n'écrit aucune ligne persistante (fire-and-forget vers Meta) — aucune preuve de passage n'est enregistrée."},
+        "queue": {"status": "ok" if queue_ok else "fail", "verifiable": True},
+        "capi": {"status": "ok" if capi_ok else ("fail" if capi_log else "not_attempted"), "verifiable": True},
+        "meta": {"status": "ok" if meta_accepted else ("fail" if capi_log else "not_attempted"), "verifiable": True},
+        "ads_manager": {"status": "non_verifiable", "verifiable": False, "reason": "Aucun accès API Meta Ads Manager configuré dans cet environnement — non vérifiable automatiquement."},
+    }
+    _checkable = [s for s in verifiable_steps.values() if s["verifiable"]]
+    _passed = sum(1 for s in _checkable if s["status"] == "ok")
+    tracking_score = round(_passed / len(_checkable) * 100, 1) if _checkable else None
+
+    failure_detail = None
+    if capi_log and capi_log.status in ("failed", "retry"):
+        failure_detail = {
+            "step": "capi",
+            "error_message": capi_log.error_message,
+            "error_category": capi_log.error_category,
+            "http_status": capi_log.last_http_status,
+            "retry_count": capi_log.retry_count,
+        }
+
+    # ── 5. Timeline — uniquement des timestamps RÉELLEMENT enregistrés.
+    # AddToCart/InitiateCheckout ne sont jamais persistés nulle part
+    # aujourd'hui (relais fire-and-forget, voir ci-dessus) — absents plutôt
+    # qu'inventés. ──
+    timeline = [{"time": order.created_at.isoformat(), "label": "Commande créée"}] if order.created_at else []
+    if capi_log:
+        if capi_log.created_at:
+            timeline.append({"time": capi_log.created_at.isoformat(), "label": "Queue créée (CAPI)"})
+        if capi_log.processing_started_at:
+            timeline.append({"time": capi_log.processing_started_at.isoformat(), "label": "Envoi CAPI en cours"})
+        if capi_log.completed_at:
+            label = "Meta accepté (Purchase visible)" if capi_log.status == "success" else "CAPI terminé (échec)"
+            timeline.append({"time": capi_log.completed_at.isoformat(), "label": label})
+    timeline.sort(key=lambda t: t["time"])
+
+    # ── 6. Attribution marketing automatique — règles simples et vérifiables,
+    # jamais un pourcentage de confiance inventé sans preuve. ──
+    def _classify_source():
+        src = (order.utm_source or "").lower()
+        medium = (order.utm_medium or "").lower()
+        ref = (order.referrer or "").lower()
+        if order.fbclid:
+            return "Facebook", "Élevée (fbclid présent — preuve de clic publicitaire)"
+        if "instagram" in src or "ig" in src.split():
+            return "Instagram", "Moyenne (utm_source déclaré)"
+        if "facebook" in src or "fb" in src.split() or "meta" in src:
+            return "Facebook", "Moyenne (utm_source déclaré, sans fbclid)"
+        if "tiktok" in src:
+            return "TikTok", "Moyenne (utm_source déclaré)"
+        if "google" in src or "google" in ref:
+            return "Google", "Moyenne (utm_source/referrer déclaré)"
+        if medium == "email":
+            return "Email", "Moyenne (utm_medium déclaré)"
+        if "whatsapp" in src or "whatsapp" in ref:
+            return "WhatsApp", "Moyenne (utm_source/referrer déclaré)"
+        if ref and not order.utm_source:
+            return "Referral", "Faible (referrer sans UTM)"
+        if not ref and not order.utm_source and not order.fbclid:
+            return "Direct ou Organique", "Faible (aucun signal d'origine détecté)"
+        return "Inconnu", "Aucune (aucune règle ne correspond)"
+
+    attribution_source, attribution_confidence = _classify_source()
+
+    return {
+        "success": True,
+        "data": {
+            "traffic_origin": traffic_origin,
+            "meta_info": meta_info,
+            "campaign_info": campaign_info,
+            "tracking_quality": {
+                "steps": verifiable_steps,
+                "score": tracking_score,
+                "score_basis": "Calculé uniquement sur les étapes vérifiables (ERP, Queue, CAPI, Meta) — Pixel/Relay/Ads Manager exclus du calcul, non observables depuis ce backend.",
+                "failure_detail": failure_detail,
+            },
+            "timeline": timeline,
+            "attribution": {
+                "source": attribution_source,
+                "confidence": attribution_confidence,
+            },
+        },
+    }
 
 
 # ─── POST /orders/{id}/unmerge — Restore a merged duplicate ─────────────────
@@ -1537,7 +1738,9 @@ def update_order(
                 from app.models.marketing import MetaAdsConfig
                 meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
                 if meta_config and meta_config.pixel_id and meta_config.access_token:
-                    from app.services.meta_capi import send_purchase_for_order
+                    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                    enqueue_purchase_for_order(db, updated)
+                    db.commit()
                     client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                     user_agent = request.headers.get("user-agent")
                     background_tasks.add_task(
@@ -1547,6 +1750,7 @@ def update_order(
                         user_agent=user_agent
                     )
             except Exception as capi_err:
+                db.rollback()
                 logger.warning(f"Failed to queue Meta CAPI event for phone-confirmed cart {updated.id}: {capi_err}")
 
         return updated
@@ -1890,13 +2094,17 @@ def get_order_events(
             "id": e.id,
             "order_id": e.order_id,
             "actor_id": e.actor_id,
+            # actor_role is the role AT THE TIME of the action (persisted on
+            # the event); e.actor.role is the actor's CURRENT role, used only
+            # as a fallback for events logged before this column existed.
+            "actor_role": e.actor_role or (e.actor.role if e.actor else None),
             "from_status": e.from_status,
             "to_status": e.to_status,
             "note": e.note,
             "call_result": e.call_result,
             "call_attempt": e.call_attempt,
             "created_at": e.created_at.isoformat() if e.created_at else None,
-            "actor": {"id": e.actor.id, "name": e.actor.name, "avatar": e.actor.avatar} if e.actor else None,
+            "actor": {"id": e.actor.id, "name": e.actor.name, "avatar": e.actor.avatar, "role": e.actor.role} if e.actor else None,
         }
         for e in events
     ]
@@ -2392,3 +2600,224 @@ async def dispatch_order(
         raise
     except Exception as e:
         raise HTTPException(502, f"Erreur de communication transporteur : {str(e)}")
+
+
+# ─── Returns / stock reintegration — audit + KPIs + manual backfill ─────────
+# Idempotency note: no new "already processed" flag was added anywhere.
+# order_service.update_order() already restocks exactly once per RETURNED
+# order via the existing CONFIRMED/SHIPPED/DELIVERED → RETURNED stock
+# matrix (was_c and not now_c/now_r → return_restock), and RETURNED is a
+# terminal state with zero outgoing transitions in _VALID_TRANSITIONS —
+# there is structurally no path to re-enter it and no path to double-fire
+# the restock. stock_movements (type=RETURN_RESTOCK) is the durable proof
+# it happened, and is exactly what the audit below checks for — reusing it
+# instead of adding a redundant boolean column.
+
+@router.get("/returns/audit", response_model=dict)
+def audit_returned_orders_stock(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Detects RETURNED orders that were physically deducted (a StockMovement
+    row of type ORDER_CONFIRM exists for them — i.e. they were once
+    CONFIRMED/SHIPPED/DELIVERED) but never got a RETURN_RESTOCK movement —
+    the exact, provable signature of a restock that was silently skipped
+    (e.g. by the delivery_partners.py / yalidine.py bypasses fixed
+    alongside this feature). An order returned straight from a RESERVED
+    state (NEW/ASSIGNED/CALLED → RETURNED) never had physical stock
+    deducted in the first place (release_reservation, not return_restock,
+    is the correct op for it) — such orders correctly have NO
+    RETURN_RESTOCK movement and are NOT flagged here.
+    """
+    from app.models.stock import StockMovement
+    from sqlalchemy import exists as sa_exists
+
+    db.info["skip_tenant_isolation"] = True
+
+    confirm_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM"
+    )
+    restock_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK"
+    )
+
+    total_returned = db.query(sqlfunc.count(Order.id)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False,
+    ).scalar() or 0
+
+    restocked_count = db.query(sqlfunc.count(Order.id)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False, restock_exists,
+    ).scalar() or 0
+
+    anomalies = (
+        db.query(Order.id, Order.order_number, Order.store_id, Order.updated_at, Order.total)
+        .filter(Order.status == "RETURNED", Order.is_deleted == False, confirm_exists, ~restock_exists)
+        .order_by(Order.updated_at.desc())
+        .limit(200)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "total_returned": total_returned,
+            "restocked": restocked_count,
+            "never_restocked_but_expected": len(anomalies),
+            "not_applicable_reserved_only": max(0, total_returned - restocked_count - len(anomalies)),
+            "anomalies": [
+                {
+                    "order_id": a.id, "order_number": a.order_number,
+                    "store_id": a.store_id, "updated_at": a.updated_at.isoformat() if a.updated_at else None,
+                    "total": a.total, "stock_remis": False,
+                }
+                for a in anomalies
+            ],
+        },
+    }
+
+
+@router.post("/returns/reintegrate-missing", response_model=dict)
+def reintegrate_missing_stock(
+    order_ids: Optional[List[str]] = Body(None, embed=True),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Admin tool: reintegrates stock for RETURNED orders flagged by the audit
+    above. Idempotent by construction — re-running it after a first
+    successful pass finds zero anomalies (each processed order now has a
+    RETURN_RESTOCK movement, so the same EXISTS/NOT-EXISTS query that found
+    it no longer does), never a double-restock. Reuses
+    inventory_service.return_restock — the exact same function the normal
+    live transition uses, not a parallel implementation.
+    """
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+
+    from app.models.stock import StockMovement
+    from app.services.inventory_service import inventory_service
+    from sqlalchemy import exists as sa_exists
+
+    db.info["skip_tenant_isolation"] = True
+
+    confirm_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM"
+    )
+    restock_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK"
+    )
+    query = db.query(Order).options(joinedload(Order.items)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False, confirm_exists, ~restock_exists,
+    )
+    if order_ids:
+        query = query.filter(Order.id.in_(order_ids))
+    targets = query.limit(500).all()
+
+    processed, skipped_items, results = 0, 0, []
+    for order in targets:
+        # Row lock + re-check under lock: two admins clicking "reintegrate"
+        # at the same moment must not both restock the same order.
+        db.query(Order.id).filter(Order.id == order.id).with_for_update().first()
+        still_missing = db.query(
+            sa_exists().where(StockMovement.order_id == order.id, StockMovement.type == "RETURN_RESTOCK")
+        ).scalar()
+        if still_missing:
+            continue
+        items_done = 0
+        for item in order.items:
+            if not item.product_id:
+                skipped_items += 1
+                continue
+            try:
+                inventory_service.return_restock(
+                    db, product_id=item.product_id, quantity=item.quantity,
+                    order_id=order.id, actor_id=current_user.id,
+                    variant_details=item.variant_details,
+                )
+                items_done += 1
+            except Exception as exc:
+                logger.warning("Reintegration failed for order %s item product %s: %s", order.id, item.product_id, exc)
+        db.commit()
+        processed += 1
+        results.append({"order_id": order.id, "order_number": order.order_number, "items_reintegrated": items_done})
+
+    return {
+        "success": True,
+        "message": f"{processed} commande(s) réintégrée(s), {skipped_items} ligne(s) sans produit lié ignorée(s)",
+        "data": {"processed": processed, "skipped_items": skipped_items, "orders": results},
+    }
+
+
+@router.get("/returns/kpis", response_model=dict)
+def get_returns_kpis(
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    All figures come from stock_movements (type=RETURN_RESTOCK), joined
+    once to order_items for financial value (unit_price) and to products
+    for names — every aggregate is a single GROUP BY, no per-row Python
+    loop, no N+1.
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import and_
+    from app.models.stock import StockMovement
+    from app.models.product import Product
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+
+    base = db.query(StockMovement).filter(StockMovement.type == "RETURN_RESTOCK")
+    if store_id:
+        base = base.join(Order, Order.id == StockMovement.order_id).filter(Order.store_id == store_id)
+
+    def _count_and_qty(since):
+        q = base.filter(StockMovement.created_at >= since)
+        row = q.with_entities(sqlfunc.count(StockMovement.id), sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).first()
+        return {"returns": row[0] or 0, "quantity": int(row[1] or 0)}
+
+    totals = base.with_entities(
+        sqlfunc.count(sqlfunc.distinct(StockMovement.order_id)),
+        sqlfunc.count(StockMovement.id),
+        sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0),
+    ).first()
+
+    # Financial value: movement.quantity × the order's own unit_price for
+    # that product (join on order_id + product_id — a single grouped query,
+    # not a loop per movement).
+    value_row = (
+        base.join(OrderItem, and_(OrderItem.order_id == StockMovement.order_id, OrderItem.product_id == StockMovement.product_id))
+        .with_entities(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity * OrderItem.unit_price), 0))
+        .first()
+    )
+
+    top_products = (
+        base.join(Product, Product.id == StockMovement.product_id)
+        .with_entities(Product.id, Product.name, sqlfunc.sum(StockMovement.quantity).label("qty"))
+        .group_by(Product.id, Product.name)
+        .order_by(sqlfunc.sum(StockMovement.quantity).desc())
+        .limit(10)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "total_returns": totals[0] or 0,
+            "total_movements": totals[1] or 0,
+            "total_quantity_reintegrated": int(totals[2] or 0),
+            "total_value_reintegrated": float(value_row[0] or 0),
+            "today": _count_and_qty(today_start),
+            "this_week": _count_and_qty(week_start),
+            "this_month": _count_and_qty(month_start),
+            "top_products": [
+                {"product_id": p[0], "product_name": p[1], "quantity_returned": int(p[2] or 0)}
+                for p in top_products
+            ],
+        },
+    }

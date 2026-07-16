@@ -70,6 +70,9 @@ META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES
 # so this runs on a slower cadence — just needs to run before a Space restart
 # would otherwise wipe them.
 CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_INTERVAL_MINUTES", "60"))
+# Daily is plenty for deleting old success rows — no reason to run this on
+# the same 3h cadence as the Meta Ads sync.
+META_CAPI_CLEANUP_INTERVAL_MINUTES = float(os.getenv("META_CAPI_CLEANUP_INTERVAL_MINUTES", "1440"))
 
 # NOEST wording → platform terminal statuses. Checked against BOTH
 # OrderInfo.statut (French human text) AND the last activity's event_key
@@ -645,6 +648,7 @@ async def background_loop() -> None:
     seconds_since_sync = SYNC_INTERVAL_MINUTES * 60  # poll immediately at boot
     seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
     seconds_since_cloudinary_sync = CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60  # migrate immediately at boot
+    seconds_since_capi_cleanup = 0.0  # not urgent at boot — wait one full interval
     while True:
         # Night idle (01:00–06:59 Algeria, UTC+1): skip every DB/network sweep
         # so the serverless Postgres compute can autosuspend — nobody confirms
@@ -659,6 +663,7 @@ async def background_loop() -> None:
             seconds_since_sync += _night_sleep
             seconds_since_meta_sync += _night_sleep
             seconds_since_cloudinary_sync += _night_sleep
+            seconds_since_capi_cleanup += _night_sleep
             continue
         try:
             scan_due_reminders()
@@ -706,7 +711,20 @@ async def background_loop() -> None:
                 await asyncio.to_thread(sync_cloudinary_migration)
             except Exception as exc:
                 logger.error("Cloudinary auto-migration pass crashed: %s", exc)
+        if seconds_since_capi_cleanup >= META_CAPI_CLEANUP_INTERVAL_MINUTES * 60:
+            seconds_since_capi_cleanup = 0
+            try:
+                from app.services.meta_capi import cleanup_old_capi_logs
+                from app.db.session import SessionLocal
+                _db = SessionLocal()
+                try:
+                    await asyncio.to_thread(cleanup_old_capi_logs, _db)
+                finally:
+                    _db.close()
+            except Exception as exc:
+                logger.error("Meta CAPI log cleanup crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
         seconds_since_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_meta_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_cloudinary_sync += REMINDER_SCAN_INTERVAL_SECONDS
+        seconds_since_capi_cleanup += REMINDER_SCAN_INTERVAL_SECONDS

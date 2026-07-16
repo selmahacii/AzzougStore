@@ -157,6 +157,13 @@ async def test_normal_order_fires_purchase_once_with_order_number_event_id(clien
 
 @pytest.mark.asyncio
 async def test_manual_and_pos_orders_never_fire_purchase(client):
+    """
+    Behavior change from the durable-queue rework: orders.py now enqueues a
+    row unconditionally whenever Meta config exists (the skip decision was
+    moved INTO send_purchase_for_order so it's traceable), so a MANUAL order
+    now DOES get a meta_capi_logs row — status='skipped', never 'success'.
+    No Meta network call is ever made for it either way.
+    """
     suffix = str(uuid.uuid4())[:8]
     store_id, product = await _setup_store_with_meta(client, suffix)
 
@@ -179,7 +186,10 @@ async def test_manual_and_pos_orders_never_fire_purchase(client):
     from app.db.session import SessionLocal
     db = SessionLocal()
     try:
-        assert _capi_rows(db, order["id"]) == []
+        rows = _capi_rows(db, order["id"])
+        assert len(rows) == 1
+        assert rows[0].status == "skipped"
+        assert "MANUAL" in (rows[0].error_message or "")
     finally:
         db.close()
 

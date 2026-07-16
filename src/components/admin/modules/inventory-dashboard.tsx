@@ -486,10 +486,19 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                      </div>
                      <div>
                         <p className="text-xs font-extrabold text-[#2D3436]">
-                           {m.type === 'RESTOCK' ? 'Réapprovisionnement' : 
-                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' : 
+                           {m.type === 'RESTOCK' ? 'Réapprovisionnement' :
+                            m.type === 'ORDER_CONFIRM' ? 'Confirmation Commande' :
+                            m.type === 'ORDER_RESERVE' ? 'Réservation Commande' :
+                            m.type === 'ORDER_RELEASE' ? 'Libération Réservation' :
+                            // RETURN_RESTOCK: the exact movement type
+                            // send_purchase_for_order/return_restock() writes
+                            // when a RETURNED order's stock is reintegrated —
+                            // this fell through to the generic "Ajustement
+                            // Manuel" label before, indistinguishable from an
+                            // admin manually correcting stock for any reason.
+                            m.type === 'RETURN_RESTOCK' ? 'Retour Client' :
                             m.type === 'POS_SALE' ? 'Vente au Comptant (POS)' :
-                            'Ajustement Manuel'} : 
+                            'Ajustement Manuel'} :
                            <span className="font-mono text-[#6C5CE7] ml-2">{m.id.split('-')[0].toUpperCase()}</span>
                         </p>
                         <div className="flex items-center gap-3 mt-1.5">
@@ -501,7 +510,13 @@ function HistoryView({ movements, isLoading }: { movements: InventoryMovement[];
                            </span>
                            <span className="text-[10px] font-bold text-[#B2BEC3] flex items-center gap-1"><Clock className="size-3" /> {new Date(m.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                            <span className="text-[10px] font-bold text-[#636E72] uppercase tracking-tighter">— Ref: {m.product_id.split('-')[0]}</span>
+                           {m.actor?.name && (
+                              <span className="text-[10px] font-bold text-[#636E72]">— {m.actor.name}</span>
+                           )}
                         </div>
+                        {m.reason && (
+                           <p className="text-[10px] text-[#B2BEC3] mt-1 max-w-md truncate" title={m.reason}>{m.reason}</p>
+                        )}
                      </div>
                   </div>
                   <button className="text-[10px] font-black uppercase bg-[#F8F9FC] border px-4 py-2 rounded-xl hover:bg-black hover:text-white transition-all opacity-0 group-hover:opacity-100" style={{ borderColor: C.border }}>Détails</button>

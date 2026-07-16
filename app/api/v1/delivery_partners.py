@@ -10,7 +10,7 @@ import httpx
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -1251,6 +1251,16 @@ def assign_internal_delivery(
     from app.models.internal_delivery import InternalDelivery
     from app.models.user import User
 
+    # A livreur must never be able to assign an order to a driver (including
+    # themselves) — only a confirmatrice/manager/admin decides who delivers
+    # what. This endpoint previously had NO role check at all (only
+    # get_current_active_user, which just verifies the account is active),
+    # unlike PATCH /orders/{id} which already blocks a LIVREUR from touching
+    # assigned_to/livreur_id — a livreur could reach the same effect through
+    # this side door.
+    if getattr(current_user, "role", None) == "LIVREUR":
+        raise HTTPException(status_code=403, detail="Un livreur ne peut pas s'auto-assigner une commande.")
+
     order = db.query(Order).filter(Order.id == payload.order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -1356,20 +1366,68 @@ def update_internal_delivery_status(
     if not delivery:
         raise HTTPException(status_code=404, detail="Internal delivery not found")
 
+    # Same side door as /internal/assign: this endpoint had no role/ownership
+    # check at all, unlike PATCH /orders/{id} which restricts a LIVREUR to
+    # SHIPPED/DELIVERED/RETURNED/CANCELLED/RESCHEDULED on orders assigned to
+    # THEM specifically. Mirror both restrictions here.
+    if getattr(current_user, "role", None) == "LIVREUR":
+        if delivery.driver_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Cette livraison n'est pas assignée à vous.")
+        if payload.status not in ("DELIVERED", "RETURNED", "PICKED_UP"):
+            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur.")
+
     delivery.status = payload.status
-    
-    # Map status to order status
-    order = db.query(Order).filter(Order.id == delivery.order_id).first()
+
+    # Map status to order status — routed through order_service.update_order
+    # (state machine + stock side effects) instead of a raw `order.status =`
+    # assignment. The raw assignment silently bypassed return_restock on
+    # RETURNED (a delivered product returned via an internal livreur never
+    # went back into stock) AND the COD-payment/commission recording on
+    # DELIVERED (_record_delivery_payment) — same bug class fixed in the
+    # Yalidine webhook, same fix: go through the one place stock/finance
+    # side effects are actually implemented.
+    # Lock just the Order row first (FOR UPDATE + an outer join to
+    # order_items in one query fails on Postgres: "FOR UPDATE cannot be
+    # applied to the nullable side of an outer join" — order_items is
+    # optional). Load items separately once the lock is held.
+    db.query(Order.id).filter(Order.id == delivery.order_id).with_for_update().first()
+    order = (
+        db.query(Order)
+        .options(joinedload(Order.items))
+        .filter(Order.id == delivery.order_id)
+        .first()
+    )
     if order:
+        target_status = {
+            "DELIVERED": "DELIVERED",
+            "RETURNED": "RETURNED",
+            "PICKED_UP": "SHIPPED",
+        }.get(payload.status, "ASSIGNED")
         if payload.status == "DELIVERED":
-            order.status = "DELIVERED"
             delivery.delivered_at = datetime.now()
-        elif payload.status == "RETURNED":
-            order.status = "RETURNED"
-        elif payload.status == "PICKED_UP":
-            order.status = "SHIPPED"
-        else:
-            order.status = "ASSIGNED"
+        if target_status != str(order.status):
+            from app.services.order_service import order_service
+            try:
+                # Deliberately NOT passing notes/note: actor_id is a real
+                # user here (unlike the Yalidine webhook's actor_id=None),
+                # and update_order writes a synthesized note straight into
+                # order.notes whenever both a note and a real actor_id are
+                # given — that field is the always-visible "at a glance"
+                # note a confirmatrice writes by hand; this endpoint never
+                # touched it before and shouldn't start clobbering it now.
+                # The status change is still fully recorded in the
+                # OrderEvent timeline regardless (order_service logs it
+                # unconditionally).
+                order_service.update_order(
+                    db,
+                    order=order,
+                    update_data={"status": target_status},
+                    actor_id=current_user.id if current_user else None,
+                    actor_name=getattr(current_user, "name", None),
+                    actor_role=getattr(current_user, "role", None),
+                )
+            except Exception as exc:
+                logger.warning("Internal delivery status update: transition to %s refused for order %s: %s", target_status, order.id, exc)
 
     # Recalculate performance score of the driver
     driver = db.query(User).filter(User.id == delivery.driver_id).first()

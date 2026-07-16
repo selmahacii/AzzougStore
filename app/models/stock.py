@@ -12,14 +12,14 @@ class StockMovement(Base):
         Index('idx_stock_prod_created', 'product_id', 'created_at'),
     )
 
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True)
     product_id = Column(String, ForeignKey("products.id"), nullable=False)
 
     # Types: RESTOCK | ORDER_RESERVE | ORDER_CONFIRM | ORDER_RELEASE | RETURN_RESTOCK | MANUAL_ADJUSTMENT
     type = Column(String, nullable=False, index=True)
     quantity = Column(Integer, nullable=False)  # Positive or negative
 
-    order_id = Column(String, ForeignKey("orders.id"), nullable=True)
+    order_id = Column(String, ForeignKey("orders.id"), nullable=True, index=True)
     warehouse_id = Column(String, ForeignKey("warehouses.id"), nullable=True)
     actor_id = Column(String, ForeignKey("users.id"), nullable=True)
     reason = Column(Text, nullable=True)

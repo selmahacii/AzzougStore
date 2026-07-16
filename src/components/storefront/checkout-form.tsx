@@ -18,6 +18,7 @@ import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
 import { cn } from '@/lib/utils';
 import { trackMetaEvent } from '@/lib/meta-tracking';
+import { attributionPayload } from '@/lib/attribution';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
 import type { CartItem, ApiResponse } from '@/lib/types';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
@@ -440,6 +441,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
           total: finalTotal,
           discount: discountAmount,
           source: isInline ? 'landing_page' : 'storefront',
+          ...attributionPayload(),
         };
 
         const res = await fetch('/api/v1/orders/abandoned', {
@@ -567,8 +569,9 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         total: finalTotal,
         discount: discountAmount,
         abandoned_cart_id: abandonedCartId,
+        ...attributionPayload(),
       };
-      
+
       console.log('Sending order payload:', payload);
       
       const res = await fetch('/api/v1/orders', {

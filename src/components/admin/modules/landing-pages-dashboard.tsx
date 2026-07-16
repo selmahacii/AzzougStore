@@ -141,13 +141,38 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
   const totals = data?.totals ?? {};
   const maxOrders = Math.max(1, ...daily.map(d => d.orders));
 
+  // "Qualité du Tracking" — same range selector as the chart above, no
+  // extra polling: manual refresh only (React Query default staleTime),
+  // this dialog isn't opened often enough to justify a refetch interval.
+  const rangeDays = Math.max(1, Math.min(90, Math.round((new Date(dEnd).getTime() - new Date(dStart).getTime()) / 86400000) || 30));
+  const trackingQuery = useQuery<any>({
+    queryKey: ['lp-tracking-quality', lp.id, rangeDays],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?range_days=${rangeDays}`),
+    refetchOnWindowFocus: false,
+  });
+  const tq = trackingQuery.data?.data;
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[94vw] max-w-[820px] max-h-[90dvh] overflow-y-auto custom-scrollbar bg-white rounded-[24px] p-0 border-none shadow-2xl">
         <div className="px-6 py-5 border-b border-slate-100 sticky top-0 bg-white z-10">
-          <DialogTitle className="text-base font-black text-slate-800 truncate pr-8">
-            {lp.headline || lp.product_name || lp.slug}
-          </DialogTitle>
+          <div className="flex items-center gap-2 pr-8">
+            <DialogTitle className="text-base font-black text-slate-800 truncate">
+              {lp.headline || lp.product_name || lp.slug}
+            </DialogTitle>
+            {tq?.available && tq.health_score != null && (
+              <span
+                className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black"
+                style={{
+                  backgroundColor: { green: '#00B89422', yellow: '#FDCB6E33', orange: '#F7B73133', red: '#E1705533' }[tq.health_color as string] || '#E2E8F0',
+                  color: { green: '#00875A', yellow: '#B7791F', orange: '#B7550A', red: '#C0392B' }[tq.health_color as string] || '#475569',
+                }}
+                title={`Score de santé du tracking : ${tq.health_score}%`}
+              >
+                {{ green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴' }[tq.health_color as string] || '⚪'} {tq.health_score}% · {tq.health_label}
+              </span>
+            )}
+          </div>
           <p className="text-[10px] font-bold text-slate-400 font-mono mt-1">
             /lp/{lp.slug}
             {data?.created_at && <> · créée le {new Date(data.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</>}
@@ -226,6 +251,115 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
               <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-[#6C5CE7] inline-block" /> Commandes</span>
               <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-emerald-400 inline-block" /> dont livrées</span>
             </div>
+          </div>
+
+          {/* Qualité du Tracking — pourquoi Meta et l'ERP ne matchent pas */}
+          <div className="bg-slate-50 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Qualité du Tracking (ERP → Meta CAPI)</p>
+              {tq?.available && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await fetch(`/api/v1/landing-pages/${lp.id}/tracking-quality/export?format=csv&range_days=${rangeDays}`, { credentials: 'include' });
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `diagnostic-${lp.slug}-${rangeDays}j.csv`;
+                    document.body.appendChild(a); a.click(); a.remove();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="text-[9px] font-black uppercase tracking-wider text-[#6C5CE7] hover:underline"
+                >
+                  Télécharger le diagnostic
+                </button>
+              )}
+            </div>
+            {trackingQuery.isLoading ? (
+              <div className="h-24 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+            ) : !tq?.available ? (
+              <div className="text-xs font-bold text-slate-400 text-center py-4">Aucun produit lié à cette page — qualité du tracking indisponible</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { label: 'Commandes éligibles', value: tq.eligible_for_capi, color: '#0984E3' },
+                    { label: 'CAPI success', value: tq.capi.success, color: '#00B894' },
+                    { label: 'Écart total', value: tq.gap_total, color: tq.gap_total > 0 ? '#E17055' : '#00B894' },
+                    { label: 'Achats déclarés Meta', value: tq.meta_ads_purchases ?? '—', color: '#F7B731' },
+                  ].map(s => (
+                    <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {tq.gap_total > 0 && (
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-2">
+                      Pourquoi ai-je un décalage ? ({tq.gap_total} commande{tq.gap_total > 1 ? 's' : ''}, {tq.gap_total_percent}% des éligibles)
+                    </p>
+                    <div className="space-y-1">
+                      {[
+                        ['en_attente_queue', 'En attente (queue)'],
+                        ['en_cours', 'En cours d\'envoi'],
+                        ['en_retry', 'En nouvelle tentative'],
+                        ['echec_definitif', 'Échec définitif'],
+                        ['exclu_intentionnellement', 'Exclu (manuel/fusionné)'],
+                        ['jamais_tente', 'Jamais tenté'],
+                        ['cause_inconnue', 'Cause inconnue'],
+                      ].filter(([key]) => tq.gap_breakdown[key]?.count > 0).map(([key, label]) => (
+                        <div key={key} className="bg-white rounded-lg px-3 py-1.5" title={tq.gap_breakdown[key].explanation}>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className={cn('font-bold', key === 'cause_inconnue' && 'text-amber-600')}>{label}</span>
+                            <span className="font-black tabular-nums">{tq.gap_breakdown[key].count} · {tq.gap_breakdown[key].percent}%</span>
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-0.5">{tq.gap_breakdown[key].explanation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tq.problematic_orders?.length > 0 && (
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-2">Commandes problématiques ({tq.problematic_orders.length})</p>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-[10px]">
+                        <thead>
+                          <tr className="text-slate-400 text-left">
+                            <th className="pb-1 pr-2">Commande</th>
+                            <th className="pb-1 pr-2">Statut ERP</th>
+                            <th className="pb-1 pr-2">Statut CAPI</th>
+                            <th className="pb-1">Cause</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tq.problematic_orders.slice(0, 15).map((o: any) => (
+                            <tr key={o.order_id} className="border-t border-slate-100">
+                              <td className="py-1 pr-2 font-mono">{o.order_number}</td>
+                              <td className="py-1 pr-2">{o.erp_status}</td>
+                              <td className="py-1 pr-2">{o.capi_status}</td>
+                              <td className="py-1 text-slate-500 truncate max-w-[200px]" title={o.cause}>{o.cause}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <details className="text-[9px] text-slate-400">
+                  <summary className="cursor-pointer font-bold uppercase tracking-wider">Métriques non disponibles</summary>
+                  <ul className="mt-1 space-y-1 pl-3 list-disc">
+                    {Object.entries(tq.unavailable_metrics || {}).map(([k, v]) => (
+                      <li key={k}>{v as string}</li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>

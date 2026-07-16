@@ -16,6 +16,7 @@ import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { trackMetaEvent } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
+import { captureAttribution } from '@/lib/attribution';
 
 interface LpData {
   id: string;
@@ -142,6 +143,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     if (setLocale) {
       setLocale('ar');
     }
+    // Landing pages are where paid-traffic clicks actually land (the URL
+    // still carries utm_*/fbclid here) — captureAttribution() was built but
+    // never called anywhere, so every order shipped with fully empty
+    // utm_source/campaign_id/fbclid columns despite the backend already
+    // supporting and storing them end-to-end.
+    captureAttribution();
   }, [setLocale]);
 
   // Meta Pixel + CAPI ViewContent — once per landing page product. A stable
