@@ -179,9 +179,9 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                   backgroundColor: { green: '#00B89422', yellow: '#FDCB6E33', orange: '#F7B73133', red: '#E1705533' }[tq.health_color as string] || '#E2E8F0',
                   color: { green: '#00875A', yellow: '#B7791F', orange: '#B7550A', red: '#C0392B' }[tq.health_color as string] || '#475569',
                 }}
-                title={`Score de santé du tracking : ${tq.health_score}%`}
+                title={`${tq.health_score}% des ventes correctement transmises à Meta`}
               >
-                {{ green: '🟢', yellow: '🟡', orange: '🟠', red: '🔴' }[tq.health_color as string] || '⚪'} {tq.health_score}% · {tq.health_label}
+                {{ green: '🟢 Suivi Meta OK', yellow: '🟡 À surveiller', orange: '🟠 À vérifier', red: '🔴 À corriger' }[tq.health_color as string] || '⚪ —'}
               </span>
             )}
           </div>
@@ -235,33 +235,34 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
-          {/* Daily chart — CSS bars, no chart lib needed at this size */}
+          {/* Graphe simplifié — chiffres toujours visibles (pas besoin de
+              survoler avec la souris), légende en langage clair. */}
           <div className="bg-slate-50 rounded-2xl p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Commandes par jour</p>
+            <p className="text-xs font-bold text-slate-500 mb-3">Commandes par jour</p>
             {analyticsQuery.isLoading ? (
-              <div className="h-36 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+              <div className="h-40 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
             ) : daily.length === 0 ? (
-              <div className="h-36 flex items-center justify-center text-xs font-bold text-slate-300 uppercase tracking-widest">
+              <div className="h-40 flex items-center justify-center text-xs font-bold text-slate-300">
                 Aucune commande sur cette période
               </div>
             ) : (
-              <div className="flex items-end gap-[3px] h-36 overflow-x-auto custom-scrollbar pb-1">
+              <div className="flex items-end gap-1.5 h-40 overflow-x-auto custom-scrollbar pb-1">
                 {daily.map(d => (
-                  <div key={d.date} className="flex flex-col items-center gap-1 min-w-[22px] flex-1 group"
-                    title={`${new Date(d.date).toLocaleDateString('fr-FR')} — ${d.orders} commande(s), ${d.delivered} livrée(s), ${d.cancelled} annulée(s), ${Math.round(d.revenue).toLocaleString('fr-FR')} DA`}>
-                    <span className="text-[8px] font-black text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity tabular-nums">{d.orders}</span>
+                  <div key={d.date} className="flex flex-col items-center gap-1 min-w-[28px] flex-1"
+                    title={`${new Date(d.date).toLocaleDateString('fr-FR')} : ${d.orders} commande(s)`}>
+                    <span className="text-[10px] font-black text-slate-600 tabular-nums">{d.orders}</span>
                     <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden" style={{ height: `${Math.max(6, (d.orders / maxOrders) * 100)}%` }}>
                       <div className="w-full bg-emerald-400" style={{ height: `${d.orders > 0 ? (d.delivered / d.orders) * 100 : 0}%` }} />
                       <div className="w-full bg-[#6C5CE7] flex-1" />
                     </div>
-                    <span className="text-[7px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
+                    <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
                   </div>
                 ))}
               </div>
             )}
             <div className="flex items-center gap-4 mt-3">
-              <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-[#6C5CE7] inline-block" /> Commandes</span>
-              <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400"><span className="size-2 rounded-sm bg-emerald-400 inline-block" /> dont livrées</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="size-2.5 rounded-sm bg-[#6C5CE7] inline-block" /> Total commandes</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="size-2.5 rounded-sm bg-emerald-400 inline-block" /> Livrées</span>
             </div>
           </div>
 
@@ -306,56 +307,33 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
               <div className="text-xs font-bold text-slate-400 text-center py-4">Aucun produit lié à cette page — qualité du tracking indisponible</div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* 3 chiffres seulement, sans jargon — le détail technique
+                    (queue/retry/cause_inconnue…) reste dans l'API mais ne
+                    sert plus à rien à afficher pour un utilisateur non-tech :
+                    soit c'est réglé automatiquement, soit le bouton
+                    "Réintégrer" ci-dessus le corrige en un clic. */}
+                <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: 'Commandes éligibles', value: tq.eligible_for_capi, color: '#0984E3' },
-                    { label: 'CAPI success', value: tq.capi.success, color: '#00B894' },
-                    { label: 'Écart total', value: tq.gap_total, color: tq.gap_total > 0 ? '#E17055' : '#00B894' },
-                    { label: 'Achats déclarés Meta', value: tq.meta_ads_purchases ?? '—', color: '#F7B731' },
+                    { label: 'Ventes', value: tq.eligible_for_capi, color: '#0984E3' },
+                    { label: 'Bien envoyées à Meta', value: tq.capi.success, color: '#00B894' },
+                    { label: 'Déclarées par Meta', value: tq.meta_ads_purchases ?? '—', color: '#F7B731' },
                   ].map(s => (
                     <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
-                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                      <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Explique la définition d'"éligible" avant que l'admin ne
-                    lise le détail ci-dessous — sans ça, "98% d'écart"
-                    ressemble à une panne massive alors que la majorité des
-                    commandes comptées n'ont simplement pas encore atteint un
-                    statut de vente (toujours en appel, ou annulées). */}
-                <div className="flex items-start gap-2 p-3 bg-white rounded-xl border border-[#0984E3]/15">
-                  <HelpCircle className="size-3.5 text-[#0984E3] shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    <strong className="text-slate-700">"Éligible" = commande devenue une vraie vente</strong> (Confirmée / Expédiée / Livrée) — une commande encore en appel ou annulée n'a jamais eu la chance de déclencher l'envoi Meta, ce n'est pas une anomalie.
-                    Le vrai écart à surveiller, ce sont les ventes confirmées sans aucun envoi — souvent d'anciens paniers abandonnés récupérés par téléphone avant que ce déclencheur n'existe dans le code ; le bouton <strong className="text-amber-600">"Réintégrer les CAPI manquants"</strong> ci-dessus rattrape ce passif en une fois.
-                  </p>
-                </div>
-
                 {tq.gap_total > 0 && (
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-2">
-                      Pourquoi ai-je un décalage ? ({tq.gap_total} commande{tq.gap_total > 1 ? 's' : ''}, {tq.gap_total_percent}% des éligibles)
-                    </p>
-                    <div className="space-y-1">
-                      {[
-                        ['en_attente_queue', 'En attente (queue)'],
-                        ['en_cours', 'En cours d\'envoi'],
-                        ['en_retry', 'En nouvelle tentative'],
-                        ['echec_definitif', 'Échec définitif'],
-                        ['exclu_intentionnellement', 'Exclu (manuel/fusionné)'],
-                        ['jamais_tente', 'Jamais tenté'],
-                        ['cause_inconnue', 'Cause inconnue'],
-                      ].filter(([key]) => tq.gap_breakdown[key]?.count > 0).map(([key, label]) => (
-                        <div key={key} className="bg-white rounded-lg px-3 py-1.5" title={tq.gap_breakdown[key].explanation}>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className={cn('font-bold', key === 'cause_inconnue' && 'text-amber-600')}>{label}</span>
-                            <span className="font-black tabular-nums">{tq.gap_breakdown[key].count} · {tq.gap_breakdown[key].percent}%</span>
-                          </div>
-                          <p className="text-[9px] text-slate-400 mt-0.5">{tq.gap_breakdown[key].explanation}</p>
-                        </div>
-                      ))}
+                  <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100">
+                    <div className="flex-1">
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${tq.health_score ?? 0}%`, backgroundColor: tq.health_score >= 90 ? '#00B894' : tq.health_score >= 70 ? '#FDCB6E' : '#E17055' }} />
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1.5">
+                        {tq.gap_total} vente{tq.gap_total > 1 ? 's' : ''} sur {tq.eligible_for_capi} pas encore bien transmise{tq.gap_total > 1 ? 's' : ''} à Meta.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -2381,22 +2359,16 @@ export default function LandingPagesDashboard() {
           ))}
         </div>
 
-        {/* Note explicative : comment lire Manuel vs Détecté Meta, et à
-            quelle fréquence les chiffres Meta se rafraîchissent. Destinée à
-            quelqu'un qui découvre le module sans le contexte de sa conception. */}
+        {/* Note simplifiée — l'utilisateur de ce module n'est pas technique :
+            une explication courte en langage clair, pas un mode d'emploi. */}
         <div className="mt-4 flex items-start gap-2.5 p-3.5 bg-[#1877F2]/5 border border-[#1877F2]/15 rounded-xl">
           <HelpCircle className="size-4 text-[#1877F2] shrink-0 mt-0.5" />
           <div className="text-[11px] text-slate-600 leading-relaxed">
-            <p className="font-bold text-slate-700 mb-0.5">Comment lire ces chiffres ?</p>
             <p>
-              <strong>Commandes générées</strong> = toutes les vraies commandes de nos pages (y compris les <strong>manuelles</strong>, créées au téléphone sans passer par une pub).{' '}
-              <strong>Détectées Meta</strong> = ce que Meta déclare lui-même avoir compté comme achat via sa propre publicité — un chiffre indépendant, calculé par Meta, jamais par nous. Les deux ne coïncideront jamais parfaitement (fenêtre d'attribution différente, paniers abandonnés jamais finalisés côté Meta, etc.), c'est normal.
+              <strong>Commandes générées</strong> = vos vraies commandes. <strong>Détectées Meta</strong> = ce que Facebook compte de son côté. Un petit écart entre les deux est normal.
             </p>
-            <p className="mt-1">
-              Les chiffres Meta se resynchronisent automatiquement <strong>toutes les 3 heures</strong> en arrière-plan (module Meta Ads & ROAS), ou immédiatement via le bouton "Synchroniser" de ce module si tu veux les tout derniers chiffres.
-              {oldestMetaSync && (
-                <> Dernière synchro Meta : <strong>{formatDistanceToNow(new Date(oldestMetaSync), { addSuffix: true, locale: fr })}</strong>.</>
-              )}
+            <p className="mt-1 text-slate-400">
+              Chiffres Meta mis à jour automatiquement {oldestMetaSync && <>· dernière fois <strong>{formatDistanceToNow(new Date(oldestMetaSync), { addSuffix: true, locale: fr })}</strong></>}.
             </p>
           </div>
         </div>

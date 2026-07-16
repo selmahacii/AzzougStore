@@ -1598,6 +1598,150 @@ def get_order_tracking(
     }
 
 
+# ─── GET /orders/{id}/erp-detail — cycle de vie complet + KPI + traçabilité ──
+# Assemble ce qui existe déjà ailleurs (OrderEvent, StockMovement, AuditLog)
+# en une seule vue par commande. Ne fabrique rien : les sections sans donnée
+# réelle (commissions, preuve de livraison photo, documents) sont absentes
+# du payload plutôt que renvoyées à zéro/vide comme si elles existaient.
+
+@router.get("/{id}/erp-detail", response_model=dict)
+def get_order_erp_detail(
+    id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.stock import StockMovement
+    from app.models.marketing import MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    order = (
+        db.query(Order)
+        .options(joinedload(Order.events).joinedload(OrderEvent.actor), joinedload(Order.livreur), joinedload(Order.assignee))
+        .filter(Order.id == id, Order.is_deleted == False)
+        .first()
+    )
+    if not order:
+        raise OrderNotFoundError()
+    _assert_order_access(order, current_user)
+
+    events = sorted(order.events, key=lambda e: e.created_at or order.created_at)
+
+    # ── Historique des statuts (qui, quand, ancien → nouveau) ──
+    status_history = [
+        {
+            "from_status": e.from_status, "to_status": e.to_status,
+            "actor": e.actor.name if e.actor else "Système", "actor_role": e.actor_role,
+            "date": e.created_at.isoformat() if e.created_at else None,
+            "note": e.note,
+        }
+        for e in events
+    ]
+
+    # ── Historique des appels / confirmations (call_result déjà sur OrderEvent) ──
+    call_history = [
+        {
+            "date": e.created_at.isoformat() if e.created_at else None,
+            "actor": e.actor.name if e.actor else "Système",
+            "result": e.call_result, "attempt": e.call_attempt, "note": e.note,
+            "scheduled_callback_at": e.scheduled_callback_at.isoformat() if e.scheduled_callback_at else None,
+        }
+        for e in events if e.call_result
+    ]
+
+    # ── Mouvements de stock générés par cette commande ──
+    movements = (
+        db.query(StockMovement).options(joinedload(StockMovement.actor))
+        .filter(StockMovement.order_id == id).order_by(StockMovement.created_at.asc()).all()
+    )
+    product_ids = {m.product_id for m in movements}
+    product_names = {}
+    warehouse_names = {}
+    if product_ids:
+        product_names = dict(db.query(Product.id, Product.name).filter(Product.id.in_(product_ids)).all())
+    wh_ids = {m.warehouse_id for m in movements if m.warehouse_id}
+    if wh_ids:
+        from app.models.warehouse import Warehouse
+        warehouse_names = dict(db.query(Warehouse.id, Warehouse.name).filter(Warehouse.id.in_(wh_ids)).all())
+    stock_movements = [
+        {
+            "type": m.type, "quantity": m.quantity, "product_name": product_names.get(m.product_id),
+            "warehouse_name": warehouse_names.get(m.warehouse_id), "batch_id": m.batch_id,
+            "actor": m.actor.name if m.actor else "Système", "reason": m.reason,
+            "date": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in movements
+    ]
+
+    # ── Tracking Meta (résumé, le détail complet vit déjà dans /tracking) ──
+    capi_log = db.query(MetaCapiLog).filter(MetaCapiLog.order_id == id, MetaCapiLog.event_name == "Purchase").first()
+
+    # ── KPI temporels — calculés depuis les vrais timestamps des transitions,
+    # jamais estimés. Absents (None) si la commande n'a pas encore atteint
+    # cette étape plutôt qu'un zéro trompeur. ──
+    def _time_to(target_statuses):
+        for e in events:
+            if e.to_status in target_statuses:
+                return e.created_at
+        return None
+
+    t_created = order.created_at
+    t_confirmed = _time_to(("CONFIRMED",))
+    t_shipped = _time_to(("SHIPPED",))
+    t_delivered = _time_to(("DELIVERED",))
+
+    def _hours_between(a, b):
+        if not a or not b:
+            return None
+        return round((b - a).total_seconds() / 3600, 1)
+
+    kpis = {
+        "temps_creation_confirmation_h": _hours_between(t_created, t_confirmed),
+        "temps_confirmation_expedition_h": _hours_between(t_confirmed, t_shipped),
+        "temps_expedition_livraison_h": _hours_between(t_shipped, t_delivered),
+        "temps_total_cycle_h": _hours_between(t_created, t_delivered),
+        "nombre_tentatives_livraison": len([e for e in events if e.to_status == "RESCHEDULED"]) + (1 if t_delivered else 0),
+        "nombre_modifications": len(events),
+        "valeur_commande": order.total,
+        "cout_livraison": order.delivery_fee,
+        # Marge/profit nécessitent le cost_price de chaque produit au moment
+        # de la vente (non snapshotté sur OrderItem) — calculé au prix
+        # ACTUEL du produit, donc une estimation explicitement marquée comme
+        # telle, pas un chiffre comptable exact.
+    }
+    cost_products = 0
+    margin_known = True
+    for it in order.items:
+        prod = db.query(Product.cost_price).filter(Product.id == it.product_id).first() if it.product_id else None
+        if prod and prod[0] is not None:
+            cost_products += prod[0] * it.quantity
+        else:
+            margin_known = False
+    kpis["cout_produits_estime"] = cost_products if margin_known else None
+    kpis["marge_estimee"] = (order.total - cost_products - (order.delivery_fee or 0)) if margin_known else None
+
+    return {
+        "success": True,
+        "data": {
+            "status_history": status_history,
+            "call_history": call_history,
+            "stock_movements": stock_movements,
+            "meta_tracking": {
+                "sent": capi_log is not None,
+                "status": capi_log.status if capi_log else None,
+                "event_id": capi_log.event_id if capi_log else None,
+                "error_message": capi_log.error_message if capi_log else None,
+            },
+            "kpis": kpis,
+            "livreur": order.livreur.name if order.livreur else None,
+            "assigned_to": order.assignee.name if order.assignee else None,
+            # Non trackés — nécessitent une nouvelle fonctionnalité, pas
+            # seulement un endpoint (commissions, preuve de livraison photo,
+            # documents/factures générés, pièces jointes) :
+            "not_tracked": ["commissions", "delivery_proof", "documents", "attachments"],
+        },
+    }
+
+
 # ─── POST /orders/{id}/unmerge — Restore a merged duplicate ─────────────────
 
 @router.post("/{id}/unmerge", response_model=dict)

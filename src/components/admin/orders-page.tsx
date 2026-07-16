@@ -100,6 +100,7 @@ import { YalidineTrackingPanel } from '@/components/admin/yalidine-tracking-pane
 import { ZRExpressTrackingPanel } from '@/components/admin/zr-express-tracking-panel';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
 import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
+import { OrderErpDetailPanel } from '@/components/admin/order-erp-detail-panel';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
 const ALL_STATUSES: { value: string; label: string }[] = [
@@ -517,7 +518,12 @@ const [timeLeft, setTimeLeft] = useState('');
   useEffect(() => {
     if (adminSubView && adminSubView !== viewMode) {
       setViewMode(adminSubView as any);
-      setStatusFilter(MODE_TO_STATUS[adminSubView] ?? 'all');
+      // A KPI click already set a precise status (e.g. CALLED) that belongs
+      // to this same mode (EN ATTENTE) — only fall back to the mode's
+      // generic status when the current one doesn't already match, so a
+      // specific KPI selection survives this reconciliation instead of
+      // being silently replaced by the mode's default status.
+      setStatusFilter(prev => (STATUS_TO_MODE[prev] === adminSubView ? prev : (MODE_TO_STATUS[adminSubView] ?? 'all')));
       setPage(1);
     }
   }, [adminSubView, viewMode]);
@@ -543,16 +549,25 @@ const [timeLeft, setTimeLeft] = useState('');
     setPage(1);
   };
 
-  // Status → view tab (statuses without a dedicated tab land on 'ALL' with a direct status filter)
+  // Status → view tab. Every status the KPI grid can filter by must appear
+  // here — a status missing from this map fell back to mode 'ALL', which
+  // then made the reconciling useEffect below (adminSubView !== viewMode)
+  // reset statusFilter back to a generic 'all' the moment anything else
+  // touched adminSubView, silently undoing the click. CALLED/IN_PROGRESS/
+  // RESCHEDULED were missing — exactly the tab where filtering looked broken.
   const STATUS_TO_MODE: Record<string, string> = {
     NEW: 'NEW',
     ASSIGNED: 'EN ATTENTE',
+    CALLED: 'EN ATTENTE',
+    IN_PROGRESS: 'EN ATTENTE',
+    RESCHEDULED: 'EN ATTENTE',
     CONFIRMED: 'CONFIRMED',
     SHIPPED: 'FOLLOWUP',
     DELIVERED: 'COMPLETED',
     CANCELLED: 'CANCELLED',
     RETURNED: 'CANCELLED',
     ABANDONED: 'ABANDONED',
+    MERGED: 'ALL',
   };
 
   // KPI widget click → filter the list by that status (click again to clear)
@@ -1895,11 +1910,26 @@ const [timeLeft, setTimeLeft] = useState('');
           
           {/* Data Table Footer - Smart Pagination */}
           <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: C.border }}>
-            <div className="text-[10px] sm:text-xs font-bold text-slate-400 text-center sm:text-left">
-              Affichage {orders.length} sur {total} unités
+            <div className="flex items-center gap-3 text-[10px] sm:text-xs font-bold text-slate-400 text-center sm:text-left">
+              <span>Affichage {orders.length} sur {total} commande{total > 1 ? 's' : ''}</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[10px] sm:text-xs font-bold text-slate-600"
+                title="Commandes par page"
+              >
+                {[20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+              </select>
             </div>
-            <div className="flex gap-2">
-              <button 
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage(1)}
+                className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
+              >
+                Début
+              </button>
+              <button
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
                 className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
@@ -1909,12 +1939,19 @@ const [timeLeft, setTimeLeft] = useState('');
               <div className="flex items-center gap-1 px-3 sm:px-4 text-[13px] sm:text-sm font-bold text-slate-700">
                 {page} <span className="opacity-30">/</span> {totalPages}
               </div>
-              <button 
+              <button
                 disabled={page === totalPages}
                 onClick={() => setPage(page + 1)}
                 className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
               >
                 <ChevronRight className="size-4 sm:size-5 text-slate-600" />
+              </button>
+              <button
+                disabled={page === totalPages}
+                onClick={() => setPage(totalPages)}
+                className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
+              >
+                Fin
               </button>
             </div>
           </div>
@@ -2282,6 +2319,16 @@ const [timeLeft, setTimeLeft] = useState('');
                       ) : null}
 
 
+
+                      {/* ── Cycle de vie complet : KPI, statuts, appels, stock, Meta ── */}
+                      <div className="space-y-3 pt-4 border-t border-slate-100">
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                          <Activity className="size-3.5" /> Cycle de vie de la commande
+                        </h3>
+                        <div className="max-h-[600px] overflow-y-auto pr-1">
+                          <OrderErpDetailPanel orderId={selectedOrder.id} />
+                        </div>
+                      </div>
 
                       {/* ── Traceability Panel ── */}
                       <div className="space-y-3 pt-4 border-t border-slate-100">
