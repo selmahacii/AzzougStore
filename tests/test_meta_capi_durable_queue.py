@@ -195,8 +195,14 @@ async def test_orphaned_queued_row_recovered_by_sweep(client, monkeypatch):
 
     # Only NOW does send_events get mocked — the point being that nothing
     # sent anything for real up to this point, matching "process restarted,
-    # THEN the fresh process's sweep runs".
+    # THEN the fresh process's sweep runs". probe_connectivity is also
+    # mocked: the sweep's pre-flight circuit-breaker probe otherwise makes a
+    # REAL network call to graph.facebook.com, which made this test flaky
+    # (found during the production-readiness audit — a TLS timeout from this
+    # sandboxed environment bulk-deferred the row instead of exercising the
+    # actual send path).
     monkeypatch.setattr("app.services.meta_capi.send_events", lambda *a, **k: dict(_OK_RESULT))
+    monkeypatch.setattr("app.services.meta_capi.probe_connectivity", lambda *a, **k: {"tls_status": "ok"})
     from app.services.meta_capi import retry_pending_events
     retry_pending_events()
 
@@ -249,6 +255,7 @@ async def test_stuck_processing_reclaimed_and_resent(client, monkeypatch):
         db.close()
 
     monkeypatch.setattr("app.services.meta_capi.send_events", lambda *a, **k: dict(_OK_RESULT))
+    monkeypatch.setattr("app.services.meta_capi.probe_connectivity", lambda *a, **k: {"tls_status": "ok"})
     retry_pending_events()
 
     db = SessionLocal()

@@ -663,9 +663,12 @@ def get_landing_page_tracking_quality(
 
     # ── 4. Gap analysis — honest breakdown of OUR OWN recorded reasons only.
     # "cause inconnue" covers what we genuinely cannot explain from our data,
-    # rather than inventing a plausible-sounding cause. ──
+    # rather than inventing a plausible-sounding cause. Each bucket carries
+    # its own count, percentage of the gap, and a short factual explanation
+    # — never a guess about WHY the underlying state occurred (e.g. "failed"
+    # doesn't speculate on WHY Meta rejected it, that's in error_message).
     gap_total = max(0, eligible_count - capi["success"])
-    gap_breakdown = {
+    _gap_counts = {
         "en_attente_queue": capi["queued"],
         "en_cours": capi["processing"],
         "en_retry": capi["retry"],
@@ -673,8 +676,43 @@ def get_landing_page_tracking_quality(
         "exclu_intentionnellement": capi["skipped"],
         "jamais_tente": no_capi_row_at_all,
     }
-    _explained = sum(gap_breakdown.values())
-    gap_breakdown["cause_inconnue"] = max(0, gap_total - _explained)
+    _explained = sum(_gap_counts.values())
+    _gap_counts["cause_inconnue"] = max(0, gap_total - _explained)
+    _gap_explanations = {
+        "en_attente_queue": "Commande en file d'attente, pas encore traitée par le worker.",
+        "en_cours": "Envoi en cours vers Meta au moment de la mesure.",
+        "en_retry": "Premier envoi échoué (réseau/timeout), nouvelle tentative programmée.",
+        "echec_definitif": "Budget de tentatives épuisé ou erreur Meta non récupérable (ex: token invalide).",
+        "exclu_intentionnellement": "Commande manuelle, fusionnée, ou config Meta absente — exclusion volontaire.",
+        "jamais_tente": "Aucune ligne de suivi trouvée pour cette commande — cause à investiguer.",
+        "cause_inconnue": "Écart non expliqué par les données actuellement enregistrées.",
+    }
+    gap_breakdown = {
+        key: {
+            "count": count,
+            "percent": round(count / gap_total * 100, 1) if gap_total else 0.0,
+            "explanation": _gap_explanations[key],
+        }
+        for key, count in _gap_counts.items()
+    }
+
+    # ── Score de santé du tracking (par landing page) ──
+    # Basé directement sur success/eligible (donc déjà l'inverse de
+    # gap_total/eligible) — pas de pondération inventée pour retries/échecs,
+    # puisque success_rate encode déjà leur effet final (un retry qui finit
+    # par réussir ne pénalise pas le score; un échec définitif si).
+    if eligible_count > 0:
+        health_score = round(capi["success"] / eligible_count * 100, 1)
+        if health_score >= 98:
+            health_label, health_color = "Excellent", "green"
+        elif health_score >= 95:
+            health_label, health_color = "Bon", "yellow"
+        elif health_score >= 90:
+            health_label, health_color = "À surveiller", "orange"
+        else:
+            health_label, health_color = "Action requise", "red"
+    else:
+        health_score, health_label, health_color = None, "Aucune donnée", "gray"
 
     # ── 5. Problematic orders — capped list, one JOIN query, no N+1 ──
     problem_rows = (
@@ -739,7 +777,11 @@ def get_landing_page_tracking_quality(
             "capi": capi,
             "meta_ads_purchases": meta_ads_purchases,
             "gap_total": gap_total,
+            "gap_total_percent": round(gap_total / eligible_count * 100, 1) if eligible_count else None,
             "gap_breakdown": gap_breakdown,
+            "health_score": health_score,
+            "health_label": health_label,
+            "health_color": health_color,
             "problematic_orders": problematic_orders,
             "history": history,
             "unavailable_metrics": {
@@ -749,6 +791,94 @@ def get_landing_page_tracking_quality(
             },
         },
     }
+
+
+# ─── GET /{lp_id}/tracking-quality/export — diagnostic export (JSON/CSV) ────
+# One row per eligible order, every field that exists in OUR database for
+# it — no fabricated Pixel/Meta-side columns. Same query shape/limit as the
+# problematic-orders table above but without the "!= success" filter (this
+# is a full diagnostic dump, not just the problems).
+
+@router.get("/{lp_id}/tracking-quality/export")
+def export_landing_page_tracking_diagnostic(
+    lp_id: str,
+    range_days: int = Query(30, ge=1, le=90),
+    format: str = Query("json", pattern="^(json|csv)$"),
+    db: Session = Depends(get_db),
+    _auth: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    from datetime import timedelta
+    from app.models.order import Order, OrderItem
+    from app.models.marketing import MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
+    if not lp:
+        raise HTTPException(404, "Landing page introuvable")
+    if not lp.product_id:
+        raise HTTPException(400, "Aucun produit lié à cette page")
+
+    since = datetime.utcnow() - timedelta(days=range_days)
+    rows = (
+        db.query(
+            Order.order_number, Order.id, Order.status, Order.source, Order.created_at,
+            MetaCapiLog.event_id, MetaCapiLog.status, MetaCapiLog.error_message,
+            MetaCapiLog.error_category, MetaCapiLog.last_http_status, MetaCapiLog.retry_count,
+            MetaCapiLog.created_at, MetaCapiLog.processing_started_at, MetaCapiLog.completed_at,
+            MetaCapiLog.latency_ms,
+        )
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= since,
+        )
+        .order_by(Order.created_at.desc())
+        .limit(2000)
+        .all()
+    )
+
+    records = [
+        {
+            "order_number": r[0], "order_id": r[1], "erp_status": r[2], "source": r[3],
+            "order_created_at": r[4].isoformat() if r[4] else None,
+            "event_id": r[5],
+            # Pixel/Relay are frontend-only — never recorded in this table, so
+            # never claimed here either. capi_* is the only stage this
+            # backend can actually attest to.
+            "pixel_fired": "non_disponible",
+            "relay_received": "non_disponible",
+            "capi_status": r[6] or "jamais_tente",
+            "capi_error_message": r[7],
+            "capi_error_category": r[8],
+            "capi_http_status": r[9],
+            "capi_retry_count": r[10],
+            "capi_log_created_at": r[11].isoformat() if r[11] else None,
+            "capi_processing_started_at": r[12].isoformat() if r[12] else None,
+            "capi_completed_at": r[13].isoformat() if r[13] else None,
+            "capi_latency_ms": r[14],
+        }
+        for r in rows
+    ]
+
+    if format == "csv":
+        import csv
+        import io
+        from fastapi.responses import StreamingResponse
+        buf = io.StringIO()
+        if records:
+            writer = csv.DictWriter(buf, fieldnames=list(records[0].keys()))
+            writer.writeheader()
+            writer.writerows(records)
+        buf.seek(0)
+        return StreamingResponse(
+            iter([buf.getvalue()]), media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=diagnostic-{lp.slug}-{range_days}j.csv"},
+        )
+
+    return {"success": True, "data": {"range_days": range_days, "count": len(records), "orders": records}}
 
 
 # ─── Create ───────────────────────────────────────────────────────────────────

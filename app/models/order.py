@@ -122,8 +122,8 @@ class OrderItem(Base):
     __tablename__ = "order_items"  # pyrefly: ignore[bad-override]
 
     id = Column(String, primary_key=True, index=True)
-    order_id = Column(String, ForeignKey("orders.id"), nullable=False)
-    product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    order_id = Column(String, ForeignKey("orders.id"), nullable=False, index=True)
+    product_id = Column(String, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     
     # Snapshot data (to preserve history)
     product_name = Column(String, nullable=False)
