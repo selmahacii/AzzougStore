@@ -151,6 +151,18 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
     refetchOnWindowFocus: false,
   });
   const tq = trackingQuery.data?.data;
+  const queryClient = useQueryClient();
+  const backfillMutation = useMutation({
+    mutationFn: () => apiFetch<{ success: boolean; message: string }>('/api/v1/orders/capi/backfill-missing', {
+      method: 'POST',
+      body: JSON.stringify({ order_ids: null }),
+    }),
+    onSuccess: (res) => {
+      toast.success(res.message || 'Réintégration lancée');
+      queryClient.invalidateQueries({ queryKey: ['lp-tracking-quality'] });
+    },
+    onError: (err: any) => toast.error('Échec', { description: err.message }),
+  });
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -258,6 +270,18 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             <div className="flex items-center justify-between">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Qualité du Tracking (ERP → Meta CAPI)</p>
               {tq?.available && (
+                <div className="flex items-center gap-3">
+                  {(tq.gap_breakdown?.jamais_tente?.count ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => backfillMutation.mutate()}
+                      disabled={backfillMutation.isPending}
+                      title="Renvoie le Purchase Meta pour les commandes confirmées/livrées dont aucune ligne CAPI n'existe — typiquement des paniers abandonnés récupérés par téléphone avant que ce déclencheur n'existe."
+                      className="text-[9px] font-black uppercase tracking-wider text-amber-600 hover:underline disabled:opacity-50"
+                    >
+                      {backfillMutation.isPending ? 'Réintégration…' : 'Réintégrer les CAPI manquants'}
+                    </button>
+                  )}
                 <button
                   type="button"
                   onClick={async () => {
@@ -273,6 +297,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 >
                   Télécharger le diagnostic
                 </button>
+                </div>
               )}
             </div>
             {trackingQuery.isLoading ? (
@@ -293,6 +318,19 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                       <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
                     </div>
                   ))}
+                </div>
+
+                {/* Explique la définition d'"éligible" avant que l'admin ne
+                    lise le détail ci-dessous — sans ça, "98% d'écart"
+                    ressemble à une panne massive alors que la majorité des
+                    commandes comptées n'ont simplement pas encore atteint un
+                    statut de vente (toujours en appel, ou annulées). */}
+                <div className="flex items-start gap-2 p-3 bg-white rounded-xl border border-[#0984E3]/15">
+                  <HelpCircle className="size-3.5 text-[#0984E3] shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    <strong className="text-slate-700">"Éligible" = commande devenue une vraie vente</strong> (Confirmée / Expédiée / Livrée) — une commande encore en appel ou annulée n'a jamais eu la chance de déclencher l'envoi Meta, ce n'est pas une anomalie.
+                    Le vrai écart à surveiller, ce sont les ventes confirmées sans aucun envoi — souvent d'anciens paniers abandonnés récupérés par téléphone avant que ce déclencheur n'existe dans le code ; le bouton <strong className="text-amber-600">"Réintégrer les CAPI manquants"</strong> ci-dessus rattrape ce passif en une fois.
+                  </p>
                 </div>
 
                 {tq.gap_total > 0 && (

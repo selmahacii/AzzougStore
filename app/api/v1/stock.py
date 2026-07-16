@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func as sqlfunc, case
+from sqlalchemy import desc, func as sqlfunc, case, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
@@ -22,6 +22,7 @@ from app.core.exceptions import (
 from app.db.session import get_db
 from app.models.product import Product
 from app.models.stock import StockMovement
+from app.models.order import OrderItem
 from app.models.user import User
 from app.schemas.stock import (
     MovementPagination,
@@ -125,6 +126,205 @@ def list_movements(
         "page": page,
         "pageSize": pageSize,
         "totalPages": (total + pageSize - 1) // pageSize,
+    }
+
+
+# ─── GET /stock/dashboard — ERP-style Surveillance dashboard ────────────────
+
+@router.get("/dashboard", response_model=dict)
+def get_stock_dashboard(
+    store_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Section "Surveillance" du centre de pilotage stock. Chaque chiffre est
+    soit calculé depuis les colonnes réelles de Product/StockMovement, soit
+    marqué explicitement `null` avec `tracked: false` quand la donnée
+    n'existe structurellement pas encore (bloqué/endommagé/expiré/réception
+    en attente — aucun type de mouvement ou statut dédié ne les distingue
+    aujourd'hui d'un retour normal). Jamais de chiffre inventé.
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.models.order import Order
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+    d7 = today_start - timedelta(days=7)
+    d30 = today_start - timedelta(days=30)
+
+    products = db.query(Product).filter(Product.store_id == store_id, Product.is_active == True).all()
+
+    stock_total = sum(p.stock or 0 for p in products)
+    valeur_totale = sum((p.stock or 0) * (p.cost_price or 0) for p in products)
+    reserved_total = sum(p.reserved_stock or 0 for p in products)
+    disponible_total = sum(max(0, (p.stock or 0) - (p.reserved_stock or 0)) for p in products)
+    sans_stock = sum(1 for p in products if (p.stock or 0) <= 0)
+    sous_seuil = sum(1 for p in products if 0 < (p.stock or 0) <= (p.low_stock_threshold or 5))
+    # Surstock : au-delà de 5x le seuil d'alerte — heuristique explicite, pas
+    # une vraie notion "stock maximum" (qui n'existe pas encore sur Product).
+    surstock = sum(1 for p in products if (p.stock or 0) > 5 * (p.low_stock_threshold or 5))
+
+    # ── Mouvements sur les 3 fenêtres (aujourd'hui/7j/30j) ──
+    def _movement_totals(since):
+        row = (
+            db.query(
+                sqlfunc.count(StockMovement.id),
+                sqlfunc.coalesce(sqlfunc.sum(case((StockMovement.quantity > 0, StockMovement.quantity), else_=0)), 0),
+                sqlfunc.coalesce(sqlfunc.sum(case((StockMovement.quantity < 0, -StockMovement.quantity), else_=0)), 0),
+            )
+            .join(Product, Product.id == StockMovement.product_id)
+            .filter(Product.store_id == store_id, StockMovement.created_at >= since)
+            .first()
+        )
+        return {"mouvements": int(row[0] or 0), "qty_entrees": int(row[1] or 0), "qty_sorties": int(row[2] or 0)}
+
+    evolution = {"aujourd_hui": _movement_totals(today_start), "sept_jours": _movement_totals(d7), "trente_jours": _movement_totals(d30)}
+
+    # ── Valeurs entrées/sorties/retours (30 derniers jours, coût produit actuel) ──
+    value_rows = (
+        db.query(StockMovement.type, StockMovement.quantity, Product.cost_price)
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.created_at >= d30)
+        .all()
+    )
+    valeur_entrees = sum(r.quantity * (r.cost_price or 0) for r in value_rows if r.quantity > 0)
+    valeur_sorties = sum(-r.quantity * (r.cost_price or 0) for r in value_rows if r.quantity < 0 and r.type != "RETURN_RESTOCK")
+    valeur_retours = sum(r.quantity * (r.cost_price or 0) for r in value_rows if r.type == "RETURN_RESTOCK")
+
+    # ── Rotation moyenne : quantité sortie (vente) / stock moyen sur 30j ──
+    qty_vendue_30j = sum(-r.quantity for r in value_rows if r.type == "ORDER_CONFIRM")
+    rotation_moyenne = round(qty_vendue_30j / stock_total, 2) if stock_total > 0 else 0.0
+
+    # ── Retournés / réintégrés aujourd'hui (même mouvement, deux angles) ──
+    retournes_today = (
+        db.query(sqlfunc.count(sqlfunc.distinct(StockMovement.order_id)))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "RETURN_RESTOCK", StockMovement.created_at >= today_start)
+        .scalar() or 0
+    )
+
+    # ── Widgets top produits ──
+    def _top_by_type(mv_type, limit=5, positive=False):
+        q = (
+            db.query(Product.id, Product.name, sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)).label("qty"))
+            .join(StockMovement, StockMovement.product_id == Product.id)
+            .filter(Product.store_id == store_id, StockMovement.type == mv_type, StockMovement.created_at >= d30)
+            .group_by(Product.id, Product.name)
+            .order_by(sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)).desc())
+            .limit(limit)
+            .all()
+        )
+        return [{"product_id": r[0], "product_name": r[1], "quantity": int(r[2])} for r in q]
+
+    top_vendus = _top_by_type("ORDER_CONFIRM")
+    top_retournes = _top_by_type("RETURN_RESTOCK")
+
+    # Annulés = commandes CANCELLED (par produit), pas un StockMovement dédié
+    top_annules = [
+        {"product_id": r[0], "product_name": r[1], "quantity": int(r[2])}
+        for r in (
+            db.query(Product.id, Product.name, sqlfunc.count(OrderItem.id).label("cnt"))
+            .join(OrderItem, OrderItem.product_id == Product.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Product.store_id == store_id, Order.status == "CANCELLED", Order.created_at >= d30)
+            .group_by(Product.id, Product.name)
+            .order_by(sqlfunc.count(OrderItem.id).desc())
+            .limit(5)
+            .all()
+        )
+    ]
+
+    # Récupérés = commandes issues d'un panier abandonné qui ont abouti
+    top_recuperes = [
+        {"product_id": r[0], "product_name": r[1], "quantity": int(r[2])}
+        for r in (
+            db.query(Product.id, Product.name, sqlfunc.count(OrderItem.id).label("cnt"))
+            .join(OrderItem, OrderItem.product_id == Product.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Product.store_id == store_id, Order.recovered_at.isnot(None), Order.created_at >= d30)
+            .group_by(Product.id, Product.name)
+            .order_by(sqlfunc.count(OrderItem.id).desc())
+            .limit(5)
+            .all()
+        )
+    ]
+
+    # Sans mouvement depuis 30j (produits actifs, aucune ligne StockMovement récente)
+    moved_ids = {
+        r[0] for r in db.query(sqlfunc.distinct(StockMovement.product_id))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.created_at >= d30).all()
+    }
+    top_sans_mouvement = [
+        {"product_id": p.id, "product_name": p.name, "quantity": p.stock or 0}
+        for p in products if p.id not in moved_ids
+    ][:10]
+
+    # À réapprovisionner : sous le seuil, triés par urgence (stock le plus bas)
+    top_a_reappro = sorted(
+        [{"product_id": p.id, "product_name": p.name, "quantity": p.stock or 0, "seuil": p.low_stock_threshold or 5}
+         for p in products if (p.stock or 0) <= (p.low_stock_threshold or 5)],
+        key=lambda x: x["quantity"],
+    )[:10]
+
+    # ── Graphique : entrées/sorties/retours par jour (30j) ──
+    day = sqlfunc.date(StockMovement.created_at)
+    chart_rows = (
+        db.query(
+            day.label("day"),
+            sqlfunc.coalesce(sqlfunc.sum(case((StockMovement.quantity > 0, StockMovement.quantity), else_=0)), 0).label("entrees"),
+            sqlfunc.coalesce(sqlfunc.sum(case((and_(StockMovement.quantity < 0, StockMovement.type != "RETURN_RESTOCK"), -StockMovement.quantity), else_=0)), 0).label("sorties"),
+            sqlfunc.coalesce(sqlfunc.sum(case((StockMovement.type == "RETURN_RESTOCK", StockMovement.quantity), else_=0)), 0).label("retours"),
+        )
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.created_at >= d30)
+        .group_by(day)
+        .order_by(day)
+        .all()
+    )
+    chart = [{"day": str(r.day), "entrees": int(r.entrees), "sorties": int(r.sorties), "retours": int(r.retours)} for r in chart_rows]
+
+    return {
+        "success": True,
+        "data": {
+            "kpis": {
+                "stock_total": stock_total,
+                "valeur_totale": valeur_totale,
+                "produits_actifs": len(products),
+                "sans_stock": sans_stock,
+                "sous_seuil": sous_seuil,
+                "surstock": surstock,
+                "reserves": reserved_total,
+                "disponible": disponible_total,
+                "retournes_aujourd_hui": retournes_today,
+                "reintegres_aujourd_hui": retournes_today,
+                # Non trackés structurellement — pas de type de mouvement ou
+                # de statut dédié aujourd'hui. Affichés explicitement plutôt
+                # que masqués, pour que l'écart avec le cahier des charges
+                # reste visible et honnête.
+                "bloques": {"value": None, "tracked": False},
+                "endommages": {"value": None, "tracked": False},
+                "expires": {"value": None, "tracked": False},
+                "en_attente_reception": {"value": None, "tracked": False},
+            },
+            "evolution": evolution,
+            "rotation_moyenne": rotation_moyenne,
+            "valeur_entrees_30j": valeur_entrees,
+            "valeur_sorties_30j": valeur_sorties,
+            "valeur_retours_30j": valeur_retours,
+            "valeur_pertes_30j": {"value": None, "tracked": False},
+            "widgets": {
+                "top_vendus": top_vendus,
+                "top_retournes": top_retournes,
+                "top_annules": top_annules,
+                "top_recuperes": top_recuperes,
+                "top_sans_mouvement": top_sans_mouvement,
+                "top_a_reapprovisionner": top_a_reappro,
+            },
+            "chart_30j": chart,
+        },
     }
 
 

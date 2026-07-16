@@ -3068,3 +3068,131 @@ def list_returned_orders(
         "data": data,
         "pagination": {"page": page, "page_size": page_size, "total": total, "pages": (total + page_size - 1) // page_size},
     }
+
+
+# ─── CAPI backfill — historical "jamais tenté" gap ──────────────────────────
+# The "Purchase never fired" gap on the tracking-quality dashboard was mostly
+# ABANDONED carts recovered by a confirmatrice through a plain status PATCH,
+# a path that had no CAPI trigger until it was added to update_order()
+# (_was_abandoned / _REAL_SALE_STATUSES, above). That fix only fires for
+# transitions happening FROM NOW ON — every order that already left ABANDONED
+# before this code existed is permanent unexplained debt unless backfilled
+# once, here, exactly like /returns/reintegrate-missing backfills historical
+# stock. Also covers any other pre-fix gap uniformly (missed config, past
+# outage) since the condition is simply "real sale, zero Purchase log row".
+
+@router.get("/capi/backfill-audit", response_model=dict)
+def audit_missing_capi(
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from sqlalchemy import exists as sa_exists
+    from app.models.marketing import MetaCapiLog, MetaAdsConfig
+
+    db.info["skip_tenant_isolation"] = True
+
+    capi_success_exists = sa_exists().where(
+        MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+    )
+    q = db.query(Order.id, Order.order_number, Order.store_id, Order.status, Order.updated_at).filter(
+        Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
+        Order.is_deleted == False,
+        sqlfunc.coalesce(Order.source, "") != "MANUAL",
+        sqlfunc.coalesce(Order.source, "") != "POS",
+        ~capi_success_exists,
+    )
+    if store_id:
+        q = q.filter(Order.store_id == store_id)
+
+    missing = q.order_by(Order.updated_at.desc()).limit(500).all()
+
+    # Only orders whose store actually has a Meta config are truly
+    # actionable — the rest would just fail again for the same reason
+    # send_purchase_for_order already silently no-ops on them.
+    configured_store_ids = {
+        s for (s,) in db.query(MetaAdsConfig.store_id).filter(
+            MetaAdsConfig.pixel_id.isnot(None), MetaAdsConfig.access_token.isnot(None),
+        ).all()
+    }
+    actionable = [m for m in missing if m.store_id in configured_store_ids]
+
+    return {
+        "success": True,
+        "data": {
+            "total_missing": len(missing),
+            "actionable": len(actionable),
+            "orders": [
+                {"order_id": m.id, "order_number": m.order_number, "store_id": m.store_id, "status": m.status, "updated_at": m.updated_at.isoformat() if m.updated_at else None}
+                for m in actionable
+            ],
+        },
+    }
+
+
+@router.post("/capi/backfill-missing", response_model=dict)
+def backfill_missing_capi(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    order_ids: Optional[List[str]] = Body(None, embed=True),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+
+    from sqlalchemy import exists as sa_exists
+    from app.models.marketing import MetaCapiLog, MetaAdsConfig
+    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+
+    db.info["skip_tenant_isolation"] = True
+
+    capi_success_exists = sa_exists().where(
+        MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+    )
+    q = db.query(Order).filter(
+        Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
+        Order.is_deleted == False,
+        sqlfunc.coalesce(Order.source, "") != "MANUAL",
+        sqlfunc.coalesce(Order.source, "") != "POS",
+        ~capi_success_exists,
+    )
+    if order_ids:
+        q = q.filter(Order.id.in_(order_ids))
+    targets = q.limit(500).all()
+
+    client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    user_agent = request.headers.get("user-agent")
+
+    queued, skipped_no_config = 0, 0
+    for order in targets:
+        # Row lock + re-check under lock — same double-fire guard pattern
+        # used by /returns/reintegrate-missing.
+        db.query(Order.id).filter(Order.id == order.id).with_for_update().first()
+        already_sent = db.query(
+            sa_exists().where(
+                MetaCapiLog.order_id == order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
+            )
+        ).scalar()
+        if already_sent:
+            continue
+        config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
+        if not config or not config.pixel_id or not config.access_token:
+            skipped_no_config += 1
+            continue
+        try:
+            enqueue_purchase_for_order(db, order)
+            db.commit()
+            background_tasks.add_task(
+                send_purchase_for_order, order_id=str(order.id), client_ip=client_ip, user_agent=user_agent,
+            )
+            queued += 1
+        except Exception as exc:
+            db.rollback()
+            logger.warning("CAPI backfill failed to queue order %s: %s", order.id, exc)
+
+    return {
+        "success": True,
+        "message": f"{queued} commande(s) mise(s) en file pour envoi Purchase, {skipped_no_config} sans config Meta",
+        "data": {"queued": queued, "skipped_no_config": skipped_no_config},
+    }

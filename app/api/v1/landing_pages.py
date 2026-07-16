@@ -615,6 +615,14 @@ def get_landing_page_tracking_quality(
     # attempt; that's not an anomaly, it's the expected pre-sale state).
     # Confirmed in production: including ABANDONED inflated "jamais tenté"
     # to 98-100% on pages with a lot of still-open abandoned carts.
+    # "Éligible" veut dire : cette commande EST devenue une vraie vente
+    # (CONFIRMED/SHIPPED/DELIVERED). Une commande encore en appel (NEW/
+    # ASSIGNED/CALLED/IN_PROGRESS/RESCHEDULED) n'a pas encore eu sa chance
+    # de déclencher le CAPI — la compter comme "jamais tenté" gonflait
+    # artificiellement le taux d'écart à 98%+ sur toute page avec beaucoup
+    # d'appels en cours. CANCELLED n'est pas une vente non plus — exclue
+    # pour la même raison qu'ABANDONED/MERGED/MANUAL.
+    _CAPI_ELIGIBLE_STATUSES = ("CONFIRMED", "SHIPPED", "DELIVERED")
     eligible_count = (
         db.query(func.count(Order.id))
         .filter(
@@ -622,7 +630,7 @@ def get_landing_page_tracking_quality(
             has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
-            Order.status.notin_(("MERGED", "ABANDONED")),
+            Order.status.in_(_CAPI_ELIGIBLE_STATUSES),
             func.coalesce(Order.source, "") != "MANUAL",
         )
         .scalar() or 0
@@ -730,7 +738,7 @@ def get_landing_page_tracking_quality(
             has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
-            Order.status.notin_(("MERGED", "ABANDONED")),
+            Order.status.in_(_CAPI_ELIGIBLE_STATUSES),
             func.coalesce(Order.source, "") != "MANUAL",
             func.coalesce(MetaCapiLog.status, "none") != "success",
         )

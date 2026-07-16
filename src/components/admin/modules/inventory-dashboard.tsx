@@ -260,6 +260,149 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    return <StockView />;
 }
 
+// ─── Section 1 "Surveillance" — tableau de bord ERP temps réel ────────────
+function ErpDashboardBlock() {
+   const activeStore = useAppStore(s => s.activeStore);
+   const { data, isLoading } = useQuery({
+      queryKey: ['stock-dashboard', activeStore?.id],
+      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/stock/dashboard?store_id=${activeStore?.id}`),
+      enabled: !!activeStore?.id,
+      refetchInterval: 60000,
+   });
+   const d = data?.data;
+
+   if (isLoading || !d) {
+      return <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+         {Array.from({ length: 12 }).map((_, i) => <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />)}
+      </div>;
+   }
+
+   const kpis = [
+      { label: 'Stock total', value: d.kpis.stock_total, color: C.primary },
+      { label: 'Valeur totale', value: formatPrice(d.kpis.valeur_totale), color: C.primary },
+      { label: 'Produits actifs', value: d.kpis.produits_actifs, color: C.text },
+      { label: 'Sans stock', value: d.kpis.sans_stock, color: C.danger },
+      { label: 'Sous seuil', value: d.kpis.sous_seuil, color: C.warning },
+      { label: 'Surstock', value: d.kpis.surstock, color: C.warning },
+      { label: 'Réservés', value: d.kpis.reserves, color: C.info },
+      { label: 'Disponibles', value: d.kpis.disponible, color: C.success },
+      { label: 'Retournés (jour)', value: d.kpis.retournes_aujourd_hui, color: C.danger },
+      { label: 'Réintégrés (jour)', value: d.kpis.reintegres_aujourd_hui, color: C.success },
+      { label: 'Bloqués', value: d.kpis.bloques.tracked === false ? '—' : d.kpis.bloques.value, color: C.textDim, untracked: !d.kpis.bloques.tracked },
+      { label: 'Endommagés', value: d.kpis.endommages.tracked === false ? '—' : d.kpis.endommages.value, color: C.textDim, untracked: !d.kpis.endommages.tracked },
+      { label: 'Expirés', value: d.kpis.expires.tracked === false ? '—' : d.kpis.expires.value, color: C.textDim, untracked: !d.kpis.expires.tracked },
+      { label: 'En attente réception', value: d.kpis.en_attente_reception.tracked === false ? '—' : d.kpis.en_attente_reception.value, color: C.textDim, untracked: !d.kpis.en_attente_reception.tracked },
+   ];
+
+   const widgetGroups: Array<[string, any[]]> = [
+      ['Top vendus', d.widgets.top_vendus],
+      ['Top retournés', d.widgets.top_retournes],
+      ['Top annulés', d.widgets.top_annules],
+      ['Top récupérés', d.widgets.top_recuperes],
+      ['Sans mouvement (30j)', d.widgets.top_sans_mouvement],
+      ['À réapprovisionner', d.widgets.top_a_reapprovisionner],
+   ];
+
+   const chartMax = Math.max(1, ...d.chart_30j.map((c: any) => Math.max(c.entrees, c.sorties, c.retours)));
+
+   return (
+      <div className="space-y-6">
+         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+            {kpis.map(k => (
+               <div key={k.label} title={(k as any).untracked ? "Non tracké — aucun type de mouvement dédié n'existe encore pour distinguer ce cas d'un retour normal." : undefined}
+                  className={cn("p-3 rounded-xl border bg-white", (k as any).untracked && "opacity-50 border-dashed")} style={{ borderColor: k.color + '33' }}>
+                  <p className="text-sm font-black tabular-nums" style={{ color: k.color }}>{k.value}</p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{k.label}</p>
+               </div>
+            ))}
+         </div>
+
+         <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+            {[
+               { label: "Aujourd'hui", v: d.evolution.aujourd_hui },
+               { label: '7 jours', v: d.evolution.sept_jours },
+               { label: '30 jours', v: d.evolution.trente_jours },
+            ].map(e => (
+               <div key={e.label} className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{e.label}</p>
+                  <div className="flex items-center gap-4">
+                     <div><p className="text-sm font-black text-slate-800">{e.v.mouvements}</p><p className="text-[8px] text-slate-400 uppercase">Mouvements</p></div>
+                     <div><p className="text-sm font-black text-emerald-500">+{e.v.qty_entrees}</p><p className="text-[8px] text-slate-400 uppercase">Entrées</p></div>
+                     <div><p className="text-sm font-black text-rose-500">-{e.v.qty_sorties}</p><p className="text-[8px] text-slate-400 uppercase">Sorties</p></div>
+                  </div>
+               </div>
+            ))}
+            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Rotation moyenne (30j)</p>
+               <p className="text-lg font-black text-slate-800">{d.rotation_moyenne}×</p>
+               <p className="text-[8px] text-slate-400 uppercase mt-1">Qté vendue / stock actuel</p>
+            </div>
+         </div>
+
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des entrées (30j)</p>
+               <p className="text-base font-black text-emerald-500 mt-1">{formatPrice(d.valeur_entrees_30j)}</p>
+            </div>
+            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des sorties (30j)</p>
+               <p className="text-base font-black text-rose-500 mt-1">{formatPrice(d.valeur_sorties_30j)}</p>
+            </div>
+            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des retours (30j)</p>
+               <p className="text-base font-black text-amber-500 mt-1">{formatPrice(d.valeur_retours_30j)}</p>
+            </div>
+         </div>
+
+         {/* Graphique entrées/sorties/retours */}
+         <div className="p-6 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Entrées / Sorties / Retours — 30 derniers jours</p>
+            {d.chart_30j.length === 0 ? (
+               <p className="text-[10px] font-bold text-slate-400 text-center py-10 uppercase">Aucun mouvement sur la période</p>
+            ) : (
+               <div className="flex items-end gap-1 h-[160px] overflow-x-auto">
+                  {d.chart_30j.map((c: any) => (
+                     <div key={c.day} className="flex-1 min-w-[8px] flex flex-col items-center justify-end gap-0.5 h-full" title={`${c.day} — entrées ${c.entrees}, sorties ${c.sorties}, retours ${c.retours}`}>
+                        <div className="w-full flex flex-col-reverse gap-px" style={{ height: '140px' }}>
+                           <div className="w-full bg-emerald-400 rounded-sm" style={{ height: `${(c.entrees / chartMax) * 140}px` }} />
+                           <div className="w-full bg-rose-400 rounded-sm" style={{ height: `${(c.sorties / chartMax) * 140}px` }} />
+                           <div className="w-full bg-amber-400 rounded-sm" style={{ height: `${(c.retours / chartMax) * 140}px` }} />
+                        </div>
+                     </div>
+                  ))}
+               </div>
+            )}
+            <div className="flex items-center gap-4 mt-3">
+               <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500"><span className="size-2 rounded-sm bg-emerald-400" /> Entrées</span>
+               <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500"><span className="size-2 rounded-sm bg-rose-400" /> Sorties</span>
+               <span className="flex items-center gap-1.5 text-[9px] font-bold text-slate-500"><span className="size-2 rounded-sm bg-amber-400" /> Retours</span>
+            </div>
+         </div>
+
+         {/* Widgets top produits */}
+         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {widgetGroups.map(([title, items]) => (
+               <div key={title} className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">{title}</p>
+                  {items.length === 0 ? (
+                     <p className="text-[10px] text-slate-400 text-center py-4">Aucune donnée</p>
+                  ) : (
+                     <div className="space-y-1.5">
+                        {items.map((it: any) => (
+                           <div key={it.product_id} className="flex items-center justify-between text-xs">
+                              <span className="text-slate-600 font-semibold truncate max-w-[180px]">{it.product_name}</span>
+                              <span className="font-black text-slate-800 tabular-nums">{it.quantity}</span>
+                           </div>
+                        ))}
+                     </div>
+                  )}
+               </div>
+            ))}
+         </div>
+      </div>
+   );
+}
+
 function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading: boolean }) {
    const activeStore = useAppStore(s => s.activeStore);
    const { data: whResponse } = useQuery({
@@ -272,7 +415,7 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
 
    return (
       <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-400">
-         {/* REMOVED: Duplicate KPI cards */}
+         <ErpDashboardBlock />
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
