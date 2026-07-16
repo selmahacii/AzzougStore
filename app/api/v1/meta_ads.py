@@ -1089,7 +1089,14 @@ def sync_meta_ads(
                 )
             daily_data = daily_response.json()
             if "error" not in daily_data:
-                upserted = 0
+                # Single batched INSERT ... ON CONFLICT DO UPDATE instead of
+                # one SELECT + one INSERT/UPDATE per row — a 30-day sync for
+                # a multi-campaign store previously issued 50-100+ separate
+                # SQL round-trips here alone (Supabase Free request quota).
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                from sqlalchemy import func as _sqlfunc
+                rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
+                rows_to_upsert = []
                 for rc in daily_data.get("data", []):
                     day_str = rc.get("date_start")
                     camp_id = rc.get("campaign_id")
@@ -1101,29 +1108,37 @@ def sync_meta_ads(
                         continue
                     d_purchases, d_purchase_value = _extract_meta_purchases(rc)
                     d_raw_spend = float(rc.get("spend", 0.0) or 0.0)
-                    rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
-                    row = db.query(MetaAdsDailyInsight).filter(
-                        MetaAdsDailyInsight.campaign_id == camp_id,
-                        MetaAdsDailyInsight.date == day_val,
-                    ).first()
-                    if not row:
-                        row = MetaAdsDailyInsight(
-                            id=str(uuid.uuid4()),
-                            store_id=store_id,
-                            campaign_id=camp_id,
-                            date=day_val,
-                        )
-                        db.add(row)
-                    row.raw_spend = d_raw_spend
-                    row.spend = d_raw_spend * rate
-                    row.impressions = int(rc.get("impressions", 0) or 0)
-                    row.clicks = int(rc.get("clicks", 0) or 0)
-                    row.reach = int(rc.get("reach", 0) or 0)
-                    row.meta_purchases = d_purchases
-                    row.meta_purchase_value = d_purchase_value
-                    upserted += 1
-                db.commit()
-                logger.info(f"[Meta Ads Sync] Insights quotidiens: {upserted} jour(s)-campagne upsertés.")
+                    rows_to_upsert.append({
+                        "id": str(uuid.uuid4()),
+                        "store_id": store_id,
+                        "campaign_id": camp_id,
+                        "date": day_val,
+                        "raw_spend": d_raw_spend,
+                        "spend": d_raw_spend * rate,
+                        "impressions": int(rc.get("impressions", 0) or 0),
+                        "clicks": int(rc.get("clicks", 0) or 0),
+                        "reach": int(rc.get("reach", 0) or 0),
+                        "meta_purchases": d_purchases,
+                        "meta_purchase_value": d_purchase_value,
+                    })
+                if rows_to_upsert:
+                    stmt = pg_insert(MetaAdsDailyInsight.__table__).values(rows_to_upsert)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_meta_daily_campaign_date",
+                        set_={
+                            "raw_spend": stmt.excluded.raw_spend,
+                            "spend": stmt.excluded.spend,
+                            "impressions": stmt.excluded.impressions,
+                            "clicks": stmt.excluded.clicks,
+                            "reach": stmt.excluded.reach,
+                            "meta_purchases": stmt.excluded.meta_purchases,
+                            "meta_purchase_value": stmt.excluded.meta_purchase_value,
+                            "updated_at": _sqlfunc.now(),
+                        },
+                    )
+                    db.execute(stmt)
+                    db.commit()
+                logger.info(f"[Meta Ads Sync] Insights quotidiens: {len(rows_to_upsert)} jour(s)-campagne upsertés en 1 requête.")
             else:
                 logger.warning(f"[Meta Ads Sync] Insights quotidiens indisponibles: {daily_data['error']}")
         except Exception as exc:
@@ -1171,35 +1186,62 @@ def sync_meta_ads(
                 )
             ad_data = ad_response.json()
             if "error" not in ad_data:
-                ad_upserted = 0
+                # Same single-batch upsert as the daily-insights block above
+                # instead of one SELECT + one INSERT/UPDATE per ad.
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                from sqlalchemy import func as _sqlfunc
+                a_rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
+                ad_rows_to_upsert = []
                 for rc in ad_data.get("data", []):
                     ad_id = rc.get("ad_id")
                     if not ad_id:
                         continue
                     a_purchases, a_purchase_value = _extract_meta_purchases(rc)
                     a_raw_spend = float(rc.get("spend", 0.0) or 0.0)
-                    a_rate = get_conversion_rate(ad_currency, config.currency, config.exchange_rate)
-                    row = db.query(MetaAdsAdInsight).filter(MetaAdsAdInsight.ad_id == ad_id).first()
-                    if not row:
-                        row = MetaAdsAdInsight(id=str(uuid.uuid4()), store_id=store_id, ad_id=ad_id)
-                        db.add(row)
-                    row.campaign_id = rc.get("campaign_id") or row.campaign_id
-                    row.ad_name = rc.get("ad_name") or "Sans nom"
-                    row.adset_id = rc.get("adset_id")
-                    row.adset_name = rc.get("adset_name")
-                    row.raw_spend = a_raw_spend
-                    row.spend = a_raw_spend * a_rate
-                    row.currency = ad_currency
-                    row.impressions = int(rc.get("impressions", 0) or 0)
-                    row.clicks = int(rc.get("clicks", 0) or 0)
-                    row.reach = int(rc.get("reach", 0) or 0)
-                    row.meta_purchases = a_purchases
-                    row.meta_purchase_value = a_purchase_value
-                    row.date_start = now - timedelta(days=30)
-                    row.date_end = now
-                    ad_upserted += 1
-                db.commit()
-                logger.info(f"[Meta Ads Sync] Détail par publicité: {ad_upserted} publicité(s) upsertée(s).")
+                    ad_rows_to_upsert.append({
+                        "id": str(uuid.uuid4()),
+                        "store_id": store_id,
+                        "ad_id": ad_id,
+                        "campaign_id": rc.get("campaign_id") or "",
+                        "ad_name": rc.get("ad_name") or "Sans nom",
+                        "adset_id": rc.get("adset_id"),
+                        "adset_name": rc.get("adset_name"),
+                        "raw_spend": a_raw_spend,
+                        "spend": a_raw_spend * a_rate,
+                        "currency": ad_currency,
+                        "impressions": int(rc.get("impressions", 0) or 0),
+                        "clicks": int(rc.get("clicks", 0) or 0),
+                        "reach": int(rc.get("reach", 0) or 0),
+                        "meta_purchases": a_purchases,
+                        "meta_purchase_value": a_purchase_value,
+                        "date_start": now - timedelta(days=30),
+                        "date_end": now,
+                    })
+                if ad_rows_to_upsert:
+                    stmt = pg_insert(MetaAdsAdInsight.__table__).values(ad_rows_to_upsert)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_meta_ad_insight_ad_id",
+                        set_={
+                            "campaign_id": stmt.excluded.campaign_id,
+                            "ad_name": stmt.excluded.ad_name,
+                            "adset_id": stmt.excluded.adset_id,
+                            "adset_name": stmt.excluded.adset_name,
+                            "raw_spend": stmt.excluded.raw_spend,
+                            "spend": stmt.excluded.spend,
+                            "currency": stmt.excluded.currency,
+                            "impressions": stmt.excluded.impressions,
+                            "clicks": stmt.excluded.clicks,
+                            "reach": stmt.excluded.reach,
+                            "meta_purchases": stmt.excluded.meta_purchases,
+                            "meta_purchase_value": stmt.excluded.meta_purchase_value,
+                            "date_start": stmt.excluded.date_start,
+                            "date_end": stmt.excluded.date_end,
+                            "updated_at": _sqlfunc.now(),
+                        },
+                    )
+                    db.execute(stmt)
+                    db.commit()
+                logger.info(f"[Meta Ads Sync] Détail par publicité: {len(ad_rows_to_upsert)} publicité(s) upsertée(s) en 1 requête.")
             else:
                 logger.warning(f"[Meta Ads Sync] Détail par publicité indisponible: {ad_data['error']}")
         except Exception as exc:

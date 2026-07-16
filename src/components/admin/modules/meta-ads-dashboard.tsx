@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { 
   TrendingUp, 
   DollarSign, 
@@ -179,17 +179,15 @@ export default function MetaAdsDashboard() {
     return !latest || c.last_synced_at > latest ? c.last_synced_at : latest;
   }, null as string | null);
 
-  // Auto-refresh Meta's numbers EVERY time this dashboard is actually
-  // opened — no staleness threshold: a 30min gate still meant numbers could
-  // be up to 30min behind Meta's own live count on every single visit,
-  // which read as "never really synchronized". Cost is bounded by how
-  // often a human opens this tab (once per mount), not by a timer.
-  const autoSyncTriggered = useRef(false);
-  useEffect(() => {
-    if (autoSyncTriggered.current || !activeStore?.id || isLoadingCampaigns) return;
-    autoSyncTriggered.current = true;
-    syncMutation.mutate();
-  }, [activeStore?.id, isLoadingCampaigns]);
+  // NO auto-sync on mount — reverted. A previous version fired a full
+  // sync (4 Meta HTTP calls + up to ~300 SQL statements for a multi-
+  // campaign store, see sync_meta_ads's per-row upsert loops) on every
+  // single dashboard open, multiplied by however many times anyone looked
+  // at this tab in a day — unacceptable on Supabase Free's request quota.
+  // Freshness now comes ONLY from: the backend's own 3h background sync
+  // (noest_sync.py META_ADS_SYNC_INTERVAL_MINUTES), or the "Synchroniser"
+  // button below when a human explicitly wants the latest numbers right
+  // now — never an implicit background cost tied to page views.
 
   // Integration data shortcuts
   const intData = integrationData?.data;

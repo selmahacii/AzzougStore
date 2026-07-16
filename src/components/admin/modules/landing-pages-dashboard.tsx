@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, Plus, Eye, EyeOff, Trash2, ExternalLink, Copy,
@@ -2245,21 +2245,14 @@ export default function LandingPagesDashboard() {
     ? metaSyncTimestamps.reduce((oldest, t) => (t < oldest ? t : oldest))
     : null;
 
-  // Auto-refresh Meta's numbers EVERY time this page is actually opened —
-  // no staleness threshold: the previous 30min gate meant the numbers could
-  // still be up to 30min behind Meta's own live count on every single
-  // visit, which read as "never really synchronized". Cost is bounded by
-  // how often a human opens this page (once per mount), not by a timer.
-  const metaResyncTriggered = useRef(false);
-  const metaResyncMutation = useMutation({
-    mutationFn: () => apiFetch(`/api/v1/meta-ads/sync?store_id=${storeId}`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['landing-pages'] }),
-  });
-  useEffect(() => {
-    if (metaResyncTriggered.current || !storeId || isLoading) return;
-    metaResyncTriggered.current = true;
-    metaResyncMutation.mutate();
-  }, [storeId, isLoading]);
+  // NO auto-sync on mount — reverted. This page has no sync button of its
+  // own; it only ever DISPLAYS Meta numbers that meta-ads-dashboard.tsx (or
+  // the backend's own 3h background sync) already wrote to the DB. Firing
+  // a full sync (4 Meta HTTP calls + up to ~300 SQL statements for a
+  // multi-campaign store) every time this page is opened, on top of the
+  // Meta Ads tab doing the same, would double the request volume against
+  // Supabase Free for zero benefit — this page was never the right place
+  // to trigger a sync from in the first place.
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-500">
@@ -2324,9 +2317,9 @@ export default function LandingPagesDashboard() {
               <strong>Détectées Meta</strong> = ce que Meta déclare lui-même avoir compté comme achat via sa propre publicité — un chiffre indépendant, calculé par Meta, jamais par nous. Les deux ne coïncideront jamais parfaitement (fenêtre d'attribution différente, paniers abandonnés jamais finalisés côté Meta, etc.), c'est normal.
             </p>
             <p className="mt-1">
-              Les chiffres Meta se resynchronisent automatiquement <strong>toutes les 3 heures</strong> en arrière-plan, et une resynchro supplémentaire se déclenche dès qu'on ouvre cette page si les données ont plus de 30 minutes.
+              Les chiffres Meta se resynchronisent automatiquement <strong>toutes les 3 heures</strong> en arrière-plan (module Meta Ads & ROAS), ou immédiatement via le bouton "Synchroniser" de ce module si tu veux les tout derniers chiffres.
               {oldestMetaSync && (
-                <> Dernière synchro Meta : <strong>{formatDistanceToNow(new Date(oldestMetaSync), { addSuffix: true, locale: fr })}</strong>{metaResyncMutation.isPending ? ' (resynchronisation en cours…)' : '.'}</>
+                <> Dernière synchro Meta : <strong>{formatDistanceToNow(new Date(oldestMetaSync), { addSuffix: true, locale: fr })}</strong>.</>
               )}
             </p>
           </div>
