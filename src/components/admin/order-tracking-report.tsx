@@ -71,6 +71,27 @@ export function OrderTrackingReport({ orderId }: OrderTrackingReportProps) {
         )}
       </div>
 
+      {/* Type d'envoi Purchase — temps réel / backfill / en attente / échec */}
+      {d.capi_classification && (
+        <div className="rounded-xl border border-slate-100 p-3">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Envoi Purchase</p>
+          <div className="flex items-center gap-2 mb-2">
+            <span className={'text-xs font-black ' + (
+              d.capi_classification.type === 'realtime' ? 'text-emerald-600' :
+              d.capi_classification.type === 'backfill' ? 'text-amber-600' :
+              d.capi_classification.type === 'failed' ? 'text-red-600' : 'text-slate-400'
+            )}>
+              {d.capi_classification.type === 'realtime' ? '🟢' : d.capi_classification.type === 'backfill' ? '🟡' : d.capi_classification.type === 'failed' ? '🔴' : '🔵'} {d.capi_classification.label}
+            </span>
+          </div>
+          <Field label="Date de création" value={d.capi_classification.created_at ? new Date(d.capi_classification.created_at).toLocaleString('fr-FR') : null} />
+          <Field label="Date d'envoi CAPI" value={d.capi_classification.sent_at ? new Date(d.capi_classification.sent_at).toLocaleString('fr-FR') : null} />
+          <Field label="Délai" value={d.capi_classification.delay_hours != null ? `${d.capi_classification.delay_hours}h` : null} />
+          {d.capi_classification.retry_count != null && <Field label="Tentatives" value={String(d.capi_classification.retry_count)} />}
+          {d.capi_classification.error_message && <Field label="Dernière erreur" value={d.capi_classification.error_message} />}
+        </div>
+      )}
+
       {/* Attribution */}
       <div className="rounded-xl border border-slate-100 p-3">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Attribution Marketing</p>

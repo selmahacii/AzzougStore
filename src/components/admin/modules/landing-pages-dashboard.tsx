@@ -325,6 +325,14 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                   ))}
                 </div>
 
+                {((tq.capi.realtime ?? 0) > 0 || (tq.capi.backfill ?? 0) > 0) && (
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400" title="Temps réel = envoyé automatiquement dans les heures suivant la vente. Backfill = rattrapé plus tard (ex: après une correction technique).">
+                    <span>🟢 {tq.capi.realtime ?? 0} temps réel</span>
+                    <span>·</span>
+                    <span>🟡 {tq.capi.backfill ?? 0} rattrapé après coup</span>
+                  </div>
+                )}
+
                 {tq.gap_total > 0 && (
                   <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100">
                     <div className="flex-1">

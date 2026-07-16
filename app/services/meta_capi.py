@@ -956,6 +956,60 @@ def _worker_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
+# ─── Classification temps réel / backfill ───────────────────────────────────
+# Pas de nouvelle colonne : `uq_meta_capi_purchase_per_order` (index unique
+# partiel sur order_id WHERE event_name='Purchase', migration
+# c3d4e5f6a7b8_meta_capi_purchase_dedup_index.py) garantit qu'il n'existe
+# JAMAIS plus d'une ligne Purchase par commande — donc son `created_at` est,
+# de façon fiable et non ambiguë, le moment exact de la PREMIÈRE mise en
+# file, que ce soit en temps réel ou via un backfill des mois plus tard.
+# Classification par écart de temps, pas une estimation floue : un envoi
+# temps réel se produit dans les secondes/minutes qui suivent la commande
+# (ou sa confirmation téléphonique) ; un backfill se produit typiquement
+# des jours voire des semaines après. Le seuil de 6h absorbe les délais de
+# file/retry légitimes sans jamais confondre les deux cas dans la pratique.
+REALTIME_WINDOW_HOURS = 6
+
+
+def classify_capi_log_timing(log_created_at, reference_time) -> str:
+    """
+    'realtime' | 'backfill' — seule la ligne de statut='success' (ou en
+    file/échec, voir classify_capi_log ci-dessous) a un sens à classifier
+    ainsi. reference_time doit être le moment où l'envoi AURAIT dû se
+    déclencher (création de commande, ou transition ABANDONED -> vente
+    réelle pour un panier récupéré par téléphone).
+    """
+    if not log_created_at or not reference_time:
+        return "backfill"  # donnée manquante — ne jamais compter comme temps réel par défaut
+    delta = (log_created_at - reference_time).total_seconds() / 3600
+    return "realtime" if delta <= REALTIME_WINDOW_HOURS else "backfill"
+
+
+def classify_capi_log(log, reference_time) -> dict:
+    """
+    Classification complète d'une ligne MetaCapiLog (Purchase) pour
+    l'affichage : type d'envoi, délai, cause du retard si connue.
+    """
+    if log is None:
+        return {"type": "pending", "label": "Jamais mis en file", "delay_hours": None}
+    if log.status in ("queued", "processing", "retry"):
+        return {"type": "pending", "label": "En attente", "delay_hours": None}
+    if log.status == "failed":
+        return {"type": "failed", "label": "Échec définitif", "delay_hours": None,
+                "error_message": log.error_message, "retry_count": log.retry_count}
+    # status == 'success'
+    timing = classify_capi_log_timing(log.created_at, reference_time)
+    delay_hours = None
+    if log.created_at and reference_time:
+        delay_hours = round((log.created_at - reference_time).total_seconds() / 3600, 1)
+    return {
+        "type": "realtime" if timing == "realtime" else "backfill",
+        "label": "Temps réel" if timing == "realtime" else "Rattrapage historique (Backfill)",
+        "delay_hours": delay_hours,
+        "retry_count": log.retry_count,
+    }
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/

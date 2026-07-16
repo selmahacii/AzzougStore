@@ -11,7 +11,7 @@ from typing import Any, List, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body, UploadFile, File
-from sqlalchemy import func as sqlfunc
+from sqlalchemy import func as sqlfunc, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
@@ -159,6 +159,28 @@ def _assert_order_access(order: Order, current_user: User) -> None:
         # A delivery agent only sees the orders handed to them
         if order.livreur_id != current_user.id:
             raise PermissionError(message="Accès refusé : cette livraison ne vous est pas assignée.")
+
+
+def _capi_reference_time(db: Session, order: Order):
+    """
+    Moment où l'envoi Purchase AURAIT DÛ se déclencher pour cette commande —
+    la base de comparaison pour classifier temps réel vs backfill (voir
+    classify_capi_log_timing dans meta_capi.py). Pour une commande jamais
+    passée par ABANDONED, c'est sa création. Pour un panier abandonné
+    récupéré par téléphone, c'est la transition ABANDONED -> vente réelle
+    (le déclencheur réel dans update_order), pas la création — sinon un
+    panier resté 3 semaines en ABANDONED avant confirmation serait
+    faussement classé "backfill".
+    """
+    abandoned_transition = (
+        db.query(OrderEvent.created_at)
+        .filter(OrderEvent.order_id == order.id, OrderEvent.from_status == "ABANDONED")
+        .order_by(OrderEvent.created_at.asc())
+        .first()
+    )
+    if abandoned_transition and abandoned_transition[0]:
+        return abandoned_transition[0]
+    return order.created_at
 
 
 def _sync_item_images_from_product(orders) -> None:
@@ -1668,6 +1690,14 @@ def get_order_tracking(
 
     attribution_source, attribution_confidence = _classify_source()
 
+    # ── 7. Classification temps réel / backfill (section 1 de la demande) ──
+    from app.services.meta_capi import classify_capi_log
+    reference_time = _capi_reference_time(db, order)
+    capi_classification = classify_capi_log(capi_log, reference_time)
+    capi_classification["created_at"] = order.created_at.isoformat() if order.created_at else None
+    capi_classification["sent_at"] = capi_log.completed_at.isoformat() if capi_log and capi_log.completed_at else None
+    capi_classification["reference_time"] = reference_time.isoformat() if reference_time else None
+
     return {
         "success": True,
         "data": {
@@ -1680,6 +1710,7 @@ def get_order_tracking(
                 "score_basis": "Calculé uniquement sur les étapes vérifiables (ERP, Queue, CAPI, Meta) — Pixel/Relay/Ads Manager exclus du calcul, non observables depuis ce backend.",
                 "failure_detail": failure_detail,
             },
+            "capi_classification": capi_classification,
             "timeline": timeline,
             "attribution": {
                 "source": attribution_source,
@@ -3361,6 +3392,175 @@ def list_returned_orders(
     }
 
 
+# ─── GET /orders/capi/tracking-quality-v2 — dashboard temps réel/backfill ───
+# Section 2/3/4 de la demande : ERP vs Meta avec répartition temps réel /
+# backfill / en attente / échec, + mode "Performance réelle" (temps réel
+# seul) vs "Performance Meta" (tout, pour matcher exactement ce que Meta
+# affiche). Une seule requête groupée sur meta_capi_logs + orders, pas de
+# boucle Python par commande pour le compte global (la boucle ne sert qu'à
+# classifier les <=200 lignes de la page "problematic_orders" ci-dessous).
+
+@router.get("/capi/tracking-quality-v2", response_model=dict)
+def get_capi_tracking_quality_v2(
+    store_id: str = Query(...),
+    mode: str = Query("meta", pattern="^(meta|realtime)$"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from datetime import datetime as _dt, timedelta as _td
+    from app.models.marketing import MetaCapiLog
+    from app.core.dates import parse_local_date_filter
+
+    db.info["skip_tenant_isolation"] = True
+
+    q = (
+        db.query(Order, MetaCapiLog)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(
+            Order.store_id == store_id, Order.is_deleted == False,
+            Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
+            sqlfunc.coalesce(Order.source, "") != "MANUAL",
+        )
+    )
+    if date_from:
+        try:
+            q = q.filter(Order.created_at >= parse_local_date_filter(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(Order.created_at <= parse_local_date_filter(date_to))
+        except ValueError:
+            pass
+    # Garde-fou perf : sans borne explicite, une boutique avec des dizaines
+    # de milliers de commandes chargerait tout en mémoire. 90 jours par
+    # défaut, jamais un scan illimité (voir rapport d'audit, point 6).
+    if not date_from and not date_to:
+        q = q.filter(Order.created_at >= _dt.now() - _td(days=90))
+    rows = q.all()
+
+    # Un seul aller-retour pour tous les OrderEvent ABANDONED->réel de la
+    # période (au lieu d'une requête par commande dans la boucle ci-dessous).
+    order_ids = [o.id for o, _ in rows]
+    abandoned_transitions = {}
+    if order_ids:
+        for oid, ts in (
+            db.query(OrderEvent.order_id, sqlfunc.min(OrderEvent.created_at))
+            .filter(OrderEvent.order_id.in_(order_ids), OrderEvent.from_status == "ABANDONED")
+            .group_by(OrderEvent.order_id)
+            .all()
+        ):
+            abandoned_transitions[oid] = ts
+
+    from app.services.meta_capi import classify_capi_log_timing
+
+    realtime_ok, backfill_ok, pending, failed = 0, 0, 0, 0
+    for order, log in rows:
+        reference = abandoned_transitions.get(order.id, order.created_at)
+        if log is None:
+            pending += 1
+        elif log.status in ("queued", "processing", "retry"):
+            pending += 1
+        elif log.status == "failed":
+            failed += 1
+        elif log.status == "success":
+            if classify_capi_log_timing(log.created_at, reference) == "realtime":
+                realtime_ok += 1
+            else:
+                backfill_ok += 1
+
+    total_erp = len(rows)
+    meta_purchases = realtime_ok + backfill_ok  # ce que Meta a effectivement reçu et accepté
+    performance_count = realtime_ok if mode == "realtime" else meta_purchases
+    coverage_pct = round(meta_purchases / total_erp * 100, 1) if total_erp else 0.0
+    ecart = total_erp - meta_purchases
+
+    return {
+        "success": True,
+        "data": {
+            "mode": mode,
+            "erp_purchases": total_erp,
+            "meta_purchases": meta_purchases,
+            "realtime": realtime_ok,
+            "backfill": backfill_ok,
+            "pending": pending,
+            "failed": failed,
+            "coverage_pct": coverage_pct,
+            "ecart_reel": ecart,
+            "performance_count": performance_count,
+        },
+    }
+
+
+# ─── GET /orders/capi/list — commandes filtrées par statut d'envoi CAPI ────
+# Section 6 : filtres temps réel / backfill / en attente / succès / échec /
+# retrying / skipped, pour les commandes ET le dashboard.
+
+@router.get("/capi/list", response_model=dict)
+def list_orders_by_capi_status(
+    store_id: str = Query(...),
+    capi_filter: str = Query(..., pattern="^(realtime|backfill|pending|success|failed|retrying|skipped)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.marketing import MetaCapiLog
+    from app.services.meta_capi import classify_capi_log_timing
+
+    db.info["skip_tenant_isolation"] = True
+
+    base = (
+        db.query(Order, MetaCapiLog)
+        .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(Order.store_id == store_id, Order.is_deleted == False)
+    )
+
+    # Filtres directement en base pour tout sauf realtime/backfill (qui
+    # dépendent d'un calcul par ligne — voir classify_capi_log_timing).
+    _STATUS_FILTERS = {"pending": ("queued", "processing"), "failed": ("failed",), "retrying": ("retry",), "skipped": ("skipped",), "success": ("success",)}
+    if capi_filter in _STATUS_FILTERS:
+        base = base.filter(MetaCapiLog.status.in_(_STATUS_FILTERS[capi_filter]))
+        total = base.count()
+        rows = base.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        # realtime / backfill : filtre sur des succès uniquement, classifiés
+        # par écart de temps — nécessite de parcourir les lignes matching
+        # (limité aux commandes déjà 'success', pas toute la table).
+        base = base.filter(MetaCapiLog.status == "success")
+        candidates = base.order_by(Order.created_at.desc()).limit(2000).all()
+        oids = [o.id for o, _ in candidates]
+        abandoned_transitions = {}
+        if oids:
+            for oid, ts in (
+                db.query(OrderEvent.order_id, sqlfunc.min(OrderEvent.created_at))
+                .filter(OrderEvent.order_id.in_(oids), OrderEvent.from_status == "ABANDONED")
+                .group_by(OrderEvent.order_id).all()
+            ):
+                abandoned_transitions[oid] = ts
+        filtered = []
+        for order, log in candidates:
+            reference = abandoned_transitions.get(order.id, order.created_at)
+            timing = classify_capi_log_timing(log.created_at, reference)
+            if timing == capi_filter:
+                filtered.append((order, log))
+        total = len(filtered)
+        rows = filtered[(page - 1) * page_size: page * page_size]
+
+    data = [
+        {
+            "order_id": o.id, "order_number": o.order_number, "customer_name": o.customer_name,
+            "status": o.status, "total": o.total, "created_at": o.created_at.isoformat() if o.created_at else None,
+            "capi_status": log.status if log else None,
+            "capi_sent_at": log.completed_at.isoformat() if log and log.completed_at else None,
+        }
+        for o, log in rows
+    ]
+    return {"success": True, "data": data, "pagination": {"page": page, "page_size": page_size, "total": total}}
+
+
 # ─── CAPI backfill — historical "jamais tenté" gap ──────────────────────────
 # The "Purchase never fired" gap on the tracking-quality dashboard was mostly
 # ABANDONED carts recovered by a confirmatrice through a plain status PATCH,
@@ -3429,14 +3629,19 @@ def backfill_missing_capi(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
+    import time as _time
+    from datetime import datetime as _dt, timezone as _tz
+    from sqlalchemy import exists as sa_exists
+    from app.models.marketing import MetaCapiLog, MetaAdsConfig
+    from app.models.audit import AuditLog
+    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+
     if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
         raise HTTPException(status_code=403, detail="Accès administrateur requis")
 
-    from sqlalchemy import exists as sa_exists
-    from app.models.marketing import MetaCapiLog, MetaAdsConfig
-    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
-
     db.info["skip_tenant_isolation"] = True
+    run_started_at = _dt.now(_tz.utc)
+    _t0 = _time.monotonic()
 
     capi_success_exists = sa_exists().where(
         MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
@@ -3451,11 +3656,19 @@ def backfill_missing_capi(
     if order_ids:
         q = q.filter(Order.id.in_(order_ids))
     targets = q.limit(500).all()
+    analyzed = len(targets)
 
     client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
     user_agent = request.headers.get("user-agent")
 
-    queued, skipped_no_config = 0, 0
+    # Envoi SYNCHRONE (pas background_tasks) — volontaire : un backfill est
+    # une opération de maintenance rare déclenchée par un admin, jamais sur
+    # le chemin critique d'une requête utilisateur. La contrepartie, en
+    # échange d'une réponse plus lente, c'est de connaître le VRAI résultat
+    # (succès/échec) de chaque envoi avant de répondre — indispensable pour
+    # que l'historique des opérations (section 5) rapporte des chiffres
+    # réels, pas juste "mis en file" sans savoir ce qui s'est passé ensuite.
+    queued, skipped_no_config, success_count, error_count = 0, 0, 0, 0
     for order in targets:
         # Row lock + re-check under lock — same double-fire guard pattern
         # used by /returns/reintegrate-missing.
@@ -3474,16 +3687,75 @@ def backfill_missing_capi(
         try:
             enqueue_purchase_for_order(db, order)
             db.commit()
-            background_tasks.add_task(
-                send_purchase_for_order, order_id=str(order.id), client_ip=client_ip, user_agent=user_agent,
-            )
             queued += 1
+            send_purchase_for_order(order_id=str(order.id), client_ip=client_ip, user_agent=user_agent)
+            final_status = db.query(MetaCapiLog.status).filter(
+                MetaCapiLog.order_id == order.id, MetaCapiLog.event_name == "Purchase",
+            ).scalar()
+            if final_status == "success":
+                success_count += 1
+            elif final_status in ("failed", "retry"):
+                error_count += 1
         except Exception as exc:
             db.rollback()
+            error_count += 1
             logger.warning("CAPI backfill failed to queue order %s: %s", order.id, exc)
+
+    duration_s = round(_time.monotonic() - _t0, 1)
+
+    # Traçabilité complète de l'opération (section 5) — via AuditLog.diff,
+    # aucune nouvelle table, même raisonnement que les commissions/preuve de
+    # livraison plus haut dans cette session.
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), actor_id=current_user.id, store_id=None,
+        entity="capi_backfill", entity_id=str(uuid.uuid4()), action="capi_backfill_run",
+        diff={
+            "date": run_started_at.isoformat(), "analyzed": analyzed, "queued": queued,
+            "success": success_count, "errors": error_count, "skipped_no_config": skipped_no_config,
+            "duration_seconds": duration_s, "order_ids_filter": order_ids,
+        },
+    ))
+    db.commit()
 
     return {
         "success": True,
-        "message": f"{queued} commande(s) mise(s) en file pour envoi Purchase, {skipped_no_config} sans config Meta",
-        "data": {"queued": queued, "skipped_no_config": skipped_no_config},
+        "message": f"{queued} commande(s) traitée(s) : {success_count} succès, {error_count} erreur(s), {skipped_no_config} sans config Meta",
+        "data": {
+            "analyzed": analyzed, "queued": queued, "success": success_count,
+            "errors": error_count, "skipped_no_config": skipped_no_config, "duration_seconds": duration_s,
+        },
+    }
+
+
+@router.get("/capi/backfill-history", response_model=dict)
+def get_backfill_history(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Section 5 — historique complet des opérations de backfill CAPI, lu
+    depuis AuditLog (écrit par backfill_missing_capi ci-dessus)."""
+    from app.models.audit import AuditLog
+
+    db.info["skip_tenant_isolation"] = True
+    logs = (
+        db.query(AuditLog).options(joinedload(AuditLog.actor))
+        .filter(AuditLog.action == "capi_backfill_run")
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": l.id, "date": (l.diff or {}).get("date") or (l.created_at.isoformat() if l.created_at else None),
+                "actor": l.actor.name if l.actor else "Système",
+                "analyzed": (l.diff or {}).get("analyzed", 0), "queued": (l.diff or {}).get("queued", 0),
+                "success": (l.diff or {}).get("success", 0), "errors": (l.diff or {}).get("errors", 0),
+                "skipped_no_config": (l.diff or {}).get("skipped_no_config", 0),
+                "duration_seconds": (l.diff or {}).get("duration_seconds"),
+            }
+            for l in logs
+        ],
     }

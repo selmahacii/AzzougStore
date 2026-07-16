@@ -661,6 +661,37 @@ def get_landing_page_tracking_quality(
     }
     no_capi_row_at_all = max(0, eligible_count - capi["sent_total"])
 
+    # ── 2bis. Répartition temps réel / backfill des succès (section 2/3) ──
+    # Bornée aux commandes de cette landing page sur la période — jamais un
+    # scan de table, juste les lignes déjà sélectionnées ci-dessus par
+    # produit+store+date, remplacées par une requête ciblée sur les succès.
+    from app.services.meta_capi import classify_capi_log_timing
+    from app.models.events import OrderEvent
+    success_rows = (
+        db.query(Order.id, Order.created_at, MetaCapiLog.created_at)
+        .join(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
+        .filter(has_product, Order.store_id == lp.store_id, Order.created_at >= since, MetaCapiLog.status == "success")
+        .all()
+    )
+    _order_ids_success = [r[0] for r in success_rows]
+    _abandoned_map = {}
+    if _order_ids_success:
+        for oid, ts in (
+            db.query(OrderEvent.order_id, func.min(OrderEvent.created_at))
+            .filter(OrderEvent.order_id.in_(_order_ids_success), OrderEvent.from_status == "ABANDONED")
+            .group_by(OrderEvent.order_id).all()
+        ):
+            _abandoned_map[oid] = ts
+    realtime_count = backfill_count = 0
+    for oid, order_created, log_created in success_rows:
+        reference = _abandoned_map.get(oid, order_created)
+        if classify_capi_log_timing(log_created, reference) == "realtime":
+            realtime_count += 1
+        else:
+            backfill_count += 1
+    capi["realtime"] = realtime_count
+    capi["backfill"] = backfill_count
+
     # ── 3. Meta Ads Manager's OWN reported purchases for this product,
     # already-synced totals (NOT real-time, NOT Meta's internal dedup math —
     # just what the last sync copied from Meta's Insights API) ──
