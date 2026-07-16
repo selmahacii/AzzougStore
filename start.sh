@@ -2,7 +2,7 @@
 set -e
 
 echo "===== Application Startup at $(date -u '+%Y-%m-%d %H:%M:%S') ====="
-echo "--- AzzougShop Backend Booting ---"
+echo "--- AzzougShop Backend Booting (deploy-diag marker: forced rebuild to inspect stuck-building issue) ---"
 
 # Wait for Postgres to be ready using Python + SQLAlchemy (works with any DATABASE_URL incl. Neon/Supabase)
 until python -c "
