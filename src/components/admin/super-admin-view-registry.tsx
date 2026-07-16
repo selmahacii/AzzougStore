@@ -28,6 +28,7 @@ import ReturnsDashboard from './modules/returns-dashboard';
 import TikTokAdsDashboard from './modules/tiktok-ads-dashboard';
 import UpsellManager from './modules/upsell-manager';
 import PurchaseManager from './modules/purchase-manager';
+import { CommissionsView } from './order-erp-features';
 
 export default function SuperAdminView() {
   const { adminView, adminSubView } = useAppStore();
@@ -81,6 +82,8 @@ export default function SuperAdminView() {
       return <MetaQueueDashboard key="meta_queue" />;
     case 'returns':
       return <ReturnsDashboard key="returns" />;
+    case 'commissions':
+      return <CommissionsView key="commissions" />;
     case 'tiktok_ads':
       return <TikTokAdsDashboard key="tiktok_ads" />;
     case 'upsell':

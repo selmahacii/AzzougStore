@@ -10,7 +10,7 @@ import logging
 from typing import Any, List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body, UploadFile, File
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session, joinedload
 
@@ -1368,6 +1368,97 @@ def create_order(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Commissions confirmatrice / livreur ────────────────────────────────────
+# Doit rester AVANT /{id} (routage par ordre d'enregistrement). Aucune
+# nouvelle table : les taux vivent dans Store.operations_config (JSON déjà
+# existant, jamais utilisé avant) — évite toute migration de schéma sur une
+# base dont l'historique Alembic a plusieurs "heads" divergentes que je ne
+# peux pas résoudre en toute sécurité sans interpréteur Python local pour
+# vérifier. Défauts appliqués si rien n'est configuré, jamais un crash.
+
+_DEFAULT_COMMISSION_CONFIRMATRICE_PCT = 2.0   # % de la valeur de la commande
+_DEFAULT_COMMISSION_LIVREUR_FIXED = 100        # DA fixe par commande livrée
+
+@router.get("/commissions", response_model=dict)
+def get_commissions(
+    store_id: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.core.dates import parse_local_date_filter
+    from app.models.store import Store
+
+    db.info["skip_tenant_isolation"] = True
+    store = db.query(Store).filter(Store.id == store_id).first()
+    cfg = (store.operations_config or {}) if store else {}
+    pct = cfg.get("commission_confirmatrice_pct", _DEFAULT_COMMISSION_CONFIRMATRICE_PCT)
+    fixed = cfg.get("commission_livreur_fixed", _DEFAULT_COMMISSION_LIVREUR_FIXED)
+
+    q = db.query(Order).filter(Order.store_id == store_id, Order.status == "DELIVERED", Order.is_deleted == False)
+    if start_date:
+        try:
+            q = q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            q = q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    orders = q.options(joinedload(Order.assignee), joinedload(Order.livreur)).all()
+
+    confirmatrices: dict = {}
+    livreurs: dict = {}
+    for o in orders:
+        if o.assignee:
+            row = confirmatrices.setdefault(o.assignee.id, {"name": o.assignee.name, "orders": 0, "commission": 0.0})
+            row["orders"] += 1
+            row["commission"] += (o.total or 0) * pct / 100
+        if o.livreur:
+            row = livreurs.setdefault(o.livreur.id, {"name": o.livreur.name, "orders": 0, "commission": 0.0})
+            row["orders"] += 1
+            row["commission"] += fixed
+
+    return {
+        "success": True,
+        "data": {
+            "rates": {"commission_confirmatrice_pct": pct, "commission_livreur_fixed": fixed},
+            "confirmatrices": sorted(confirmatrices.values(), key=lambda r: -r["commission"]),
+            "livreurs": sorted(livreurs.values(), key=lambda r: -r["commission"]),
+            "total_commandes_livrees": len(orders),
+        },
+    }
+
+
+@router.patch("/commissions/config", response_model=dict)
+def update_commission_config(
+    store_id: str = Body(...),
+    commission_confirmatrice_pct: Optional[float] = Body(None),
+    commission_livreur_fixed: Optional[float] = Body(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.store import Store
+
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+
+    store = db.query(Store).filter(Store.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store introuvable")
+
+    cfg = dict(store.operations_config or {})
+    if commission_confirmatrice_pct is not None:
+        cfg["commission_confirmatrice_pct"] = commission_confirmatrice_pct
+    if commission_livreur_fixed is not None:
+        cfg["commission_livreur_fixed"] = commission_livreur_fixed
+    store.operations_config = cfg
+    db.commit()
+    return {"success": True, "data": cfg}
+
+
 # ─── GET /orders/{id} ─────────────────────────────────────────────────────────
 
 @router.get("/{id}", response_model=OrderReadFull)
@@ -1595,6 +1686,61 @@ def get_order_tracking(
                 "confidence": attribution_confidence,
             },
         },
+    }
+
+
+# ─── Preuve de livraison (photo) ─────────────────────────────────────────────
+# Stockée via AuditLog.diff (JSON déjà existant) plutôt qu'une nouvelle
+# colonne — même raisonnement d'évitement de migration que ci-dessus.
+
+@router.post("/{id}/delivery-proof", response_model=dict)
+async def upload_delivery_proof(
+    id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    import os as _os
+    from app.models.audit import AuditLog
+
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not order:
+        raise OrderNotFoundError()
+
+    _os.makedirs("uploads/delivery_proofs", exist_ok=True)
+    ext = _os.path.splitext(file.filename or "")[1] or ".jpg"
+    filename = f"{id}_{uuid.uuid4().hex}{ext}"
+    filepath = _os.path.join("uploads/delivery_proofs", filename)
+    with open(filepath, "wb") as f:
+        f.write(await file.read())
+    url = f"/uploads/delivery_proofs/{filename}"
+
+    db.add(AuditLog(
+        id=str(uuid.uuid4()), actor_id=current_user.id, store_id=order.store_id,
+        entity="order", entity_id=order.id, action="delivery_proof_uploaded",
+        diff={"url": url},
+    ))
+    db.commit()
+    return {"success": True, "url": url}
+
+
+@router.get("/{id}/delivery-proof", response_model=dict)
+def get_delivery_proofs(
+    id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.audit import AuditLog
+
+    logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.entity == "order", AuditLog.entity_id == id, AuditLog.action == "delivery_proof_uploaded")
+        .order_by(AuditLog.created_at.desc())
+        .all()
+    )
+    return {
+        "success": True,
+        "data": [{"url": (l.diff or {}).get("url"), "date": l.created_at.isoformat() if l.created_at else None} for l in logs],
     }
 
 

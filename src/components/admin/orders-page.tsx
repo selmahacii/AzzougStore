@@ -101,6 +101,7 @@ import { ZRExpressTrackingPanel } from '@/components/admin/zr-express-tracking-p
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
 import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderErpDetailPanel } from '@/components/admin/order-erp-detail-panel';
+import { DeliveryProofUpload, InvoiceButton, OrdersKanbanView, OrdersMapView } from '@/components/admin/order-erp-features';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
 const ALL_STATUSES: { value: string; label: string }[] = [
@@ -586,6 +587,7 @@ const [timeLeft, setTimeLeft] = useState('');
   };
 
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [listViewMode, setListViewMode] = useState<'LIST' | 'KANBAN' | 'MAP'>('LIST');
 
   const buildQueryParams = useCallback(() => {
     const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString() });
@@ -1352,6 +1354,23 @@ const [timeLeft, setTimeLeft] = useState('');
           )}
         </div>
 
+        {/* Sélecteur de vue — Liste / Kanban / Carte des livraisons */}
+        <div className="flex items-center gap-1.5 bg-white rounded-2xl border p-1.5 w-fit" style={{ borderColor: C.border }}>
+          {([['LIST', 'Liste'], ['KANBAN', 'Kanban'], ['MAP', 'Carte livraisons']] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setListViewMode(id)}
+              className={cn('px-3.5 py-2 rounded-xl text-xs font-bold transition-all',
+                listViewMode === id ? 'bg-[#4b7bec] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50')}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {listViewMode === 'KANBAN' ? (
+          <OrdersKanbanView orders={displayOrders} onOpenOrder={handleDetailClick} />
+        ) : listViewMode === 'MAP' ? (
+          <OrdersMapView orders={displayOrders} onOpenOrder={handleDetailClick} />
+        ) : (
+        <>
         {/* Performance Ledger Table */}
         <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
           <div className="hidden md:block">
@@ -1956,6 +1975,8 @@ const [timeLeft, setTimeLeft] = useState('');
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
 
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
@@ -2322,11 +2343,17 @@ const [timeLeft, setTimeLeft] = useState('');
 
                       {/* ── Cycle de vie complet : KPI, statuts, appels, stock, Meta ── */}
                       <div className="space-y-3 pt-4 border-t border-slate-100">
-                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                          <Activity className="size-3.5" /> Cycle de vie de la commande
-                        </h3>
-                        <div className="max-h-[600px] overflow-y-auto pr-1">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                            <Activity className="size-3.5" /> Cycle de vie de la commande
+                          </h3>
+                          <InvoiceButton order={selectedOrder} />
+                        </div>
+                        <div className="max-h-[600px] overflow-y-auto pr-1 space-y-4">
                           <OrderErpDetailPanel orderId={selectedOrder.id} />
+                          <div className="pt-3 border-t border-slate-100">
+                            <DeliveryProofUpload orderId={selectedOrder.id} />
+                          </div>
                         </div>
                       </div>
 

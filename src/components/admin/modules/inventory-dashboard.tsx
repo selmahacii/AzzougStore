@@ -33,9 +33,8 @@ import { useAppStore } from '@/store/app-store';
 import StockManager from './stock-manager';
 import WarehouseManager from './warehouse-manager';
 import StockTracker from './stock-tracker';
-import SupplierManager from './supplier-manager';
 import PurchaseManager from './purchase-manager';
-import ReturnManager from './return-manager';
+import SuppliersReturnsHub from './suppliers-returns-hub';
 import { LivreursInventoryView, TracabilityView, DiscrepanciesView } from './inventory-tracability';
 import { LotsView, AlertsEngineView, WarehouseTransferPanel } from './inventory-erp-extra';
 
@@ -176,11 +175,13 @@ export default function InventoryDashboard() {
       if (!sv) return 'STOCK';
       if (['Stock', 'Gestion Stock', 'STOCK'].includes(sv)) return 'STOCK';
       if (['Suivi de Stock', 'Suivi de stock', 'Suivi des lots', 'TRACKER'].includes(sv)) return 'TRACKER';
-      if (['Alerte de Stock', 'Alerte de stock', 'Alertes rupture', 'ALERTS'].includes(sv)) return 'ALERTS';
+      // Alertes fusionnées dans Gestion Stock (sous-onglet) — les deux
+      // anciens noms redirigent vers le même écran combiné.
+      if (['Alerte de Stock', 'Alerte de stock', 'Alertes rupture', 'ALERTS', 'Alertes intelligentes', 'ALERTS_ENGINE'].includes(sv)) return 'STOCK';
       if (["Entrées d'achat", 'Achats', 'PURCHASES'].includes(sv)) return 'PURCHASES';
-      if (["Entrées de retour", 'Retours', 'RETURNS'].includes(sv)) return 'RETURNS';
+      // Retours fournisseurs + Fournisseurs fusionnés en un seul hub.
+      if (["Entrées de retour", 'Retours', 'RETURNS', 'Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS_RETURNS';
       if (['Entrepôts', 'WAREHOUSES'].includes(sv)) return 'WAREHOUSES';
-      if (['Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS';
       if (['Surveillance', 'MONITOR'].includes(sv)) return 'MONITOR';
       if (['Historique', 'HISTORY'].includes(sv)) return 'HISTORY';
       if (['Timeline', 'Chronologie', 'TIMELINE'].includes(sv)) return 'TIMELINE';
@@ -188,7 +189,6 @@ export default function InventoryDashboard() {
       if (['Traçabilité', 'Tracabilite', 'TRACABILITE'].includes(sv)) return 'TRACABILITE';
       if (['Écarts', 'Ecarts', 'ECARTS'].includes(sv)) return 'ECARTS';
       if (['Lots', 'Suivi des lots', 'LOTS'].includes(sv)) return 'LOTS';
-      if (['Alertes intelligentes', 'ALERTS_ENGINE'].includes(sv)) return 'ALERTS_ENGINE';
       if (['Transferts', 'TRANSFERS'].includes(sv)) return 'TRANSFERS';
       return 'STOCK';
    };
@@ -251,18 +251,15 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    if (activeTab === 'MONITOR') return <MonitorView logs={movements} isLoading={isLoadingMovements} />;
    if (activeTab === 'WAREHOUSES') return <WarehouseManager />;
    if (activeTab === 'TRACKER') return <StockTracker />;
-   if (activeTab === 'RETURNS') return <ReturnManager />;
+   if (activeTab === 'PARTNERS_RETURNS') return <SuppliersReturnsHub />;
    if (activeTab === 'STOCK') return <StockView />;
-   if (activeTab === 'ALERTS') return <AlertsView />;
    if (activeTab === 'PURCHASES') return <PurchaseManager />;
-   if (activeTab === 'PARTNERS') return <SupplierManager />;
    if (activeTab === 'HISTORY') return <HistoryView />;
    if (activeTab === 'TIMELINE') return <TimelineView />;
    if (activeTab === 'LIVREURS') return <LivreursInventoryView />;
    if (activeTab === 'TRACABILITE') return <TracabilityView />;
    if (activeTab === 'ECARTS') return <DiscrepanciesView />;
    if (activeTab === 'LOTS') return <LotsView />;
-   if (activeTab === 'ALERTS_ENGINE') return <AlertsEngineView />;
    if (activeTab === 'TRANSFERS') return <WarehouseTransferPanel />;
    return <StockView />;
 }
@@ -599,36 +596,38 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
    );
 }
 
+// Fusion "Gestion Stock" + "Alertes" — un admin qui ajuste le stock a besoin
+// de voir les alertes juste à côté, pas dans un onglet séparé à retrouver.
 function StockView() {
+   const [subTab, setSubTab] = useState<'stock' | 'alerts'>('stock');
    return (
-      <div className="bg-white border rounded-xl overflow-hidden p-6 animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
-         <div className="flex items-center justify-between mb-6">
-            <div>
-               <h3 className="text-lg font-extrabold text-[#2D3436]">Contrôle des Stocks</h3>
-               <p className="text-xs font-semibold text-[#636E72] mt-1">Ajustement des réserves opérationnelles</p>
-            </div>
-            <button className="px-4 py-2 rounded-lg text-xs font-bold bg-black text-white hover:opacity-90">Audit Inventaire</button>
+      <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-400">
+         <div className="flex items-center gap-1.5 bg-white rounded-2xl border p-1.5 w-fit" style={{ borderColor: C.border }}>
+            <button onClick={() => setSubTab('stock')}
+               className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                  subTab === 'stock' ? "bg-[#6C5CE7] text-white shadow-sm" : "text-slate-500 hover:bg-slate-50")}>
+               <Package className="size-3.5" /> Gestion Stock
+            </button>
+            <button onClick={() => setSubTab('alerts')}
+               className={cn("flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                  subTab === 'alerts' ? "bg-[#6C5CE7] text-white shadow-sm" : "text-slate-500 hover:bg-slate-50")}>
+               <AlertCircle className="size-3.5" /> Alertes
+            </button>
          </div>
-         <StockManager variant="all" />
-      </div>
-   );
-}
 
-function AlertsView() {
-   return (
-      <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-400">
-         <div className="bg-[#FFEDE9] border border-[#FAD9D1] p-5 rounded-xl flex items-center gap-4">
-            <div className="size-10 bg-white rounded-lg flex items-center justify-center shrink-0">
-               <AlertCircle className="size-5 text-[#E17055]" />
+         {subTab === 'stock' ? (
+            <div className="bg-white border rounded-xl overflow-hidden p-6" style={{ borderColor: C.border }}>
+               <div className="flex items-center justify-between mb-6">
+                  <div>
+                     <h3 className="text-lg font-extrabold text-[#2D3436]">Contrôle des Stocks</h3>
+                     <p className="text-xs font-semibold text-[#636E72] mt-1">Ajustement des réserves opérationnelles</p>
+                  </div>
+               </div>
+               <StockManager variant="all" />
             </div>
-            <div>
-               <h3 className="text-sm font-extrabold text-[#E17055]">Suite de Détection d'Anomalies</h3>
-               <p className="text-xs font-semibold text-[#E17055]/80 mt-0.5">Les réserves sous le seuil critique nécessitent un approvisionnement</p>
-            </div>
-         </div>
-         <div className="bg-white border rounded-xl overflow-hidden p-6" style={{ borderColor: C.border }}>
-            <StockManager variant="alerts" />
-         </div>
+         ) : (
+            <AlertsEngineView />
+         )}
       </div>
    );
 }

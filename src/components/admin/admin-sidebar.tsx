@@ -135,22 +135,20 @@ const NAV_SECTIONS: NavSection[] = [
             items: [
                { label: 'Surveillance', view: 'inventory', subView: 'MONITOR' },
                { label: 'Entrepôts', view: 'inventory', subView: 'WAREHOUSES' },
-               { label: 'Gestion Stock', view: 'inventory', subView: 'STOCK' },
-               { label: 'Suivi des lots', view: 'inventory', subView: 'TRACKER' },
-               { label: 'Alertes rupture', view: 'inventory', subView: 'ALERTS' },
+               { label: 'Gestion Stock & Alertes', view: 'inventory', subView: 'STOCK' },
+               { label: 'Suivi de stock (lots/mouvements)', view: 'inventory', subView: 'TRACKER' },
                { label: 'Achats', view: 'inventory', subView: 'PURCHASES' },
                { label: 'Bons d\'Achat & d\'Entrée', view: 'purchase_vouchers' },
-               { label: 'Retours (fournisseurs)', view: 'inventory', subView: 'RETURNS' },
-               { label: 'Fournisseurs', view: 'inventory', subView: 'PARTNERS' },
+               { label: 'Fournisseurs & Retours', view: 'inventory', subView: 'PARTNERS_RETURNS' },
                { label: 'Historique', view: 'inventory', subView: 'HISTORY' },
                { label: 'Timeline', view: 'inventory', subView: 'TIMELINE' },
                { label: 'Inventaire Livreurs', view: 'inventory', subView: 'LIVREURS' },
                { label: 'Traçabilité', view: 'inventory', subView: 'TRACABILITE' },
                { label: 'Analyse des écarts', view: 'inventory', subView: 'ECARTS' },
                { label: 'Suivi des lots', view: 'inventory', subView: 'LOTS' },
-               { label: 'Alertes intelligentes', view: 'inventory', subView: 'ALERTS_ENGINE' },
                { label: 'Transferts entrepôts', view: 'inventory', subView: 'TRANSFERS' },
-               { label: 'Retours Commandes', view: 'returns' }
+               { label: 'Retours Commandes', view: 'returns' },
+               { label: 'Commissions', view: 'commissions' }
             ]
          },
          {

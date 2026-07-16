@@ -3,35 +3,31 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { RefreshCw, Trash2, RotateCcw, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, Trash2, RotateCcw, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2, Zap, Gauge } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const C = {
+   primary: '#6C5CE7', primaryBg: '#F0EDFF',
+   success: '#00B894', successBg: '#E6FFF8',
+   danger: '#E17055', dangerBg: '#FFEDE9',
+   warning: '#FDCB6E', warningBg: '#FFF8E6',
+   info: '#0984E3', infoBg: '#E8F4FE',
+   text: '#2D3436', textLight: '#636E72', textDim: '#B2BEC3', border: '#E9ECF0', bg: '#F8F9FC',
+};
 
 interface QueueStats {
-  queued: number;
-  processing: number;
-  retry: number;
-  failed: number;
-  skipped: number;
-  success_today: number;
-  success_30d: number;
-  failed_30d: number;
-  success_rate_30d: number | null;
-  failure_rate_30d: number | null;
-  avg_latency_ms: number | null;
-  max_latency_ms: number | null;
-  min_latency_ms: number | null;
-  avg_attempts: number | null;
-  queue_size: number;
-  avg_queue_age_seconds: number | null;
-  last_success_at: string | null;
-  last_error: string | null;
-  last_error_at: string | null;
+  queued: number; processing: number; retry: number; failed: number; skipped: number;
+  success_today: number; success_30d: number; failed_30d: number;
+  success_rate_30d: number | null; failure_rate_30d: number | null;
+  avg_latency_ms: number | null; max_latency_ms: number | null; min_latency_ms: number | null;
+  avg_attempts: number | null; queue_size: number; avg_queue_age_seconds: number | null;
+  last_success_at: string | null; last_error: string | null; last_error_at: string | null;
 }
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' });
 }
-
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return '—';
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -39,135 +35,132 @@ function formatDuration(seconds: number | null): string {
   return `${Math.round(seconds / 3600)}h`;
 }
 
-function StatCard({ label, value, icon: Icon, tone }: { label: string; value: string | number; icon: any; tone: 'default' | 'warn' | 'danger' | 'ok' }) {
-  const toneClasses: Record<string, string> = {
-    default: 'border-border bg-card',
-    warn: 'border-amber-500/40 bg-amber-500/5',
-    danger: 'border-red-500/40 bg-red-500/5',
-    ok: 'border-emerald-500/40 bg-emerald-500/5',
-  };
-  return (
-    <div className={`rounded-lg border p-4 ${toneClasses[tone]}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+function Tile({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: any; color: string }) {
+   return (
+      <div className="p-3.5 rounded-2xl border bg-white flex items-center gap-3" style={{ borderColor: color + '33' }}>
+         <div className="size-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: color + '18' }}>
+            <Icon className="size-4" style={{ color }} />
+         </div>
+         <div className="min-w-0">
+            <p className="text-base font-black tabular-nums leading-none" style={{ color }}>{value}</p>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mt-1 truncate">{label}</p>
+         </div>
       </div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-    </div>
-  );
+   );
 }
 
 export default function MetaQueueDashboard() {
   const queryClient = useQueryClient();
 
-  // Admin monitoring page opened occasionally, not embedded in a hot path —
-  // no polling interval, manual refresh only, to stay off the Supabase Free
-  // traffic the whole rest of this pipeline was rebuilt to minimize.
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['meta_queue_stats'],
     queryFn: () => apiFetch<{ success: boolean; data: QueueStats }>('/api/v1/meta-ads/queue/stats'),
     refetchOnWindowFocus: false,
   });
-
   const stats = data?.data;
 
   const retryAllMutation = useMutation({
     mutationFn: () => apiFetch('/api/v1/meta-ads/queue/retry-all', { method: 'POST' }),
-    onSuccess: (res: any) => {
-      toast.success(res?.message || 'Relance effectuée');
-      queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] });
-    },
+    onSuccess: (res: any) => { toast.success(res?.message || 'Relance effectuée'); queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] }); },
     onError: (err: any) => toast.error('Erreur', { description: err.message }),
   });
-
   const cleanupMutation = useMutation({
     mutationFn: () => apiFetch('/api/v1/meta-ads/queue/cleanup', { method: 'POST' }),
-    onSuccess: (res: any) => {
-      toast.success(res?.message || 'Nettoyage effectué');
-      queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] });
-    },
+    onSuccess: (res: any) => { toast.success(res?.message || 'Nettoyage effectué'); queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] }); },
     onError: (err: any) => toast.error('Erreur', { description: err.message }),
   });
 
+  const healthy = stats && stats.failed === 0 && (stats.success_rate_30d ?? 100) >= 95;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Meta Queue</h2>
-          <p className="text-sm text-muted-foreground">
-            File persistante des événements Purchase (PostgreSQL) — aucun événement n'est perdu, même après un redémarrage du conteneur.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] })}
-            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} /> Actualiser
-          </button>
-          <button
-            onClick={() => retryAllMutation.mutate()}
-            disabled={retryAllMutation.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Relancer tout
-          </button>
-          <button
-            onClick={() => cleanupMutation.mutate()}
-            disabled={cleanupMutation.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Nettoyer anciens logs
-          </button>
+    <div className="space-y-5 animate-in fade-in duration-500">
+      {/* ─── Bandeau de santé — la seule chose qu'un admin doit voir en 1 coup d'œil ─── */}
+      <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.border }}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="size-11 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ backgroundColor: (healthy ? C.success : C.danger) + '18' }}>
+              <Zap className="size-5" style={{ color: healthy ? C.success : C.danger }} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-slate-800">File d'envoi Meta (Purchase)</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isLoading ? 'Vérification…' : healthy ? 'Tout fonctionne normalement' : `${stats?.failed ?? 0} événement(s) en échec définitif — action requise`}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => queryClient.invalidateQueries({ queryKey: ['meta_queue_stats'] })}
+              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors" style={{ borderColor: C.border }}>
+              <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} /> Actualiser
+            </button>
+            <button onClick={() => retryAllMutation.mutate()} disabled={retryAllMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-white transition-colors disabled:opacity-50" style={{ backgroundColor: C.primary }}>
+              <RotateCcw className="h-3.5 w-3.5" /> Relancer tout
+            </button>
+            <button onClick={() => cleanupMutation.mutate()} disabled={cleanupMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-50" style={{ borderColor: C.border }}>
+              <Trash2 className="h-3.5 w-3.5" /> Nettoyer
+            </button>
+          </div>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
-          <Loader2 className="h-4 w-4 animate-spin" /> Chargement...
-        </div>
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-slate-300" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Queued" value={stats?.queued ?? 0} icon={Clock} tone="default" />
-            <StatCard label="Processing" value={stats?.processing ?? 0} icon={Loader2} tone="default" />
-            <StatCard label="Retry" value={stats?.retry ?? 0} icon={RotateCcw} tone={stats && stats.retry > 0 ? 'warn' : 'default'} />
-            <StatCard label="Failed" value={stats?.failed ?? 0} icon={XCircle} tone={stats && stats.failed > 0 ? 'danger' : 'default'} />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Success aujourd'hui" value={stats?.success_today ?? 0} icon={CheckCircle2} tone="ok" />
-            <StatCard label="Success 30 jours" value={stats?.success_30d ?? 0} icon={CheckCircle2} tone="ok" />
-            <StatCard label="Taux de réussite (30j)" value={stats?.success_rate_30d != null ? `${stats.success_rate_30d}%` : '—'} icon={CheckCircle2} tone={stats?.success_rate_30d != null && stats.success_rate_30d < 95 ? 'warn' : 'ok'} />
-            <StatCard label="Taux d'échec (30j)" value={stats?.failure_rate_30d != null ? `${stats.failure_rate_30d}%` : '—'} icon={XCircle} tone={stats?.failure_rate_30d != null && stats.failure_rate_30d > 5 ? 'danger' : 'default'} />
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Temps moyen d'envoi" value={stats?.avg_latency_ms ? `${stats.avg_latency_ms} ms` : '—'} icon={Clock} tone="default" />
-            <StatCard label="Temps maximal" value={stats?.max_latency_ms ? `${stats.max_latency_ms} ms` : '—'} icon={Clock} tone="default" />
-            <StatCard label="Tentatives moyennes" value={stats?.avg_attempts ?? '—'} icon={RotateCcw} tone="default" />
-            <StatCard label="Âge moyen de la queue" value={formatDuration(stats?.avg_queue_age_seconds ?? null)} icon={Clock} tone={stats && (stats.avg_queue_age_seconds ?? 0) > 900 ? 'warn' : 'default'} />
-          </div>
-
           {(stats?.failed ?? 0) > 0 && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-4 flex items-start gap-3">
-              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-              <div className="text-sm">
-                <div className="font-medium">{stats?.failed} événement(s) définitivement échoué(s)</div>
-                <div className="text-muted-foreground">Budget de tentatives épuisé — nécessite une investigation manuelle (jeton expiré, config invalide, etc.)</div>
+            <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: C.danger + '40', backgroundColor: C.dangerBg }}>
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: C.danger }} />
+              <div className="text-xs">
+                <p className="font-black" style={{ color: C.danger }}>{stats?.failed} événement(s) définitivement échoué(s)</p>
+                <p className="text-slate-500 mt-0.5">Budget de tentatives épuisé — jeton Meta expiré ou configuration invalide, nécessite une vérification manuelle.</p>
               </div>
             </div>
           )}
 
-          <div className="rounded-lg border p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Dernier envoi réussi</span>
-              <span>{formatDate(stats?.last_success_at ?? null)}</span>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">File actuelle</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <Tile label="En attente" value={stats?.queued ?? 0} icon={Clock} color={C.info} />
+              <Tile label="En cours" value={stats?.processing ?? 0} icon={Loader2} color={C.primary} />
+              <Tile label="Nouvelle tentative" value={stats?.retry ?? 0} icon={RotateCcw} color={(stats?.retry ?? 0) > 0 ? C.warning : C.textDim} />
+              <Tile label="Échec définitif" value={stats?.failed ?? 0} icon={XCircle} color={(stats?.failed ?? 0) > 0 ? C.danger : C.textDim} />
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Dernière erreur</span>
-              <span>{formatDate(stats?.last_error_at ?? null)}</span>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Performance (30 jours)</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <Tile label="Réussis aujourd'hui" value={stats?.success_today ?? 0} icon={CheckCircle2} color={C.success} />
+              <Tile label="Réussis (30j)" value={stats?.success_30d ?? 0} icon={CheckCircle2} color={C.success} />
+              <Tile label="Taux de réussite" value={stats?.success_rate_30d != null ? `${stats.success_rate_30d}%` : '—'} icon={Gauge} color={(stats?.success_rate_30d ?? 100) >= 95 ? C.success : C.warning} />
+              <Tile label="Taux d'échec" value={stats?.failure_rate_30d != null ? `${stats.failure_rate_30d}%` : '—'} icon={Gauge} color={(stats?.failure_rate_30d ?? 0) > 5 ? C.danger : C.textDim} />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Vitesse</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              <Tile label="Temps moyen" value={stats?.avg_latency_ms ? `${stats.avg_latency_ms}ms` : '—'} icon={Clock} color={C.text} />
+              <Tile label="Temps maximal" value={stats?.max_latency_ms ? `${stats.max_latency_ms}ms` : '—'} icon={Clock} color={C.textLight} />
+              <Tile label="Tentatives moy." value={stats?.avg_attempts ?? '—'} icon={RotateCcw} color={C.textLight} />
+              <Tile label="Âge moyen file" value={formatDuration(stats?.avg_queue_age_seconds ?? null)} icon={Clock} color={(stats?.avg_queue_age_seconds ?? 0) > 900 ? C.warning : C.textDim} />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border p-4 space-y-2" style={{ borderColor: C.border }}>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400 font-bold">Dernier envoi réussi</span>
+              <span className="font-bold text-slate-700">{formatDate(stats?.last_success_at ?? null)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-400 font-bold">Dernière erreur</span>
+              <span className="font-bold text-slate-700">{formatDate(stats?.last_error_at ?? null)}</span>
             </div>
             {stats?.last_error && (
-              <div className="mt-2 rounded bg-muted p-2 text-xs font-mono break-all">{stats.last_error}</div>
+              <div className="mt-2 rounded-xl bg-slate-50 p-2.5 text-[11px] font-mono break-all text-slate-500">{stats.last_error}</div>
             )}
           </div>
         </>
