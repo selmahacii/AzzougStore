@@ -99,6 +99,7 @@ import { NoestTrackingPanel } from '@/components/admin/noest-tracking-panel';
 import { YalidineTrackingPanel } from '@/components/admin/yalidine-tracking-panel';
 import { ZRExpressTrackingPanel } from '@/components/admin/zr-express-tracking-panel';
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
+import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
 const ALL_STATUSES: { value: string; label: string }[] = [
@@ -2299,6 +2300,16 @@ const [timeLeft, setTimeLeft] = useState('');
                         </h3>
                         <div className="max-h-[400px] overflow-y-auto pr-1">
                           <OrderTraceabilityPanel orderId={selectedOrder.id} />
+                        </div>
+                      </div>
+
+                      {/* ── Marketing Attribution Report ── */}
+                      <div className="space-y-3 pt-4 border-t border-slate-100">
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                          <Activity className="size-3.5" /> Rapport d'Attribution Marketing
+                        </h3>
+                        <div className="max-h-[500px] overflow-y-auto pr-1">
+                          <OrderTrackingReport orderId={selectedOrder.id} />
                         </div>
                       </div>
                    </div>

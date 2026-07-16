@@ -1406,6 +1406,184 @@ def get_order(
     return result
 
 
+# ─── GET /orders/{id}/tracking — marketing attribution report ───────────────
+# Everything here comes from data already stored on the order + 3 cheap
+# lookups by primary/unique key (MetaAdsConfig by store_id, MetaAdsCampaign
+# by campaign_id, MetaAdsAdInsight by ad_id) + meta_capi_logs by order_id.
+# No Meta API call is ever made here — opening this tab costs 0 network
+# requests to Meta, only already-synced local data.
+
+@router.get("/{id}/tracking", response_model=dict)
+def get_order_tracking(
+    id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from app.models.marketing import MetaAdsConfig, MetaAdsCampaign, MetaAdsAdInsight, MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not order:
+        raise OrderNotFoundError()
+    _assert_order_access(order, current_user)
+
+    def _or_na(v):
+        return v if v not in (None, "") else None
+
+    # ── 1. Origine du trafic — 100% depuis les colonnes déjà stockées sur order ──
+    traffic_origin = {
+        "source": _or_na(order.source),
+        "utm_source": _or_na(order.utm_source),
+        "utm_medium": _or_na(order.utm_medium),
+        "utm_campaign": _or_na(order.utm_campaign),
+        "utm_content": _or_na(order.utm_content),
+        "utm_term": _or_na(order.utm_term),
+        "referrer": _or_na(order.referrer),
+        "landing_page_url": _or_na(order.event_source_url),
+        "full_url": _or_na(order.event_source_url),
+        "order_time": order.created_at.isoformat() if order.created_at else None,
+        # Genuinely not captured anywhere in this system today — no page-view
+        # history mechanism exists client-side. Not fabricated.
+        "first_page_visited": None,
+        "last_page_before_purchase": None,
+        "arrival_time": None,
+    }
+
+    # ── 2. Informations Meta — order columns + store-level MetaAdsConfig (1 query) ──
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
+    capi_log = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.order_id == order.id, MetaCapiLog.event_name == "Purchase")
+        .first()
+    )
+    meta_info = {
+        "pixel_id": _or_na(config.pixel_id) if config else None,
+        "event_id": _or_na(capi_log.event_id) if capi_log else None,
+        "event_name": _or_na(capi_log.event_name) if capi_log else None,
+        "event_time": capi_log.completed_at.isoformat() if capi_log and capi_log.completed_at else None,
+        "fbp": _or_na(order.fbp),
+        "fbc": _or_na(order.fbc),
+        "fbclid": _or_na(order.fbclid),
+        "click_id": _or_na(order.fbclid),
+        "event_source_url": _or_na(order.event_source_url),
+    }
+
+    # ── 3. Campagne Meta — noms résolus par 2 lookups par clé unique, pas de scan ──
+    campaign_name = adset_name = ad_name = None
+    if order.campaign_id:
+        camp = db.query(MetaAdsCampaign.campaign_name).filter(MetaAdsCampaign.campaign_id == order.campaign_id).first()
+        campaign_name = camp[0] if camp else None
+    if order.ad_id:
+        ad_row = db.query(MetaAdsAdInsight.adset_name, MetaAdsAdInsight.ad_name).filter(MetaAdsAdInsight.ad_id == order.ad_id).first()
+        if ad_row:
+            adset_name, ad_name = ad_row[0], ad_row[1]
+    campaign_info = {
+        "campaign_name": _or_na(campaign_name),
+        "adset_name": _or_na(adset_name),
+        "ad_name": _or_na(ad_name),
+        "campaign_id": _or_na(order.campaign_id),
+        "adset_id": _or_na(order.adset_id),
+        "ad_id": _or_na(order.ad_id),
+    }
+
+    # ── 4. Qualité du tracking — étapes VÉRIFIABLES seulement. Pixel/Relay/Ads
+    # Manager ne sont jamais observables depuis ce backend (voir explication
+    # dans chaque champ) — jamais affichés comme ✅/❌ pour ne pas fabriquer
+    # une preuve qu'on n'a pas. ──
+    erp_ok = True  # la commande existe, trivialement vrai
+    queue_ok = capi_log is not None
+    capi_ok = capi_log.status == "success" if capi_log else False
+    # "Meta accepté" : un statut success signifie que Meta a répondu 200 à
+    # notre envoi — c'est une preuve réelle (le code HTTP), pas une supposition.
+    meta_accepted = capi_log.status == "success" if capi_log else False
+
+    verifiable_steps = {
+        "erp": {"status": "ok" if erp_ok else "fail", "verifiable": True},
+        "pixel": {"status": "non_verifiable", "verifiable": False, "reason": "Le Pixel s'exécute uniquement dans le navigateur du client, jamais observable depuis ce backend."},
+        "relay": {"status": "non_verifiable", "verifiable": False, "reason": "Le relais frontend n'écrit aucune ligne persistante (fire-and-forget vers Meta) — aucune preuve de passage n'est enregistrée."},
+        "queue": {"status": "ok" if queue_ok else "fail", "verifiable": True},
+        "capi": {"status": "ok" if capi_ok else ("fail" if capi_log else "not_attempted"), "verifiable": True},
+        "meta": {"status": "ok" if meta_accepted else ("fail" if capi_log else "not_attempted"), "verifiable": True},
+        "ads_manager": {"status": "non_verifiable", "verifiable": False, "reason": "Aucun accès API Meta Ads Manager configuré dans cet environnement — non vérifiable automatiquement."},
+    }
+    _checkable = [s for s in verifiable_steps.values() if s["verifiable"]]
+    _passed = sum(1 for s in _checkable if s["status"] == "ok")
+    tracking_score = round(_passed / len(_checkable) * 100, 1) if _checkable else None
+
+    failure_detail = None
+    if capi_log and capi_log.status in ("failed", "retry"):
+        failure_detail = {
+            "step": "capi",
+            "error_message": capi_log.error_message,
+            "error_category": capi_log.error_category,
+            "http_status": capi_log.last_http_status,
+            "retry_count": capi_log.retry_count,
+        }
+
+    # ── 5. Timeline — uniquement des timestamps RÉELLEMENT enregistrés.
+    # AddToCart/InitiateCheckout ne sont jamais persistés nulle part
+    # aujourd'hui (relais fire-and-forget, voir ci-dessus) — absents plutôt
+    # qu'inventés. ──
+    timeline = [{"time": order.created_at.isoformat(), "label": "Commande créée"}] if order.created_at else []
+    if capi_log:
+        if capi_log.created_at:
+            timeline.append({"time": capi_log.created_at.isoformat(), "label": "Queue créée (CAPI)"})
+        if capi_log.processing_started_at:
+            timeline.append({"time": capi_log.processing_started_at.isoformat(), "label": "Envoi CAPI en cours"})
+        if capi_log.completed_at:
+            label = "Meta accepté (Purchase visible)" if capi_log.status == "success" else "CAPI terminé (échec)"
+            timeline.append({"time": capi_log.completed_at.isoformat(), "label": label})
+    timeline.sort(key=lambda t: t["time"])
+
+    # ── 6. Attribution marketing automatique — règles simples et vérifiables,
+    # jamais un pourcentage de confiance inventé sans preuve. ──
+    def _classify_source():
+        src = (order.utm_source or "").lower()
+        medium = (order.utm_medium or "").lower()
+        ref = (order.referrer or "").lower()
+        if order.fbclid:
+            return "Facebook", "Élevée (fbclid présent — preuve de clic publicitaire)"
+        if "instagram" in src or "ig" in src.split():
+            return "Instagram", "Moyenne (utm_source déclaré)"
+        if "facebook" in src or "fb" in src.split() or "meta" in src:
+            return "Facebook", "Moyenne (utm_source déclaré, sans fbclid)"
+        if "tiktok" in src:
+            return "TikTok", "Moyenne (utm_source déclaré)"
+        if "google" in src or "google" in ref:
+            return "Google", "Moyenne (utm_source/referrer déclaré)"
+        if medium == "email":
+            return "Email", "Moyenne (utm_medium déclaré)"
+        if "whatsapp" in src or "whatsapp" in ref:
+            return "WhatsApp", "Moyenne (utm_source/referrer déclaré)"
+        if ref and not order.utm_source:
+            return "Referral", "Faible (referrer sans UTM)"
+        if not ref and not order.utm_source and not order.fbclid:
+            return "Direct ou Organique", "Faible (aucun signal d'origine détecté)"
+        return "Inconnu", "Aucune (aucune règle ne correspond)"
+
+    attribution_source, attribution_confidence = _classify_source()
+
+    return {
+        "success": True,
+        "data": {
+            "traffic_origin": traffic_origin,
+            "meta_info": meta_info,
+            "campaign_info": campaign_info,
+            "tracking_quality": {
+                "steps": verifiable_steps,
+                "score": tracking_score,
+                "score_basis": "Calculé uniquement sur les étapes vérifiables (ERP, Queue, CAPI, Meta) — Pixel/Relay/Ads Manager exclus du calcul, non observables depuis ce backend.",
+                "failure_detail": failure_detail,
+            },
+            "timeline": timeline,
+            "attribution": {
+                "source": attribution_source,
+                "confidence": attribution_confidence,
+            },
+        },
+    }
+
+
 # ─── POST /orders/{id}/unmerge — Restore a merged duplicate ─────────────────
 
 @router.post("/{id}/unmerge", response_model=dict)
