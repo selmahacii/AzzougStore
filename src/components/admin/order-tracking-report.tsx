@@ -92,6 +92,26 @@ export function OrderTrackingReport({ orderId }: OrderTrackingReportProps) {
         </div>
       )}
 
+      {/* Event Match Quality — complétude des paramètres envoyés à Meta */}
+      {d.match_quality && (
+        <div className="rounded-xl border border-slate-100 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Match Quality</p>
+            <span className={
+              'text-sm font-black ' + (d.match_quality.score >= 80 ? 'text-emerald-600' : d.match_quality.score >= 50 ? 'text-amber-600' : 'text-red-600')
+            }>{d.match_quality.score}%</span>
+          </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {d.match_quality.fields.map((f: any) => (
+              <div key={f.key} className="flex flex-col items-center gap-0.5" title={f.label}>
+                {f.present ? <CheckCircle2 className="size-3 text-emerald-500" /> : <XCircle className="size-3 text-slate-200" />}
+                <span className="text-[7px] font-bold text-slate-400 text-center leading-tight">{f.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Attribution */}
       <div className="rounded-xl border border-slate-100 p-3">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Attribution Marketing</p>

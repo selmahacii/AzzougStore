@@ -599,9 +599,23 @@ def build_purchase_event(
          "item_price": float(i.unit_price or 0)}
         for i in items
     ]
+    # event_time DOIT être le moment réel de l'achat, jamais l'heure d'envoi
+    # — c'était int(time.time()) avant ce correctif, ce qui rapportait à Meta
+    # "cette conversion vient d'avoir lieu" même pour un backfill vieux de
+    # plusieurs semaines. Contraire à la doc officielle Conversions API
+    # (Meta accepte event_time jusqu'à 7 jours dans le passé et attend
+    # explicitement l'heure réelle de la conversion, pas l'heure d'envoi —
+    # https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
+    # : "event_time... This is important to help Facebook determine the
+    # optimal conversion window for your event"). Un envoi hors de cette
+    # fenêtre de 7 jours sera rejeté par Meta — c'est le comportement voulu
+    # (voir _handle_claimed_row : erreur non-retryable classée "failed",
+    # jamais masquée en réutilisant l'heure actuelle).
+    reference_dt = getattr(order, "created_at", None)
+    event_time = int(reference_dt.replace(tzinfo=timezone.utc).timestamp()) if reference_dt else int(time.time())
     event: Dict[str, Any] = {
         "event_name": "Purchase",
-        "event_time": int(time.time()),
+        "event_time": event_time,
         # MUST be keyed by order_number, not order.id: the browser Pixel
         # fires `purchase-${order_number}` (checkout-form.tsx — orderNum is
         # json.order_number), so keying this on the UUID produced two
@@ -611,6 +625,7 @@ def build_purchase_event(
         "event_id": purchase_event_id(str(order.order_number or order.id)),
         "action_source": "website",
         "user_data": build_user_data(
+            email=getattr(order, "customer_email", None),
             phone=order.customer_phone,
             full_name=order.customer_name,
             city=order.customer_commune,
@@ -985,10 +1000,16 @@ def classify_capi_log_timing(log_created_at, reference_time) -> str:
     return "realtime" if delta <= REALTIME_WINDOW_HOURS else "backfill"
 
 
-def classify_capi_log(log, reference_time) -> dict:
+def classify_capi_log(log, reference_time, explicit_backfill: bool = False) -> dict:
     """
     Classification complète d'une ligne MetaCapiLog (Purchase) pour
     l'affichage : type d'envoi, délai, cause du retard si connue.
+
+    explicit_backfill : True si un AuditLog(action='capi_marked_backfill')
+    existe pour cette commande — écrit AU MOMENT du rattrapage par
+    backfill_missing_capi (orders.py), pas déduit après coup. Prioritaire
+    sur l'heuristique de délai ci-dessous, qui ne sert plus que pour les
+    lignes envoyées avant que ce marquage explicite n'existe.
     """
     if log is None:
         return {"type": "pending", "label": "Jamais mis en file", "delay_hours": None}
@@ -998,7 +1019,7 @@ def classify_capi_log(log, reference_time) -> dict:
         return {"type": "failed", "label": "Échec définitif", "delay_hours": None,
                 "error_message": log.error_message, "retry_count": log.retry_count}
     # status == 'success'
-    timing = classify_capi_log_timing(log.created_at, reference_time)
+    timing = "backfill" if explicit_backfill else classify_capi_log_timing(log.created_at, reference_time)
     delay_hours = None
     if log.created_at and reference_time:
         delay_hours = round((log.created_at - reference_time).total_seconds() / 3600, 1)
@@ -1007,6 +1028,35 @@ def classify_capi_log(log, reference_time) -> dict:
         "label": "Temps réel" if timing == "realtime" else "Rattrapage historique (Backfill)",
         "delay_hours": delay_hours,
         "retry_count": log.retry_count,
+    }
+
+
+# ─── Event Match Quality ─────────────────────────────────────────────────────
+# Champs recommandés par Meta pour l'Event Match Quality (Conversions API) :
+# https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
+_MATCH_QUALITY_FIELDS = [
+    ("em", "Email"), ("ph", "Téléphone"), ("fn", "Prénom"), ("ln", "Nom"),
+    ("ct", "Ville"), ("st", "Wilaya"), ("country", "Pays"),
+    ("external_id", "ID externe"), ("client_ip_address", "Adresse IP"),
+    ("client_user_agent", "User Agent"), ("fbp", "FBP"), ("fbc", "FBC"),
+]
+
+
+def compute_match_quality(user_data: Optional[dict]) -> dict:
+    """
+    Score de complétude des paramètres envoyés à Meta pour cet événement —
+    un proxy honnête de l'Event Match Quality (le score EXACT que Meta
+    calcule en interne n'est jamais exposé par aucune API, seulement visible
+    dans Events Manager). Compte les champs réellement présents sur les 12
+    recommandés par Meta, jamais un chiffre inventé.
+    """
+    user_data = user_data or {}
+    present = {key: bool(user_data.get(key)) for key, _ in _MATCH_QUALITY_FIELDS}
+    score = round(sum(present.values()) / len(_MATCH_QUALITY_FIELDS) * 100, 1)
+    return {
+        "score": score,
+        "fields": [{"key": key, "label": label, "present": present[key]} for key, label in _MATCH_QUALITY_FIELDS],
+        "missing": [label for key, label in _MATCH_QUALITY_FIELDS if not present[key]],
     }
 
 
@@ -1177,6 +1227,10 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             row.last_http_status = result.get("http_status")
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             row.error_message = None
+            # Stocké aussi en succès (avant : seulement sur échec/retry) — sans
+            # ça, l'Event Match Quality est incalculable après coup pour
+            # n'importe quel envoi réussi, la grande majorité des lignes.
+            row.payload = event
             db.commit()
             logger.info(
                 "[MetaCAPI] queue: order=%s SUCCESS event_id=%s received=%s",

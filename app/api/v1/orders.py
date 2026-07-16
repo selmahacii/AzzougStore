@@ -1692,11 +1692,19 @@ def get_order_tracking(
 
     # ── 7. Classification temps réel / backfill (section 1 de la demande) ──
     from app.services.meta_capi import classify_capi_log
+    from app.models.audit import AuditLog as _AuditLog
     reference_time = _capi_reference_time(db, order)
-    capi_classification = classify_capi_log(capi_log, reference_time)
+    _explicit_backfill = db.query(_AuditLog.id).filter(
+        _AuditLog.entity == "order", _AuditLog.entity_id == order.id, _AuditLog.action == "capi_marked_backfill",
+    ).first() is not None
+    capi_classification = classify_capi_log(capi_log, reference_time, explicit_backfill=_explicit_backfill)
     capi_classification["created_at"] = order.created_at.isoformat() if order.created_at else None
     capi_classification["sent_at"] = capi_log.completed_at.isoformat() if capi_log and capi_log.completed_at else None
     capi_classification["reference_time"] = reference_time.isoformat() if reference_time else None
+
+    # ── 8. Event Match Quality (section 2 de la demande) ──
+    from app.services.meta_capi import compute_match_quality
+    match_quality = compute_match_quality((capi_log.payload or {}).get("user_data") if capi_log and capi_log.payload else None)
 
     return {
         "success": True,
@@ -1711,6 +1719,7 @@ def get_order_tracking(
                 "failure_detail": failure_detail,
             },
             "capi_classification": capi_classification,
+            "match_quality": match_quality,
             "timeline": timeline,
             "attribution": {
                 "source": attribution_source,
@@ -3455,6 +3464,15 @@ def get_capi_tracking_quality_v2(
             abandoned_transitions[oid] = ts
 
     from app.services.meta_capi import classify_capi_log_timing
+    from app.models.audit import AuditLog as _AuditLog
+
+    explicit_backfill_ids = set()
+    if order_ids:
+        explicit_backfill_ids = {
+            r[0] for r in db.query(_AuditLog.entity_id).filter(
+                _AuditLog.entity == "order", _AuditLog.entity_id.in_(order_ids), _AuditLog.action == "capi_marked_backfill",
+            ).all()
+        }
 
     realtime_ok, backfill_ok, pending, failed = 0, 0, 0, 0
     for order, log in rows:
@@ -3466,7 +3484,7 @@ def get_capi_tracking_quality_v2(
         elif log.status == "failed":
             failed += 1
         elif log.status == "success":
-            if classify_capi_log_timing(log.created_at, reference) == "realtime":
+            if order.id not in explicit_backfill_ids and classify_capi_log_timing(log.created_at, reference) == "realtime":
                 realtime_ok += 1
             else:
                 backfill_ok += 1
@@ -3476,6 +3494,38 @@ def get_capi_tracking_quality_v2(
     performance_count = realtime_ok if mode == "realtime" else meta_purchases
     coverage_pct = round(meta_purchases / total_erp * 100, 1) if total_erp else 0.0
     ecart = total_erp - meta_purchases
+
+    # ── Event Match Quality moyenne (section 8) — calculée sur les succès
+    # déjà chargés, aucune requête supplémentaire.
+    from app.services.meta_capi import compute_match_quality
+    mq_scores = [
+        compute_match_quality((log.payload or {}).get("user_data"))["score"]
+        for _, log in rows if log and log.status == "success" and log.payload
+    ]
+    avg_match_quality = round(sum(mq_scores) / len(mq_scores), 1) if mq_scores else None
+
+    # ── Note globale /100 + recommandations (section 8) — combinaison
+    # transparente de 3 signaux déjà calculés ci-dessus, pondération
+    # documentée plutôt qu'une formule opaque.
+    recommendations = []
+    score_components = []
+    score_components.append(coverage_pct)
+    if avg_match_quality is not None:
+        score_components.append(avg_match_quality)
+    failure_rate = round(failed / total_erp * 100, 1) if total_erp else 0.0
+    score_components.append(max(0.0, 100 - failure_rate * 5))  # chaque % d'échec pèse lourd
+    tracking_score_global = round(sum(score_components) / len(score_components), 1) if score_components else None
+
+    if coverage_pct < 95:
+        recommendations.append(f"Couverture à {coverage_pct}% — vérifier les commandes 'manquantes' via /orders/capi/backfill-audit.")
+    if avg_match_quality is not None and avg_match_quality < 70:
+        recommendations.append(f"Match Quality moyenne à {avg_match_quality}% — email/ville souvent absents, vérifier la collecte au checkout.")
+    if failure_rate > 2:
+        recommendations.append(f"Taux d'échec CAPI à {failure_rate}% — vérifier la validité du token Meta (voir Santé du Pixel).")
+    if backfill_ok > realtime_ok * 0.2 and backfill_ok > 5:
+        recommendations.append(f"{backfill_ok} achat(s) en rattrapage — surveiller que le déclencheur temps réel fonctionne pour les nouvelles commandes.")
+    if not recommendations:
+        recommendations.append("Aucune anomalie détectée sur la période.")
 
     return {
         "success": True,
@@ -3487,6 +3537,9 @@ def get_capi_tracking_quality_v2(
             "backfill": backfill_ok,
             "pending": pending,
             "failed": failed,
+            "avg_match_quality": avg_match_quality,
+            "tracking_score": tracking_score_global,
+            "recommendations": recommendations,
             "coverage_pct": coverage_pct,
             "ecart_reel": ecart,
             "performance_count": performance_count,
@@ -3529,10 +3582,12 @@ def list_orders_by_capi_status(
         # realtime / backfill : filtre sur des succès uniquement, classifiés
         # par écart de temps — nécessite de parcourir les lignes matching
         # (limité aux commandes déjà 'success', pas toute la table).
+        from app.models.audit import AuditLog as _AuditLog
         base = base.filter(MetaCapiLog.status == "success")
         candidates = base.order_by(Order.created_at.desc()).limit(2000).all()
         oids = [o.id for o, _ in candidates]
         abandoned_transitions = {}
+        explicit_backfill_ids = set()
         if oids:
             for oid, ts in (
                 db.query(OrderEvent.order_id, sqlfunc.min(OrderEvent.created_at))
@@ -3540,10 +3595,15 @@ def list_orders_by_capi_status(
                 .group_by(OrderEvent.order_id).all()
             ):
                 abandoned_transitions[oid] = ts
+            explicit_backfill_ids = {
+                r[0] for r in db.query(_AuditLog.entity_id).filter(
+                    _AuditLog.entity == "order", _AuditLog.entity_id.in_(oids), _AuditLog.action == "capi_marked_backfill",
+                ).all()
+            }
         filtered = []
         for order, log in candidates:
             reference = abandoned_transitions.get(order.id, order.created_at)
-            timing = classify_capi_log_timing(log.created_at, reference)
+            timing = "backfill" if order.id in explicit_backfill_ids else classify_capi_log_timing(log.created_at, reference)
             if timing == capi_filter:
                 filtered.append((order, log))
         total = len(filtered)
@@ -3572,12 +3632,24 @@ def list_orders_by_capi_status(
 # stock. Also covers any other pre-fix gap uniformly (missed config, past
 # outage) since the condition is simply "real sale, zero Purchase log row".
 
+# Fenêtre officielle Meta Conversions API : un event_time de plus de 7
+# jours dans le passé est rejeté par Meta (doc :
+# developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event).
+# Comme le correctif event_time (voir meta_capi.py) envoie désormais la
+# VRAIE date de la commande — jamais l'heure actuelle — une commande plus
+# vieille que 7 jours n'est structurellement plus rattrapable par CAPI.
+# Ce n'est pas contourné en trichant sur la date ; l'ordre est simplement
+# retiré du backfill actionnable, honnêtement étiqueté "hors fenêtre Meta".
+META_CAPI_EVENT_TIME_WINDOW_DAYS = 7
+
+
 @router.get("/capi/backfill-audit", response_model=dict)
 def audit_missing_capi(
     store_id: Optional[str] = Query(None),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
+    from datetime import datetime as _dt, timedelta as _td
     from sqlalchemy import exists as sa_exists
     from app.models.marketing import MetaCapiLog, MetaAdsConfig
 
@@ -3586,7 +3658,7 @@ def audit_missing_capi(
     capi_success_exists = sa_exists().where(
         MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
     )
-    q = db.query(Order.id, Order.order_number, Order.store_id, Order.status, Order.updated_at).filter(
+    q = db.query(Order.id, Order.order_number, Order.store_id, Order.status, Order.updated_at, Order.created_at).filter(
         Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
         Order.is_deleted == False,
         sqlfunc.coalesce(Order.source, "") != "MANUAL",
@@ -3606,13 +3678,18 @@ def audit_missing_capi(
             MetaAdsConfig.pixel_id.isnot(None), MetaAdsConfig.access_token.isnot(None),
         ).all()
     }
-    actionable = [m for m in missing if m.store_id in configured_store_ids]
+    cutoff = _dt.utcnow() - _td(days=META_CAPI_EVENT_TIME_WINDOW_DAYS)
+    with_config = [m for m in missing if m.store_id in configured_store_ids]
+    actionable = [m for m in with_config if m.created_at and m.created_at >= cutoff]
+    out_of_window = [m for m in with_config if not (m.created_at and m.created_at >= cutoff)]
 
     return {
         "success": True,
         "data": {
             "total_missing": len(missing),
             "actionable": len(actionable),
+            "out_of_window": len(out_of_window),
+            "out_of_window_reason": f"Commande créée il y a plus de {META_CAPI_EVENT_TIME_WINDOW_DAYS} jours — Meta rejette tout event_time hors de cette fenêtre, non contournable sans mentir sur la date réelle.",
             "orders": [
                 {"order_id": m.id, "order_number": m.order_number, "store_id": m.store_id, "status": m.status, "updated_at": m.updated_at.isoformat() if m.updated_at else None}
                 for m in actionable
@@ -3630,7 +3707,7 @@ def backfill_missing_capi(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     import time as _time
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt, timezone as _tz, timedelta
     from sqlalchemy import exists as sa_exists
     from app.models.marketing import MetaCapiLog, MetaAdsConfig
     from app.models.audit import AuditLog
@@ -3646,11 +3723,13 @@ def backfill_missing_capi(
     capi_success_exists = sa_exists().where(
         MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
     )
+    cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - timedelta(days=META_CAPI_EVENT_TIME_WINDOW_DAYS)
     q = db.query(Order).filter(
         Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
         Order.is_deleted == False,
         sqlfunc.coalesce(Order.source, "") != "MANUAL",
         sqlfunc.coalesce(Order.source, "") != "POS",
+        Order.created_at >= cutoff,  # hors de cette fenêtre = Meta rejette l'event_time réel, non contournable
         ~capi_success_exists,
     )
     if order_ids:
@@ -3688,6 +3767,16 @@ def backfill_missing_capi(
             enqueue_purchase_for_order(db, order)
             db.commit()
             queued += 1
+            # Marquage EXPLICITE "rattrapage" (section 2 : tracking_source =
+            # backfill) — enregistré ICI, avant l'envoi, pas déduit après
+            # coup par un écart de temps. Destiné à notre ERP uniquement,
+            # n'affecte jamais ce qui est transmis à Meta.
+            db.add(AuditLog(
+                id=str(uuid.uuid4()), actor_id=current_user.id, store_id=order.store_id,
+                entity="order", entity_id=order.id, action="capi_marked_backfill",
+                diff={"order_created_at": order.created_at.isoformat() if order.created_at else None},
+            ))
+            db.commit()
             send_purchase_for_order(order_id=str(order.id), client_ip=client_ip, user_agent=user_agent)
             final_status = db.query(MetaCapiLog.status).filter(
                 MetaCapiLog.order_id == order.id, MetaCapiLog.event_name == "Purchase",
