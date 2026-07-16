@@ -461,6 +461,12 @@ def get_agent_counts(
             Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
             or_(Order.next_callback_time == None, Order.next_callback_time <= datetime.now(timezone.utc).replace(tzinfo=None)),
         ),
+        # "Commandes Manuelles" sidebar badge — store-wide like shipped/
+        # delivered/returned above, not scoped to the confirmatrice's own
+        # `base`: a manually-entered order can be created by any agent/admin,
+        # and whoever's checking this count should see the store's total,
+        # not just their own.
+        "manual": _count_wide(sqlfunc.coalesce(Order.source, "") == "MANUAL"),
     }
     return {"success": True, "counts": counts}
 
