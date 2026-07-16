@@ -26,6 +26,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -76,6 +78,7 @@ interface LandingPage {
     duplicates: number;
     meta_purchases?: number;
     meta_impressions?: number;
+    meta_last_synced_at?: string | null;
     [key: string]: any;
   } | null;
   stock_detail?: {
@@ -394,6 +397,17 @@ function LandingPageCard({
               <p className="text-[8px] font-bold text-[#1877F2]/70 uppercase tracking-wider">Achats détectés Meta</p>
             </div>
           </div>
+        )}
+        {lp.metrics?.meta_last_synced_at && (
+          // Meta's own numbers above are a SNAPSHOT from the last backend
+          // sync (auto-sync runs every ~24h), never live — without this
+          // timestamp, any gap with Meta Ads Manager's real-time count
+          // (which keeps ticking up between syncs) reads as a bug instead
+          // of ordinary staleness.
+          <p className="text-[9px] text-slate-400 font-bold -mt-2 mb-4 flex items-center gap-1">
+            <RefreshCw className="size-2.5" />
+            Meta synchronisé {formatDistanceToNow(new Date(lp.metrics.meta_last_synced_at), { addSuffix: true, locale: fr })}
+          </p>
         )}
 
         {/* Actions */}
