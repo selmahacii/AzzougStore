@@ -9,7 +9,7 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus,
-  Warehouse, History, Bell, Wallet
+  Warehouse, History, Bell, Wallet, UserCheck
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -67,6 +67,11 @@ const MODULES: Module[] = [
       { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
       { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
       { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
+      // Commandes saisies directement par un agent/admin (téléphone, en
+      // magasin...) plutôt que soumises par le client lui-même — quel que
+      // soit leur statut actuel (utile pour distinguer une vente manuelle
+      // d'une commande storefront/landing page dans le suivi quotidien).
+      { id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck },
     ]
   },
   {

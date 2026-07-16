@@ -141,8 +141,8 @@ export default function LivreurDashboard() {
           column made them cramped and broken-looking on a laptop. They get
           the full viewport width like in the admin app; only the deliveries
           list keeps the narrow phone-first column. */}
-      {section === 'products'   && <div className="max-w-7xl mx-auto p-3 sm:p-6"><ProductsPage /></div>}
-      {section === 'inventory'  && <div className="max-w-7xl mx-auto p-3 sm:p-6"><InventoryDashboard /></div>}
+      {section === 'products'   && <div className="max-w-7xl mx-auto p-2 sm:p-6 overflow-x-hidden"><ProductsPage /></div>}
+      {section === 'inventory'  && <div className="max-w-7xl mx-auto p-2 sm:p-6 overflow-x-hidden"><InventoryDashboard /></div>}
     </div>
   );
 }
@@ -231,28 +231,26 @@ function LivreurDeliveries() {
   return (
     <>
       <main className="max-w-3xl mx-auto p-4 space-y-4">
-        {/* ── KPI strip ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-2">
-          <div className="bg-white border rounded-2xl p-3 text-center">
-            <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">À livrer</p>
-            <p className="text-2xl font-black text-cyan-600 tabular-nums mt-1">
-              {todoAll.filter(o => o.status !== 'SHIPPED').length}
-            </p>
-          </div>
-          <div className="bg-white border rounded-2xl p-3 text-center">
-            <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">En route</p>
-            <p className="text-2xl font-black text-blue-600 tabular-nums mt-1">{inTransit.length}</p>
-          </div>
-          <div className="bg-white border rounded-2xl p-3 text-center">
-            <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Livrées</p>
-            <p className="text-2xl font-black text-green-600 tabular-nums mt-1">
-              {doneAll.filter(o => o.status === 'DELIVERED').length}
-            </p>
-          </div>
-          <div className="bg-white border rounded-2xl p-3 text-center">
-            <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">Encaissé</p>
-            <p className="text-xs font-black text-slate-800 tabular-nums mt-1.5">{formatPrice(collectedTotal)}</p>
-          </div>
+        {/* ── KPI strip ── colored-tile pattern from 4d8c24a (LP analytics
+            "Achats déclarés par Meta" card): borderColor at ~20% opacity,
+            backgroundColor at ~5% opacity, per-metric accent color — same
+            tinted-tile language now used across the admin analytics cards,
+            applied here instead of the previous plain white/colored-text
+            tiles for visual consistency across the whole app. ──────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {[
+            { label: 'À livrer', value: todoAll.filter(o => o.status !== 'SHIPPED').length, color: '#6C5CE7' },
+            { label: 'En route', value: inTransit.length, color: '#0984E3' },
+            { label: 'Livrées', value: doneAll.filter(o => o.status === 'DELIVERED').length, color: '#00B894' },
+            { label: 'Retournées', value: doneAll.filter(o => o.status === 'RETURNED').length, color: '#E17055' },
+            { label: 'Encaissé', value: formatPrice(collectedTotal), color: '#F7B731' },
+          ].map(s => (
+            <div key={s.label} className="text-center p-3 rounded-2xl border"
+              style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+              <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 leading-tight">{s.label}</p>
+              <p className="text-lg sm:text-2xl font-black tabular-nums mt-1" style={{ color: s.color }}>{s.value}</p>
+            </div>
+          ))}
         </div>
 
         {/* ── Filters ────────────────────────────────────────────────── */}
