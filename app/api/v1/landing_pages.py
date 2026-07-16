@@ -477,6 +477,53 @@ def get_landing_page_analytics(
         "revenue": sum(d["revenue"] for d in daily),
     }
 
+    # ── Micro-détail panier normal / abandonné / récupéré / doublons / NRP —
+    # même calcul que les badges de la liste des landing pages (une seule
+    # requête groupée), pour que le client voie clairement d'où viennent ses
+    # commandes sans avoir à deviner. Scopé au même produit + période que le
+    # reste de cet endpoint.
+    _not_manual = func.coalesce(Order.source, "") != "MANUAL"
+    _is_abandoned = Order.is_abandoned_cart == True
+    _DELIVERED_STATES = ("CONFIRMED", "SHIPPED", "DELIVERED")
+    detail_row = (
+        db.query(
+            func.count(distinct(case(
+                (and_(Order.status != "MERGED", _not_manual, func.coalesce(Order.is_abandoned_cart, False) == False), Order.id)
+            ))).label("normal"),
+            func.count(distinct(case((_is_abandoned, Order.id)))).label("abandoned"),
+            func.count(distinct(case(
+                (and_(_is_abandoned, Order.status.in_(_DELIVERED_STATES)), Order.id)
+            ))).label("recovered"),
+            func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
+            func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
+            func.count(distinct(case(
+                (and_(Order.nrp_count > 0, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
+            ))).label("nrp"),
+            func.count(distinct(case(
+                (and_(Order.nrp_count > 0, _is_abandoned, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
+            ))).label("nrp_abandoned"),
+        )
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.created_at >= d_start,
+            Order.created_at <= d_end,
+        )
+        .first()
+    )
+    totals["normal"] = int(detail_row.normal or 0)
+    totals["abandoned"] = int(detail_row.abandoned or 0)
+    totals["recovered"] = int(detail_row.recovered or 0)
+    totals["duplicates"] = int(detail_row.duplicates or 0)
+    totals["confirmed_delivered"] = int(detail_row.confirmed_delivered or 0)
+    totals["nrp"] = int(detail_row.nrp or 0)
+    totals["nrp_abandoned"] = int(detail_row.nrp_abandoned or 0)
+    totals["nrp_normal"] = max(0, totals["nrp"] - totals["nrp_abandoned"])
+    # Abandonné jamais récupéré = toujours ouvert/en cours, pas de statut final
+    totals["abandoned_not_recovered"] = max(0, totals["abandoned"] - totals["recovered"])
+
     # "Achats déclarés par Meta" for this exact product — client's main ask
     # was to see, right on the landing page card, what Meta itself reports
     # having received, next to the real order count above. Sourced from the

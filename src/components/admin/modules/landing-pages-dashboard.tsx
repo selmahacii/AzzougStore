@@ -235,6 +235,49 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
+          {/* Micro-détails — regroupés par question claire ("d'où viennent
+              mes commandes ?" / "combien de relances téléphoniques ?"),
+              chaque groupe visuellement séparé pour que le client s'y
+              retrouve sans avoir à deviner ce que chaque chiffre veut dire. */}
+          <div className="space-y-3">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">D'où viennent ces commandes ?</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { label: 'Panier normal', value: totals.normal ?? 0, color: '#6C5CE7', title: "Commande passée normalement au checkout — pas un panier abandonné, pas manuelle, pas un doublon." },
+                  { label: 'Panier abandonné', value: totals.abandoned ?? 0, color: '#FDCB6E', title: "Client parti sans finaliser — total, qu'il ait été récupéré ensuite ou non." },
+                  { label: 'dont récupéré', value: totals.recovered ?? 0, color: '#00B894', title: "Panier abandonné rappelé et confirmé/livré par la suite." },
+                  { label: 'dont jamais récupéré', value: totals.abandoned_not_recovered ?? 0, color: '#E17055', title: "Panier abandonné resté sans suite — toujours ouvert ou définitivement perdu." },
+                  { label: 'Doublons fusionnés', value: totals.duplicates ?? 0, color: '#B2BEC3', title: "Même client, même produit, soumis plusieurs fois — fusionnés automatiquement en une seule commande." },
+                  { label: 'Manuelles', value: totals.manual ?? 0, color: '#636E72', title: "Créées à la main par un agent (téléphone, réseaux sociaux) — jamais vues par Meta." },
+                ].map(s => (
+                  <div key={s.label} title={s.title} className="text-center p-2.5 rounded-xl border" style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                    <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {(totals.nrp ?? 0) > 0 && (
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Relances téléphoniques (NRP — ne répond pas)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Total NRP', value: totals.nrp ?? 0, color: '#E17055', title: "Commandes en cours (pas encore livrées/annulées) où le client n'a pas répondu au moins une fois." },
+                    { label: 'NRP panier normal', value: totals.nrp_normal ?? 0, color: '#FDCB6E', title: "NRP sur une commande passée normalement au checkout." },
+                    { label: 'NRP panier abandonné', value: totals.nrp_abandoned ?? 0, color: '#FDCB6E', title: "NRP sur un panier abandonné en cours de récupération téléphonique." },
+                  ].map(s => (
+                    <div key={s.label} title={s.title} className="text-center p-2.5 rounded-xl border" style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Graphe simplifié — chiffres toujours visibles (pas besoin de
               survoler avec la souris), légende en langage clair. */}
           <div className="bg-slate-50 rounded-2xl p-4">
