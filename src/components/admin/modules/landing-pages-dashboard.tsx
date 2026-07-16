@@ -2245,9 +2245,11 @@ export default function LandingPagesDashboard() {
     ? metaSyncTimestamps.reduce((oldest, t) => (t < oldest ? t : oldest))
     : null;
 
-  // Auto-refresh Meta's numbers when this page is actually being looked at,
-  // instead of waiting up to 3h for the backend's own background sync — one
-  // resync per mount, only if the oldest linked campaign is already stale.
+  // Auto-refresh Meta's numbers EVERY time this page is actually opened —
+  // no staleness threshold: the previous 30min gate meant the numbers could
+  // still be up to 30min behind Meta's own live count on every single
+  // visit, which read as "never really synchronized". Cost is bounded by
+  // how often a human opens this page (once per mount), not by a timer.
   const metaResyncTriggered = useRef(false);
   const metaResyncMutation = useMutation({
     mutationFn: () => apiFetch(`/api/v1/meta-ads/sync?store_id=${storeId}`, { method: 'POST' }),
@@ -2255,12 +2257,9 @@ export default function LandingPagesDashboard() {
   });
   useEffect(() => {
     if (metaResyncTriggered.current || !storeId || isLoading) return;
-    const staleMs = oldestMetaSync ? Date.now() - new Date(oldestMetaSync).getTime() : Infinity;
-    if (staleMs > 30 * 60 * 1000) {
-      metaResyncTriggered.current = true;
-      metaResyncMutation.mutate();
-    }
-  }, [storeId, isLoading, oldestMetaSync]);
+    metaResyncTriggered.current = true;
+    metaResyncMutation.mutate();
+  }, [storeId, isLoading]);
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-500">

@@ -179,19 +179,17 @@ export default function MetaAdsDashboard() {
     return !latest || c.last_synced_at > latest ? c.last_synced_at : latest;
   }, null as string | null);
 
-  // Auto-refresh Meta's numbers when the dashboard is actually being looked
-  // at, instead of only once every 24h in the background — fires once per
-  // mount, only when the last sync is already stale (>30min), so opening
-  // this tab doesn't itself become a new source of constant polling cost.
+  // Auto-refresh Meta's numbers EVERY time this dashboard is actually
+  // opened — no staleness threshold: a 30min gate still meant numbers could
+  // be up to 30min behind Meta's own live count on every single visit,
+  // which read as "never really synchronized". Cost is bounded by how
+  // often a human opens this tab (once per mount), not by a timer.
   const autoSyncTriggered = useRef(false);
   useEffect(() => {
     if (autoSyncTriggered.current || !activeStore?.id || isLoadingCampaigns) return;
-    const staleMs = lastSyncedAt ? Date.now() - new Date(lastSyncedAt).getTime() : Infinity;
-    if (staleMs > 30 * 60 * 1000) {
-      autoSyncTriggered.current = true;
-      syncMutation.mutate();
-    }
-  }, [activeStore?.id, isLoadingCampaigns, lastSyncedAt]);
+    autoSyncTriggered.current = true;
+    syncMutation.mutate();
+  }, [activeStore?.id, isLoadingCampaigns]);
 
   // Integration data shortcuts
   const intData = integrationData?.data;
