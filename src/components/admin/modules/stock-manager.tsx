@@ -336,6 +336,32 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                                )}
                             </div>
                             <p className="text-[10px] font-black text-[#6C5CE7] font-mono mt-0.5 tracking-wider">SKU: {p.slug || 'N/A'}</p>
+                            {/* Per-variant availability, right in the row — no need
+                                to open "Ajuster" just to see which color/size is
+                                low. Already-loaded product.variants, no extra
+                                fetch. Color follows the same rupture/faible/ok
+                                logic as the product-level badge above. */}
+                            {variant !== 'alerts' && getProductVariantItems(p).length > 0 && (
+                               <div className="flex items-center gap-1 flex-wrap mt-1.5 max-w-[280px]">
+                                  {getProductVariantItems(p).map((vi, vIdx) => {
+                                     const vAvailable = Math.max(0, vi.stock - vi.reserved);
+                                     const vColor = vAvailable <= 0 ? { bg: '#FFEDE9', text: '#E17055' }
+                                        : vAvailable <= (p.low_stock_threshold || 5) ? { bg: '#FFF8E6', text: '#FDCB6E' }
+                                        : { bg: '#E6FFF8', text: '#00B894' };
+                                     return (
+                                        <span
+                                           key={vIdx}
+                                           title={vi.variantStr}
+                                           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black tracking-wide whitespace-nowrap"
+                                           style={{ backgroundColor: vColor.bg, color: vColor.text }}
+                                        >
+                                           {vi.variantStr.length > 18 ? vi.variantStr.slice(0, 18) + '…' : vi.variantStr}
+                                           <span className="opacity-70">· {vAvailable} dispo{vi.reserved > 0 ? ` / ${vi.reserved} résa` : ''}</span>
+                                        </span>
+                                     );
+                                  })}
+                               </div>
+                            )}
                          </td>
                          {variant === 'alerts' ? (
                             <>
