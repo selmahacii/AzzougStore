@@ -147,6 +147,9 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Inventaire Livreurs', view: 'inventory', subView: 'LIVREURS' },
                { label: 'Traçabilité', view: 'inventory', subView: 'TRACABILITE' },
                { label: 'Analyse des écarts', view: 'inventory', subView: 'ECARTS' },
+               { label: 'Suivi des lots', view: 'inventory', subView: 'LOTS' },
+               { label: 'Alertes intelligentes', view: 'inventory', subView: 'ALERTS_ENGINE' },
+               { label: 'Transferts entrepôts', view: 'inventory', subView: 'TRANSFERS' },
                { label: 'Retours Commandes', view: 'returns' }
             ]
          },

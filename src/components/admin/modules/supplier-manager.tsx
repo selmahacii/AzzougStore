@@ -332,6 +332,13 @@ export default function SupplierManager() {
 
   const suppliers = data?.data || [];
 
+  const { data: scorecardData } = useQuery({
+    queryKey: ['supplier-scorecards', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/suppliers/scorecards?store_id=${activeStore?.id}`),
+    enabled: !!activeStore?.id,
+  });
+  const scorecards = scorecardData?.data || [];
+
   // --- Mutations ---
   const mutation = useMutation({
     mutationFn: (payload: any) => {
@@ -487,7 +494,42 @@ export default function SupplierManager() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      
+
+      {/* ─── Scorecard fournisseurs — comparaison rapide (section 8) ─── */}
+      {scorecards.length > 0 && (
+        <div className="bg-white rounded-[24px] border p-5 overflow-x-auto" style={{ borderColor: C.border }}>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Performance fournisseurs</p>
+          <table className="w-full text-left text-xs min-w-[700px]">
+            <thead>
+              <tr className="text-[9px] font-black uppercase text-slate-400 border-b" style={{ borderColor: C.border }}>
+                <th className="pb-2">Fournisseur</th>
+                <th className="pb-2 text-center">Commandes</th>
+                <th className="pb-2 text-right">Montant total</th>
+                <th className="pb-2 text-center">Délai moyen</th>
+                <th className="pb-2 text-center">Retards</th>
+                <th className="pb-2 text-center">Retours</th>
+                <th className="pb-2">Dernier achat</th>
+                <th className="pb-2 text-center">Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y" style={{ borderColor: C.border }}>
+              {scorecards.map((s: any) => (
+                <tr key={s.supplier_id}>
+                  <td className="py-2 font-bold text-slate-800">{s.name}</td>
+                  <td className="py-2 text-center tabular-nums">{s.nombre_commandes}</td>
+                  <td className="py-2 text-right tabular-nums font-bold">{formatPrice(s.montant_total)}</td>
+                  <td className="py-2 text-center tabular-nums">{s.delai_moyen_jours != null ? `${s.delai_moyen_jours}j` : '—'}</td>
+                  <td className={cn("py-2 text-center tabular-nums font-bold", s.retards > 0 ? "text-rose-500" : "text-emerald-500")}>{s.retards}</td>
+                  <td className="py-2 text-center tabular-nums">{s.retours}</td>
+                  <td className="py-2 text-slate-500">{s.dernier_achat ? new Date(s.dernier_achat).toLocaleDateString('fr-FR') : '—'}</td>
+                  <td className="py-2 text-center font-black" style={{ color: s.score >= 80 ? '#00B894' : s.score >= 50 ? '#FDCB6E' : '#E17055' }}>{Math.round(s.score)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* ─── Search & Global Stats ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
          <div className="lg:col-span-3 bg-white rounded-[24px] sm:rounded-[32px] border p-3 sm:p-4 flex items-center shadow-sm" style={{ borderColor: C.border }}>

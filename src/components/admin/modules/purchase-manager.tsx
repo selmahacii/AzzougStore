@@ -96,6 +96,13 @@ export default function PurchaseManager() {
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
 
   // --- Data Fetching ---
+  const { data: statsData } = useQuery({
+    queryKey: ['purchase-stats', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/purchase-vouchers/stats?store_id=${activeStore?.id}`),
+    enabled: !!activeStore?.id,
+  });
+  const stats = statsData?.data;
+
   const { data: vouchersData, isLoading: isLoadingVouchers } = useQuery({
     queryKey: ['purchase_vouchers', activeStore?.id, activeTab],
     queryFn: () => {
@@ -272,6 +279,23 @@ export default function PurchaseManager() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {[
+            { label: 'Valeur totale', value: formatPrice(stats.valeur_totale), color: C.primary },
+            { label: 'Taxes', value: formatPrice(stats.taxes_totales), color: C.textLight },
+            { label: 'Transport', value: formatPrice(stats.transport_total), color: C.textLight },
+            { label: 'Reçu / Commandé', value: `${stats.quantite_recue} / ${stats.quantite_commandee}`, color: C.success },
+            { label: 'Taux réception', value: `${stats.taux_reception_pct}%`, color: stats.taux_reception_pct >= 90 ? C.success : C.warning },
+            { label: 'Retards', value: stats.retards.count, color: stats.retards.count > 0 ? C.danger : C.success },
+          ].map(s => (
+            <div key={s.label} className="p-3 rounded-xl border bg-white" style={{ borderColor: s.color + '33' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
       
       {/* ─── TABS & METRICS ─── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

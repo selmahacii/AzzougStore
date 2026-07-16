@@ -218,6 +218,86 @@ def list_suppliers(
     }
 
 
+# ─── GET /suppliers/scorecards — Section 8 "Fournisseurs" ──────────────────
+# Doit rester AVANT /{supplier_id} (routage par ordre d'enregistrement).
+
+@router.get("/scorecards", response_model=dict)
+def get_supplier_scorecards(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import func as sqlfunc
+    from app.models.purchase import Purchase, PurchaseItem
+    from app.models.returns import Return
+
+    suppliers = db.query(Supplier).filter(Supplier.store_id == store_id).all()
+    if not suppliers:
+        return {"success": True, "data": []}
+    sids = [s.id for s in suppliers]
+
+    purchase_rows = dict(
+        (r[0], r) for r in db.query(
+            Purchase.supplier_id,
+            sqlfunc.count(Purchase.id),
+            sqlfunc.coalesce(sqlfunc.sum(Purchase.total), 0),
+            sqlfunc.max(Purchase.created_at),
+        )
+        .filter(Purchase.supplier_id.in_(sids), Purchase.bon_type == "PURCHASE_ORDER")
+        .group_by(Purchase.supplier_id)
+        .all()
+    )
+    return_counts = dict(
+        db.query(Return.supplier_id, sqlfunc.count(Return.id))
+        .filter(Return.supplier_id.in_(sids))
+        .group_by(Return.supplier_id)
+        .all()
+    )
+    # "Produits" par fournisseur : Product n'a pas de supplier_id (un
+    # produit n'est pas lié à un fournisseur unique dans ce schéma) —
+    # approximé par les produits distincts achetés via bon de commande.
+    product_counts = dict(
+        db.query(Purchase.supplier_id, sqlfunc.count(sqlfunc.distinct(PurchaseItem.product_id)))
+        .join(PurchaseItem, PurchaseItem.purchase_id == Purchase.id)
+        .filter(Purchase.supplier_id.in_(sids))
+        .group_by(Purchase.supplier_id)
+        .all()
+    )
+
+    # Délai moyen réel : received_at - created_at, sur les bons reçus
+    delay_rows = (
+        db.query(Purchase.supplier_id, Purchase.created_at, Purchase.received_at)
+        .filter(Purchase.supplier_id.in_(sids), Purchase.received_at.isnot(None))
+        .all()
+    )
+    delays_by_supplier: dict = {}
+    for sid, created, received in delay_rows:
+        delays_by_supplier.setdefault(sid, []).append((received - created).days)
+
+    data = []
+    for s in suppliers:
+        pr = purchase_rows.get(s.id)
+        nb_commandes = int(pr[1]) if pr else 0
+        montant_total = float(pr[2]) if pr else 0.0
+        dernier_achat = pr[3].isoformat() if pr and pr[3] else None
+        delays = delays_by_supplier.get(s.id, [])
+        delai_moyen = round(sum(delays) / len(delays), 1) if delays else None
+        retards = len([d for d in delays if d > (s.lead_time_days or 7)])
+        data.append({
+            "supplier_id": s.id, "name": s.name,
+            "nombre_commandes": nb_commandes,
+            "montant_total": montant_total,
+            "produits": product_counts.get(s.id, 0),
+            "delai_moyen_jours": delai_moyen,
+            "retards": retards,
+            "retours": return_counts.get(s.id, 0),
+            "dernier_achat": dernier_achat,
+            "score": s.reliability_score,
+        })
+
+    data.sort(key=lambda x: x["montant_total"], reverse=True)
+    return {"success": True, "data": data}
+
+
 @router.get("/{supplier_id}", response_model=dict)
 def get_supplier(supplier_id: str, db: Session = Depends(get_db)):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()

@@ -559,7 +559,27 @@ def quick_update_stock(
     if new_stock is None or int(new_stock) < 0:
         raise HTTPException(status_code=400, detail="Stock invalide (doit être >= 0).")
 
-    product.stock = int(new_stock)  # type: ignore[assignment]
+    new_stock = int(new_stock)
+    old_stock = product.stock or 0
+    delta = new_stock - old_stock
+
+    # Invariant du module Inventaire : aucun stock ne change sans mouvement
+    # traçable. Cette route l'ignorait — un admin pouvait taper un chiffre
+    # dans le tableau et le stock changeait sans laisser aucune trace (pas
+    # d'auteur, pas de raison, pas de "avant/après").
+    if delta != 0:
+        import uuid as _uuid
+        from app.models.stock import StockMovement
+        db.add(StockMovement(
+            id=str(_uuid.uuid4()),
+            product_id=product.id,
+            type="MANUAL_ADJUSTMENT",
+            quantity=delta,
+            actor_id=getattr(current_user, "id", None),
+            reason=f"Ajustement rapide (tableau) : {old_stock} → {new_stock}",
+        ))
+
+    product.stock = new_stock  # type: ignore[assignment]
     db.commit()
     return {"success": True, "id": id, "stock": product.stock}
 

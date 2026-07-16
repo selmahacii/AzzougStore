@@ -37,6 +37,7 @@ import SupplierManager from './supplier-manager';
 import PurchaseManager from './purchase-manager';
 import ReturnManager from './return-manager';
 import { LivreursInventoryView, TracabilityView, DiscrepanciesView } from './inventory-tracability';
+import { LotsView, AlertsEngineView, WarehouseTransferPanel } from './inventory-erp-extra';
 
 interface InventorySummary {
   data: {
@@ -186,6 +187,9 @@ export default function InventoryDashboard() {
       if (['Livreurs', 'Inventaire Livreurs', 'LIVREURS'].includes(sv)) return 'LIVREURS';
       if (['Traçabilité', 'Tracabilite', 'TRACABILITE'].includes(sv)) return 'TRACABILITE';
       if (['Écarts', 'Ecarts', 'ECARTS'].includes(sv)) return 'ECARTS';
+      if (['Lots', 'Suivi des lots', 'LOTS'].includes(sv)) return 'LOTS';
+      if (['Alertes intelligentes', 'ALERTS_ENGINE'].includes(sv)) return 'ALERTS_ENGINE';
+      if (['Transferts', 'TRANSFERS'].includes(sv)) return 'TRANSFERS';
       return 'STOCK';
    };
 
@@ -257,6 +261,9 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    if (activeTab === 'LIVREURS') return <LivreursInventoryView />;
    if (activeTab === 'TRACABILITE') return <TracabilityView />;
    if (activeTab === 'ECARTS') return <DiscrepanciesView />;
+   if (activeTab === 'LOTS') return <LotsView />;
+   if (activeTab === 'ALERTS_ENGINE') return <AlertsEngineView />;
+   if (activeTab === 'TRANSFERS') return <WarehouseTransferPanel />;
    return <StockView />;
 }
 

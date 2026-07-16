@@ -47,6 +47,8 @@ def list_movements(
     movement_type: Optional[str] = None,
     warehouse_id: Optional[str] = None,
     actor_id: Optional[str] = None,
+    order_id: Optional[str] = None,
+    batch_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -71,6 +73,10 @@ def list_movements(
         query = query.filter(StockMovement.warehouse_id == warehouse_id)
     if actor_id:
         query = query.filter(StockMovement.actor_id == actor_id)
+    if order_id:
+        query = query.filter(StockMovement.order_id == order_id)
+    if batch_id:
+        query = query.filter(StockMovement.batch_id == batch_id)
     if date_from:
         try:
             query = query.filter(StockMovement.created_at >= parse_local_date_filter(date_from))
@@ -479,6 +485,314 @@ def get_stock_discrepancies(
         "data": findings,
         "total": len(findings),
         "high_severity": len([f for f in findings if f["severity"] == "high"]),
+    }
+
+
+# ─── GET /stock/lots — Section 4 "Suivi des lots" ───────────────────────────
+# Aucun modèle Lot dédié n'existe — batch_id/expiration_date sont déjà des
+# colonnes de StockMovement (réutilisées, pas de migration). Un "lot" est
+# donc l'ensemble des mouvements partageant le même batch_id.
+
+@router.get("/lots", response_model=dict)
+def list_lots(
+    store_id: str,
+    product_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    rows = (
+        db.query(
+            StockMovement.batch_id,
+            StockMovement.product_id,
+            Product.name,
+            sqlfunc.min(StockMovement.expiration_date).label("expiration_date"),
+            sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0).label("balance"),
+            sqlfunc.count(StockMovement.id).label("movements"),
+            sqlfunc.min(StockMovement.created_at).label("received_at"),
+            sqlfunc.max(StockMovement.warehouse_id).label("warehouse_id"),
+        )
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.batch_id.isnot(None))
+        .group_by(StockMovement.batch_id, StockMovement.product_id, Product.name)
+    )
+    if product_id:
+        rows = rows.filter(StockMovement.product_id == product_id)
+    rows = rows.order_by(sqlfunc.min(StockMovement.created_at).desc()).limit(200).all()
+
+    warehouse_ids = {r.warehouse_id for r in rows if r.warehouse_id}
+    warehouse_names = {}
+    if warehouse_ids:
+        from app.models.warehouse import Warehouse
+        warehouse_names = dict(db.query(Warehouse.id, Warehouse.name).filter(Warehouse.id.in_(warehouse_ids)).all())
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    data = []
+    for r in rows:
+        etat = "actif"
+        if r.balance <= 0:
+            etat = "épuisé"
+        elif r.expiration_date:
+            try:
+                exp = datetime.fromisoformat(r.expiration_date).replace(tzinfo=timezone.utc)
+                if exp < now:
+                    etat = "expiré"
+                elif (exp - now).days <= 7:
+                    etat = "expire bientôt"
+            except (ValueError, TypeError):
+                pass
+        data.append({
+            "batch_id": r.batch_id, "product_id": r.product_id, "product_name": r.name,
+            "expiration_date": r.expiration_date, "balance": max(0, int(r.balance)),
+            "movements": int(r.movements), "received_at": r.received_at.isoformat() if r.received_at else None,
+            "warehouse_name": warehouse_names.get(r.warehouse_id), "etat": etat,
+            # Non tracké : le lot n'a pas de lien direct vers son
+            # fournisseur/commande d'achat d'origine (batch_id est saisi
+            # librement lors d'un réappro, PurchaseItem n'a pas de batch_id).
+            "fournisseur": {"value": None, "tracked": False},
+            "commande_fournisseur": {"value": None, "tracked": False},
+        })
+
+    return {"success": True, "data": data}
+
+
+@router.get("/lots/{batch_id}/history", response_model=dict)
+def get_lot_history(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Historique complet d'un lot + toutes les commandes clients qui l'ont utilisé."""
+    from app.models.order import Order
+
+    movements = (
+        db.query(StockMovement)
+        .options(joinedload(StockMovement.actor))
+        .filter(StockMovement.batch_id == batch_id)
+        .order_by(StockMovement.created_at.asc())
+        .all()
+    )
+    order_ids = {m.order_id for m in movements if m.order_id}
+    orders = {}
+    if order_ids:
+        orders = dict(db.query(Order.id, Order.order_number).filter(Order.id.in_(order_ids)).all())
+
+    return {
+        "success": True,
+        "data": {
+            "movements": [
+                {
+                    "id": m.id, "type": m.type, "quantity": m.quantity, "reason": m.reason,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "actor": m.actor.name if m.actor else None,
+                    "order_number": orders.get(m.order_id),
+                }
+                for m in movements
+            ],
+            "orders_using_this_lot": sorted(set(orders.values())),
+        },
+    }
+
+
+# ─── GET /stock/alerts-engine — Section 5 "Alertes" moteur intelligent ─────
+# Distinct de /stock/alerts (liste simple sous-seuil, existant) : ici chaque
+# ligne porte priorité + action recommandée + horodatage, couvrant tous les
+# types demandés que les données permettent de calculer honnêtement.
+
+@router.get("/alerts-engine", response_model=dict)
+def get_alerts_engine(
+    store_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from datetime import datetime, timedelta, timezone
+    from app.models.order import Order
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc)
+    d30 = now.replace(tzinfo=None) - timedelta(days=30)
+
+    products = db.query(Product).filter(Product.store_id == store_id, Product.is_active == True).all()
+    alerts = []
+
+    # Stock faible / rupture
+    for p in products:
+        if (p.stock or 0) <= 0:
+            alerts.append({"type": "STOCK_FAIBLE", "priority": "high", "product_id": p.id, "product_name": p.name,
+                            "detail": "Rupture de stock", "action": "Réapprovisionner en urgence"})
+        elif (p.stock or 0) <= (p.low_stock_threshold or 5):
+            alerts.append({"type": "STOCK_FAIBLE", "priority": "medium", "product_id": p.id, "product_name": p.name,
+                            "detail": f"Stock = {p.stock} (seuil {p.low_stock_threshold or 5})", "action": "Planifier un réapprovisionnement"})
+        elif (p.stock or 0) > 5 * (p.low_stock_threshold or 5):
+            alerts.append({"type": "SURSTOCK", "priority": "low", "product_id": p.id, "product_name": p.name,
+                            "detail": f"Stock = {p.stock}, très au-dessus du seuil habituel", "action": "Vérifier la rotation, envisager une promotion"})
+
+    # Aucun mouvement depuis 30j
+    moved_ids = {
+        r[0] for r in db.query(sqlfunc.distinct(StockMovement.product_id))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.created_at >= d30).all()
+    }
+    for p in products:
+        if p.id not in moved_ids and (p.stock or 0) > 0:
+            alerts.append({"type": "AUCUN_MOUVEMENT", "priority": "low", "product_id": p.id, "product_name": p.name,
+                            "detail": "Aucun mouvement depuis 30 jours", "action": "Vérifier si le produit est toujours en vente"})
+
+    # Expiration (lots)
+    expiring = (
+        db.query(StockMovement.batch_id, StockMovement.product_id, Product.name, sqlfunc.min(StockMovement.expiration_date))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.batch_id.isnot(None), StockMovement.expiration_date.isnot(None))
+        .group_by(StockMovement.batch_id, StockMovement.product_id, Product.name)
+        .all()
+    )
+    for batch_id, pid, pname, exp_str in expiring:
+        try:
+            exp = datetime.fromisoformat(exp_str)
+            days_left = (exp.replace(tzinfo=None) - now.replace(tzinfo=None)).days
+            if days_left <= 7:
+                alerts.append({"type": "EXPIRATION", "priority": "high" if days_left <= 0 else "medium",
+                                "product_id": pid, "product_name": pname, "batch_id": batch_id,
+                                "detail": f"Lot {batch_id[:8]} expire dans {days_left}j" if days_left >= 0 else f"Lot {batch_id[:8]} expiré depuis {-days_left}j",
+                                "action": "Écouler en priorité ou retirer du stock"})
+        except (ValueError, TypeError):
+            pass
+
+    # Taux de retour élevé + annulations élevées, par produit (30j)
+    return_counts = dict(
+        db.query(StockMovement.product_id, sqlfunc.count(StockMovement.id))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "RETURN_RESTOCK", StockMovement.created_at >= d30)
+        .group_by(StockMovement.product_id).all()
+    )
+    sold_counts = dict(
+        db.query(StockMovement.product_id, sqlfunc.count(StockMovement.id))
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "ORDER_CONFIRM", StockMovement.created_at >= d30)
+        .group_by(StockMovement.product_id).all()
+    )
+    pname_by_id = {p.id: p.name for p in products}
+    for pid, returns in return_counts.items():
+        sold = sold_counts.get(pid, 0)
+        if sold >= 5:
+            rate = returns / sold * 100
+            if rate >= 30:
+                alerts.append({"type": "TAUX_RETOUR_ELEVE", "priority": "high" if rate >= 50 else "medium",
+                                "product_id": pid, "product_name": pname_by_id.get(pid, pid),
+                                "detail": f"Taux de retour {rate:.0f}% ({returns}/{sold} ventes, 30j)",
+                                "action": "Investiguer la cause (qualité, description, taille)"})
+
+    cancel_rows = (
+        db.query(Product.id, Product.name, sqlfunc.count(OrderItem.id))
+        .join(OrderItem, OrderItem.product_id == Product.id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(Product.store_id == store_id, Order.status == "CANCELLED", Order.created_at >= d30)
+        .group_by(Product.id, Product.name)
+        .having(sqlfunc.count(OrderItem.id) >= 5)
+        .all()
+    )
+    for pid, pname, cnt in cancel_rows:
+        alerts.append({"type": "ANNULATIONS_ELEVEES", "priority": "medium", "product_id": pid, "product_name": pname,
+                        "detail": f"{cnt} commande(s) annulée(s) en 30j", "action": "Vérifier disponibilité réelle / description produit"})
+
+    # Erreurs / différences d'inventaire — réutilise la détection d'écarts
+    discrepancies = get_stock_discrepancies(store_id=store_id, db=db, current_user=current_user)
+    for f in discrepancies["data"]:
+        alerts.append({"type": f["type"], "priority": "high" if f["severity"] == "high" else "medium",
+                        "product_id": f.get("product_id"), "product_name": f.get("product_name"),
+                        "order_id": f.get("order_id"), "order_number": f.get("order_number"),
+                        "detail": f["detail"], "action": "Corriger via la section Écarts"})
+
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    alerts.sort(key=lambda a: priority_order.get(a["priority"], 3))
+
+    return {
+        "success": True,
+        "data": alerts,
+        "total": len(alerts),
+        "by_priority": {
+            "high": len([a for a in alerts if a["priority"] == "high"]),
+            "medium": len([a for a in alerts if a["priority"] == "medium"]),
+            "low": len([a for a in alerts if a["priority"] == "low"]),
+        },
+    }
+
+
+# ─── GET /stock/product/{id}/breakdown — Section 3 "Gestion Stock" enrichie ─
+
+@router.get("/product/{product_id}/breakdown", response_model=dict)
+def get_product_stock_breakdown(
+    product_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Toutes les quantités demandées pour un produit — calculées, jamais
+    stockées en double. Ce qui n'a structurellement aucune source de
+    données (stock max/sécurité/moyen, FIFO/LIFO, stock fournisseur) est
+    renvoyé avec tracked=false plutôt qu'une valeur inventée.
+    """
+    from app.models.purchase import PurchaseItem, Purchase
+
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    physique = p.stock or 0
+    reserve = p.reserved_stock or 0
+    disponible = max(0, physique - reserve)
+
+    en_commande = (
+        db.query(sqlfunc.coalesce(sqlfunc.sum(PurchaseItem.quantity - PurchaseItem.received_quantity), 0))
+        .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
+        .filter(PurchaseItem.product_id == product_id, Purchase.reception_status != "RECEIVED")
+        .scalar() or 0
+    )
+
+    retourne = db.query(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).filter(
+        StockMovement.product_id == product_id, StockMovement.type == "RETURN_RESTOCK"
+    ).scalar() or 0
+
+    en_transfert = db.query(sqlfunc.coalesce(sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)), 0)).filter(
+        StockMovement.product_id == product_id, StockMovement.type.in_(("TRANSFER_OUT", "TRANSFER_IN")),
+    ).scalar() or 0
+
+    from datetime import datetime, timedelta, timezone
+    d30 = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    qty_vendue_30j = db.query(sqlfunc.coalesce(sqlfunc.sum(-StockMovement.quantity), 0)).filter(
+        StockMovement.product_id == product_id, StockMovement.type == "ORDER_CONFIRM", StockMovement.created_at >= d30,
+    ).scalar() or 0
+    rotation = round(int(qty_vendue_30j) / physique, 2) if physique > 0 else 0.0
+
+    return {
+        "success": True,
+        "data": {
+            "product_id": p.id, "product_name": p.name,
+            "stock_physique": physique,
+            "stock_reserve": reserve,
+            "stock_disponible": disponible,
+            "stock_en_commande": int(en_commande),
+            "stock_retourne": int(retourne),
+            "stock_en_transfert": int(en_transfert),
+            "stock_minimum": p.low_stock_threshold or 5,
+            "valeur": physique * (p.cost_price or 0),
+            "cout_moyen": p.cost_price or 0,
+            "dernier_cout": p.cost_price or 0,
+            "rotation_30j": rotation,
+            # Structurellement non trackés — nécessitent soit une nouvelle
+            # colonne (max/sécurité), soit un historique de niveau de stock
+            # dans le temps (moyen), soit une distinction lot-par-lot du
+            # coût d'achat (FIFO/LIFO) qui n'existe pas aujourd'hui.
+            "stock_maximum": {"value": None, "tracked": False},
+            "stock_securite": {"value": None, "tracked": False},
+            "stock_moyen": {"value": None, "tracked": False},
+            "stock_fournisseur": {"value": None, "tracked": False},
+            "stock_casse": {"value": None, "tracked": False},
+            "stock_perdu": {"value": None, "tracked": False},
+            "stock_expire": {"value": None, "tracked": False},
+            "stock_bloque": {"value": None, "tracked": False},
+            "fifo_lifo": {"value": None, "tracked": False},
+        },
     }
 
 

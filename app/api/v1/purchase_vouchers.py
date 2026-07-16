@@ -87,6 +87,75 @@ def list_vouchers(
     vouchers = query.order_by(Purchase.received_at.desc() if bon_type == 'RECEPTION_VOUCHER' else Purchase.id.desc()).all()
     return {"success": True, "data": [_serialize_purchase(v) for v in vouchers]}
 
+
+# ─── GET /purchase_vouchers/stats — Section 6 "Achats" ──────────────────────
+# Doit rester AVANT /{voucher_id} : sinon FastAPI matcherait "stats" comme
+# un voucher_id (routage par ordre d'enregistrement).
+
+@router.get("/stats", response_model=dict)
+def get_purchase_stats(
+    store_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    KPI achats : commandé/reçu/restant/valeur/taxes/transport, comparaison
+    par bon, retards (délai réel vs lead_time_days du fournisseur).
+    """
+    from sqlalchemy import func as sqlfunc
+    from app.models.supplier import Supplier as _Supplier
+
+    purchases = (
+        db.query(Purchase)
+        .filter(Purchase.store_id == store_id, Purchase.bon_type == "PURCHASE_ORDER")
+        .all()
+    )
+
+    total_commande_amount = sum(p.total or 0 for p in purchases)
+    total_tax = sum(p.tax_amount or 0 for p in purchases)
+    total_shipping = sum(p.shipping_cost or 0 for p in purchases)
+    by_status = {}
+    for p in purchases:
+        key = (p.reception_status.value if hasattr(p.reception_status, "value") else str(p.reception_status)) or "PENDING"
+        by_status[key] = by_status.get(key, 0) + 1
+
+    # Commandé / reçu / restant — agrégé sur toutes les lignes de tous les bons
+    item_rows = (
+        db.query(sqlfunc.coalesce(sqlfunc.sum(PurchaseItem.quantity), 0), sqlfunc.coalesce(sqlfunc.sum(PurchaseItem.received_quantity), 0))
+        .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
+        .filter(Purchase.store_id == store_id, Purchase.bon_type == "PURCHASE_ORDER")
+        .first()
+    )
+    qty_commandee = int(item_rows[0] or 0)
+    qty_recue = int(item_rows[1] or 0)
+    qty_restante = max(0, qty_commandee - qty_recue)
+
+    # Retards : bons reçus après created_at + lead_time_days du fournisseur
+    late = []
+    for p in purchases:
+        if p.received_at and p.created_at:
+            supplier = db.query(_Supplier).filter(_Supplier.id == p.supplier_id).first()
+            lead = supplier.lead_time_days if supplier else 7
+            expected_days = (p.received_at - p.created_at).days
+            if expected_days > lead:
+                late.append({"purchase_id": p.id, "reference": p.reference, "delay_days": expected_days - lead})
+
+    return {
+        "success": True,
+        "data": {
+            "total_bons": len(purchases),
+            "par_statut": by_status,
+            "valeur_totale": total_commande_amount,
+            "taxes_totales": total_tax,
+            "transport_total": total_shipping,
+            "quantite_commandee": qty_commandee,
+            "quantite_recue": qty_recue,
+            "quantite_restante": qty_restante,
+            "taux_reception_pct": round(qty_recue / qty_commandee * 100, 1) if qty_commandee else 0.0,
+            "retards": {"count": len(late), "bons": late[:20]},
+        },
+    }
+
+
 @router.get("/{voucher_id}", response_model=dict)
 def get_voucher(voucher_id: str, db: Session = Depends(get_db)):
     voucher = db.query(Purchase).filter(Purchase.id == voucher_id).first()
@@ -247,7 +316,7 @@ async def upload_photo(voucher_id: str, file: UploadFile = File(...), db: Sessio
     photos = list(purchase.photos or [])
     photos.append(public_url)
     purchase.photos = photos
-    
+
     db.commit()
     db.refresh(purchase)
     return {"success": True, "url": public_url, "photos": purchase.photos}

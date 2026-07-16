@@ -69,6 +69,7 @@ interface WarehouseData {
   wilaya: string; 
   manager_name?: string;
   capacity?: number;
+  current_load?: number;
   is_active?: boolean;
   note?: string;
 }
@@ -301,7 +302,7 @@ export default function WarehouseManager() {
                <div className="mt-8 pt-8 border-t border-slate-50 flex items-center justify-between">
                   <div className="flex flex-col">
                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1">Capacité Remplie</span>
-                     <p className="text-xs font-black text-slate-800">420 / {w.capacity || 1000} PCS</p>
+                     <p className="text-xs font-black text-slate-800">{w.current_load ?? 0}{w.capacity ? ` / ${w.capacity}` : ''} PCS</p>
                   </div>
                   <button className="flex items-center gap-2 text-[10px] font-black text-[#6C5CE7] uppercase tracking-widest group-hover:translate-x-1 transition-all">
                      Audit Stock <ChevronRight className="size-3" />
