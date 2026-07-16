@@ -1758,11 +1758,12 @@ def get_order_erp_detail(
 ):
     from app.models.stock import StockMovement
     from app.models.marketing import MetaCapiLog
+    from app.models.product import Product
 
     db.info["skip_tenant_isolation"] = True
     order = (
         db.query(Order)
-        .options(joinedload(Order.events).joinedload(OrderEvent.actor), joinedload(Order.livreur), joinedload(Order.assignee))
+        .options(joinedload(Order.events).joinedload(OrderEvent.actor), joinedload(Order.livreur), joinedload(Order.assignee), joinedload(Order.items))
         .filter(Order.id == id, Order.is_deleted == False)
         .first()
     )
