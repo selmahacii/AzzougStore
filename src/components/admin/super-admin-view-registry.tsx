@@ -25,6 +25,7 @@ import VisitorsPage from './visitors-page';
 import MetaAdsDashboard from './modules/meta-ads-dashboard';
 import MetaQueueDashboard from './modules/meta-queue-dashboard';
 import ReturnsDashboard from './modules/returns-dashboard';
+import TikTokAdsDashboard from './modules/tiktok-ads-dashboard';
 import UpsellManager from './modules/upsell-manager';
 import PurchaseManager from './modules/purchase-manager';
 
@@ -80,6 +81,8 @@ export default function SuperAdminView() {
       return <MetaQueueDashboard key="meta_queue" />;
     case 'returns':
       return <ReturnsDashboard key="returns" />;
+    case 'tiktok_ads':
+      return <TikTokAdsDashboard key="tiktok_ads" />;
     case 'upsell':
       return <UpsellManager key="upsell" />;
     case 'purchase_vouchers':

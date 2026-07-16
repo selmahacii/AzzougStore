@@ -575,20 +575,26 @@ def get_landing_page_tracking_quality(
     now = datetime.utcnow()
     since = now - timedelta(days=range_days)
 
-    # ── 1. ERP KPIs — ONE grouped query, every count via conditional COUNT(DISTINCT) ──
+    # Correlated EXISTS instead of a JOIN to order_items: a JOIN fans out one
+    # row per matching OrderItem, so an order with N lines of this product
+    # was counted/listed N times everywhere below (confirmed in production:
+    # a 4-item order appeared 4 times in "commandes problématiques"). .any()
+    # compiles to a single EXISTS subquery — no fan-out, no DISTINCT needed.
+    has_product = Order.items.any(OrderItem.product_id == lp.product_id)
+
+    # ── 1. ERP KPIs — ONE grouped query, every count via conditional COUNT ──
     erp_row = (
         db.query(
-            func.count(distinct(Order.id)).label("total"),
-            func.count(distinct(case((Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.id)))).label("confirmed"),
-            func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
-            func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("merged"),
-            func.count(distinct(case((func.coalesce(Order.source, "") == "MANUAL", Order.id)))).label("manual"),
-            func.count(distinct(case((func.coalesce(Order.source, "") == "landing_page", Order.id)))).label("landing_page_only"),
+            func.count(Order.id).label("total"),
+            func.count(case((Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.id))).label("confirmed"),
+            func.count(case((Order.status == "CANCELLED", Order.id))).label("cancelled"),
+            func.count(case((Order.status == "MERGED", Order.id))).label("merged"),
+            func.count(case((func.coalesce(Order.source, "") == "MANUAL", Order.id))).label("manual"),
+            func.count(case((func.coalesce(Order.source, "") == "landing_page", Order.id))).label("landing_page_only"),
         )
-        .join(OrderItem, OrderItem.order_id == Order.id)
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
         )
@@ -602,31 +608,32 @@ def get_landing_page_tracking_quality(
         "manual": int(erp_row.manual or 0),
         "landing_page_only": int(erp_row.landing_page_only or 0),
     }
-    # CAPI is only ever attempted for non-MERGED, non-MANUAL/POS orders (see
-    # send_purchase_for_order's own skip logic) — that subset is the honest
-    # denominator for the gap analysis below, not total_orders.
-    eligible_order_ids_subq = (
-        db.query(Order.id)
-        .join(OrderItem, OrderItem.order_id == Order.id)
+    # CAPI is only ever attempted for non-MERGED, non-MANUAL/POS orders that
+    # have LEFT the ABANDONED state (see send_purchase_for_order's skip logic
+    # + the two enqueue trigger points in orders.py — a cart still sitting in
+    # ABANDONED was never purchased, so it correctly never gets a CAPI
+    # attempt; that's not an anomaly, it's the expected pre-sale state).
+    # Confirmed in production: including ABANDONED inflated "jamais tenté"
+    # to 98-100% on pages with a lot of still-open abandoned carts.
+    eligible_count = (
+        db.query(func.count(Order.id))
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
-            Order.status != "MERGED",
+            Order.status.notin_(("MERGED", "ABANDONED")),
             func.coalesce(Order.source, "") != "MANUAL",
         )
-        .distinct()
+        .scalar() or 0
     )
-    eligible_count = eligible_order_ids_subq.count()
 
-    # ── 2. Meta CAPI status breakdown — ONE grouped query joined on order_id ──
+    # ── 2. Meta CAPI status breakdown — ONE grouped query, EXISTS not JOIN ──
     capi_rows = (
         db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
         .join(Order, Order.id == MetaCapiLog.order_id)
-        .join(OrderItem, OrderItem.order_id == Order.id)
         .filter(
-            OrderItem.product_id == lp.product_id,
+            has_product,
             Order.store_id == lp.store_id,
             MetaCapiLog.event_name == "Purchase",
             Order.created_at >= since,
@@ -714,17 +721,16 @@ def get_landing_page_tracking_quality(
     else:
         health_score, health_label, health_color = None, "Aucune donnée", "gray"
 
-    # ── 5. Problematic orders — capped list, one JOIN query, no N+1 ──
+    # ── 5. Problematic orders — capped list, EXISTS not JOIN (no fan-out) ──
     problem_rows = (
         db.query(Order.order_number, Order.status, MetaCapiLog.status, MetaCapiLog.error_message, MetaCapiLog.error_category, Order.id)
-        .join(OrderItem, OrderItem.order_id == Order.id)
         .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
-            Order.status != "MERGED",
+            Order.status.notin_(("MERGED", "ABANDONED")),
             func.coalesce(Order.source, "") != "MANUAL",
             func.coalesce(MetaCapiLog.status, "none") != "success",
         )
@@ -751,14 +757,13 @@ def get_landing_page_tracking_quality(
             func.count(distinct(Order.id)).label("erp_orders"),
             func.count(distinct(case((MetaCapiLog.status == "success", Order.id)))).label("capi_success"),
         )
-        .join(OrderItem, OrderItem.order_id == Order.id)
         .outerjoin(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            has_product,
             Order.is_deleted == False,
             Order.created_at >= since,
-            Order.status != "MERGED",
+            Order.status.notin_(("MERGED", "ABANDONED")),
             func.coalesce(Order.source, "") != "MANUAL",
         )
         .group_by(day)

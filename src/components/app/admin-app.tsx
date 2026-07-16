@@ -8,6 +8,7 @@ import AdminSidebar from '@/components/admin/admin-sidebar';
 import SuperAdminSidebar from '@/components/admin/super-admin-sidebar';
 import AdminHeader from '@/components/admin/admin-header';
 import AgentDashboard from '@/components/agent/agent-dashboard';
+import LivreurDashboard from '@/components/livreur/livreur-dashboard';
 
 import SuperAdminViewRegistry from '@/components/admin/super-admin-view-registry';
 
@@ -16,10 +17,16 @@ export function AdminApp() {
    const [isMobile, setIsMobile] = useState(false);
    const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
    const isAgent = currentUser?.role === 'CONFIRMATEUR';
+   // LivreurDashboard existed fully built (deliveries/products/inventory
+   // sections, its own mobile-first header+nav) but was never imported or
+   // routed to anywhere — a livreur fell through to the generic AdminSidebar
+   // branch below, seeing the full admin nav (Employees/Analytics/Finances/
+   // ...) instead of their own scoped interface.
+   const isLivreur = currentUser?.role === 'LIVREUR';
    const notifiedIdsRef = useRef<Set<string>>(new Set());
 
    useEffect(() => {
-      if (!activeStore?.id || isAgent) return;
+      if (!activeStore?.id || isAgent || isLivreur) return;
 
       // Clear notified list when store changes
       notifiedIdsRef.current.clear();
@@ -102,7 +109,7 @@ export function AdminApp() {
       // polling, and this ran against the DB from every open admin tab.
       const interval = setInterval(checkLowStock, 120000);
       return () => clearInterval(interval);
-   }, [activeStore?.id, isAgent, setAdminView, setQuickAdjustProduct]);
+   }, [activeStore?.id, isAgent, isLivreur, setAdminView, setQuickAdjustProduct]);
 
    useEffect(() => {
       const handleResize = () => {
@@ -124,6 +131,8 @@ export function AdminApp() {
 
    // Confirmateur gets their own focused dashboard — no sidebar/header clutter
    if (isAgent) return <AgentDashboard />;
+   // Livreur likewise: his own mobile-first shell, not the generic admin one.
+   if (isLivreur) return <LivreurDashboard />;
 
    return (
       <div className="min-h-screen flex bg-[#F8F9FC]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
