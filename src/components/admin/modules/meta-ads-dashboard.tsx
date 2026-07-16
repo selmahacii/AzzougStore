@@ -109,6 +109,17 @@ export default function MetaAdsDashboard() {
     refetchOnWindowFocus: false,
   });
 
+  // --- Query Tracking Quality (temps réel/backfill, Match Quality, score) ---
+  const { data: trackingQualityData, isLoading: isLoadingTrackingQuality } = useQuery({
+    queryKey: ['meta_tracking_quality_v2', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/orders/capi/tracking-quality-v2?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id,
+    refetchOnWindowFocus: false,
+  });
+  const trackingQuality = trackingQualityData?.data;
+
   // --- Mutations ---
   const saveConfigMutation = useMutation({
     mutationFn: (payload: any) => apiFetch('/api/v1/meta-ads/config', {
@@ -1148,6 +1159,89 @@ export default function MetaAdsDashboard() {
       {/* ─── TAB: DIAGNOSTICS ─── */}
       {activeTab === 'diagnostics' && (
         <div className="space-y-4">
+          {/* ─── Widget Qualité du Tracking — temps réel/backfill, Match
+              Quality, note globale. Intégré ici plutôt que dans un nouveau
+              module : cette section EST le centre de pilotage tracking
+              demandé, à l'intérieur de Meta Ads & ROAS. ─── */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="size-4 text-[#6C5CE7]" /> Qualité du Tracking
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">ERP ↔ Meta, temps réel vs rattrapage, complétude des signaux envoyés.</p>
+              </div>
+              {trackingQuality?.tracking_score != null && (
+                <div className="text-right shrink-0">
+                  <p className={cn(
+                    'text-2xl font-black leading-none',
+                    trackingQuality.tracking_score >= 90 ? 'text-[#00B894]' : trackingQuality.tracking_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                  )}>{trackingQuality.tracking_score}<span className="text-xs text-slate-300">/100</span></p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Tracking Score</p>
+                </div>
+              )}
+            </div>
+
+            {isLoadingTrackingQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : !trackingQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  {[
+                    { label: 'Commandes ERP', value: trackingQuality.erp_purchases, color: '#0984E3' },
+                    { label: 'Reçus par Meta', value: trackingQuality.meta_purchases, color: '#00B894' },
+                    { label: 'Couverture', value: `${trackingQuality.coverage_pct}%`, color: trackingQuality.coverage_pct >= 95 ? '#00B894' : '#FDCB6E' },
+                    { label: 'Match Quality moy.', value: trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '—', color: '#6C5CE7' },
+                  ].map(s => (
+                    <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
+                      <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                  {[
+                    { label: 'Temps réel', value: trackingQuality.realtime, color: '#00B894' },
+                    { label: 'Rattrapage (Backfill)', value: trackingQuality.backfill, color: '#FDCB6E' },
+                    { label: 'En attente', value: trackingQuality.pending, color: '#0984E3' },
+                    { label: 'Échecs', value: trackingQuality.failed, color: trackingQuality.failed > 0 ? '#E17055' : '#B2BEC3' },
+                  ].map(s => (
+                    <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {trackingQuality.ecart_reel > 0 && (
+                  <div className="p-3 mb-4 rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 text-[11px] text-slate-600">
+                    <strong className="text-slate-700">{trackingQuality.ecart_reel} commande(s)</strong> pas encore bien transmise(s) à Meta —
+                    {trackingQuality.pending > 0 && ` ${trackingQuality.pending} en attente`}
+                    {trackingQuality.pending > 0 && trackingQuality.failed > 0 && ', '}
+                    {trackingQuality.failed > 0 && ` ${trackingQuality.failed} en échec (voir Achats/Bons d'Achat pour relancer)`}.
+                  </div>
+                )}
+
+                {trackingQuality.recommendations?.length > 0 && (
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Recommandations</p>
+                    <div className="space-y-1.5">
+                      {trackingQuality.recommendations.map((r: string, i: number) => (
+                        <div key={i} className="flex items-start gap-2 text-[11px] text-slate-600 p-2 rounded-lg bg-slate-50">
+                          <span>{r.startsWith('Aucune') ? '✅' : '💡'}</span>
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="bg-white rounded-3xl border shadow-sm p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
