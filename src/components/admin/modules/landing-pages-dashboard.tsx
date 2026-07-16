@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, Plus, Eye, EyeOff, Trash2, ExternalLink, Copy,
@@ -8,7 +8,7 @@ import {
   ChevronRight, BarChart3, Star, ArrowRight, Palette,
   Image as ImageIcon, MessageSquare, HelpCircle, Settings,
   TrendingUp, Users, ShoppingCart, Link, RefreshCw, Calendar,
-  Truck, Upload
+  Truck, Upload, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2231,6 +2231,36 @@ export default function LandingPagesDashboard() {
   const totalViews  = pages.reduce((s, p) => s + (p.views || 0), 0);
   const totalOrders = pages.reduce((s, p) => s + (p.orders || 0), 0);
   const activeCount = pages.filter(p => p.is_active).length;
+  // Manuel = commandes créées à la main (téléphone/admin) — jamais vues par
+  // Meta, pas de clic pub. Détecté Meta = achats que Meta a lui-même
+  // attribué à sa propre publicité (son pixel/CAPI), indépendamment de nos
+  // commandes ERP. Les deux répondent à des questions différentes, d'où des
+  // totaux qui ne coïncident jamais exactement — normal, pas une erreur.
+  const totalManual = pages.reduce((s, p) => s + ((p.metrics as any)?.manual ?? 0), 0);
+  const totalMetaDetected = pages.reduce((s, p) => s + ((p.metrics as any)?.meta_purchases ?? 0), 0);
+  const metaSyncTimestamps = pages
+    .map(p => (p.metrics as any)?.meta_last_synced_at)
+    .filter(Boolean) as string[];
+  const oldestMetaSync = metaSyncTimestamps.length
+    ? metaSyncTimestamps.reduce((oldest, t) => (t < oldest ? t : oldest))
+    : null;
+
+  // Auto-refresh Meta's numbers when this page is actually being looked at,
+  // instead of waiting up to 3h for the backend's own background sync — one
+  // resync per mount, only if the oldest linked campaign is already stale.
+  const metaResyncTriggered = useRef(false);
+  const metaResyncMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/meta-ads/sync?store_id=${storeId}`, { method: 'POST' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['landing-pages'] }),
+  });
+  useEffect(() => {
+    if (metaResyncTriggered.current || !storeId || isLoading) return;
+    const staleMs = oldestMetaSync ? Date.now() - new Date(oldestMetaSync).getTime() : Infinity;
+    if (staleMs > 30 * 60 * 1000) {
+      metaResyncTriggered.current = true;
+      metaResyncMutation.mutate();
+    }
+  }, [storeId, isLoading, oldestMetaSync]);
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-500">
@@ -2256,15 +2286,24 @@ export default function LandingPagesDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mt-5">
           {[
             { label: 'Pages actives', value: activeCount, Icon: LayoutTemplate },
             { label: 'Vues totales',  value: totalViews.toLocaleString('fr-FR'),  Icon: Eye },
             { label: 'Commandes générées', value: totalOrders, Icon: ShoppingCart },
+            {
+              label: 'Dont manuelles', value: totalManual, Icon: Users,
+              title: "Commandes créées à la main par un agent (téléphone, réseaux sociaux) — jamais vues par Meta, aucun clic publicitaire derrière.",
+            },
+            {
+              label: 'Détectées Meta', value: totalMetaDetected, Icon: Sparkles, accent: '#1877F2',
+              title: "Achats que Meta a lui-même attribués à sa propre publicité (son pixel + API Conversions), tous produits confondus. Chiffre indépendant de nos commandes ERP ci-dessus — voir la note plus bas.",
+            },
           ].map(k => (
-            <div key={k.label} className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-4">
-              <div className="size-10 rounded-lg bg-slate-200/50 flex items-center justify-center shrink-0">
-                <k.Icon className="size-5 text-slate-600" />
+            <div key={k.label} title={(k as any).title} className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-4">
+              <div className="size-10 rounded-lg bg-slate-200/50 flex items-center justify-center shrink-0"
+                style={(k as any).accent ? { backgroundColor: (k as any).accent + '15' } : undefined}>
+                <k.Icon className="size-5 text-slate-600" style={(k as any).accent ? { color: (k as any).accent } : undefined} />
               </div>
               <div>
                  <p className="text-lg font-bold text-slate-900 leading-none">{k.value}</p>
@@ -2272,6 +2311,26 @@ export default function LandingPagesDashboard() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Note explicative : comment lire Manuel vs Détecté Meta, et à
+            quelle fréquence les chiffres Meta se rafraîchissent. Destinée à
+            quelqu'un qui découvre le module sans le contexte de sa conception. */}
+        <div className="mt-4 flex items-start gap-2.5 p-3.5 bg-[#1877F2]/5 border border-[#1877F2]/15 rounded-xl">
+          <HelpCircle className="size-4 text-[#1877F2] shrink-0 mt-0.5" />
+          <div className="text-[11px] text-slate-600 leading-relaxed">
+            <p className="font-bold text-slate-700 mb-0.5">Comment lire ces chiffres ?</p>
+            <p>
+              <strong>Commandes générées</strong> = toutes les vraies commandes de nos pages (y compris les <strong>manuelles</strong>, créées au téléphone sans passer par une pub).{' '}
+              <strong>Détectées Meta</strong> = ce que Meta déclare lui-même avoir compté comme achat via sa propre publicité — un chiffre indépendant, calculé par Meta, jamais par nous. Les deux ne coïncideront jamais parfaitement (fenêtre d'attribution différente, paniers abandonnés jamais finalisés côté Meta, etc.), c'est normal.
+            </p>
+            <p className="mt-1">
+              Les chiffres Meta se resynchronisent automatiquement <strong>toutes les 3 heures</strong> en arrière-plan, et une resynchro supplémentaire se déclenche dès qu'on ouvre cette page si les données ont plus de 30 minutes.
+              {oldestMetaSync && (
+                <> Dernière synchro Meta : <strong>{formatDistanceToNow(new Date(oldestMetaSync), { addSuffix: true, locale: fr })}</strong>{metaResyncMutation.isPending ? ' (resynchronisation en cours…)' : '.'}</>
+              )}
+            </p>
+          </div>
         </div>
       </div>
 

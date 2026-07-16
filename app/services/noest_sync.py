@@ -58,7 +58,13 @@ REMINDER_SCAN_INTERVAL_SECONDS = float(os.getenv("REMINDER_SCAN_INTERVAL_SECONDS
 # once this many minutes have elapsed). Matches the frontend's own 24h poll
 # on this data (meta-ads-dashboard.tsx) — syncing more often than the UI
 # ever reads it just burns compute/network for numbers nobody sees sooner.
-META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "1440"))
+# Was 1440 (24h) — Meta Ads Manager's own achats counter updates
+# continuously, so a full day of staleness read as a bug ("Meta affiche
+# 239, nous affichons 255") rather than the explainable lag it was. 3h
+# balances freshness against hammering Meta's API/Neon for a small
+# account; the frontend also self-triggers a sync when a dashboard is
+# opened and its data is already >30min stale, on top of this baseline.
+META_ADS_SYNC_INTERVAL_MINUTES = float(os.getenv("META_ADS_SYNC_INTERVAL_MINUTES", "180"))
 # How often to sweep product images still stuck on the ephemeral local disk
 # and move them to Cloudinary. Images change far less often than orders/ads,
 # so this runs on a slower cadence — just needs to run before a Space restart
