@@ -1201,6 +1201,7 @@ def create_order(
                                 user_agent=user_agent
                             )
                     except Exception as capi_err:
+                        db.rollback()
                         logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
 
                 return existing
@@ -1340,6 +1341,7 @@ def create_order(
                     user_agent=user_agent
                 )
         except Exception as capi_err:
+            db.rollback()
             logger.warning(f"Failed to queue Meta CAPI event: {capi_err}")
 
         return order
@@ -1570,6 +1572,7 @@ def update_order(
                         user_agent=user_agent
                     )
             except Exception as capi_err:
+                db.rollback()
                 logger.warning(f"Failed to queue Meta CAPI event for phone-confirmed cart {updated.id}: {capi_err}")
 
         return updated

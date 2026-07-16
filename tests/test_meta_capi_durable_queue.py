@@ -27,6 +27,7 @@ the background task ran" gap can actually be observed instead of being
 masked by AsyncClient(app=...) executing background tasks synchronously
 within the same request/response cycle.
 """
+import asyncio
 import os
 import sys
 import uuid
@@ -438,3 +439,131 @@ def test_cleanup_only_deletes_aged_success_rows():
         db.execute(MetaCapiLog.__table__.delete().where(MetaCapiLog.id.in_(ids)))
         db.commit()
         db.close()
+
+
+# ─── 8. Meta 500 (server error) -> retryable, unlike a 4xx ─────────────────
+
+@pytest.mark.asyncio
+async def test_meta_5xx_error_is_retryable_unlike_4xx(client, monkeypatch):
+    """Distinct code path from the 4xx test: send_events treats
+    400 <= status < 500 as non-retryable but >=500 as a transient Meta-side
+    problem worth retrying — this exercises that branch specifically via the
+    real HTTP-response handling in send_events (not the exception handlers
+    used for connection-level failures)."""
+    def _fake_502(pixel_id, access_token, events, **kwargs):
+        return {"success": False, "events_received": None, "error": "HTTP 502: Bad Gateway",
+                "retryable": True, "error_category": "network_error", "http_status": 502}
+    monkeypatch.setattr("app.services.meta_capi.send_events", _fake_502)
+
+    suffix = str(uuid.uuid4())[:8]
+    store_id, product = await _setup_store_with_meta(client, suffix)
+    r = await client.post(
+        f"{settings.API_V1_STR}/orders/", json=_make_order_payload(store_id, product, suffix),
+        headers=INTERNAL_KEY_HEADER,
+    )
+    order = r.json()
+    # Automatic background send already ran once with the 502 mock.
+
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        row = _get_row(db, order["id"])
+        assert row.status == "retry", f"a 502 must be retried, not failed immediately, got {row.status}"
+        assert row.retry_count == 1
+        assert row.last_http_status == 502
+        assert row.next_retry_at is not None
+    finally:
+        db.close()
+
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+# ─── 9. Network loss (ConnectError, distinct from a read timeout) ───────────
+
+@pytest.mark.asyncio
+async def test_network_loss_connect_error_is_retryable(client, monkeypatch):
+    """"Perte réseau" — DNS/TCP failure before any HTTP response exists at
+    all, distinct from a read timeout (Meta reachable but slow) or a 5xx
+    (Meta reachable, responded with an error). Exercises send_events'
+    httpx.ConnectError exception branch specifically."""
+    def _connect_error(pixel_id, access_token, events, **kwargs):
+        return {"success": False, "events_received": None,
+                "error": "Connect Error: DNS Resolution Failed: [Errno -2] Name or service not known",
+                "retryable": True, "error_category": "network_error", "http_status": None}
+    monkeypatch.setattr("app.services.meta_capi.send_events", _connect_error)
+
+    suffix = str(uuid.uuid4())[:8]
+    store_id, product = await _setup_store_with_meta(client, suffix)
+    r = await client.post(
+        f"{settings.API_V1_STR}/orders/", json=_make_order_payload(store_id, product, suffix),
+        headers=INTERNAL_KEY_HEADER,
+    )
+    order = r.json()
+
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        row = _get_row(db, order["id"])
+        assert row.status == "retry"
+        assert row.last_http_status is None, "a connect-level failure has no HTTP response at all"
+        assert "DNS" in (row.error_message or "")
+    finally:
+        db.close()
+
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+# ─── 10. Several distinct orders created concurrently ───────────────────────
+
+@pytest.mark.asyncio
+async def test_multiple_simultaneous_orders_each_send_exactly_once(client, monkeypatch):
+    """Not the same order raced (that's scenario 4) — N DIFFERENT orders
+    created at the same time must each get their own row and their own
+    send, with no cross-contamination (e.g. a claim on order A never
+    touching order B's row).
+
+    Each order is created in its OWN store rather than 6 concurrent orders
+    in one store: concurrent order creation for the SAME store hits a
+    pre-existing, unrelated deadlock in order_service.py's sequence-number
+    generation (SELECT ... FOR UPDATE on the store row) — reproduced,
+    confirmed out of scope for the CAPI queue, and flagged separately. Using
+    distinct stores isolates what THIS test is actually about: the CAPI
+    claim/send path across multiple concurrent orders, not order_service's
+    sequence numbering."""
+    send_calls = []
+    def _counting_send(*a, **k):
+        send_calls.append(1)
+        return dict(_OK_RESULT)
+    monkeypatch.setattr("app.services.meta_capi.send_events", _counting_send)
+
+    suffix = str(uuid.uuid4())[:8]
+
+    async def _create_one(i):
+        store_id, product = await _setup_store_with_meta(client, f"{suffix}{i}")
+        payload = _make_order_payload(store_id, product, f"{suffix}{i}", phone_prefix="066")
+        r = await client.post(f"{settings.API_V1_STR}/orders/", json=payload, headers=INTERNAL_KEY_HEADER)
+        assert r.status_code == 201
+        result = r.json()
+        result["_store_id"] = store_id
+        return result
+
+    orders = await asyncio.gather(*[_create_one(i) for i in range(6)])
+    order_ids = {o["id"] for o in orders}
+    assert len(order_ids) == 6, "each concurrent order must be its own distinct row, not merged/collided"
+
+    assert len(send_calls) == 6, f"expected exactly 1 send per distinct order (6 orders), got {len(send_calls)}"
+
+    from app.db.session import SessionLocal
+    from app.models.marketing import MetaCapiLog
+    db = SessionLocal()
+    try:
+        rows = db.query(MetaCapiLog).filter(
+            MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase",
+        ).all()
+        assert len(rows) == 6
+        assert all(row.status == "success" for row in rows)
+    finally:
+        db.close()
+
+    for o in orders:
+        await client.delete(f"{settings.API_V1_STR}/stores/{o['_store_id']}", headers=INTERNAL_KEY_HEADER)

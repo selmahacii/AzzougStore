@@ -10,10 +10,18 @@ interface QueueStats {
   processing: number;
   retry: number;
   failed: number;
+  skipped: number;
   success_today: number;
   success_30d: number;
+  failed_30d: number;
+  success_rate_30d: number | null;
+  failure_rate_30d: number | null;
   avg_latency_ms: number | null;
+  max_latency_ms: number | null;
+  min_latency_ms: number | null;
   avg_attempts: number | null;
+  queue_size: number;
+  avg_queue_age_seconds: number | null;
   last_success_at: string | null;
   last_error: string | null;
   last_error_at: string | null;
@@ -22,6 +30,13 @@ interface QueueStats {
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' });
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds == null) return '—';
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}min`;
+  return `${Math.round(seconds / 3600)}h`;
 }
 
 function StatCard({ label, value, icon: Icon, tone }: { label: string; value: string | number; icon: any; tone: 'default' | 'warn' | 'danger' | 'ok' }) {
@@ -122,8 +137,14 @@ export default function MetaQueueDashboard() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="Success aujourd'hui" value={stats?.success_today ?? 0} icon={CheckCircle2} tone="ok" />
             <StatCard label="Success 30 jours" value={stats?.success_30d ?? 0} icon={CheckCircle2} tone="ok" />
-            <StatCard label="Temps moyen" value={stats?.avg_latency_ms ? `${stats.avg_latency_ms} ms` : '—'} icon={Clock} tone="default" />
+            <StatCard label="Taux de réussite (30j)" value={stats?.success_rate_30d != null ? `${stats.success_rate_30d}%` : '—'} icon={CheckCircle2} tone={stats?.success_rate_30d != null && stats.success_rate_30d < 95 ? 'warn' : 'ok'} />
+            <StatCard label="Taux d'échec (30j)" value={stats?.failure_rate_30d != null ? `${stats.failure_rate_30d}%` : '—'} icon={XCircle} tone={stats?.failure_rate_30d != null && stats.failure_rate_30d > 5 ? 'danger' : 'default'} />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Temps moyen d'envoi" value={stats?.avg_latency_ms ? `${stats.avg_latency_ms} ms` : '—'} icon={Clock} tone="default" />
+            <StatCard label="Temps maximal" value={stats?.max_latency_ms ? `${stats.max_latency_ms} ms` : '—'} icon={Clock} tone="default" />
             <StatCard label="Tentatives moyennes" value={stats?.avg_attempts ?? '—'} icon={RotateCcw} tone="default" />
+            <StatCard label="Âge moyen de la queue" value={formatDuration(stats?.avg_queue_age_seconds ?? null)} icon={Clock} tone={stats && (stats.avg_queue_age_seconds ?? 0) > 900 ? 'warn' : 'default'} />
           </div>
 
           {(stats?.failed ?? 0) > 0 && (

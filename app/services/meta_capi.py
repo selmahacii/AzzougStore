@@ -1051,7 +1051,28 @@ def send_purchase_for_order(
             return
 
         logger.info("[MetaCAPI] queue: processing order=%s log_id=%s", order_id, row.id)
+        _handle_claimed_row(db, row, order_id, client_ip=client_ip, user_agent=user_agent)
+    finally:
+        db.close()
 
+
+def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[str], user_agent: Optional[str]) -> None:
+    """
+    Split out from send_purchase_for_order so unexpected exceptions here
+    (bad order data, a lazy-load failure, a bug in build_purchase_event —
+    anything past the claim) are caught and turned into a 'failed' row
+    instead of propagating. Uncaught here, this would blow past the
+    sweep's per-row loop and abort the WHOLE batch mid-iteration — every
+    other order still due in that sweep run would silently wait an extra
+    interval for no reason related to their own send. The claim itself
+    already succeeded (row is 'processing'), so on ANY exception here the
+    row is explicitly finalized rather than left for the 15-minute stuck-
+    processing reclaim to eventually notice.
+    """
+    from app.models.marketing import MetaAdsConfig
+    from app.models.order import Order
+
+    try:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
             row.status = "failed"
@@ -1142,8 +1163,16 @@ def send_purchase_for_order(
                 "[MetaCAPI] queue: order=%s FAILED event_id=%s: %s",
                 order.order_number, event["event_id"], result["error"],
             )
-    finally:
-        db.close()
+    except Exception as exc:
+        db.rollback()
+        try:
+            row.status = "failed"
+            row.error_message = f"unexpected exception: {exc}"[:1000]
+            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            db.commit()
+        except Exception:
+            db.rollback()
+        logger.exception("[MetaCAPI] queue: order=%s unexpected exception while processing claimed row", order_id)
 
 
 _QUEUE_ALERT_THRESHOLD = int(os.getenv("META_CAPI_QUEUE_ALERT_THRESHOLD", "100"))
@@ -1357,7 +1386,16 @@ def _retry_pending_events_inner() -> None:
                     deferred_bulk, deferred_until.strftime("%H:%M:%S"),
                 )
                 return
-            send_purchase_for_order(order_id, client_ip=None, user_agent=None)
+            try:
+                send_purchase_for_order(order_id, client_ip=None, user_agent=None)
+            except Exception:
+                # One order's claim/send blowing up (e.g. a transient DB
+                # connectivity error on the claim UPDATE itself, before
+                # send_purchase_for_order's own internal try/except around
+                # the claimed-row handling even starts) must never abort the
+                # rest of this sweep batch — every other due order_id still
+                # deserves its attempt this round.
+                logger.exception("[MetaCAPI] sweep: order=%s raised unexpectedly — continuing with next due order", order_id)
     except Exception:
         db.rollback()
         logger.exception("[MetaCAPI] retry sweep crashed")
@@ -1395,12 +1433,26 @@ def get_queue_stats(db: "Session") -> Dict[str, Any]:
         MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
         MetaCapiLog.completed_at >= thirty_days_ago,
     ).scalar() or 0
-    avg_latency_ms, avg_attempts = db.query(
-        _f.avg(MetaCapiLog.latency_ms), _f.avg(MetaCapiLog.retry_count),
+    failed_30d = db.query(_f.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "failed",
+        MetaCapiLog.completed_at >= thirty_days_ago,
+    ).scalar() or 0
+    avg_latency_ms, max_latency_ms, min_latency_ms, avg_attempts = db.query(
+        _f.avg(MetaCapiLog.latency_ms), _f.max(MetaCapiLog.latency_ms),
+        _f.min(MetaCapiLog.latency_ms), _f.avg(MetaCapiLog.retry_count),
     ).filter(
         MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
         MetaCapiLog.completed_at >= thirty_days_ago,
-    ).first() or (None, None)
+    ).first() or (None, None, None, None)
+
+    # Average age of everything still in flight (queued/retry/processing) —
+    # a single EXTRACT(EPOCH ...) aggregate, not a per-row Python loop.
+    avg_queue_age_seconds = db.query(
+        _f.avg(_f.extract("epoch", now - MetaCapiLog.created_at))
+    ).filter(
+        MetaCapiLog.event_name == "Purchase",
+        MetaCapiLog.status.in_(("queued", "retry", "processing", "pending_retry")),
+    ).scalar()
 
     last_success = db.query(_f.max(MetaCapiLog.completed_at)).filter(
         MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
@@ -1412,15 +1464,28 @@ def get_queue_stats(db: "Session") -> Dict[str, Any]:
         .first()
     )
 
+    total_30d = success_30d + failed_30d
+    success_rate = round(success_30d / total_30d * 100, 1) if total_30d else None
+    failure_rate = round(failed_30d / total_30d * 100, 1) if total_30d else None
+    in_flight = by_status.get("queued", 0) + by_status.get("processing", 0) + by_status.get("retry", 0) + by_status.get("pending_retry", 0)
+
     return {
         "queued": by_status.get("queued", 0),
         "processing": by_status.get("processing", 0),
         "retry": by_status.get("retry", 0) + by_status.get("pending_retry", 0),
         "failed": by_status.get("failed", 0),
+        "skipped": by_status.get("skipped", 0),
         "success_today": success_today,
         "success_30d": success_30d,
+        "failed_30d": failed_30d,
+        "success_rate_30d": success_rate,
+        "failure_rate_30d": failure_rate,
         "avg_latency_ms": round(avg_latency_ms, 0) if avg_latency_ms else None,
+        "max_latency_ms": max_latency_ms,
+        "min_latency_ms": min_latency_ms,
         "avg_attempts": round(avg_attempts, 2) if avg_attempts else None,
+        "queue_size": in_flight,
+        "avg_queue_age_seconds": round(avg_queue_age_seconds, 0) if avg_queue_age_seconds else None,
         "last_success_at": last_success.isoformat() if last_success else None,
         "last_error": last_error_row[0] if last_error_row else None,
         "last_error_at": (last_error_row[1].isoformat() if last_error_row and last_error_row[1] else None),
