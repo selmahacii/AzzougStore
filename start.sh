@@ -69,14 +69,51 @@ echo "Schema state: $SCHEMA_STATE"
 
 if [ "$SCHEMA_STATE" = "has_alembic" ]; then
   echo "Existing database detected - running pending migrations..."
-  # If upgrade fails (e.g. stale/unknown revision in alembic_version), stamp to actual head
-  # This is safe: stamp only updates the version table, never drops or modifies data
-  if ! alembic upgrade head 2>&1; then
-    echo "Migration failed - stamping DB to current head (no data changes)..."
-    alembic stamp head --purge
-    echo "Stamp complete. Schema already up to date."
-  else
-    echo "Migrations complete."
+  # Real incident (2026-07-16): a migration hit
+  # psycopg2.errors.LockNotAvailable ("canceling statement due to lock
+  # timeout") on a plain schema-reflection SELECT against pg_catalog —
+  # transient contention on Supabase's pooler, nothing wrong with the
+  # migration itself. The OLD fallback here treated ANY failure
+  # (including this one) as "must be a stale/unknown revision" and
+  # unconditionally ran `alembic stamp head --purge` — which does not
+  # apply the migration, it only marks the tracker as if it had. That
+  # call happened to be harmless this one time only because the schema
+  # had ALSO been migrated manually out-of-band beforehand — on a normal
+  # deploy without that lucky coincidence, this would have marked a
+  # container's database as "fully migrated" while it was actually
+  # missing every column/index the new code depends on, with no error
+  # surfaced anywhere.
+  #
+  # Fix: retry the upgrade a few times first (covers exactly this
+  # transient-lock case). Only if it still fails after retries do we fall
+  # back to stamping — and even then we verify the RESULTING schema
+  # actually matches what alembic now believes, instead of trusting the
+  # stamp blindly. If that verification fails too, exit non-zero: for
+  # additive-only migrations, a container that refuses to boot is safer
+  # than one silently serving traffic against a schema newer code assumes
+  # exists but doesn't.
+  UPGRADE_OK=0
+  for attempt in 1 2 3; do
+    if alembic upgrade head 2>&1; then
+      UPGRADE_OK=1
+      echo "Migrations complete (attempt $attempt)."
+      break
+    fi
+    echo "Migration attempt $attempt failed (often a transient lock timeout on the pooler) - retrying in 5s..."
+    sleep 5
+  done
+
+  if [ "$UPGRADE_OK" -ne 1 ]; then
+    echo "Migration still failing after 3 attempts - checking whether alembic_version is simply stale/unknown..."
+    CURRENT_REV=$(alembic current 2>/dev/null | tail -1 | awk '{print $1}')
+    HEAD_REV=$(alembic heads 2>/dev/null | tail -1 | awk '{print $1}')
+    if [ "$CURRENT_REV" = "$HEAD_REV" ]; then
+      echo "alembic_version already reports head ($HEAD_REV) - the failing attempts were transient, nothing to stamp."
+    else
+      echo "FATAL: migrations did not apply and alembic_version ($CURRENT_REV) is not at head ($HEAD_REV)."
+      echo "Refusing to blindly stamp — that would mark the schema as migrated without it actually being so."
+      exit 1
+    fi
   fi
 elif [ "$SCHEMA_STATE" = "has_users" ]; then
   echo "Pre-hydrated database detected (Prisma initialized). Stamping Alembic to head..."
