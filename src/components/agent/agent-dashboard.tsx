@@ -271,7 +271,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch }: { order: Order; onO
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
         {hasCarrierParcel ? (
           <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
-        ) : order.status !== 'CONFIRMED' && order.source !== 'MANUAL' ? (
+        ) : order.status !== 'CONFIRMED' ? (
           <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
         ) : order.carrier_id ? (
           <button

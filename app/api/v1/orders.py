@@ -2321,23 +2321,12 @@ async def dispatch_order(
     # assumes stock was already physically deducted by an earlier ->CONFIRMED
     # transition. Dispatching a NEW/ASSIGNED order straight from here would
     # ship stock that was never actually confirmed/deducted. A MANUAL order
-    # (typed in directly by staff who already have the confirmed details —
-    # no call-confirmation step needed, unlike a self-submitted storefront
-    # order) is auto-confirmed here first, through the real state machine
-    # (order_service.update_order), so the stock side effect still happens
-    # correctly before the carrier parcel is created. Any other source must
-    # already be CONFIRMED — same requirement the frontend gate enforces,
-    # now also held server-side so this can't be bypassed by a direct call.
+    # goes through the exact same confirmation workflow as any other order
+    # (explicitly confirmed by an agent) — no auto-confirm shortcut, no
+    # special-casing by source. Enforced server-side (previously only the
+    # frontend gate stopped this; a direct API call could bypass it).
     if order.status != "CONFIRMED":
-        if order.source == "MANUAL" and order.status in ("NEW", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"):
-            order_service.update_order(
-                db, order=order, update_data={"status": "CONFIRMED"},
-                actor_id=current_user.id, actor_role=getattr(current_user, "role", None),
-            )
-            db.commit()
-            db.refresh(order)
-        else:
-            raise HTTPException(400, "La commande doit être Confirmée avant de créer le colis chez le transporteur.")
+        raise HTTPException(400, "La commande doit être Confirmée avant de créer le colis chez le transporteur.")
 
     # Rebuild the merged basket before shipping: duplicate merges may have
     # aggregated items, the parcel must carry the exact quantities and COD
