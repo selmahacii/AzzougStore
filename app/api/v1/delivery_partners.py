@@ -1251,6 +1251,16 @@ def assign_internal_delivery(
     from app.models.internal_delivery import InternalDelivery
     from app.models.user import User
 
+    # A livreur must never be able to assign an order to a driver (including
+    # themselves) — only a confirmatrice/manager/admin decides who delivers
+    # what. This endpoint previously had NO role check at all (only
+    # get_current_active_user, which just verifies the account is active),
+    # unlike PATCH /orders/{id} which already blocks a LIVREUR from touching
+    # assigned_to/livreur_id — a livreur could reach the same effect through
+    # this side door.
+    if getattr(current_user, "role", None) == "LIVREUR":
+        raise HTTPException(status_code=403, detail="Un livreur ne peut pas s'auto-assigner une commande.")
+
     order = db.query(Order).filter(Order.id == payload.order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -1356,6 +1366,16 @@ def update_internal_delivery_status(
     if not delivery:
         raise HTTPException(status_code=404, detail="Internal delivery not found")
 
+    # Same side door as /internal/assign: this endpoint had no role/ownership
+    # check at all, unlike PATCH /orders/{id} which restricts a LIVREUR to
+    # SHIPPED/DELIVERED/RETURNED/CANCELLED/RESCHEDULED on orders assigned to
+    # THEM specifically. Mirror both restrictions here.
+    if getattr(current_user, "role", None) == "LIVREUR":
+        if delivery.driver_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Cette livraison n'est pas assignée à vous.")
+        if payload.status not in ("DELIVERED", "RETURNED", "PICKED_UP"):
+            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur.")
+
     delivery.status = payload.status
 
     # Map status to order status — routed through order_service.update_order
@@ -1366,11 +1386,15 @@ def update_internal_delivery_status(
     # DELIVERED (_record_delivery_payment) — same bug class fixed in the
     # Yalidine webhook, same fix: go through the one place stock/finance
     # side effects are actually implemented.
+    # Lock just the Order row first (FOR UPDATE + an outer join to
+    # order_items in one query fails on Postgres: "FOR UPDATE cannot be
+    # applied to the nullable side of an outer join" — order_items is
+    # optional). Load items separately once the lock is held.
+    db.query(Order.id).filter(Order.id == delivery.order_id).with_for_update().first()
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
         .filter(Order.id == delivery.order_id)
-        .with_for_update()
         .first()
     )
     if order:

@@ -2094,13 +2094,17 @@ def get_order_events(
             "id": e.id,
             "order_id": e.order_id,
             "actor_id": e.actor_id,
+            # actor_role is the role AT THE TIME of the action (persisted on
+            # the event); e.actor.role is the actor's CURRENT role, used only
+            # as a fallback for events logged before this column existed.
+            "actor_role": e.actor_role or (e.actor.role if e.actor else None),
             "from_status": e.from_status,
             "to_status": e.to_status,
             "note": e.note,
             "call_result": e.call_result,
             "call_attempt": e.call_attempt,
             "created_at": e.created_at.isoformat() if e.created_at else None,
-            "actor": {"id": e.actor.id, "name": e.actor.name, "avatar": e.actor.avatar} if e.actor else None,
+            "actor": {"id": e.actor.id, "name": e.actor.name, "avatar": e.actor.avatar, "role": e.actor.role} if e.actor else None,
         }
         for e in events
     ]

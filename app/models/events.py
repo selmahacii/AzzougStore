@@ -9,6 +9,13 @@ class OrderEvent(Base):
     id = Column(String, primary_key=True, index=True)
     order_id = Column(String, ForeignKey("orders.id"), nullable=False)
     actor_id = Column(String, ForeignKey("users.id"), nullable=True)
+    # The role the actor held AT THE TIME of the action (not a live join to
+    # users.role, which can change later) — order_service.update_order()
+    # already receives actor_role as a parameter but previously only used it
+    # to build a free-text prefix inside order.notes, never persisting it as
+    # its own field. Needed to answer "depuis quel rôle" for the history
+    # timeline (a confirmatrice and a livreur can both act on the same order).
+    actor_role = Column(String, nullable=True)
 
     from_status = Column(String, nullable=True)
     to_status = Column(String, nullable=False)
