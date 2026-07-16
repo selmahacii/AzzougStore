@@ -140,9 +140,10 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Alertes rupture', view: 'inventory', subView: 'ALERTS' },
                { label: 'Achats', view: 'inventory', subView: 'PURCHASES' },
                { label: 'Bons d\'Achat & d\'Entrée', view: 'purchase_vouchers' },
-               { label: 'Retours', view: 'inventory', subView: 'RETURNS' },
+               { label: 'Retours (fournisseurs)', view: 'inventory', subView: 'RETURNS' },
                { label: 'Fournisseurs', view: 'inventory', subView: 'PARTNERS' },
-               { label: 'Historique', view: 'inventory', subView: 'HISTORY' }
+               { label: 'Historique', view: 'inventory', subView: 'HISTORY' },
+               { label: 'Retours Commandes', view: 'returns' }
             ]
          },
          {

@@ -10,7 +10,7 @@ import logging
 from typing import Any, List, Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body
 from sqlalchemy import func as sqlfunc
 from sqlalchemy.orm import Session, joinedload
 
@@ -2596,3 +2596,224 @@ async def dispatch_order(
         raise
     except Exception as e:
         raise HTTPException(502, f"Erreur de communication transporteur : {str(e)}")
+
+
+# ─── Returns / stock reintegration — audit + KPIs + manual backfill ─────────
+# Idempotency note: no new "already processed" flag was added anywhere.
+# order_service.update_order() already restocks exactly once per RETURNED
+# order via the existing CONFIRMED/SHIPPED/DELIVERED → RETURNED stock
+# matrix (was_c and not now_c/now_r → return_restock), and RETURNED is a
+# terminal state with zero outgoing transitions in _VALID_TRANSITIONS —
+# there is structurally no path to re-enter it and no path to double-fire
+# the restock. stock_movements (type=RETURN_RESTOCK) is the durable proof
+# it happened, and is exactly what the audit below checks for — reusing it
+# instead of adding a redundant boolean column.
+
+@router.get("/returns/audit", response_model=dict)
+def audit_returned_orders_stock(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Detects RETURNED orders that were physically deducted (a StockMovement
+    row of type ORDER_CONFIRM exists for them — i.e. they were once
+    CONFIRMED/SHIPPED/DELIVERED) but never got a RETURN_RESTOCK movement —
+    the exact, provable signature of a restock that was silently skipped
+    (e.g. by the delivery_partners.py / yalidine.py bypasses fixed
+    alongside this feature). An order returned straight from a RESERVED
+    state (NEW/ASSIGNED/CALLED → RETURNED) never had physical stock
+    deducted in the first place (release_reservation, not return_restock,
+    is the correct op for it) — such orders correctly have NO
+    RETURN_RESTOCK movement and are NOT flagged here.
+    """
+    from app.models.stock import StockMovement
+    from sqlalchemy import exists as sa_exists
+
+    db.info["skip_tenant_isolation"] = True
+
+    confirm_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM"
+    )
+    restock_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK"
+    )
+
+    total_returned = db.query(sqlfunc.count(Order.id)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False,
+    ).scalar() or 0
+
+    restocked_count = db.query(sqlfunc.count(Order.id)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False, restock_exists,
+    ).scalar() or 0
+
+    anomalies = (
+        db.query(Order.id, Order.order_number, Order.store_id, Order.updated_at, Order.total)
+        .filter(Order.status == "RETURNED", Order.is_deleted == False, confirm_exists, ~restock_exists)
+        .order_by(Order.updated_at.desc())
+        .limit(200)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "total_returned": total_returned,
+            "restocked": restocked_count,
+            "never_restocked_but_expected": len(anomalies),
+            "not_applicable_reserved_only": max(0, total_returned - restocked_count - len(anomalies)),
+            "anomalies": [
+                {
+                    "order_id": a.id, "order_number": a.order_number,
+                    "store_id": a.store_id, "updated_at": a.updated_at.isoformat() if a.updated_at else None,
+                    "total": a.total, "stock_remis": False,
+                }
+                for a in anomalies
+            ],
+        },
+    }
+
+
+@router.post("/returns/reintegrate-missing", response_model=dict)
+def reintegrate_missing_stock(
+    order_ids: Optional[List[str]] = Body(None, embed=True),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Admin tool: reintegrates stock for RETURNED orders flagged by the audit
+    above. Idempotent by construction — re-running it after a first
+    successful pass finds zero anomalies (each processed order now has a
+    RETURN_RESTOCK movement, so the same EXISTS/NOT-EXISTS query that found
+    it no longer does), never a double-restock. Reuses
+    inventory_service.return_restock — the exact same function the normal
+    live transition uses, not a parallel implementation.
+    """
+    if getattr(current_user, "role", None) not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+
+    from app.models.stock import StockMovement
+    from app.services.inventory_service import inventory_service
+    from sqlalchemy import exists as sa_exists
+
+    db.info["skip_tenant_isolation"] = True
+
+    confirm_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "ORDER_CONFIRM"
+    )
+    restock_exists = sa_exists().where(
+        StockMovement.order_id == Order.id, StockMovement.type == "RETURN_RESTOCK"
+    )
+    query = db.query(Order).options(joinedload(Order.items)).filter(
+        Order.status == "RETURNED", Order.is_deleted == False, confirm_exists, ~restock_exists,
+    )
+    if order_ids:
+        query = query.filter(Order.id.in_(order_ids))
+    targets = query.limit(500).all()
+
+    processed, skipped_items, results = 0, 0, []
+    for order in targets:
+        # Row lock + re-check under lock: two admins clicking "reintegrate"
+        # at the same moment must not both restock the same order.
+        db.query(Order.id).filter(Order.id == order.id).with_for_update().first()
+        still_missing = db.query(
+            sa_exists().where(StockMovement.order_id == order.id, StockMovement.type == "RETURN_RESTOCK")
+        ).scalar()
+        if still_missing:
+            continue
+        items_done = 0
+        for item in order.items:
+            if not item.product_id:
+                skipped_items += 1
+                continue
+            try:
+                inventory_service.return_restock(
+                    db, product_id=item.product_id, quantity=item.quantity,
+                    order_id=order.id, actor_id=current_user.id,
+                    variant_details=item.variant_details,
+                )
+                items_done += 1
+            except Exception as exc:
+                logger.warning("Reintegration failed for order %s item product %s: %s", order.id, item.product_id, exc)
+        db.commit()
+        processed += 1
+        results.append({"order_id": order.id, "order_number": order.order_number, "items_reintegrated": items_done})
+
+    return {
+        "success": True,
+        "message": f"{processed} commande(s) réintégrée(s), {skipped_items} ligne(s) sans produit lié ignorée(s)",
+        "data": {"processed": processed, "skipped_items": skipped_items, "orders": results},
+    }
+
+
+@router.get("/returns/kpis", response_model=dict)
+def get_returns_kpis(
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    All figures come from stock_movements (type=RETURN_RESTOCK), joined
+    once to order_items for financial value (unit_price) and to products
+    for names — every aggregate is a single GROUP BY, no per-row Python
+    loop, no N+1.
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import and_
+    from app.models.stock import StockMovement
+    from app.models.product import Product
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+
+    base = db.query(StockMovement).filter(StockMovement.type == "RETURN_RESTOCK")
+    if store_id:
+        base = base.join(Order, Order.id == StockMovement.order_id).filter(Order.store_id == store_id)
+
+    def _count_and_qty(since):
+        q = base.filter(StockMovement.created_at >= since)
+        row = q.with_entities(sqlfunc.count(StockMovement.id), sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).first()
+        return {"returns": row[0] or 0, "quantity": int(row[1] or 0)}
+
+    totals = base.with_entities(
+        sqlfunc.count(sqlfunc.distinct(StockMovement.order_id)),
+        sqlfunc.count(StockMovement.id),
+        sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0),
+    ).first()
+
+    # Financial value: movement.quantity × the order's own unit_price for
+    # that product (join on order_id + product_id — a single grouped query,
+    # not a loop per movement).
+    value_row = (
+        base.join(OrderItem, and_(OrderItem.order_id == StockMovement.order_id, OrderItem.product_id == StockMovement.product_id))
+        .with_entities(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity * OrderItem.unit_price), 0))
+        .first()
+    )
+
+    top_products = (
+        base.join(Product, Product.id == StockMovement.product_id)
+        .with_entities(Product.id, Product.name, sqlfunc.sum(StockMovement.quantity).label("qty"))
+        .group_by(Product.id, Product.name)
+        .order_by(sqlfunc.sum(StockMovement.quantity).desc())
+        .limit(10)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "data": {
+            "total_returns": totals[0] or 0,
+            "total_movements": totals[1] or 0,
+            "total_quantity_reintegrated": int(totals[2] or 0),
+            "total_value_reintegrated": float(value_row[0] or 0),
+            "today": _count_and_qty(today_start),
+            "this_week": _count_and_qty(week_start),
+            "this_month": _count_and_qty(month_start),
+            "top_products": [
+                {"product_id": p[0], "product_name": p[1], "quantity_returned": int(p[2] or 0)}
+                for p in top_products
+            ],
+        },
+    }

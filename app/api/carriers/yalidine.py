@@ -449,21 +449,33 @@ async def webhook(
     new_status = STATUS_MAP.get(new_status_raw)
 
     if tracking and new_status:
+        # Row-locked, re-checked-after-lock, routed through order_service.
+        # update_order — NOT a raw `order.status = new_status` assignment.
+        # This used to bypass the entire stock/state-machine logic: a
+        # customer return reported by Yalidine here never restocked the
+        # product (no return_restock call), unlike every other path
+        # (noest_sync.py, the admin PATCH endpoint) that already went
+        # through update_order. Same bug class as the internal-delivery
+        # endpoint in delivery_partners.py, fixed the same way.
+        db.query(Order.id).filter(Order.tracking_number == tracking, Order.is_deleted == False).with_for_update().first()
         order = db.query(Order).filter(Order.tracking_number == tracking, Order.is_deleted == False).first()
         if order and order.status != new_status:
-            from app.models.events import OrderEvent
-            import uuid
-            
-            event = OrderEvent(
-                id=str(uuid.uuid4()),
-                order_id=order.id,
-                from_status=order.status,
-                to_status=new_status,
-                note=f"Statut mis à jour via Yalidine ({new_status})"
-            )
-            db.add(event)
-            order.status = new_status
-            db.commit()
-            logger.info("Webhook Yalidine: order %s → %s", tracking, new_status)
+            from app.services.order_service import order_service
+            try:
+                order_service.update_order(
+                    db,
+                    order=order,
+                    update_data={
+                        "status": new_status,
+                        "notes": None,
+                        "note": f"Statut mis à jour via Yalidine ({new_status})",
+                    },
+                    actor_id=None,  # system/carrier webhook, no logged-in user
+                )
+                db.commit()
+                logger.info("Webhook Yalidine: order %s → %s", tracking, new_status)
+            except Exception as exc:
+                db.rollback()
+                logger.warning("Webhook Yalidine: transition to %s refused for order %s: %s", new_status, order.id, exc)
 
     return {"received": True}
