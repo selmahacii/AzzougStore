@@ -211,7 +211,18 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     }
   }
 
-  const userData = await buildMetaUserData(options.userData);
+  // user_data DOIT être un objet plat (MetaEventUserData côté backend :
+  // em/ph/fn/ln/ct/st/zp/fbp/fbc/client_ip_address/client_user_agent en
+  // Optional[str]) — buildMetaUserData() renvoyait un objet {em: [hash],
+  // ct: [hash], co: [hash], ...} au format Graph API (listes pré-hashées,
+  // "co" au lieu de "country"), donc Pydantic ignorait silencieusement ces
+  // champs (mauvais type/mauvaise clé) ET fbp/fbc/client_ip_address/
+  // client_user_agent/external_id étaient envoyés au niveau racine
+  // d'eventPayload au lieu d'être nichés dans user_data comme le schéma
+  // l'exige — perdus avant même d'atteindre build_user_data côté serveur.
+  // Envoyer les valeurs BRUTES ici et laisser le serveur normaliser/hasher
+  // via build_user_data (déjà utilisé par le chemin commande) élimine le
+  // double-traitement et garantit une seule implémentation de hachage.
   const eventPayload = {
     pixel_id: pixelId,
     store_id: storeId,
@@ -219,12 +230,20 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     event_time: Math.floor(Date.now() / 1000),
     event_id: eventId,
     event_source_url: options.eventSourceUrl || window.location.href,
-    user_data: userData,
-    external_id: options.externalId,
-    client_ip_address: options.clientIpAddress,
-    client_user_agent: options.clientUserAgent || window.navigator.userAgent,
-    fbp: options.fbp || pickCookie('_fbp'),
-    fbc: options.fbc || pickCookie('_fbc'),
+    user_data: {
+      em: options.userData?.email || undefined,
+      ph: options.userData?.phone || undefined,
+      fn: options.userData?.first_name || undefined,
+      ln: options.userData?.last_name || undefined,
+      ct: options.userData?.city || undefined,
+      st: options.userData?.wilaya || undefined,
+      zp: options.userData?.postal_code || undefined,
+      external_id: options.externalId,
+      client_ip_address: options.clientIpAddress,
+      client_user_agent: options.clientUserAgent || window.navigator.userAgent,
+      fbp: options.fbp || pickCookie('_fbp'),
+      fbc: options.fbc || pickCookie('_fbc'),
+    },
     // MUST be named custom_data — MetaEventPayload (meta_ads.py) has no
     // "event_data" field, and Pydantic silently drops unrecognized keys by
     // default. This was named event_data, so custom_data was always None

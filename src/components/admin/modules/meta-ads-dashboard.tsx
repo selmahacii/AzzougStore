@@ -1517,6 +1517,14 @@ export default function MetaAdsDashboard() {
                 <p className="text-[10px] text-slate-400 mt-1">
                   Qualité des signaux envoyés à Meta — Période : <strong className="text-slate-500">{dateStart} → {dateEnd}</strong>
                 </p>
+                {signalQuality?.meta && (
+                  <p className="text-[9px] text-slate-300 mt-1 leading-relaxed">
+                    Calculé le <strong className="text-slate-400">{signalQuality.meta.calculated_at ? new Date(signalQuality.meta.calculated_at).toLocaleString('fr-FR') : '—'}</strong>
+                    {' · '}Dernier Purchase analysé : <strong className="text-slate-400">{signalQuality.meta.last_purchase_event_at ? new Date(signalQuality.meta.last_purchase_event_at).toLocaleString('fr-FR') : 'Aucun'}</strong>
+                    {' · '}{signalQuality.meta.calculation_mode}
+                    <br />{signalQuality.meta.population}
+                  </p>
+                )}
               </div>
               {signalQuality?.global_score != null && (
                 <div className="text-right shrink-0">
