@@ -6,12 +6,13 @@ ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# Install system dependencies (for psycopg2 and general build)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+# No apt-get/build-essential/libpq-dev/gcc needed: every dependency below
+# (psycopg2-binary included — it bundles its own libpq, no libpq-dev headers
+# or compiler required) ships a precompiled manylinux wheel for this exact
+# Python 3.11 slim image, and nothing in the app shells out to psql/pg_dump.
+# That apt-get layer was pulling ~98MB across 81 packages (full gcc/g++
+# toolchain + postgresql-client-17) on every build with no cache hit —
+# the actual cause of the build timing out before pip install ever ran.
 
 # Install python dependencies
 COPY requirements.txt .
