@@ -135,11 +135,11 @@ const NAV_SECTIONS: NavSection[] = [
             items: [
                { label: 'Surveillance', view: 'inventory', subView: 'MONITOR' },
                { label: 'Entrepôts', view: 'inventory', subView: 'WAREHOUSES' },
-               { label: 'Gestion Stock & Alertes', view: 'inventory', subView: 'STOCK' },
+               { label: 'Gestion Stock', view: 'inventory', subView: 'STOCK' },
                { label: 'Suivi de stock (lots/mouvements)', view: 'inventory', subView: 'TRACKER' },
                { label: 'Achats', view: 'inventory', subView: 'PURCHASES' },
                { label: 'Bons d\'Achat & d\'Entrée', view: 'purchase_vouchers' },
-               { label: 'Fournisseurs & Retours', view: 'inventory', subView: 'PARTNERS_RETURNS' },
+               { label: 'Fournisseurs', view: 'inventory', subView: 'PARTNERS_RETURNS' },
                { label: 'Historique', view: 'inventory', subView: 'HISTORY' },
                { label: 'Timeline', view: 'inventory', subView: 'TIMELINE' },
                { label: 'Inventaire Livreurs', view: 'inventory', subView: 'LIVREURS' },
