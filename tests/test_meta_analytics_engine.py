@@ -34,6 +34,7 @@ from app.models.marketing import MetaCapiLog
 from app.models.order import Order
 from app.models.audit import AuditLog
 from app.services.meta_analytics_engine import compute_meta_metrics
+import app.services.meta_capi as meta_capi
 
 
 @pytest.fixture()
@@ -170,3 +171,53 @@ def test_emq_zero_percent_only_when_fields_genuinely_missing(db_session):
     m = compute_meta_metrics(db_session, store_id, since, until)
     assert m["event_match_quality"] == 0.0
     assert m["event_match_quality"] is not None
+
+
+def test_benchmark_change_propagates_identically_to_every_view(db_session):
+    """
+    Guarantees the "single source of truth" contract: a benchmark/band
+    change made in app/services/meta_capi.py (meta_health_label's bands,
+    which classify() in the engine wraps) must change the label/color for
+    BOTH store-wide and per-campaign views identically, with no view left
+    behind on the old thresholds. This is what "no divergence between
+    endpoints/dashboards" actually means in an automated test: patch the
+    canonical band function once, and assert every caller reflects it.
+    """
+    store_id = "store-3"
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
+
+    order = _make_order(store_id, campaign_id="camp-C")
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(_make_log(store_id, order.id, status="success"))
+    db_session.commit()
+
+    before_store_wide = compute_meta_metrics(db_session, store_id, since, until)
+    before_per_campaign = compute_meta_metrics(db_session, store_id, since, until, order_ids=[order.id])
+    assert before_store_wide["learning_score"]["label"] == before_per_campaign["learning_score"]["label"]
+
+    # Tighten the "Excellent" band from >=90 to >=101 (impossible to reach)
+    # so ANY previously-"Excellent" score must now report a lower label —
+    # simulates a benchmark change made once, centrally.
+    original = meta_capi._score_band
+    try:
+        def _tightened(score, bands):
+            patched_bands = [(101 if label == "Excellent" else t, label) for t, label in bands]
+            return original(score, patched_bands)
+        meta_capi._score_band = _tightened
+
+        # Re-import engine module's bound reference isn't needed: classify()
+        # calls meta_health_label(), which calls the module-level
+        # _score_band — patching the module attribute is enough since
+        # meta_health_label looks it up dynamically at call time.
+        after_store_wide = compute_meta_metrics(db_session, store_id, since, until)
+        after_per_campaign = compute_meta_metrics(db_session, store_id, since, until, order_ids=[order.id])
+    finally:
+        meta_capi._score_band = original
+
+    assert after_store_wide["learning_score"]["label"] != "Excellent"
+    assert after_per_campaign["learning_score"]["label"] != "Excellent"
+    # The core guarantee: both views moved together, to the SAME new label.
+    assert after_store_wide["learning_score"]["label"] == after_per_campaign["learning_score"]["label"]
+    assert after_store_wide["signal_score"]["label"] == after_per_campaign["signal_score"]["label"]

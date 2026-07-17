@@ -41,8 +41,48 @@ from app.services.meta_capi import (
     evaluate_purchase_signal_quality,
     compute_learning_score,
     compute_component_scores,
+    compute_meta_optimization_score,
+    meta_health_label,
+    campaign_classification_label,
+    meta_optimization_label,
+    detect_funnel_bottleneck,
     _MATCH_QUALITY_FIELDS,
 )
+
+# Une seule palette de couleurs par label de bande — les labels eux-mêmes
+# viennent des fonctions canoniques ci-dessus (meta_health_label &co,
+# meta_capi.py:1688+), jamais un second barème de seuils inventé ici. Le
+# frontend consomme `level`/`color` tels quels : aucune logique de seuil
+# ne doit être ré-écrite en TSX.
+_LEVEL_COLORS: Dict[str, str] = {
+    "Excellent": "#00B894", "Excellente": "#00B894", "Très bon": "#00B894",
+    "Bon": "#0984E3", "Bonne": "#0984E3",
+    "Moyen": "#FDCB6E", "À surveiller": "#FDCB6E",
+    "Faible": "#E17055",
+    "Critique": "#E17055",
+    "Non disponible": "#B2BEC3",
+}
+
+
+def classify(score: Optional[float], label_fn) -> Dict[str, Any]:
+    """
+    Attache un label et une couleur canoniques à un score déjà calculé —
+    ne recalcule jamais le score lui-même. `label_fn` est une des
+    fonctions de bandes de meta_capi.py (meta_health_label,
+    campaign_classification_label, meta_optimization_label).
+    """
+    label = label_fn(score)
+    return {"score": score, "label": label, "color": _LEVEL_COLORS.get(label, _LEVEL_COLORS["Non disponible"])}
+
+
+def compute_funnel_metrics(stages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Ré-exporté depuis meta_capi.detect_funnel_bottleneck — point d'entrée
+    UNIQUE pour l'analyse de funnel, pour que tout appelant (endpoint ou
+    futur dashboard) passe par le moteur plutôt que d'importer
+    meta_capi directement.
+    """
+    return detect_funnel_bottleneck(stages)
 
 
 def _pct(numerator: float, denominator: float) -> Optional[float]:
@@ -264,6 +304,26 @@ def compute_meta_metrics(
         "event_match_quality": emq_for_scoring, "attribution_pct": attribution_pct or 0.0,
         "avg_completeness_pct": avg_completeness_pct or 0.0,
     })
+    weekly_purchase_rate = success / max((until - since).days / 7, 1)
+    optimization_score = compute_meta_optimization_score(
+        learning_score["score"], component_scores, {"purchase": weekly_purchase_rate}
+    )
+
+    # ── Classification — label + couleur attachés à CHAQUE score exposé, en
+    # utilisant les bandes canoniques de meta_capi.py. Le frontend ne doit
+    # plus jamais réinventer un `score >= X ? couleur`. ──
+    learning_score_classified = {**learning_score, **classify(learning_score["score"], meta_health_label)}
+    global_score_classified = classify(global_score, meta_health_label)
+    component_scores_classified = {
+        key: classify(value, meta_health_label) for key, value in component_scores.items()
+    }
+    # ATTENTION : field_coverage a déjà une clé "label" (le nom du champ,
+    # "Email"/"FBP"/...) — la classification qualité utilise donc des clés
+    # distinctes (quality_label/quality_color) pour ne jamais l'écraser.
+    field_coverage_classified = [
+        {**f, "quality_label": (c := classify(f["coverage_pct"], meta_health_label))["label"], "quality_color": c["color"]}
+        for f in field_coverage
+    ]
 
     return {
         "since": since, "until": until,
@@ -273,7 +333,7 @@ def compute_meta_metrics(
         "retry_pct": retry_pct, "pending_pct": pending_pct,
         "tracking_coverage": coverage_score, "server_reliability": reliability_score,
         "event_match_quality": avg_emq, "match_quality": avg_emq,
-        "sample_size": sample_n, "field_coverage": field_coverage,
+        "sample_size": sample_n, "field_coverage": field_coverage_classified,
         "field_present_counts": field_present_counts,
         "value_present_pct": value_present_pct, "missing_value_count": missing_value,
         "missing_currency_pct": missing_currency_pct, "missing_currency_count": missing_currency,
@@ -285,9 +345,10 @@ def compute_meta_metrics(
         "dedup_pct": dedup_pct,
         "attribution_pct": attribution_pct, "orphan_campaign": orphan_campaign,
         "avg_completeness_pct": avg_completeness_pct,
-        "global_score": global_score,
-        "learning_score": learning_score,
-        "component_scores": component_scores,
+        "global_score": global_score, "signal_score": global_score_classified,
+        "learning_score": learning_score_classified,
+        "component_scores": component_scores, "component_scores_classified": component_scores_classified,
+        "optimization_score": optimization_score,
     }
 
 
@@ -309,6 +370,21 @@ class MetricDefinition:
     source: str
     benchmark: Optional[str] = None
     na_when_empty: bool = True
+    unit: str = "%"
+    # Bandes de seuils affichées telles quelles par le frontend (label +
+    # couleur déjà résolus par classify()) — documentées ici pour que la
+    # provenance du niveau/couleur affiché soit traçable depuis le
+    # registre, jamais réinventée en TSX.
+    bands: str = "90/75/55/35/0 -> Excellent/Bon/Moyen/Faible/Critique (meta_health_label)"
+    recommendation: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name, "label": self.label, "description": self.description,
+            "formula": self.formula, "population": self.population, "period": self.period,
+            "source": self.source, "benchmark": self.benchmark, "na_when_empty": self.na_when_empty,
+            "unit": self.unit, "bands": self.bands, "recommendation": self.recommendation,
+        }
 
 
 METRIC_REGISTRY: Dict[str, MetricDefinition] = {
@@ -322,6 +398,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             period="30 jours glissants (par défaut, configurable via date_from/date_to).",
             source="compute_meta_metrics() -> compute_learning_score()",
             benchmark=">=80 = sain, 50-79 = à surveiller, <50 = critique",
+            recommendation="Si faible : identifier le composant le plus bas (estimated_gains) et le corriger en priorité — jamais ajuster le score directement.",
         ),
         MetricDefinition(
             name="global_score",
@@ -331,6 +408,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Idem learning_score.",
             period="30 jours glissants.",
             source="compute_meta_metrics()",
+            recommendation="Si faible : vérifier lequel des 3 sous-scores tire la moyenne vers le bas dans la réponse détaillée.",
         ),
         MetricDefinition(
             name="event_match_quality",
@@ -341,6 +419,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             period="30 jours glissants.",
             source="compute_match_quality() appelé par compute_meta_metrics()",
             benchmark="Meta : >=6/10 acceptable, <4/10 problématique",
+            recommendation="Si bas : vérifier field_coverage pour identifier quel champ (fbp/fbc/ip/user_agent en tête) manque le plus souvent côté checkout.",
         ),
         MetricDefinition(
             name="tracking_coverage",
@@ -350,6 +429,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Tous statuts confondus (success/failed/retry/pending/skipped).",
             period="30 jours glissants.",
             source="compute_meta_metrics()",
+            recommendation="Si bas : voir purchase_breakdown (failed/retry/pending) pour la cause dominante.",
         ),
         MetricDefinition(
             name="server_reliability",
@@ -359,6 +439,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Idem tracking_coverage.",
             period="30 jours glissants.",
             source="compute_meta_metrics()",
+            recommendation="Si bas : vérifier la Santé du Pixel (token/scopes) — un rejet Meta n'est presque jamais un problème réseau.",
         ),
         MetricDefinition(
             name="attribution_pct",
@@ -368,6 +449,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Purchase status='success' uniquement.",
             period="30 jours glissants.",
             source="compute_meta_metrics() — définition UNIQUE, remplace l'ancienne divergence store-wide vs par-campagne.",
+            recommendation="Si bas : vérifier le tracking UTM sur les liens publicitaires (souvent des ventes organiques/directes, normal en partie).",
         ),
         MetricDefinition(
             name="realtime_pct",
@@ -377,6 +459,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Purchase status='success', jointure Order pour la classification temps réel/backfill.",
             period="30 jours glissants.",
             source="classify_capi_log_timing() + compute_meta_metrics()",
+            recommendation="Si bas : vérifier que l'envoi CAPI se déclenche bien au moment de la commande, pas seulement lors d'un rattrapage manuel.",
         ),
         MetricDefinition(
             name="backfill_pct",
@@ -395,6 +478,7 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="TOUS les statuts (total_sent) — avant cet engine, le store-wide ne comptait que les succès plafonnés à 1000.",
             period="30 jours glissants.",
             source="compute_meta_metrics()",
+            recommendation="Si bas : investiguer manuellement — un event_id dupliqué n'est jamais attendu (contrainte unique en base).",
         ),
         MetricDefinition(
             name="valid_purchase_pct",
@@ -422,6 +506,18 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             population="Même échantillon que l'EMQ (Purchase success, plafonné à 500 store-wide).",
             period="30 jours glissants.",
             source="scan_payload_quality() + compute_meta_metrics()",
+            recommendation="Si bas : vérifier order.total sur les commandes concernées (produit gratuit ? item sans prix ?).",
+        ),
+        MetricDefinition(
+            name="avg_latency_ms",
+            label="Latence moyenne",
+            description="Délai moyen entre la commande (ou sa reprise) et l'envoi effectif du Purchase à Meta.",
+            formula="moyenne(latency_ms) sur les envois réussis de la fenêtre.",
+            population="Purchase status='success' avec latency_ms renseigné.",
+            period="30 jours glissants.",
+            source="compute_meta_metrics()",
+            unit="ms",
+            bands="<=5000ms -> 100, >=60000ms -> 0, dégradé linéairement entre les deux (_latency_to_score)",
         ),
         MetricDefinition(
             name="component_scores",
@@ -432,5 +528,30 @@ METRIC_REGISTRY: Dict[str, MetricDefinition] = {
             period="30 jours glissants.",
             source="compute_component_scores()",
         ),
+        MetricDefinition(
+            name="optimization_score",
+            label="Meta Optimization Advisor — score global",
+            description="Score global /100 pondérant learning_score, meta_acceptance, queue, event_quality et l'adéquation de volume (Purchase/semaine vs repère ~50/semaine).",
+            formula="Voir compute_meta_optimization_score() — pondération _META_OPTIMIZATION_WEIGHTS.",
+            population="Idem compute_meta_metrics().",
+            period="30 jours glissants.",
+            source="compute_meta_optimization_score()",
+            bands="90/80/65/45/0 -> Excellent/Très bon/Bon/Moyen/Critique (meta_optimization_label)",
+        ),
+        MetricDefinition(
+            name="funnel",
+            label="Funnel (goulot d'étranglement)",
+            description="Étape du funnel (AddToCart -> InitiateCheckout -> Purchase, etc.) où le taux de passage réel est le plus en dessous de son repère indicatif.",
+            formula="Voir detect_funnel_bottleneck() — ratio entre étapes consécutives comparé à un seuil par transition (_FUNNEL_TRANSITIONS).",
+            population="Stages fournis par GET /meta-ads/funnel (comptages déjà agrégés, jamais recalculés ici).",
+            period="Période sélectionnée sur le dashboard (indépendante de la fenêtre 30 jours des autres KPI).",
+            source="compute_funnel_metrics() (ré-export de meta_capi.detect_funnel_bottleneck)",
+            na_when_empty=False,
+        ),
     ]
 }
+
+
+def get_metric_registry_payload() -> List[Dict[str, Any]]:
+    """Sérialisation JSON du registre — endpoint unique consommé par le frontend pour les métadonnées (labels, formules, bandes, recommandations), jamais dupliquées en TSX."""
+    return [d.to_dict() for d in METRIC_REGISTRY.values()]

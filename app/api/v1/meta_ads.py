@@ -2889,6 +2889,19 @@ def cleanup_meta_queue(
     return {"success": True, "message": f"{deleted} old success row(s) deleted", "count": deleted}
 
 
+@router.get("/metric-registry", response_model=dict)
+def get_metric_registry(
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Métadonnées de chaque KPI Meta (formule, population, période, bandes de
+    seuils, unité, recommandation) — point d'entrée UNIQUE pour que le
+    frontend affiche labels/explications/seuils sans les dupliquer en TSX.
+    """
+    from app.services.meta_analytics_engine import get_metric_registry_payload
+    return {"success": True, "data": get_metric_registry_payload()}
+
+
 @router.get("/signal-quality", response_model=dict)
 def get_signal_quality(
     store_id: str = Query(...),

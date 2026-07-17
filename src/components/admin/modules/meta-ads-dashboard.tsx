@@ -1461,10 +1461,12 @@ export default function MetaAdsDashboard() {
               </div>
               {signalQuality?.learning_score?.score != null && (
                 <div className="text-right shrink-0">
-                  <p className={cn(
-                    'text-3xl font-black leading-none',
-                    signalQuality.learning_score.score >= 90 ? 'text-[#00E6A0]' : signalQuality.learning_score.score >= 70 ? 'text-[#FFD86B]' : 'text-[#FF7A6E]'
-                  )}>{signalQuality.learning_score.score}<span className="text-sm text-white/30">/100</span></p>
+                  {/* Couleur/label fournis par MetaAnalyticsEngine (classify()) —
+                      jamais un seuil recalculé côté frontend. */}
+                  <p className="text-3xl font-black leading-none" style={{ color: signalQuality.learning_score.color }}>
+                    {signalQuality.learning_score.score}<span className="text-sm text-white/30">/100</span>
+                  </p>
+                  <p className="text-[10px] font-bold mt-0.5" style={{ color: signalQuality.learning_score.color }}>{signalQuality.learning_score.label}</p>
                 </div>
               )}
             </div>
@@ -1518,11 +1520,12 @@ export default function MetaAdsDashboard() {
               </div>
               {signalQuality?.global_score != null && (
                 <div className="text-right shrink-0">
-                  <p className={cn(
-                    'text-2xl font-black leading-none',
-                    signalQuality.global_score >= 90 ? 'text-[#00B894]' : signalQuality.global_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
-                  )}>{signalQuality.global_score}<span className="text-xs text-slate-300">/100</span></p>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Signal Score</p>
+                  <p className="text-2xl font-black leading-none" style={{ color: signalQuality.signal_score?.color }}>
+                    {signalQuality.global_score}<span className="text-xs text-slate-300">/100</span>
+                  </p>
+                  <p className="text-[9px] font-black uppercase tracking-widest mt-0.5" style={{ color: signalQuality.signal_score?.color }}>
+                    {signalQuality.signal_score?.label ?? 'Signal Score'}
+                  </p>
                 </div>
               )}
             </div>
@@ -1559,9 +1562,9 @@ export default function MetaAdsDashboard() {
                         <div key={f.key} className="flex items-center gap-2">
                           <span className="text-[10px] font-bold text-slate-500 w-24 shrink-0">{f.label}</span>
                           <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${f.coverage_pct}%`, backgroundColor: f.coverage_pct >= 90 ? '#00B894' : f.coverage_pct >= 50 ? '#FDCB6E' : '#E17055' }} />
+                            <div className="h-full rounded-full" style={{ width: `${f.coverage_pct ?? 0}%`, backgroundColor: f.quality_color }} />
                           </div>
-                          <span className="text-[10px] font-black tabular-nums w-10 text-right" style={{ color: f.coverage_pct >= 90 ? '#00B894' : f.coverage_pct >= 50 ? '#FDCB6E' : '#E17055' }}>{f.coverage_pct}%</span>
+                          <span className="text-[10px] font-black tabular-nums w-10 text-right" style={{ color: f.quality_color }}>{f.coverage_pct != null ? `${f.coverage_pct}%` : 'N/A'}</span>
                         </div>
                       ))}
                     </div>
