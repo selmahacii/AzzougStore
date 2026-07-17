@@ -2910,6 +2910,7 @@ def get_signal_quality(
     from app.services.meta_capi import (
         compute_match_quality, scan_payload_quality, compute_learning_score,
         classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
+        meta_health_label, estimate_learning_score_gains,
     )
 
     db.info["skip_tenant_isolation"] = True
@@ -3149,7 +3150,7 @@ def get_signal_quality(
     value_present_pct = round((sample_n - missing_value) / sample_n * 100, 1) if sample_n else 0.0
     attribution_pct = round((success - orphan_campaign) / success * 100, 1) if success else 0.0
 
-    learning_score = compute_learning_score({
+    _learning_components = {
         "realtime_pct": realtime_pct,
         "event_match_quality": emq_score,
         "valid_purchase_pct": valid_purchase_pct,
@@ -3157,7 +3158,9 @@ def get_signal_quality(
         "value_present_pct": value_present_pct,
         "attribution_pct": attribution_pct,
         "avg_latency_ms": avg_latency_ms,
-    })
+    }
+    learning_score = compute_learning_score(_learning_components)
+    estimated_gains = estimate_learning_score_gains(_learning_components)
 
     return {
         "success": True,
@@ -3172,6 +3175,11 @@ def get_signal_quality(
                 "success": success, "failed": failed, "retry": retry,
                 "pending": pending, "skipped": skipped, "total_sent": total_sent,
             },
+            "meta_health": {
+                "score": learning_score["score"],
+                "label": meta_health_label(learning_score["score"]),
+            },
+            "estimated_gains": estimated_gains,
             "learning_score": {
                 "score": learning_score["score"],
                 "realtime_pct": realtime_pct,
@@ -3467,6 +3475,7 @@ def get_campaign_learning_health(
     from app.services.meta_capi import (
         compute_match_quality, compute_learning_score,
         diagnose_campaign_learning, classify_capi_log_timing,
+        meta_health_label, estimate_learning_score_gains,
     )
 
     db.info["skip_tenant_isolation"] = True
@@ -3576,12 +3585,14 @@ def get_campaign_learning_health(
     missing_currency_pct = round(100 - field_completeness["currency"], 1)
     attribution_pct = round((orders_count - no_utm_count) / orders_count * 100, 1) if orders_count else 0.0
 
-    learning_score = compute_learning_score({
+    _learning_components = {
         "realtime_pct": realtime_pct, "event_match_quality": avg_emq or 0.0,
         "valid_purchase_pct": valid_purchase_pct, "dedup_pct": dedup_pct,
         "value_present_pct": field_completeness["value"], "attribution_pct": attribution_pct,
         "avg_latency_ms": avg_latency_ms,
-    })
+    }
+    learning_score = compute_learning_score(_learning_components)
+    estimated_gains = estimate_learning_score_gains(_learning_components)
     coverage_score = round(success / total_sent * 100, 1) if total_sent else 0.0
     reliability_score = round(max(0.0, 100 - rejected_pct * 3), 1) if total_sent else 100.0
     signal_score = round((coverage_score + (avg_emq or 0.0) + reliability_score) / 3, 1)
@@ -3638,6 +3649,11 @@ def get_campaign_learning_health(
                 "avg_latency_ms": avg_latency_ms,
                 "max_latency_ms": max_latency_ms,
             },
+            "meta_health": {
+                "score": learning_score["score"],
+                "label": meta_health_label(learning_score["score"]),
+            },
+            "estimated_gains": estimated_gains,
             "field_completeness": field_completeness,
             "diagnosis": reasons,
         },

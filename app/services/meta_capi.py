@@ -1282,6 +1282,220 @@ def diagnose_campaign_learning(metrics: dict) -> list:
     return reasons
 
 
+# ─── Meta Optimization Engine ─────────────────────────────────────────────────
+# Explication par champ — pourquoi il peut manquer sur UN event Purchase
+# réel, son impact, et la correction possible. Source de vérité UNIQUE,
+# partagée par le contrôle avant envoi (_handle_claimed_row) ET par tout
+# scan a posteriori — jamais deux explications différentes pour le même
+# champ. Aucune de ces valeurs n'est une donnée : ce sont des explications
+# fixes, jamais substituées à un champ manquant.
+_SIGNAL_FIELD_GUIDE: Dict[str, Dict[str, str]] = {
+    "event_id": {
+        "impact": "critique — sans lui Meta ne peut pas dédupliquer Pixel/CAPI, risque de double comptage.",
+        "why_missing": "ne devrait jamais manquer : généré de façon déterministe depuis order_number.",
+        "fix": "vérifier purchase_event_id() et order.order_number.",
+    },
+    "event_time": {
+        "impact": "élevé — Meta ne peut pas situer la conversion dans sa fenêtre d'attribution.",
+        "why_missing": "ne devrait jamais manquer : dérivé de order.created_at (toujours renseigné).",
+        "fix": "vérifier build_purchase_event / order.created_at.",
+    },
+    "value": {
+        "impact": "élevé — Meta ne peut pas optimiser sur la valeur des conversions.",
+        "why_missing": "order.total est à 0 ou absent (commande gratuite, remise à 100%, item sans prix).",
+        "fix": "vérifier order.total sur cette commande.",
+    },
+    "currency": {
+        "impact": "élevé — une valeur sans devise valide peut faire rejeter l'événement par Meta.",
+        "why_missing": "MetaAdsConfig.currency non configuré pour cette boutique.",
+        "fix": "renseigner la devise du compte pub dans la configuration Meta Ads.",
+    },
+    "event_source_url": {
+        "impact": "faible — contexte de navigation, n'entre ni dans l'attribution ni le matching.",
+        "why_missing": "commande créée hors navigateur (téléphone, admin) ou URL non transmise au checkout.",
+        "fix": "vérifier que attributionPayload() est bien envoyé au moment du checkout.",
+    },
+    "action_source": {
+        "impact": "élevé — Meta a besoin de savoir où l'action a eu lieu.",
+        "why_missing": "ne devrait jamais manquer : toujours 'website' en dur.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "client_ip_address": {
+        "impact": "moyen — dégrade l'Event Match Quality.",
+        "why_missing": "commande créée sans requête HTTP directe (rattrapage, admin) ou IP non transmise par le proxy.",
+        "fix": "vérifier x-forwarded-for côté proxy/CDN pour les commandes concernées.",
+    },
+    "client_user_agent": {
+        "impact": "moyen — dégrade l'Event Match Quality.",
+        "why_missing": "commande créée sans en-tête User-Agent (rattrapage, admin, vente téléphonique).",
+        "fix": "vérifier que le checkout transmet bien le User-Agent au moment de la commande.",
+    },
+    "fbp": {
+        "impact": "moyen — dégrade l'Event Match Quality (identifiant navigateur Meta).",
+        "why_missing": "cookie _fbp absent (bloqueur de cookies, Pixel pas encore chargé, commande hors navigateur).",
+        "fix": "vérifier le chargement du Pixel avant la soumission du formulaire de commande.",
+    },
+    "fbc": {
+        "impact": "moyen — dégrade l'Event Match Quality (identifiant de clic publicitaire).",
+        "why_missing": "trafic non-Meta (organique/direct) ou fbclid non capturé sur la page d'atterrissage.",
+        "fix": "normal pour du trafic non-Meta ; sinon vérifier la capture de fbclid dans l'URL d'atterrissage.",
+    },
+    "em": {
+        "impact": "élevé — l'email est le signal de matching le plus fiable pour Meta.",
+        "why_missing": "order.customer_email vide (commande sans email collecté).",
+        "fix": "rendre l'email obligatoire ou incitatif au checkout.",
+    },
+    "ph": {
+        "impact": "élevé — signal de matching très fiable, quasi toujours disponible (vente par téléphone).",
+        "why_missing": "order.customer_phone vide — généralement une anomalie de saisie.",
+        "fix": "vérifier la validation du champ téléphone au checkout.",
+    },
+    "external_id": {
+        "impact": "moyen — signal de matching additionnel.",
+        "why_missing": "ne devrait jamais manquer : dérivé de customer_phone ou order.id.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "fn": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_name vide ou ne contient qu'un seul mot.",
+        "fix": "encourager la saisie prénom + nom séparément au checkout.",
+    },
+    "ln": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_name ne contient qu'un seul mot (pas de nom de famille distinct).",
+        "fix": "encourager la saisie prénom + nom séparément au checkout.",
+    },
+    "ct": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_commune vide.",
+        "fix": "rendre la commune obligatoire au checkout.",
+    },
+    "st": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_wilaya vide.",
+        "fix": "rendre la wilaya obligatoire au checkout (déjà quasi toujours présente).",
+    },
+    "country": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "ne devrait jamais manquer : fixé à 'DZ' (boutique Algérie uniquement).",
+        "fix": "aucune action nécessaire.",
+    },
+    "zp": {
+        "impact": "faible — le moins utile des champs de matching Meta.",
+        "why_missing": "structurel : aucune colonne code postal sur la commande — jamais collecté au checkout.",
+        "fix": "ajouter un champ code postal au formulaire de commande (décision produit, pas un correctif de code).",
+    },
+}
+
+
+def evaluate_purchase_signal_quality(event: Optional[dict]) -> dict:
+    """
+    Évaluateur exécuté sur un event Purchase déjà construit
+    (build_purchase_event ou un payload historique) — sert à la fois de
+    contrôle avant envoi (_handle_claimed_row, juste avant send_events) et
+    de scan a posteriori (Signal Quality Center / Campaign Learning
+    Health), UNE seule fonction pour ne jamais afficher deux scores
+    différents pour le même événement.
+
+    Ne bloque JAMAIS l'envoi — le retour ne contient aucun signal
+    "annuler" : seulement un diagnostic honnête (champ par champ) de ce
+    qui manque, pourquoi, l'impact réel, et comment le corriger. Aucune
+    donnée n'est jamais complétée ici avec une valeur fictive — un champ
+    absent reste `None`, expliqué, jamais remplacé.
+
+    match_score = le score Event Match Quality déjà calculé par
+    compute_match_quality — même calcul, même nombre, réutilisé sous un
+    nom plus parlant plutôt que dupliqué sous un autre score.
+    """
+    event = event or {}
+    ud = event.get("user_data") or {}
+    cd = event.get("custom_data") or {}
+    root_fields = {
+        "event_id": bool(event.get("event_id")),
+        "event_time": bool(event.get("event_time")),
+        "event_source_url": bool(event.get("event_source_url")),
+        "action_source": bool(event.get("action_source")),
+        "value": cd.get("value") not in (None, "", 0),
+        "currency": bool(cd.get("currency")),
+    }
+    user_data_fields = {
+        key: bool(ud.get(key)) for key in
+        ("em", "ph", "fn", "ln", "ct", "st", "country", "zp", "external_id",
+         "client_ip_address", "client_user_agent", "fbp", "fbc")
+    }
+    all_fields = {**root_fields, **user_data_fields}
+
+    checks = []
+    for key, present in all_fields.items():
+        guide = _SIGNAL_FIELD_GUIDE.get(key, {})
+        checks.append({
+            "field": key,
+            "present": present,
+            "impact": guide.get("impact", "non documenté"),
+            "why_if_missing": None if present else guide.get("why_missing", "cause non identifiée"),
+            "fix": None if present else guide.get("fix", "vérifier la source de cette donnée"),
+        })
+
+    match_quality = compute_match_quality(ud)
+    n_present = sum(1 for c in checks if c["present"])
+    completeness_pct = round(n_present / len(checks) * 100, 1) if checks else 0.0
+
+    return {
+        "match_score": match_quality["score"],
+        "completeness_pct": completeness_pct,
+        "checks": checks,
+        "missing_fields": [c["field"] for c in checks if not c["present"]],
+    }
+
+
+def meta_health_label(score: Optional[float]) -> str:
+    """Bandes catégorielles pour un score /100 déjà calculé ailleurs (jamais une note recalculée en secret)."""
+    if score is None:
+        return "Non disponible"
+    if score >= 90:
+        return "Excellent"
+    if score >= 75:
+        return "Bon"
+    if score >= 55:
+        return "Moyen"
+    if score >= 35:
+        return "Faible"
+    return "Critique"
+
+
+def estimate_learning_score_gains(components: dict) -> list:
+    """
+    Pour chaque composant du Learning Score qui n'est pas déjà à 100,
+    calcule le gain de points RÉEL : recalcul complet de
+    compute_learning_score avec CE SEUL composant porté à 100 (ou latence
+    ramenée à 0ms), tous les autres inchangés — jamais un gain estimé à la
+    main. Trié par gain décroissant ; les composants déjà parfaits ou sans
+    gain possible n'apparaissent pas.
+
+    `components` prend les mêmes clés que compute_learning_score :
+    realtime_pct, event_match_quality, valid_purchase_pct, dedup_pct,
+    value_present_pct, attribution_pct, avg_latency_ms.
+    """
+    base = compute_learning_score(components)
+    base_score = base["score"]
+    gains = []
+    for key in _LEARNING_SCORE_WEIGHTS:
+        current = base["components"].get(key, 0.0)
+        if current >= 100:
+            continue
+        hypothetical = dict(components)
+        if key == "latency_score":
+            hypothetical["avg_latency_ms"] = 0
+        else:
+            hypothetical[key] = 100.0
+        new_score = compute_learning_score(hypothetical)["score"]
+        gain = round(new_score - base_score, 1)
+        if gain > 0:
+            gains.append({"component": key, "current": round(current, 1), "gain_points": gain})
+    gains.sort(key=lambda g: g["gain_points"], reverse=True)
+    return gains
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/
@@ -1436,6 +1650,22 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             ad_currency=config.currency or "DZD",
             exchange_rate=config.exchange_rate if config.exchange_rate else 1.0,
         )
+
+        # Contrôle avant envoi — jamais un blocage (aucune donnée n'est
+        # jamais inventée ou complétée par une valeur fictive ici ; tout ce
+        # qui peut réellement être récupéré l'est déjà dans
+        # build_purchase_event/build_user_data ci-dessus, depuis order/
+        # config, la seule "optimisation automatique" honnête possible).
+        # Seul un signal faible est journalisé, pour que la cause soit
+        # visible dans les logs au moment même de l'envoi plutôt que
+        # découverte seulement lors d'un scan a posteriori.
+        _signal_eval = evaluate_purchase_signal_quality(event)
+        if _signal_eval["match_score"] < 50 or _signal_eval["completeness_pct"] < 70:
+            logger.warning(
+                "[MetaCAPI] order=%s faible qualité de signal avant envoi — match_score=%.1f completeness=%.1f%% champs manquants=%s",
+                order_id, _signal_eval["match_score"], _signal_eval["completeness_pct"], _signal_eval["missing_fields"],
+            )
+
         result = send_events(
             config.pixel_id, config.access_token, [event],
             store_label=order.store.name if order.store else str(order.store_id),

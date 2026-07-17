@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.services.meta_capi import (
     compute_match_quality, scan_payload_quality, compute_learning_score,
-    diagnose_campaign_learning, _latency_to_score, _MATCH_QUALITY_FIELDS,
+    diagnose_campaign_learning, evaluate_purchase_signal_quality,
+    meta_health_label, estimate_learning_score_gains,
+    _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
 
@@ -193,3 +195,86 @@ def test_diagnose_campaign_learning_cpa_uses_aov_ratio_not_absolute_value():
     assert not any(r["type"] == "CPA_ELEVE" for r in reasons)
     reasons_bad = diagnose_campaign_learning({"cost_per_purchase": 6000, "aov": 10000})
     assert any(r["type"] == "CPA_ELEVE" for r in reasons_bad)
+
+
+# ─── Meta Optimization Engine — pre-send evaluator ──────────────────────────
+
+def test_evaluate_purchase_signal_quality_all_fields_present_scores_100():
+    event = {
+        "event_id": "purchase-123", "event_time": 1752000000,
+        "event_source_url": "https://x.dz", "action_source": "website",
+        "custom_data": {"value": 5000, "currency": "DZD"},
+        "user_data": {
+            "em": ["h"], "ph": ["h"], "fn": ["h"], "ln": ["h"], "ct": ["h"], "st": ["h"],
+            "country": ["h"], "zp": ["h"], "external_id": ["h"],
+            "client_ip_address": "1.2.3.4", "client_user_agent": "UA/1",
+            "fbp": "fb.1.1.1", "fbc": "fb.1.1.1",
+        },
+    }
+    result = evaluate_purchase_signal_quality(event)
+    assert result["completeness_pct"] == 100.0
+    assert result["missing_fields"] == []
+    assert result["match_score"] == 100.0
+
+
+def test_evaluate_purchase_signal_quality_handles_none_without_crashing():
+    result = evaluate_purchase_signal_quality(None)
+    assert result["completeness_pct"] == 0.0
+    assert "event_id" in result["missing_fields"]
+
+
+def test_evaluate_purchase_signal_quality_missing_fields_carry_explanation_not_fabricated_data():
+    event = {"event_id": "purchase-123", "custom_data": {}, "user_data": {}}
+    result = evaluate_purchase_signal_quality(event)
+    value_check = next(c for c in result["checks"] if c["field"] == "value")
+    assert value_check["present"] is False
+    assert value_check["why_if_missing"]  # une explication réelle, jamais une valeur inventée
+    assert value_check["fix"]
+    present_check = next(c for c in result["checks"] if c["field"] == "event_id")
+    assert present_check["present"] is True
+    assert present_check["why_if_missing"] is None  # jamais d'explication sur un champ présent
+    assert present_check["fix"] is None
+
+
+def test_evaluate_purchase_signal_quality_match_score_equals_compute_match_quality():
+    # Le "Match Score" ne doit jamais être un second calcul divergent de l'EMQ
+    # déjà affiché ailleurs — même entrée, même sortie, une seule vérité.
+    ud = {"em": ["h"], "ph": ["h"]}
+    event = {"user_data": ud, "custom_data": {}}
+    assert evaluate_purchase_signal_quality(event)["match_score"] == compute_match_quality(ud)["score"]
+
+
+# ─── Meta Health label ───────────────────────────────────────────────────────
+
+def test_meta_health_label_bands():
+    assert meta_health_label(None) == "Non disponible"
+    assert meta_health_label(95) == "Excellent"
+    assert meta_health_label(80) == "Bon"
+    assert meta_health_label(60) == "Moyen"
+    assert meta_health_label(40) == "Faible"
+    assert meta_health_label(10) == "Critique"
+
+
+# ─── Estimated Learning Score gains — real recomputation, not invented ──────
+
+def test_estimate_learning_score_gains_perfect_metrics_yield_no_gains():
+    perfect = {
+        "realtime_pct": 100.0, "event_match_quality": 100.0, "valid_purchase_pct": 100.0,
+        "dedup_pct": 100.0, "value_present_pct": 100.0, "attribution_pct": 100.0,
+        "avg_latency_ms": 0,
+    }
+    assert estimate_learning_score_gains(perfect) == []
+
+
+def test_estimate_learning_score_gains_matches_documented_weight():
+    # Porter event_match_quality de 0 à 100 doit gagner EXACTEMENT son poids
+    # (20%) multiplié par 100 points — recalcul réel, pas une estimation.
+    gains = estimate_learning_score_gains({"event_match_quality": 0.0})
+    emq_gain = next(g for g in gains if g["component"] == "event_match_quality")
+    assert emq_gain["gain_points"] == round(_LEARNING_SCORE_WEIGHTS["event_match_quality"] * 100, 1)
+
+
+def test_estimate_learning_score_gains_sorted_descending():
+    gains = estimate_learning_score_gains({})
+    values = [g["gain_points"] for g in gains]
+    assert values == sorted(values, reverse=True)
