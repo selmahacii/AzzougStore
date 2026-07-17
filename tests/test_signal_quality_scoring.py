@@ -21,6 +21,8 @@ from app.services.meta_capi import (
     diagnose_campaign_learning, evaluate_purchase_signal_quality,
     validate_purchase_event_consistency, evaluate_order_attribution,
     meta_health_label, estimate_learning_score_gains, estimate_learning_score_gains_by_field,
+    compute_component_scores, analyze_meta_response, detect_metric_regressions,
+    evaluate_best_practices_compliance, generate_signal_alerts,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -426,3 +428,157 @@ def test_evaluate_order_attribution_partial_signal_flagged_differently_than_orga
     assert result["likely_organic"] is False
     adset_check = next(c for c in result["checks"] if c["field"] == "adset_id")
     assert "normale" not in adset_check["why_if_missing"]
+
+
+# ─── compute_component_scores — no duplication between named sub-scores ────
+
+def test_compute_component_scores_meta_acceptance_merges_tracking():
+    # Tracking et Meta Acceptance ont été volontairement fusionnés (même
+    # ratio success/total_sent) — un seul champ "meta_acceptance", jamais
+    # deux clés portant le même nombre sous des noms différents.
+    scores = compute_component_scores({"total_sent": 100, "success": 80})
+    assert scores["meta_acceptance"] == 80.0
+    assert set(scores.keys()) == {"meta_acceptance", "matching", "attribution", "delivery", "queue", "event_quality"}
+
+
+def test_compute_component_scores_delivery_isolates_network_failures():
+    scores = compute_component_scores({"total_sent": 100, "success": 70, "network_failed": 10})
+    assert scores["delivery"] == 90.0  # 10% d'échecs réseau, indépendant du taux d'acceptation Meta
+
+
+def test_compute_component_scores_missing_metrics_default_honestly():
+    scores = compute_component_scores({})
+    assert scores["meta_acceptance"] == 0.0
+    assert scores["delivery"] == 100.0  # aucun envoi = aucun échec réseau constaté, pas une pénalité
+
+
+# ─── Meta Response Analyzer ─────────────────────────────────────────────────
+
+def test_analyze_meta_response_no_error_returns_no_diagnosis():
+    result = analyze_meta_response(None)
+    assert result["category"] == "unknown"
+    assert result["confidence"] is None
+
+
+def test_analyze_meta_response_detects_token_error():
+    result = analyze_meta_response("OAuthException: Error validating access token")
+    assert result["category"] == "token_expire"
+
+
+def test_analyze_meta_response_detects_duplicate_event():
+    result = analyze_meta_response("This event_id has already been received (duplicate)")
+    assert result["category"] == "duplicate_event"
+
+
+def test_analyze_meta_response_network_category_wins_when_no_text_match():
+    result = analyze_meta_response("connection reset", error_category="network_error")
+    assert result["category"] == "network_issue"
+
+
+def test_analyze_meta_response_unrecognized_error_is_honest_not_guessed():
+    result = analyze_meta_response("some completely novel error text nobody has seen before")
+    assert result["category"] == "unknown_error"
+    assert result["confidence"] is None
+
+
+# ─── detect_metric_regressions — unified drift/regression/anomaly engine ───
+
+def test_detect_metric_regressions_no_change_no_regressions():
+    snapshot = {"learning_score": 90, "event_match_quality": 90}
+    assert detect_metric_regressions(snapshot, dict(snapshot)) == []
+
+
+def test_detect_metric_regressions_emq_drop_flagged_with_threshold():
+    regressions = detect_metric_regressions({"event_match_quality": 92}, {"event_match_quality": 76})
+    assert any(r["metric"] == "event_match_quality" for r in regressions)
+    r = next(r for r in regressions if r["metric"] == "event_match_quality")
+    assert r["delta"] == -16.0
+    assert "baissé" in r["message"]
+
+
+def test_detect_metric_regressions_small_change_not_flagged():
+    # En dessous du seuil documenté (5 points pour l'EMQ) — pas un faux positif.
+    regressions = detect_metric_regressions({"event_match_quality": 92}, {"event_match_quality": 89})
+    assert regressions == []
+
+
+def test_detect_metric_regressions_backfill_rise_flagged():
+    regressions = detect_metric_regressions({"backfill_pct": 2}, {"backfill_pct": 15})
+    assert any(r["metric"] == "backfill_pct" and r["direction"] == "rise" for r in regressions)
+
+
+def test_detect_metric_regressions_missing_metric_in_either_snapshot_is_skipped():
+    # Jamais traité comme 0 — une métrique absente d'un instantané n'a rien
+    # à comparer, donc ignorée plutôt que fabriquée en régression.
+    assert detect_metric_regressions({}, {"event_match_quality": 10}) == []
+    assert detect_metric_regressions({"event_match_quality": 90}, {}) == []
+
+
+def test_detect_metric_regressions_identifies_biggest_field_coverage_drop():
+    regressions = detect_metric_regressions(
+        {"event_match_quality": 92}, {"event_match_quality": 76},
+        field_coverage_previous={"fbp": 90, "fbc": 90, "em": 100},
+        field_coverage_current={"fbp": 10, "fbc": 85, "em": 100},
+    )
+    r = next(r for r in regressions if r["metric"] == "event_match_quality")
+    assert "FBP" in r["likely_cause"]
+
+
+def test_detect_metric_regressions_sorted_by_severity():
+    regressions = detect_metric_regressions(
+        {"backfill_pct": 2, "rejected_pct": 0, "learning_score": 90},
+        {"backfill_pct": 20, "rejected_pct": 10, "learning_score": 60},
+    )
+    severities = [r["severity"] for r in regressions]
+    assert severities == sorted(severities, key=lambda s: {"high": 0, "medium": 1, "low": 2}[s])
+
+
+# ─── Meta Best Practices Validator ──────────────────────────────────────────
+
+def test_evaluate_best_practices_compliance_conforme():
+    signal_eval = {"blocking_errors": [], "warnings": [], "completeness_pct": 95.0, "match_score": 90.0}
+    assert evaluate_best_practices_compliance(signal_eval)["verdict"] == "Conforme"
+
+
+def test_evaluate_best_practices_compliance_non_conforme_on_blocking_error():
+    signal_eval = {"blocking_errors": [{"field": "value", "issue": "négative"}], "warnings": [], "completeness_pct": 100.0, "match_score": 100.0}
+    assert evaluate_best_practices_compliance(signal_eval)["verdict"] == "Non conforme"
+
+
+def test_evaluate_best_practices_compliance_partiellement_conforme():
+    signal_eval = {"blocking_errors": [], "warnings": [{"field": "fbc"}], "completeness_pct": 70.0, "match_score": 60.0}
+    assert evaluate_best_practices_compliance(signal_eval)["verdict"] == "Partiellement conforme"
+
+
+# ─── Alertes intelligentes — exact thresholds ───────────────────────────────
+
+def test_generate_signal_alerts_all_thresholds():
+    alerts = generate_signal_alerts({
+        "event_match_quality": 70, "tracking_coverage": 90, "learning_score": 75,
+        "backfill_pct": 15, "retry_pct": 5, "rejected_pct": 3, "avg_latency_ms": 6000,
+    })
+    metrics_alerted = {a["metric"] for a in alerts}
+    assert metrics_alerted == {
+        "event_match_quality", "tracking_coverage", "learning_score",
+        "backfill_pct", "retry_pct", "rejected_pct", "avg_latency_ms",
+    }
+
+
+def test_generate_signal_alerts_healthy_metrics_yield_nothing():
+    alerts = generate_signal_alerts({
+        "event_match_quality": 95, "tracking_coverage": 99, "learning_score": 95,
+        "backfill_pct": 2, "retry_pct": 0.5, "rejected_pct": 0.1, "avg_latency_ms": 1000,
+    })
+    assert alerts == []
+
+
+def test_generate_signal_alerts_critical_before_warning():
+    alerts = generate_signal_alerts({"learning_score": 70, "rejected_pct": 5})
+    assert alerts[0]["level"] == "critical"
+
+
+def test_generate_signal_alerts_missing_metric_not_treated_as_zero():
+    # event_match_quality absent (pas mesuré) ne doit jamais déclencher
+    # l'alerte "EMQ < 80%" comme si elle valait 0.
+    alerts = generate_signal_alerts({})
+    assert alerts == []

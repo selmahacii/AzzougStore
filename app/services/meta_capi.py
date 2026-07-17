@@ -1710,6 +1710,245 @@ def estimate_learning_score_gains_by_field(components: dict, field_coverage_pct:
     return gains
 
 
+# ─── Component scores — decomposition of the Learning Score ─────────────────
+# Chaque score ci-dessous réutilise un nombre DÉJÀ calculé ailleurs (voir la
+# docstring de compute_component_scores) — jamais un second calcul du même
+# signal sous un nom différent. "Tracking" et "Meta Acceptance" mesurent le
+# MÊME ratio (success/total_sent) : plutôt que les dupliquer sous deux noms,
+# ils sont fusionnés ici en un seul "Meta Acceptance Score" — noté
+# explicitement pour ne pas prétendre qu'il s'agit de deux mesures
+# distinctes quand elles ne le sont pas dans les données disponibles.
+def compute_component_scores(metrics: dict) -> dict:
+    """
+    Décompose la qualité du pipeline en 6 sous-scores nommés, chacun
+    réutilisant un chiffre déjà calculé par une autre fonction de ce
+    module — jamais recalculé indépendamment :
+      - meta_acceptance : success / total_sent (= "Tracking"/"Meta
+        Acceptance" fusionnés — même ratio, un seul nom).
+      - matching : event_match_quality (compute_match_quality, déjà EMQ).
+      - attribution : attribution_pct (déjà utilisé par compute_learning_score).
+      - delivery : 1 - (échecs réseau / total envoyé) — isole la fiabilité
+        de NOTRE infrastructure (DNS/TCP/TLS/timeout), distincte de
+        l'acceptation applicative par Meta (un échec réseau n'est pas un
+        rejet Meta).
+      - queue : santé de la file (moins il y a de retry/pending en attente,
+        plus haut) — nouveau, pas encore mesuré ailleurs.
+      - event_quality : complétude moyenne du payload (les 18 champs de
+        evaluate_purchase_signal_quality, un ensemble plus large que les 12
+        champs EMQ) — nouveau, distinct de `matching`.
+
+    `metrics` attend : total_sent, success, network_failed,
+    retry_pct, pending_pct, event_match_quality, attribution_pct,
+    avg_completeness_pct (toutes optionnelles ; absente = 0, jamais ignorée).
+    """
+    total_sent = metrics.get("total_sent") or 0
+    success = metrics.get("success") or 0
+    network_failed = metrics.get("network_failed") or 0
+
+    meta_acceptance = round(success / total_sent * 100, 1) if total_sent else 0.0
+    delivery = round(max(0.0, 100 - (network_failed / total_sent * 100)), 1) if total_sent else 100.0
+    retry_pct = metrics.get("retry_pct") or 0.0
+    pending_pct = metrics.get("pending_pct") or 0.0
+    queue = round(max(0.0, 100 - (retry_pct * 2 + pending_pct)), 1)
+
+    return {
+        "meta_acceptance": meta_acceptance,
+        "matching": round(metrics.get("event_match_quality") or 0.0, 1),
+        "attribution": round(metrics.get("attribution_pct") or 0.0, 1),
+        "delivery": delivery,
+        "queue": queue,
+        "event_quality": round(metrics.get("avg_completeness_pct") or 0.0, 1),
+    }
+
+
+# ─── Meta Response Analyzer ──────────────────────────────────────────────────
+# Motifs texte tirés des messages d'erreur RÉELLEMENT documentés par l'API
+# Graph de Meta (OAuthException = token, "Object does not exist" = pixel/
+# dataset invalide, "duplicate" = event déjà reçu, "Invalid parameter" =
+# paramètre manquant/malformé). Classification heuristique par
+# correspondance de texte — jamais garantie à 100%, présentée comme telle
+# (`confidence`), jamais comme un diagnostic certain.
+_META_ERROR_PATTERNS = [
+    ("token_expire", ["oauthexception", "access token", "session has expired", "token expired", "invalid access token"],
+     "Token expiré ou invalide", "Régénérer un token d'accès système avec la permission ads_management."),
+    ("pixel_not_found", ["does not exist", "unknown pixel", "invalid pixel"],
+     "Pixel ou dataset introuvable", "Vérifier le Pixel ID dans la configuration Meta Ads — il a peut-être été supprimé ou appartient à un autre compte."),
+    ("duplicate_event", ["duplicate", "already received", "already processed"],
+     "Événement déjà reçu par Meta (déduplication)", "Normal si un retry a réussi après un timeout apparent côté serveur — vérifier qu'aucun double comptage n'en résulte."),
+    ("missing_param", ["missing", "required parameter", "param is required"],
+     "Paramètre obligatoire manquant", "Vérifier le payload envoyé (voir evaluate_purchase_signal_quality pour ce Purchase)."),
+    ("bad_currency", ["currency", "invalid for event"],
+     "Devise invalide pour ce compte publicitaire", "Vérifier MetaAdsConfig.currency — doit correspondre à la devise réelle du compte pub Meta."),
+    ("invalid_value", ["invalid value", "value must be"],
+     "Valeur invalide (value/quantité)", "Vérifier order.total et les quantités d'articles de cette commande."),
+    ("rate_limit", ["rate limit", "too many calls"],
+     "Limite de débit Meta atteinte", "Réduire la fréquence d'envoi ou espacer les tentatives — géré par le circuit breaker existant."),
+]
+
+
+def analyze_meta_response(error_message: Optional[str], error_category: Optional[str] = None, http_status: Optional[int] = None) -> dict:
+    """
+    Classifie un échec CAPI à partir du message d'erreur RÉELLEMENT reçu de
+    Meta (jamais inventé) — la Meta Response Analyzer demandée. Retourne
+    `unknown_error` avec confidence=None plutôt que de forcer une
+    correspondance quand rien ne matche : mieux vaut "cause inconnue,
+    vérifier manuellement" qu'un faux diagnostic.
+    """
+    if not error_message:
+        if http_status and 500 <= http_status < 600:
+            return {"category": "temporary_meta_error", "label": "Erreur temporaire côté Meta",
+                    "fix": "Aucune action requise — le circuit de retry existant reprendra automatiquement.", "confidence": "high"}
+        return {"category": "unknown", "label": "Aucune erreur — envoi réussi ou statut non déterminé", "fix": None, "confidence": None}
+
+    text = error_message.lower()
+    for category, needles, label, fix in _META_ERROR_PATTERNS:
+        if any(needle in text for needle in needles):
+            return {"category": category, "label": label, "fix": fix, "confidence": "medium"}
+
+    if error_category == "network_timeout" or error_category == "network_error":
+        return {"category": "network_issue", "label": "Problème réseau (pas une erreur Meta applicative)",
+                "fix": "Vérifier la connectivité sortante du serveur (Santé du Pixel).", "confidence": "high"}
+    if http_status and 500 <= http_status < 600:
+        return {"category": "temporary_meta_error", "label": "Erreur temporaire côté Meta",
+                "fix": "Aucune action requise — le circuit de retry existant reprendra automatiquement.", "confidence": "high"}
+
+    return {"category": "unknown_error", "label": "Cause non reconnue automatiquement",
+            "fix": "Consulter le message d'erreur brut dans les logs CAPI pour un diagnostic manuel.", "confidence": None}
+
+
+# ─── Drift / regression / anomaly detection ──────────────────────────────────
+# UNE seule fonction pour les 3 demandes "Signal Drift", "Learning Score
+# Regression" et "Détection d'anomalies" — ce sont la MÊME opération
+# (comparer deux instantanés du même ensemble de métriques et signaler les
+# écarts significatifs), jamais 3 fonctions quasi identiques.
+_REGRESSION_THRESHOLDS = {
+    "learning_score": {"drop": 5, "label": "Learning Score", "severity": "high"},
+    "event_match_quality": {"drop": 5, "label": "Event Match Quality (EMQ)", "severity": "high"},
+    "valid_purchase_pct": {"drop": 5, "label": "Purchase valides", "severity": "high"},
+    "realtime_pct": {"drop": 10, "label": "Temps réel", "severity": "medium"},
+    "backfill_pct": {"rise": 10, "label": "Backfill", "severity": "medium"},
+    "retry_pct": {"rise": 5, "label": "Retry", "severity": "medium"},
+    "rejected_pct": {"rise": 2, "label": "Purchase rejetés", "severity": "high"},
+    "avg_latency_ms": {"rise": 5000, "label": "Latence moyenne", "severity": "medium"},
+    "dedup_pct": {"drop": 5, "label": "Déduplication", "severity": "medium"},
+}
+
+
+def detect_metric_regressions(previous: dict, current: dict, field_coverage_previous: Optional[dict] = None,
+                                field_coverage_current: Optional[dict] = None) -> list:
+    """
+    Compare deux instantanés du même jeu de métriques (ex : hier vs
+    aujourd'hui, ou toute paire de fenêtres) et signale chaque écart au-delà
+    du seuil documenté dans _REGRESSION_THRESHOLDS — jamais un seuil choisi
+    au hasard, chacun est une baisse/hausse déjà jugée significative
+    ailleurs dans ce module. Si `field_coverage_previous/current` (les 12
+    champs EMQ) sont fournis ET que event_match_quality a baissé, identifie
+    en plus la cause probable (quel champ a le plus chuté) — répond
+    directement à "identifier la cause : perte des FBP, etc." sans dupliquer
+    field_coverage lui-même.
+
+    Ne fabrique jamais un chiffre : si une métrique est absente d'un des
+    deux instantanés, elle est simplement ignorée plutôt que traitée comme 0.
+    """
+    regressions = []
+    for key, rule in _REGRESSION_THRESHOLDS.items():
+        prev_val = previous.get(key)
+        cur_val = current.get(key)
+        if prev_val is None or cur_val is None:
+            continue
+        delta = cur_val - prev_val
+        if "drop" in rule and delta <= -rule["drop"]:
+            entry = {
+                "metric": key, "label": rule["label"], "direction": "drop",
+                "previous": prev_val, "current": cur_val, "delta": round(delta, 1),
+                "severity": rule["severity"],
+                "message": f"{rule['label']} a baissé de {abs(round(delta, 1))} ({prev_val} → {cur_val}).",
+            }
+            if key == "event_match_quality" and field_coverage_previous and field_coverage_current:
+                entry["likely_cause"] = _biggest_field_coverage_drop(field_coverage_previous, field_coverage_current)
+            regressions.append(entry)
+        elif "rise" in rule and delta >= rule["rise"]:
+            regressions.append({
+                "metric": key, "label": rule["label"], "direction": "rise",
+                "previous": prev_val, "current": cur_val, "delta": round(delta, 1),
+                "severity": rule["severity"],
+                "message": f"{rule['label']} a augmenté de {round(delta, 1)} ({prev_val} → {cur_val}).",
+            })
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    regressions.sort(key=lambda r: severity_order.get(r["severity"], 3))
+    return regressions
+
+
+def _biggest_field_coverage_drop(previous: dict, current: dict) -> Optional[str]:
+    """Le champ EMQ (fbp/fbc/email/...) dont la couverture a le plus chuté entre deux instantanés, ou None si aucun n'a baissé."""
+    worst_key, worst_drop = None, 0.0
+    for key, label in _MATCH_QUALITY_FIELDS:
+        prev_cov = previous.get(key)
+        cur_cov = current.get(key)
+        if prev_cov is None or cur_cov is None:
+            continue
+        drop = prev_cov - cur_cov
+        if drop > worst_drop:
+            worst_drop, worst_key = drop, label
+    return f"{worst_key} (-{round(worst_drop, 1)} points)" if worst_key else None
+
+
+# ─── Meta Best Practices Validator ───────────────────────────────────────────
+def evaluate_best_practices_compliance(signal_eval: dict) -> dict:
+    """
+    Verdict de conformité (Conforme / Partiellement conforme / Non
+    conforme) à partir du résultat DÉJÀ produit par
+    evaluate_purchase_signal_quality — ne re-vérifie rien depuis zéro,
+    seulement une lecture de synthèse de ce diagnostic existant.
+    """
+    if signal_eval.get("blocking_errors"):
+        return {"verdict": "Non conforme", "reason": "au moins une erreur bloquante (valeur négative, devise invalide, event_time hors fenêtre...)."}
+    completeness = signal_eval.get("completeness_pct", 0.0)
+    match_score = signal_eval.get("match_score", 0.0)
+    if completeness >= 90 and match_score >= 80 and not signal_eval.get("warnings"):
+        return {"verdict": "Conforme", "reason": f"complétude {completeness}%, Event Match Quality {match_score}%, aucun avertissement."}
+    return {"verdict": "Partiellement conforme",
+            "reason": f"complétude {completeness}%, Event Match Quality {match_score}%" +
+                      (f", {len(signal_eval.get('warnings', []))} avertissement(s)" if signal_eval.get("warnings") else ".")}
+
+
+# ─── Alertes intelligentes ───────────────────────────────────────────────────
+_ALERT_RULES = [
+    ("event_match_quality", "lt", 80, "critical", "EMQ sous 80% — dégrade sévèrement l'optimisation Meta."),
+    ("tracking_coverage", "lt", 95, "warning", "Couverture de tracking sous 95%."),
+    ("learning_score", "lt", 80, "warning", "Learning Score sous 80."),
+    ("backfill_pct", "gt", 10, "warning", "Plus de 10% des envois sont du rattrapage (backfill)."),
+    ("retry_pct", "gt", 2, "warning", "Plus de 2% des envois nécessitent un retry."),
+    ("rejected_pct", "gt", 1, "critical", "Plus de 1% des Purchase sont rejetés définitivement."),
+    ("avg_latency_ms", "gt", 5000, "warning", "Latence moyenne supérieure à 5 secondes."),
+]
+_ALERT_LEVEL_LABELS = {"info": "Information", "warning": "Attention", "critical": "Critique"}
+
+
+def generate_signal_alerts(metrics: dict) -> list:
+    """
+    Alertes à seuils fixes (exactement ceux demandés : EMQ<80, Tracking<95,
+    Learning<80, Backfill>10%, Retry>2%, Failed>1%, Latence>5s) sur des
+    métriques déjà calculées ailleurs — ne recalcule rien, ne fabrique
+    aucun chiffre. Une métrique absente ne déclenche simplement pas sa
+    règle plutôt que d'être traitée comme 0.
+    """
+    alerts = []
+    for key, op, threshold, level, message in _ALERT_RULES:
+        value = metrics.get(key)
+        if value is None:
+            continue
+        triggered = value < threshold if op == "lt" else value > threshold
+        if triggered:
+            alerts.append({
+                "metric": key, "level": level, "level_label": _ALERT_LEVEL_LABELS[level],
+                "value": value, "threshold": threshold, "message": message,
+            })
+    severity_order = {"critical": 0, "warning": 1, "info": 2}
+    alerts.sort(key=lambda a: severity_order.get(a["level"], 3))
+    return alerts
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/
@@ -1902,6 +2141,20 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             order_label=f"#{order.order_number}",
         )
 
+        # Réponse Meta persistée dans le JSON payload déjà existant (clé
+        # _meta_response) plutôt que dans de nouvelles colonnes — pas de
+        # migration nécessaire pour conserver http_status/fbtrace_id/erreur
+        # même sur un envoi réussi (avant : fbtrace_id n'était JAMAIS stocké,
+        # seulement loggé en texte, perdu après rotation des logs).
+        _meta_response_meta = {
+            "http_status": result.get("http_status"),
+            "fbtrace_id": result.get("fbtrace_id"),
+            "events_received": result.get("events_received"),
+            "error": result.get("error"),
+            "error_category": result.get("error_category"),
+        }
+        event_with_response = {**event, "_meta_response": _meta_response_meta}
+
         if result["success"]:
             row.status = "success"
             row.events_received = result["events_received"]
@@ -1912,26 +2165,27 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             # Stocké aussi en succès (avant : seulement sur échec/retry) — sans
             # ça, l'Event Match Quality est incalculable après coup pour
             # n'importe quel envoi réussi, la grande majorité des lignes.
-            row.payload = event
+            row.payload = event_with_response
             db.commit()
             logger.info(
-                "[MetaCAPI] queue: order=%s SUCCESS event_id=%s received=%s",
-                order.order_number, event["event_id"], result["events_received"],
+                "[MetaCAPI] queue: order=%s SUCCESS event_id=%s received=%s fbtrace=%s",
+                order.order_number, event["event_id"], result["events_received"], result.get("fbtrace_id"),
             )
         elif result.get("retryable"):
             row.error_message = result["error"]
             row.error_category = result.get("error_category")
             row.last_http_status = result.get("http_status")
-            row.payload = event
+            row.payload = event_with_response
             row.retry_count = (row.retry_count or 0) + 1
+            _diagnosis = analyze_meta_response(result.get("error"), result.get("error_category"), result.get("http_status"))
             if row.retry_count >= _MAX_QUEUE_RETRIES:
                 row.status = "failed"
                 row.next_retry_at = None
                 row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 db.commit()
                 logger.error(
-                    "[MetaCAPI] queue: order=%s retry budget exhausted (%d attempts) — FAILED event_id=%s: %s",
-                    order.order_number, row.retry_count, event["event_id"], result["error"],
+                    "[MetaCAPI] queue: order=%s retry budget exhausted (%d attempts) — FAILED event_id=%s: %s (diagnostic: %s)",
+                    order.order_number, row.retry_count, event["event_id"], result["error"], _diagnosis["label"],
                 )
             else:
                 row.status = "retry"
@@ -1939,8 +2193,8 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
                 row.next_retry_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
                 db.commit()
                 logger.warning(
-                    "[MetaCAPI] queue: order=%s RETRY (%d/%d) event_id=%s next_retry_at=%s: %s",
-                    order.order_number, row.retry_count, _MAX_QUEUE_RETRIES, event["event_id"], row.next_retry_at, result["error"],
+                    "[MetaCAPI] queue: order=%s RETRY (%d/%d) event_id=%s next_retry_at=%s: %s (diagnostic: %s)",
+                    order.order_number, row.retry_count, _MAX_QUEUE_RETRIES, event["event_id"], row.next_retry_at, result["error"], _diagnosis["label"],
                 )
         else:
             row.status = "failed"
@@ -1948,10 +2202,15 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             row.error_category = result.get("error_category")
             row.last_http_status = result.get("http_status")
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            # Avant : payload jamais stocké sur un échec immédiat (4xx non
+            # retryable) — impossible de reconstruire ensuite ce qui avait
+            # réellement été envoyé pour ce Purchase précis.
+            row.payload = event_with_response
+            _diagnosis = analyze_meta_response(result.get("error"), result.get("error_category"), result.get("http_status"))
             db.commit()
             logger.error(
-                "[MetaCAPI] queue: order=%s FAILED event_id=%s: %s",
-                order.order_number, event["event_id"], result["error"],
+                "[MetaCAPI] queue: order=%s FAILED event_id=%s: %s (diagnostic: %s — %s)",
+                order.order_number, event["event_id"], result["error"], _diagnosis["label"], _diagnosis["fix"],
             )
     except Exception as exc:
         db.rollback()
