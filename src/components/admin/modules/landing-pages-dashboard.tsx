@@ -291,18 +291,30 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 Aucune commande sur cette période
               </div>
             ) : (
-              <div className="flex items-end gap-1.5 h-40 overflow-x-auto custom-scrollbar pb-1">
-                {daily.map(d => (
-                  <div key={d.date} className="flex flex-col items-center gap-1 min-w-[28px] flex-1"
-                    title={`${new Date(d.date).toLocaleDateString('fr-FR')} : ${d.orders} commande(s)`}>
-                    <span className="text-[10px] font-black text-slate-600 tabular-nums">{d.orders}</span>
-                    <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden" style={{ height: `${Math.max(6, (d.orders / maxOrders) * 100)}%` }}>
-                      <div className="w-full bg-emerald-400" style={{ height: `${d.orders > 0 ? (d.delivered / d.orders) * 100 : 0}%` }} />
-                      <div className="w-full bg-[#6C5CE7] flex-1" />
+              // Hauteurs en PIXELS, jamais en % : les barres vivaient dans un
+              // conteneur à hauteur "auto" (chaque colonne n'a pas de hauteur
+              // explicite, seul le parent flex a items-end, pas stretch), donc
+              // un enfant en height:% n'avait aucune base de calcul valide et
+              // s'effondrait à 0 — les nombres/dates s'affichaient mais aucune
+              // barre n'était visible. Un conteneur de hauteur FIXE (BAR_MAX_PX)
+              // élimine l'ambiguïté CSS une fois pour toutes.
+              <div className="flex items-end gap-1.5 overflow-x-auto custom-scrollbar pb-1">
+                {daily.map(d => {
+                  const BAR_MAX_PX = 120;
+                  const barPx = Math.max(4, Math.round((d.orders / maxOrders) * BAR_MAX_PX));
+                  const deliveredPx = d.orders > 0 ? Math.round((d.delivered / d.orders) * barPx) : 0;
+                  return (
+                    <div key={d.date} className="flex flex-col items-center gap-1 min-w-[28px] flex-1"
+                      title={`${new Date(d.date).toLocaleDateString('fr-FR')} : ${d.orders} commande(s), ${d.delivered} livrée(s)`}>
+                      <span className="text-[10px] font-black text-slate-600 tabular-nums">{d.orders}</span>
+                      <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden bg-slate-200" style={{ height: `${BAR_MAX_PX}px` }}>
+                        <div className="w-full bg-[#6C5CE7]" style={{ height: `${barPx - deliveredPx}px` }} />
+                        <div className="w-full bg-emerald-400" style={{ height: `${deliveredPx}px` }} />
+                      </div>
+                      <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
                     </div>
-                    <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <div className="flex items-center gap-4 mt-3">
