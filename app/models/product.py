@@ -46,6 +46,12 @@ class Product(Base):
     # ─── Business Flags ───
     is_active = Column(Boolean, default=True)
     is_featured = Column(Boolean, default=False)
+    # Produit upsell indépendant : créé par l'admin uniquement pour être
+    # proposé comme upsell (jamais rattaché à un produit principal via
+    # UpsellRule), jamais visible sur le site, jamais dans les listes de
+    # produits standard — seulement dans le sélecteur upsell dédié (voir
+    # GET /products?include_upsell_only=true).
+    is_upsell_only = Column(Boolean, default=False)
     is_pack = Column(Boolean, default=False)                  # Bundle/pack product
     pack_items = Column(JSON, default=list)                  # [{product_id, quantity, unit_cost}]
     pack_charges = Column(JSON, default=list)                # [{label, amount}]
