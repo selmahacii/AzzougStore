@@ -3805,3 +3805,194 @@ def get_campaign_history(
 
     history = sorted(by_date.values(), key=lambda r: r["date"])
     return {"success": True, "data": history}
+
+
+@router.get("/orders/{order_id}/event-timeline", response_model=dict)
+def get_order_event_timeline(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Chronologie complète du Purchase d'UNE commande — deux requêtes
+    indexées (Order par PK, MetaCapiLog par order_id, déjà indexé), aucun
+    scan. "Pixel Purchase" est explicitement absent : le navigateur envoie
+    directement à Meta, jamais au backend — aucune preuve serveur de son
+    envoi n'existe, donc jamais affichée comme si elle existait.
+    """
+    from app.models.marketing import MetaCapiLog
+    from app.models.audit import AuditLog
+    from app.services.meta_capi import classify_capi_log_timing, evaluate_purchase_signal_quality, evaluate_order_attribution
+
+    db.info["skip_tenant_isolation"] = True
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        return {"success": False, "error": "Commande introuvable"}
+
+    log = (
+        db.query(MetaCapiLog)
+        .filter(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase")
+        .order_by(MetaCapiLog.id.desc())
+        .first()
+    )
+    explicit_backfill = (
+        db.query(AuditLog.id)
+        .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order", AuditLog.entity_id == order_id)
+        .first()
+        is not None
+    )
+
+    timeline = [{
+        "step": "commande_creee", "label": "Commande créée",
+        "timestamp": order.created_at.isoformat() if order.created_at else None,
+    }, {
+        "step": "pixel_purchase", "label": "Pixel Purchase",
+        "timestamp": None,
+        "note": "Non mesurable côté serveur — le navigateur envoie directement à Meta, jamais au backend.",
+    }]
+
+    if not log:
+        timeline.append({"step": "capi_purchase", "label": "CAPI Purchase", "timestamp": None, "note": "Jamais mis en file."})
+        return {"success": True, "data": {
+            "order_number": order.order_number, "timeline": timeline, "signal_evaluation": None,
+            "attribution": evaluate_order_attribution(order),
+        }}
+
+    timing = classify_capi_log_timing(log.created_at, order.created_at)
+    is_backfill = explicit_backfill or timing == "backfill"
+
+    timeline.append({
+        "step": "capi_queued", "label": "CAPI mis en file",
+        "timestamp": log.created_at.isoformat() if log.created_at else None,
+    })
+    if log.processing_started_at:
+        timeline.append({
+            "step": "capi_processing", "label": "CAPI en cours d'envoi",
+            "timestamp": log.processing_started_at.isoformat(),
+        })
+    if log.status == "success":
+        timeline.append({
+            "step": "meta_accepted", "label": "Meta a accepté l'événement",
+            "timestamp": log.completed_at.isoformat() if log.completed_at else None,
+        })
+    elif log.status == "failed":
+        timeline.append({
+            "step": "meta_failed", "label": "Échec définitif",
+            "timestamp": log.completed_at.isoformat() if log.completed_at else None,
+            "note": log.error_message,
+        })
+    elif log.status in ("retry", "pending_retry"):
+        timeline.append({
+            "step": "retry", "label": f"En retry (tentative {log.retry_count})",
+            "timestamp": log.next_retry_at.isoformat() if log.next_retry_at else None,
+            "note": log.error_message,
+        })
+    if is_backfill:
+        timeline.append({
+            "step": "backfill", "label": "Envoyé en rattrapage (Backfill)",
+            "timestamp": None,
+            "note": "Explicitement marqué au moment du rattrapage." if explicit_backfill else "Déduit du délai entre création et envoi (> 6h).",
+        })
+
+    signal_eval = evaluate_purchase_signal_quality(log.payload) if log.payload else None
+
+    return {
+        "success": True,
+        "data": {
+            "order_number": order.order_number,
+            "capi_status": log.status,
+            "retry_count": log.retry_count,
+            "latency_ms": log.latency_ms,
+            "backfill": is_backfill,
+            "timeline": timeline,
+            "signal_evaluation": signal_eval,
+            "attribution": evaluate_order_attribution(order),
+        },
+    }
+
+
+@router.get("/learning-history", response_model=dict)
+def get_learning_history(
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Historique quotidien du Learning Score et de ses composants — calculé
+    À LA DEMANDE depuis meta_capi_logs (une requête groupée par jour,
+    bornée par date), PAS depuis une table de snapshots dédiée : ajouter
+    une table + un job de calcul quotidien est une charge d'infrastructure
+    que cette fonctionnalité ne justifie pas encore (le calcul à la
+    demande reste rapide sur le volume actuel). Si le volume grandit au
+    point où ce recalcul devient coûteux, ce sera le signal pour ajouter
+    un vrai job planifié — pas avant.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.services.meta_capi import compute_match_quality, compute_learning_score
+
+    db.info["skip_tenant_isolation"] = True
+    since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+
+    # Filtre sur created_at brut (sargable) plutôt que func.date(created_at)
+    # >= X : envelopper la colonne filtrée dans une fonction empêcherait
+    # Postgres d'exploiter un index dessus. func.date() n'est utilisé plus
+    # bas QUE pour le regroupement par jour (SELECT), jamais pour filtrer.
+    rows = (
+        db.query(
+            func.date(MetaCapiLog.created_at), MetaCapiLog.status,
+            MetaCapiLog.payload, MetaCapiLog.latency_ms, MetaCapiLog.retry_count,
+        )
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.created_at >= since_dt)
+        .all()
+    )
+
+    by_day: Dict[str, Dict[str, Any]] = {}
+    for d, status, payload, latency_ms, retry_count in rows:
+        d_str = d.isoformat() if hasattr(d, "isoformat") else str(d)
+        day = by_day.setdefault(d_str, {
+            "date": d_str, "success": 0, "failed": 0, "retry": 0, "pending": 0, "skipped": 0,
+            "emq_scores": [], "latencies": [],
+        })
+        if status == "success":
+            day["success"] += 1
+        elif status == "failed":
+            day["failed"] += 1
+        elif status in ("retry", "pending_retry"):
+            day["retry"] += 1
+        elif status in ("queued", "processing"):
+            day["pending"] += 1
+        elif status == "skipped":
+            day["skipped"] += 1
+        if status == "success" and payload:
+            day["emq_scores"].append(compute_match_quality((payload or {}).get("user_data") or {})["score"])
+            if latency_ms is not None:
+                day["latencies"].append(latency_ms)
+
+    history = []
+    for d_str in sorted(by_day.keys()):
+        day = by_day[d_str]
+        total = day["success"] + day["failed"] + day["retry"] + day["pending"] + day["skipped"]
+        avg_emq = round(sum(day["emq_scores"]) / len(day["emq_scores"]), 1) if day["emq_scores"] else None
+        avg_latency_ms = round(sum(day["latencies"]) / len(day["latencies"])) if day["latencies"] else None
+        valid_purchase_pct = round(day["success"] / total * 100, 1) if total else 0.0
+        learning_score = compute_learning_score({
+            "event_match_quality": avg_emq or 0.0,
+            "valid_purchase_pct": valid_purchase_pct,
+            "avg_latency_ms": avg_latency_ms,
+        })
+        history.append({
+            "date": d_str,
+            "learning_score": learning_score["score"],
+            "avg_emq": avg_emq,
+            "success": day["success"], "failed": day["failed"], "retry": day["retry"],
+            "pending": day["pending"], "skipped": day["skipped"], "total_sent": total,
+            "avg_latency_ms": avg_latency_ms,
+        })
+    return {
+        "success": True,
+        "data": history,
+        "note": "learning_score ici n'inclut PAS realtime/backfill/dedup/attribution (nécessiteraient des jointures Order supplémentaires par jour) — sous-ensemble honnête EMQ+validité+latence, pas le score complet du Signal Quality Center.",
+    }

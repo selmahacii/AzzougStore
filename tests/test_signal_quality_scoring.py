@@ -14,10 +14,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from types import SimpleNamespace
+
 from app.services.meta_capi import (
     compute_match_quality, scan_payload_quality, compute_learning_score,
     diagnose_campaign_learning, evaluate_purchase_signal_quality,
-    meta_health_label, estimate_learning_score_gains,
+    validate_purchase_event_consistency, evaluate_order_attribution,
+    meta_health_label, estimate_learning_score_gains, estimate_learning_score_gains_by_field,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -201,9 +204,13 @@ def test_diagnose_campaign_learning_cpa_uses_aov_ratio_not_absolute_value():
 
 def test_evaluate_purchase_signal_quality_all_fields_present_scores_100():
     event = {
-        "event_id": "purchase-123", "event_time": 1752000000,
+        "event_name": "Purchase", "event_id": "purchase-123", "event_time": 1752000000,
         "event_source_url": "https://x.dz", "action_source": "website",
-        "custom_data": {"value": 5000, "currency": "DZD"},
+        "custom_data": {
+            "value": 5000, "currency": "DZD", "order_id": "ORD-123",
+            "content_type": "product", "content_ids": ["p1"],
+            "contents": [{"id": "p1", "quantity": 1}], "num_items": 1,
+        },
         "user_data": {
             "em": ["h"], "ph": ["h"], "fn": ["h"], "ln": ["h"], "ct": ["h"], "st": ["h"],
             "country": ["h"], "zp": ["h"], "external_id": ["h"],
@@ -278,3 +285,144 @@ def test_estimate_learning_score_gains_sorted_descending():
     gains = estimate_learning_score_gains({})
     values = [g["gain_points"] for g in gains]
     assert values == sorted(values, reverse=True)
+
+
+# ─── evaluate_purchase_signal_quality — extended field list ────────────────
+
+def test_evaluate_purchase_signal_quality_checks_content_fields_too():
+    event = {
+        "event_name": "Purchase", "event_id": "purchase-1", "event_time": 1,
+        "action_source": "website",
+        "custom_data": {"value": 100, "currency": "DZD", "order_id": "ORD-1",
+                         "content_type": "product", "content_ids": ["p1"],
+                         "contents": [{"id": "p1", "quantity": 1}], "num_items": 1},
+        "user_data": {},
+    }
+    result = evaluate_purchase_signal_quality(event)
+    checked_fields = {c["field"] for c in result["checks"]}
+    assert {"event_name", "order_id", "content_type", "content_ids", "contents", "num_items"} <= checked_fields
+    for f in ("event_name", "order_id", "content_type", "content_ids", "contents", "num_items"):
+        assert next(c for c in result["checks"] if c["field"] == f)["present"] is True
+
+
+def test_evaluate_purchase_signal_quality_includes_consistency_results():
+    event = {"custom_data": {"value": -5, "currency": "DZD"}, "event_time": 1}
+    result = evaluate_purchase_signal_quality(event)
+    assert any(e["field"] == "value" for e in result["blocking_errors"])
+
+
+# ─── validate_purchase_event_consistency — value/currency/time sanity ──────
+
+def test_validate_purchase_event_consistency_clean_event_has_no_issues():
+    event = {"event_time": 1000, "custom_data": {"value": 100, "currency": "DZD", "content_ids": ["p1"]}}
+    result = validate_purchase_event_consistency(event, now=1000 + 3600)
+    assert result["blocking_errors"] == []
+    assert result["warnings"] == []
+
+
+def test_validate_purchase_event_consistency_negative_value_is_blocking():
+    event = {"custom_data": {"value": -100, "currency": "DZD"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(e["field"] == "value" for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_bad_currency_format_is_blocking():
+    event = {"custom_data": {"value": 100, "currency": "dzd"}}  # minuscule = invalide
+    result = validate_purchase_event_consistency(event)
+    assert any(e["field"] == "currency" for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_unknown_but_valid_currency_is_warning_only():
+    event = {"custom_data": {"value": 100, "currency": "JPY"}}
+    result = validate_purchase_event_consistency(event)
+    assert result["blocking_errors"] == []
+    assert any(w["field"] == "currency" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_future_event_time_is_blocking():
+    now = 1_000_000
+    result = validate_purchase_event_consistency({"event_time": now + 3600, "custom_data": {}}, now=now)
+    assert any(e["field"] == "event_time" and e["issue"] == "dans le futur" for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_stale_event_time_is_blocking():
+    now = 1_000_000
+    eight_days_ago = now - 8 * 86400
+    result = validate_purchase_event_consistency({"event_time": eight_days_ago, "custom_data": {}}, now=now)
+    assert any(e["field"] == "event_time" and "fenêtre" in e["issue"] for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_empty_content_id_is_warning():
+    event = {"custom_data": {"value": 100, "currency": "DZD", "content_ids": ["p1", ""]}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "content_ids" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_handles_none_without_crashing():
+    result = validate_purchase_event_consistency(None)
+    assert result == {"blocking_errors": [], "warnings": []}
+
+
+# ─── estimate_learning_score_gains_by_field — exact per-field math ─────────
+
+def test_estimate_learning_score_gains_by_field_exact_math():
+    components = {"event_match_quality": 50.0}
+    # fbp à 0% de couverture -> le porter à 100% relève l'EMQ moyen
+    # exactement de (100-0)/12 points de pourcentage.
+    coverage = {"fbp": 0.0}
+    gains = estimate_learning_score_gains_by_field(components, coverage)
+    assert len(gains) == 1
+    expected_new_emq = 50.0 + (100.0 / 12)
+    expected_score = compute_learning_score({**components, "event_match_quality": expected_new_emq})["score"]
+    base_score = compute_learning_score(components)["score"]
+    assert gains[0]["gain_points"] == round(expected_score - base_score, 1)
+
+
+def test_estimate_learning_score_gains_by_field_skips_fields_already_at_100():
+    gains = estimate_learning_score_gains_by_field({"event_match_quality": 90.0}, {"fbp": 100.0})
+    assert gains == []
+
+
+def test_estimate_learning_score_gains_by_field_sorted_descending():
+    gains = estimate_learning_score_gains_by_field(
+        {"event_match_quality": 30.0}, {"fbp": 0.0, "fbc": 50.0, "em": 90.0}
+    )
+    values = [g["gain_points"] for g in gains]
+    assert values == sorted(values, reverse=True)
+
+
+# ─── meta_health_label already covered above; evaluate_order_attribution ───
+
+def test_evaluate_order_attribution_full_signal_present():
+    order = SimpleNamespace(
+        campaign_id="c1", adset_id="a1", ad_id="ad1",
+        utm_source="facebook", utm_medium="cpc", utm_campaign="promo",
+        utm_content="v1", utm_term="shoes", event_source_url="https://x.dz/lp",
+    )
+    result = evaluate_order_attribution(order)
+    assert result["attribution_completeness_pct"] == 100.0
+    assert result["likely_organic"] is False
+    assert all(c["why_if_missing"] is None for c in result["checks"])
+
+
+def test_evaluate_order_attribution_fully_organic_order_is_not_flagged_as_anomaly():
+    order = SimpleNamespace(
+        campaign_id=None, adset_id=None, ad_id=None,
+        utm_source=None, utm_medium=None, utm_campaign=None,
+        utm_content=None, utm_term=None, event_source_url=None,
+    )
+    result = evaluate_order_attribution(order)
+    assert result["likely_organic"] is True
+    assert all("normale" in c["why_if_missing"] for c in result["checks"])
+
+
+def test_evaluate_order_attribution_partial_signal_flagged_differently_than_organic():
+    order = SimpleNamespace(
+        campaign_id="c1", adset_id=None, ad_id=None,
+        utm_source="facebook", utm_medium="cpc", utm_campaign="promo",
+        utm_content=None, utm_term=None, event_source_url="https://x.dz/lp",
+    )
+    result = evaluate_order_attribution(order)
+    assert result["likely_organic"] is False
+    adset_check = next(c for c in result["checks"] if c["field"] == "adset_id")
+    assert "normale" not in adset_check["why_if_missing"]
