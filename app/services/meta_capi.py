@@ -1899,6 +1899,26 @@ def compute_metric_correlation(pairs: list, label_a: str = "A", label_b: str = "
     }
 
 
+def verify_percentage_matches_counter(numerator: int, denominator: int, displayed_pct: float, tolerance: float = 0.15) -> dict:
+    """
+    Invariant KPI le plus fondamental de tout ce module : un pourcentage
+    affiché DOIT toujours être recalculable depuis le compteur/total
+    affiché à côté, à un arrondi près. Réutilisé par GET
+    /meta-ads/kpi-validation et par les tests — une seule implémentation
+    de cette vérification, jamais une par carte du dashboard.
+
+    tolerance en points de pourcentage (0.15 par défaut, absorbe les
+    arrondis à 1 décimale déjà appliqués avant stockage/affichage).
+    """
+    expected_pct = round(numerator / denominator * 100, 1) if denominator else 0.0
+    diff = abs(expected_pct - displayed_pct)
+    return {
+        "expected_pct": expected_pct, "displayed_pct": displayed_pct,
+        "numerator": numerator, "denominator": denominator,
+        "diff": round(diff, 2), "passed": diff <= tolerance,
+    }
+
+
 # ─── Component scores — decomposition of the Learning Score ─────────────────
 # Chaque score ci-dessous réutilise un nombre DÉJÀ calculé ailleurs (voir la
 # docstring de compute_component_scores) — jamais un second calcul du même

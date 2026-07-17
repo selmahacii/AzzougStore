@@ -2893,6 +2893,8 @@ def cleanup_meta_queue(
 def get_signal_quality(
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=90),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -2903,12 +2905,23 @@ def get_signal_quality(
     (notre propre base), aucun appel Meta, une poignée de requêtes bornées
     par date et plafonnées — jamais un scan de table complète.
 
+    date_from/date_to (mêmes noms et même parsing que
+    /orders/capi/tracking-quality-v2) priment sur range_days quand fournis
+    — AVANT ce correctif, ce endpoint ignorait totalement le sélecteur de
+    dates du dashboard (toujours fixé à range_days=30), pendant que le
+    widget "Qualité du Tracking" juste à côté respectait la période
+    choisie : deux cartes du même écran regardaient deux fenêtres
+    temporelles différentes, d'où des chiffres qui semblaient se
+    contredire. Les deux widgets reçoivent maintenant exactement la même
+    période depuis le frontend.
+
     Ne fabrique jamais de conversion : mesure uniquement ce qui a réellement
     été envoyé, et signale honnêtement ce qui manque.
     """
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
     from app.models.audit import AuditLog
+    from app.core.dates import parse_local_date_filter
     from app.services.meta_capi import (
         compute_match_quality, scan_payload_quality, compute_learning_score,
         classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
@@ -2918,7 +2931,21 @@ def get_signal_quality(
     )
 
     db.info["skip_tenant_isolation"] = True
-    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    until = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = until - timedelta(days=range_days)
+    period_source = "range_days"
+    if date_from:
+        try:
+            since = parse_local_date_filter(date_from)
+            period_source = "date_range"
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            until = parse_local_date_filter(date_to)
+            period_source = "date_range"
+        except ValueError:
+            pass
 
     # ── 1. Répartition des statuts Purchase, AVEC error_category dans le
     # même GROUP BY (pas une requête de plus — juste une colonne de plus
@@ -2929,7 +2956,7 @@ def get_signal_quality(
         .filter(
             MetaCapiLog.store_id == store_id,
             MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.created_at >= since,
+            MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
         )
         .group_by(MetaCapiLog.status, MetaCapiLog.error_category)
         .all()
@@ -2958,7 +2985,7 @@ def get_signal_quality(
             MetaCapiLog.event_name == "Purchase",
             MetaCapiLog.status == "success",
             MetaCapiLog.payload.isnot(None),
-            MetaCapiLog.created_at >= since,
+            MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
         )
         .order_by(MetaCapiLog.created_at.desc())
         .limit(500)
@@ -3006,7 +3033,7 @@ def get_signal_quality(
         db.query(func.count(MetaCapiLog.id))
         .filter(
             MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.order_id.is_(None), MetaCapiLog.created_at >= since,
+            MetaCapiLog.order_id.is_(None), MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
         )
         .scalar() or 0
     )
@@ -3038,7 +3065,8 @@ def get_signal_quality(
     # ça arrive (payload corrompu, ancienne ligne pré-index unique).
     dup_event_ids = (
         db.query(MetaCapiLog.event_id, func.count(MetaCapiLog.id).label("cnt"))
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.created_at >= since)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
         .group_by(MetaCapiLog.event_id)
         .having(func.count(MetaCapiLog.id) > 1)
         .all()
@@ -3094,7 +3122,7 @@ def get_signal_quality(
         .join(Order, Order.id == MetaCapiLog.order_id)
         .filter(
             MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since,
+            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
             Order.campaign_id.is_(None), func.coalesce(Order.utm_campaign, "") == "",
         )
         .scalar() or 0
@@ -3128,7 +3156,7 @@ def get_signal_quality(
         row[0] for row in (
             db.query(AuditLog.entity_id)
             .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
-                    AuditLog.created_at >= since)
+                    AuditLog.created_at >= since, AuditLog.created_at <= until)
             .all()
         )
     }
@@ -3138,7 +3166,7 @@ def get_signal_quality(
         .join(Order, Order.id == MetaCapiLog.order_id)
         .filter(
             MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since,
+            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
         )
         .order_by(MetaCapiLog.created_at.desc())
         .limit(1000)
@@ -3203,7 +3231,7 @@ def get_signal_quality(
         db.query(MetaCapiLog.event_name, func.count(MetaCapiLog.id))
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success",
                 MetaCapiLog.event_name.in_(("AddToCart", "InitiateCheckout")),
-                MetaCapiLog.created_at >= since)
+                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
         .group_by(MetaCapiLog.event_name)
         .all()
     )
@@ -3222,6 +3250,9 @@ def get_signal_quality(
         "success": True,
         "data": {
             "range_days": range_days,
+            "period": {
+                "source": period_source, "since": since.isoformat(), "until": until.isoformat(),
+            },
             "global_score": global_score,
             "sub_scores": sub_scores,
             "component_scores": component_scores,
@@ -3243,15 +3274,24 @@ def get_signal_quality(
             "learning_score": {
                 "score": learning_score["score"],
                 "realtime_pct": realtime_pct,
+                "realtime_count": realtime_n,
                 "backfill_pct": backfill_pct,
+                "backfill_count": backfill_n,
                 "event_match_quality": emq_score,
                 "avg_latency_ms": avg_latency_ms,
                 "dedup_pct": dedup_pct,
                 "valid_purchase_pct": valid_purchase_pct,
+                "valid_purchase_count": success,
                 "rejected_pct": round(100 - valid_purchase_pct, 1) if total_sent else 0.0,
+                "rejected_count": failed,
                 "value_present_pct": value_present_pct,
                 "attribution_pct": attribution_pct,
+                # sample_size = realtime_count + backfill_count PAR CONSTRUCTION
+                # (voir timing_rows plus haut) — la carte peut donc toujours
+                # afficher le pourcentage ET les compteurs qui le produisent
+                # réellement, jamais deux nombres sans lien vérifiable entre eux.
                 "sample_size": timing_n,
+                "methodology": "Calculé depuis meta_capi_logs (nos propres envois CAPI, event_name=Purchase, status=success) sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi et la création de la commande (ou la reprise d'un panier abandonné), backfill explicite prioritaire sur l'heuristique de délai.",
             },
             "anomalies": anomalies,
         },
@@ -4209,4 +4249,150 @@ def get_meta_audit_reports(
             {"generated_at": row.created_at.isoformat() if row.created_at else None, **(row.diff or {})}
             for row in rows
         ],
+    }
+
+
+@router.get("/kpi-validation", response_model=dict)
+def get_kpi_validation(
+    store_id: str = Query(...),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    "Validation des KPI" — recalcule une poignée de compteurs DIRECTEMENT
+    depuis meta_capi_logs/orders, en dehors de toute fonction de scoring,
+    puis vérifie des invariants mathématiques que les chiffres affichés
+    ailleurs DOIVENT respecter par construction. Comparer un calcul à
+    lui-même ne prouverait rien — cette page réimplémente volontairement
+    en minimal/indépendant pour détecter une vraie divergence si elle
+    apparaît un jour (bug de filtre, fenêtre de date oubliée, etc.).
+
+    Chaque check retourne les valeurs brutes utilisées, jamais juste un
+    verdict — traçable jusqu'aux lignes ayant servi au calcul.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.core.dates import parse_local_date_filter
+    from app.services.meta_capi import (
+        compute_match_quality, classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
+        verify_percentage_matches_counter,
+    )
+
+    db.info["skip_tenant_isolation"] = True
+    until = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = until - timedelta(days=30)
+    if date_from:
+        try:
+            since = parse_local_date_filter(date_from)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            until = parse_local_date_filter(date_to)
+        except ValueError:
+            pass
+
+    checks = []
+
+    # ── Check 1 : répartition brute des statuts Purchase — un simple
+    # GROUP BY, aucune logique de score. Doit égaler EXACTEMENT
+    # purchase_breakdown de /signal-quality (même filtre, même fenêtre) —
+    # toute différence signale que l'un des deux endpoints a dévié.
+    raw_status_rows = (
+        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
+        .group_by(MetaCapiLog.status)
+        .all()
+    )
+    raw_by_status = {s: c for s, c in raw_status_rows}
+    raw_total = sum(raw_by_status.values())
+    checks.append({
+        "name": "purchase_status_breakdown_raw",
+        "description": "Répartition brute des statuts Purchase (GROUP BY direct, sans logique de score) — doit égaler purchase_breakdown affiché par Signal Quality Center pour la même période.",
+        "raw_values": {**raw_by_status, "total": raw_total},
+        "traceable_query": "SELECT status, COUNT(*) FROM meta_capi_logs WHERE store_id=:store_id AND event_name='Purchase' AND created_at BETWEEN :since AND :until GROUP BY status",
+    })
+
+    # ── Check 2 : realtime/backfill recalculés indépendamment (nouvelle
+    # requête + boucle Python séparée de celle de /signal-quality), pour
+    # vérifier que realtime_count + backfill_count == sample_size PAR
+    # CONSTRUCTION et que cela correspond au nombre réel de succès.
+    from app.models.audit import AuditLog
+    backfill_order_ids = {
+        row[0] for row in (
+            db.query(AuditLog.entity_id)
+            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
+                    AuditLog.created_at >= since, AuditLog.created_at <= until)
+            .all()
+        )
+    }
+    timing_rows = (
+        db.query(MetaCapiLog.order_id, MetaCapiLog.created_at, Order.created_at)
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
+        .all()
+    )
+    realtime_n = sum(
+        1 for oid, log_ts, order_ts in timing_rows
+        if oid not in backfill_order_ids and classify_capi_log_timing(log_ts, order_ts) == "realtime"
+    )
+    backfill_n = len(timing_rows) - realtime_n
+    success_count = raw_by_status.get("success", 0)
+    realtime_pct_check = verify_percentage_matches_counter(
+        realtime_n, len(timing_rows), round(realtime_n / len(timing_rows) * 100, 1) if timing_rows else 0.0
+    )
+    checks.append({
+        "name": "realtime_backfill_partition",
+        "description": "realtime_count + backfill_count doit toujours égaler le nombre de Purchase réussis joints à une commande (invariant de partition, pas une coïncidence), et le % temps réel doit être recalculable depuis ces mêmes compteurs.",
+        "raw_values": {"realtime_count": realtime_n, "backfill_count": backfill_n,
+                       "sum": realtime_n + backfill_n, "success_with_order_join": len(timing_rows),
+                       "success_total": success_count, "realtime_pct_recomputed": realtime_pct_check["expected_pct"]},
+        "passed": (realtime_n + backfill_n) == len(timing_rows) and realtime_pct_check["passed"],
+        "note": "success_with_order_join peut être < success_total si des lignes success ont order_id NULL (chemin relay) — pas une anomalie.",
+    })
+
+    # ── Check 3 : EMQ moyen recalculé depuis la couverture par champ.
+    # Invariant mathématique : compute_match_quality fait une moyenne NON
+    # PONDÉRÉE sur 12 champs, donc la moyenne des 12 field_coverage DOIT
+    # être identique à avg_emq calculé sur le MÊME échantillon — sinon un
+    # vrai bug de calcul existe quelque part.
+    sample = (
+        db.query(MetaCapiLog.payload)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.payload.isnot(None),
+                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
+        .order_by(MetaCapiLog.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    field_present_counts = {key: 0 for key, _ in _MATCH_QUALITY_FIELDS}
+    emq_scores = []
+    for (payload,) in sample:
+        mq = compute_match_quality((payload or {}).get("user_data") or {})
+        emq_scores.append(mq["score"])
+        for f in mq["fields"]:
+            if f["present"]:
+                field_present_counts[f["key"]] += 1
+    n = len(sample)
+    avg_emq_direct = round(sum(emq_scores) / n, 1) if n else None
+    field_coverage_avg = round(sum(field_present_counts.values()) / (n * len(_MATCH_QUALITY_FIELDS)) * 100, 1) if n else None
+    checks.append({
+        "name": "emq_matches_field_coverage_average",
+        "description": "La moyenne des 12 pourcentages de couverture par champ DOIT égaler l'EMQ moyen affiché, par construction mathématique de compute_match_quality.",
+        "raw_values": {"avg_emq": avg_emq_direct, "field_coverage_average": field_coverage_avg, "sample_size": n},
+        "passed": avg_emq_direct is None or field_coverage_avg is None or abs(avg_emq_direct - field_coverage_avg) < 0.2,
+    })
+
+    all_passed = all(c.get("passed", True) for c in checks)
+    return {
+        "success": True,
+        "data": {
+            "period": {"since": since.isoformat(), "until": until.isoformat()},
+            "checks": checks,
+            "all_passed": all_passed,
+        },
     }

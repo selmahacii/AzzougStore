@@ -3649,6 +3649,7 @@ def get_capi_tracking_quality_v2(
     if not recommendations:
         recommendations.append("Aucune anomalie détectée sur la période.")
 
+    _timing_total = realtime_ok + backfill_ok
     return {
         "success": True,
         "data": {
@@ -3656,7 +3657,9 @@ def get_capi_tracking_quality_v2(
             "erp_purchases": total_erp,
             "meta_purchases": meta_purchases,
             "realtime": realtime_ok,
+            "realtime_pct": round(realtime_ok / _timing_total * 100, 1) if _timing_total else 0.0,
             "backfill": backfill_ok,
+            "backfill_pct": round(backfill_ok / _timing_total * 100, 1) if _timing_total else 0.0,
             "pending": pending,
             "failed": failed,
             "avg_match_quality": avg_match_quality,
@@ -3666,12 +3669,14 @@ def get_capi_tracking_quality_v2(
             "learning": {
                 "status": learning_status, "label": learning_label,
                 "explanation": learning_explanation, "purchases_7d": purchases_7d,
+                "note": "Fenêtre glissante de 7 jours, INDÉPENDANTE de la période sélectionnée ci-dessus (la phase d'apprentissage Meta se réévalue en continu, pas sur une période de dashboard).",
             },
             "tracking_score": tracking_score_global,
             "recommendations": recommendations,
             "coverage_pct": coverage_pct,
             "ecart_reel": ecart,
             "performance_count": performance_count,
+            "methodology": "Calculé depuis les commandes ERP (CONFIRMED/SHIPPED/DELIVERED, hors MANUAL) jointes à meta_capi_logs sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi CAPI et la création de la commande OU la reprise d'un panier abandonné (référence différente de Signal Quality Center, qui utilise toujours la création de commande).",
         },
     }
 

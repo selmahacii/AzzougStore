@@ -60,7 +60,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics' | 'kpi-validation'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -122,10 +122,16 @@ export default function MetaAdsDashboard() {
   const trackingQuality = trackingQualityData?.data;
 
   // --- Query Signal Quality Center (EMQ store-wide, couverture par champ, anomalies) ---
+  // date_from/date_to : AVANT ce correctif, cette carte ignorait le
+  // sélecteur de dates du dashboard (toujours 30 derniers jours en dur)
+  // pendant que "Qualité du Tracking" juste au-dessus respectait la
+  // période choisie — les deux widgets regardaient des fenêtres
+  // temporelles différentes, produisant des chiffres qui semblaient se
+  // contredire pour la même période affichée à l'écran.
   const { data: signalQualityData, isLoading: isLoadingSignalQuality } = useQuery({
-    queryKey: ['meta_signal_quality', activeStore?.id],
+    queryKey: ['meta_signal_quality', activeStore?.id, dateStart, dateEnd],
     queryFn: () => apiFetch<{ success: boolean; data: any }>(
-      `/api/v1/meta-ads/signal-quality?store_id=${activeStore?.id}`
+      `/api/v1/meta-ads/signal-quality?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
     ),
     enabled: !!activeStore?.id,
     refetchOnWindowFocus: false,
@@ -143,6 +149,20 @@ export default function MetaAdsDashboard() {
     refetchOnWindowFocus: false,
   });
   const learningDiagnostics = learningDiagnosticsData?.data;
+
+  // --- Query "Validation des KPI" — recalcule quelques compteurs
+  // directement depuis meta_capi_logs, en dehors de toute logique de
+  // score, pour détecter une divergence si une carte affiche un chiffre
+  // qui ne correspond plus aux données brutes. Ne fetch que sur cet onglet.
+  const { data: kpiValidationData, isLoading: isLoadingKpiValidation } = useQuery({
+    queryKey: ['meta_kpi_validation', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/kpi-validation?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id && activeTab === 'kpi-validation',
+    refetchOnWindowFocus: false,
+  });
+  const kpiValidation = kpiValidationData?.data;
 
   // --- Mutations ---
   const saveConfigMutation = useMutation({
@@ -698,6 +718,17 @@ export default function MetaAdsDashboard() {
           )}
         >
           <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Diagnostics</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('kpi-validation')}
+          className={cn(
+            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === 'kpi-validation'
+              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
+              : "text-[#B2BEC3] hover:text-[#636E72]"
+          )}
+        >
+          <span className="flex items-center gap-1.5"><CheckCircle className="size-3.5" /> Validation KPI</span>
         </button>
       </div>
 
@@ -1445,22 +1476,30 @@ export default function MetaAdsDashboard() {
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                 {[
-                  { label: 'Temps réel', value: `${signalQuality.learning_score.realtime_pct}%` },
-                  { label: 'Backfill', value: `${signalQuality.learning_score.backfill_pct}%` },
+                  // sous-titre = compteur réel qui produit le %, toujours
+                  // depuis LE MÊME calcul (learning_score.sample_size =
+                  // realtime_count + backfill_count par construction) —
+                  // jamais un pourcentage affiché sans son compteur d'origine.
+                  { label: 'Temps réel', value: `${signalQuality.learning_score.realtime_pct}%`, sub: `${signalQuality.learning_score.realtime_count}/${signalQuality.learning_score.sample_size}` },
+                  { label: 'Backfill', value: `${signalQuality.learning_score.backfill_pct}%`, sub: `${signalQuality.learning_score.backfill_count}/${signalQuality.learning_score.sample_size}` },
                   { label: 'EMQ', value: signalQuality.learning_score.event_match_quality != null ? `${signalQuality.learning_score.event_match_quality}%` : '—' },
                   { label: 'Latence', value: signalQuality.learning_score.avg_latency_ms != null ? `${(signalQuality.learning_score.avg_latency_ms / 1000).toFixed(1)}s` : '—' },
                   { label: 'Dédup', value: `${signalQuality.learning_score.dedup_pct}%` },
-                  { label: 'Purchase valides', value: `${signalQuality.learning_score.valid_purchase_pct}%` },
-                  { label: 'Rejetés', value: `${signalQuality.learning_score.rejected_pct}%` },
+                  { label: 'Purchase valides', value: `${signalQuality.learning_score.valid_purchase_pct}%`, sub: `${signalQuality.learning_score.valid_purchase_count}` },
+                  { label: 'Rejetés', value: `${signalQuality.learning_score.rejected_pct}%`, sub: `${signalQuality.learning_score.rejected_count}` },
                   { label: 'Valeur monétaire', value: `${signalQuality.learning_score.value_present_pct}%` },
                   { label: 'Attribution', value: `${signalQuality.learning_score.attribution_pct}%` },
                 ].map(m => (
                   <div key={m.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <p className="text-base font-black tabular-nums text-white">{m.value}</p>
                     <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-white/50">{m.label}</p>
+                    {m.sub && <p className="text-[8px] text-white/30 mt-0.5 tabular-nums">{m.sub}</p>}
                   </div>
                 ))}
               </div>
+            )}
+            {signalQuality?.learning_score?.methodology && (
+              <p className="text-[9px] text-white/30 mt-3 italic">{signalQuality.learning_score.methodology}</p>
             )}
           </div>
 
@@ -1473,7 +1512,9 @@ export default function MetaAdsDashboard() {
                 <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
                   <Zap className="size-4 text-[#1877F2]" /> Signal Quality Center
                 </h3>
-                <p className="text-[10px] text-slate-400 mt-1">Qualité des signaux envoyés à Meta — 30 derniers jours.</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Qualité des signaux envoyés à Meta — Période : <strong className="text-slate-500">{dateStart} → {dateEnd}</strong>
+                </p>
               </div>
               {signalQuality?.global_score != null && (
                 <div className="text-right shrink-0">
@@ -1621,7 +1662,9 @@ export default function MetaAdsDashboard() {
                 <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="size-4 text-[#6C5CE7]" /> Qualité du Tracking
                 </h3>
-                <p className="text-[10px] text-slate-400 mt-1">ERP ↔ Meta, temps réel vs rattrapage, complétude des signaux envoyés.</p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  ERP ↔ Meta, temps réel vs rattrapage, complétude des signaux envoyés — Période : <strong className="text-slate-500">{dateStart} → {dateEnd}</strong>
+                </p>
               </div>
               {trackingQuality?.tracking_score != null && (
                 <div className="text-right shrink-0">
@@ -1662,17 +1705,24 @@ export default function MetaAdsDashboard() {
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                   {[
-                    { label: 'Temps réel', value: trackingQuality.realtime, color: '#00B894' },
-                    { label: 'Rattrapage (Backfill)', value: trackingQuality.backfill, color: '#FDCB6E' },
+                    // % affiché à côté du compteur qui le produit — même
+                    // paire compteur/pourcentage, jamais l'un sans l'autre.
+                    { label: 'Temps réel', value: trackingQuality.realtime, pct: trackingQuality.realtime_pct, color: '#00B894' },
+                    { label: 'Rattrapage (Backfill)', value: trackingQuality.backfill, pct: trackingQuality.backfill_pct, color: '#FDCB6E' },
                     { label: 'En attente', value: trackingQuality.pending, color: '#0984E3' },
                     { label: 'Échecs', value: trackingQuality.failed, color: trackingQuality.failed > 0 ? '#E17055' : '#B2BEC3' },
                   ].map(s => (
                     <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
-                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>
+                        {s.value}{s.pct != null && <span className="text-[10px] text-slate-400 ml-1">({s.pct}%)</span>}
+                      </p>
                       <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
                     </div>
                   ))}
                 </div>
+                {trackingQuality.methodology && (
+                  <p className="text-[9px] text-slate-300 italic mb-4">{trackingQuality.methodology}</p>
+                )}
 
                 {trackingQuality.ecart_reel > 0 && (
                   <div className="p-3 mb-4 rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 text-[11px] text-slate-600">
@@ -1699,6 +1749,9 @@ export default function MetaAdsDashboard() {
                       <span>📚 Learning Score : {trackingQuality.learning.label}</span>
                     </div>
                     <p>{trackingQuality.learning.explanation}</p>
+                    {trackingQuality.learning.note && (
+                      <p className="text-[9px] opacity-60 italic mt-1">{trackingQuality.learning.note}</p>
+                    )}
                   </div>
                 )}
 
@@ -1800,6 +1853,63 @@ export default function MetaAdsDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ─── TAB: VALIDATION DES KPI — recalcule les compteurs directement
+          depuis les données brutes (hors toute logique de score) pour
+          détecter une divergence avec ce qu'affichent les autres onglets. ─── */}
+      {activeTab === 'kpi-validation' && (
+        <div className="bg-white rounded-3xl border shadow-sm p-6">
+          <div className="mb-5">
+            <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+              <CheckCircle className="size-4 text-[#00B894]" /> Validation des KPI
+            </h3>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Recalcul indépendant depuis meta_capi_logs — Période : <strong className="text-slate-500">{dateStart} → {dateEnd}</strong>. Chaque valeur est traçable jusqu'à la requête SQL affichée.
+            </p>
+          </div>
+          {isLoadingKpiValidation ? (
+            <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Calcul en cours…</div>
+          ) : !kpiValidation ? (
+            <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+          ) : (
+            <>
+              <div className={cn(
+                'p-4 rounded-2xl border mb-5 text-sm font-black',
+                kpiValidation.all_passed ? 'bg-[#E6FFF8] border-[#00B894]/30 text-[#00895f]' : 'bg-[#FFEDE9] border-[#E17055]/30 text-[#E17055]'
+              )}>
+                {kpiValidation.all_passed ? '✓ Tous les invariants vérifiés — aucune divergence détectée.' : '⚠ Divergence détectée — voir le détail ci-dessous.'}
+              </div>
+              <div className="space-y-4">
+                {kpiValidation.checks.map((check: any, i: number) => (
+                  <div key={i} className="p-4 rounded-2xl border bg-slate-50">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-xs font-black text-slate-700">{check.name}</p>
+                      {check.passed != null && (
+                        <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase',
+                          check.passed ? 'bg-[#E6FFF8] text-[#00B894]' : 'bg-[#FFEDE9] text-[#E17055]')}>
+                          {check.passed ? 'OK' : 'Divergence'}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-2">{check.description}</p>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {Object.entries(check.raw_values).map(([k, v]: [string, any]) => (
+                        <span key={k} className="text-[10px] font-mono bg-white border rounded-lg px-2 py-1">
+                          <span className="text-slate-400">{k}:</span> <strong className="text-slate-700">{String(v)}</strong>
+                        </span>
+                      ))}
+                    </div>
+                    {check.traceable_query && (
+                      <code className="block text-[9px] text-slate-400 bg-white border rounded-lg p-2 overflow-x-auto">{check.traceable_query}</code>
+                    )}
+                    {check.note && <p className="text-[9px] text-slate-300 italic mt-1">{check.note}</p>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
