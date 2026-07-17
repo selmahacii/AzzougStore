@@ -2947,83 +2947,23 @@ def get_signal_quality(
         except ValueError:
             pass
 
-    # ── 1. Répartition des statuts Purchase, AVEC error_category dans le
-    # même GROUP BY (pas une requête de plus — juste une colonne de plus
-    # dans la même requête groupée) pour isoler les échecs réseau des rejets
-    # applicatifs Meta, nécessaire au Delivery Score plus bas. ──
-    status_rows = (
-        db.query(MetaCapiLog.status, MetaCapiLog.error_category, func.count(MetaCapiLog.id))
-        .filter(
-            MetaCapiLog.store_id == store_id,
-            MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
-        )
-        .group_by(MetaCapiLog.status, MetaCapiLog.error_category)
-        .all()
-    )
-    by_status: Dict[str, int] = {}
-    network_failed = 0
-    for status, error_category, count in status_rows:
-        by_status[status] = by_status.get(status, 0) + count
-        if error_category in ("network_timeout", "network_error"):
-            network_failed += count
-    success = by_status.get("success", 0)
-    failed = by_status.get("failed", 0)
-    retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
-    pending = by_status.get("queued", 0) + by_status.get("processing", 0)
-    skipped = by_status.get("skipped", 0)
-    total_sent = success + failed + retry + pending
+    # ── Moteur canonique — UNE SEULE implémentation de chaque métrique,
+    # partagée avec l'Optimization Advisor par-campagne (voir
+    # app/services/meta_analytics_engine.py). Ne recalcule plus rien
+    # localement : évite la divergence historique attribution_pct/dedup_pct/
+    # total_sent entre les deux endpoints. ──
+    from app.services.meta_analytics_engine import compute_meta_metrics
+    m = compute_meta_metrics(db, store_id, since, until)
 
-    # ── 2. Event Match Quality : moyenne + couverture par champ, sur un
-    # échantillon PLAFONNÉ des succès (payload contient user_data depuis le
-    # correctif de stockage-sur-succès). Cap à 500 pour rester léger sur
-    # Supabase quel que soit le volume de la boutique. ──
-    sample = (
-        db.query(MetaCapiLog.payload)
-        .filter(
-            MetaCapiLog.store_id == store_id,
-            MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.status == "success",
-            MetaCapiLog.payload.isnot(None),
-            MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
-        )
-        .order_by(MetaCapiLog.created_at.desc())
-        .limit(500)
-        .all()
-    )
-    field_present_counts = {key: 0 for key, _ in _MATCH_QUALITY_FIELDS}
-    emq_scores = []
-    completeness_scores = []
-    # Comptés sur le MÊME échantillon (aucune requête supplémentaire) pour
-    # le scan de qualité des données ci-dessous : value/currency/event_time
-    # vivent dans custom_data/racine du payload, pas dans user_data.
-    missing_value = missing_currency = missing_event_time = wrong_currency = 0
-    for (payload,) in sample:
-        ud = (payload or {}).get("user_data") or {}
-        mq = compute_match_quality(ud)
-        emq_scores.append(mq["score"])
-        for f in mq["fields"]:
-            if f["present"]:
-                field_present_counts[f["key"]] += 1
-        pq = scan_payload_quality(payload)
-        missing_value += int(pq["missing_value"])
-        missing_currency += int(pq["missing_currency"])
-        wrong_currency += int(pq["wrong_currency"])
-        missing_event_time += int(pq["missing_event_time"])
-        # Complétude complète (18 champs, pas seulement les 12 EMQ) — sur le
-        # MÊME échantillon déjà chargé, pour le futur Event Quality Score.
-        completeness_scores.append(evaluate_purchase_signal_quality(payload)["completeness_pct"])
-    sample_n = len(sample)
-    avg_completeness_pct = round(sum(completeness_scores) / len(completeness_scores), 1) if completeness_scores else 0.0
-    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
-    field_coverage = [
-        {
-            "key": key, "label": label,
-            "coverage_pct": round(field_present_counts[key] / sample_n * 100, 1) if sample_n else 0.0,
-            "missing_pct": round((1 - field_present_counts[key] / sample_n) * 100, 1) if sample_n else 100.0,
-        }
-        for key, label in _MATCH_QUALITY_FIELDS
-    ]
+    success, failed, retry, pending, skipped = m["success"], m["failed"], m["retry"], m["pending"], m["skipped"]
+    network_failed, total_sent = m["network_failed"], m["total_sent"]
+    sample_n = m["sample_size"]
+    field_present_counts = m["field_present_counts"]
+    missing_value, missing_currency = m["missing_value_count"], m["missing_currency_count"]
+    missing_event_time, wrong_currency = m["missing_event_time_count"], m["wrong_currency_count"]
+    avg_emq = m["event_match_quality"]
+    field_coverage = m["field_coverage"]
+    avg_completeness_pct = m["avg_completeness_pct"] or 0.0
 
     # ── 3. Scan d'anomalies (chacune une requête groupée bornée) ──
     anomalies = []
@@ -3137,90 +3077,55 @@ def get_signal_quality(
     # ── 4. Score global décomposé — chaque sous-score est un pourcentage réel
     # déjà calculé ci-dessus, jamais une note inventée. Moyenne simple,
     # pondération documentée. ──
-    coverage_score = round(success / total_sent * 100, 1) if total_sent else 0.0
-    emq_score = avg_emq if avg_emq is not None else 0.0
-    reliability_score = round(max(0.0, 100 - (failed / total_sent * 100 * 3)), 1) if total_sent else 100.0
-    sub_scores = {
-        "tracking_coverage": coverage_score,
-        "event_match_quality": emq_score,
-        "server_reliability": reliability_score,
-    }
-    global_score = round(sum(sub_scores.values()) / len(sub_scores), 1)
+    # ── 4/5. Scores composés — tout vient du moteur canonique `m` ci-dessus
+    # (tracking_coverage, server_reliability, realtime/backfill, latence,
+    # dédup, attribution, Learning Score, sous-scores) : plus aucun calcul
+    # dupliqué ici. `_or0` convertit None ("pas de donnée") en 0.0
+    # UNIQUEMENT pour les entrées qui nourrissent une moyenne pondérée —
+    # jamais pour ce qui est affiché tel quel dans la réponse JSON. ──
+    def _or0(v):
+        return v if v is not None else 0.0
 
-    # ── 5. Learning Score — realtime/backfill + latence + dédup, en UNE
-    # requête jointe bornée par date et plafonnée (jamais un scan complet).
-    # explicit_backfill (AuditLog écrit AU MOMENT du rattrapage) prime sur
-    # l'heuristique de délai, seulement utilisée pour les lignes envoyées
-    # avant que ce marquage explicite n'existe. ──
-    backfill_order_ids = {
-        row[0] for row in (
-            db.query(AuditLog.entity_id)
-            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
-                    AuditLog.created_at >= since, AuditLog.created_at <= until)
-            .all()
-        )
+    coverage_score = m["tracking_coverage"]
+    emq_score = _or0(avg_emq)
+    reliability_score = m["server_reliability"]
+    sub_scores = {
+        "tracking_coverage": _or0(coverage_score),
+        "event_match_quality": emq_score,
+        "server_reliability": _or0(reliability_score),
     }
-    timing_rows = (
-        db.query(MetaCapiLog.order_id, MetaCapiLog.created_at, MetaCapiLog.latency_ms, MetaCapiLog.event_id,
-                  Order.created_at)
-        .join(Order, Order.id == MetaCapiLog.order_id)
-        .filter(
-            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
-        )
-        .order_by(MetaCapiLog.created_at.desc())
-        .limit(1000)
-        .all()
-    )
-    realtime_n = 0
-    backfill_n = 0
-    latencies = []
-    event_id_counts: Dict[str, int] = {}
-    for order_id, log_created_at, latency_ms, event_id, order_created_at in timing_rows:
-        is_backfill = order_id in backfill_order_ids or classify_capi_log_timing(log_created_at, order_created_at) == "backfill"
-        if is_backfill:
-            backfill_n += 1
-        else:
-            realtime_n += 1
-        if latency_ms is not None:
-            latencies.append(latency_ms)
-        event_id_counts[event_id] = event_id_counts.get(event_id, 0) + 1
-    timing_n = realtime_n + backfill_n
-    realtime_pct = round(realtime_n / timing_n * 100, 1) if timing_n else 0.0
-    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
-    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
-    dup_n = sum(1 for c in event_id_counts.values() if c > 1)
-    dedup_pct = round((1 - dup_n / timing_n) * 100, 1) if timing_n else 100.0
-    valid_purchase_pct = round(success / total_sent * 100, 1) if total_sent else 0.0
-    value_present_pct = round((sample_n - missing_value) / sample_n * 100, 1) if sample_n else 0.0
-    attribution_pct = round((success - orphan_campaign) / success * 100, 1) if success else 0.0
+    global_score = m["global_score"]
+
+    realtime_pct = m["realtime_pct"]
+    backfill_pct = m["backfill_pct"]
+    avg_latency_ms = m["avg_latency_ms"]
+    dedup_pct = m["dedup_pct"]
+    valid_purchase_pct = m["valid_purchase_pct"]
+    value_present_pct = m["value_present_pct"]
+    attribution_pct = m["attribution_pct"]
+    orphan_campaign = m["orphan_campaign"]
+    retry_pct = m["retry_pct"]
+    pending_pct = m["pending_pct"]
+    rejected_pct = m["rejected_pct"]
 
     _learning_components = {
-        "realtime_pct": realtime_pct,
+        "realtime_pct": _or0(realtime_pct),
         "event_match_quality": emq_score,
-        "valid_purchase_pct": valid_purchase_pct,
-        "dedup_pct": dedup_pct,
-        "value_present_pct": value_present_pct,
-        "attribution_pct": attribution_pct,
+        "valid_purchase_pct": _or0(valid_purchase_pct),
+        "dedup_pct": dedup_pct if dedup_pct is not None else 100.0,
+        "value_present_pct": _or0(value_present_pct),
+        "attribution_pct": _or0(attribution_pct),
         "avg_latency_ms": avg_latency_ms,
     }
-    learning_score = compute_learning_score(_learning_components)
+    learning_score = m["learning_score"]
     estimated_gains = estimate_learning_score_gains(_learning_components)
-
-    retry_pct = round(retry / total_sent * 100, 1) if total_sent else 0.0
-    pending_pct = round(pending / total_sent * 100, 1) if total_sent else 0.0
-    rejected_pct = round(failed / total_sent * 100, 1) if total_sent else 0.0
-    component_scores = compute_component_scores({
-        "total_sent": total_sent, "success": success, "network_failed": network_failed,
-        "retry_pct": retry_pct, "pending_pct": pending_pct,
-        "event_match_quality": emq_score, "attribution_pct": attribution_pct,
-        "avg_completeness_pct": avg_completeness_pct,
-    })
+    component_scores = m["component_scores"]
     alerts = generate_signal_alerts({
-        "event_match_quality": emq_score, "tracking_coverage": coverage_score,
-        "learning_score": learning_score["score"], "backfill_pct": backfill_pct,
-        "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
+        "event_match_quality": emq_score, "tracking_coverage": _or0(coverage_score),
+        "learning_score": learning_score["score"], "backfill_pct": _or0(backfill_pct),
+        "retry_pct": _or0(retry_pct), "rejected_pct": _or0(rejected_pct), "avg_latency_ms": avg_latency_ms,
     })
+    realtime_n, backfill_n, timing_n = m["realtime_count"], m["backfill_count"], m["timing_sample_size"]
 
     # Volume AddToCart/Checkout store-wide — même table MetaCapiLog, une
     # seule requête groupée de plus (bornée par date), pour le Meta
@@ -3606,57 +3511,42 @@ def get_campaign_learning_health(
     roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
     aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
 
+    # ── Moteur canonique — MÊMES formules/populations que le Signal Quality
+    # Center store-wide (/signal-quality), juste filtrées à cette campagne
+    # via order_ids. AVANT ce correctif, ce endpoint recalculait
+    # attribution_pct sur (orders_count - no_utm_count)/orders_count
+    # (population = commandes brutes) alors que le store-wide utilisait
+    # (success - orphan_campaign)/success (population = CAPI réussis) —
+    # même nom, deux résultats non comparables. dedup_pct divisait aussi par
+    # total_sent SANS jamais inclure skipped alors que ce total_sent-ci
+    # l'incluait déjà — les deux sont maintenant strictement identiques par
+    # construction (compute_meta_metrics est la seule implémentation). ──
+    from app.services.meta_analytics_engine import compute_meta_metrics
+    m = compute_meta_metrics(db, store_id, since, datetime.now(timezone.utc).replace(tzinfo=None), order_ids=order_ids)
+
+    success, failed, retry, pending, skipped = m["success"], m["failed"], m["retry"], m["pending"], m["skipped"]
+    network_failed, total_sent = m["network_failed"], m["total_sent"]
+    dup_n = 0  # conservé pour compat de champ "purchase_dedup_conflicts" ; dérivé ci-dessous
+    dedup_pct = m["dedup_pct"] if m["dedup_pct"] is not None else 100.0
+    realtime_n, backfill_n, timing_n = m["realtime_count"], m["backfill_count"], m["timing_sample_size"]
+    realtime_pct = m["realtime_pct"] if m["realtime_pct"] is not None else 0.0
+    backfill_pct = m["backfill_pct"] if m["backfill_pct"] is not None else 0.0
+    avg_latency_ms = m["avg_latency_ms"]
+    max_latency_ms = m["max_latency_ms"]
+    attribution_pct = m["attribution_pct"] if m["attribution_pct"] is not None else 0.0
+
+    # capi_logs conservé UNIQUEMENT pour field_completeness ci-dessous (13
+    # champs "amicaux" distincts des 12 champs EMQ) — pas une métrique
+    # partagée avec le store-wide, donc pas de risque de régression du
+    # même type que ci-dessus.
     capi_logs = (
         db.query(MetaCapiLog).filter(MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase").all()
         if order_ids else []
     )
-    by_status: Dict[str, int] = {}
-    network_failed = 0
-    for log in capi_logs:
-        by_status[log.status] = by_status.get(log.status, 0) + 1
-        if log.error_category in ("network_timeout", "network_error"):
-            network_failed += 1
-    success = by_status.get("success", 0)
-    failed = by_status.get("failed", 0)
-    retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
-    pending = by_status.get("queued", 0) + by_status.get("processing", 0)
-    skipped = by_status.get("skipped", 0)
-    total_sent = success + failed + retry + pending + skipped
-
     event_id_counts: Dict[str, int] = {}
     for log in capi_logs:
         event_id_counts[log.event_id] = event_id_counts.get(log.event_id, 0) + 1
     dup_n = sum(1 for c in event_id_counts.values() if c > 1)
-    dedup_pct = round((1 - dup_n / total_sent) * 100, 1) if total_sent else 100.0
-
-    backfill_order_ids = {
-        row[0] for row in (
-            db.query(AuditLog.entity_id)
-            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
-                    AuditLog.entity_id.in_(order_ids))
-            .all()
-        )
-    } if order_ids else set()
-
-    realtime_n = backfill_n = 0
-    latencies = []
-    for log in capi_logs:
-        if log.status != "success":
-            continue
-        order = orders_by_id.get(log.order_id)
-        ref_time = order.created_at if order else None
-        is_backfill = log.order_id in backfill_order_ids or classify_capi_log_timing(log.created_at, ref_time) == "backfill"
-        if is_backfill:
-            backfill_n += 1
-        else:
-            realtime_n += 1
-        if log.latency_ms is not None:
-            latencies.append(log.latency_ms)
-    timing_n = realtime_n + backfill_n
-    realtime_pct = round(realtime_n / timing_n * 100, 1) if timing_n else 0.0
-    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
-    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
-    max_latency_ms = max(latencies) if latencies else None
 
     success_payloads = [log.payload for log in capi_logs if log.status == "success" and log.payload]
     n_payloads = len(success_payloads)
@@ -3680,31 +3570,23 @@ def get_campaign_learning_health(
         for key, fn in _field_checks.items()
     } if n_payloads else {key: 0.0 for key in _field_checks}
 
-    emq_scores = [compute_match_quality((p or {}).get("user_data") or {})["score"] for p in success_payloads]
-    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
-    # Complétude complète (18 champs) sur le MÊME échantillon déjà en
-    # mémoire — pas une requête de plus — pour le Event Quality Score.
-    completeness_scores = [evaluate_purchase_signal_quality(p)["completeness_pct"] for p in success_payloads]
-    avg_completeness_pct = round(sum(completeness_scores) / len(completeness_scores), 1) if completeness_scores else 0.0
+    # EMQ / complétude 18-champs / scores composés / Learning Score : tous
+    # issus du moteur canonique `m` (même formules que le store-wide) —
+    # plus aucun recalcul local ici.
+    avg_emq = m["event_match_quality"]
+    avg_completeness_pct = m["avg_completeness_pct"] or 0.0
 
-    valid_purchase_pct = round(success / total_sent * 100, 1) if total_sent else 0.0
-    rejected_pct = round(failed / total_sent * 100, 1) if total_sent else 0.0
-    retry_pct = round(retry / total_sent * 100, 1) if total_sent else 0.0
-    pending_pct = round(pending / total_sent * 100, 1) if total_sent else 0.0
+    valid_purchase_pct = m["valid_purchase_pct"] if m["valid_purchase_pct"] is not None else 0.0
+    rejected_pct = m["rejected_pct"] if m["rejected_pct"] is not None else 0.0
+    retry_pct = m["retry_pct"] if m["retry_pct"] is not None else 0.0
+    pending_pct = m["pending_pct"] if m["pending_pct"] is not None else 0.0
     missing_value_pct = round(100 - field_completeness["value"], 1)
     missing_currency_pct = round(100 - field_completeness["currency"], 1)
-    attribution_pct = round((orders_count - no_utm_count) / orders_count * 100, 1) if orders_count else 0.0
 
-    _learning_components = {
-        "realtime_pct": realtime_pct, "event_match_quality": avg_emq or 0.0,
-        "valid_purchase_pct": valid_purchase_pct, "dedup_pct": dedup_pct,
-        "value_present_pct": field_completeness["value"], "attribution_pct": attribution_pct,
-        "avg_latency_ms": avg_latency_ms,
-    }
-    learning_score = compute_learning_score(_learning_components)
-    estimated_gains = estimate_learning_score_gains(_learning_components)
-    coverage_score = round(success / total_sent * 100, 1) if total_sent else 0.0
-    reliability_score = round(max(0.0, 100 - rejected_pct * 3), 1) if total_sent else 100.0
+    learning_score = m["learning_score"]
+    estimated_gains = estimate_learning_score_gains(learning_score["components"])
+    coverage_score = m["tracking_coverage"] if m["tracking_coverage"] is not None else 0.0
+    reliability_score = m["server_reliability"] if m["server_reliability"] is not None else 100.0
     signal_score = round((coverage_score + (avg_emq or 0.0) + reliability_score) / 3, 1)
 
     weekly_rate = success / max(range_days / 7, 1)
@@ -3715,12 +3597,7 @@ def get_campaign_learning_health(
         "no_utm_pct": no_utm_pct, "frequency": frequency, "ctr": ctr, "impressions": camp.impressions,
         "cost_per_purchase": cost_per_purchase, "aov": aov,
     })
-    component_scores = compute_component_scores({
-        "total_sent": total_sent, "success": success, "network_failed": network_failed,
-        "retry_pct": retry_pct, "pending_pct": pending_pct,
-        "event_match_quality": avg_emq or 0.0, "attribution_pct": attribution_pct,
-        "avg_completeness_pct": avg_completeness_pct,
-    })
+    component_scores = m["component_scores"]
     alerts = generate_signal_alerts({
         "event_match_quality": avg_emq, "tracking_coverage": coverage_score,
         "learning_score": learning_score["score"], "backfill_pct": backfill_pct,
