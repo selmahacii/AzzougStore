@@ -50,6 +50,7 @@ Graph API version: v21.0.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 import os
 import random
@@ -1558,6 +1559,48 @@ def validate_purchase_event_consistency(event: Optional[dict], *, now: Optional[
             "detail": "au moins un content_id est vide — dégrade le retargeting catalogue pour cet article.",
         })
 
+    content_type = cd.get("content_type")
+    if content_type and content_type != "product":
+        warnings.append({
+            "field": "content_type", "issue": "valeur inattendue",
+            "detail": f"content_type={content_type!r} — build_purchase_event force toujours 'product' ; une autre valeur signale un payload reconstruit ailleurs.",
+        })
+
+    event_name = event.get("event_name")
+    if event_name and event_name != "Purchase":
+        blocking_errors.append({
+            "field": "event_name", "issue": "valeur inattendue pour ce pipeline",
+            "detail": f"event_name={event_name!r} — cette validation est faite pour des événements Purchase ; un autre nom signale un mélange de payloads.",
+        })
+
+    # Hash SHA-256 attendu par Meta pour em/ph : exactement 64 caractères
+    # hexadécimaux MINUSCULES (normalize_email/normalize_phone hashent déjà
+    # ainsi — un hash mal formé signale un appel externe qui contourne
+    # build_user_data, pas une commande réelle sans email/téléphone).
+    ud = event.get("user_data") or {}
+    _sha256_re = re.compile(r"^[0-9a-f]{64}$")
+    for key, label in (("em", "email"), ("ph", "téléphone")):
+        values = ud.get(key)
+        if not values:
+            continue
+        for v in (values if isinstance(values, list) else [values]):
+            if not _sha256_re.match(str(v)):
+                warnings.append({
+                    "field": key, "issue": f"hash {label} mal formé",
+                    "detail": f"'{key}' présent mais ne ressemble pas à un SHA-256 (64 hex minuscules) — Meta l'ignorera silencieusement, dégradant l'EMQ sans lever d'erreur explicite.",
+                })
+                break
+
+    ip = ud.get("client_ip_address")
+    if ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            warnings.append({
+                "field": "client_ip_address", "issue": "format IP invalide",
+                "detail": f"'{ip}' n'est pas une adresse IPv4/IPv6 valide — probablement un en-tête x-forwarded-for mal parsé (liste de plusieurs IP, valeur vide après split).",
+            })
+
     return {"blocking_errors": blocking_errors, "warnings": warnings}
 
 
@@ -1637,6 +1680,25 @@ def meta_health_label(score: Optional[float]) -> str:
         return "Moyen"
     if score >= 35:
         return "Faible"
+    return "Critique"
+
+
+def campaign_classification_label(score: Optional[float]) -> str:
+    """
+    Bandes "Excellente / Bonne / À surveiller / Critique" demandées pour le
+    classement des campagnes — MÊMES seuils que meta_health_label (90/75/55),
+    juste un vocabulaire différent pour ce contexte précis. Pas un second
+    barème inventé : Excellent+Bon -> Excellente/Bonne (mappage direct),
+    Moyen+Faible -> À surveiller, Critique -> Critique.
+    """
+    if score is None:
+        return "Non disponible"
+    if score >= 90:
+        return "Excellente"
+    if score >= 75:
+        return "Bonne"
+    if score >= 35:
+        return "À surveiller"
     return "Critique"
 
 
@@ -1831,6 +1893,16 @@ _REGRESSION_THRESHOLDS = {
     "rejected_pct": {"rise": 2, "label": "Purchase rejetés", "severity": "high"},
     "avg_latency_ms": {"rise": 5000, "label": "Latence moyenne", "severity": "medium"},
     "dedup_pct": {"drop": 5, "label": "Déduplication", "severity": "medium"},
+    # Métriques de performance campagne — mode "relative" (pourcentage de
+    # variation) plutôt qu'un delta absolu : un CPA/ROAS/fréquence n'a pas
+    # la même échelle qu'un score /100, un seuil absolu serait arbitraire
+    # d'une boutique à l'autre. 20% est un repère indicatif (documenté
+    # comme tel dans detect_metric_regressions), pas un seuil Meta officiel.
+    "cpa": {"rise_pct": 20, "label": "CPA (coût par achat)", "severity": "high", "mode": "relative"},
+    "roas": {"drop_pct": 20, "label": "ROAS", "severity": "high", "mode": "relative"},
+    "frequency": {"rise_pct": 20, "label": "Fréquence publicitaire", "severity": "medium", "mode": "relative"},
+    "impressions": {"drop_pct": 30, "label": "Impressions", "severity": "medium", "mode": "relative"},
+    "ctr": {"drop_pct": 20, "label": "CTR", "severity": "medium", "mode": "relative"},
 }
 
 
@@ -1848,13 +1920,38 @@ def detect_metric_regressions(previous: dict, current: dict, field_coverage_prev
     field_coverage lui-même.
 
     Ne fabrique jamais un chiffre : si une métrique est absente d'un des
-    deux instantanés, elle est simplement ignorée plutôt que traitée comme 0.
+    deux instantanés, elle est simplement ignorée plutôt que traitée comme 0
+    (jamais un delta relatif calculé contre zéro non plus).
+
+    mode="relative" (cpa/roas/frequency/impressions/ctr) compare un
+    pourcentage de VARIATION (rise_pct/drop_pct) plutôt qu'un delta de
+    points absolu — nécessaire car ces métriques n'ont pas d'échelle fixe
+    0-100 comparable d'une boutique à l'autre.
     """
     regressions = []
     for key, rule in _REGRESSION_THRESHOLDS.items():
         prev_val = previous.get(key)
         cur_val = current.get(key)
         if prev_val is None or cur_val is None:
+            continue
+        if rule.get("mode") == "relative":
+            if not prev_val:
+                continue
+            pct_change = round((cur_val - prev_val) / prev_val * 100, 1)
+            if "rise_pct" in rule and pct_change >= rule["rise_pct"]:
+                regressions.append({
+                    "metric": key, "label": rule["label"], "direction": "rise",
+                    "previous": prev_val, "current": cur_val, "pct_change": pct_change,
+                    "severity": rule["severity"],
+                    "message": f"{rule['label']} a augmenté de {pct_change}% ({prev_val} → {cur_val}).",
+                })
+            elif "drop_pct" in rule and pct_change <= -rule["drop_pct"]:
+                regressions.append({
+                    "metric": key, "label": rule["label"], "direction": "drop",
+                    "previous": prev_val, "current": cur_val, "pct_change": pct_change,
+                    "severity": rule["severity"],
+                    "message": f"{rule['label']} a baissé de {abs(pct_change)}% ({prev_val} → {cur_val}).",
+                })
             continue
         delta = cur_val - prev_val
         if "drop" in rule and delta <= -rule["drop"]:
@@ -1947,6 +2044,56 @@ def generate_signal_alerts(metrics: dict) -> list:
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda a: severity_order.get(a["level"], 3))
     return alerts
+
+
+# ─── Funnel bottleneck detector ──────────────────────────────────────────────
+# Repères indicatifs (pas des seuils officiels Meta) pour interpréter un
+# funnel déjà mesuré avec des données 100% réelles (GET /meta-ads/funnel) —
+# cette fonction ne calcule AUCUN chiffre elle-même, elle ne fait
+# qu'interpréter des ratios déjà réels. AddToCart n'est pas un événement
+# distinct dans ce système (funnel va de ViewContent à InitiateCheckout
+# directement) — jamais présenté comme mesuré s'il ne l'est pas.
+_FUNNEL_TRANSITIONS = [
+    ("Impressions", "Clics", 1.0, "Créatif ou ciblage publicitaire", "Le clic n'accroche pas assez — tester d'autres visuels/accroches ou revoir le ciblage."),
+    ("Clics", "Vues Produit", 50.0, "Landing page / temps de chargement", "Beaucoup de clics n'aboutissent jamais à une vue produit — vérifier la vitesse de chargement et la cohérence pub → page."),
+    ("Vues Produit", "Paiement Initié", 10.0, "Fiche produit", "Peu de visiteurs déclenchent un paiement — vérifier prix, avis, photos, argumentaire de la fiche produit."),
+    ("Paiement Initié", "Achats", 30.0, "Tunnel de checkout", "Beaucoup de paiements initiés n'aboutissent pas — vérifier frais de livraison visibles tôt, simplicité du formulaire, rapidité de confirmation téléphonique."),
+    ("Achats", "Livrées", 80.0, "Livraison / confirmation", "Trop de commandes ne sont jamais livrées — vérifier le transporteur et le taux de rejet à la livraison."),
+]
+
+
+def detect_funnel_bottleneck(stages: list) -> dict:
+    """
+    Identifie l'étape du funnel où le taux de passage réel est le plus en
+    dessous de son repère indicatif — "le" goulot d'étranglement, pas une
+    liste de tous les écarts. `stages` = la liste EXACTE déjà renvoyée par
+    GET /meta-ads/funnel ([{name, count}, ...]) — aucune donnée recalculée
+    depuis zéro, seulement les ratios entre étapes consécutives déjà comptées.
+    """
+    counts = {s["name"]: s["count"] for s in (stages or [])}
+    candidates = []
+    for from_stage, to_stage, threshold_pct, cause, fix in _FUNNEL_TRANSITIONS:
+        from_count = counts.get(from_stage)
+        to_count = counts.get(to_stage)
+        if not from_count:
+            continue
+        rate_pct = round((to_count or 0) / from_count * 100, 2)
+        gap = threshold_pct - rate_pct
+        if gap > 0:
+            candidates.append({
+                "from_stage": from_stage, "to_stage": to_stage,
+                "rate_pct": rate_pct, "benchmark_pct": threshold_pct,
+                "gap_points": round(gap, 2), "likely_cause": cause, "fix": fix,
+            })
+    if not candidates:
+        return {"bottleneck": None, "message": "Aucune étape du funnel n'est en dessous de son repère indicatif sur la période.", "all_gaps": []}
+    candidates.sort(key=lambda c: c["gap_points"], reverse=True)
+    worst = candidates[0]
+    return {
+        "bottleneck": worst,
+        "message": f"Goulot d'étranglement : {worst['from_stage']} → {worst['to_stage']} ({worst['rate_pct']}%, repère indicatif {worst['benchmark_pct']}%) — {worst['likely_cause']}.",
+        "all_gaps": candidates,
+    }
 
 
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:

@@ -23,6 +23,7 @@ from app.services.meta_capi import (
     meta_health_label, estimate_learning_score_gains, estimate_learning_score_gains_by_field,
     compute_component_scores, analyze_meta_response, detect_metric_regressions,
     evaluate_best_practices_compliance, generate_signal_alerts,
+    detect_funnel_bottleneck, campaign_classification_label,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -582,3 +583,122 @@ def test_generate_signal_alerts_missing_metric_not_treated_as_zero():
     # l'alerte "EMQ < 80%" comme si elle valait 0.
     alerts = generate_signal_alerts({})
     assert alerts == []
+
+
+# ─── validate_purchase_event_consistency — extended checks ─────────────────
+
+def test_validate_purchase_event_consistency_detects_malformed_email_hash():
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"em": ["not-a-real-sha256"]}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "em" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_accepts_real_sha256_hash():
+    real_hash = "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b"
+    assert len(real_hash) == 64
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"em": [real_hash]}}
+    result = validate_purchase_event_consistency(event)
+    assert not any(w["field"] == "em" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_detects_invalid_ip():
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"client_ip_address": "999.999.999.999"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "client_ip_address" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_accepts_valid_ipv4_and_ipv6():
+    for ip in ("102.45.12.9", "2001:db8::1"):
+        event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"client_ip_address": ip}}
+        result = validate_purchase_event_consistency(event)
+        assert not any(w["field"] == "client_ip_address" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_unexpected_event_name_is_blocking():
+    event = {"event_name": "ViewContent", "custom_data": {"value": 100, "currency": "DZD"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(e["field"] == "event_name" for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_unexpected_content_type_is_warning():
+    event = {"custom_data": {"value": 100, "currency": "DZD", "content_type": "something_else"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "content_type" for w in result["warnings"])
+
+
+# ─── Funnel bottleneck detector ─────────────────────────────────────────────
+
+def test_detect_funnel_bottleneck_identifies_weakest_transition():
+    stages = [
+        {"name": "Impressions", "count": 100000},
+        {"name": "Clics", "count": 2000},       # CTR 2% — healthy
+        {"name": "Vues Produit", "count": 200},  # 10% of clicks — well under 50% benchmark
+        {"name": "Paiement Initié", "count": 40},
+        {"name": "Achats", "count": 20},
+        {"name": "Livrées", "count": 18},
+    ]
+    result = detect_funnel_bottleneck(stages)
+    assert result["bottleneck"]["from_stage"] == "Clics"
+    assert result["bottleneck"]["to_stage"] == "Vues Produit"
+
+
+def test_detect_funnel_bottleneck_no_gap_returns_none():
+    stages = [
+        {"name": "Impressions", "count": 100000},
+        {"name": "Clics", "count": 5000},
+        {"name": "Vues Produit", "count": 4000},
+        {"name": "Paiement Initié", "count": 1000},
+        {"name": "Achats", "count": 500},
+        {"name": "Livrées", "count": 480},
+    ]
+    result = detect_funnel_bottleneck(stages)
+    assert result["bottleneck"] is None
+
+
+def test_detect_funnel_bottleneck_missing_stage_data_skipped_not_fabricated():
+    result = detect_funnel_bottleneck([{"name": "Impressions", "count": 0}])
+    assert result["bottleneck"] is None
+    assert result["all_gaps"] == []
+
+
+# ─── Campaign classification label ──────────────────────────────────────────
+
+def test_campaign_classification_label_bands():
+    assert campaign_classification_label(None) == "Non disponible"
+    assert campaign_classification_label(95) == "Excellente"
+    assert campaign_classification_label(80) == "Bonne"
+    assert campaign_classification_label(50) == "À surveiller"
+    assert campaign_classification_label(20) == "Critique"
+
+
+def test_campaign_classification_label_matches_meta_health_label_thresholds():
+    # Mêmes seuils que meta_health_label (90/75/35), vocabulaire différent —
+    # pas un second barème inventé.
+    for score in (95, 80, 50, 20):
+        assert (campaign_classification_label(score) == "Non disponible") == (meta_health_label(score) == "Non disponible")
+
+
+# ─── detect_metric_regressions — relative (percentage) mode ────────────────
+
+def test_detect_metric_regressions_relative_mode_cpa_rise():
+    regressions = detect_metric_regressions({"cpa": 500}, {"cpa": 650})  # +30%
+    r = next(r for r in regressions if r["metric"] == "cpa")
+    assert r["direction"] == "rise"
+    assert r["pct_change"] == 30.0
+
+
+def test_detect_metric_regressions_relative_mode_roas_drop():
+    regressions = detect_metric_regressions({"roas": 5.0}, {"roas": 3.5})  # -30%
+    r = next(r for r in regressions if r["metric"] == "roas")
+    assert r["direction"] == "drop"
+
+
+def test_detect_metric_regressions_relative_mode_small_change_not_flagged():
+    regressions = detect_metric_regressions({"cpa": 500}, {"cpa": 520})  # +4%, under 20% threshold
+    assert not any(r["metric"] == "cpa" for r in regressions)
+
+
+def test_detect_metric_regressions_relative_mode_zero_previous_value_skipped():
+    # Division par zéro évitée — jamais un pourcentage calculé contre 0.
+    regressions = detect_metric_regressions({"cpa": 0}, {"cpa": 500})
+    assert not any(r["metric"] == "cpa" for r in regressions)

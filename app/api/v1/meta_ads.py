@@ -1708,6 +1708,7 @@ def get_meta_funnel(
 ):
     from sqlalchemy import func
     from app.core.dates import parse_local_date_filter
+    from app.services.meta_capi import detect_funnel_bottleneck
 
     db.info["skip_tenant_isolation"] = True
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1778,6 +1779,7 @@ def get_meta_funnel(
         "success": True,
         "stages": stages,
         "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate},
+        "bottleneck": detect_funnel_bottleneck(stages),
     }
 
 
@@ -3508,6 +3510,7 @@ def get_campaign_learning_health(
         diagnose_campaign_learning, classify_capi_log_timing,
         meta_health_label, estimate_learning_score_gains,
         compute_component_scores, generate_signal_alerts, evaluate_purchase_signal_quality,
+        campaign_classification_label,
     )
 
     db.info["skip_tenant_isolation"] = True
@@ -3689,6 +3692,7 @@ def get_campaign_learning_health(
                 "purchase_skipped": skipped,
                 "purchase_pixel_note": "Non mesurable côté serveur — le Pixel navigateur ne confirme jamais son envoi au backend (voir Purchase CAPI, qui partage le même event_id pour la déduplication Meta).",
             },
+            "classification": campaign_classification_label(signal_score),
             "signal_quality": {
                 "signal_score": signal_score,
                 "learning_score": learning_score["score"],
@@ -3813,6 +3817,7 @@ def get_campaign_history(
     """
     from sqlalchemy import func
     from app.models.marketing import MetaAdsDailyInsight, MetaCapiLog
+    from app.services.meta_capi import detect_metric_regressions
 
     db.info["skip_tenant_isolation"] = True
     since_date = (datetime.now(timezone.utc) - timedelta(days=range_days)).date()
@@ -3857,7 +3862,34 @@ def get_campaign_history(
                 entry[f"purchase_{status}"] = entry.get(f"purchase_{status}", 0) + count
 
     history = sorted(by_date.values(), key=lambda r: r["date"])
-    return {"success": True, "data": history}
+
+    # Explication des tendances (section "Pourquoi mon CPA augmente ?" etc.)
+    # — compare la seconde moitié de l'historique déjà chargé à la première,
+    # AUCUNE requête de plus. Nécessite au moins 4 jours de données pour
+    # que chaque moitié soit un minimum représentative (pas 1 jour vs 1 jour).
+    performance_trends = []
+    if len(history) >= 4:
+        mid = len(history) // 2
+        earlier, recent = history[:mid], history[mid:]
+
+        def _avg(rows, key):
+            values = [r[key] for r in rows if r.get(key) is not None]
+            return round(sum(values) / len(values), 2) if values else None
+
+        prev_snapshot = {
+            "cpa": _avg(earlier, "cpa"), "roas": _avg(earlier, "roas"), "ctr": _avg(earlier, "ctr"),
+            "impressions": _avg(earlier, "impressions"),
+        }
+        cur_snapshot = {
+            "cpa": _avg(recent, "cpa"), "roas": _avg(recent, "roas"), "ctr": _avg(recent, "ctr"),
+            "impressions": _avg(recent, "impressions"),
+        }
+        performance_trends = detect_metric_regressions(prev_snapshot, cur_snapshot)
+
+    return {
+        "success": True, "data": history, "performance_trends": performance_trends,
+        "trends_note": "Compare la 2e moitié de la période à la 1re (moyennes réelles issues de meta_ads_daily_insights) — variations en pourcentage, seuils indicatifs documentés dans _REGRESSION_THRESHOLDS, pas des seuils Meta officiels.",
+    }
 
 
 @router.get("/orders/{order_id}/event-timeline", response_model=dict)
