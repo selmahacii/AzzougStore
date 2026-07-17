@@ -736,6 +736,12 @@ export default function ProductsPage() {
                   <Button onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId }); setIsCreating(true); }} className="h-10 sm:h-14 px-5 sm:px-10 rounded-xl sm:rounded-2xl text-[11px] sm:text-[12px] font-black uppercase tracking-widest bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-200 transition-all border-none">
                      <Plus className="mr-2 size-4 sm:size-6" /> <span className="hidden sm:inline">Ajouter un </span>Produit
                   </Button>
+                  {/* Produit Upsell Indépendant : même formulaire, is_upsell_only
+                      pré-coché — l'admin n'a plus besoin de créer un produit
+                      normal puis d'aller cocher la case dans l'onglet Avancé. */}
+                  <Button onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId, is_upsell_only: true }); setIsCreating(true); }} className="h-10 sm:h-14 px-5 sm:px-10 rounded-xl sm:rounded-2xl text-[11px] sm:text-[12px] font-black uppercase tracking-widest bg-[#6C5CE7] hover:bg-[#5b4bd4] text-white shadow-lg shadow-[#6C5CE7]/20 transition-all border-none">
+                     <Zap className="mr-2 size-4 sm:size-6" /> <span className="hidden sm:inline">Ajouter un Produit </span>Upsell
+                  </Button>
                </div>
             </div>
          </div>

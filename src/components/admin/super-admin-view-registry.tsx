@@ -23,6 +23,7 @@ import LandingPagesDashboard from './modules/landing-pages-dashboard';
 import { SettingsPlaceholder } from '../app/settings-placeholder';
 import VisitorsPage from './visitors-page';
 import MetaAdsDashboard from './modules/meta-ads-dashboard';
+import ConversionOptimizationDashboard from './modules/conversion-optimization-dashboard';
 import MetaQueueDashboard from './modules/meta-queue-dashboard';
 import ReturnsDashboard from './modules/returns-dashboard';
 import TikTokAdsDashboard from './modules/tiktok-ads-dashboard';
@@ -78,6 +79,8 @@ export default function SuperAdminView() {
       return <LandingPagesDashboard key="landing_pages" />;
     case 'meta_ads':
       return <MetaAdsDashboard key="meta_ads" />;
+    case 'conversion_optimization':
+      return <ConversionOptimizationDashboard key="conversion_optimization" />;
     case 'meta_queue':
       return <MetaQueueDashboard key="meta_queue" />;
     case 'returns':

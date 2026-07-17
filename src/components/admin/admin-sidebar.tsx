@@ -35,6 +35,7 @@ import {
    UserCircle,
    Eye,
    Calculator,
+   Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
@@ -105,6 +106,7 @@ const NAV_SECTIONS: NavSection[] = [
          { label: 'Télémétrie Agents', icon: UserCheck, view: 'analytics', subView: 'agents' },
          { label: 'Ventes Marketers', icon: Megaphone, view: 'analytics', subView: 'marketers' },
          { label: 'Meta Ads & ROAS', icon: Megaphone, view: 'meta_ads' },
+         { label: 'Conversion Optimization', icon: Target, view: 'conversion_optimization' },
          { label: 'Meta Queue', icon: Megaphone, view: 'meta_queue' },
          { label: 'TikTok Ads & ROAS', icon: Megaphone, view: 'tiktok_ads' },
       ],

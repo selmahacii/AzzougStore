@@ -5,6 +5,7 @@ import {
   CreditCard, Boxes, Settings, Store, Warehouse,
   Users, UserCircle, Truck, BarChart3, RadioTower,
   ChevronDown, ChevronRight, ChevronLeft, Home, Building2,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
@@ -116,6 +117,7 @@ const NAV: NavSection[] = [
     title: 'Publicité',
     items: [
       { label: 'Meta Ads & ROAS',   icon: BarChart3, view: 'meta_ads' },
+      { label: 'Conversion Optimization', icon: Target, view: 'conversion_optimization' },
       { label: 'Meta Queue',        icon: BarChart3, view: 'meta_queue' },
       { label: 'TikTok Ads & ROAS', icon: BarChart3, view: 'tiktok_ads' },
     ],
