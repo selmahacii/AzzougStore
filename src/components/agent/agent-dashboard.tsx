@@ -447,11 +447,11 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
-    // include_upsell_only=true : cette liste alimente UNIQUEMENT le
-    // sélecteur upsell ci-dessous — c'est le seul endroit où les produits
-    // upsell indépendants (créés par l'admin, jamais affichés sur le site)
-    // doivent apparaître.
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&include_upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
+    // upsell_only=true : cette liste alimente UNIQUEMENT le sélecteur
+    // upsell ci-dessous — c'est le seul endroit où les produits upsell
+    // indépendants (créés par l'admin, jamais affichés sur le site) doivent
+    // apparaître, et RIEN d'autre du catalogue ne doit s'y mélanger.
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
   });
   const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
     (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
