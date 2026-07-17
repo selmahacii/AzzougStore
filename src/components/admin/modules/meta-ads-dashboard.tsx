@@ -1177,6 +1177,12 @@ export default function MetaAdsDashboard() {
                     'text-2xl font-black leading-none',
                     trackingQuality.tracking_score >= 90 ? 'text-[#00B894]' : trackingQuality.tracking_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
                   )}>{trackingQuality.tracking_score}<span className="text-xs text-slate-300">/100</span></p>
+                  {/* 1 étoile = 20 points, arrondi — même score que ci-dessus,
+                      juste une lecture visuelle plus rapide. */}
+                  <p className="text-xs tracking-tight" aria-hidden="true">
+                    {'★'.repeat(Math.round(trackingQuality.tracking_score / 20))}
+                    <span className="text-slate-200">{'★'.repeat(5 - Math.round(trackingQuality.tracking_score / 20))}</span>
+                  </p>
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Tracking Score</p>
                 </div>
               )}
@@ -1222,6 +1228,46 @@ export default function MetaAdsDashboard() {
                     {trackingQuality.pending > 0 && ` ${trackingQuality.pending} en attente`}
                     {trackingQuality.pending > 0 && trackingQuality.failed > 0 && ', '}
                     {trackingQuality.failed > 0 && ` ${trackingQuality.failed} en échec (voir Achats/Bons d'Achat pour relancer)`}.
+                  </div>
+                )}
+
+                {/* Learning Score — volume de Purchase reçus par Meta sur 7 jours
+                    glissants. Seuils indicatifs (recommandation générale
+                    publique de Meta, ~50/semaine pour sortir d'apprentissage),
+                    jamais le calcul interne exact de Meta. */}
+                {trackingQuality.learning && (
+                  <div className={cn(
+                    'p-3 mb-4 rounded-xl border text-[11px]',
+                    trackingQuality.learning.status === 'optimized' ? 'bg-[#E6FFF8] border-[#00B894]/30 text-[#00895f]' :
+                    trackingQuality.learning.status === 'stable' ? 'bg-[#EEF2FF] border-[#6C5CE7]/30 text-[#5847c9]' :
+                    trackingQuality.learning.status === 'limited_learning' ? 'bg-[#FFF8E6] border-[#FDCB6E]/30 text-[#9c7a1a]' :
+                    'bg-slate-50 border-slate-200 text-slate-600'
+                  )}>
+                    <div className="flex items-center gap-2 font-black uppercase tracking-wider text-[10px] mb-1">
+                      <span>📚 Learning Score : {trackingQuality.learning.label}</span>
+                    </div>
+                    <p>{trackingQuality.learning.explanation}</p>
+                  </div>
+                )}
+
+                {/* Signal Quality Dashboard — couverture réelle par champ,
+                    pas seulement la moyenne. Montre PRÉCISÉMENT quel champ
+                    manque (ex: email jamais collecté) plutôt qu'un score
+                    unique qui masque la cause. */}
+                {trackingQuality.signal_field_coverage?.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Signal Quality Dashboard — couverture par champ</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                      {trackingQuality.signal_field_coverage.map((f: any) => (
+                        <div key={f.key} className="text-center p-2 rounded-lg bg-slate-50">
+                          <p className={cn(
+                            'text-xs font-black tabular-nums',
+                            f.coverage_pct >= 80 ? 'text-[#00B894]' : f.coverage_pct >= 40 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                          )}>{f.coverage_pct}%</p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 leading-tight mt-0.5">{f.label}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

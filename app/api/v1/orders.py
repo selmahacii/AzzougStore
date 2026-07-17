@@ -3495,14 +3495,59 @@ def get_capi_tracking_quality_v2(
     coverage_pct = round(meta_purchases / total_erp * 100, 1) if total_erp else 0.0
     ecart = total_erp - meta_purchases
 
-    # ── Event Match Quality moyenne (section 8) — calculée sur les succès
-    # déjà chargés, aucune requête supplémentaire.
+    # ── Event Match Quality moyenne + couverture PAR CHAMP (section "Signal
+    # Quality Dashboard") — calculées sur les succès déjà chargés, aucune
+    # requête supplémentaire. Le détail par champ (pas seulement la moyenne)
+    # permet de voir PRÉCISÉMENT lequel manque le plus (ex: email jamais
+    # collecté) plutôt qu'un seul nombre agrégé.
     from app.services.meta_capi import compute_match_quality
-    mq_scores = [
-        compute_match_quality((log.payload or {}).get("user_data"))["score"]
-        for _, log in rows if log and log.status == "success" and log.payload
-    ]
+    mq_scores = []
+    _field_present_count: dict = {}
+    _field_labels: dict = {}
+    _n_with_payload = 0
+    for _, log in rows:
+        if log and log.status == "success" and log.payload:
+            mq = compute_match_quality((log.payload or {}).get("user_data"))
+            mq_scores.append(mq["score"])
+            _n_with_payload += 1
+            for f in mq["fields"]:
+                _field_labels[f["key"]] = f["label"]
+                _field_present_count[f["key"]] = _field_present_count.get(f["key"], 0) + (1 if f["present"] else 0)
     avg_match_quality = round(sum(mq_scores) / len(mq_scores), 1) if mq_scores else None
+    signal_field_coverage = [
+        {"key": k, "label": _field_labels[k], "coverage_pct": round(_field_present_count[k] / _n_with_payload * 100, 1)}
+        for k in _field_present_count
+    ] if _n_with_payload else []
+
+    # ── Learning Score — volume de Purchase reçus par Meta sur 7 jours
+    # glissants (indépendant de la période sélectionnée : la phase
+    # d'apprentissage de Meta se réévalue en continu sur une fenêtre
+    # glissante, pas sur la période du dashboard). Seuils indicatifs basés
+    # sur la recommandation générale publique de Meta (~50 conversions/
+    # semaine pour sortir de la phase d'apprentissage) — jamais le calcul
+    # interne exact de Meta, qu'aucune API n'expose.
+    _seven_days_ago = _dt.now() - _td(days=7)
+    purchases_7d = (
+        db.query(sqlfunc.count(MetaCapiLog.id))
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(
+            Order.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.status == "success", MetaCapiLog.completed_at >= _seven_days_ago,
+        )
+        .scalar() or 0
+    )
+    if purchases_7d < 10:
+        learning_status, learning_label = "learning", "Apprentissage"
+        learning_explanation = f"Seulement {purchases_7d} Purchase reçu(s) par Meta cette semaine. Meta possède peu de données ; le modèle d'optimisation est encore en apprentissage."
+    elif purchases_7d < 50:
+        learning_status, learning_label = "limited_learning", "Apprentissage Limité"
+        learning_explanation = f"{purchases_7d} Purchase cette semaine — sous le seuil de ~50/semaine généralement recommandé par Meta pour sortir de l'apprentissage."
+    elif purchases_7d < 100:
+        learning_status, learning_label = "stable", "Stable"
+        learning_explanation = f"{purchases_7d} Purchase cette semaine — volume suffisant pour une diffusion stable selon les repères généraux de Meta."
+    else:
+        learning_status, learning_label = "optimized", "Optimisé"
+        learning_explanation = f"{purchases_7d} Purchase cette semaine — volume élevé, Meta dispose de largement assez de données pour optimiser finement la diffusion."
 
     # ── Note globale /100 + recommandations (section 8) — combinaison
     # transparente de 3 signaux déjà calculés ci-dessus, pondération
@@ -3524,6 +3569,11 @@ def get_capi_tracking_quality_v2(
         recommendations.append(f"Taux d'échec CAPI à {failure_rate}% — vérifier la validité du token Meta (voir Santé du Pixel).")
     if backfill_ok > realtime_ok * 0.2 and backfill_ok > 5:
         recommendations.append(f"{backfill_ok} achat(s) en rattrapage — surveiller que le déclencheur temps réel fonctionne pour les nouvelles commandes.")
+    # Recommandations dérivées de la couverture par champ — jamais génériques,
+    # toujours le champ précis et son pourcentage réel mesuré.
+    for fc in signal_field_coverage:
+        if fc["coverage_pct"] < 30 and fc["key"] in ("em", "fbc", "fbp"):
+            recommendations.append(f"{fc['label']} présent sur seulement {fc['coverage_pct']}% des Purchase — signal de correspondance faible pour Meta.")
     if not recommendations:
         recommendations.append("Aucune anomalie détectée sur la période.")
 
@@ -3538,6 +3588,11 @@ def get_capi_tracking_quality_v2(
             "pending": pending,
             "failed": failed,
             "avg_match_quality": avg_match_quality,
+            "signal_field_coverage": signal_field_coverage,
+            "learning": {
+                "status": learning_status, "label": learning_label,
+                "explanation": learning_explanation, "purchases_7d": purchases_7d,
+            },
             "tracking_score": tracking_score_global,
             "recommendations": recommendations,
             "coverage_pct": coverage_pct,
