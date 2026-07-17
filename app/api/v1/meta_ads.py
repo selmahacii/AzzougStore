@@ -2911,23 +2911,32 @@ def get_signal_quality(
         compute_match_quality, scan_payload_quality, compute_learning_score,
         classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
         meta_health_label, estimate_learning_score_gains,
+        compute_component_scores, generate_signal_alerts, evaluate_purchase_signal_quality,
     )
 
     db.info["skip_tenant_isolation"] = True
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
 
-    # ── 1. Répartition des statuts Purchase (une requête groupée) ──
+    # ── 1. Répartition des statuts Purchase, AVEC error_category dans le
+    # même GROUP BY (pas une requête de plus — juste une colonne de plus
+    # dans la même requête groupée) pour isoler les échecs réseau des rejets
+    # applicatifs Meta, nécessaire au Delivery Score plus bas. ──
     status_rows = (
-        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        db.query(MetaCapiLog.status, MetaCapiLog.error_category, func.count(MetaCapiLog.id))
         .filter(
             MetaCapiLog.store_id == store_id,
             MetaCapiLog.event_name == "Purchase",
             MetaCapiLog.created_at >= since,
         )
-        .group_by(MetaCapiLog.status)
+        .group_by(MetaCapiLog.status, MetaCapiLog.error_category)
         .all()
     )
-    by_status = {s: c for s, c in status_rows}
+    by_status: Dict[str, int] = {}
+    network_failed = 0
+    for status, error_category, count in status_rows:
+        by_status[status] = by_status.get(status, 0) + count
+        if error_category in ("network_timeout", "network_error"):
+            network_failed += count
     success = by_status.get("success", 0)
     failed = by_status.get("failed", 0)
     retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
@@ -2954,6 +2963,7 @@ def get_signal_quality(
     )
     field_present_counts = {key: 0 for key, _ in _MATCH_QUALITY_FIELDS}
     emq_scores = []
+    completeness_scores = []
     # Comptés sur le MÊME échantillon (aucune requête supplémentaire) pour
     # le scan de qualité des données ci-dessous : value/currency/event_time
     # vivent dans custom_data/racine du payload, pas dans user_data.
@@ -2970,7 +2980,11 @@ def get_signal_quality(
         missing_currency += int(pq["missing_currency"])
         wrong_currency += int(pq["wrong_currency"])
         missing_event_time += int(pq["missing_event_time"])
+        # Complétude complète (18 champs, pas seulement les 12 EMQ) — sur le
+        # MÊME échantillon déjà chargé, pour le futur Event Quality Score.
+        completeness_scores.append(evaluate_purchase_signal_quality(payload)["completeness_pct"])
     sample_n = len(sample)
+    avg_completeness_pct = round(sum(completeness_scores) / len(completeness_scores), 1) if completeness_scores else 0.0
     avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
     field_coverage = [
         {
@@ -3162,12 +3176,29 @@ def get_signal_quality(
     learning_score = compute_learning_score(_learning_components)
     estimated_gains = estimate_learning_score_gains(_learning_components)
 
+    retry_pct = round(retry / total_sent * 100, 1) if total_sent else 0.0
+    pending_pct = round(pending / total_sent * 100, 1) if total_sent else 0.0
+    rejected_pct = round(failed / total_sent * 100, 1) if total_sent else 0.0
+    component_scores = compute_component_scores({
+        "total_sent": total_sent, "success": success, "network_failed": network_failed,
+        "retry_pct": retry_pct, "pending_pct": pending_pct,
+        "event_match_quality": emq_score, "attribution_pct": attribution_pct,
+        "avg_completeness_pct": avg_completeness_pct,
+    })
+    alerts = generate_signal_alerts({
+        "event_match_quality": emq_score, "tracking_coverage": coverage_score,
+        "learning_score": learning_score["score"], "backfill_pct": backfill_pct,
+        "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
+    })
+
     return {
         "success": True,
         "data": {
             "range_days": range_days,
             "global_score": global_score,
             "sub_scores": sub_scores,
+            "component_scores": component_scores,
+            "alerts": alerts,
             "avg_emq": avg_emq,
             "emq_sample_size": sample_n,
             "field_coverage": field_coverage,
@@ -3476,6 +3507,7 @@ def get_campaign_learning_health(
         compute_match_quality, compute_learning_score,
         diagnose_campaign_learning, classify_capi_log_timing,
         meta_health_label, estimate_learning_score_gains,
+        compute_component_scores, generate_signal_alerts, evaluate_purchase_signal_quality,
     )
 
     db.info["skip_tenant_isolation"] = True
@@ -3509,8 +3541,11 @@ def get_campaign_learning_health(
         if order_ids else []
     )
     by_status: Dict[str, int] = {}
+    network_failed = 0
     for log in capi_logs:
         by_status[log.status] = by_status.get(log.status, 0) + 1
+        if log.error_category in ("network_timeout", "network_error"):
+            network_failed += 1
     success = by_status.get("success", 0)
     failed = by_status.get("failed", 0)
     retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
@@ -3577,10 +3612,15 @@ def get_campaign_learning_health(
 
     emq_scores = [compute_match_quality((p or {}).get("user_data") or {})["score"] for p in success_payloads]
     avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
+    # Complétude complète (18 champs) sur le MÊME échantillon déjà en
+    # mémoire — pas une requête de plus — pour le Event Quality Score.
+    completeness_scores = [evaluate_purchase_signal_quality(p)["completeness_pct"] for p in success_payloads]
+    avg_completeness_pct = round(sum(completeness_scores) / len(completeness_scores), 1) if completeness_scores else 0.0
 
     valid_purchase_pct = round(success / total_sent * 100, 1) if total_sent else 0.0
     rejected_pct = round(failed / total_sent * 100, 1) if total_sent else 0.0
     retry_pct = round(retry / total_sent * 100, 1) if total_sent else 0.0
+    pending_pct = round(pending / total_sent * 100, 1) if total_sent else 0.0
     missing_value_pct = round(100 - field_completeness["value"], 1)
     missing_currency_pct = round(100 - field_completeness["currency"], 1)
     attribution_pct = round((orders_count - no_utm_count) / orders_count * 100, 1) if orders_count else 0.0
@@ -3604,6 +3644,17 @@ def get_campaign_learning_health(
         "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
         "no_utm_pct": no_utm_pct, "frequency": frequency, "ctr": ctr, "impressions": camp.impressions,
         "cost_per_purchase": cost_per_purchase, "aov": aov,
+    })
+    component_scores = compute_component_scores({
+        "total_sent": total_sent, "success": success, "network_failed": network_failed,
+        "retry_pct": retry_pct, "pending_pct": pending_pct,
+        "event_match_quality": avg_emq or 0.0, "attribution_pct": attribution_pct,
+        "avg_completeness_pct": avg_completeness_pct,
+    })
+    alerts = generate_signal_alerts({
+        "event_match_quality": avg_emq, "tracking_coverage": coverage_score,
+        "learning_score": learning_score["score"], "backfill_pct": backfill_pct,
+        "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
     })
 
     return {
@@ -3653,6 +3704,8 @@ def get_campaign_learning_health(
                 "score": learning_score["score"],
                 "label": meta_health_label(learning_score["score"]),
             },
+            "component_scores": component_scores,
+            "alerts": alerts,
             "estimated_gains": estimated_gains,
             "field_completeness": field_completeness,
             "diagnosis": reasons,
@@ -3822,7 +3875,10 @@ def get_order_event_timeline(
     """
     from app.models.marketing import MetaCapiLog
     from app.models.audit import AuditLog
-    from app.services.meta_capi import classify_capi_log_timing, evaluate_purchase_signal_quality, evaluate_order_attribution
+    from app.services.meta_capi import (
+        classify_capi_log_timing, evaluate_purchase_signal_quality, evaluate_order_attribution,
+        evaluate_best_practices_compliance, analyze_meta_response,
+    )
 
     db.info["skip_tenant_isolation"] = True
     order = db.query(Order).filter(Order.id == order_id).first()
@@ -3870,6 +3926,19 @@ def get_order_event_timeline(
             "step": "capi_processing", "label": "CAPI en cours d'envoi",
             "timestamp": log.processing_started_at.isoformat(),
         })
+    # "Validated" n'a pas de timestamp propre stocké — la validation se
+    # produit en mémoire, juste avant l'envoi, dans la même exécution que
+    # "Sending" (voir evaluate_purchase_signal_quality dans
+    # _handle_claimed_row) : jamais un timestamp fabriqué pour une étape qui
+    # n'est pas une transition d'état durable séparée.
+    if log.payload:
+        _pre_signal_eval = evaluate_purchase_signal_quality(log.payload)
+        timeline.append({
+            "step": "validated", "label": "Validé avant envoi",
+            "timestamp": None,
+            "note": f"match_score={_pre_signal_eval['match_score']}%, complétude={_pre_signal_eval['completeness_pct']}%"
+                    + (f", {len(_pre_signal_eval['blocking_errors'])} erreur(s) bloquante(s)" if _pre_signal_eval["blocking_errors"] else ""),
+        })
     if log.status == "success":
         timeline.append({
             "step": "meta_accepted", "label": "Meta a accepté l'événement",
@@ -3895,6 +3964,14 @@ def get_order_event_timeline(
         })
 
     signal_eval = evaluate_purchase_signal_quality(log.payload) if log.payload else None
+    # Réponse Meta brute — stockée dans payload._meta_response (voir
+    # _handle_claimed_row), pas de nouvelle colonne. Absente pour les lignes
+    # envoyées avant ce correctif : renvoyée à None plutôt qu'inventée.
+    meta_response = (log.payload or {}).get("_meta_response") if log.payload else None
+    response_analysis = (
+        analyze_meta_response(meta_response.get("error"), meta_response.get("error_category"), meta_response.get("http_status"))
+        if meta_response and meta_response.get("error") else None
+    )
 
     return {
         "success": True,
@@ -3906,6 +3983,9 @@ def get_order_event_timeline(
             "backfill": is_backfill,
             "timeline": timeline,
             "signal_evaluation": signal_eval,
+            "meta_response": meta_response,
+            "response_analysis": response_analysis,
+            "best_practices": evaluate_best_practices_compliance(signal_eval) if signal_eval else None,
             "attribution": evaluate_order_attribution(order),
         },
     }
@@ -3930,7 +4010,10 @@ def get_learning_history(
     """
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
-    from app.services.meta_capi import compute_match_quality, compute_learning_score
+    from app.services.meta_capi import (
+        compute_match_quality, compute_learning_score, _MATCH_QUALITY_FIELDS,
+        detect_metric_regressions, generate_signal_alerts,
+    )
 
     db.info["skip_tenant_isolation"] = True
     since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
@@ -3954,7 +4037,7 @@ def get_learning_history(
         d_str = d.isoformat() if hasattr(d, "isoformat") else str(d)
         day = by_day.setdefault(d_str, {
             "date": d_str, "success": 0, "failed": 0, "retry": 0, "pending": 0, "skipped": 0,
-            "emq_scores": [], "latencies": [],
+            "emq_scores": [], "latencies": [], "field_present_counts": {k: 0 for k, _ in _MATCH_QUALITY_FIELDS},
         })
         if status == "success":
             day["success"] += 1
@@ -3967,32 +4050,71 @@ def get_learning_history(
         elif status == "skipped":
             day["skipped"] += 1
         if status == "success" and payload:
-            day["emq_scores"].append(compute_match_quality((payload or {}).get("user_data") or {})["score"])
+            ud = (payload or {}).get("user_data") or {}
+            mq = compute_match_quality(ud)
+            day["emq_scores"].append(mq["score"])
+            for f in mq["fields"]:
+                if f["present"]:
+                    day["field_present_counts"][f["key"]] += 1
             if latency_ms is not None:
                 day["latencies"].append(latency_ms)
 
     history = []
+    field_coverage_by_day: Dict[str, Dict[str, float]] = {}
     for d_str in sorted(by_day.keys()):
         day = by_day[d_str]
         total = day["success"] + day["failed"] + day["retry"] + day["pending"] + day["skipped"]
         avg_emq = round(sum(day["emq_scores"]) / len(day["emq_scores"]), 1) if day["emq_scores"] else None
         avg_latency_ms = round(sum(day["latencies"]) / len(day["latencies"])) if day["latencies"] else None
         valid_purchase_pct = round(day["success"] / total * 100, 1) if total else 0.0
+        rejected_pct = round(day["failed"] / total * 100, 1) if total else 0.0
+        retry_pct = round(day["retry"] / total * 100, 1) if total else 0.0
         learning_score = compute_learning_score({
             "event_match_quality": avg_emq or 0.0,
             "valid_purchase_pct": valid_purchase_pct,
             "avg_latency_ms": avg_latency_ms,
         })
+        n_success = len(day["emq_scores"])
+        field_coverage_by_day[d_str] = {
+            k: round(day["field_present_counts"][k] / n_success * 100, 1) if n_success else 0.0
+            for k, _ in _MATCH_QUALITY_FIELDS
+        }
         history.append({
             "date": d_str,
             "learning_score": learning_score["score"],
-            "avg_emq": avg_emq,
+            "event_match_quality": avg_emq,
             "success": day["success"], "failed": day["failed"], "retry": day["retry"],
             "pending": day["pending"], "skipped": day["skipped"], "total_sent": total,
             "avg_latency_ms": avg_latency_ms,
+            "valid_purchase_pct": valid_purchase_pct, "rejected_pct": rejected_pct, "retry_pct": retry_pct,
         })
+
+    # Drift/régression : compare les DEUX derniers jours disponibles dans
+    # CET historique déjà calculé — aucune requête de plus. Si moins de 2
+    # jours de données, rien à comparer (pas une erreur, juste pas assez
+    # d'historique pour l'instant).
+    regressions = []
+    latest_alerts = []
+    if len(history) >= 2:
+        previous_day, current_day = history[-2], history[-1]
+        regressions = detect_metric_regressions(
+            previous_day, current_day,
+            field_coverage_previous=field_coverage_by_day.get(previous_day["date"]),
+            field_coverage_current=field_coverage_by_day.get(current_day["date"]),
+        )
+    if history:
+        latest = history[-1]
+        latest_alerts = generate_signal_alerts({
+            "event_match_quality": latest["event_match_quality"],
+            "learning_score": latest["learning_score"],
+            "retry_pct": latest["retry_pct"], "rejected_pct": latest["rejected_pct"],
+            "avg_latency_ms": latest["avg_latency_ms"],
+        })
+
     return {
         "success": True,
         "data": history,
+        "regressions": regressions,
+        "alerts": latest_alerts,
         "note": "learning_score ici n'inclut PAS realtime/backfill/dedup/attribution (nécessiteraient des jointures Order supplémentaires par jour) — sous-ensemble honnête EMQ+validité+latence, pas le score complet du Signal Quality Center.",
     }
