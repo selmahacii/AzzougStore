@@ -213,13 +213,15 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
-          {/* Period totals */}
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+          {/* Period totals — "Manuelles" volontairement absent ici : déjà
+              affiché juste en dessous dans "D'où viennent ces commandes ?"
+              avec son explication complète, pas besoin du même chiffre deux
+              fois dans deux blocs différents de la même fenêtre. */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[
               { label: 'Commandes', value: totals.orders ?? 0, color: '#6C5CE7' },
               { label: 'Livrées', value: totals.delivered ?? 0, color: '#00B894' },
               { label: 'Annulées', value: totals.cancelled ?? 0, color: '#E17055' },
-              { label: 'Manuelles', value: totals.manual ?? 0, color: '#636E72' },
               { label: 'CA', value: `${Math.round(totals.revenue ?? 0).toLocaleString('fr-FR')} DA`, color: '#0984E3' },
               // Ce que Meta déclare avoir reçu pour ce produit, affiché juste
               // à côté de nos vraies commandes — c'était le besoin principal

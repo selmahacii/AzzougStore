@@ -531,7 +531,13 @@ const [timeLeft, setTimeLeft] = useState('');
 
   const MODE_TO_STATUS: Record<string, string> = {
     NEW: 'NEW',
-    'EN ATTENTE': 'ASSIGNED',
+    // Same reasoning as CANCELLED→ARCHIVED below: this tab's badge sums
+    // ASSIGNED/CALLED/IN_PROGRESS/RESCHEDULED (see the count computation
+    // further down), so clicking it must request the backend's matching
+    // WORKING bucket — requesting ASSIGNED alone showed "2" while the
+    // badge (and the KPI grid's own "En cours" card) showed the combined
+    // count, e.g. "38".
+    'EN ATTENTE': 'WORKING',
     CONFIRMED: 'CONFIRMED',
     FOLLOWUP: 'SHIPPED',
     COMPLETED: 'DELIVERED',
@@ -1283,6 +1289,16 @@ const [timeLeft, setTimeLeft] = useState('');
                       // undercounts vs. what the tab actually displays when clicked.
                       : tab.statusKey === 'CANCELLED'
                       ? (tabCounts['CANCELLED'] ?? 0) + (tabCounts['RETURNED'] ?? 0)
+                      // "En Cours" (EN ATTENTE) is the shared home for
+                      // ASSIGNED/CALLED/IN_PROGRESS/RESCHEDULED (see
+                      // STATUS_TO_MODE above) — the badge was hardcoded to
+                      // ASSIGNED alone, showing e.g. "2" while the KPI grid's
+                      // own "En cours" card (IN_PROGRESS) showed "38" for the
+                      // SAME French label, and clicking any of the 4 statuses
+                      // lands on this exact tab. Sum all 4 so the badge
+                      // matches what the tab actually displays.
+                      : tab.statusKey === 'ASSIGNED'
+                      ? (tabCounts['ASSIGNED'] ?? 0) + (tabCounts['CALLED'] ?? 0) + (tabCounts['IN_PROGRESS'] ?? 0) + (tabCounts['RESCHEDULED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
                     return (
                       <TabsTrigger key={tab.id} value={tab.id} className="rounded-lg sm:rounded-xl px-3 sm:px-5 py-2 text-[10px] sm:text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-[#4b7bec] data-[state=active]:shadow-sm transition-all focus-visible:ring-0 whitespace-nowrap">

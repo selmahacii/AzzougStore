@@ -815,6 +815,15 @@ def list_orders(
             )
         elif status.upper() == "ARCHIVED":
             query = query.filter(Order.status.in_(["CANCELLED", "RETURNED"]))
+        elif status.upper() == "WORKING":
+            # "En Cours" dans le tableau de bord confirmatrice — regroupe
+            # tous les statuts "en cours de traitement téléphonique" avant
+            # confirmation (ASSIGNED/CALLED/IN_PROGRESS/RESCHEDULED), même
+            # logique que ARCHIVED ci-dessus. Le badge de cet onglet
+            # sommait déjà ces 4 statuts côté frontend ; ce filtre les
+            # regroupe aussi côté liste, pour que le nombre affiché sur
+            # l'onglet corresponde à ce qu'il affiche une fois cliqué.
+            query = query.filter(Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]))
         elif status.upper() == "MANUAL":
             # "Commandes Manuelles" — every order an agent/admin typed in
             # directly (phone order, in-store, etc.) rather than the
