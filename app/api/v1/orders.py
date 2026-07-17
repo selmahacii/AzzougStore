@@ -3519,6 +3519,78 @@ def get_capi_tracking_quality_v2(
         for k in _field_present_count
     ] if _n_with_payload else []
 
+    # ── Délais moyens du pipeline (commande → confirmation → expédition →
+    # livraison, + création → envoi CAPI) — calculés depuis les VRAIS
+    # timestamps OrderEvent des commandes déjà chargées : une seule requête
+    # groupée supplémentaire, pas de boucle SQL. Clic/visite de landing ne
+    # sont capturés nulle part dans la base — délibérément absents plutôt
+    # qu'inventés.
+    _stage_events: dict = {}
+    if order_ids:
+        for oid, to_status, ts in (
+            db.query(OrderEvent.order_id, OrderEvent.to_status, sqlfunc.min(OrderEvent.created_at))
+            .filter(OrderEvent.order_id.in_(order_ids),
+                    OrderEvent.to_status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")))
+            .group_by(OrderEvent.order_id, OrderEvent.to_status)
+            .all()
+        ):
+            _stage_events.setdefault(oid, {})[to_status] = ts
+
+    def _avg_delay_hours(pairs):
+        vals = [(b - a).total_seconds() / 3600 for a, b in pairs if a and b and b >= a]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    _conf_pairs, _ship_pairs, _deliv_pairs, _capi_pairs = [], [], [], []
+    for order, log in rows:
+        ev = _stage_events.get(order.id, {})
+        _conf_pairs.append((order.created_at, ev.get("CONFIRMED")))
+        _ship_pairs.append((ev.get("CONFIRMED"), ev.get("SHIPPED")))
+        _deliv_pairs.append((ev.get("SHIPPED"), ev.get("DELIVERED")))
+        if log is not None and log.status == "success":
+            _capi_pairs.append((order.created_at, log.created_at))
+    pipeline_delays = {
+        "commande_vers_confirmation_h": _avg_delay_hours(_conf_pairs),
+        "confirmation_vers_expedition_h": _avg_delay_hours(_ship_pairs),
+        "expedition_vers_livraison_h": _avg_delay_hours(_deliv_pairs),
+        "commande_vers_purchase_meta_h": _avg_delay_hours(_capi_pairs),
+        "note": "Clic et visite de landing page ne sont pas capturés en base — délais indisponibles pour ces étapes, jamais estimés.",
+    }
+
+    # ── Analyse des pertes — pourquoi certaines commandes de la période ne
+    # sont PAS dans le décompte Meta. Une seule requête groupée sur les
+    # commandes EXCLUES du filtre principal (annulées/fusionnées/manuelles),
+    # + les raisons techniques déjà comptées ci-dessus.
+    _excluded_q = (
+        db.query(Order.status, sqlfunc.coalesce(Order.source, ""), sqlfunc.count(Order.id))
+        .filter(
+            Order.store_id == store_id, Order.is_deleted == False,
+            ~and_(Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
+                  sqlfunc.coalesce(Order.source, "") != "MANUAL"),
+        )
+    )
+    # Même borne temporelle que la requête principale : quand aucune date
+    # n'est fournie, on limite à 90j (garde-fou perf). Filtre construit
+    # conditionnellement — passer un bool Python brut à .filter() lève une
+    # ArgumentError en SQLAlchemy, d'où ce if explicite plutôt qu'un ternaire.
+    if not date_from and not date_to:
+        _excluded_q = _excluded_q.filter(Order.created_at >= _dt.now() - _td(days=90))
+    _excluded_rows = (
+        _excluded_q.group_by(Order.status, sqlfunc.coalesce(Order.source, "")).all()
+    )
+    loss_analysis = {"annulee": 0, "fusionnee_doublon": 0, "manuelle": 0, "abandonnee": 0, "autre_statut": 0,
+                     "en_attente_envoi": pending, "echec_technique": failed}
+    for st, src, cnt in _excluded_rows:
+        if src == "MANUAL":
+            loss_analysis["manuelle"] += cnt
+        elif st == "CANCELLED":
+            loss_analysis["annulee"] += cnt
+        elif st == "MERGED":
+            loss_analysis["fusionnee_doublon"] += cnt
+        elif st == "ABANDONED":
+            loss_analysis["abandonnee"] += cnt
+        else:
+            loss_analysis["autre_statut"] += cnt
+
     # ── Learning Score — volume de Purchase reçus par Meta sur 7 jours
     # glissants (indépendant de la période sélectionnée : la phase
     # d'apprentissage de Meta se réévalue en continu sur une fenêtre
@@ -3589,6 +3661,8 @@ def get_capi_tracking_quality_v2(
             "failed": failed,
             "avg_match_quality": avg_match_quality,
             "signal_field_coverage": signal_field_coverage,
+            "pipeline_delays": pipeline_delays,
+            "loss_analysis": loss_analysis,
             "learning": {
                 "status": learning_status, "label": learning_label,
                 "explanation": learning_explanation, "purchases_7d": purchases_7d,

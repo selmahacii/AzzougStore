@@ -293,6 +293,22 @@ def list_campaigns(
 
     campaigns = query.all()
 
+    # ── Learning Score par campagne — Purchases Meta des 7 derniers jours,
+    # UNE requête groupée sur meta_ads_daily_insights pour toutes les
+    # campagnes (pas de N+1). Les seuils (10/50) suivent le repère public de
+    # Meta (~50 conversions/semaine pour sortir de l'apprentissage) — jamais
+    # présenté comme le calcul interne exact de Meta.
+    from app.models.marketing import MetaAdsDailyInsight as _Daily
+    from datetime import datetime as _dt2, timedelta as _td2
+    from sqlalchemy import func as _hs_func
+    _week_ago = (_dt2.utcnow() - _td2(days=7)).date()
+    purchases_7d_by_campaign = dict(
+        db.query(_Daily.campaign_id, _hs_func.coalesce(_hs_func.sum(_Daily.meta_purchases), 0))
+        .filter(_Daily.store_id == store_id, _Daily.date >= _week_ago)
+        .group_by(_Daily.campaign_id)
+        .all()
+    )
+
     # Product lookup for the campaigns table's own "Produit" column — cheap
     # here since we'll query all active products again below anyway for the
     # attribution breakdown; a plain dict keeps this section independent.
@@ -407,6 +423,44 @@ def list_campaigns(
         meta_roas = round(meta_purchase_value / raw_spend, 2) if raw_spend > 0 else 0.0
         conversion_gap = orders_count - meta_purchases
 
+        # ── Learning par campagne (7 jours glissants, données du sync réel) ──
+        _p7d = int(purchases_7d_by_campaign.get(camp.campaign_id, 0) or 0)
+        if _p7d < 10:
+            camp_learning = {"status": "learning", "label": "Apprentissage",
+                             "explanation": f"Seulement {_p7d} Purchase Meta cette semaine — le modèle d'optimisation manque encore de données."}
+        elif _p7d < 50:
+            camp_learning = {"status": "limited_learning", "label": "Apprentissage Limité",
+                             "explanation": f"{_p7d} Purchase cette semaine — sous le repère de ~50/semaine de Meta pour sortir de l'apprentissage."}
+        else:
+            camp_learning = {"status": "stable" if _p7d < 100 else "optimized",
+                             "label": "Stable" if _p7d < 100 else "Optimisé",
+                             "explanation": f"{_p7d} Purchase cette semaine — volume suffisant pour une diffusion optimisée."}
+        camp_learning["purchases_7d"] = _p7d
+
+        # ── Saturation d'audience / fatigue créative — heuristique publique
+        # standard (frequency = impressions/reach) : au-delà de ~3-4
+        # expositions par personne, le CTR décroît typiquement. Signalé comme
+        # indicateur, jamais comme verdict certain.
+        audience_saturation = ("high" if frequency >= 4 else "medium" if frequency >= 2.5 else "low") if frequency > 0 else None
+
+        # ── Campaign Health Score /100 — formule DOCUMENTÉE, moyenne de
+        # composantes bornées calculées sur les données réelles ci-dessus :
+        #   • ROAS ERP (roas/3 plafonné à 1 : ROAS 3+ = 100 pts)
+        #   • CTR (ctr/1.5% plafonné : 1.5%+ = 100 pts, repère e-commerce)
+        #   • Volume 7j (purchases_7d/50 plafonné — même seuil que Learning)
+        #   • Fraîcheur de fréquence (100 si <2.5, 50 si <4, 0 sinon)
+        # Aucune composante inventée : chacune est dérivée d'un chiffre déjà
+        # affiché dans ce même tableau.
+        _hs_components = []
+        if camp.spend > 0:
+            _hs_components.append(min(1.0, roas / 3.0) * 100)
+        if camp.impressions > 0:
+            _hs_components.append(min(1.0, ctr / 1.5) * 100)
+        _hs_components.append(min(1.0, _p7d / 50.0) * 100)
+        if frequency > 0:
+            _hs_components.append(100.0 if frequency < 2.5 else 50.0 if frequency < 4 else 0.0)
+        health_score = round(sum(_hs_components) / len(_hs_components), 1) if _hs_components else None
+
         linked_product = products_by_id.get(camp.product_id) if camp.product_id else None
 
         data.append({
@@ -442,6 +496,9 @@ def list_campaigns(
             "meta_conversion_rate": meta_conversion_rate,
             "meta_roas": meta_roas,
             "conversion_gap": conversion_gap,
+            "learning": camp_learning,
+            "audience_saturation": audience_saturation,
+            "health_score": health_score,
             "date_start": camp.date_start.isoformat() if camp.date_start else None,
             "date_end": camp.date_end.isoformat() if camp.date_end else None,
             # When this row was actually last synced from Meta — the numbers
@@ -2829,4 +2886,148 @@ def cleanup_meta_queue(
     deleted = cleanup_old_capi_logs(db)
     return {"success": True, "message": f"{deleted} old success row(s) deleted", "count": deleted}
 
-    return results
+
+@router.get("/signal-quality", response_model=dict)
+def get_signal_quality(
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Signal Quality Center — score global /100 de la qualité des signaux Meta,
+    décomposé en sous-scores expliqués, + couverture par champ Event Match
+    Quality + scan d'anomalies. Tout est calculé depuis meta_capi_logs
+    (notre propre base), aucun appel Meta, une poignée de requêtes bornées
+    par date et plafonnées — jamais un scan de table complète.
+
+    Ne fabrique jamais de conversion : mesure uniquement ce qui a réellement
+    été envoyé, et signale honnêtement ce qui manque.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog
+    from app.services.meta_capi import compute_match_quality, _MATCH_QUALITY_FIELDS
+
+    db.info["skip_tenant_isolation"] = True
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+
+    # ── 1. Répartition des statuts Purchase (une requête groupée) ──
+    status_rows = (
+        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .filter(
+            MetaCapiLog.store_id == store_id,
+            MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.created_at >= since,
+        )
+        .group_by(MetaCapiLog.status)
+        .all()
+    )
+    by_status = {s: c for s, c in status_rows}
+    success = by_status.get("success", 0)
+    failed = by_status.get("failed", 0)
+    retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
+    pending = by_status.get("queued", 0) + by_status.get("processing", 0)
+    skipped = by_status.get("skipped", 0)
+    total_sent = success + failed + retry + pending
+
+    # ── 2. Event Match Quality : moyenne + couverture par champ, sur un
+    # échantillon PLAFONNÉ des succès (payload contient user_data depuis le
+    # correctif de stockage-sur-succès). Cap à 500 pour rester léger sur
+    # Supabase quel que soit le volume de la boutique. ──
+    sample = (
+        db.query(MetaCapiLog.payload)
+        .filter(
+            MetaCapiLog.store_id == store_id,
+            MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.status == "success",
+            MetaCapiLog.payload.isnot(None),
+            MetaCapiLog.created_at >= since,
+        )
+        .order_by(MetaCapiLog.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    field_present_counts = {key: 0 for key, _ in _MATCH_QUALITY_FIELDS}
+    emq_scores = []
+    for (payload,) in sample:
+        ud = (payload or {}).get("user_data") or {}
+        mq = compute_match_quality(ud)
+        emq_scores.append(mq["score"])
+        for f in mq["fields"]:
+            if f["present"]:
+                field_present_counts[f["key"]] += 1
+    sample_n = len(sample)
+    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
+    field_coverage = [
+        {
+            "key": key, "label": label,
+            "coverage_pct": round(field_present_counts[key] / sample_n * 100, 1) if sample_n else 0.0,
+            "missing_pct": round((1 - field_present_counts[key] / sample_n) * 100, 1) if sample_n else 100.0,
+        }
+        for key, label in _MATCH_QUALITY_FIELDS
+    ]
+
+    # ── 3. Scan d'anomalies (chacune une requête groupée bornée) ──
+    anomalies = []
+
+    # Purchase CAPI sans commande liée (chemin relay frontend : order_id NULL)
+    orphan_capi = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.order_id.is_(None), MetaCapiLog.created_at >= since,
+        )
+        .scalar() or 0
+    )
+    if orphan_capi > 0:
+        anomalies.append({
+            "type": "PURCHASE_SANS_COMMANDE", "count": orphan_capi, "severity": "medium",
+            "detail": f"{orphan_capi} Purchase CAPI sans order_id (chemin relay navigateur) — impossible à rapprocher d'une commande ERP.",
+            "fix": "Vérifier que le relay frontend transmet bien l'order_id, ou s'appuyer uniquement sur le chemin backend.",
+        })
+
+    # Purchase en échec définitif
+    if failed > 0:
+        anomalies.append({
+            "type": "PURCHASE_REJETE", "count": failed, "severity": "high",
+            "detail": f"{failed} Purchase en échec définitif — token expiré ou config invalide probable.",
+            "fix": "Vérifier la Santé du Pixel (token/scopes) puis relancer via Bons d'Achat.",
+        })
+
+    # Purchase bloqués en attente depuis longtemps
+    if pending > 0:
+        anomalies.append({
+            "type": "PURCHASE_EN_ATTENTE", "count": pending, "severity": "low",
+            "detail": f"{pending} Purchase encore en file — normal si récent, à surveiller si ça persiste.",
+            "fix": "Vérifier que le worker CAPI tourne (Meta Queue).",
+        })
+
+    # ── 4. Score global décomposé — chaque sous-score est un pourcentage réel
+    # déjà calculé ci-dessus, jamais une note inventée. Moyenne simple,
+    # pondération documentée. ──
+    coverage_score = round(success / total_sent * 100, 1) if total_sent else 0.0
+    emq_score = avg_emq if avg_emq is not None else 0.0
+    reliability_score = round(max(0.0, 100 - (failed / total_sent * 100 * 3)), 1) if total_sent else 100.0
+    sub_scores = {
+        "tracking_coverage": coverage_score,
+        "event_match_quality": emq_score,
+        "server_reliability": reliability_score,
+    }
+    global_score = round(sum(sub_scores.values()) / len(sub_scores), 1)
+
+    return {
+        "success": True,
+        "data": {
+            "range_days": range_days,
+            "global_score": global_score,
+            "sub_scores": sub_scores,
+            "avg_emq": avg_emq,
+            "emq_sample_size": sample_n,
+            "field_coverage": field_coverage,
+            "purchase_breakdown": {
+                "success": success, "failed": failed, "retry": retry,
+                "pending": pending, "skipped": skipped, "total_sent": total_sent,
+            },
+            "anomalies": anomalies,
+        },
+    }

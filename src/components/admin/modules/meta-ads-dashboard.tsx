@@ -120,6 +120,17 @@ export default function MetaAdsDashboard() {
   });
   const trackingQuality = trackingQualityData?.data;
 
+  // --- Query Signal Quality Center (EMQ store-wide, couverture par champ, anomalies) ---
+  const { data: signalQualityData, isLoading: isLoadingSignalQuality } = useQuery({
+    queryKey: ['meta_signal_quality', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/signal-quality?store_id=${activeStore?.id}`
+    ),
+    enabled: !!activeStore?.id,
+    refetchOnWindowFocus: false,
+  });
+  const signalQuality = signalQualityData?.data;
+
   // --- Mutations ---
   const saveConfigMutation = useMutation({
     mutationFn: (payload: any) => apiFetch('/api/v1/meta-ads/config', {
@@ -678,6 +689,7 @@ export default function MetaAdsDashboard() {
                      <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Ventes</th>
                      <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">CA</th>
                      <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">ROAS</th>
+                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Santé</th>
                   </tr>
                </thead>
                <tbody className="divide-y divide-[#E9ECF0]">
@@ -773,10 +785,39 @@ export default function MetaAdsDashboard() {
                               {c.roas || 0}x
                             </Badge>
                          </td>
+                         {/* Campaign Health Score — formule documentée côté
+                             backend (ROAS + CTR + volume 7j + fréquence),
+                             jamais une boîte noire. Le badge Learning vient du
+                             volume réel de Purchases Meta des 7 derniers jours
+                             (meta_ads_daily_insights), pas d'une estimation. */}
+                         <td className="px-6 py-5 text-center">
+                            {c.health_score != null ? (
+                              <div title={c.learning?.explanation}>
+                                <span className={cn(
+                                  "font-black font-mono text-sm tabular-nums",
+                                  c.health_score >= 80 ? "text-[#00B894]" : c.health_score >= 50 ? "text-[#FDCB6E]" : "text-[#E17055]"
+                                )}>{c.health_score}</span>
+                                <span className="text-[9px] text-slate-300">/100</span>
+                                {c.learning?.label && (
+                                  <p className={cn(
+                                    "text-[8px] font-black uppercase tracking-wider mt-0.5",
+                                    c.learning.status === 'optimized' ? 'text-[#00B894]' :
+                                    c.learning.status === 'stable' ? 'text-[#6C5CE7]' :
+                                    c.learning.status === 'limited_learning' ? 'text-[#FDCB6E]' : 'text-slate-400'
+                                  )}>{c.learning.label}</p>
+                                )}
+                                {c.audience_saturation === 'high' && (
+                                  <p className="text-[8px] font-black uppercase text-[#E17055] mt-0.5" title="Fréquence ≥ 4 — chaque personne a vu la publicité 4+ fois, fatigue créative probable">⚠ Saturation</p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-300 italic">—</span>
+                            )}
+                         </td>
                       </tr>
                       {isExpanded && (
                         <tr className="bg-[#F0EDFF]/30">
-                          <td colSpan={9} className="px-8 py-5">
+                          <td colSpan={10} className="px-8 py-5">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                               <div className="bg-white rounded-xl p-3 border border-slate-100">
                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPM</p>
@@ -1159,6 +1200,90 @@ export default function MetaAdsDashboard() {
       {/* ─── TAB: DIAGNOSTICS ─── */}
       {activeTab === 'diagnostics' && (
         <div className="space-y-4">
+          {/* ─── Signal Quality Center — score global de la qualité des
+              signaux envoyés à Meta, décomposé + couverture par champ EMQ +
+              anomalies. Ne mesure QUE ce qui a réellement été envoyé. ─── */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap className="size-4 text-[#1877F2]" /> Signal Quality Center
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-1">Qualité des signaux envoyés à Meta — 30 derniers jours.</p>
+              </div>
+              {signalQuality?.global_score != null && (
+                <div className="text-right shrink-0">
+                  <p className={cn(
+                    'text-2xl font-black leading-none',
+                    signalQuality.global_score >= 90 ? 'text-[#00B894]' : signalQuality.global_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                  )}>{signalQuality.global_score}<span className="text-xs text-slate-300">/100</span></p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Signal Score</p>
+                </div>
+              )}
+            </div>
+
+            {isLoadingSignalQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : !signalQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+            ) : (
+              <>
+                {/* Sous-scores décomposés */}
+                <div className="grid grid-cols-3 gap-3 mb-5">
+                  {[
+                    { label: 'Couverture Tracking', value: signalQuality.sub_scores.tracking_coverage },
+                    { label: 'Event Match Quality', value: signalQuality.sub_scores.event_match_quality },
+                    { label: 'Fiabilité Serveur', value: signalQuality.sub_scores.server_reliability },
+                  ].map(s => (
+                    <div key={s.label} className="p-3 rounded-2xl border bg-white" style={{ borderColor: (s.value >= 90 ? '#00B894' : s.value >= 70 ? '#FDCB6E' : '#E17055') + '33' }}>
+                      <p className="text-lg font-black tabular-nums" style={{ color: s.value >= 90 ? '#00B894' : s.value >= 70 ? '#FDCB6E' : '#E17055' }}>{s.value}%</p>
+                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Couverture par champ EMQ */}
+                {signalQuality.emq_sample_size > 0 && (
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Couverture par champ (sur {signalQuality.emq_sample_size} envois)</p>
+                      {signalQuality.avg_emq != null && <span className="text-xs font-black text-[#6C5CE7]">EMQ moy. {signalQuality.avg_emq}%</span>}
+                    </div>
+                    <div className="space-y-1.5">
+                      {signalQuality.field_coverage.map((f: any) => (
+                        <div key={f.key} className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-500 w-24 shrink-0">{f.label}</span>
+                          <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${f.coverage_pct}%`, backgroundColor: f.coverage_pct >= 90 ? '#00B894' : f.coverage_pct >= 50 ? '#FDCB6E' : '#E17055' }} />
+                          </div>
+                          <span className="text-[10px] font-black tabular-nums w-10 text-right" style={{ color: f.coverage_pct >= 90 ? '#00B894' : f.coverage_pct >= 50 ? '#FDCB6E' : '#E17055' }}>{f.coverage_pct}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Anomalies */}
+                {signalQuality.anomalies?.length > 0 && (
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Anomalies détectées</p>
+                    <div className="space-y-1.5">
+                      {signalQuality.anomalies.map((a: any, i: number) => (
+                        <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl" style={{ backgroundColor: (a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3') + '0D' }}>
+                          <span className="size-1.5 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3' }} />
+                          <div className="flex-1">
+                            <p className="text-[11px] font-bold text-slate-700">{a.detail}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">→ {a.fix}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {/* ─── Widget Qualité du Tracking — temps réel/backfill, Match
               Quality, note globale. Intégré ici plutôt que dans un nouveau
               module : cette section EST le centre de pilotage tracking
