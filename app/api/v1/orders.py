@@ -1400,6 +1400,7 @@ def create_order(
 
 _DEFAULT_COMMISSION_CONFIRMATRICE_PCT = 2.0   # % de la valeur de la commande
 _DEFAULT_COMMISSION_LIVREUR_FIXED = 100        # DA fixe par commande livrée
+_UPSELL_COMMISSION_FLAT_DA = 250               # DA fixe par produit upsell ajouté par la confirmatrice
 
 @router.get("/commissions", response_model=dict)
 def get_commissions(
@@ -2160,6 +2161,13 @@ def update_order_info(
         from app.services.order_service import expand_combined_variant_items, _expand_order_item
         inv_svc = InventoryService()
 
+        # Commission upsell (250 DA/produit) : capturé AVANT toute suppression
+        # depuis l'état RÉEL de la commande en base — jamais depuis un flag
+        # envoyé par le frontend (is_upsell), qui reste vrai tant que le
+        # composant n'a pas rechargé originalProductIds et re-déclencherait
+        # une commission à chaque nouvelle sauvegarde de la même commande.
+        _previous_product_ids = {item.product_id for item in order.items}
+
         # Release stock for old items. Expanded first: a legacy item can still
         # carry a combined "P1: ... | P2: ..." variant string (e.g. absorbed
         # from a merged duplicate before this was fixed there too) — releasing
@@ -2259,6 +2267,29 @@ def update_order_info(
         if old_items_desc != ", ".join(new_items_desc) or order.subtotal != total_amount:
             changed_fields.append(f"articles ({old_items_desc} -> {', '.join(new_items_desc)})")
             order.subtotal = total_amount
+
+        # Commission upsell — 250 DA par produit upsell RÉELLEMENT ajouté à
+        # l'instant (product_id absent de _previous_product_ids), et
+        # UNIQUEMENT si ce produit est marqué is_upsell_only=True (un
+        # confirmatrice qui ajoute un produit catalogue normal ne déclenche
+        # aucune commission upsell — seuls les produits upsell dédiés comptent).
+        _newly_added_ids = {
+            item.product_id for item in order.items if item.product_id not in _previous_product_ids
+        }
+        if _newly_added_ids:
+            from app.models.upsell import UpsellCommission
+            from app.models.product import Product
+            _upsell_products = (
+                db.query(Product.id, Product.name)
+                .filter(Product.id.in_(_newly_added_ids), Product.is_upsell_only == True)
+                .all()
+            )
+            for _prod_id, _prod_name in _upsell_products:
+                db.add(UpsellCommission(
+                    id=str(uuid.uuid4()), store_id=order.store_id, user_id=current_user.id,
+                    order_id=order.id, amount=_UPSELL_COMMISSION_FLAT_DA, is_paid=False,
+                ))
+                changed_fields.append(f"commission upsell +{_UPSELL_COMMISSION_FLAT_DA} DA ({_prod_name})")
 
     # Translation dictionary for cleaner logs
     field_labels = {
@@ -3649,6 +3680,7 @@ def get_capi_tracking_quality_v2(
     if not recommendations:
         recommendations.append("Aucune anomalie détectée sur la période.")
 
+    _timing_total = realtime_ok + backfill_ok
     return {
         "success": True,
         "data": {
@@ -3656,7 +3688,9 @@ def get_capi_tracking_quality_v2(
             "erp_purchases": total_erp,
             "meta_purchases": meta_purchases,
             "realtime": realtime_ok,
+            "realtime_pct": round(realtime_ok / _timing_total * 100, 1) if _timing_total else 0.0,
             "backfill": backfill_ok,
+            "backfill_pct": round(backfill_ok / _timing_total * 100, 1) if _timing_total else 0.0,
             "pending": pending,
             "failed": failed,
             "avg_match_quality": avg_match_quality,
@@ -3666,12 +3700,14 @@ def get_capi_tracking_quality_v2(
             "learning": {
                 "status": learning_status, "label": learning_label,
                 "explanation": learning_explanation, "purchases_7d": purchases_7d,
+                "note": "Fenêtre glissante de 7 jours, INDÉPENDANTE de la période sélectionnée ci-dessus (la phase d'apprentissage Meta se réévalue en continu, pas sur une période de dashboard).",
             },
             "tracking_score": tracking_score_global,
             "recommendations": recommendations,
             "coverage_pct": coverage_pct,
             "ecart_reel": ecart,
             "performance_count": performance_count,
+            "methodology": "Calculé depuis les commandes ERP (CONFIRMED/SHIPPED/DELIVERED, hors MANUAL) jointes à meta_capi_logs sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi CAPI et la création de la commande OU la reprise d'un panier abandonné (référence différente de Signal Quality Center, qui utilise toujours la création de commande).",
         },
     }
 

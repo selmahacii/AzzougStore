@@ -26,7 +26,7 @@ from app.services.meta_capi import (
     detect_funnel_bottleneck, campaign_classification_label,
     compute_meta_optimization_score, meta_optimization_label,
     simulate_learning_score_change, rank_recommendations_by_impact,
-    compute_metric_correlation,
+    compute_metric_correlation, verify_percentage_matches_counter,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -850,3 +850,59 @@ def test_compute_metric_correlation_never_asserts_direction_not_present_in_data(
     result = compute_metric_correlation(pairs, "EMQ", "CPA")
     assert result["coefficient"] > 0
     assert result["direction"].startswith("positive")
+
+
+# ─── verify_percentage_matches_counter — the KPI audit's core invariant ────
+# This is the exact bug the user reported: a widget's displayed percentage
+# not matching the counters shown on the same or another card. This
+# function is the single shared check reused by GET /meta-ads/kpi-validation.
+
+def test_verify_percentage_matches_counter_exact_match():
+    result = verify_percentage_matches_counter(30, 100, 30.0)
+    assert result["passed"] is True
+    assert result["expected_pct"] == 30.0
+    assert result["diff"] == 0.0
+
+
+def test_verify_percentage_matches_counter_detects_real_divergence():
+    # Le bug rapporté : un % affiché qui ne vient pas des compteurs montrés.
+    result = verify_percentage_matches_counter(30, 100, 45.0)
+    assert result["passed"] is False
+    assert result["diff"] == 15.0
+
+
+def test_verify_percentage_matches_counter_rounding_tolerance():
+    # 1/3 = 33.333...% arrondi à 33.3% en amont — ne doit pas être signalé
+    # comme une divergence à cause de l'arrondi.
+    result = verify_percentage_matches_counter(1, 3, 33.3)
+    assert result["passed"] is True
+
+
+def test_verify_percentage_matches_counter_zero_denominator_never_divides_by_zero():
+    result = verify_percentage_matches_counter(0, 0, 0.0)
+    assert result["expected_pct"] == 0.0
+    assert result["passed"] is True
+
+
+def test_verify_percentage_matches_counter_custom_tolerance():
+    result = verify_percentage_matches_counter(30, 100, 31.0, tolerance=0.5)
+    assert result["passed"] is False  # diff de 1.0 > tolérance de 0.5
+    result_lenient = verify_percentage_matches_counter(30, 100, 31.0, tolerance=1.5)
+    assert result_lenient["passed"] is True
+
+
+# ─── Learning Score realtime/backfill percentages always reconstructible
+# from the same counts used to derive them (the KPI audit's core demand:
+# "vérifier que les compteurs correspondent exactement aux pourcentages") ──
+
+def test_learning_score_realtime_backfill_pct_reconstructible_from_counts():
+    realtime_n, backfill_n = 37, 13
+    total = realtime_n + backfill_n
+    realtime_pct = round(realtime_n / total * 100, 1)
+    backfill_pct = round(backfill_n / total * 100, 1)
+    check_rt = verify_percentage_matches_counter(realtime_n, total, realtime_pct)
+    check_bf = verify_percentage_matches_counter(backfill_n, total, backfill_pct)
+    assert check_rt["passed"] and check_bf["passed"]
+    # Les deux pourcentages doivent couvrir 100% du même total, jamais des
+    # fenêtres/échantillons différents mélangés.
+    assert abs((realtime_pct + backfill_pct) - 100.0) < 0.2
