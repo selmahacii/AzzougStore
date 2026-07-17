@@ -14,7 +14,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.meta_capi import compute_match_quality, scan_payload_quality, _MATCH_QUALITY_FIELDS
+from app.services.meta_capi import (
+    compute_match_quality, scan_payload_quality, compute_learning_score,
+    diagnose_campaign_learning, _latency_to_score, _MATCH_QUALITY_FIELDS,
+)
 
 
 def test_field_list_matches_meta_recommended_set():
@@ -96,3 +99,97 @@ def test_scan_payload_quality_handles_none_payload_without_crashing():
     assert result["missing_currency"] is True
     assert result["missing_event_time"] is True
     assert result["wrong_currency"] is False
+
+
+# ─── Learning Score ──────────────────────────────────────────────────────────
+
+def test_latency_to_score_instant_send_is_perfect():
+    assert _latency_to_score(500) == 100.0
+    assert _latency_to_score(5000) == 100.0
+    assert _latency_to_score(None) == 100.0  # pas de donnée != mauvaise latence
+
+
+def test_latency_to_score_degrades_linearly_then_floors_at_zero():
+    assert _latency_to_score(60000) == 0.0
+    assert _latency_to_score(120000) == 0.0
+    mid = _latency_to_score(32500)  # milieu de la fenêtre 5s -> 60s
+    assert 45 < mid < 55
+
+
+def test_learning_score_perfect_metrics_score_100():
+    result = compute_learning_score({
+        "realtime_pct": 100.0, "event_match_quality": 100.0, "valid_purchase_pct": 100.0,
+        "dedup_pct": 100.0, "value_present_pct": 100.0, "attribution_pct": 100.0,
+        "avg_latency_ms": 1000,
+    })
+    assert result["score"] == 100.0
+
+
+def test_learning_score_missing_metrics_count_as_zero_not_ignored():
+    # Une clé absente ne doit jamais faire disparaître son poids du calcul —
+    # sinon un signal manquant gonflerait artificiellement la moyenne. Seule
+    # latency_score échappe à cette règle (absence de latence != mauvaise
+    # latence, voir _latency_to_score), donc le score attendu est exactement
+    # son poids (10%) et rien d'autre.
+    result = compute_learning_score({})
+    assert result["score"] == 10.0
+    assert result["components"]["latency_score"] == 100.0
+    assert result["components"]["event_match_quality"] == 0.0
+
+
+def test_learning_score_matches_documented_weights():
+    weights = compute_learning_score({})["weights"]
+    assert abs(sum(weights.values()) - 1.0) < 1e-9
+
+
+# ─── Per-campaign diagnostic engine ─────────────────────────────────────────
+
+def test_diagnose_campaign_learning_no_rules_triggered_on_healthy_metrics():
+    reasons = diagnose_campaign_learning({
+        "weekly_rate": 80, "backfill_pct": 5, "event_match_quality": 95,
+        "missing_value_pct": 0, "missing_currency_pct": 0, "retry_pct": 1,
+        "rejected_pct": 0, "avg_latency_ms": 1000, "no_utm_pct": 5,
+        "frequency": 1.5, "ctr": 3.0, "impressions": 5000,
+        "cost_per_purchase": 500, "aov": 5000,
+    })
+    assert reasons == []
+
+
+def test_diagnose_campaign_learning_low_volume_flagged():
+    reasons = diagnose_campaign_learning({"weekly_rate": 10})
+    types = {r["type"] for r in reasons}
+    assert "VOLUME_FAIBLE" in types
+
+
+def test_diagnose_campaign_learning_missing_keys_never_trigger_rules():
+    # Une métrique absente ne doit jamais déclencher sa règle — sinon un
+    # calcul non encore disponible (ex: pas de payload échantillon) friserait
+    # de fausses alertes plutôt que de rester silencieux sur le sujet.
+    assert diagnose_campaign_learning({}) == []
+
+
+def test_diagnose_campaign_learning_sorted_by_severity():
+    reasons = diagnose_campaign_learning({
+        "no_utm_pct": 50,       # low
+        "retry_pct": 20,        # medium
+        "missing_value_pct": 10,  # high
+    })
+    severities = [r["severity"] for r in reasons]
+    assert severities == sorted(severities, key=lambda s: {"high": 0, "medium": 1, "low": 2}[s])
+
+
+def test_diagnose_campaign_learning_each_reason_has_required_fields():
+    reasons = diagnose_campaign_learning({"rejected_pct": 20})
+    assert reasons
+    for r in reasons:
+        assert {"type", "severity", "impact", "explanation", "recommendation", "title"} <= r.keys()
+
+
+def test_diagnose_campaign_learning_cpa_uses_aov_ratio_not_absolute_value():
+    # Un CPA élevé en valeur absolue mais petit par rapport au panier moyen
+    # ne doit pas être signalé — sinon une boutique à gros panier serait
+    # pénalisée pour un CPA parfaitement rentable.
+    reasons = diagnose_campaign_learning({"cost_per_purchase": 1000, "aov": 10000})
+    assert not any(r["type"] == "CPA_ELEVE" for r in reasons)
+    reasons_bad = diagnose_campaign_learning({"cost_per_purchase": 6000, "aov": 10000})
+    assert any(r["type"] == "CPA_ELEVE" for r in reasons_bad)
