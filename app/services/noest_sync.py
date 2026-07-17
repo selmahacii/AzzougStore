@@ -73,6 +73,11 @@ CLOUDINARY_MIGRATION_INTERVAL_MINUTES = float(os.getenv("CLOUDINARY_MIGRATION_IN
 # Daily is plenty for deleting old success rows — no reason to run this on
 # the same 3h cadence as the Meta Ads sync.
 META_CAPI_CLEANUP_INTERVAL_MINUTES = float(os.getenv("META_CAPI_CLEANUP_INTERVAL_MINUTES", "1440"))
+# "Chaque nuit" — un audit statistique/structurel (pixel/token présents,
+# taux de rejet/retry 24h, campagnes sans achat, commandes sans
+# attribution), pas une inspection en temps réel. Daily cadence, même
+# rythme que le nettoyage des logs CAPI.
+META_AUDIT_INTERVAL_MINUTES = float(os.getenv("META_AUDIT_INTERVAL_MINUTES", "1440"))
 
 # NOEST wording → platform terminal statuses. Checked against BOTH
 # OrderInfo.statut (French human text) AND the last activity's event_key
@@ -641,14 +646,15 @@ async def background_loop() -> None:
         return
     logger.info(
         "Background sync started (Noest every %.0f min, Meta Ads every %.0f min, "
-        "Cloudinary migration every %.0f min, reminders every %.0f s)",
+        "Cloudinary migration every %.0f min, Meta audit every %.0f min, reminders every %.0f s)",
         SYNC_INTERVAL_MINUTES, META_ADS_SYNC_INTERVAL_MINUTES,
-        CLOUDINARY_MIGRATION_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
+        CLOUDINARY_MIGRATION_INTERVAL_MINUTES, META_AUDIT_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
     )
     seconds_since_sync = SYNC_INTERVAL_MINUTES * 60  # poll immediately at boot
     seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
     seconds_since_cloudinary_sync = CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60  # migrate immediately at boot
     seconds_since_capi_cleanup = 0.0  # not urgent at boot — wait one full interval
+    seconds_since_meta_audit = 0.0  # not urgent at boot — wait one full interval
     while True:
         # Night idle (01:00–06:59 Algeria, UTC+1): skip every DB/network sweep
         # so the serverless Postgres compute can autosuspend — nobody confirms
@@ -664,6 +670,7 @@ async def background_loop() -> None:
             seconds_since_meta_sync += _night_sleep
             seconds_since_cloudinary_sync += _night_sleep
             seconds_since_capi_cleanup += _night_sleep
+            seconds_since_meta_audit += _night_sleep
             continue
         try:
             scan_due_reminders()
@@ -723,8 +730,44 @@ async def background_loop() -> None:
                     _db.close()
             except Exception as exc:
                 logger.error("Meta CAPI log cleanup crashed: %s", exc)
+        if seconds_since_meta_audit >= META_AUDIT_INTERVAL_MINUTES * 60:
+            seconds_since_meta_audit = 0
+            try:
+                await asyncio.to_thread(_run_meta_nightly_audit_all_stores)
+            except Exception as exc:
+                logger.error("Meta nightly audit crashed: %s", exc)
         await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
         seconds_since_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_meta_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_cloudinary_sync += REMINDER_SCAN_INTERVAL_SECONDS
         seconds_since_capi_cleanup += REMINDER_SCAN_INTERVAL_SECONDS
+        seconds_since_meta_audit += REMINDER_SCAN_INTERVAL_SECONDS
+
+
+def _run_meta_nightly_audit_all_stores() -> None:
+    """
+    Lance run_meta_nightly_audit pour chaque boutique ayant une config Meta
+    Ads — une session DB par boutique, jamais un scan croisé. Appelé depuis
+    background_loop, offload dans un thread (voir ci-dessus) car
+    run_meta_nightly_audit fait plusieurs requêtes synchrones.
+    """
+    from app.db.session import SessionLocal
+    from app.models.marketing import MetaAdsConfig
+    from app.services.meta_capi import run_meta_nightly_audit
+
+    db = SessionLocal()
+    try:
+        store_ids = [row[0] for row in db.query(MetaAdsConfig.store_id).filter(MetaAdsConfig.pixel_id.isnot(None)).all()]
+    finally:
+        db.close()
+
+    for store_id in store_ids:
+        _db = SessionLocal()
+        try:
+            report = run_meta_nightly_audit(_db, store_id)
+            if not report["healthy"]:
+                logger.warning("[MetaAudit] store=%s %d problème(s) détecté(s)", store_id, report["problem_count"])
+        except Exception as exc:
+            logger.error("[MetaAudit] store=%s crashed: %s", store_id, exc)
+        finally:
+            _db.close()

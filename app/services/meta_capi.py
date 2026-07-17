@@ -50,6 +50,7 @@ Graph API version: v21.0.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 import os
 import random
@@ -1558,6 +1559,48 @@ def validate_purchase_event_consistency(event: Optional[dict], *, now: Optional[
             "detail": "au moins un content_id est vide — dégrade le retargeting catalogue pour cet article.",
         })
 
+    content_type = cd.get("content_type")
+    if content_type and content_type != "product":
+        warnings.append({
+            "field": "content_type", "issue": "valeur inattendue",
+            "detail": f"content_type={content_type!r} — build_purchase_event force toujours 'product' ; une autre valeur signale un payload reconstruit ailleurs.",
+        })
+
+    event_name = event.get("event_name")
+    if event_name and event_name != "Purchase":
+        blocking_errors.append({
+            "field": "event_name", "issue": "valeur inattendue pour ce pipeline",
+            "detail": f"event_name={event_name!r} — cette validation est faite pour des événements Purchase ; un autre nom signale un mélange de payloads.",
+        })
+
+    # Hash SHA-256 attendu par Meta pour em/ph : exactement 64 caractères
+    # hexadécimaux MINUSCULES (normalize_email/normalize_phone hashent déjà
+    # ainsi — un hash mal formé signale un appel externe qui contourne
+    # build_user_data, pas une commande réelle sans email/téléphone).
+    ud = event.get("user_data") or {}
+    _sha256_re = re.compile(r"^[0-9a-f]{64}$")
+    for key, label in (("em", "email"), ("ph", "téléphone")):
+        values = ud.get(key)
+        if not values:
+            continue
+        for v in (values if isinstance(values, list) else [values]):
+            if not _sha256_re.match(str(v)):
+                warnings.append({
+                    "field": key, "issue": f"hash {label} mal formé",
+                    "detail": f"'{key}' présent mais ne ressemble pas à un SHA-256 (64 hex minuscules) — Meta l'ignorera silencieusement, dégradant l'EMQ sans lever d'erreur explicite.",
+                })
+                break
+
+    ip = ud.get("client_ip_address")
+    if ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            warnings.append({
+                "field": "client_ip_address", "issue": "format IP invalide",
+                "detail": f"'{ip}' n'est pas une adresse IPv4/IPv6 valide — probablement un en-tête x-forwarded-for mal parsé (liste de plusieurs IP, valeur vide après split).",
+            })
+
     return {"blocking_errors": blocking_errors, "warnings": warnings}
 
 
@@ -1625,19 +1668,41 @@ def evaluate_order_attribution(order) -> dict:
     }
 
 
-def meta_health_label(score: Optional[float]) -> str:
-    """Bandes catégorielles pour un score /100 déjà calculé ailleurs (jamais une note recalculée en secret)."""
+def _score_band(score: Optional[float], bands: list) -> str:
+    """
+    Une seule logique de bandes catégorielles, réutilisée par tous les
+    contextes qui ont besoin d'un vocabulaire différent pour le MÊME score
+    /100 déjà calculé ailleurs — jamais une note recalculée, jamais un
+    second barème de seuils inventé par contexte. `bands` = [(seuil_min,
+    label), ...] triés du plus haut au plus bas ; le dernier est le
+    label plancher (utilisé si aucun seuil n'est atteint).
+    """
     if score is None:
         return "Non disponible"
-    if score >= 90:
-        return "Excellent"
-    if score >= 75:
-        return "Bon"
-    if score >= 55:
-        return "Moyen"
-    if score >= 35:
-        return "Faible"
-    return "Critique"
+    for threshold, label in bands:
+        if score >= threshold:
+            return label
+    return bands[-1][1]
+
+
+def meta_health_label(score: Optional[float]) -> str:
+    """Bandes Excellent/Bon/Moyen/Faible/Critique — Signal Quality Center / Campaign Learning Health."""
+    return _score_band(score, [(90, "Excellent"), (75, "Bon"), (55, "Moyen"), (35, "Faible"), (0, "Critique")])
+
+
+def campaign_classification_label(score: Optional[float]) -> str:
+    """
+    Bandes "Excellente / Bonne / À surveiller / Critique" — MÊMES seuils que
+    meta_health_label (90/75/35), vocabulaire différent pour le classement
+    des campagnes. Pas un second barème inventé : Excellent+Bon ->
+    Excellente/Bonne, Moyen+Faible -> À surveiller, Critique -> Critique.
+    """
+    return _score_band(score, [(90, "Excellente"), (75, "Bonne"), (35, "À surveiller"), (0, "Critique")])
+
+
+def meta_optimization_label(score: Optional[float]) -> str:
+    """Bandes Excellent/Très bon/Bon/Moyen/Critique — Meta Optimization Advisor (score global)."""
+    return _score_band(score, [(90, "Excellent"), (80, "Très bon"), (65, "Bon"), (45, "Moyen"), (0, "Critique")])
 
 
 def estimate_learning_score_gains(components: dict) -> list:
@@ -1710,6 +1775,130 @@ def estimate_learning_score_gains_by_field(components: dict, field_coverage_pct:
     return gains
 
 
+def simulate_learning_score_change(components: dict, changes: dict) -> dict:
+    """
+    Simulateur "si X passe de A à B, quel gain ?" à valeur cible LIBRE —
+    généralisation d'estimate_learning_score_gains (qui suppose toujours
+    "porté à 100%") à n'importe quelle cible réaliste (ex: EMQ 60 -> 90,
+    Backfill -> 5%). MÊME moteur de calcul (compute_learning_score),
+    recalcul réel, jamais une estimation arbitraire.
+
+    `changes` : {clé de compute_learning_score: nouvelle_valeur}, ex.
+    {"event_match_quality": 90} ou {"avg_latency_ms": 2000}. Présenté
+    explicitement comme une estimation théorique (toutes choses égales par
+    ailleurs), jamais une garantie — voir `disclaimer` dans le retour.
+    """
+    base = compute_learning_score(components)
+    hypothetical = {**components, **changes}
+    projected = compute_learning_score(hypothetical)
+    gain = round(projected["score"] - base["score"], 1)
+    return {
+        "current_score": base["score"],
+        "projected_score": projected["score"],
+        "gain_points": gain,
+        "changes_simulated": changes,
+        "disclaimer": "Estimation théorique basée sur le moteur de scoring actuel, toutes choses égales par ailleurs — pas une garantie de résultat réel, Meta peut réagir différemment selon d'autres facteurs (audience, créa, budget, concurrence).",
+    }
+
+
+# Libellés FR pour les composants du Learning Score (hors event_match_quality,
+# volontairement exclu ici — voir rank_recommendations_by_impact).
+_COMPONENT_LABELS = {
+    "realtime_pct": "Envoi en temps réel", "valid_purchase_pct": "Purchase valides",
+    "dedup_pct": "Déduplication", "value_present_pct": "Valeur monétaire (value)",
+    "attribution_pct": "Attribution campagne", "latency_score": "Latence d'envoi",
+}
+
+
+def rank_recommendations_by_impact(components: dict, field_coverage_pct: dict) -> list:
+    """
+    Centre de recommandations — fusionne estimate_learning_score_gains_by_field
+    (détail par champ EMQ : FBP, FBC, email, ...) et estimate_learning_score_gains
+    (autres composants : temps réel, dédup, valeur, attribution, latence) en
+    UNE liste triée par gain réel décroissant, avec une note ★ 1-5. Aucun
+    nouveau calcul de gain — uniquement une fusion + présentation des deux
+    moteurs déjà existants.
+
+    event_match_quality est explicitement EXCLU des gains par composant ici :
+    le détail par champ (FBP/FBC/email/...) EST la version actionnable de ce
+    même signal — l'inclure aussi au niveau composant compterait la même
+    amélioration deux fois sous deux libellés différents.
+    """
+    field_gains = estimate_learning_score_gains_by_field(components, field_coverage_pct)
+    component_gains = [
+        g for g in estimate_learning_score_gains(components) if g["component"] != "event_match_quality"
+    ]
+
+    recommendations = []
+    for g in field_gains:
+        label = dict(_MATCH_QUALITY_FIELDS).get(g["field"], g["field"])
+        recommendations.append({
+            "action": f"Corriger {label}", "gain_points": g["gain_points"],
+            "current": g["current_coverage_pct"], "category": "event_match_quality_field",
+        })
+    for g in component_gains:
+        label = _COMPONENT_LABELS.get(g["component"], g["component"])
+        recommendations.append({
+            "action": f"Corriger {label}", "gain_points": g["gain_points"],
+            "current": g["current"], "category": "learning_score_component",
+        })
+
+    recommendations.sort(key=lambda r: r["gain_points"], reverse=True)
+    for r in recommendations:
+        gp = r["gain_points"]
+        stars = 5 if gp >= 8 else 4 if gp >= 5 else 3 if gp >= 3 else 2 if gp >= 1 else 1
+        r["stars"] = "★" * stars + "☆" * (5 - stars)
+    return recommendations
+
+
+_MIN_CORRELATION_SAMPLE = 5
+
+
+def compute_metric_correlation(pairs: list, label_a: str = "A", label_b: str = "B") -> dict:
+    """
+    Corrélation RÉELLEMENT calculée (coefficient de Pearson, aucune
+    bibliothèque externe) entre deux séries de valeurs réelles appariées —
+    ex. EMQ quotidien vs CPA quotidien sur le même historique. Ne présuppose
+    JAMAIS la direction (EMQ↑→CPA↓ n'est qu'un exemple d'intuition
+    courante, pas un fait injecté ici) : le coefficient calculé peut être
+    positif, négatif, ou trop faible pour rien affirmer — c'est exactement
+    ce que ce module doit refléter honnêtement.
+
+    `pairs` : liste de (valeur_a, valeur_b) déjà réelles (ex. un couple par
+    jour d'historique). Sous _MIN_CORRELATION_SAMPLE points, retourne
+    "insufficient_data" plutôt qu'un coefficient peu fiable présenté comme
+    solide.
+    """
+    clean = [(a, b) for a, b in pairs if a is not None and b is not None]
+    n = len(clean)
+    if n < _MIN_CORRELATION_SAMPLE:
+        return {
+            "coefficient": None, "sample_size": n, "strength": "données insuffisantes",
+            "note": f"Seulement {n} point(s) de données comparables — au moins {_MIN_CORRELATION_SAMPLE} nécessaires pour évaluer une corrélation de façon fiable.",
+        }
+
+    xs, ys = [p[0] for p in clean], [p[1] for p in clean]
+    mean_x, mean_y = sum(xs) / n, sum(ys) / n
+    cov = sum((x - mean_x) * (y - mean_y) for x, y in clean)
+    var_x = sum((x - mean_x) ** 2 for x in xs)
+    var_y = sum((y - mean_y) ** 2 for y in ys)
+    if var_x == 0 or var_y == 0:
+        return {
+            "coefficient": None, "sample_size": n, "strength": "non calculable",
+            "note": f"{label_a} ou {label_b} est constant sur la période — aucune variation à corréler.",
+        }
+    r = round(cov / (var_x ** 0.5 * var_y ** 0.5), 3)
+
+    abs_r = abs(r)
+    strength = "forte" if abs_r >= 0.7 else "modérée" if abs_r >= 0.4 else "faible" if abs_r >= 0.2 else "négligeable"
+    direction = "positive (évoluent ensemble)" if r > 0 else "négative (évoluent en sens inverse)" if r < 0 else "aucune"
+
+    return {
+        "coefficient": r, "sample_size": n, "strength": strength, "direction": direction,
+        "note": f"Corrélation {strength} ({direction}) entre {label_a} et {label_b} sur {n} points de données réelles — observation statistique, pas une preuve de causalité.",
+    }
+
+
 # ─── Component scores — decomposition of the Learning Score ─────────────────
 # Chaque score ci-dessous réutilise un nombre DÉJÀ calculé ailleurs (voir la
 # docstring de compute_component_scores) — jamais un second calcul du même
@@ -1758,6 +1947,76 @@ def compute_component_scores(metrics: dict) -> dict:
         "delivery": delivery,
         "queue": queue,
         "event_quality": round(metrics.get("avg_completeness_pct") or 0.0, 1),
+    }
+
+
+# Volume hebdomadaire de référence pour juger un volume d'événements
+# "suffisant" — même repère que VOLUME_INSUFFISANT dans
+# get_learning_diagnostics (~50 conversions/semaine, indicatif Meta pour
+# sortir de la phase d'apprentissage), pas un second seuil inventé.
+_VOLUME_ADEQUACY_WEEKLY_BENCHMARK = 50.0
+
+
+def _volume_adequacy_score(weekly_rate: Optional[float]) -> float:
+    """0-100 : weekly_rate atteint ou dépasse le repère -> 100, sinon proportionnel. None -> 0 (donnée non mesurée, jamais gonflée)."""
+    if not weekly_rate:
+        return 0.0
+    return round(min(100.0, weekly_rate / _VOLUME_ADEQUACY_WEEKLY_BENCHMARK * 100), 1)
+
+
+_META_OPTIMIZATION_WEIGHTS = {
+    # learning_score encapsule DÉJÀ EMQ/temps réel/backfill(inverse)/dedup/
+    # valeur/attribution/latence (voir compute_learning_score) — repris ici
+    # tel quel plutôt que re-pondérer ses composants un par un, ce qui les
+    # compterait deux fois.
+    "learning_score": 0.40,
+    "meta_acceptance": 0.20,   # component_scores — taux d'acceptation Meta
+    "queue": 0.15,             # component_scores — santé retry/pending
+    "event_quality": 0.15,     # component_scores — complétude payload (18 champs, pas seulement les 12 EMQ)
+    "volume_adequacy": 0.10,   # NOUVEAU — moyenne Purchase/AddToCart/Checkout vs repère hebdomadaire
+}
+
+
+def compute_meta_optimization_score(learning_score: float, component_scores: dict, volume_weekly_rates: dict) -> dict:
+    """
+    Meta Optimization Advisor — score global /100, réutilisant TOUJOURS des
+    nombres déjà calculés ailleurs (learning_score de compute_learning_score,
+    component_scores de compute_component_scores) plutôt que de re-dériver
+    EMQ/temps réel/backfill/attribution une seconde fois sous ce nouveau
+    nom. La seule vraie nouveauté ici est volume_adequacy (Purchase/
+    AddToCart/Checkout par semaine vs le repère ~50/semaine déjà utilisé
+    par get_learning_diagnostics).
+
+    volume_weekly_rates attend les clés "purchase", "addtocart", "checkout"
+    (taux hebdomadaire réel, ou None si non mesuré — jamais fabriqué).
+    """
+    volume_scores = [
+        _volume_adequacy_score(volume_weekly_rates.get(k))
+        for k in ("purchase", "addtocart", "checkout")
+        if volume_weekly_rates.get(k) is not None
+    ]
+    volume_adequacy = round(sum(volume_scores) / len(volume_scores), 1) if volume_scores else 0.0
+
+    components = {
+        "learning_score": learning_score,
+        "meta_acceptance": component_scores.get("meta_acceptance", 0.0),
+        "queue": component_scores.get("queue", 0.0),
+        "event_quality": component_scores.get("event_quality", 0.0),
+        "volume_adequacy": volume_adequacy,
+    }
+    score = round(sum(components[k] * w for k, w in _META_OPTIMIZATION_WEIGHTS.items()), 1)
+
+    # Explication détaillée — les composants les plus faibles, dans l'ordre,
+    # jamais une liste de conseils génériques.
+    ranked = sorted(components.items(), key=lambda kv: kv[1])
+    weakest = [{"component": k, "value": v, "weight": _META_OPTIMIZATION_WEIGHTS[k]} for k, v in ranked if v < 80]
+
+    return {
+        "score": score,
+        "label": meta_optimization_label(score),
+        "components": components,
+        "weights": _META_OPTIMIZATION_WEIGHTS,
+        "weakest_components": weakest,
     }
 
 
@@ -1822,15 +2081,53 @@ def analyze_meta_response(error_message: Optional[str], error_category: Optional
 # (comparer deux instantanés du même ensemble de métriques et signaler les
 # écarts significatifs), jamais 3 fonctions quasi identiques.
 _REGRESSION_THRESHOLDS = {
-    "learning_score": {"drop": 5, "label": "Learning Score", "severity": "high"},
-    "event_match_quality": {"drop": 5, "label": "Event Match Quality (EMQ)", "severity": "high"},
-    "valid_purchase_pct": {"drop": 5, "label": "Purchase valides", "severity": "high"},
-    "realtime_pct": {"drop": 10, "label": "Temps réel", "severity": "medium"},
-    "backfill_pct": {"rise": 10, "label": "Backfill", "severity": "medium"},
-    "retry_pct": {"rise": 5, "label": "Retry", "severity": "medium"},
-    "rejected_pct": {"rise": 2, "label": "Purchase rejetés", "severity": "high"},
-    "avg_latency_ms": {"rise": 5000, "label": "Latence moyenne", "severity": "medium"},
-    "dedup_pct": {"drop": 5, "label": "Déduplication", "severity": "medium"},
+    "learning_score": {"drop": 5, "label": "Learning Score", "severity": "high",
+                        "cause": "Baisse combinée d'un ou plusieurs composants (EMQ, temps réel, dédup, valeur, attribution, latence).",
+                        "action": "Consulter les gains estimés par champ/composant (Centre de recommandations) pour identifier la cause exacte."},
+    "event_match_quality": {"drop": 5, "label": "Event Match Quality (EMQ)", "severity": "high",
+                             "cause": "Un ou plusieurs champs de matching (email/téléphone/FBP/FBC/IP/UA/...) manquent désormais plus souvent qu'avant.",
+                             "action": "Voir likely_cause ci-dessous (champ EMQ ayant le plus chuté) et le Centre de recommandations pour le corriger en priorité."},
+    "valid_purchase_pct": {"drop": 5, "label": "Purchase valides", "severity": "high",
+                            "cause": "Davantage d'échecs/rejets définitifs sur les envois CAPI récents.",
+                            "action": "Vérifier la Santé du Pixel (token/scopes) et les derniers messages d'erreur via le Meta Response Analyzer."},
+    "realtime_pct": {"drop": 10, "label": "Temps réel", "severity": "medium",
+                      "cause": "Plus d'envois basculent en rattrapage (backfill) qu'avant — file d'attente ou connectivité dégradée.",
+                      "action": "Vérifier la file CAPI (retries, latence) et la connectivité sortante du serveur."},
+    "backfill_pct": {"rise": 10, "label": "Backfill", "severity": "medium",
+                      "cause": "L'envoi temps réel échoue plus souvent, forçant un rattrapage a posteriori.",
+                      "action": "Fiabiliser l'envoi temps réel (voir file CAPI et connectivité) pour réduire la dépendance au rattrapage."},
+    "retry_pct": {"rise": 5, "label": "Retry", "severity": "medium",
+                  "cause": "Erreurs transitoires (réseau ou 5xx Meta) plus fréquentes sur les envois récents.",
+                  "action": "Consulter le Meta Response Analyzer sur les dernières erreurs pour distinguer panne réseau vs erreur Meta."},
+    "rejected_pct": {"rise": 2, "label": "Purchase rejetés", "severity": "high",
+                      "cause": "Erreurs non-retryables (4xx) en hausse — souvent un token/scope invalide ou un payload malformé.",
+                      "action": "Vérifier la Santé du Pixel (token/scopes) puis relancer via Bons d'Achat."},
+    "avg_latency_ms": {"rise": 5000, "label": "Latence moyenne", "severity": "medium",
+                        "cause": "La file CAPI met plus de temps à traiter chaque événement (charge, connectivité, ou volume).",
+                        "action": "Vérifier la charge de la file CAPI et la connectivité sortante du serveur."},
+    "dedup_pct": {"drop": 5, "label": "Déduplication", "severity": "medium",
+                  "cause": "Des event_id apparaissent en double plus souvent — signal anormal si la contrainte d'unicité est respectée.",
+                  "action": "Investiguer manuellement via Bons d'Achat > Meta Queue > CAPI Logs pour ces event_id."},
+    # Métriques de performance campagne — mode "relative" (pourcentage de
+    # variation) plutôt qu'un delta absolu : un CPA/ROAS/fréquence n'a pas
+    # la même échelle qu'un score /100, un seuil absolu serait arbitraire
+    # d'une boutique à l'autre. 20% est un repère indicatif (documenté
+    # comme tel dans detect_metric_regressions), pas un seuil Meta officiel.
+    "cpa": {"rise_pct": 20, "label": "CPA (coût par achat)", "severity": "high", "mode": "relative",
+            "cause": "Coût par acquisition en hausse — dépense stable/en hausse pour moins d'achats, ou enchères plus chères.",
+            "action": "Vérifier fréquence (fatigue créative), CTR (créa), et la qualité des signaux envoyés (EMQ/Learning Score)."},
+    "roas": {"drop_pct": 20, "label": "ROAS", "severity": "high", "mode": "relative",
+             "cause": "Le retour sur dépense publicitaire baisse — moins de valeur générée pour le même budget.",
+             "action": "Croiser avec le CPA et la fréquence pour identifier si c'est un problème de coût, de conversion, ou de fatigue créative."},
+    "frequency": {"rise_pct": 20, "label": "Fréquence publicitaire", "severity": "medium", "mode": "relative",
+                  "cause": "La même audience revoit la publicité plus souvent — signe de fatigue créative ou d'audience trop restreinte.",
+                  "action": "Élargir l'audience, renouveler les créas, ou plafonner la fréquence."},
+    "impressions": {"drop_pct": 30, "label": "Impressions", "severity": "medium", "mode": "relative",
+                     "cause": "Meta diffuse moins — budget épuisé, enchères non compétitives, ou audience saturée.",
+                     "action": "Vérifier le budget restant, l'état de diffusion et la fréquence dans Meta Ads Manager."},
+    "ctr": {"drop_pct": 20, "label": "CTR", "severity": "medium", "mode": "relative",
+            "cause": "Le créa ou le ciblage accroche moins qu'avant.",
+            "action": "Tester d'autres visuels/accroches ou revoir le ciblage."},
 }
 
 
@@ -1848,13 +2145,40 @@ def detect_metric_regressions(previous: dict, current: dict, field_coverage_prev
     field_coverage lui-même.
 
     Ne fabrique jamais un chiffre : si une métrique est absente d'un des
-    deux instantanés, elle est simplement ignorée plutôt que traitée comme 0.
+    deux instantanés, elle est simplement ignorée plutôt que traitée comme 0
+    (jamais un delta relatif calculé contre zéro non plus).
+
+    mode="relative" (cpa/roas/frequency/impressions/ctr) compare un
+    pourcentage de VARIATION (rise_pct/drop_pct) plutôt qu'un delta de
+    points absolu — nécessaire car ces métriques n'ont pas d'échelle fixe
+    0-100 comparable d'une boutique à l'autre.
     """
     regressions = []
     for key, rule in _REGRESSION_THRESHOLDS.items():
         prev_val = previous.get(key)
         cur_val = current.get(key)
         if prev_val is None or cur_val is None:
+            continue
+        if rule.get("mode") == "relative":
+            if not prev_val:
+                continue
+            pct_change = round((cur_val - prev_val) / prev_val * 100, 1)
+            if "rise_pct" in rule and pct_change >= rule["rise_pct"]:
+                regressions.append({
+                    "metric": key, "label": rule["label"], "direction": "rise",
+                    "previous": prev_val, "current": cur_val, "pct_change": pct_change,
+                    "severity": rule["severity"],
+                    "message": f"{rule['label']} a augmenté de {pct_change}% ({prev_val} → {cur_val}).",
+                    "probable_cause": rule.get("cause"), "recommended_action": rule.get("action"),
+                })
+            elif "drop_pct" in rule and pct_change <= -rule["drop_pct"]:
+                regressions.append({
+                    "metric": key, "label": rule["label"], "direction": "drop",
+                    "previous": prev_val, "current": cur_val, "pct_change": pct_change,
+                    "severity": rule["severity"],
+                    "message": f"{rule['label']} a baissé de {abs(pct_change)}% ({prev_val} → {cur_val}).",
+                    "probable_cause": rule.get("cause"), "recommended_action": rule.get("action"),
+                })
             continue
         delta = cur_val - prev_val
         if "drop" in rule and delta <= -rule["drop"]:
@@ -1863,6 +2187,7 @@ def detect_metric_regressions(previous: dict, current: dict, field_coverage_prev
                 "previous": prev_val, "current": cur_val, "delta": round(delta, 1),
                 "severity": rule["severity"],
                 "message": f"{rule['label']} a baissé de {abs(round(delta, 1))} ({prev_val} → {cur_val}).",
+                "probable_cause": rule.get("cause"), "recommended_action": rule.get("action"),
             }
             if key == "event_match_quality" and field_coverage_previous and field_coverage_current:
                 entry["likely_cause"] = _biggest_field_coverage_drop(field_coverage_previous, field_coverage_current)
@@ -1873,6 +2198,7 @@ def detect_metric_regressions(previous: dict, current: dict, field_coverage_prev
                 "previous": prev_val, "current": cur_val, "delta": round(delta, 1),
                 "severity": rule["severity"],
                 "message": f"{rule['label']} a augmenté de {round(delta, 1)} ({prev_val} → {cur_val}).",
+                "probable_cause": rule.get("cause"), "recommended_action": rule.get("action"),
             })
     severity_order = {"high": 0, "medium": 1, "low": 2}
     regressions.sort(key=lambda r: severity_order.get(r["severity"], 3))
@@ -1947,6 +2273,56 @@ def generate_signal_alerts(metrics: dict) -> list:
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     alerts.sort(key=lambda a: severity_order.get(a["level"], 3))
     return alerts
+
+
+# ─── Funnel bottleneck detector ──────────────────────────────────────────────
+# Repères indicatifs (pas des seuils officiels Meta) pour interpréter un
+# funnel déjà mesuré avec des données 100% réelles (GET /meta-ads/funnel) —
+# cette fonction ne calcule AUCUN chiffre elle-même, elle ne fait
+# qu'interpréter des ratios déjà réels. AddToCart n'est pas un événement
+# distinct dans ce système (funnel va de ViewContent à InitiateCheckout
+# directement) — jamais présenté comme mesuré s'il ne l'est pas.
+_FUNNEL_TRANSITIONS = [
+    ("Impressions", "Clics", 1.0, "Créatif ou ciblage publicitaire", "Le clic n'accroche pas assez — tester d'autres visuels/accroches ou revoir le ciblage."),
+    ("Clics", "Vues Produit", 50.0, "Landing page / temps de chargement", "Beaucoup de clics n'aboutissent jamais à une vue produit — vérifier la vitesse de chargement et la cohérence pub → page."),
+    ("Vues Produit", "Paiement Initié", 10.0, "Fiche produit", "Peu de visiteurs déclenchent un paiement — vérifier prix, avis, photos, argumentaire de la fiche produit."),
+    ("Paiement Initié", "Achats", 30.0, "Tunnel de checkout", "Beaucoup de paiements initiés n'aboutissent pas — vérifier frais de livraison visibles tôt, simplicité du formulaire, rapidité de confirmation téléphonique."),
+    ("Achats", "Livrées", 80.0, "Livraison / confirmation", "Trop de commandes ne sont jamais livrées — vérifier le transporteur et le taux de rejet à la livraison."),
+]
+
+
+def detect_funnel_bottleneck(stages: list) -> dict:
+    """
+    Identifie l'étape du funnel où le taux de passage réel est le plus en
+    dessous de son repère indicatif — "le" goulot d'étranglement, pas une
+    liste de tous les écarts. `stages` = la liste EXACTE déjà renvoyée par
+    GET /meta-ads/funnel ([{name, count}, ...]) — aucune donnée recalculée
+    depuis zéro, seulement les ratios entre étapes consécutives déjà comptées.
+    """
+    counts = {s["name"]: s["count"] for s in (stages or [])}
+    candidates = []
+    for from_stage, to_stage, threshold_pct, cause, fix in _FUNNEL_TRANSITIONS:
+        from_count = counts.get(from_stage)
+        to_count = counts.get(to_stage)
+        if not from_count:
+            continue
+        rate_pct = round((to_count or 0) / from_count * 100, 2)
+        gap = threshold_pct - rate_pct
+        if gap > 0:
+            candidates.append({
+                "from_stage": from_stage, "to_stage": to_stage,
+                "rate_pct": rate_pct, "benchmark_pct": threshold_pct,
+                "gap_points": round(gap, 2), "likely_cause": cause, "fix": fix,
+            })
+    if not candidates:
+        return {"bottleneck": None, "message": "Aucune étape du funnel n'est en dessous de son repère indicatif sur la période.", "all_gaps": []}
+    candidates.sort(key=lambda c: c["gap_points"], reverse=True)
+    worst = candidates[0]
+    return {
+        "bottleneck": worst,
+        "message": f"Goulot d'étranglement : {worst['from_stage']} → {worst['to_stage']} ({worst['rate_pct']}%, repère indicatif {worst['benchmark_pct']}%) — {worst['likely_cause']}.",
+        "all_gaps": candidates,
+    }
 
 
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
@@ -2563,3 +2939,93 @@ def cleanup_old_capi_logs(db: "Session") -> int:
     if result.rowcount:
         logger.info("[MetaCAPI] cleanup: deleted %d success row(s) older than %dd", result.rowcount, _CLEANUP_RETENTION_DAYS)
     return result.rowcount
+
+
+# ─── Audit permanent (nightly) ───────────────────────────────────────────────
+def run_meta_nightly_audit(db: "Session", store_id: str) -> dict:
+    """
+    Audit permanent horodaté — appelé depuis le scheduler DÉJÀ EXISTANT
+    (background_loop, noest_sync.py), pas un nouveau cron. Persiste son
+    rapport dans audit_logs (action='meta_nightly_audit') — la table
+    d'audit générique déjà utilisée pour capi_marked_backfill, PAS une
+    nouvelle table dédiée.
+
+    Vérifie uniquement des faits structurels/statistiques (présence
+    pixel/token, taux de rejet/retry des dernières 24h, campagnes sans
+    achat Meta déclaré, commandes récentes sans UTM/campagne) — AUCUN appel
+    Graph API (la validation live du token existe déjà, à la demande, via
+    GET /health ; l'appeler chaque nuit pour chaque boutique ajouterait un
+    appel Meta périodique que rien ne justifie ici).
+    """
+    from app.models.marketing import MetaCapiLog, MetaAdsCampaign
+    from app.models.order import Order
+    from app.models.audit import AuditLog
+    from sqlalchemy import func
+    import uuid as _uuid
+
+    findings = []
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    if not config or not config.pixel_id:
+        findings.append({"check": "pixel", "status": "problem", "detail": "Aucun Pixel ID configuré pour cette boutique."})
+    elif not config.access_token or len(config.access_token) < 15:
+        findings.append({"check": "token", "status": "problem", "detail": "Access token absent ou trop court."})
+    else:
+        findings.append({"check": "pixel_token", "status": "ok",
+                          "detail": "Pixel et token présents (validité live non vérifiée ici — voir Santé du Pixel pour un contrôle à la demande)."})
+
+    status_rows = (
+        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.created_at >= since)
+        .group_by(MetaCapiLog.status)
+        .all()
+    )
+    by_status = {s: c for s, c in status_rows}
+    total_24h = sum(by_status.values())
+    failed_24h = by_status.get("failed", 0)
+    retry_24h = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
+    if total_24h and failed_24h / total_24h > 0.01:
+        findings.append({"check": "rejected", "status": "problem",
+                          "detail": f"{failed_24h}/{total_24h} Purchase rejetés sur les dernières 24h (> 1%)."})
+    if total_24h and retry_24h / total_24h > 0.02:
+        findings.append({"check": "retry", "status": "problem",
+                          "detail": f"{retry_24h}/{total_24h} Purchase en retry sur les dernières 24h (> 2%)."})
+
+    campaigns = (
+        db.query(MetaAdsCampaign)
+        .filter(MetaAdsCampaign.store_id == store_id, MetaAdsCampaign.spend > 0)
+        .all()
+    )
+    no_purchase = [c.campaign_name for c in campaigns if (c.meta_purchases or 0) == 0]
+    if no_purchase:
+        findings.append({"check": "campaigns_without_purchase", "status": "problem",
+                          "detail": f"{len(no_purchase)} campagne(s) avec dépenses mais aucun achat Meta déclaré.",
+                          "campaigns": no_purchase[:20]})
+
+    orders_24h = (
+        db.query(Order)
+        .filter(Order.store_id == store_id, Order.created_at >= since, Order.is_deleted == False)
+        .all()
+    )
+    if orders_24h:
+        no_attribution = sum(1 for o in orders_24h if not o.utm_campaign and not o.campaign_id)
+        if no_attribution / len(orders_24h) > 0.5:
+            findings.append({"check": "orders_without_attribution", "status": "problem",
+                              "detail": f"{no_attribution}/{len(orders_24h)} commandes des dernières 24h sans UTM ni campaign_id (normal si majoritairement organique/direct)."})
+
+    problems = [f for f in findings if f["status"] == "problem"]
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "store_id": store_id,
+        "findings": findings,
+        "problem_count": len(problems),
+        "healthy": len(problems) == 0,
+    }
+
+    db.add(AuditLog(
+        id=str(_uuid.uuid4()), store_id=store_id, entity="store", entity_id=store_id,
+        action="meta_nightly_audit", diff=report,
+    ))
+    db.commit()
+    return report

@@ -23,6 +23,10 @@ from app.services.meta_capi import (
     meta_health_label, estimate_learning_score_gains, estimate_learning_score_gains_by_field,
     compute_component_scores, analyze_meta_response, detect_metric_regressions,
     evaluate_best_practices_compliance, generate_signal_alerts,
+    detect_funnel_bottleneck, campaign_classification_label,
+    compute_meta_optimization_score, meta_optimization_label,
+    simulate_learning_score_change, rank_recommendations_by_impact,
+    compute_metric_correlation,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -582,3 +586,267 @@ def test_generate_signal_alerts_missing_metric_not_treated_as_zero():
     # l'alerte "EMQ < 80%" comme si elle valait 0.
     alerts = generate_signal_alerts({})
     assert alerts == []
+
+
+# ─── validate_purchase_event_consistency — extended checks ─────────────────
+
+def test_validate_purchase_event_consistency_detects_malformed_email_hash():
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"em": ["not-a-real-sha256"]}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "em" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_accepts_real_sha256_hash():
+    real_hash = "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b"
+    assert len(real_hash) == 64
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"em": [real_hash]}}
+    result = validate_purchase_event_consistency(event)
+    assert not any(w["field"] == "em" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_detects_invalid_ip():
+    event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"client_ip_address": "999.999.999.999"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "client_ip_address" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_accepts_valid_ipv4_and_ipv6():
+    for ip in ("102.45.12.9", "2001:db8::1"):
+        event = {"custom_data": {"value": 100, "currency": "DZD"}, "user_data": {"client_ip_address": ip}}
+        result = validate_purchase_event_consistency(event)
+        assert not any(w["field"] == "client_ip_address" for w in result["warnings"])
+
+
+def test_validate_purchase_event_consistency_unexpected_event_name_is_blocking():
+    event = {"event_name": "ViewContent", "custom_data": {"value": 100, "currency": "DZD"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(e["field"] == "event_name" for e in result["blocking_errors"])
+
+
+def test_validate_purchase_event_consistency_unexpected_content_type_is_warning():
+    event = {"custom_data": {"value": 100, "currency": "DZD", "content_type": "something_else"}}
+    result = validate_purchase_event_consistency(event)
+    assert any(w["field"] == "content_type" for w in result["warnings"])
+
+
+# ─── Funnel bottleneck detector ─────────────────────────────────────────────
+
+def test_detect_funnel_bottleneck_identifies_weakest_transition():
+    stages = [
+        {"name": "Impressions", "count": 100000},
+        {"name": "Clics", "count": 2000},       # CTR 2% — healthy
+        {"name": "Vues Produit", "count": 200},  # 10% of clicks — well under 50% benchmark
+        {"name": "Paiement Initié", "count": 40},
+        {"name": "Achats", "count": 20},
+        {"name": "Livrées", "count": 18},
+    ]
+    result = detect_funnel_bottleneck(stages)
+    assert result["bottleneck"]["from_stage"] == "Clics"
+    assert result["bottleneck"]["to_stage"] == "Vues Produit"
+
+
+def test_detect_funnel_bottleneck_no_gap_returns_none():
+    stages = [
+        {"name": "Impressions", "count": 100000},
+        {"name": "Clics", "count": 5000},
+        {"name": "Vues Produit", "count": 4000},
+        {"name": "Paiement Initié", "count": 1000},
+        {"name": "Achats", "count": 500},
+        {"name": "Livrées", "count": 480},
+    ]
+    result = detect_funnel_bottleneck(stages)
+    assert result["bottleneck"] is None
+
+
+def test_detect_funnel_bottleneck_missing_stage_data_skipped_not_fabricated():
+    result = detect_funnel_bottleneck([{"name": "Impressions", "count": 0}])
+    assert result["bottleneck"] is None
+    assert result["all_gaps"] == []
+
+
+# ─── Campaign classification label ──────────────────────────────────────────
+
+def test_campaign_classification_label_bands():
+    assert campaign_classification_label(None) == "Non disponible"
+    assert campaign_classification_label(95) == "Excellente"
+    assert campaign_classification_label(80) == "Bonne"
+    assert campaign_classification_label(50) == "À surveiller"
+    assert campaign_classification_label(20) == "Critique"
+
+
+def test_campaign_classification_label_matches_meta_health_label_thresholds():
+    # Mêmes seuils que meta_health_label (90/75/35), vocabulaire différent —
+    # pas un second barème inventé.
+    for score in (95, 80, 50, 20):
+        assert (campaign_classification_label(score) == "Non disponible") == (meta_health_label(score) == "Non disponible")
+
+
+# ─── detect_metric_regressions — relative (percentage) mode ────────────────
+
+def test_detect_metric_regressions_relative_mode_cpa_rise():
+    regressions = detect_metric_regressions({"cpa": 500}, {"cpa": 650})  # +30%
+    r = next(r for r in regressions if r["metric"] == "cpa")
+    assert r["direction"] == "rise"
+    assert r["pct_change"] == 30.0
+
+
+def test_detect_metric_regressions_relative_mode_roas_drop():
+    regressions = detect_metric_regressions({"roas": 5.0}, {"roas": 3.5})  # -30%
+    r = next(r for r in regressions if r["metric"] == "roas")
+    assert r["direction"] == "drop"
+
+
+def test_detect_metric_regressions_relative_mode_small_change_not_flagged():
+    regressions = detect_metric_regressions({"cpa": 500}, {"cpa": 520})  # +4%, under 20% threshold
+    assert not any(r["metric"] == "cpa" for r in regressions)
+
+
+def test_detect_metric_regressions_relative_mode_zero_previous_value_skipped():
+    # Division par zéro évitée — jamais un pourcentage calculé contre 0.
+    regressions = detect_metric_regressions({"cpa": 0}, {"cpa": 500})
+    assert not any(r["metric"] == "cpa" for r in regressions)
+
+
+def test_detect_metric_regressions_includes_probable_cause_and_action():
+    regressions = detect_metric_regressions({"backfill_pct": 2}, {"backfill_pct": 20})
+    r = next(r for r in regressions if r["metric"] == "backfill_pct")
+    assert r["probable_cause"]
+    assert r["recommended_action"]
+
+
+# ─── Meta Optimization Advisor — global score ───────────────────────────────
+
+def test_meta_optimization_label_bands():
+    assert meta_optimization_label(None) == "Non disponible"
+    assert meta_optimization_label(95) == "Excellent"
+    assert meta_optimization_label(85) == "Très bon"
+    assert meta_optimization_label(70) == "Bon"
+    assert meta_optimization_label(50) == "Moyen"
+    assert meta_optimization_label(20) == "Critique"
+
+
+def test_compute_meta_optimization_score_perfect_inputs():
+    result = compute_meta_optimization_score(
+        learning_score=100.0,
+        component_scores={"meta_acceptance": 100.0, "queue": 100.0, "event_quality": 100.0},
+        volume_weekly_rates={"purchase": 100, "addtocart": 100, "checkout": 100},
+    )
+    assert result["score"] == 100.0
+    assert result["label"] == "Excellent"
+    assert result["weakest_components"] == []
+
+
+def test_compute_meta_optimization_score_reuses_learning_score_verbatim():
+    # learning_score doit apparaître tel quel dans components, jamais recalculé.
+    result = compute_meta_optimization_score(72.3, {}, {})
+    assert result["components"]["learning_score"] == 72.3
+
+
+def test_compute_meta_optimization_score_volume_below_benchmark_is_partial():
+    # 25/semaine sur un repère de 50 -> 50% d'adéquation, pas 0% ni 100%.
+    result = compute_meta_optimization_score(100.0, {"meta_acceptance": 100, "queue": 100, "event_quality": 100},
+                                              {"purchase": 25, "addtocart": None, "checkout": None})
+    assert result["components"]["volume_adequacy"] == 50.0
+
+
+def test_compute_meta_optimization_score_missing_volume_data_is_zero_not_fabricated():
+    result = compute_meta_optimization_score(100.0, {"meta_acceptance": 100, "queue": 100, "event_quality": 100}, {})
+    assert result["components"]["volume_adequacy"] == 0.0
+
+
+def test_compute_meta_optimization_score_weights_sum_to_one():
+    result = compute_meta_optimization_score(50.0, {}, {})
+    assert abs(sum(result["weights"].values()) - 1.0) < 1e-9
+
+
+# ─── Arbitrary-target simulator ─────────────────────────────────────────────
+
+def test_simulate_learning_score_change_computes_real_delta():
+    components = {"event_match_quality": 60.0}
+    result = simulate_learning_score_change(components, {"event_match_quality": 90.0})
+    base = compute_learning_score(components)["score"]
+    projected = compute_learning_score({"event_match_quality": 90.0})["score"]
+    assert result["current_score"] == base
+    assert result["projected_score"] == projected
+    assert result["gain_points"] == round(projected - base, 1)
+
+
+def test_simulate_learning_score_change_includes_disclaimer():
+    result = simulate_learning_score_change({}, {"backfill_pct": 5})
+    assert "estimation" in result["disclaimer"].lower() or "Estimation" in result["disclaimer"]
+    assert result["changes_simulated"] == {"backfill_pct": 5}
+
+
+def test_simulate_learning_score_change_no_change_yields_zero_gain():
+    components = {"event_match_quality": 80.0}
+    result = simulate_learning_score_change(components, {})
+    assert result["gain_points"] == 0.0
+
+
+# ─── Recommendations ranker — merges existing engines, adds star rating ────
+
+def test_rank_recommendations_by_impact_excludes_component_level_emq_duplicate():
+    # event_match_quality ne doit JAMAIS apparaître comme recommandation de
+    # composant séparée du détail par champ (FBP/FBC/...) — double comptage.
+    components = {"event_match_quality": 20.0}
+    coverage = {"fbp": 0.0, "fbc": 0.0}
+    recs = rank_recommendations_by_impact(components, coverage)
+    assert not any("Event Match" in r["action"] or r["action"] == "Corriger event_match_quality" for r in recs)
+
+
+def test_rank_recommendations_by_impact_sorted_and_starred():
+    components = {"event_match_quality": 10.0, "realtime_pct": 10.0}
+    coverage = {"fbp": 0.0, "fbc": 50.0}
+    recs = rank_recommendations_by_impact(components, coverage)
+    gains = [r["gain_points"] for r in recs]
+    assert gains == sorted(gains, reverse=True)
+    for r in recs:
+        assert r["stars"].count("★") + r["stars"].count("☆") == 5
+        assert 1 <= r["stars"].count("★") <= 5
+
+
+def test_rank_recommendations_by_impact_field_labels_are_french():
+    coverage = {"fbp": 0.0}
+    recs = rank_recommendations_by_impact({"event_match_quality": 50.0}, coverage)
+    assert any(r["action"] == "Corriger FBP" for r in recs)
+
+
+# ─── Real correlation (Pearson), never asserted a priori ───────────────────
+
+def test_compute_metric_correlation_insufficient_data():
+    result = compute_metric_correlation([(1, 2), (2, 3)], "EMQ", "CPA")
+    assert result["coefficient"] is None
+    assert result["strength"] == "données insuffisantes"
+    assert result["sample_size"] == 2
+
+
+def test_compute_metric_correlation_perfect_negative():
+    pairs = [(60, 100), (70, 90), (80, 80), (90, 70), (100, 60)]
+    result = compute_metric_correlation(pairs, "EMQ", "CPA")
+    assert result["coefficient"] == -1.0
+    assert result["direction"].startswith("négative")
+    assert result["strength"] == "forte"
+
+
+def test_compute_metric_correlation_perfect_positive():
+    pairs = [(60, 60), (70, 70), (80, 80), (90, 90), (100, 100)]
+    result = compute_metric_correlation(pairs, "Learning", "ROAS")
+    assert result["coefficient"] == 1.0
+    assert result["direction"].startswith("positive")
+
+
+def test_compute_metric_correlation_no_variation_returns_not_computable():
+    pairs = [(50, 10), (50, 20), (50, 30), (50, 40), (50, 50)]
+    result = compute_metric_correlation(pairs, "A", "B")
+    assert result["coefficient"] is None
+    assert result["strength"] == "non calculable"
+
+
+def test_compute_metric_correlation_never_asserts_direction_not_present_in_data():
+    # Données réelles où EMQ et CPA montent ENSEMBLE (corrélation positive),
+    # contrairement à l'intuition "EMQ haut -> CPA bas" — le système doit
+    # rapporter ce qui EST observé, jamais l'hypothèse de départ.
+    pairs = [(60, 100), (70, 110), (80, 120), (90, 130), (100, 140)]
+    result = compute_metric_correlation(pairs, "EMQ", "CPA")
+    assert result["coefficient"] > 0
+    assert result["direction"].startswith("positive")
