@@ -1060,6 +1060,28 @@ def compute_match_quality(user_data: Optional[dict]) -> dict:
     }
 
 
+def scan_payload_quality(payload: Optional[dict]) -> dict:
+    """
+    Vérifie un event Purchase déjà construit (le dict complet stocké dans
+    MetaCapiLog.payload) pour les défauts structurels que Meta rejette ou
+    mal-interprète : value/currency/event_time manquants, devise inattendue.
+    Fonction pure, réutilisée par le Signal Quality Center (meta_ads.py)
+    pour rester testable sans dépendre de la base.
+    """
+    p = payload or {}
+    cd = p.get("custom_data") or {}
+    currency = cd.get("currency")
+    return {
+        "missing_value": cd.get("value") in (None, "", 0),
+        "missing_currency": not currency,
+        # DZD = devise native ERP ; USD/EUR = conversion volontaire vers la
+        # devise du compte pub (voir build_purchase_event). Toute autre
+        # valeur non-vide est une anomalie réelle, pas une fausse alerte.
+        "wrong_currency": bool(currency) and currency not in ("DZD", "USD", "EUR"),
+        "missing_event_time": not p.get("event_time"),
+    }
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/
