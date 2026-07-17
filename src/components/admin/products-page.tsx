@@ -997,18 +997,35 @@ export default function ProductsPage() {
                p-0 flex flex-col bg-slate-50 border-none shadow-2xl 
                rounded-none sm:rounded-[2rem] overflow-hidden !outline-none
             ">
-               {/* ── Header ── */}
-               <div className="shrink-0 h-[72px] sm:h-20 px-4 sm:px-8 bg-white border-b border-slate-100 flex items-center justify-between z-20 shadow-sm relative">
+               {/* ── Header — thème violet Upsell distinct du produit normal (bleu),
+                    pour que l'utilisateur voie IMMÉDIATEMENT, sans ouvrir un onglet,
+                    s'il est en train de créer/modifier un produit upsell ou un
+                    produit/pack classique. Réagit en direct au toggle "Produit
+                    Upsell Indépendant" plus bas (même state form.is_upsell_only). ── */}
+               <div className={cn(
+                  "shrink-0 h-[72px] sm:h-20 px-4 sm:px-8 border-b flex items-center justify-between z-20 shadow-sm relative transition-colors",
+                  form.is_upsell_only ? "bg-[#F0EDFF] border-[#6C5CE7]/20" : "bg-white border-slate-100"
+               )}>
                   <div className="flex items-center gap-3 sm:gap-4">
-                     <div className="size-10 sm:size-12 rounded-[14px] bg-indigo-50 flex items-center justify-center text-[#4b7bec]">
-                        {editingProduct ? <Edit3 className="size-5 sm:size-6" /> : <Plus className="size-5 sm:size-6" />}
+                     <div className={cn(
+                        "size-10 sm:size-12 rounded-[14px] flex items-center justify-center transition-colors",
+                        form.is_upsell_only ? "bg-[#6C5CE7] text-white" : "bg-indigo-50 text-[#4b7bec]"
+                     )}>
+                        {form.is_upsell_only ? <Zap className="size-5 sm:size-6" /> : editingProduct ? <Edit3 className="size-5 sm:size-6" /> : <Plus className="size-5 sm:size-6" />}
                      </div>
                      <div>
-                        <DialogTitle className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
-                           {editingProduct ? 'Modifier le Produit' : 'Nouvelle Référence'}
-                        </DialogTitle>
+                        <div className="flex items-center gap-2">
+                           <DialogTitle className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight leading-none">
+                              {form.is_upsell_only
+                                 ? (editingProduct ? 'Modifier le Produit Upsell' : 'Nouveau Produit Upsell')
+                                 : (editingProduct ? 'Modifier le Produit' : 'Nouvelle Référence')}
+                           </DialogTitle>
+                           {form.is_upsell_only && (
+                              <span className="text-[9px] font-black uppercase tracking-widest text-white bg-[#6C5CE7] px-2 py-0.5 rounded-full shrink-0">Upsell</span>
+                           )}
+                        </div>
                         <DialogDescription className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                           {activeStore?.name || 'Boutique'}
+                           {form.is_upsell_only ? 'Jamais visible sur le site — proposé uniquement par la confirmatrice' : (activeStore?.name || 'Boutique')}
                         </DialogDescription>
                      </div>
                   </div>
@@ -2641,11 +2658,18 @@ export default function ProductsPage() {
                               </Button>
                               <Button type="submit"
                                  disabled={createMutation.isPending || updateMutation.isPending}
-                                 className="flex-1 sm:flex-none h-12 sm:h-14 px-8 rounded-2xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-black uppercase tracking-[0.15em] text-[11px] shadow-xl shadow-indigo-500/20 transition-all active:scale-[0.98]"
+                                 className={cn(
+                                    "flex-1 sm:flex-none h-12 sm:h-14 px-8 rounded-2xl text-white font-black uppercase tracking-[0.15em] text-[11px] shadow-xl transition-all active:scale-[0.98]",
+                                    form.is_upsell_only
+                                       ? "bg-[#6C5CE7] hover:bg-[#5b4bd4] shadow-[#6C5CE7]/20"
+                                       : "bg-[#4b7bec] hover:bg-[#3867d6] shadow-indigo-500/20"
+                                 )}
                               >
                                  {createMutation.isPending || updateMutation.isPending
                                     ? <Loader2 className="size-5 animate-spin" />
-                                    : editingProduct ? 'Valider modifications ✓' : 'Créer le produit 🚀'
+                                    : editingProduct
+                                       ? (form.is_upsell_only ? 'Valider le produit upsell ✓' : 'Valider modifications ✓')
+                                       : (form.is_upsell_only ? 'Créer le produit upsell 🎁' : 'Créer le produit 🚀')
                                  }
                               </Button>
                            </div>
