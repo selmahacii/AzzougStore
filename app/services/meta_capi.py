@@ -1282,6 +1282,434 @@ def diagnose_campaign_learning(metrics: dict) -> list:
     return reasons
 
 
+# ─── Meta Optimization Engine ─────────────────────────────────────────────────
+# Explication par champ — pourquoi il peut manquer sur UN event Purchase
+# réel, son impact, et la correction possible. Source de vérité UNIQUE,
+# partagée par le contrôle avant envoi (_handle_claimed_row) ET par tout
+# scan a posteriori — jamais deux explications différentes pour le même
+# champ. Aucune de ces valeurs n'est une donnée : ce sont des explications
+# fixes, jamais substituées à un champ manquant.
+_SIGNAL_FIELD_GUIDE: Dict[str, Dict[str, str]] = {
+    "event_name": {
+        "impact": "critique — sans lui Meta ne sait pas quel type de conversion a eu lieu.",
+        "why_missing": "ne devrait jamais manquer : toujours 'Purchase' en dur.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "order_id": {
+        "impact": "faible — champ interne (custom_data.order_id), pas un paramètre standard Meta, utile seulement pour notre propre traçabilité.",
+        "why_missing": "ne devrait jamais manquer : dérivé de order.order_number.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "content_type": {
+        "impact": "moyen — recommandé par Meta pour le e-commerce (aide au catalogue produit/Advantage+).",
+        "why_missing": "ne devrait jamais manquer : toujours 'product' en dur.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "content_ids": {
+        "impact": "élevé — sans IDs produit, Meta ne peut pas faire de retargeting catalogue ni de recommandations dynamiques.",
+        "why_missing": "la commande n'a aucun article (order.items vide) — ne devrait pas arriver pour une commande valide.",
+        "fix": "vérifier que order.items est bien chargé/non vide pour cette commande.",
+    },
+    "contents": {
+        "impact": "élevé — quantités/prix par article, utilisés par Meta pour le catalogue dynamique.",
+        "why_missing": "la commande n'a aucun article (order.items vide).",
+        "fix": "vérifier que order.items est bien chargé/non vide pour cette commande.",
+    },
+    "num_items": {
+        "impact": "moyen — utilisé par Meta pour distinguer un panier d'un article unique.",
+        "why_missing": "la commande n'a aucun article ou une quantité totale de 0.",
+        "fix": "vérifier order.items[].quantity pour cette commande.",
+    },
+    "event_id": {
+        "impact": "critique — sans lui Meta ne peut pas dédupliquer Pixel/CAPI, risque de double comptage.",
+        "why_missing": "ne devrait jamais manquer : généré de façon déterministe depuis order_number.",
+        "fix": "vérifier purchase_event_id() et order.order_number.",
+    },
+    "event_time": {
+        "impact": "élevé — Meta ne peut pas situer la conversion dans sa fenêtre d'attribution.",
+        "why_missing": "ne devrait jamais manquer : dérivé de order.created_at (toujours renseigné).",
+        "fix": "vérifier build_purchase_event / order.created_at.",
+    },
+    "value": {
+        "impact": "élevé — Meta ne peut pas optimiser sur la valeur des conversions.",
+        "why_missing": "order.total est à 0 ou absent (commande gratuite, remise à 100%, item sans prix).",
+        "fix": "vérifier order.total sur cette commande.",
+    },
+    "currency": {
+        "impact": "élevé — une valeur sans devise valide peut faire rejeter l'événement par Meta.",
+        "why_missing": "MetaAdsConfig.currency non configuré pour cette boutique.",
+        "fix": "renseigner la devise du compte pub dans la configuration Meta Ads.",
+    },
+    "event_source_url": {
+        "impact": "faible — contexte de navigation, n'entre ni dans l'attribution ni le matching.",
+        "why_missing": "commande créée hors navigateur (téléphone, admin) ou URL non transmise au checkout.",
+        "fix": "vérifier que attributionPayload() est bien envoyé au moment du checkout.",
+    },
+    "action_source": {
+        "impact": "élevé — Meta a besoin de savoir où l'action a eu lieu.",
+        "why_missing": "ne devrait jamais manquer : toujours 'website' en dur.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "client_ip_address": {
+        "impact": "moyen — dégrade l'Event Match Quality.",
+        "why_missing": "commande créée sans requête HTTP directe (rattrapage, admin) ou IP non transmise par le proxy.",
+        "fix": "vérifier x-forwarded-for côté proxy/CDN pour les commandes concernées.",
+    },
+    "client_user_agent": {
+        "impact": "moyen — dégrade l'Event Match Quality.",
+        "why_missing": "commande créée sans en-tête User-Agent (rattrapage, admin, vente téléphonique).",
+        "fix": "vérifier que le checkout transmet bien le User-Agent au moment de la commande.",
+    },
+    "fbp": {
+        "impact": "moyen — dégrade l'Event Match Quality (identifiant navigateur Meta).",
+        "why_missing": "cookie _fbp absent (bloqueur de cookies, Pixel pas encore chargé, commande hors navigateur).",
+        "fix": "vérifier le chargement du Pixel avant la soumission du formulaire de commande.",
+    },
+    "fbc": {
+        "impact": "moyen — dégrade l'Event Match Quality (identifiant de clic publicitaire).",
+        "why_missing": "trafic non-Meta (organique/direct) ou fbclid non capturé sur la page d'atterrissage.",
+        "fix": "normal pour du trafic non-Meta ; sinon vérifier la capture de fbclid dans l'URL d'atterrissage.",
+    },
+    "em": {
+        "impact": "élevé — l'email est le signal de matching le plus fiable pour Meta.",
+        "why_missing": "order.customer_email vide (commande sans email collecté).",
+        "fix": "rendre l'email obligatoire ou incitatif au checkout.",
+    },
+    "ph": {
+        "impact": "élevé — signal de matching très fiable, quasi toujours disponible (vente par téléphone).",
+        "why_missing": "order.customer_phone vide — généralement une anomalie de saisie.",
+        "fix": "vérifier la validation du champ téléphone au checkout.",
+    },
+    "external_id": {
+        "impact": "moyen — signal de matching additionnel.",
+        "why_missing": "ne devrait jamais manquer : dérivé de customer_phone ou order.id.",
+        "fix": "vérifier build_purchase_event.",
+    },
+    "fn": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_name vide ou ne contient qu'un seul mot.",
+        "fix": "encourager la saisie prénom + nom séparément au checkout.",
+    },
+    "ln": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_name ne contient qu'un seul mot (pas de nom de famille distinct).",
+        "fix": "encourager la saisie prénom + nom séparément au checkout.",
+    },
+    "ct": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_commune vide.",
+        "fix": "rendre la commune obligatoire au checkout.",
+    },
+    "st": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "order.customer_wilaya vide.",
+        "fix": "rendre la wilaya obligatoire au checkout (déjà quasi toujours présente).",
+    },
+    "country": {
+        "impact": "faible — signal de matching secondaire.",
+        "why_missing": "ne devrait jamais manquer : fixé à 'DZ' (boutique Algérie uniquement).",
+        "fix": "aucune action nécessaire.",
+    },
+    "zp": {
+        "impact": "faible — le moins utile des champs de matching Meta.",
+        "why_missing": "structurel : aucune colonne code postal sur la commande — jamais collecté au checkout.",
+        "fix": "ajouter un champ code postal au formulaire de commande (décision produit, pas un correctif de code).",
+    },
+}
+
+
+def evaluate_purchase_signal_quality(event: Optional[dict]) -> dict:
+    """
+    Évaluateur exécuté sur un event Purchase déjà construit
+    (build_purchase_event ou un payload historique) — sert à la fois de
+    contrôle avant envoi (_handle_claimed_row, juste avant send_events) et
+    de scan a posteriori (Signal Quality Center / Campaign Learning
+    Health), UNE seule fonction pour ne jamais afficher deux scores
+    différents pour le même événement.
+
+    Ne bloque JAMAIS l'envoi — le retour ne contient aucun signal
+    "annuler" : seulement un diagnostic honnête (champ par champ) de ce
+    qui manque, pourquoi, l'impact réel, et comment le corriger. Aucune
+    donnée n'est jamais complétée ici avec une valeur fictive — un champ
+    absent reste `None`, expliqué, jamais remplacé.
+
+    match_score = le score Event Match Quality déjà calculé par
+    compute_match_quality — même calcul, même nombre, réutilisé sous un
+    nom plus parlant plutôt que dupliqué sous un autre score.
+    """
+    event = event or {}
+    ud = event.get("user_data") or {}
+    cd = event.get("custom_data") or {}
+    root_fields = {
+        "event_name": bool(event.get("event_name")),
+        "event_id": bool(event.get("event_id")),
+        "event_time": bool(event.get("event_time")),
+        "event_source_url": bool(event.get("event_source_url")),
+        "action_source": bool(event.get("action_source")),
+        "value": cd.get("value") not in (None, "", 0),
+        "currency": bool(cd.get("currency")),
+        "order_id": bool(cd.get("order_id")),
+        "content_type": bool(cd.get("content_type")),
+        "content_ids": bool(cd.get("content_ids")),
+        "contents": bool(cd.get("contents")),
+        "num_items": bool(cd.get("num_items")),
+    }
+    user_data_fields = {
+        key: bool(ud.get(key)) for key in
+        ("em", "ph", "fn", "ln", "ct", "st", "country", "zp", "external_id",
+         "client_ip_address", "client_user_agent", "fbp", "fbc")
+    }
+    all_fields = {**root_fields, **user_data_fields}
+
+    checks = []
+    for key, present in all_fields.items():
+        guide = _SIGNAL_FIELD_GUIDE.get(key, {})
+        checks.append({
+            "field": key,
+            "present": present,
+            "impact": guide.get("impact", "non documenté"),
+            "why_if_missing": None if present else guide.get("why_missing", "cause non identifiée"),
+            "fix": None if present else guide.get("fix", "vérifier la source de cette donnée"),
+        })
+
+    match_quality = compute_match_quality(ud)
+    n_present = sum(1 for c in checks if c["present"])
+    completeness_pct = round(n_present / len(checks) * 100, 1) if checks else 0.0
+    consistency = validate_purchase_event_consistency(event)
+
+    return {
+        "match_score": match_quality["score"],
+        "completeness_pct": completeness_pct,
+        "checks": checks,
+        "missing_fields": [c["field"] for c in checks if not c["present"]],
+        "blocking_errors": consistency["blocking_errors"],
+        "warnings": consistency["warnings"],
+    }
+
+
+# Fenêtre d'acceptation event_time de Meta — même valeur que
+# META_CAPI_EVENT_TIME_WINDOW_DAYS (app/api/v1/orders.py), dupliquée ici en
+# constante plutôt qu'importée pour éviter un import circulaire
+# (orders.py importe déjà depuis meta_capi.py). Documentée pour rester en
+# phase si l'une des deux change un jour.
+_EVENT_TIME_MAX_AGE_DAYS = 7
+# Devises couramment vues dans ce système (DZD natif ERP, USD/EUR comptes
+# pub) — une devise hors de cette liste n'est pas forcément invalide pour
+# Meta, mais mérite une vérification manuelle plutôt qu'un envoi silencieux.
+_KNOWN_CURRENCIES = {"DZD", "USD", "EUR", "GBP", "CAD", "AUD", "CHF", "AED", "SAR", "TND", "MAD"}
+
+
+def validate_purchase_event_consistency(event: Optional[dict], *, now: Optional[float] = None) -> dict:
+    """
+    Vérifie la COHÉRENCE des valeurs d'un event Purchase déjà construit —
+    pas seulement leur présence (voir evaluate_purchase_signal_quality,
+    qui appelle cette fonction et fusionne son résultat). Sépare erreurs
+    bloquantes (Meta rejettera très probablement l'événement) des
+    avertissements (accepté mais dégradé).
+
+    `now` en secondes epoch, injectable pour les tests ; par défaut
+    l'heure réelle. Ne modifie jamais l'event reçu.
+    """
+    import time as _time
+    event = event or {}
+    cd = event.get("custom_data") or {}
+    now = now if now is not None else _time.time()
+
+    blocking_errors = []
+    warnings = []
+
+    value = cd.get("value")
+    if isinstance(value, (int, float)) and value < 0:
+        blocking_errors.append({
+            "field": "value", "issue": "valeur négative",
+            "detail": f"value={value} — Meta rejette les valeurs négatives pour un Purchase.",
+        })
+
+    currency = cd.get("currency")
+    if currency:
+        if not (isinstance(currency, str) and len(currency) == 3 and currency.isalpha() and currency.isupper()):
+            blocking_errors.append({
+                "field": "currency", "issue": "format invalide",
+                "detail": f"currency={currency!r} — doit être un code ISO 4217 à 3 lettres majuscules.",
+            })
+        elif currency not in _KNOWN_CURRENCIES:
+            warnings.append({
+                "field": "currency", "issue": "devise inhabituelle",
+                "detail": f"currency={currency} n'est pas dans la liste des devises couramment utilisées par ce système — à vérifier manuellement, pas forcément une erreur.",
+            })
+
+    event_time = event.get("event_time")
+    if isinstance(event_time, (int, float)):
+        if event_time > now + 300:  # 5 min de marge pour l'horloge serveur
+            blocking_errors.append({
+                "field": "event_time", "issue": "dans le futur",
+                "detail": f"event_time={int(event_time)} est postérieur à l'heure actuelle — jamais valide pour une conversion déjà survenue.",
+            })
+        elif event_time < now - (_EVENT_TIME_MAX_AGE_DAYS * 86400):
+            blocking_errors.append({
+                "field": "event_time", "issue": "hors fenêtre d'acceptation Meta",
+                "detail": f"event_time vieux de plus de {_EVENT_TIME_MAX_AGE_DAYS} jours — Meta rejette ces événements (voir META_CAPI_EVENT_TIME_WINDOW_DAYS).",
+            })
+
+    content_ids = cd.get("content_ids")
+    if isinstance(content_ids, list) and any(not cid for cid in content_ids):
+        warnings.append({
+            "field": "content_ids", "issue": "ID produit vide dans la liste",
+            "detail": "au moins un content_id est vide — dégrade le retargeting catalogue pour cet article.",
+        })
+
+    return {"blocking_errors": blocking_errors, "warnings": warnings}
+
+
+# Explication par champ d'attribution — QUAND il aurait dû être capturé
+# (utile pour distinguer "jamais capturable" de "capturable mais perdu").
+# "landing_page" n'a pas de colonne dédiée sur Order — event_source_url
+# (l'URL de la page au moment du checkout) en est le proxy honnête, jamais
+# présenté comme un champ distinct qui n'existe pas.
+_ATTRIBUTION_FIELD_GUIDE: Dict[str, str] = {
+    "campaign_id": "au clic sur la publicité (paramètre d'URL), transmis au checkout par attributionPayload().",
+    "adset_id": "au clic sur la publicité (paramètre d'URL), transmis au checkout par attributionPayload().",
+    "ad_id": "au clic sur la publicité (paramètre d'URL), transmis au checkout par attributionPayload().",
+    "utm_source": "dans l'URL de la publicité, capturé à la première page vue et transmis au checkout.",
+    "utm_medium": "dans l'URL de la publicité, capturé à la première page vue et transmis au checkout.",
+    "utm_campaign": "dans l'URL de la publicité, capturé à la première page vue et transmis au checkout.",
+    "utm_content": "dans l'URL de la publicité, capturé à la première page vue et transmis au checkout.",
+    "utm_term": "dans l'URL de la publicité, capturé à la première page vue et transmis au checkout.",
+    "event_source_url": "au chargement de la page de checkout (window.location.href) — sert de landing_page, aucune colonne dédiée.",
+}
+
+
+def evaluate_order_attribution(order) -> dict:
+    """
+    Complétude de l'attribution publicitaire d'UNE commande —
+    campaign_id/adset_id/ad_id/utm_*/event_source_url (proxy landing_page).
+    L'absence de ces champs n'est PAS une anomalie en soi : une commande
+    organique/directe n'a normalement AUCUN signal publicitaire — c'est le
+    comportement attendu, jamais présenté comme un défaut de tracking.
+    Aucune valeur n'est jamais déduite : un champ absent reste `None`.
+    """
+    fields = {
+        "campaign_id": getattr(order, "campaign_id", None),
+        "adset_id": getattr(order, "adset_id", None),
+        "ad_id": getattr(order, "ad_id", None),
+        "utm_source": getattr(order, "utm_source", None),
+        "utm_medium": getattr(order, "utm_medium", None),
+        "utm_campaign": getattr(order, "utm_campaign", None),
+        "utm_content": getattr(order, "utm_content", None),
+        "utm_term": getattr(order, "utm_term", None),
+        "event_source_url": getattr(order, "event_source_url", None),
+    }
+    has_any_ad_signal = any(fields[k] for k in ("campaign_id", "adset_id", "ad_id", "utm_campaign"))
+
+    checks = []
+    for key, value in fields.items():
+        present = bool(value)
+        why_if_missing = None
+        if not present:
+            why_if_missing = (
+                "aucun signal publicitaire détecté sur cette commande (probablement trafic organique/direct) — absence normale, pas une anomalie."
+                if not has_any_ad_signal
+                else "signal publicitaire partiellement capturé pour cette commande (certains champs présents, celui-ci non) — vérifier les paramètres d'URL de cette publicité spécifique."
+            )
+        checks.append({
+            "field": key,
+            "present": present,
+            "when_should_be_captured": _ATTRIBUTION_FIELD_GUIDE.get(key, "au checkout"),
+            "why_if_missing": why_if_missing,
+        })
+
+    return {
+        "checks": checks,
+        "likely_organic": not has_any_ad_signal,
+        "attribution_completeness_pct": round(sum(1 for c in checks if c["present"]) / len(checks) * 100, 1) if checks else 0.0,
+    }
+
+
+def meta_health_label(score: Optional[float]) -> str:
+    """Bandes catégorielles pour un score /100 déjà calculé ailleurs (jamais une note recalculée en secret)."""
+    if score is None:
+        return "Non disponible"
+    if score >= 90:
+        return "Excellent"
+    if score >= 75:
+        return "Bon"
+    if score >= 55:
+        return "Moyen"
+    if score >= 35:
+        return "Faible"
+    return "Critique"
+
+
+def estimate_learning_score_gains(components: dict) -> list:
+    """
+    Pour chaque composant du Learning Score qui n'est pas déjà à 100,
+    calcule le gain de points RÉEL : recalcul complet de
+    compute_learning_score avec CE SEUL composant porté à 100 (ou latence
+    ramenée à 0ms), tous les autres inchangés — jamais un gain estimé à la
+    main. Trié par gain décroissant ; les composants déjà parfaits ou sans
+    gain possible n'apparaissent pas.
+
+    `components` prend les mêmes clés que compute_learning_score :
+    realtime_pct, event_match_quality, valid_purchase_pct, dedup_pct,
+    value_present_pct, attribution_pct, avg_latency_ms.
+    """
+    base = compute_learning_score(components)
+    base_score = base["score"]
+    gains = []
+    for key in _LEARNING_SCORE_WEIGHTS:
+        current = base["components"].get(key, 0.0)
+        if current >= 100:
+            continue
+        hypothetical = dict(components)
+        if key == "latency_score":
+            hypothetical["avg_latency_ms"] = 0
+        else:
+            hypothetical[key] = 100.0
+        new_score = compute_learning_score(hypothetical)["score"]
+        gain = round(new_score - base_score, 1)
+        if gain > 0:
+            gains.append({"component": key, "current": round(current, 1), "gain_points": gain})
+    gains.sort(key=lambda g: g["gain_points"], reverse=True)
+    return gains
+
+
+def estimate_learning_score_gains_by_field(components: dict, field_coverage_pct: dict) -> list:
+    """
+    Gain de Learning Score si UN champ EMQ précis (FBP, FBC, email, ...)
+    passait à 100% de couverture — pas juste "si l'EMQ moyen passait à
+    100%" comme estimate_learning_score_gains. Calcul EXACT, pas une
+    approximation : compute_match_quality fait une moyenne NON PONDÉRÉE
+    sur les 12 champs _MATCH_QUALITY_FIELDS, donc porter UN champ de X% à
+    100% de couverture relève l'EMQ moyen de EXACTEMENT (100 - X) / 12
+    points de pourcentage (chaque champ pèse 1/12 dans ce score, par
+    construction de compute_match_quality) — pas une estimation arbitraire.
+
+    field_coverage_pct : dict {clé EMQ: pourcentage de présence 0-100},
+    typiquement `field_coverage` du Signal Quality Center ou
+    field_completeness d'une campagne, restreint aux 12 clés EMQ.
+    """
+    base_emq = components.get("event_match_quality", 0.0) or 0.0
+    base = compute_learning_score(components)
+    base_score = base["score"]
+    n_fields = len(_MATCH_QUALITY_FIELDS)
+
+    gains = []
+    for key, _label in _MATCH_QUALITY_FIELDS:
+        coverage = field_coverage_pct.get(key)
+        if coverage is None or coverage >= 100:
+            continue
+        delta_emq = (100 - coverage) / n_fields
+        hypothetical_emq = min(100.0, base_emq + delta_emq)
+        hypothetical = dict(components)
+        hypothetical["event_match_quality"] = hypothetical_emq
+        new_score = compute_learning_score(hypothetical)["score"]
+        gain = round(new_score - base_score, 1)
+        if gain > 0:
+            gains.append({"field": key, "current_coverage_pct": round(coverage, 1), "gain_points": gain})
+    gains.sort(key=lambda g: g["gain_points"], reverse=True)
+    return gains
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/
@@ -1436,6 +1864,38 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             ad_currency=config.currency or "DZD",
             exchange_rate=config.exchange_rate if config.exchange_rate else 1.0,
         )
+
+        # Contrôle avant envoi — jamais un blocage (aucune donnée n'est
+        # jamais inventée ou complétée par une valeur fictive ici ; tout ce
+        # qui peut réellement être récupéré l'est déjà dans
+        # build_purchase_event/build_user_data ci-dessus, depuis order/
+        # config, la seule "optimisation automatique" honnête possible).
+        # Seul un signal faible est journalisé, pour que la cause soit
+        # visible dans les logs au moment même de l'envoi plutôt que
+        # découverte seulement lors d'un scan a posteriori.
+        # event_id ne peut PAS être vérifié "unique" par une requête ici sans
+        # ajouter un scan non indexé par envoi (event_id n'a aucun index —
+        # contraire à la contrainte "aucune augmentation importante des
+        # requêtes SQL / index optimisés"). La garantie vient de la
+        # CONSTRUCTION, plus forte qu'une vérification runtime : event_id
+        # est dérivé déterministiquement d'order_number (unique en base), et
+        # uq_meta_capi_purchase_per_order empêche la même commande d'avoir
+        # deux lignes Purchase. Les doublons RÉELS (payload corrompu, ligne
+        # pré-contrainte) restent détectés par le scan groupé déjà existant
+        # (Signal Quality Center, anomalie EVENT_ID_DUPLIQUE).
+        _signal_eval = evaluate_purchase_signal_quality(event)
+        if _signal_eval["blocking_errors"]:
+            logger.error(
+                "[MetaCAPI] order=%s erreurs bloquantes avant envoi — %s",
+                order_id, _signal_eval["blocking_errors"],
+            )
+        if _signal_eval["match_score"] < 50 or _signal_eval["completeness_pct"] < 70:
+            logger.warning(
+                "[MetaCAPI] order=%s faible qualité de signal avant envoi — match_score=%.1f completeness=%.1f%% champs manquants=%s warnings=%s",
+                order_id, _signal_eval["match_score"], _signal_eval["completeness_pct"],
+                _signal_eval["missing_fields"], _signal_eval["warnings"],
+            )
+
         result = send_events(
             config.pixel_id, config.access_token, [event],
             store_label=order.store.name if order.store else str(order.store_id),
