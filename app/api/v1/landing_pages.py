@@ -445,6 +445,13 @@ def get_landing_page_analytics(
                 (Order.status != "MERGED", OrderItem.quantity * OrderItem.unit_price), else_=0
             )), 0).label("revenue"),
         )
+        # select_from() explicite : quand toutes les colonnes sélectionnées
+        # sont des expressions func.count()/case() plutôt que des entités
+        # mappées, SQLAlchemy ne peut pas toujours déduire le FROM implicite
+        # depuis les colonnes seules — d'où l'InvalidRequestError
+        # "Don't know how to join to Order" observée en production sur la
+        # requête detail_row juste en dessous (structure identique).
+        .select_from(OrderItem)
         .join(Order, Order.id == OrderItem.order_id)
         .filter(
             Order.store_id == lp.store_id,
@@ -503,6 +510,12 @@ def get_landing_page_analytics(
                 (and_(Order.nrp_count > 0, _is_abandoned, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
             ))).label("nrp_abandoned"),
         )
+        # select_from() explicite — c'est ICI que l'erreur 500 réelle se
+        # produisait : cette requête n'a aucune entité mappée en tête de
+        # SELECT (seulement des func.count(distinct(case(...)))), donc
+        # SQLAlchemy ne pouvait pas déduire tout seul quelle table est le
+        # FROM avant le join vers Order.
+        .select_from(OrderItem)
         .join(Order, Order.id == OrderItem.order_id)
         .filter(
             Order.store_id == lp.store_id,
