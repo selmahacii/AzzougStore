@@ -1482,15 +1482,19 @@ export default function MetaAdsDashboard() {
                   // depuis LE MÊME calcul (learning_score.sample_size =
                   // realtime_count + backfill_count par construction) —
                   // jamais un pourcentage affiché sans son compteur d'origine.
-                  { label: 'Temps réel', value: `${signalQuality.learning_score.realtime_pct}%`, sub: `${signalQuality.learning_score.realtime_count}/${signalQuality.learning_score.sample_size}` },
-                  { label: 'Backfill', value: `${signalQuality.learning_score.backfill_pct}%`, sub: `${signalQuality.learning_score.backfill_count}/${signalQuality.learning_score.sample_size}` },
+                  // Aucun champ ci-dessous n'affiche "0%" pour un échantillon
+                  // vide — le moteur (compute_meta_metrics) renvoie null dans
+                  // ce cas, distingué ici de "—" pour ne jamais confondre
+                  // "pas de donnée" avec "mauvaise qualité mesurée".
+                  { label: 'Temps réel', value: signalQuality.learning_score.realtime_pct != null ? `${signalQuality.learning_score.realtime_pct}%` : '—', sub: `${signalQuality.learning_score.realtime_count}/${signalQuality.learning_score.sample_size}` },
+                  { label: 'Backfill', value: signalQuality.learning_score.backfill_pct != null ? `${signalQuality.learning_score.backfill_pct}%` : '—', sub: `${signalQuality.learning_score.backfill_count}/${signalQuality.learning_score.sample_size}` },
                   { label: 'EMQ', value: signalQuality.learning_score.event_match_quality != null ? `${signalQuality.learning_score.event_match_quality}%` : '—' },
                   { label: 'Latence', value: signalQuality.learning_score.avg_latency_ms != null ? `${(signalQuality.learning_score.avg_latency_ms / 1000).toFixed(1)}s` : '—' },
-                  { label: 'Dédup', value: `${signalQuality.learning_score.dedup_pct}%` },
-                  { label: 'Purchase valides', value: `${signalQuality.learning_score.valid_purchase_pct}%`, sub: `${signalQuality.learning_score.valid_purchase_count}` },
-                  { label: 'Rejetés', value: `${signalQuality.learning_score.rejected_pct}%`, sub: `${signalQuality.learning_score.rejected_count}` },
-                  { label: 'Valeur monétaire', value: `${signalQuality.learning_score.value_present_pct}%` },
-                  { label: 'Attribution', value: `${signalQuality.learning_score.attribution_pct}%` },
+                  { label: 'Dédup', value: signalQuality.learning_score.dedup_pct != null ? `${signalQuality.learning_score.dedup_pct}%` : '—' },
+                  { label: 'Purchase valides', value: signalQuality.learning_score.valid_purchase_pct != null ? `${signalQuality.learning_score.valid_purchase_pct}%` : '—', sub: `${signalQuality.learning_score.valid_purchase_count}` },
+                  { label: 'Rejetés', value: signalQuality.learning_score.rejected_pct != null ? `${signalQuality.learning_score.rejected_pct}%` : '—', sub: `${signalQuality.learning_score.rejected_count}` },
+                  { label: 'Valeur monétaire', value: signalQuality.learning_score.value_present_pct != null ? `${signalQuality.learning_score.value_present_pct}%` : '—' },
+                  { label: 'Attribution', value: signalQuality.learning_score.attribution_pct != null ? `${signalQuality.learning_score.attribution_pct}%` : '—' },
                 ].map(m => (
                   <div key={m.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                     <p className="text-base font-black tabular-nums text-white">{m.value}</p>

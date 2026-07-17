@@ -558,12 +558,22 @@ def sync_cloudinary_migration() -> None:
     """
     db = SessionLocal()
     try:
-        from app.api.v1.upload import run_cloudinary_migration
+        from app.api.v1.upload import run_cloudinary_migration, clear_orphaned_local_images
         result = run_cloudinary_migration(db)
         if result.get("products_updated"):
             logger.info(
                 "Cloudinary auto-migration: %d produit(s) migré(s), %d échec(s)",
                 result.get("products_updated", 0), result.get("images_still_local_or_failed", 0),
+            )
+        # Ce qui n'a PAS pu être migré (fichier local déjà disparu, ex :
+        # redémarrage du Space avant que ce sweep ne passe) restera cassé pour
+        # toujours sinon — on le nettoie juste après, même sweep, même cadence.
+        cleanup = clear_orphaned_local_images(db)
+        if cleanup.get("total_references_removed"):
+            logger.info(
+                "Nettoyage images orphelines : %d référence(s) retirée(s) (produits=%d, landing pages=%d, boutiques=%d)",
+                cleanup["total_references_removed"], cleanup["products_cleared"],
+                cleanup["landing_pages_cleared"], cleanup["stores_cleared"],
             )
     except Exception as exc:
         logger.warning("Cloudinary auto-migration crashed: %s", exc)

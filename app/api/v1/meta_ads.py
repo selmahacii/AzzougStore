@@ -2935,6 +2935,7 @@ def get_signal_quality(
     from app.models.marketing import MetaCapiLog
     from app.models.audit import AuditLog
     from app.core.dates import parse_local_date_filter
+    from app.core.analytics_cache import get_cached, set_cached, DEFAULT_TTL_SECONDS
     from app.services.meta_capi import (
         compute_match_quality, scan_payload_quality, compute_learning_score,
         classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
@@ -2942,6 +2943,16 @@ def get_signal_quality(
         compute_component_scores, generate_signal_alerts, evaluate_purchase_signal_quality,
         compute_meta_optimization_score, rank_recommendations_by_impact,
     )
+
+    # Endpoint le plus coûteux du module (plusieurs requêtes groupées/jointes
+    # sur meta_capi_logs) et rouvert plusieurs fois par session dashboard
+    # (changement d'onglet, refresh) sans que les données sous-jacentes
+    # changent seconde par seconde — un cache court (10 min) ramène le temps
+    # de réponse sous la seconde sans jamais dépasser une fraîcheur "raisonnable".
+    _cache_key = f"signal_quality:{store_id}:{range_days}:{date_from}:{date_to}"
+    _cached = get_cached(_cache_key)
+    if _cached is not None:
+        return _cached
 
     db.info["skip_tenant_isolation"] = True
     until = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -3164,7 +3175,7 @@ def get_signal_quality(
     field_coverage_pct = {f["key"]: f["coverage_pct"] for f in field_coverage}
     recommendations = rank_recommendations_by_impact(_learning_components, field_coverage_pct)
 
-    return {
+    result = {
         "success": True,
         "data": {
             "range_days": range_days,
@@ -3177,7 +3188,7 @@ def get_signal_quality(
             "meta": {
                 "calculated_at": m["calculated_at"].isoformat() if m["calculated_at"] else None,
                 "last_purchase_event_at": m["last_success_at"].isoformat() if m["last_success_at"] else None,
-                "calculation_mode": "Temps réel — recalculé à chaque ouverture du dashboard (aucun cache).",
+                "calculation_mode": f"Recalculé depuis meta_capi_logs, mis en cache {DEFAULT_TTL_SECONDS // 60} minutes pour accélérer les ouvertures rapprochées du dashboard.",
                 "audit_note": "Un audit quotidien (run_meta_nightly_audit) historise séparément ces indicateurs dans AuditLog (action='meta_nightly_audit') — voir GET /meta-ads/audit-reports pour l'historique jour par jour.",
                 "population": f"{success} Purchase CAPI réussis sur la période ({range_days} jours) — dont {sample_n} avec payload exploitable pour l'EMQ.",
             },
@@ -3205,12 +3216,17 @@ def get_signal_quality(
                 "realtime_count": realtime_n,
                 "backfill_pct": backfill_pct,
                 "backfill_count": backfill_n,
-                "event_match_quality": emq_score,
+                # avg_emq (pas emq_score, sa version 0.0-par-défaut réservée au
+                # calcul pondéré du score) : ne jamais réafficher un
+                # échantillon vide comme "0%" — la distinction None vs 0.0 se
+                # perdait ici avant, c'est la cause exacte du symptôme
+                # "EMQ = 0% alors que fbp/fbc/IP/UA sont présents".
+                "event_match_quality": avg_emq,
                 "avg_latency_ms": avg_latency_ms,
                 "dedup_pct": dedup_pct,
                 "valid_purchase_pct": valid_purchase_pct,
                 "valid_purchase_count": success,
-                "rejected_pct": round(100 - valid_purchase_pct, 1) if total_sent else 0.0,
+                "rejected_pct": rejected_pct,
                 "rejected_count": failed,
                 "value_present_pct": value_present_pct,
                 "attribution_pct": attribution_pct,
@@ -3224,6 +3240,8 @@ def get_signal_quality(
             "anomalies": anomalies,
         },
     }
+    set_cached(_cache_key, result, DEFAULT_TTL_SECONDS)
+    return result
 
 
 @router.get("/learning-diagnostics", response_model=dict)
@@ -3246,6 +3264,12 @@ def get_learning_diagnostics(
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog, MetaAdsCampaign
     from app.models.audit import AuditLog
+    from app.core.analytics_cache import get_cached, set_cached, DEFAULT_TTL_SECONDS
+
+    _cache_key = f"learning_diagnostics:{store_id}:{range_days}"
+    _cached = get_cached(_cache_key)
+    if _cached is not None:
+        return _cached
 
     db.info["skip_tenant_isolation"] = True
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
@@ -3376,7 +3400,7 @@ def get_learning_diagnostics(
     severity_order = {"high": 0, "medium": 1, "low": 2}
     reasons.sort(key=lambda r: severity_order.get(r["severity"], 3))
 
-    return {
+    result = {
         "success": True,
         "data": {
             "range_days": range_days,
@@ -3393,6 +3417,8 @@ def get_learning_diagnostics(
             },
         },
     }
+    set_cached(_cache_key, result, DEFAULT_TTL_SECONDS)
+    return result
 
 
 def _match_campaign_orders(db: Session, store_id: str, camp: "MetaAdsCampaign", since=None, until=None):
