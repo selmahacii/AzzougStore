@@ -13,7 +13,7 @@ from app.api.v1 import (
     reviews, chat, suppliers, purchases, returns, expenses, marketing,
     partners, delivery_partners, upload, landing_pages, api_keys,
     meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
-    notifications,
+    notifications, conversion_optimization,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -345,6 +345,7 @@ include_v1(reviews.router, "reviews", ["⭐ Avis"])
 include_v1(chat.router, "chat", ["💬 Chat IA"])
 include_v1(marketing.router, "marketing", ["📣 Marketing"])
 include_v1(meta_ads.router, "meta-ads", ["📣 Meta Ads & ROAS"])
+include_v1(conversion_optimization.router, "conversion-optimization", ["🎯 Conversion Optimization Center"])
 include_v1(tiktok_ads.router, "tiktok-ads", ["🎵 TikTok Ads & ROAS"])
 include_v1(payroll.router, "payroll", ["💵 Paie Mensuelle"])
 include_v1(partners.router, "partners", ["🔗 Partenaires API"])
