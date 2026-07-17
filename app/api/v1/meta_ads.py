@@ -2914,6 +2914,7 @@ def get_signal_quality(
         classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
         meta_health_label, estimate_learning_score_gains,
         compute_component_scores, generate_signal_alerts, evaluate_purchase_signal_quality,
+        compute_meta_optimization_score, rank_recommendations_by_impact,
     )
 
     db.info["skip_tenant_isolation"] = True
@@ -3193,6 +3194,30 @@ def get_signal_quality(
         "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
     })
 
+    # Volume AddToCart/Checkout store-wide — même table MetaCapiLog, une
+    # seule requête groupée de plus (bornée par date), pour le Meta
+    # Optimization Advisor. Ces événements passent par le relay frontend
+    # (order_id toujours NULL), jamais attribuables à une campagne
+    # précise — store-wide uniquement, jamais fabriqué par campagne.
+    volume_rows = (
+        db.query(MetaCapiLog.event_name, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "success",
+                MetaCapiLog.event_name.in_(("AddToCart", "InitiateCheckout")),
+                MetaCapiLog.created_at >= since)
+        .group_by(MetaCapiLog.event_name)
+        .all()
+    )
+    volume_by_event = {name: count for name, count in volume_rows}
+    weeks = max(range_days / 7, 1)
+    volume_weekly_rates = {
+        "purchase": success / weeks,
+        "addtocart": volume_by_event.get("AddToCart", 0) / weeks,
+        "checkout": volume_by_event.get("InitiateCheckout", 0) / weeks,
+    }
+    optimization_score = compute_meta_optimization_score(learning_score["score"], component_scores, volume_weekly_rates)
+    field_coverage_pct = {f["key"]: f["coverage_pct"] for f in field_coverage}
+    recommendations = rank_recommendations_by_impact(_learning_components, field_coverage_pct)
+
     return {
         "success": True,
         "data": {
@@ -3200,6 +3225,8 @@ def get_signal_quality(
             "global_score": global_score,
             "sub_scores": sub_scores,
             "component_scores": component_scores,
+            "optimization_score": optimization_score,
+            "recommendations": recommendations,
             "alerts": alerts,
             "avg_emq": avg_emq,
             "emq_sample_size": sample_n,
@@ -4149,4 +4176,37 @@ def get_learning_history(
         "regressions": regressions,
         "alerts": latest_alerts,
         "note": "learning_score ici n'inclut PAS realtime/backfill/dedup/attribution (nécessiteraient des jointures Order supplémentaires par jour) — sous-ensemble honnête EMQ+validité+latence, pas le score complet du Signal Quality Center.",
+    }
+
+
+@router.get("/audit-reports", response_model=dict)
+def get_meta_audit_reports(
+    store_id: str = Query(...),
+    limit: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Historique des audits nocturnes (voir run_meta_nightly_audit,
+    app/services/meta_capi.py) — lit la table AuditLog déjà existante,
+    filtrée sur action='meta_nightly_audit', jamais une nouvelle table.
+    Chaque rapport est horodaté (created_at) et contient les findings
+    complets dans `diff`.
+    """
+    from app.models.audit import AuditLog
+
+    db.info["skip_tenant_isolation"] = True
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.store_id == store_id, AuditLog.action == "meta_nightly_audit")
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "success": True,
+        "data": [
+            {"generated_at": row.created_at.isoformat() if row.created_at else None, **(row.diff or {})}
+            for row in rows
+        ],
     }

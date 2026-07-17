@@ -24,6 +24,9 @@ from app.services.meta_capi import (
     compute_component_scores, analyze_meta_response, detect_metric_regressions,
     evaluate_best_practices_compliance, generate_signal_alerts,
     detect_funnel_bottleneck, campaign_classification_label,
+    compute_meta_optimization_score, meta_optimization_label,
+    simulate_learning_score_change, rank_recommendations_by_impact,
+    compute_metric_correlation,
     _latency_to_score, _MATCH_QUALITY_FIELDS, _LEARNING_SCORE_WEIGHTS,
 )
 
@@ -702,3 +705,148 @@ def test_detect_metric_regressions_relative_mode_zero_previous_value_skipped():
     # Division par zéro évitée — jamais un pourcentage calculé contre 0.
     regressions = detect_metric_regressions({"cpa": 0}, {"cpa": 500})
     assert not any(r["metric"] == "cpa" for r in regressions)
+
+
+def test_detect_metric_regressions_includes_probable_cause_and_action():
+    regressions = detect_metric_regressions({"backfill_pct": 2}, {"backfill_pct": 20})
+    r = next(r for r in regressions if r["metric"] == "backfill_pct")
+    assert r["probable_cause"]
+    assert r["recommended_action"]
+
+
+# ─── Meta Optimization Advisor — global score ───────────────────────────────
+
+def test_meta_optimization_label_bands():
+    assert meta_optimization_label(None) == "Non disponible"
+    assert meta_optimization_label(95) == "Excellent"
+    assert meta_optimization_label(85) == "Très bon"
+    assert meta_optimization_label(70) == "Bon"
+    assert meta_optimization_label(50) == "Moyen"
+    assert meta_optimization_label(20) == "Critique"
+
+
+def test_compute_meta_optimization_score_perfect_inputs():
+    result = compute_meta_optimization_score(
+        learning_score=100.0,
+        component_scores={"meta_acceptance": 100.0, "queue": 100.0, "event_quality": 100.0},
+        volume_weekly_rates={"purchase": 100, "addtocart": 100, "checkout": 100},
+    )
+    assert result["score"] == 100.0
+    assert result["label"] == "Excellent"
+    assert result["weakest_components"] == []
+
+
+def test_compute_meta_optimization_score_reuses_learning_score_verbatim():
+    # learning_score doit apparaître tel quel dans components, jamais recalculé.
+    result = compute_meta_optimization_score(72.3, {}, {})
+    assert result["components"]["learning_score"] == 72.3
+
+
+def test_compute_meta_optimization_score_volume_below_benchmark_is_partial():
+    # 25/semaine sur un repère de 50 -> 50% d'adéquation, pas 0% ni 100%.
+    result = compute_meta_optimization_score(100.0, {"meta_acceptance": 100, "queue": 100, "event_quality": 100},
+                                              {"purchase": 25, "addtocart": None, "checkout": None})
+    assert result["components"]["volume_adequacy"] == 50.0
+
+
+def test_compute_meta_optimization_score_missing_volume_data_is_zero_not_fabricated():
+    result = compute_meta_optimization_score(100.0, {"meta_acceptance": 100, "queue": 100, "event_quality": 100}, {})
+    assert result["components"]["volume_adequacy"] == 0.0
+
+
+def test_compute_meta_optimization_score_weights_sum_to_one():
+    result = compute_meta_optimization_score(50.0, {}, {})
+    assert abs(sum(result["weights"].values()) - 1.0) < 1e-9
+
+
+# ─── Arbitrary-target simulator ─────────────────────────────────────────────
+
+def test_simulate_learning_score_change_computes_real_delta():
+    components = {"event_match_quality": 60.0}
+    result = simulate_learning_score_change(components, {"event_match_quality": 90.0})
+    base = compute_learning_score(components)["score"]
+    projected = compute_learning_score({"event_match_quality": 90.0})["score"]
+    assert result["current_score"] == base
+    assert result["projected_score"] == projected
+    assert result["gain_points"] == round(projected - base, 1)
+
+
+def test_simulate_learning_score_change_includes_disclaimer():
+    result = simulate_learning_score_change({}, {"backfill_pct": 5})
+    assert "estimation" in result["disclaimer"].lower() or "Estimation" in result["disclaimer"]
+    assert result["changes_simulated"] == {"backfill_pct": 5}
+
+
+def test_simulate_learning_score_change_no_change_yields_zero_gain():
+    components = {"event_match_quality": 80.0}
+    result = simulate_learning_score_change(components, {})
+    assert result["gain_points"] == 0.0
+
+
+# ─── Recommendations ranker — merges existing engines, adds star rating ────
+
+def test_rank_recommendations_by_impact_excludes_component_level_emq_duplicate():
+    # event_match_quality ne doit JAMAIS apparaître comme recommandation de
+    # composant séparée du détail par champ (FBP/FBC/...) — double comptage.
+    components = {"event_match_quality": 20.0}
+    coverage = {"fbp": 0.0, "fbc": 0.0}
+    recs = rank_recommendations_by_impact(components, coverage)
+    assert not any("Event Match" in r["action"] or r["action"] == "Corriger event_match_quality" for r in recs)
+
+
+def test_rank_recommendations_by_impact_sorted_and_starred():
+    components = {"event_match_quality": 10.0, "realtime_pct": 10.0}
+    coverage = {"fbp": 0.0, "fbc": 50.0}
+    recs = rank_recommendations_by_impact(components, coverage)
+    gains = [r["gain_points"] for r in recs]
+    assert gains == sorted(gains, reverse=True)
+    for r in recs:
+        assert r["stars"].count("★") + r["stars"].count("☆") == 5
+        assert 1 <= r["stars"].count("★") <= 5
+
+
+def test_rank_recommendations_by_impact_field_labels_are_french():
+    coverage = {"fbp": 0.0}
+    recs = rank_recommendations_by_impact({"event_match_quality": 50.0}, coverage)
+    assert any(r["action"] == "Corriger FBP" for r in recs)
+
+
+# ─── Real correlation (Pearson), never asserted a priori ───────────────────
+
+def test_compute_metric_correlation_insufficient_data():
+    result = compute_metric_correlation([(1, 2), (2, 3)], "EMQ", "CPA")
+    assert result["coefficient"] is None
+    assert result["strength"] == "données insuffisantes"
+    assert result["sample_size"] == 2
+
+
+def test_compute_metric_correlation_perfect_negative():
+    pairs = [(60, 100), (70, 90), (80, 80), (90, 70), (100, 60)]
+    result = compute_metric_correlation(pairs, "EMQ", "CPA")
+    assert result["coefficient"] == -1.0
+    assert result["direction"].startswith("négative")
+    assert result["strength"] == "forte"
+
+
+def test_compute_metric_correlation_perfect_positive():
+    pairs = [(60, 60), (70, 70), (80, 80), (90, 90), (100, 100)]
+    result = compute_metric_correlation(pairs, "Learning", "ROAS")
+    assert result["coefficient"] == 1.0
+    assert result["direction"].startswith("positive")
+
+
+def test_compute_metric_correlation_no_variation_returns_not_computable():
+    pairs = [(50, 10), (50, 20), (50, 30), (50, 40), (50, 50)]
+    result = compute_metric_correlation(pairs, "A", "B")
+    assert result["coefficient"] is None
+    assert result["strength"] == "non calculable"
+
+
+def test_compute_metric_correlation_never_asserts_direction_not_present_in_data():
+    # Données réelles où EMQ et CPA montent ENSEMBLE (corrélation positive),
+    # contrairement à l'intuition "EMQ haut -> CPA bas" — le système doit
+    # rapporter ce qui EST observé, jamais l'hypothèse de départ.
+    pairs = [(60, 100), (70, 110), (80, 120), (90, 130), (100, 140)]
+    result = compute_metric_correlation(pairs, "EMQ", "CPA")
+    assert result["coefficient"] > 0
+    assert result["direction"].startswith("positive")
