@@ -1082,6 +1082,206 @@ def scan_payload_quality(payload: Optional[dict]) -> dict:
     }
 
 
+# Poids du Learning Score — documentés ici pour que le calcul reste auditable
+# (jamais une note ajustée à la main pour "faire joli"). Chaque composant est
+# un pourcentage réel déjà mesuré ailleurs dans le Signal Quality Center :
+# aucune de ces valeurs n'est déduite indirectement ou estimée.
+_LEARNING_SCORE_WEIGHTS = {
+    "realtime_pct": 0.20,      # Meta apprend surtout des signaux temps réel
+    "event_match_quality": 0.20,
+    "valid_purchase_pct": 0.20,
+    "dedup_pct": 0.10,
+    "value_present_pct": 0.10,
+    "attribution_pct": 0.10,
+    "latency_score": 0.10,
+}
+
+
+def _latency_to_score(avg_latency_ms: Optional[float]) -> float:
+    """
+    100 si l'envoi est quasi instantané (<=5s, le cas normal d'un envoi
+    synchrone au moment de la commande), dégradé linéairement jusqu'à 0 à
+    partir d'1 minute de latence moyenne (signe d'une file qui traîne).
+    """
+    if avg_latency_ms is None:
+        return 100.0
+    if avg_latency_ms <= 5000:
+        return 100.0
+    if avg_latency_ms >= 60000:
+        return 0.0
+    return round(100 - (avg_latency_ms - 5000) / (60000 - 5000) * 100, 1)
+
+
+def compute_learning_score(metrics: dict) -> dict:
+    """
+    Learning Score — le KPI unique qui répond à "Meta reçoit-il des signaux
+    assez bons pour bien apprendre et optimiser la diffusion ?". Moyenne
+    pondérée de composants déjà mesurés honnêtement ailleurs (jamais une
+    note distincte recalculée en secret) : realtime_pct, event_match_quality
+    (avg EMQ), valid_purchase_pct, dedup_pct, value_present_pct,
+    attribution_pct, et avg_latency_ms (converti en score via
+    _latency_to_score). Toute clé manquante dans `metrics` est traitée comme
+    0 plutôt que d'ignorer la pondération, pour ne jamais gonfler la note en
+    silence sur une donnée absente.
+    """
+    latency_score = _latency_to_score(metrics.get("avg_latency_ms"))
+    components = {
+        "realtime_pct": metrics.get("realtime_pct") or 0.0,
+        "event_match_quality": metrics.get("event_match_quality") or 0.0,
+        "valid_purchase_pct": metrics.get("valid_purchase_pct") or 0.0,
+        "dedup_pct": metrics.get("dedup_pct") or 0.0,
+        "value_present_pct": metrics.get("value_present_pct") or 0.0,
+        "attribution_pct": metrics.get("attribution_pct") or 0.0,
+        "latency_score": latency_score,
+    }
+    score = round(sum(components[k] * w for k, w in _LEARNING_SCORE_WEIGHTS.items()), 1)
+    return {"score": score, "components": components, "weights": _LEARNING_SCORE_WEIGHTS}
+
+
+def diagnose_campaign_learning(metrics: dict) -> list:
+    """
+    "Pourquoi CETTE campagne n'apprend-elle pas ?" — moteur de diagnostic
+    pur (aucune requête ici, appelé par meta_ads.py avec des métriques déjà
+    agrégées en SQL) partagé par la carte "Campaign Learning Health" et la
+    vue dédiée. Chaque règle ne se déclenche que si le seuil documenté à
+    côté est dépassé — jamais une liste statique de conseils génériques.
+    Chaque raison inclut severity/impact/explication/recommandation, dans
+    l'ordre attendu par le front (grave -> faible).
+
+    metrics attendues (toutes optionnelles, une clé absente ne déclenche
+    simplement pas la règle correspondante) : purchase_count, weekly_rate,
+    backfill_pct, event_match_quality, missing_value_pct, missing_currency_pct,
+    retry_pct, rejected_pct, avg_latency_ms, no_utm_pct, frequency, ctr,
+    cost_per_purchase.
+    """
+    reasons = []
+
+    weekly_rate = metrics.get("weekly_rate")
+    if weekly_rate is not None and weekly_rate < 50:
+        reasons.append({
+            "type": "VOLUME_FAIBLE", "severity": "high",
+            "title": "Peu de Purchase",
+            "impact": "high",
+            "explanation": f"~{round(weekly_rate, 1)} Purchase/semaine sur cette campagne — sous le seuil de ~50/semaine que Meta recommande pour sortir de la phase d'apprentissage.",
+            "recommendation": "Regrouper des ad sets trop fragmentés ou élargir ciblage/budget pour accumuler plus de conversions.",
+        })
+
+    backfill_pct = metrics.get("backfill_pct")
+    if backfill_pct is not None and backfill_pct > 20:
+        reasons.append({
+            "type": "BACKFILL_ELEVE", "severity": "high",
+            "title": "Beaucoup de backfill",
+            "impact": "high",
+            "explanation": f"{backfill_pct}% des Purchase de cette campagne sont du rattrapage — Meta apprend sur des signaux reçus trop tard.",
+            "recommendation": "Fiabiliser l'envoi temps réel (file CAPI, connectivité) pour réduire la dépendance au rattrapage.",
+        })
+
+    emq = metrics.get("event_match_quality")
+    if emq is not None and emq < 60:
+        reasons.append({
+            "type": "EMQ_FAIBLE", "severity": "high",
+            "title": "Event Match faible",
+            "impact": "high",
+            "explanation": f"EMQ moyen de {emq}% sur cette campagne — Meta ne parvient à rapprocher qu'une minorité des événements d'un profil réel.",
+            "recommendation": "Vérifier email/téléphone/ville/wilaya/IP/user-agent/fbp/fbc transmis pour les commandes de cette campagne.",
+        })
+
+    missing_value_pct = metrics.get("missing_value_pct")
+    if missing_value_pct is not None and missing_value_pct > 0:
+        reasons.append({
+            "type": "VALEUR_ABSENTE", "severity": "high",
+            "title": "Valeur absente",
+            "impact": "high",
+            "explanation": f"{missing_value_pct}% des Purchase de cette campagne sans valeur monétaire — Meta ne peut pas optimiser sur la valeur.",
+            "recommendation": "Vérifier order.total sur les commandes concernées.",
+        })
+
+    missing_currency_pct = metrics.get("missing_currency_pct")
+    if missing_currency_pct is not None and missing_currency_pct > 0:
+        reasons.append({
+            "type": "CURRENCY_ABSENTE", "severity": "high",
+            "title": "Currency absente",
+            "impact": "medium",
+            "explanation": f"{missing_currency_pct}% des Purchase sans devise déclarée.",
+            "recommendation": "Vérifier la configuration currency/exchange_rate du compte pub.",
+        })
+
+    retry_pct = metrics.get("retry_pct")
+    if retry_pct is not None and retry_pct > 10:
+        reasons.append({
+            "type": "RETRY_ELEVE", "severity": "medium",
+            "title": "Beaucoup de retry",
+            "impact": "medium",
+            "explanation": f"{retry_pct}% des Purchase ont nécessité au moins une nouvelle tentative d'envoi.",
+            "recommendation": "Vérifier les erreurs de la file CAPI (réseau, token) pour les commandes de cette campagne.",
+        })
+
+    rejected_pct = metrics.get("rejected_pct")
+    if rejected_pct is not None and rejected_pct > 5:
+        reasons.append({
+            "type": "REJETS_ELEVES", "severity": "high",
+            "title": "Trop de Purchase rejetés",
+            "impact": "high",
+            "explanation": f"{rejected_pct}% des Purchase de cette campagne ont échoué définitivement.",
+            "recommendation": "Vérifier la Santé du Pixel (token/scopes) puis relancer via Bons d'Achat.",
+        })
+
+    avg_latency_ms = metrics.get("avg_latency_ms")
+    if avg_latency_ms is not None and avg_latency_ms > 30000:
+        reasons.append({
+            "type": "LATENCE_ELEVEE", "severity": "medium",
+            "title": "Latence élevée",
+            "impact": "medium",
+            "explanation": f"Délai moyen d'envoi de {round(avg_latency_ms / 1000, 1)}s pour cette campagne.",
+            "recommendation": "Vérifier la connectivité sortante du serveur et la charge de la file CAPI.",
+        })
+
+    no_utm_pct = metrics.get("no_utm_pct")
+    if no_utm_pct is not None and no_utm_pct > 30:
+        reasons.append({
+            "type": "SANS_UTM", "severity": "low",
+            "title": "Beaucoup de commandes sans UTM",
+            "impact": "low",
+            "explanation": f"{no_utm_pct}% des commandes rattachées à cette campagne n'ont pas d'UTM (rattachées par produit) — invisibles dans les rapports UTM natifs de Meta.",
+            "recommendation": "Vérifier le tracking UTM sur les liens publicitaires de cette campagne.",
+        })
+
+    frequency = metrics.get("frequency")
+    if frequency is not None and frequency > 3:
+        reasons.append({
+            "type": "FREQUENCE_ELEVEE", "severity": "low",
+            "title": "Fréquence trop élevée",
+            "impact": "low",
+            "explanation": f"Fréquence de {frequency} (impressions/reach) — la même audience revoit trop souvent la publicité.",
+            "recommendation": "Élargir l'audience, renouveler les créas, ou plafonner la fréquence.",
+        })
+
+    ctr = metrics.get("ctr")
+    if ctr is not None and metrics.get("impressions", 0) > 200 and ctr < 1.0:
+        reasons.append({
+            "type": "CTR_FAIBLE", "severity": "low",
+            "title": "CTR faible",
+            "impact": "medium",
+            "explanation": f"CTR de {ctr}% (> 200 impressions) — le créa ou le ciblage n'accroche pas assez.",
+            "recommendation": "Tester d'autres visuels/accroches ou revoir le ciblage.",
+        })
+
+    cost_per_purchase = metrics.get("cost_per_purchase")
+    aov = metrics.get("aov")
+    if cost_per_purchase is not None and aov and cost_per_purchase > aov * 0.5:
+        reasons.append({
+            "type": "CPA_ELEVE", "severity": "medium",
+            "title": "Coût par achat élevé",
+            "impact": "high",
+            "explanation": f"Coût par achat de {cost_per_purchase} pour un panier moyen de {aov} — marge dégradée.",
+            "recommendation": "Revoir enchère/ciblage/budget de cette campagne ou mettre en pause si la tendance persiste.",
+        })
+
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    reasons.sort(key=lambda r: severity_order.get(r["severity"], 3))
+    return reasons
+
+
 def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     """
     Durable-queue entry point — call this from the SAME db session/

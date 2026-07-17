@@ -2906,7 +2906,11 @@ def get_signal_quality(
     """
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
-    from app.services.meta_capi import compute_match_quality, scan_payload_quality, _MATCH_QUALITY_FIELDS
+    from app.models.audit import AuditLog
+    from app.services.meta_capi import (
+        compute_match_quality, scan_payload_quality, compute_learning_score,
+        classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
+    )
 
     db.info["skip_tenant_isolation"] = True
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
@@ -3097,6 +3101,64 @@ def get_signal_quality(
     }
     global_score = round(sum(sub_scores.values()) / len(sub_scores), 1)
 
+    # ── 5. Learning Score — realtime/backfill + latence + dédup, en UNE
+    # requête jointe bornée par date et plafonnée (jamais un scan complet).
+    # explicit_backfill (AuditLog écrit AU MOMENT du rattrapage) prime sur
+    # l'heuristique de délai, seulement utilisée pour les lignes envoyées
+    # avant que ce marquage explicite n'existe. ──
+    backfill_order_ids = {
+        row[0] for row in (
+            db.query(AuditLog.entity_id)
+            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
+                    AuditLog.created_at >= since)
+            .all()
+        )
+    }
+    timing_rows = (
+        db.query(MetaCapiLog.order_id, MetaCapiLog.created_at, MetaCapiLog.latency_ms, MetaCapiLog.event_id,
+                  Order.created_at)
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since,
+        )
+        .order_by(MetaCapiLog.created_at.desc())
+        .limit(1000)
+        .all()
+    )
+    realtime_n = 0
+    backfill_n = 0
+    latencies = []
+    event_id_counts: Dict[str, int] = {}
+    for order_id, log_created_at, latency_ms, event_id, order_created_at in timing_rows:
+        is_backfill = order_id in backfill_order_ids or classify_capi_log_timing(log_created_at, order_created_at) == "backfill"
+        if is_backfill:
+            backfill_n += 1
+        else:
+            realtime_n += 1
+        if latency_ms is not None:
+            latencies.append(latency_ms)
+        event_id_counts[event_id] = event_id_counts.get(event_id, 0) + 1
+    timing_n = realtime_n + backfill_n
+    realtime_pct = round(realtime_n / timing_n * 100, 1) if timing_n else 0.0
+    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
+    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
+    dup_n = sum(1 for c in event_id_counts.values() if c > 1)
+    dedup_pct = round((1 - dup_n / timing_n) * 100, 1) if timing_n else 100.0
+    valid_purchase_pct = round(success / total_sent * 100, 1) if total_sent else 0.0
+    value_present_pct = round((sample_n - missing_value) / sample_n * 100, 1) if sample_n else 0.0
+    attribution_pct = round((success - orphan_campaign) / success * 100, 1) if success else 0.0
+
+    learning_score = compute_learning_score({
+        "realtime_pct": realtime_pct,
+        "event_match_quality": emq_score,
+        "valid_purchase_pct": valid_purchase_pct,
+        "dedup_pct": dedup_pct,
+        "value_present_pct": value_present_pct,
+        "attribution_pct": attribution_pct,
+        "avg_latency_ms": avg_latency_ms,
+    })
+
     return {
         "success": True,
         "data": {
@@ -3110,6 +3172,620 @@ def get_signal_quality(
                 "success": success, "failed": failed, "retry": retry,
                 "pending": pending, "skipped": skipped, "total_sent": total_sent,
             },
+            "learning_score": {
+                "score": learning_score["score"],
+                "realtime_pct": realtime_pct,
+                "backfill_pct": backfill_pct,
+                "event_match_quality": emq_score,
+                "avg_latency_ms": avg_latency_ms,
+                "dedup_pct": dedup_pct,
+                "valid_purchase_pct": valid_purchase_pct,
+                "rejected_pct": round(100 - valid_purchase_pct, 1) if total_sent else 0.0,
+                "value_present_pct": value_present_pct,
+                "attribution_pct": attribution_pct,
+                "sample_size": timing_n,
+            },
             "anomalies": anomalies,
         },
     }
+
+
+@router.get("/learning-diagnostics", response_model=dict)
+def get_learning_diagnostics(
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    "Pourquoi Meta n'apprend pas ?" — ranked, evidence-based reasons the
+    delivery algorithm may be struggling to optimize, computed ENTIÈREMENT
+    depuis notre DB (meta_capi_logs, orders, meta_ads_campaigns). Aucun
+    appel Graph API ici (la validation live du token/scopes vit déjà dans
+    /health — pas dupliquée pour rester léger et sans appel Meta inutile).
+
+    Chaque raison n'apparaît que si le signal qui la justifie dépasse un
+    seuil documenté ci-dessous ligne par ligne — jamais une liste statique.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaCapiLog, MetaAdsCampaign
+    from app.models.audit import AuditLog
+
+    db.info["skip_tenant_isolation"] = True
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    reasons = []
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+
+    # ── Pixel/CAPI absents ou mal configurés (pas d'appel réseau — juste la
+    # présence des identifiants ; la validité live est dans /health) ──
+    if not config or not config.pixel_id:
+        reasons.append({
+            "type": "PIXEL_ABSENT", "severity": "high",
+            "title": "Pixel Meta non configuré",
+            "detail": "Aucun pixel_id enregistré pour cette boutique — le Pixel et la CAPI ne peuvent envoyer aucun signal.",
+            "fix": "Renseigner le Pixel ID et l'access token dans la configuration Meta Ads.",
+        })
+    elif not config.access_token or len(config.access_token) < 15:
+        reasons.append({
+            "type": "TOKEN_MANQUANT", "severity": "high",
+            "title": "Access token manquant ou invalide (format)",
+            "detail": "Le token configuré est absent ou trop court pour être un vrai token Graph API.",
+            "fix": "Régénérer un token d'accès système avec la permission ads_management.",
+        })
+
+    # ── Volume : Meta recommande un minimum de conversions pour sortir de la
+    # phase d'apprentissage (learning phase) d'un ensemble de publicités. ──
+    purchase_count = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.created_at >= since)
+        .scalar() or 0
+    )
+    weekly_rate = purchase_count / max(range_days / 7, 1)
+    if weekly_rate < 50:
+        reasons.append({
+            "type": "VOLUME_INSUFFISANT", "severity": "high",
+            "title": "Volume de conversions insuffisant",
+            "detail": f"~{round(weekly_rate, 1)} Purchase/semaine sur la période — Meta recommande environ 50 conversions/semaine par ensemble de publicités pour sortir de la phase d'apprentissage.",
+            "fix": "Regrouper les ensembles de publicités trop fragmentés, ou élargir le ciblage/budget pour accumuler plus de conversions.",
+        })
+
+    # ── Event Match Quality (échantillon déjà calculé par /signal-quality ;
+    # recalculé ici sur un échantillon plafonné identique, une seule requête) ──
+    emq_sample = (
+        db.query(MetaCapiLog.payload)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.payload.isnot(None),
+                MetaCapiLog.created_at >= since)
+        .order_by(MetaCapiLog.created_at.desc()).limit(500).all()
+    )
+    from app.services.meta_capi import compute_match_quality
+    emq_scores = [compute_match_quality((p or {}).get("user_data") or {})["score"] for (p,) in emq_sample]
+    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
+    if avg_emq is not None and avg_emq < 60:
+        reasons.append({
+            "type": "EMQ_FAIBLE", "severity": "high",
+            "title": "Event Match Quality trop faible",
+            "detail": f"EMQ moyen de {avg_emq}% — Meta ne parvient à rapprocher qu'une minorité des événements d'un profil utilisateur réel.",
+            "fix": "Vérifier que email/téléphone/nom/ville/IP/user-agent/fbp/fbc sont bien transmis à chaque commande.",
+        })
+
+    # ── Backfill : trop d'événements en rattrapage = signal appris trop tard,
+    # peu utile pour l'optimisation en cours. ──
+    backfill_order_ids = {
+        row[0] for row in (
+            db.query(AuditLog.entity_id)
+            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order", AuditLog.created_at >= since)
+            .all()
+        )
+    }
+    timing_rows = (
+        db.query(MetaCapiLog.order_id, MetaCapiLog.created_at, MetaCapiLog.latency_ms, Order.created_at)
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.created_at >= since)
+        .order_by(MetaCapiLog.created_at.desc()).limit(1000).all()
+    )
+    from app.services.meta_capi import classify_capi_log_timing
+    backfill_n = sum(
+        1 for order_id, log_created_at, _, order_created_at in timing_rows
+        if order_id in backfill_order_ids or classify_capi_log_timing(log_created_at, order_created_at) == "backfill"
+    )
+    timing_n = len(timing_rows)
+    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
+    if backfill_pct > 20:
+        reasons.append({
+            "type": "TROP_DE_BACKFILL", "severity": "medium",
+            "title": "Trop d'événements envoyés en rattrapage",
+            "detail": f"{backfill_pct}% des Purchase de la période sont du rattrapage (backfill), pas du temps réel — Meta optimise sur des signaux appris trop tard.",
+            "fix": "Fiabiliser l'envoi temps réel (voir file d'attente CAPI et connectivité) pour réduire la dépendance au rattrapage.",
+        })
+
+    latencies = [row[2] for row in timing_rows if row[2] is not None]
+    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
+    if avg_latency_ms is not None and avg_latency_ms > 30000:
+        reasons.append({
+            "type": "LATENCE_ELEVEE", "severity": "medium",
+            "title": "Latence d'envoi élevée",
+            "detail": f"Délai moyen d'envoi de {round(avg_latency_ms / 1000, 1)}s entre la commande et la confirmation Meta.",
+            "fix": "Vérifier la connectivité sortante du serveur (probe DNS/TCP/TLS dans Santé du Pixel) et la charge de la file CAPI.",
+        })
+
+    # ── Taux de retry : des envois qui échouent avant de réussir dégradent
+    # la fraîcheur du signal reçu par Meta. ──
+    status_rows = (
+        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.created_at >= since)
+        .group_by(MetaCapiLog.status).all()
+    )
+    by_status = {s: c for s, c in status_rows}
+    total_sent = sum(by_status.values())
+    retry_n = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
+    if total_sent and retry_n / total_sent > 0.10:
+        reasons.append({
+            "type": "TAUX_RETRY_ELEVE", "severity": "medium",
+            "title": "Taux de retry élevé",
+            "detail": f"{round(retry_n / total_sent * 100, 1)}% des Purchase ont nécessité au moins une nouvelle tentative d'envoi.",
+            "fix": "Vérifier les erreurs de la file CAPI (Bons d'Achat > Meta Queue) — souvent un problème réseau ou un token à renouveler.",
+        })
+
+    # ── Campagnes actives sans trafic réel, fréquence élevée (fatigue
+    # publicitaire) ou CTR très faible — signaux DEJA synchronisés
+    # (meta_ads_campaigns), aucun appel Graph API ici. ──
+    campaigns = (
+        db.query(MetaAdsCampaign)
+        .filter(MetaAdsCampaign.store_id == store_id, MetaAdsCampaign.spend > 0)
+        .all()
+    )
+    no_traffic = [c for c in campaigns if (c.impressions or 0) == 0]
+    if no_traffic:
+        reasons.append({
+            "type": "CAMPAGNE_SANS_TRAFIC", "severity": "medium",
+            "title": "Campagne(s) avec budget dépensé mais aucune impression",
+            "detail": f"{len(no_traffic)} campagne(s) avec des dépenses enregistrées mais 0 impression — configuration ou diffusion bloquée côté Meta.",
+            "fix": "Vérifier le statut de diffusion (ad review, budget épuisé, audience trop restreinte) directement dans Meta Ads Manager.",
+        })
+    high_freq = [c for c in campaigns if (c.reach or 0) > 0 and (c.impressions or 0) / c.reach > 3]
+    if high_freq:
+        reasons.append({
+            "type": "FREQUENCE_ELEVEE", "severity": "low",
+            "title": "Fréquence publicitaire élevée (fatigue possible)",
+            "detail": f"{len(high_freq)} campagne(s) avec une fréquence > 3 (impressions/reach) — la même audience revoit trop souvent la même publicité.",
+            "fix": "Élargir l'audience, renouveler les créas, ou plafonner la fréquence dans les paramètres de la campagne.",
+        })
+    low_ctr = [c for c in campaigns if (c.impressions or 0) > 200 and (c.clicks or 0) / c.impressions < 0.01]
+    if low_ctr:
+        reasons.append({
+            "type": "CTR_FAIBLE", "severity": "low",
+            "title": "CTR très faible sur au moins une campagne",
+            "detail": f"{len(low_ctr)} campagne(s) avec un CTR < 1% (> 200 impressions) — le créa ou le ciblage n'accroche pas assez pour générer du volume de conversion.",
+            "fix": "Tester d'autres visuels/accroches ou revoir le ciblage de ces campagnes.",
+        })
+
+    # ── Abandon de panier élevé : moins de Purchase confirmés pour le même
+    # volume de commandes créées = moins de signal exploitable par Meta. ──
+    order_status_rows = (
+        db.query(Order.status, func.count(Order.id))
+        .filter(Order.store_id == store_id, Order.is_deleted == False, Order.created_at >= since)
+        .group_by(Order.status).all()
+    )
+    by_order_status = {s: c for s, c in order_status_rows}
+    total_orders = sum(by_order_status.values())
+    abandoned = by_order_status.get("ABANDONED", 0)
+    if total_orders and abandoned / total_orders > 0.40:
+        reasons.append({
+            "type": "ABANDONS_ELEVES", "severity": "low",
+            "title": "Taux d'abandon de panier élevé",
+            "detail": f"{round(abandoned / total_orders * 100, 1)}% des commandes de la période sont des paniers abandonnés — moins de Purchase confirmés à envoyer à Meta pour le même trafic.",
+            "fix": "Revoir le tunnel de checkout (frais de livraison visibles tôt, confirmation téléphonique rapide) pour convertir plus de paniers.",
+        })
+
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    reasons.sort(key=lambda r: severity_order.get(r["severity"], 3))
+
+    return {
+        "success": True,
+        "data": {
+            "range_days": range_days,
+            "reasons": reasons,
+            "healthy": len(reasons) == 0,
+        },
+    }
+
+
+def _match_campaign_orders(db: Session, store_id: str, camp: "MetaAdsCampaign", since=None, until=None):
+    """
+    MÊME logique d'attribution commande <-> campagne que /campaigns (utm
+    d'abord, produit lié en repli) — réutilisée ici pour qu'une carte
+    "Campaign Learning Health" ne raconte jamais un nombre de commandes en
+    désaccord avec le tableau des campagnes. Bornée par date, jamais un
+    scan complet de la table orders.
+
+    Retourne (orders, no_utm_count) — no_utm_count est le nombre de ces
+    commandes matchées UNIQUEMENT via le produit lié (donc sans UTM), pour
+    le diagnostic "beaucoup de commandes sans UTM".
+    """
+    from app.models.order import OrderItem
+    from sqlalchemy import or_, func
+
+    base_filters = [Order.store_id == store_id, Order.status != "CANCELLED",
+                     Order.status != "MERGED", Order.is_deleted == False]
+    if since:
+        base_filters.append(Order.created_at >= since)
+    if until:
+        base_filters.append(Order.created_at <= until)
+
+    utm_orders = (
+        db.query(Order).options(joinedload(Order.items))
+        .filter(*base_filters, or_(
+            func.lower(Order.utm_campaign) == camp.campaign_name.lower(),
+            Order.utm_campaign == camp.campaign_id,
+        ))
+        .all()
+    )
+    matched = {o.id: o for o in utm_orders}
+    no_utm_count = 0
+    if camp.product_id:
+        product_orders = (
+            db.query(Order).options(joinedload(Order.items))
+            .join(OrderItem, OrderItem.order_id == Order.id)
+            .filter(*base_filters, OrderItem.product_id == camp.product_id)
+            .all()
+        )
+        for o in product_orders:
+            if o.id not in matched:
+                matched[o.id] = o
+                no_utm_count += 1
+    return list(matched.values()), no_utm_count
+
+
+@router.get("/campaigns/{campaign_id}/learning-health", response_model=dict)
+def get_campaign_learning_health(
+    campaign_id: str,
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Campaign Learning Health — la même analyse honnête que le Signal
+    Quality Center / Learning Score store-wide (/signal-quality), appliquée
+    à UNE seule campagne : "pourquoi CETTE campagne apprend-elle bien ou
+    mal ?". Toutes les requêtes sont bornées par date et par commandes déjà
+    matchées à cette campagne (jamais un scan complet) ; aucun appel Graph
+    API — tout vient de meta_ads_campaigns/*_insights déjà synchronisés et
+    de nos propres logs CAPI.
+
+    Objectif/Statut/Date de création Meta ne sont PAS encore synchronisés
+    dans meta_ads_campaigns (seuls nom/dépenses/impressions/clics/reach/
+    achats le sont) — renvoyés à `None` plutôt qu'inventés ; les ajouter
+    demanderait d'étendre le sync existant (mêmes appels, champs en plus).
+    """
+    from app.models.marketing import MetaCapiLog
+    from app.models.audit import AuditLog
+    from app.services.meta_capi import (
+        compute_match_quality, compute_learning_score,
+        diagnose_campaign_learning, classify_capi_log_timing,
+    )
+
+    db.info["skip_tenant_isolation"] = True
+    camp = (
+        db.query(MetaAdsCampaign)
+        .filter(MetaAdsCampaign.campaign_id == campaign_id, MetaAdsCampaign.store_id == store_id)
+        .first()
+    )
+    if not camp:
+        return {"success": False, "error": "Campagne introuvable"}
+
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    orders, no_utm_count = _match_campaign_orders(db, store_id, camp, since=since)
+    order_ids = [o.id for o in orders]
+    orders_by_id = {o.id: o for o in orders}
+    orders_count = len(orders)
+    revenue = sum(o.total or 0 for o in orders)
+    no_utm_pct = round(no_utm_count / orders_count * 100, 1) if orders_count else 0.0
+
+    raw_spend = camp.raw_spend if camp.raw_spend is not None else camp.spend
+    ctr = round(camp.clicks / camp.impressions * 100, 3) if camp.impressions > 0 else 0.0
+    cpc = round(camp.spend / camp.clicks, 2) if camp.clicks > 0 else 0.0
+    cpm = round(camp.spend / camp.impressions * 1000, 2) if camp.impressions > 0 else 0.0
+    frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
+    cost_per_purchase = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
+    roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
+    aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
+
+    capi_logs = (
+        db.query(MetaCapiLog).filter(MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase").all()
+        if order_ids else []
+    )
+    by_status: Dict[str, int] = {}
+    for log in capi_logs:
+        by_status[log.status] = by_status.get(log.status, 0) + 1
+    success = by_status.get("success", 0)
+    failed = by_status.get("failed", 0)
+    retry = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
+    pending = by_status.get("queued", 0) + by_status.get("processing", 0)
+    skipped = by_status.get("skipped", 0)
+    total_sent = success + failed + retry + pending + skipped
+
+    event_id_counts: Dict[str, int] = {}
+    for log in capi_logs:
+        event_id_counts[log.event_id] = event_id_counts.get(log.event_id, 0) + 1
+    dup_n = sum(1 for c in event_id_counts.values() if c > 1)
+    dedup_pct = round((1 - dup_n / total_sent) * 100, 1) if total_sent else 100.0
+
+    backfill_order_ids = {
+        row[0] for row in (
+            db.query(AuditLog.entity_id)
+            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
+                    AuditLog.entity_id.in_(order_ids))
+            .all()
+        )
+    } if order_ids else set()
+
+    realtime_n = backfill_n = 0
+    latencies = []
+    for log in capi_logs:
+        if log.status != "success":
+            continue
+        order = orders_by_id.get(log.order_id)
+        ref_time = order.created_at if order else None
+        is_backfill = log.order_id in backfill_order_ids or classify_capi_log_timing(log.created_at, ref_time) == "backfill"
+        if is_backfill:
+            backfill_n += 1
+        else:
+            realtime_n += 1
+        if log.latency_ms is not None:
+            latencies.append(log.latency_ms)
+    timing_n = realtime_n + backfill_n
+    realtime_pct = round(realtime_n / timing_n * 100, 1) if timing_n else 0.0
+    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
+    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
+    max_latency_ms = max(latencies) if latencies else None
+
+    success_payloads = [log.payload for log in capi_logs if log.status == "success" and log.payload]
+    n_payloads = len(success_payloads)
+    _field_checks = {
+        "value": lambda p: (p.get("custom_data") or {}).get("value") not in (None, "", 0),
+        "currency": lambda p: bool((p.get("custom_data") or {}).get("currency")),
+        "event_time": lambda p: bool(p.get("event_time")),
+        "event_id": lambda p: bool(p.get("event_id")),
+        "email": lambda p: bool((p.get("user_data") or {}).get("em")),
+        "phone": lambda p: bool((p.get("user_data") or {}).get("ph")),
+        "city": lambda p: bool((p.get("user_data") or {}).get("ct")),
+        "state": lambda p: bool((p.get("user_data") or {}).get("st")),
+        "country": lambda p: bool((p.get("user_data") or {}).get("country")),
+        "ip": lambda p: bool((p.get("user_data") or {}).get("client_ip_address")),
+        "user_agent": lambda p: bool((p.get("user_data") or {}).get("client_user_agent")),
+        "fbp": lambda p: bool((p.get("user_data") or {}).get("fbp")),
+        "fbc": lambda p: bool((p.get("user_data") or {}).get("fbc")),
+    }
+    field_completeness = {
+        key: round(sum(1 for p in success_payloads if fn(p)) / n_payloads * 100, 1)
+        for key, fn in _field_checks.items()
+    } if n_payloads else {key: 0.0 for key in _field_checks}
+
+    emq_scores = [compute_match_quality((p or {}).get("user_data") or {})["score"] for p in success_payloads]
+    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
+
+    valid_purchase_pct = round(success / total_sent * 100, 1) if total_sent else 0.0
+    rejected_pct = round(failed / total_sent * 100, 1) if total_sent else 0.0
+    retry_pct = round(retry / total_sent * 100, 1) if total_sent else 0.0
+    missing_value_pct = round(100 - field_completeness["value"], 1)
+    missing_currency_pct = round(100 - field_completeness["currency"], 1)
+    attribution_pct = round((orders_count - no_utm_count) / orders_count * 100, 1) if orders_count else 0.0
+
+    learning_score = compute_learning_score({
+        "realtime_pct": realtime_pct, "event_match_quality": avg_emq or 0.0,
+        "valid_purchase_pct": valid_purchase_pct, "dedup_pct": dedup_pct,
+        "value_present_pct": field_completeness["value"], "attribution_pct": attribution_pct,
+        "avg_latency_ms": avg_latency_ms,
+    })
+    coverage_score = round(success / total_sent * 100, 1) if total_sent else 0.0
+    reliability_score = round(max(0.0, 100 - rejected_pct * 3), 1) if total_sent else 100.0
+    signal_score = round((coverage_score + (avg_emq or 0.0) + reliability_score) / 3, 1)
+
+    weekly_rate = success / max(range_days / 7, 1)
+    reasons = diagnose_campaign_learning({
+        "weekly_rate": weekly_rate, "backfill_pct": backfill_pct, "event_match_quality": avg_emq,
+        "missing_value_pct": missing_value_pct, "missing_currency_pct": missing_currency_pct,
+        "retry_pct": retry_pct, "rejected_pct": rejected_pct, "avg_latency_ms": avg_latency_ms,
+        "no_utm_pct": no_utm_pct, "frequency": frequency, "ctr": ctr, "impressions": camp.impressions,
+        "cost_per_purchase": cost_per_purchase, "aov": aov,
+    })
+
+    return {
+        "success": True,
+        "data": {
+            "range_days": range_days,
+            "general": {
+                "campaign_name": camp.campaign_name,
+                "campaign_id": camp.campaign_id,
+                "product_id": camp.product_id,
+                "objective": None,
+                "status": None,
+                "created_at": camp.created_at.isoformat() if camp.created_at else None,
+                "last_synced_at": camp.updated_at.isoformat() if camp.updated_at else None,
+                "not_yet_synced": ["objective", "status"],
+            },
+            "performance": {
+                "spend": camp.spend, "raw_spend": raw_spend, "currency": camp.currency,
+                "impressions": camp.impressions, "reach": camp.reach, "frequency": frequency,
+                "cpm": cpm, "ctr": ctr, "cpc": cpc, "cost_per_purchase": cost_per_purchase,
+                "roas": roas, "revenue": revenue, "aov": aov,
+            },
+            "tracking": {
+                "orders_erp": orders_count,
+                "purchase_capi_success": success,
+                "purchase_dedup_conflicts": dup_n,
+                "purchase_backfill": backfill_n,
+                "purchase_realtime": realtime_n,
+                "purchase_retry": retry,
+                "purchase_failed": failed,
+                "purchase_pending": pending,
+                "purchase_skipped": skipped,
+                "purchase_pixel_note": "Non mesurable côté serveur — le Pixel navigateur ne confirme jamais son envoi au backend (voir Purchase CAPI, qui partage le même event_id pour la déduplication Meta).",
+            },
+            "signal_quality": {
+                "signal_score": signal_score,
+                "learning_score": learning_score["score"],
+                "event_match_quality": avg_emq,
+                "tracking_coverage": coverage_score,
+                "dedup_pct": dedup_pct,
+                "realtime_pct": realtime_pct,
+                "backfill_pct": backfill_pct,
+                "avg_latency_ms": avg_latency_ms,
+                "max_latency_ms": max_latency_ms,
+            },
+            "field_completeness": field_completeness,
+            "diagnosis": reasons,
+        },
+    }
+
+
+@router.get("/campaigns/{campaign_id}/orders", response_model=dict)
+def get_campaign_orders_detail(
+    campaign_id: str,
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=90),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Vue détaillée des commandes d'UNE campagne — pour chacune, exactement ce
+    qui a réellement été envoyé à Meta (jamais un statut inventé). Plafonné
+    à `limit` (défaut 100, max 500), la plus récente d'abord.
+    """
+    from app.models.marketing import MetaCapiLog
+    from app.models.audit import AuditLog
+    from app.services.meta_capi import classify_capi_log_timing
+
+    db.info["skip_tenant_isolation"] = True
+    camp = (
+        db.query(MetaAdsCampaign)
+        .filter(MetaAdsCampaign.campaign_id == campaign_id, MetaAdsCampaign.store_id == store_id)
+        .first()
+    )
+    if not camp:
+        return {"success": False, "error": "Campagne introuvable"}
+
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    orders, _ = _match_campaign_orders(db, store_id, camp, since=since)
+    orders = sorted(orders, key=lambda o: o.created_at or datetime.min, reverse=True)[:limit]
+    order_ids = [o.id for o in orders]
+
+    logs = (
+        db.query(MetaCapiLog).filter(MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase").all()
+        if order_ids else []
+    )
+    logs_by_order = {log.order_id: log for log in logs}
+    backfill_order_ids = {
+        row[0] for row in (
+            db.query(AuditLog.entity_id)
+            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
+                    AuditLog.entity_id.in_(order_ids))
+            .all()
+        )
+    } if order_ids else set()
+
+    data = []
+    for o in orders:
+        log = logs_by_order.get(o.id)
+        payload = (log.payload if log else None) or {}
+        cd = payload.get("custom_data") or {}
+        ud = payload.get("user_data") or {}
+        is_backfill = None
+        if log and log.status == "success":
+            is_backfill = o.id in backfill_order_ids or classify_capi_log_timing(log.created_at, o.created_at) == "backfill"
+        data.append({
+            "order_number": o.order_number,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+            "customer_name": o.customer_name,
+            "source": o.source,
+            "utm_campaign": o.utm_campaign,
+            "capi_status": log.status if log else "jamais_envoye",
+            "event_id": log.event_id if log else None,
+            "event_time": payload.get("event_time"),
+            "value": cd.get("value"),
+            "currency": cd.get("currency"),
+            "fbp": ud.get("fbp"),
+            "fbc": ud.get("fbc"),
+            "ip": ud.get("client_ip_address"),
+            "user_agent": ud.get("client_user_agent"),
+            "retry_count": log.retry_count if log else 0,
+            "backfill": is_backfill,
+            "latency_ms": log.latency_ms if log else None,
+            "error_message": log.error_message if log else None,
+        })
+    return {
+        "success": True,
+        "data": data,
+        "count": len(data),
+        "note": "Purchase Pixel non inclus — non mesurable côté serveur.",
+    }
+
+
+@router.get("/campaigns/{campaign_id}/history", response_model=dict)
+def get_campaign_history(
+    campaign_id: str,
+    store_id: str = Query(...),
+    range_days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Évolution quotidienne d'une campagne — spend/impressions/clicks/reach/
+    achats Meta viennent de meta_ads_daily_insights (déjà synchronisé par le
+    sync existant, ZÉRO appel Meta supplémentaire ici). Purchase par jour
+    vient d'UNE requête groupée par jour sur meta_capi_logs, bornée par date
+    et par les commandes déjà matchées à cette campagne.
+    """
+    from sqlalchemy import func
+    from app.models.marketing import MetaAdsDailyInsight, MetaCapiLog
+
+    db.info["skip_tenant_isolation"] = True
+    since_date = (datetime.now(timezone.utc) - timedelta(days=range_days)).date()
+
+    daily_insights = (
+        db.query(MetaAdsDailyInsight)
+        .filter(MetaAdsDailyInsight.campaign_id == campaign_id, MetaAdsDailyInsight.store_id == store_id,
+                MetaAdsDailyInsight.date >= since_date)
+        .order_by(MetaAdsDailyInsight.date.asc())
+        .all()
+    )
+    by_date: Dict[str, Dict[str, Any]] = {}
+    for row in daily_insights:
+        d = row.date.isoformat()
+        by_date[d] = {
+            "date": d, "spend": row.spend, "impressions": row.impressions, "clicks": row.clicks,
+            "reach": row.reach, "meta_purchases": row.meta_purchases, "meta_purchase_value": row.meta_purchase_value,
+            "cpa": round(row.spend / row.meta_purchases, 2) if row.meta_purchases else None,
+            "ctr": round(row.clicks / row.impressions * 100, 3) if row.impressions else None,
+            "roas": round(row.meta_purchase_value / row.spend, 2) if row.spend else None,
+        }
+
+    camp = (
+        db.query(MetaAdsCampaign)
+        .filter(MetaAdsCampaign.campaign_id == campaign_id, MetaAdsCampaign.store_id == store_id)
+        .first()
+    )
+    if camp:
+        since_dt = datetime.combine(since_date, datetime.min.time())
+        orders, _ = _match_campaign_orders(db, store_id, camp, since=since_dt)
+        order_ids = [o.id for o in orders]
+        if order_ids:
+            purchase_rows = (
+                db.query(func.date(MetaCapiLog.created_at), MetaCapiLog.status, func.count(MetaCapiLog.id))
+                .filter(MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase")
+                .group_by(func.date(MetaCapiLog.created_at), MetaCapiLog.status)
+                .all()
+            )
+            for d, status, count in purchase_rows:
+                d_str = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                entry = by_date.setdefault(d_str, {"date": d_str})
+                entry[f"purchase_{status}"] = entry.get(f"purchase_{status}", 0) + count
+
+    history = sorted(by_date.values(), key=lambda r: r["date"])
+    return {"success": True, "data": history}

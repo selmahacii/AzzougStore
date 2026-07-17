@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
@@ -131,6 +132,18 @@ export default function MetaAdsDashboard() {
   });
   const signalQuality = signalQualityData?.data;
 
+  // --- Query "Pourquoi Meta n'apprend pas ?" — raisons classées par sévérité,
+  // calculées uniquement depuis notre DB (aucun appel Graph API). ---
+  const { data: learningDiagnosticsData, isLoading: isLoadingLearningDiagnostics } = useQuery({
+    queryKey: ['meta_learning_diagnostics', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/learning-diagnostics?store_id=${activeStore?.id}`
+    ),
+    enabled: !!activeStore?.id,
+    refetchOnWindowFocus: false,
+  });
+  const learningDiagnostics = learningDiagnosticsData?.data;
+
   // --- Mutations ---
   const saveConfigMutation = useMutation({
     mutationFn: (payload: any) => apiFetch('/api/v1/meta-ads/config', {
@@ -190,6 +203,39 @@ export default function MetaAdsDashboard() {
   });
   const campaignAds = campaignAdsData?.data || [];
   const summary = campaignsData?.summary || { total_spend: 0, total_revenue: 0, total_orders: 0, global_roas: 0 };
+
+  // --- Campaign Learning Health — audit individuel d'une campagne (Signal
+  // Score, Learning Score, tracking ERP, complétude des champs, causes du
+  // mauvais apprentissage). Ne se déclenche QUE si la ligne est dépliée ET
+  // l'onglet correspondant ouvert, jamais un fetch pour toutes les
+  // campagnes à la fois. ---
+  const [campaignDetailTab, setCampaignDetailTab] = useState<'ads' | 'health' | 'orders' | 'history'>('ads');
+  const { data: campaignHealthData, isLoading: isLoadingCampaignHealth } = useQuery({
+    queryKey: ['meta_campaign_learning_health', expandedMetaCampaignId],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/campaigns/${expandedMetaCampaignId}/learning-health?store_id=${activeStore?.id}`
+    ),
+    enabled: !!expandedMetaCampaignId && !!activeStore?.id && campaignDetailTab === 'health',
+  });
+  const campaignHealth = campaignHealthData?.data;
+
+  const { data: campaignOrdersData, isLoading: isLoadingCampaignOrders } = useQuery({
+    queryKey: ['meta_campaign_orders', expandedMetaCampaignId],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
+      `/api/v1/meta-ads/campaigns/${expandedMetaCampaignId}/orders?store_id=${activeStore?.id}&limit=100`
+    ),
+    enabled: !!expandedMetaCampaignId && !!activeStore?.id && campaignDetailTab === 'orders',
+  });
+  const campaignOrders = campaignOrdersData?.data || [];
+
+  const { data: campaignHistoryData, isLoading: isLoadingCampaignHistory } = useQuery({
+    queryKey: ['meta_campaign_history', expandedMetaCampaignId],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
+      `/api/v1/meta-ads/campaigns/${expandedMetaCampaignId}/history?store_id=${activeStore?.id}`
+    ),
+    enabled: !!expandedMetaCampaignId && !!activeStore?.id && campaignDetailTab === 'history',
+  });
+  const campaignHistory = campaignHistoryData?.data || [];
 
   // Most recent sync across all loaded campaigns — shown near the "Historique
   // des Campagnes" header so a gap with Meta's own live count (12 achats one
@@ -722,7 +768,7 @@ export default function MetaAdsDashboard() {
                     <React.Fragment key={c.id}>
                       <tr
                         className={cn("transition-colors font-bold text-xs cursor-pointer", isExpanded ? "bg-[#F8F9FC]" : "hover:bg-[#FAFBFD]")}
-                        onClick={() => setExpandedCampaign(isExpanded ? null : c.id)}
+                        onClick={() => { setExpandedCampaign(isExpanded ? null : c.id); setCampaignDetailTab('ads'); }}
                       >
                          <td className="px-6 py-5">
                             <div className="flex items-start gap-2">
@@ -847,58 +893,227 @@ export default function MetaAdsDashboard() {
                               </div>
                             )}
 
-                            {/* Per-ad breakdown — this campaign row is Meta's own
-                                rollup of every ad underneath it; several
-                                split-tested ads under one campaign show up here
-                                individually instead of only as one combined
-                                total above. */}
+                            {/* Onglets du détail campagne — Publicités (déjà là),
+                                Learning Health / Commandes / Historique (nouveaux),
+                                chacun ne fetch que lorsqu'il est réellement ouvert. */}
                             <div className="mt-4 pt-4 border-t border-[#E9ECF0]">
-                              <div className="flex items-center justify-between mb-2">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                                  <Layers className="size-3" /> Détail par publicité
-                                </p>
-                                {campaignAds.length > 0 && campaignAds[0]?.last_synced_at && (
-                                  <p className="text-[9px] text-slate-300 font-bold">
-                                    Chiffres Meta au dernier sync — {formatDistanceToNow(new Date(campaignAds[0].last_synced_at), { addSuffix: true, locale: fr })}
-                                  </p>
-                                )}
+                              <div className="flex items-center gap-1 mb-3">
+                                {([
+                                  { key: 'ads', label: 'Publicités', icon: Layers },
+                                  { key: 'health', label: 'Learning Health', icon: Zap },
+                                  { key: 'orders', label: 'Commandes', icon: ShoppingBag },
+                                  { key: 'history', label: 'Historique', icon: Activity },
+                                ] as const).map(t => (
+                                  <button
+                                    key={t.key}
+                                    onClick={(e) => { e.stopPropagation(); setCampaignDetailTab(t.key); }}
+                                    className={cn(
+                                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors',
+                                      campaignDetailTab === t.key ? 'bg-[#6C5CE7] text-white' : 'bg-white text-slate-400 hover:text-slate-600'
+                                    )}
+                                  >
+                                    <t.icon className="size-3" /> {t.label}
+                                  </button>
+                                ))}
                               </div>
-                              {isLoadingCampaignAds ? (
-                                <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
-                              ) : campaignAds.length === 0 ? (
-                                <p className="text-[10px] text-slate-300 italic">Aucun détail par publicité disponible pour cette campagne — resynchronisez pour le récupérer.</p>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left border-collapse min-w-[700px]">
-                                    <thead>
-                                      <tr>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Publicité</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Dépenses</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Impressions</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Achats (Meta)</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Coût / achat</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-[#E9ECF0]/60">
-                                      {campaignAds.map((ad: any) => (
-                                        <tr key={ad.ad_id} className="text-xs font-bold bg-white">
-                                          <td className="px-3 py-2.5">
-                                            <p className="text-[11px] font-black text-[#2D3436]">{ad.ad_name}</p>
-                                            {ad.adset_name && <p className="text-[9px] text-slate-400">{ad.adset_name}</p>}
-                                          </td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums">{formatPrice(ad.spend)}</td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.impressions || 0).toLocaleString()}</td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.clicks || 0).toLocaleString()}</td>
-                                          <td className="px-3 py-2.5 text-center">
-                                            <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{ad.meta_purchases || 0}</span>
-                                          </td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums font-mono">{ad.cost_per_purchase ? formatPrice(ad.cost_per_purchase) : '—'}</td>
-                                        </tr>
+
+                              {campaignDetailTab === 'ads' && (
+                                <>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                                      <Layers className="size-3" /> Détail par publicité
+                                    </p>
+                                    {campaignAds.length > 0 && campaignAds[0]?.last_synced_at && (
+                                      <p className="text-[9px] text-slate-300 font-bold">
+                                        Chiffres Meta au dernier sync — {formatDistanceToNow(new Date(campaignAds[0].last_synced_at), { addSuffix: true, locale: fr })}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {isLoadingCampaignAds ? (
+                                    <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
+                                  ) : campaignAds.length === 0 ? (
+                                    <p className="text-[10px] text-slate-300 italic">Aucun détail par publicité disponible pour cette campagne — resynchronisez pour le récupérer.</p>
+                                  ) : (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left border-collapse min-w-[700px]">
+                                        <thead>
+                                          <tr>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Publicité</th>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Dépenses</th>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Impressions</th>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Achats (Meta)</th>
+                                            <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Coût / achat</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[#E9ECF0]/60">
+                                          {campaignAds.map((ad: any) => (
+                                            <tr key={ad.ad_id} className="text-xs font-bold bg-white">
+                                              <td className="px-3 py-2.5">
+                                                <p className="text-[11px] font-black text-[#2D3436]">{ad.ad_name}</p>
+                                                {ad.adset_name && <p className="text-[9px] text-slate-400">{ad.adset_name}</p>}
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right tabular-nums">{formatPrice(ad.spend)}</td>
+                                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.impressions || 0).toLocaleString()}</td>
+                                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.clicks || 0).toLocaleString()}</td>
+                                              <td className="px-3 py-2.5 text-center">
+                                                <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{ad.meta_purchases || 0}</span>
+                                              </td>
+                                              <td className="px-3 py-2.5 text-right tabular-nums font-mono">{ad.cost_per_purchase ? formatPrice(ad.cost_per_purchase) : '—'}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+
+                              {campaignDetailTab === 'health' && (
+                                isLoadingCampaignHealth ? (
+                                  <div className="animate-pulse h-24 bg-slate-100 rounded-xl" />
+                                ) : !campaignHealth ? (
+                                  <p className="text-[10px] text-slate-300 italic">Aucune donnée pour cette campagne sur la période.</p>
+                                ) : (
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                      {[
+                                        { label: 'Signal Score', value: `${campaignHealth.signal_quality.signal_score}/100` },
+                                        { label: 'Learning Score', value: `${campaignHealth.signal_quality.learning_score}/100` },
+                                        { label: 'Event Match', value: campaignHealth.signal_quality.event_match_quality != null ? `${campaignHealth.signal_quality.event_match_quality}%` : '—' },
+                                        { label: 'Tracking Coverage', value: `${campaignHealth.signal_quality.tracking_coverage}%` },
+                                        { label: 'Déduplication', value: `${campaignHealth.signal_quality.dedup_pct}%` },
+                                        { label: 'Temps réel', value: `${campaignHealth.signal_quality.realtime_pct}%` },
+                                        { label: 'Backfill', value: `${campaignHealth.signal_quality.backfill_pct}%` },
+                                        { label: 'Latence moy.', value: campaignHealth.signal_quality.avg_latency_ms != null ? `${(campaignHealth.signal_quality.avg_latency_ms / 1000).toFixed(1)}s` : '—' },
+                                      ].map(m => (
+                                        <div key={m.label} className="bg-white rounded-xl p-3 border border-slate-100">
+                                          <p className="text-sm font-black text-slate-700 tabular-nums">{m.value}</p>
+                                          <p className="text-[9px] font-black uppercase tracking-wider mt-0.5 text-slate-400">{m.label}</p>
+                                        </div>
                                       ))}
-                                    </tbody>
-                                  </table>
-                                </div>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Tracking ERP</p>
+                                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                        {[
+                                          { label: 'Commandes ERP', value: campaignHealth.tracking.orders_erp },
+                                          { label: 'Purchase CAPI', value: campaignHealth.tracking.purchase_capi_success },
+                                          { label: 'Dédupliqués', value: campaignHealth.tracking.purchase_dedup_conflicts },
+                                          { label: 'Backfill', value: campaignHealth.tracking.purchase_backfill },
+                                          { label: 'Temps réel', value: campaignHealth.tracking.purchase_realtime },
+                                          { label: 'Retry', value: campaignHealth.tracking.purchase_retry },
+                                          { label: 'Échoués', value: campaignHealth.tracking.purchase_failed },
+                                          { label: 'Ignorés', value: campaignHealth.tracking.purchase_skipped },
+                                        ].map(m => (
+                                          <div key={m.label} className="bg-slate-50 rounded-lg px-2.5 py-2 text-center">
+                                            <p className="text-xs font-black text-slate-700 tabular-nums">{m.value}</p>
+                                            <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">{m.label}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <p className="text-[9px] text-slate-300 italic mt-1.5">{campaignHealth.tracking.purchase_pixel_note}</p>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Complétude des événements Purchase</p>
+                                      <div className="space-y-1.5">
+                                        {Object.entries(campaignHealth.field_completeness).map(([key, pct]: [string, any]) => (
+                                          <div key={key} className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold text-slate-500 w-20 shrink-0 capitalize">{key.replace('_', ' ')}</span>
+                                            <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: pct >= 90 ? '#00B894' : pct >= 50 ? '#FDCB6E' : '#E17055' }} />
+                                            </div>
+                                            <span className="text-[10px] font-black tabular-nums w-10 text-right" style={{ color: pct >= 90 ? '#00B894' : pct >= 50 ? '#FDCB6E' : '#E17055' }}>{pct}%</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                                        Pourquoi cette campagne n'apprend pas bien {campaignHealth.diagnosis.length === 0 ? '— aucun frein détecté' : `(${campaignHealth.diagnosis.length})`}
+                                      </p>
+                                      {campaignHealth.diagnosis.length > 0 && (
+                                        <div className="space-y-2">
+                                          {campaignHealth.diagnosis.map((r: any, i: number) => (
+                                            <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl border bg-white">
+                                              <span className="size-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: r.severity === 'high' ? '#E17055' : r.severity === 'medium' ? '#FDCB6E' : '#0984E3' }} />
+                                              <div className="min-w-0">
+                                                <p className="text-[11px] font-black text-slate-700">❌ {r.title}</p>
+                                                <p className="text-[10px] text-slate-500 mt-0.5">{r.explanation}</p>
+                                                <p className="text-[10px] text-slate-700 mt-0.5"><strong>Recommandation :</strong> {r.recommendation}</p>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              )}
+
+                              {campaignDetailTab === 'orders' && (
+                                isLoadingCampaignOrders ? (
+                                  <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
+                                ) : campaignOrders.length === 0 ? (
+                                  <p className="text-[10px] text-slate-300 italic">Aucune commande rattachée à cette campagne sur la période.</p>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse min-w-[900px]">
+                                      <thead>
+                                        <tr>
+                                          {['Commande', 'Date', 'Client', 'Statut Meta', 'Valeur', 'FBP/FBC', 'Retry', 'Backfill', 'Latence'].map(h => (
+                                            <th key={h} className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">{h}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-[#E9ECF0]/60">
+                                        {campaignOrders.map((o: any) => (
+                                          <tr key={o.order_number} className="text-xs font-bold bg-white">
+                                            <td className="px-3 py-2.5 font-mono text-[11px]">{o.order_number}</td>
+                                            <td className="px-3 py-2.5 text-[10px] text-slate-500">{o.created_at ? new Date(o.created_at).toLocaleDateString('fr-DZ') : '—'}</td>
+                                            <td className="px-3 py-2.5 text-[11px]">{o.customer_name || '—'}</td>
+                                            <td className="px-3 py-2.5">
+                                              <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase',
+                                                o.capi_status === 'success' ? 'bg-[#E6FFF8] text-[#00B894]' : o.capi_status === 'jamais_envoye' ? 'bg-slate-100 text-slate-400' : 'bg-[#FFEDE9] text-[#E17055]')}>
+                                                {o.capi_status}
+                                              </Badge>
+                                            </td>
+                                            <td className="px-3 py-2.5 tabular-nums">{o.value != null ? `${o.value} ${o.currency || ''}` : '—'}</td>
+                                            <td className="px-3 py-2.5 text-[9px] text-slate-400">{o.fbp ? 'FBP✓' : 'FBP✗'} / {o.fbc ? 'FBC✓' : 'FBC✗'}</td>
+                                            <td className="px-3 py-2.5 text-center">{o.retry_count || 0}</td>
+                                            <td className="px-3 py-2.5 text-center">{o.backfill == null ? '—' : o.backfill ? 'Oui' : 'Non'}</td>
+                                            <td className="px-3 py-2.5 tabular-nums">{o.latency_ms != null ? `${o.latency_ms}ms` : '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )
+                              )}
+
+                              {campaignDetailTab === 'history' && (
+                                isLoadingCampaignHistory ? (
+                                  <div className="animate-pulse h-40 bg-slate-100 rounded-xl" />
+                                ) : campaignHistory.length === 0 ? (
+                                  <p className="text-[10px] text-slate-300 italic">Aucun historique quotidien disponible pour cette campagne.</p>
+                                ) : (
+                                  <div className="h-56">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                      <LineChart data={campaignHistory}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F5" />
+                                        <XAxis dataKey="date" tick={{ fontSize: 9 }} />
+                                        <YAxis tick={{ fontSize: 9 }} />
+                                        <RechartsTooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                                        <Line type="monotone" dataKey="roas" stroke="#00B894" strokeWidth={2} dot={false} name="ROAS" />
+                                        <Line type="monotone" dataKey="ctr" stroke="#0984E3" strokeWidth={2} dot={false} name="CTR %" />
+                                        <Line type="monotone" dataKey="purchase_success" stroke="#6C5CE7" strokeWidth={2} dot={false} name="Purchase" />
+                                      </LineChart>
+                                    </ResponsiveContainer>
+                                  </div>
+                                )
                               )}
                             </div>
                           </td>
@@ -1200,6 +1415,55 @@ export default function MetaAdsDashboard() {
       {/* ─── TAB: DIAGNOSTICS ─── */}
       {activeTab === 'diagnostics' && (
         <div className="space-y-4">
+          {/* ─── Learning Score — LE KPI principal du module : répond en une
+              carte à "Meta reçoit-il des signaux assez bons pour bien
+              optimiser la diffusion ?". Moyenne pondérée de composants déjà
+              mesurés honnêtement ailleurs (voir compute_learning_score côté
+              backend) — jamais une note recalculée en secret. ─── */}
+          <div className="bg-gradient-to-br from-[#0C1B33] to-[#132A4D] rounded-3xl shadow-sm p-6 text-white">
+            <div className="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 text-white">
+                  <Sparkles className="size-4 text-[#FFD86B]" /> Learning Score
+                </h3>
+                <p className="text-[10px] text-white/50 mt-1">Meta reçoit-il des signaux assez bons pour bien optimiser vos publicités ? — 30 derniers jours.</p>
+              </div>
+              {signalQuality?.learning_score?.score != null && (
+                <div className="text-right shrink-0">
+                  <p className={cn(
+                    'text-3xl font-black leading-none',
+                    signalQuality.learning_score.score >= 90 ? 'text-[#00E6A0]' : signalQuality.learning_score.score >= 70 ? 'text-[#FFD86B]' : 'text-[#FF7A6E]'
+                  )}>{signalQuality.learning_score.score}<span className="text-sm text-white/30">/100</span></p>
+                </div>
+              )}
+            </div>
+
+            {isLoadingSignalQuality ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50">Chargement…</div>
+            ) : !signalQuality?.learning_score ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-white/50">Aucune donnée sur cette période.</div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                {[
+                  { label: 'Temps réel', value: `${signalQuality.learning_score.realtime_pct}%` },
+                  { label: 'Backfill', value: `${signalQuality.learning_score.backfill_pct}%` },
+                  { label: 'EMQ', value: signalQuality.learning_score.event_match_quality != null ? `${signalQuality.learning_score.event_match_quality}%` : '—' },
+                  { label: 'Latence', value: signalQuality.learning_score.avg_latency_ms != null ? `${(signalQuality.learning_score.avg_latency_ms / 1000).toFixed(1)}s` : '—' },
+                  { label: 'Dédup', value: `${signalQuality.learning_score.dedup_pct}%` },
+                  { label: 'Purchase valides', value: `${signalQuality.learning_score.valid_purchase_pct}%` },
+                  { label: 'Rejetés', value: `${signalQuality.learning_score.rejected_pct}%` },
+                  { label: 'Valeur monétaire', value: `${signalQuality.learning_score.value_present_pct}%` },
+                  { label: 'Attribution', value: `${signalQuality.learning_score.attribution_pct}%` },
+                ].map(m => (
+                  <div key={m.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <p className="text-base font-black tabular-nums text-white">{m.value}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-white/50">{m.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* ─── Signal Quality Center — score global de la qualité des
               signaux envoyés à Meta, décomposé + couverture par champ EMQ +
               anomalies. Ne mesure QUE ce qui a réellement été envoyé. ─── */}
@@ -1306,6 +1570,44 @@ export default function MetaAdsDashboard() {
                   </div>
                 )}
               </>
+            )}
+          </div>
+
+          {/* ─── "Pourquoi Meta n'apprend pas ?" — raisons classées par
+              sévérité, calculées uniquement depuis notre DB (aucun appel
+              Graph API), jamais une liste statique de conseils génériques. ─── */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="mb-5">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                <Zap className="size-4 text-[#E17055]" /> Pourquoi Meta n'apprend pas ?
+              </h3>
+              <p className="text-[10px] text-slate-400 mt-1">Diagnostic automatique des freins à l'optimisation de la diffusion — 30 derniers jours.</p>
+            </div>
+            {isLoadingLearningDiagnostics ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : learningDiagnostics?.healthy ? (
+              <div className="rounded-2xl border border-[#00B894]/30 bg-[#00B894]/5 p-6 text-sm text-[#00B894] font-bold">
+                Aucun frein détecté sur la période — les signaux envoyés à Meta sont dans les seuils recommandés.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {(learningDiagnostics?.reasons || []).map((r: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-2xl border bg-slate-50">
+                    <span className="size-1.5 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: r.severity === 'high' ? '#E17055' : r.severity === 'medium' ? '#FDCB6E' : '#0984E3' }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[12px] font-black text-slate-800">{r.title}</p>
+                        <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase',
+                          r.severity === 'high' ? 'bg-[#FFEDE9] text-[#E17055]' : r.severity === 'medium' ? 'bg-[#FFF8E6] text-[#B8860B]' : 'bg-[#E8F4FE] text-[#0984E3]')}>
+                          {r.severity === 'high' ? 'Haute' : r.severity === 'medium' ? 'Moyenne' : 'Faible'}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">{r.detail}</p>
+                      <p className="text-[11px] text-slate-700 mt-1"><strong>Correction :</strong> {r.fix}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
