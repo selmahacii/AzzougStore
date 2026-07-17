@@ -34,6 +34,7 @@ class ProductBase(BaseModel):
     # Flags
     is_active: Optional[bool] = True
     is_featured: Optional[bool] = False
+    is_upsell_only: Optional[bool] = False
     is_pack: Optional[bool] = False
     pack_items: Optional[List[Any]] = []
     pack_charges: Optional[List[Any]] = []

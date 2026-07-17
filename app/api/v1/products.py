@@ -109,10 +109,20 @@ def read_products(
     promo: Optional[bool] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    include_upsell_only: bool = Query(False),
     current_user: Optional[Any] = Depends(deps.get_current_user_optional)
 ) -> Any:
     """
     Retrieve products. Public when store_id is provided (storefront), auth required for admin.
+
+    include_upsell_only=false (default, every caller today) excludes
+    products created purely as independent upsell offers — never shown on
+    the storefront, never cluttering the regular admin/agent product
+    pickers. Only the dedicated upsell-candidate picker passes
+    include_upsell_only=true, which is the ONLY place these products
+    become visible — matching "visible uniquement dans la section upsell,
+    jamais sur le site". Staff vs. public status does NOT gate this (both
+    default to excluded) — a separate, explicit axis from is_active.
     """
     logger.debug(f"[Products] Listing: store_id={store_id!r}, page={page}, pageSize={pageSize}, search={search!r}, category={category!r}, user={getattr(current_user, 'email', 'anon')!r}")
 
@@ -136,6 +146,9 @@ def read_products(
         query = query.filter(Product.is_active == True)
     elif is_active is not None:
         query = query.filter(Product.is_active == is_active)
+
+    if not include_upsell_only:
+        query = query.filter(Product.is_upsell_only == False)
 
     if store_id:
         query = query.filter(Product.store_id == store_id)

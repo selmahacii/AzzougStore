@@ -118,7 +118,7 @@ const EMPTY_FORM = {
    name: '', category: '', sku: '', barcode: '', brand: '', slug: '',
    description: '', price: '', compare_price: '', cost_price: '',
    stock: '', low_stock_threshold: '5', tags: '', images: [] as string[],
-   is_active: true, main_image: '', store_id: '',
+   is_active: true, is_upsell_only: false, main_image: '', store_id: '',
    variants: [] as any[],
    // Production source
    production_source: 'imported' as 'imported' | 'local',
@@ -331,7 +331,10 @@ export default function ProductsPage() {
    const pageSize = parseInt(pageSizeOption);
 
    const buildQueryParams = useCallback(() => {
-      const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString() });
+      // include_upsell_only=true : sinon un produit upsell indépendant
+      // deviendrait invisible ici juste après sa création — l'admin a
+      // besoin de pouvoir le retrouver/modifier dans le catalogue.
+      const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString(), include_upsell_only: 'true' });
       if (searchQuery) params.set('search', searchQuery);
       if (categoryFilter !== 'all') params.set('category', categoryFilter);
       if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
@@ -638,6 +641,7 @@ export default function ProductsPage() {
          low_stock_threshold: parseInt(form.low_stock_threshold || '5'),
          description: form.description.trim(),
          is_active: form.is_active,
+         is_upsell_only: form.is_upsell_only,
          store_id: form.store_id || storeId,
          main_image: form.main_image.trim(),
          images: form.images,
@@ -896,6 +900,7 @@ export default function ProductsPage() {
                                            tags: freshProduct.tags?.join(', ') || '',
                                            images: freshProduct.images || [],
                                            is_active: freshProduct.is_active !== false,
+                                           is_upsell_only: !!(freshProduct as any).is_upsell_only,
                                            main_image: freshProduct.main_image || '',
                                            store_id: (freshProduct as any).store_id || storeId,
                                            variants: freshProduct.variants || [],
@@ -2174,6 +2179,24 @@ export default function ProductsPage() {
                                     {form.is_active ? 'En Ligne' : 'Hors Ligne'}
                                  </span>
                                  <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec]" />
+                              </div>
+                           </div>
+
+                           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-[24px] border border-slate-100">
+                              <div className="flex items-center gap-4">
+                                 <div className="size-10 rounded-xl bg-white border flex items-center justify-center text-[#6C5CE7]">
+                                    <Package className="size-5" />
+                                 </div>
+                                 <div>
+                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Produit Upsell Indépendant</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Jamais sur le site — proposé uniquement par la confirmatrice pendant la commande</p>
+                                 </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_upsell_only ? "text-[#6C5CE7]" : "text-slate-300")}>
+                                    {form.is_upsell_only ? 'Upsell Uniquement' : 'Produit Normal'}
+                                 </span>
+                                 <input type="checkbox" checked={!!form.is_upsell_only} onChange={e => setF({ is_upsell_only: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#6C5CE7] focus:ring-[#6C5CE7]" />
                               </div>
                            </div>
                         </TabsContent>
