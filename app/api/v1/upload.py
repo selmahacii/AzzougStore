@@ -487,6 +487,129 @@ def migrate_local_images_to_cloudinary(
         db.close()
 
 
+def clear_orphaned_local_images(db) -> dict:
+    """
+    Removes DB references to images that pointed at THIS backend's own
+    ephemeral local-disk file server (…/api/v1/upload/files/…) but whose
+    file no longer exists on disk — the exact combination that 404s in the
+    browser forever, since run_cloudinary_migration() can only migrate a
+    file that's still there to read. Most commonly caused by a HuggingFace
+    Space restart wiping local disk between the upload and the migration
+    sweep noticing it.
+
+    Only clears a reference when the local file is CONFIRMED missing — never
+    touches Cloudinary URLs (https://res.cloudinary.com/...) or any URL that
+    still resolves to a real file on disk. Nulls main_image/logo_url/etc.,
+    and drops the entry from list fields (images[], gallery), rather than
+    inventing a replacement — the frontend already renders a placeholder for
+    a missing image, which is honest; a dead URL that always 404s is not.
+    Every change is written to AuditLog (action='clear_orphaned_images') so
+    exactly what was cleared, and from which row, stays traceable.
+    """
+    from app.models.product import Product
+    from app.models.landing_page import LandingPage
+    from app.models.store import Store
+    from app.models.audit import AuditLog
+    from sqlalchemy.orm.attributes import flag_modified
+    import uuid as _uuid
+
+    local_marker = "/api/v1/upload/files/"
+
+    def _is_orphaned(url: Optional[str]) -> bool:
+        if not url or local_marker not in url:
+            return False
+        filename = url.rsplit("/", 1)[-1]
+        return not (UPLOAD_DIR / Path(filename).name).exists()
+
+    cleared: dict[str, int] = {"products": 0, "landing_pages": 0, "stores": 0}
+    cleared_details = []
+
+    for p in db.query(Product).all():
+        changed = False
+        if _is_orphaned(p.main_image):
+            cleared_details.append({"entity": "product", "entity_id": p.id, "field": "main_image", "old_value": p.main_image})
+            p.main_image = None
+            changed = True
+        images = list(p.images) if isinstance(p.images, list) else []
+        kept_images = [img for img in images if not _is_orphaned(img)]
+        if len(kept_images) != len(images):
+            cleared_details.append({"entity": "product", "entity_id": p.id, "field": "images", "removed_count": len(images) - len(kept_images)})
+            p.images = kept_images
+            flag_modified(p, "images")
+            changed = True
+        if changed:
+            cleared["products"] += 1
+
+    for lp in db.query(LandingPage).all():
+        changed = False
+        if _is_orphaned(lp.image_url):
+            cleared_details.append({"entity": "landing_page", "entity_id": lp.id, "field": "image_url", "old_value": lp.image_url})
+            lp.image_url = None
+            changed = True
+        if _is_orphaned(lp.banner_image_url):
+            cleared_details.append({"entity": "landing_page", "entity_id": lp.id, "field": "banner_image_url", "old_value": lp.banner_image_url})
+            lp.banner_image_url = None
+            changed = True
+        if changed:
+            cleared["landing_pages"] += 1
+
+    for s in db.query(Store).all():
+        changed = False
+        if _is_orphaned(s.logo_url):
+            cleared_details.append({"entity": "store", "entity_id": s.id, "field": "logo_url", "old_value": s.logo_url})
+            s.logo_url = None
+            changed = True
+        if _is_orphaned(s.banner_url):
+            cleared_details.append({"entity": "store", "entity_id": s.id, "field": "banner_url", "old_value": s.banner_url})
+            s.banner_url = None
+            changed = True
+        if changed:
+            cleared["stores"] += 1
+
+    total = sum(cleared.values())
+    if total:
+        db.add(AuditLog(
+            id=str(_uuid.uuid4()), actor_id=None, store_id=None,
+            entity="images", entity_id="cleanup", action="clear_orphaned_images",
+            diff={"cleared": cleared, "details": cleared_details[:200]},
+        ))
+    db.commit()
+
+    return {
+        "success": True,
+        "products_cleared": cleared["products"],
+        "landing_pages_cleared": cleared["landing_pages"],
+        "stores_cleared": cleared["stores"],
+        "total_references_removed": len(cleared_details),
+        "message": (
+            f"{total} référence(s) rectifiée(s) — plus aucune image cassée pointant vers un fichier local disparu."
+            if total else "Aucune référence d'image orpheline trouvée."
+        ),
+    }
+
+
+@router.post("/clear-orphaned-images", response_model=dict)
+def clear_orphaned_images_endpoint(
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> dict:
+    """
+    On-demand: clears product/landing-page/store image references that 404
+    because their local-disk file is gone for good (see
+    clear_orphaned_local_images() for why this happens). Run
+    /migrate-to-cloudinary FIRST if in doubt — this only clears what
+    migration could never have saved anyway (the file is already gone).
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Superadmin only")
+
+    from app.db.session import get_db as _get_db
+    db = next(_get_db())
+    try:
+        return clear_orphaned_local_images(db)
+    finally:
+        db.close()
+
+
 @router.get("/files/{filename}")
 def serve_uploaded_file(filename: str) -> FileResponse:
     """

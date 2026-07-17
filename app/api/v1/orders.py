@@ -3461,6 +3461,12 @@ def get_capi_tracking_quality_v2(
     from datetime import datetime as _dt, timedelta as _td
     from app.models.marketing import MetaCapiLog
     from app.core.dates import parse_local_date_filter
+    from app.core.analytics_cache import get_cached, set_cached, DEFAULT_TTL_SECONDS
+
+    _cache_key = f"tracking_quality_v2:{store_id}:{mode}:{date_from}:{date_to}"
+    _cached = get_cached(_cache_key)
+    if _cached is not None:
+        return _cached
 
     db.info["skip_tenant_isolation"] = True
 
@@ -3691,7 +3697,7 @@ def get_capi_tracking_quality_v2(
         recommendations.append("Aucune anomalie détectée sur la période.")
 
     _timing_total = realtime_ok + backfill_ok
-    return {
+    result = {
         "success": True,
         "data": {
             "mode": mode,
@@ -3722,6 +3728,8 @@ def get_capi_tracking_quality_v2(
             "methodology": "Calculé depuis les commandes ERP (CONFIRMED/SHIPPED/DELIVERED, hors MANUAL) jointes à meta_capi_logs sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi CAPI et la création de la commande OU la reprise d'un panier abandonné (référence différente de Signal Quality Center, qui utilise toujours la création de commande).",
         },
     }
+    set_cached(_cache_key, result, DEFAULT_TTL_SECONDS)
+    return result
 
 
 # ─── GET /orders/capi/list — commandes filtrées par statut d'envoi CAPI ────
