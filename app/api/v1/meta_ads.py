@@ -2906,7 +2906,7 @@ def get_signal_quality(
     """
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
-    from app.services.meta_capi import compute_match_quality, _MATCH_QUALITY_FIELDS
+    from app.services.meta_capi import compute_match_quality, scan_payload_quality, _MATCH_QUALITY_FIELDS
 
     db.info["skip_tenant_isolation"] = True
     since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
@@ -2949,6 +2949,10 @@ def get_signal_quality(
     )
     field_present_counts = {key: 0 for key, _ in _MATCH_QUALITY_FIELDS}
     emq_scores = []
+    # Comptés sur le MÊME échantillon (aucune requête supplémentaire) pour
+    # le scan de qualité des données ci-dessous : value/currency/event_time
+    # vivent dans custom_data/racine du payload, pas dans user_data.
+    missing_value = missing_currency = missing_event_time = wrong_currency = 0
     for (payload,) in sample:
         ud = (payload or {}).get("user_data") or {}
         mq = compute_match_quality(ud)
@@ -2956,6 +2960,11 @@ def get_signal_quality(
         for f in mq["fields"]:
             if f["present"]:
                 field_present_counts[f["key"]] += 1
+        pq = scan_payload_quality(payload)
+        missing_value += int(pq["missing_value"])
+        missing_currency += int(pq["missing_currency"])
+        wrong_currency += int(pq["wrong_currency"])
+        missing_event_time += int(pq["missing_event_time"])
     sample_n = len(sample)
     avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
     field_coverage = [
@@ -3000,6 +3009,79 @@ def get_signal_quality(
             "type": "PURCHASE_EN_ATTENTE", "count": pending, "severity": "low",
             "detail": f"{pending} Purchase encore en file — normal si récent, à surveiller si ça persiste.",
             "fix": "Vérifier que le worker CAPI tourne (Meta Queue).",
+        })
+
+    # event_id dupliqués — signature exacte d'un double-envoi, jamais permis
+    # par uq_meta_capi_purchase_per_order en théorie, donc un signal fort si
+    # ça arrive (payload corrompu, ancienne ligne pré-index unique).
+    dup_event_ids = (
+        db.query(MetaCapiLog.event_id, func.count(MetaCapiLog.id).label("cnt"))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.created_at >= since)
+        .group_by(MetaCapiLog.event_id)
+        .having(func.count(MetaCapiLog.id) > 1)
+        .all()
+    )
+    if dup_event_ids:
+        anomalies.append({
+            "type": "EVENT_ID_DUPLIQUE", "count": len(dup_event_ids), "severity": "high",
+            "detail": f"{len(dup_event_ids)} event_id apparaissent plus d'une fois — risque de double comptage Purchase côté Meta.",
+            "fix": "Investiguer manuellement (contraire à la contrainte unique attendue) : voir Bons d'Achat > Meta Queue > CAPI Logs pour ces event_id.",
+        })
+
+    # Champs manquants sur les Purchase envoyés avec succès (échantillon déjà chargé)
+    if sample_n > 0:
+        if missing_value > 0:
+            anomalies.append({
+                "type": "PURCHASE_SANS_VALUE", "count": missing_value, "severity": "high",
+                "detail": f"{missing_value}/{sample_n} Purchase envoyés sans valeur monétaire — Meta ne peut pas optimiser sur la valeur.",
+                "fix": "Vérifier order.total sur les commandes concernées (produit gratuit ? item sans prix ?).",
+            })
+        if missing_currency > 0:
+            anomalies.append({
+                "type": "PURCHASE_SANS_CURRENCY", "count": missing_currency, "severity": "high",
+                "detail": f"{missing_currency}/{sample_n} Purchase sans devise déclarée.",
+                "fix": "Vérifier la configuration currency/exchange_rate du compte pub (MetaAdsConfig).",
+            })
+        if wrong_currency > 0:
+            anomalies.append({
+                "type": "PURCHASE_DEVISE_INATTENDUE", "count": wrong_currency, "severity": "medium",
+                "detail": f"{wrong_currency}/{sample_n} Purchase avec une devise ni DZD ni USD/EUR — à vérifier manuellement.",
+                "fix": "Confirmer la devise réelle du compte publicitaire Meta dans sa configuration.",
+            })
+        if missing_event_time > 0:
+            anomalies.append({
+                "type": "PURCHASE_SANS_EVENT_TIME", "count": missing_event_time, "severity": "high",
+                "detail": f"{missing_event_time}/{sample_n} Purchase sans event_time — Meta rejette ou mal-attribue ces événements.",
+                "fix": "Bug de construction d'événement — vérifier build_purchase_event (ne devrait jamais arriver, order.created_at existe toujours).",
+            })
+        for key, label in (("fbp", "FBP"), ("fbc", "FBC"), ("client_user_agent", "User Agent"), ("client_ip_address", "IP")):
+            missing_n = sample_n - field_present_counts[key]
+            if missing_n / sample_n > 0.10:  # >10% manquant = signal notable, pas du bruit
+                anomalies.append({
+                    "type": f"PURCHASE_SANS_{key.upper()}", "count": missing_n, "severity": "medium",
+                    "detail": f"{missing_n}/{sample_n} Purchase sans {label} — dégrade l'Event Match Quality.",
+                    "fix": "Vérifier que le checkout transmet bien fbp/fbc/IP/user-agent au backend avant l'envoi CAPI.",
+                })
+
+    # Purchase réussis sans campagne attribuable (order.campaign_id ET
+    # utm_campaign absents) — la commande a bien un Purchase envoyé à Meta,
+    # mais impossible de savoir QUELLE campagne l'a généré dans nos propres
+    # rapports campagne/landing page.
+    orphan_campaign = (
+        db.query(func.count(MetaCapiLog.id))
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+            MetaCapiLog.status == "success", MetaCapiLog.created_at >= since,
+            Order.campaign_id.is_(None), func.coalesce(Order.utm_campaign, "") == "",
+        )
+        .scalar() or 0
+    )
+    if orphan_campaign > 0:
+        anomalies.append({
+            "type": "PURCHASE_SANS_CAMPAGNE", "count": orphan_campaign, "severity": "low",
+            "detail": f"{orphan_campaign} Purchase envoyés à Meta sans campaign_id/utm_campaign sur la commande — invisibles dans les classements par campagne.",
+            "fix": "Vérifier le tracking UTM sur les liens publicitaires (souvent des ventes organiques/directes, normal en partie).",
         })
 
     # ── 4. Score global décomposé — chaque sous-score est un pourcentage réel

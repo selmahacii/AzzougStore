@@ -1263,20 +1263,45 @@ export default function MetaAdsDashboard() {
                   </div>
                 )}
 
-                {/* Anomalies */}
+                {/* Scan de qualité des données — Problème / Impact / Priorité / Correction */}
                 {signalQuality.anomalies?.length > 0 && (
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Anomalies détectées</p>
-                    <div className="space-y-1.5">
-                      {signalQuality.anomalies.map((a: any, i: number) => (
-                        <div key={i} className="flex items-start gap-2 p-2.5 rounded-xl" style={{ backgroundColor: (a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3') + '0D' }}>
-                          <span className="size-1.5 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3' }} />
-                          <div className="flex-1">
-                            <p className="text-[11px] font-bold text-slate-700">{a.detail}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">→ {a.fix}</p>
-                          </div>
-                        </div>
-                      ))}
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                      Scan de qualité des données ({signalQuality.anomalies.length} problème{signalQuality.anomalies.length > 1 ? 's' : ''})
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[600px]">
+                        <thead>
+                          <tr className="border-b border-slate-100">
+                            <th className="py-2 pr-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Problème</th>
+                            <th className="py-2 pr-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Impact estimé</th>
+                            <th className="py-2 pr-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Priorité</th>
+                            <th className="py-2 text-[9px] font-black uppercase tracking-widest text-slate-400">Correction proposée</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {[...signalQuality.anomalies]
+                            .sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.severity] ?? 3) - ({ high: 0, medium: 1, low: 2 }[b.severity] ?? 3))
+                            .map((a: any, i: number) => (
+                            <tr key={i} className="align-top">
+                              <td className="py-2.5 pr-3">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3' }} />
+                                  <span className="text-[11px] font-bold text-slate-700">{a.detail}</span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 pr-3 text-[11px] font-black tabular-nums" style={{ color: a.severity === 'high' ? '#E17055' : a.severity === 'medium' ? '#FDCB6E' : '#0984E3' }}>{a.count}</td>
+                              <td className="py-2.5 pr-3">
+                                <Badge className={cn('border-none rounded-md px-2 py-0.5 text-[9px] font-black uppercase',
+                                  a.severity === 'high' ? 'bg-[#FFEDE9] text-[#E17055]' : a.severity === 'medium' ? 'bg-[#FFF8E6] text-[#B8860B]' : 'bg-[#E8F4FE] text-[#0984E3]')}>
+                                  {a.severity === 'high' ? 'Haute' : a.severity === 'medium' ? 'Moyenne' : 'Faible'}
+                                </Badge>
+                              </td>
+                              <td className="py-2.5 text-[11px] text-slate-500">{a.fix}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
