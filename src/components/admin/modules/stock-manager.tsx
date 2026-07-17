@@ -81,7 +81,10 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
   const productsQuery = useQuery({
     queryKey: ['admin-products-stock', storeId, search, variant, warehouseId],
     queryFn: () => {
-      let url = `/api/v1/products?store_id=${storeId}&search=${search}&limit=50`;
+      // include_upsell_only=true : les produits upsell indépendants doivent
+      // rester gérables en stock (par la confirmatrice notamment) même s'ils
+      // sont exclus du catalogue public et des sélecteurs de produits standards.
+      let url = `/api/v1/products?store_id=${storeId}&search=${search}&limit=50&include_upsell_only=true`;
       if (variant === 'alerts') url += '&low_stock=true';
       if (warehouseId !== 'all') url += `&warehouse_id=${warehouseId}`;
       return apiFetch<{ success: boolean; data: any[]; total: number }>(url);
@@ -1134,6 +1137,26 @@ function ProductDetailSheet({ product, storeId, onClose }: { product: any; store
    const margin = (product.price || 0) - (product.cost_price || 0);
    const marginPct = product.price > 0 ? Math.round((margin / product.price) * 100) : 0;
 
+   // Prix éditable UNIQUEMENT pour un produit upsell indépendant — le
+   // backend (PATCH /products/{id}) n'autorise de toute façon CONFIRMATEUR
+   // que sur is_upsell_only=true, ce champ ne fait qu'exposer cette
+   // capacité dans le seul écran produit auquel elle a accès.
+   const queryClientPds = useQueryClient();
+   const [editingPrice, setEditingPrice] = useState(false);
+   const [priceInput, setPriceInput] = useState(String(product.price || 0));
+   const priceMutation = useMutation({
+      mutationFn: () => apiFetch(`/api/v1/products/${product.id}`, {
+         method: 'PATCH',
+         body: JSON.stringify({ price: parseInt(priceInput) || 0 }),
+      }),
+      onSuccess: () => {
+         toast.success('Prix mis à jour');
+         setEditingPrice(false);
+         queryClientPds.invalidateQueries({ queryKey: ['admin-products-stock'] });
+      },
+      onError: (err: any) => toast.error('Erreur', { description: err.message }),
+   });
+
    const movementsQuery = useQuery({
       queryKey: ['product-movements', product.id],
       queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/stock/?product_id=${product.id}&pageSize=15`),
@@ -1195,6 +1218,26 @@ function ProductDetailSheet({ product, storeId, onClose }: { product: any; store
                      </div>
                   ))}
                </div>
+
+               {product.is_upsell_only && (
+                  <div className="p-4 rounded-2xl border bg-[#F0EDFF] border-[#6C5CE7]/20">
+                     <p className="text-[9px] font-black text-[#6C5CE7] uppercase tracking-widest mb-2">Produit Upsell Indépendant — prix modifiable ici</p>
+                     {editingPrice ? (
+                        <div className="flex items-center gap-2">
+                           <Input type="number" value={priceInput} onChange={e => setPriceInput(e.target.value)} className="h-9 w-32 bg-white" />
+                           <span className="text-xs font-bold text-[#636E72]">DA</span>
+                           <Button size="sm" onClick={() => priceMutation.mutate()} disabled={priceMutation.isPending} className="h-9">
+                              {priceMutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : 'Enregistrer'}
+                           </Button>
+                           <Button size="sm" variant="outline" onClick={() => { setEditingPrice(false); setPriceInput(String(product.price || 0)); }} className="h-9">Annuler</Button>
+                        </div>
+                     ) : (
+                        <Button size="sm" variant="outline" onClick={() => setEditingPrice(true)} className="h-9">
+                           Modifier le prix ({formatPrice(product.price || 0)})
+                        </Button>
+                     )}
+                  </div>
+               )}
 
                {variantItems.length > 0 && (
                   <div>

@@ -1400,6 +1400,7 @@ def create_order(
 
 _DEFAULT_COMMISSION_CONFIRMATRICE_PCT = 2.0   # % de la valeur de la commande
 _DEFAULT_COMMISSION_LIVREUR_FIXED = 100        # DA fixe par commande livrée
+_UPSELL_COMMISSION_FLAT_DA = 250               # DA fixe par produit upsell ajouté par la confirmatrice
 
 @router.get("/commissions", response_model=dict)
 def get_commissions(
@@ -2160,6 +2161,13 @@ def update_order_info(
         from app.services.order_service import expand_combined_variant_items, _expand_order_item
         inv_svc = InventoryService()
 
+        # Commission upsell (250 DA/produit) : capturé AVANT toute suppression
+        # depuis l'état RÉEL de la commande en base — jamais depuis un flag
+        # envoyé par le frontend (is_upsell), qui reste vrai tant que le
+        # composant n'a pas rechargé originalProductIds et re-déclencherait
+        # une commission à chaque nouvelle sauvegarde de la même commande.
+        _previous_product_ids = {item.product_id for item in order.items}
+
         # Release stock for old items. Expanded first: a legacy item can still
         # carry a combined "P1: ... | P2: ..." variant string (e.g. absorbed
         # from a merged duplicate before this was fixed there too) — releasing
@@ -2259,6 +2267,29 @@ def update_order_info(
         if old_items_desc != ", ".join(new_items_desc) or order.subtotal != total_amount:
             changed_fields.append(f"articles ({old_items_desc} -> {', '.join(new_items_desc)})")
             order.subtotal = total_amount
+
+        # Commission upsell — 250 DA par produit upsell RÉELLEMENT ajouté à
+        # l'instant (product_id absent de _previous_product_ids), et
+        # UNIQUEMENT si ce produit est marqué is_upsell_only=True (un
+        # confirmatrice qui ajoute un produit catalogue normal ne déclenche
+        # aucune commission upsell — seuls les produits upsell dédiés comptent).
+        _newly_added_ids = {
+            item.product_id for item in order.items if item.product_id not in _previous_product_ids
+        }
+        if _newly_added_ids:
+            from app.models.upsell import UpsellCommission
+            from app.models.product import Product
+            _upsell_products = (
+                db.query(Product.id, Product.name)
+                .filter(Product.id.in_(_newly_added_ids), Product.is_upsell_only == True)
+                .all()
+            )
+            for _prod_id, _prod_name in _upsell_products:
+                db.add(UpsellCommission(
+                    id=str(uuid.uuid4()), store_id=order.store_id, user_id=current_user.id,
+                    order_id=order.id, amount=_UPSELL_COMMISSION_FLAT_DA, is_paid=False,
+                ))
+                changed_fields.append(f"commission upsell +{_UPSELL_COMMISSION_FLAT_DA} DA ({_prod_name})")
 
     # Translation dictionary for cleaner logs
     field_labels = {

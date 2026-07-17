@@ -398,7 +398,13 @@ def update_product(
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """Update a product fully."""
-    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
+    # CONFIRMATEUR n'a normalement aucun droit de modification produit — SAUF
+    # sur un produit upsell indépendant (is_upsell_only=True), qu'elle doit
+    # pouvoir gérer elle-même (stock, prix, variantes) en temps réel plutôt
+    # que de dépendre de l'admin à chaque changement. Vérifié APRÈS avoir
+    # chargé le produit puisque la décision dépend de son is_upsell_only.
+    _is_confirmateur = current_user.role == "CONFIRMATEUR"
+    if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"] and not _is_confirmateur:
         raise HTTPException(status_code=403, detail="Privilèges insuffisants pour modifier un produit.")
 
     # Back-office staff (livreur included) edit products across stores in real
@@ -408,6 +414,9 @@ def update_product(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
+
+    if _is_confirmateur and not product.is_upsell_only:
+        raise HTTPException(status_code=403, detail="La confirmatrice ne peut modifier que les produits upsell indépendants.")
 
     update_data = product_in.model_dump(exclude_unset=True)
 
