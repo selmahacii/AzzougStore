@@ -3171,6 +3171,16 @@ def get_signal_quality(
             "period": {
                 "source": period_source, "since": since.isoformat(), "until": until.isoformat(),
             },
+            # Section 4 (rapport) : distinguer explicitement le moment du
+            # calcul et l'événement le plus récent analysé, pour qu'aucun
+            # chiffre affiché ne soit pris pour une valeur mise en cache.
+            "meta": {
+                "calculated_at": m["calculated_at"].isoformat() if m["calculated_at"] else None,
+                "last_purchase_event_at": m["last_success_at"].isoformat() if m["last_success_at"] else None,
+                "calculation_mode": "Temps réel — recalculé à chaque ouverture du dashboard (aucun cache).",
+                "audit_note": "Un audit quotidien (run_meta_nightly_audit) historise séparément ces indicateurs dans AuditLog (action='meta_nightly_audit') — voir GET /meta-ads/audit-reports pour l'historique jour par jour.",
+                "population": f"{success} Purchase CAPI réussis sur la période ({range_days} jours) — dont {sample_n} avec payload exploitable pour l'EMQ.",
+            },
             "global_score": global_score,
             "sub_scores": sub_scores,
             "component_scores": component_scores,

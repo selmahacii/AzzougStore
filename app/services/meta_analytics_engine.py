@@ -28,7 +28,7 @@ its exact formula, population, period and source.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func
@@ -164,6 +164,17 @@ def compute_meta_metrics(
     reliability_score = (
         round(max(0.0, 100 - (rejected_pct * 3)), 1) if rejected_pct is not None else None
     )
+
+    # Horodatage — pour que le dashboard affiche EXPLICITEMENT sur quoi le
+    # calcul porte (mode temps réel : recalculé à chaque appel de cette
+    # fonction, jamais un cache), plutôt que de laisser deviner si le
+    # chiffre affiché est frais ou périmé.
+    calculated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    last_success_at = (
+        db.query(func.max(MetaCapiLog.created_at))
+        .filter(*base_filters, MetaCapiLog.status == "success")
+        .scalar()
+    ) if total_sent else None
 
     # ── 2. Event Match Quality — moyenne + couverture par champ, sur un
     # échantillon PLAFONNÉ des Purchase réussis (payload contient user_data
@@ -327,6 +338,8 @@ def compute_meta_metrics(
 
     return {
         "since": since, "until": until,
+        "calculated_at": calculated_at, "last_success_at": last_success_at,
+        "calculation_mode": "realtime_on_demand",
         "total_sent": total_sent, "success": success, "failed": failed,
         "retry": retry, "pending": pending, "skipped": skipped, "network_failed": network_failed,
         "valid_purchase_pct": valid_purchase_pct, "rejected_pct": rejected_pct,
