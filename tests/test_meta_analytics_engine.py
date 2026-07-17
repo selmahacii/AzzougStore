@@ -221,3 +221,42 @@ def test_benchmark_change_propagates_identically_to_every_view(db_session):
     # The core guarantee: both views moved together, to the SAME new label.
     assert after_store_wide["learning_score"]["label"] == after_per_campaign["learning_score"]["label"]
     assert after_store_wide["signal_score"]["label"] == after_per_campaign["signal_score"]["label"]
+
+
+def test_emq_identical_across_learning_score_signal_quality_and_diagnostics(db_session):
+    """
+    Section 4 of the audit: Learning Score, Signal Quality, Optimization
+    Advisor, Learning Diagnostics and Campaign Health must never show three
+    different EMQ values for the same period. All five views now read
+    m["event_match_quality"] from the SAME compute_meta_metrics() call (see
+    get_signal_quality, get_campaign_learning_health and
+    get_learning_diagnostics in app/api/v1/meta_ads.py, all migrated this
+    round) — this test proves the invariant at the engine level: calling it
+    the way each of those three call sites does (store-wide, store-wide
+    with a since/until pair, and per-campaign order_ids) for the SAME
+    dataset always returns the same EMQ.
+    """
+    store_id = "store-4"
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
+
+    order = _make_order(store_id, campaign_id="camp-D")
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(_make_log(store_id, order.id, status="success"))
+    db_session.commit()
+
+    # get_signal_quality (Learning Score + Signal Quality cards)
+    signal_quality_view = compute_meta_metrics(db_session, store_id, since, until)
+    # get_learning_diagnostics ("Pourquoi Meta apprend")
+    learning_diagnostics_view = compute_meta_metrics(db_session, store_id, since, until)
+    # get_campaign_learning_health (Optimization Advisor / Campaign Health)
+    campaign_health_view = compute_meta_metrics(db_session, store_id, since, until, order_ids=[order.id])
+
+    emqs = {
+        "signal_quality": signal_quality_view["event_match_quality"],
+        "learning_diagnostics": learning_diagnostics_view["event_match_quality"],
+        "campaign_health": campaign_health_view["event_match_quality"],
+    }
+    assert len(set(emqs.values())) == 1, f"EMQ diverged across views: {emqs}"
+    assert emqs["signal_quality"] is not None

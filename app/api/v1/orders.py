@@ -3536,28 +3536,20 @@ def get_capi_tracking_quality_v2(
     ecart = total_erp - meta_purchases
 
     # ── Event Match Quality moyenne + couverture PAR CHAMP (section "Signal
-    # Quality Dashboard") — calculées sur les succès déjà chargés, aucune
-    # requête supplémentaire. Le détail par champ (pas seulement la moyenne)
-    # permet de voir PRÉCISÉMENT lequel manque le plus (ex: email jamais
-    # collecté) plutôt qu'un seul nombre agrégé.
-    from app.services.meta_capi import compute_match_quality
-    mq_scores = []
-    _field_present_count: dict = {}
-    _field_labels: dict = {}
-    _n_with_payload = 0
-    for _, log in rows:
-        if log and log.status == "success" and log.payload:
-            mq = compute_match_quality((log.payload or {}).get("user_data"))
-            mq_scores.append(mq["score"])
-            _n_with_payload += 1
-            for f in mq["fields"]:
-                _field_labels[f["key"]] = f["label"]
-                _field_present_count[f["key"]] = _field_present_count.get(f["key"], 0) + (1 if f["present"] else 0)
-    avg_match_quality = round(sum(mq_scores) / len(mq_scores), 1) if mq_scores else None
-    signal_field_coverage = [
-        {"key": k, "label": _field_labels[k], "coverage_pct": round(_field_present_count[k] / _n_with_payload * 100, 1)}
-        for k in _field_present_count
-    ] if _n_with_payload else []
+    # Quality Dashboard") — déléguée à MetaAnalyticsEngine, scopée aux MÊMES
+    # commandes déjà chargées ci-dessus (order_ids), pour utiliser l'unique
+    # implémentation de compute_match_quality plutôt qu'une boucle locale
+    # redondante. Le reference-time pour realtime/backfill RESTE local
+    # ci-dessus (abandoned_transitions) : c'est une nuance déjà documentée
+    # (méthodologie en bas de cette fonction) que le moteur store-wide ne
+    # gère pas encore, donc pas migrée pour ne pas régresser silencieusement
+    # ce comportement précis.
+    from app.services.meta_analytics_engine import compute_meta_metrics
+    _emq_since = min((o.created_at for o, _ in rows), default=_dt.now() - _td(days=90))
+    _emq_until = _dt.now()
+    _m = compute_meta_metrics(db, store_id, _emq_since, _emq_until, order_ids=order_ids) if order_ids else None
+    avg_match_quality = _m["event_match_quality"] if _m else None
+    signal_field_coverage = _m["field_coverage"] if _m else []
 
     # ── Délais moyens du pipeline (commande → confirmation → expédition →
     # livraison, + création → envoi CAPI) — calculés depuis les VRAIS
@@ -3672,6 +3664,15 @@ def get_capi_tracking_quality_v2(
     failure_rate = round(failed / total_erp * 100, 1) if total_erp else 0.0
     score_components.append(max(0.0, 100 - failure_rate * 5))  # chaque % d'échec pèse lourd
     tracking_score_global = round(sum(score_components) / len(score_components), 1) if score_components else None
+    # Label/couleur via les MÊMES bandes que le Signal Quality Center
+    # (meta_health_label, via classify()) — la formule reste locale (elle
+    # combine coverage_pct/avg_match_quality/failure_rate, propres à cette
+    # vue centrée-commandes), mais le vocabulaire Excellent/Bon/.../Critique
+    # et sa couleur ne sont plus réinventés en TSX.
+    from app.services.meta_analytics_engine import classify
+    from app.services.meta_capi import meta_health_label
+    tracking_score_classified = classify(tracking_score_global, meta_health_label)
+    coverage_pct_classified = classify(coverage_pct, meta_health_label)
 
     if coverage_pct < 95:
         recommendations.append(f"Couverture à {coverage_pct}% — vérifier les commandes 'manquantes' via /orders/capi/backfill-audit.")
@@ -3684,7 +3685,7 @@ def get_capi_tracking_quality_v2(
     # Recommandations dérivées de la couverture par champ — jamais génériques,
     # toujours le champ précis et son pourcentage réel mesuré.
     for fc in signal_field_coverage:
-        if fc["coverage_pct"] < 30 and fc["key"] in ("em", "fbc", "fbp"):
+        if fc["coverage_pct"] is not None and fc["coverage_pct"] < 30 and fc["key"] in ("em", "fbc", "fbp"):
             recommendations.append(f"{fc['label']} présent sur seulement {fc['coverage_pct']}% des Purchase — signal de correspondance faible pour Meta.")
     if not recommendations:
         recommendations.append("Aucune anomalie détectée sur la période.")
@@ -3712,8 +3713,10 @@ def get_capi_tracking_quality_v2(
                 "note": "Fenêtre glissante de 7 jours, INDÉPENDANTE de la période sélectionnée ci-dessus (la phase d'apprentissage Meta se réévalue en continu, pas sur une période de dashboard).",
             },
             "tracking_score": tracking_score_global,
+            "tracking_score_classified": tracking_score_classified,
             "recommendations": recommendations,
             "coverage_pct": coverage_pct,
+            "coverage_pct_classified": coverage_pct_classified,
             "ecart_reel": ecart,
             "performance_count": performance_count,
             "methodology": "Calculé depuis les commandes ERP (CONFIRMED/SHIPPED/DELIVERED, hors MANUAL) jointes à meta_capi_logs sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi CAPI et la création de la commande OU la reprise d'un panier abandonné (référence différente de Signal Quality Center, qui utilise toujours la création de commande).",

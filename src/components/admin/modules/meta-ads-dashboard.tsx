@@ -1671,17 +1671,18 @@ export default function MetaAdsDashboard() {
               </div>
               {trackingQuality?.tracking_score != null && (
                 <div className="text-right shrink-0">
-                  <p className={cn(
-                    'text-2xl font-black leading-none',
-                    trackingQuality.tracking_score >= 90 ? 'text-[#00B894]' : trackingQuality.tracking_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
-                  )}>{trackingQuality.tracking_score}<span className="text-xs text-slate-300">/100</span></p>
+                  <p className="text-2xl font-black leading-none" style={{ color: trackingQuality.tracking_score_classified?.color }}>
+                    {trackingQuality.tracking_score}<span className="text-xs text-slate-300">/100</span>
+                  </p>
                   {/* 1 étoile = 20 points, arrondi — même score que ci-dessus,
                       juste une lecture visuelle plus rapide. */}
                   <p className="text-xs tracking-tight" aria-hidden="true">
                     {'★'.repeat(Math.round(trackingQuality.tracking_score / 20))}
                     <span className="text-slate-200">{'★'.repeat(5 - Math.round(trackingQuality.tracking_score / 20))}</span>
                   </p>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Tracking Score</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest mt-0.5" style={{ color: trackingQuality.tracking_score_classified?.color }}>
+                    {trackingQuality.tracking_score_classified?.label ?? 'Tracking Score'}
+                  </p>
                 </div>
               )}
             </div>
@@ -1696,7 +1697,7 @@ export default function MetaAdsDashboard() {
                   {[
                     { label: 'Commandes ERP', value: trackingQuality.erp_purchases, color: '#0984E3' },
                     { label: 'Reçus par Meta', value: trackingQuality.meta_purchases, color: '#00B894' },
-                    { label: 'Couverture', value: `${trackingQuality.coverage_pct}%`, color: trackingQuality.coverage_pct >= 95 ? '#00B894' : '#FDCB6E' },
+                    { label: 'Couverture', value: `${trackingQuality.coverage_pct}%`, color: trackingQuality.coverage_pct_classified?.color ?? '#0984E3' },
                     { label: 'Match Quality moy.', value: trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '—', color: '#6C5CE7' },
                   ].map(s => (
                     <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
@@ -1768,10 +1769,9 @@ export default function MetaAdsDashboard() {
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                       {trackingQuality.signal_field_coverage.map((f: any) => (
                         <div key={f.key} className="text-center p-2 rounded-lg bg-slate-50">
-                          <p className={cn(
-                            'text-xs font-black tabular-nums',
-                            f.coverage_pct >= 80 ? 'text-[#00B894]' : f.coverage_pct >= 40 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
-                          )}>{f.coverage_pct}%</p>
+                          <p className="text-xs font-black tabular-nums" style={{ color: f.quality_color }}>
+                            {f.coverage_pct != null ? `${f.coverage_pct}%` : 'N/A'}
+                          </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 leading-tight mt-0.5">{f.label}</p>
                         </div>
                       ))}

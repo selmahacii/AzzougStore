@@ -3260,14 +3260,13 @@ def get_learning_diagnostics(
             "fix": "Régénérer un token d'accès système avec la permission ads_management.",
         })
 
-    # ── Volume : Meta recommande un minimum de conversions pour sortir de la
-    # phase d'apprentissage (learning phase) d'un ensemble de publicités. ──
-    purchase_count = (
-        db.query(func.count(MetaCapiLog.id))
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-                MetaCapiLog.status == "success", MetaCapiLog.created_at >= since)
-        .scalar() or 0
-    )
+    # ── Toutes les métriques ci-dessous viennent du moteur canonique — plus
+    # aucun recalcul local d'EMQ/backfill/latence/retry/volume ici. ──
+    from app.services.meta_analytics_engine import compute_meta_metrics
+    until = datetime.now(timezone.utc).replace(tzinfo=None)
+    m = compute_meta_metrics(db, store_id, since, until)
+
+    purchase_count = m["success"]
     weekly_rate = purchase_count / max(range_days / 7, 1)
     if weekly_rate < 50:
         reasons.append({
@@ -3277,49 +3276,16 @@ def get_learning_diagnostics(
             "fix": "Regrouper les ensembles de publicités trop fragmentés, ou élargir le ciblage/budget pour accumuler plus de conversions.",
         })
 
-    # ── Event Match Quality (échantillon déjà calculé par /signal-quality ;
-    # recalculé ici sur un échantillon plafonné identique, une seule requête) ──
-    emq_sample = (
-        db.query(MetaCapiLog.payload)
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-                MetaCapiLog.status == "success", MetaCapiLog.payload.isnot(None),
-                MetaCapiLog.created_at >= since)
-        .order_by(MetaCapiLog.created_at.desc()).limit(500).all()
-    )
-    from app.services.meta_capi import compute_match_quality
-    emq_scores = [compute_match_quality((p or {}).get("user_data") or {})["score"] for (p,) in emq_sample]
-    avg_emq = round(sum(emq_scores) / len(emq_scores), 1) if emq_scores else None
+    avg_emq = m["event_match_quality"]
     if avg_emq is not None and avg_emq < 60:
         reasons.append({
             "type": "EMQ_FAIBLE", "severity": "high",
             "title": "Event Match Quality trop faible",
-            "detail": f"EMQ moyen de {avg_emq}% — Meta ne parvient à rapprocher qu'une minorité des événements d'un profil utilisateur réel.",
+            "detail": f"EMQ moyen de {avg_emq}% (sur {m['sample_size']} Purchase réussis échantillonnés) — Meta ne parvient à rapprocher qu'une minorité des événements d'un profil utilisateur réel.",
             "fix": "Vérifier que email/téléphone/nom/ville/IP/user-agent/fbp/fbc sont bien transmis à chaque commande.",
         })
 
-    # ── Backfill : trop d'événements en rattrapage = signal appris trop tard,
-    # peu utile pour l'optimisation en cours. ──
-    backfill_order_ids = {
-        row[0] for row in (
-            db.query(AuditLog.entity_id)
-            .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order", AuditLog.created_at >= since)
-            .all()
-        )
-    }
-    timing_rows = (
-        db.query(MetaCapiLog.order_id, MetaCapiLog.created_at, MetaCapiLog.latency_ms, Order.created_at)
-        .join(Order, Order.id == MetaCapiLog.order_id)
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
-                MetaCapiLog.status == "success", MetaCapiLog.created_at >= since)
-        .order_by(MetaCapiLog.created_at.desc()).limit(1000).all()
-    )
-    from app.services.meta_capi import classify_capi_log_timing
-    backfill_n = sum(
-        1 for order_id, log_created_at, _, order_created_at in timing_rows
-        if order_id in backfill_order_ids or classify_capi_log_timing(log_created_at, order_created_at) == "backfill"
-    )
-    timing_n = len(timing_rows)
-    backfill_pct = round(backfill_n / timing_n * 100, 1) if timing_n else 0.0
+    backfill_pct = m["backfill_pct"] if m["backfill_pct"] is not None else 0.0
     if backfill_pct > 20:
         reasons.append({
             "type": "TROP_DE_BACKFILL", "severity": "medium",
@@ -3328,8 +3294,7 @@ def get_learning_diagnostics(
             "fix": "Fiabiliser l'envoi temps réel (voir file d'attente CAPI et connectivité) pour réduire la dépendance au rattrapage.",
         })
 
-    latencies = [row[2] for row in timing_rows if row[2] is not None]
-    avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else None
+    avg_latency_ms = m["avg_latency_ms"]
     if avg_latency_ms is not None and avg_latency_ms > 30000:
         reasons.append({
             "type": "LATENCE_ELEVEE", "severity": "medium",
@@ -3338,21 +3303,12 @@ def get_learning_diagnostics(
             "fix": "Vérifier la connectivité sortante du serveur (probe DNS/TCP/TLS dans Santé du Pixel) et la charge de la file CAPI.",
         })
 
-    # ── Taux de retry : des envois qui échouent avant de réussir dégradent
-    # la fraîcheur du signal reçu par Meta. ──
-    status_rows = (
-        db.query(MetaCapiLog.status, func.count(MetaCapiLog.id))
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.created_at >= since)
-        .group_by(MetaCapiLog.status).all()
-    )
-    by_status = {s: c for s, c in status_rows}
-    total_sent = sum(by_status.values())
-    retry_n = by_status.get("retry", 0) + by_status.get("pending_retry", 0)
-    if total_sent and retry_n / total_sent > 0.10:
+    retry_pct = m["retry_pct"] if m["retry_pct"] is not None else 0.0
+    if retry_pct > 10:
         reasons.append({
             "type": "TAUX_RETRY_ELEVE", "severity": "medium",
             "title": "Taux de retry élevé",
-            "detail": f"{round(retry_n / total_sent * 100, 1)}% des Purchase ont nécessité au moins une nouvelle tentative d'envoi.",
+            "detail": f"{retry_pct}% des Purchase ont nécessité au moins une nouvelle tentative d'envoi.",
             "fix": "Vérifier les erreurs de la file CAPI (Bons d'Achat > Meta Queue) — souvent un problème réseau ou un token à renouveler.",
         })
 
@@ -3416,6 +3372,15 @@ def get_learning_diagnostics(
             "range_days": range_days,
             "reasons": reasons,
             "healthy": len(reasons) == 0,
+            # Métriques brutes du moteur canonique + leur population exacte —
+            # pour que le frontend affiche "calculé sur N Purchase" au lieu
+            # d'un pourcentage nu sans contexte (voir METRIC_REGISTRY).
+            "metrics": {
+                "event_match_quality": avg_emq, "emq_sample_size": m["sample_size"],
+                "backfill_pct": backfill_pct, "avg_latency_ms": avg_latency_ms,
+                "retry_pct": retry_pct, "weekly_purchase_rate": round(weekly_rate, 1),
+                "population": f"{purchase_count} Purchase CAPI réussis sur la période ({range_days} jours).",
+            },
         },
     }
 
