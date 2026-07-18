@@ -64,6 +64,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         )
         # Propagate correlation ID back to client
         response.headers["X-Request-Id"] = request_id
+        # Server-side processing time only (excludes network/TLS/proxy hops)
+        # — lets us separate "our handler was slow" from "the network path
+        # to/from us was slow" from outside, without guessing.
+        response.headers["X-Process-Time-Ms"] = f"{duration_ms:.1f}"
         return response
 
 app = FastAPI(
