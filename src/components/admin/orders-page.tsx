@@ -1462,6 +1462,17 @@ const [timeLeft, setTimeLeft] = useState('');
                             visible sur la même ligne que les autres badges, à
                             toutes les largeurs d'écran. */}
                         <div className="flex items-center gap-1 flex-wrap mt-1">
+                          {/* Date/heure de réception — vivait UNIQUEMENT dans la
+                              colonne "Date & Heure" cachée sous xl (hidden
+                              xl:table-cell, colonne dédiée plus loin dans la
+                              ligne) : sur un écran/fenêtre plus étroit que 1280px,
+                              cette info disparaissait entièrement. Dupliqué ici en
+                              badge compact pour rester visible à toute largeur. */}
+                          {order.created_at && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase" title="Date de réception de la commande">
+                              🕐 {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
                           {order.source === 'MANUAL' ? (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 text-purple-700 border border-purple-200 uppercase">Manuel</span>
                           ) : order.source === 'FACEBOOK' ? (
