@@ -10,13 +10,18 @@ tenant_store_id = contextvars.ContextVar("tenant_store_id", default=None)
 
 class TenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        from app.core import timing as _timing
+        import time as _time_mod
+
+        _t0 = _time_mod.perf_counter()
+
         # 1. Try to get tenant from Header
         store_id = request.headers.get("X-Store-Id")
-        
+
         # 2. Try to get tenant from Host (if custom domains are mapped)
         # In a real app, you'd lookup the store_id by domain from a quick cache like Redis
         host = request.headers.get("Host", "")
-        
+
         # Determine the tenant
         if store_id:
             tenant_val = store_id
@@ -25,9 +30,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
             tenant_val = request.headers.get("X-Resolved-Store-Id")
         else:
             tenant_val = None
-            
+
         token = tenant_store_id.set(tenant_val)
-        
+        _timing.record("tenant", (_time_mod.perf_counter() - _t0) * 1000)
+
         try:
             response = await call_next(request)
             return response

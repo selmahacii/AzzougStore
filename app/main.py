@@ -68,6 +68,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # — lets us separate "our handler was slow" from "the network path
         # to/from us was slow" from outside, without guessing.
         response.headers["X-Process-Time-Ms"] = f"{duration_ms:.1f}"
+        # This middleware is innermost of the 3 custom ones (rate-limit and
+        # tenant wrap it), so this span is FastAPI routing + all Depends()
+        # resolution (auth, get_db) + the route body itself — recorded into
+        # the same per-request bag DistributedRateLimitMiddleware (outermost)
+        # turns into the Server-Timing header.
+        from app.core import timing as _timing
+        _timing.record("handler_total", duration_ms)
         return response
 
 app = FastAPI(

@@ -89,8 +89,11 @@ def get_json(key: str) -> Optional[Any]:
         logger.debug("[Cache] get_json(%s) miss/error: %s", key, exc)
         return None
     finally:
-        _metrics["redis_latency_total_ms"] += (time.monotonic() - t0) * 1000
+        _dt = (time.monotonic() - t0) * 1000
+        _metrics["redis_latency_total_ms"] += _dt
         _metrics["redis_latency_count"] += 1
+        from app.core import timing as _timing
+        _timing.record("redis", _dt)
 
 
 def set_json(key: str, value: Any, ttl_seconds: int) -> None:
@@ -105,8 +108,11 @@ def set_json(key: str, value: Any, ttl_seconds: int) -> None:
         _metrics["redis_failures"] += 1
         logger.debug("[Cache] set_json(%s) failed: %s", key, exc)
     finally:
-        _metrics["redis_latency_total_ms"] += (time.monotonic() - t0) * 1000
+        _dt = (time.monotonic() - t0) * 1000
+        _metrics["redis_latency_total_ms"] += _dt
         _metrics["redis_latency_count"] += 1
+        from app.core import timing as _timing
+        _timing.record("redis", _dt)
 
 
 def delete(*keys: str) -> None:
@@ -120,8 +126,11 @@ def delete(*keys: str) -> None:
         _metrics["redis_failures"] += 1
         logger.debug("[Cache] delete(%s) failed: %s", keys, exc)
     finally:
-        _metrics["redis_latency_total_ms"] += (time.monotonic() - t0) * 1000
+        _dt = (time.monotonic() - t0) * 1000
+        _metrics["redis_latency_total_ms"] += _dt
         _metrics["redis_latency_count"] += 1
+        from app.core import timing as _timing
+        _timing.record("redis", _dt)
 
 
 # ─── Unified L1 (in-process, short-TTL) + L2 (Upstash) + Postgres fallback ──
