@@ -436,6 +436,11 @@ def list_campaigns(
                              "label": "Stable" if _p7d < 100 else "Optimisé",
                              "explanation": f"{_p7d} Purchase cette semaine — volume suffisant pour une diffusion optimisée."}
         camp_learning["purchases_7d"] = _p7d
+        # Même fenêtre glissante de 7 jours que Qualité du Tracking, et
+        # INDÉPENDANTE de la période sélectionnée sur le dashboard Diagnostics
+        # (qui affiche une moyenne sur toute la période, 30/90 jours) — les
+        # deux peuvent légitimement diverger, ce n'est pas une contradiction.
+        camp_learning["note"] = "Fenêtre glissante de 7 jours, indépendante de la période sélectionnée dans Diagnostics/Learning (moyenne sur toute la période choisie là-bas)."
 
         # ── Saturation d'audience / fatigue créative — heuristique publique
         # standard (frequency = impressions/reach) : au-delà de ~3-4
@@ -3301,12 +3306,19 @@ def get_learning_diagnostics(
     m = compute_meta_metrics(db, store_id, since, until)
 
     purchase_count = m["success"]
+    # Moyenne sur TOUTE la période sélectionnée (range_days), pas les 7
+    # derniers jours glissants — voir Qualité du Tracking / liste des
+    # campagnes, qui affichent un compteur "cette semaine" séparé et
+    # INDÉPENDANT de ce sélecteur de période. Les deux peuvent légitimement
+    # diverger (ex: 90 jours calmes en moyenne mais un pic réel cette
+    # semaine, ou l'inverse) — précisé explicitement pour ne pas laisser
+    # croire à une contradiction entre deux écrans.
     weekly_rate = purchase_count / max(range_days / 7, 1)
     if weekly_rate < 50:
         reasons.append({
             "type": "VOLUME_INSUFFISANT", "severity": "high",
             "title": "Volume de conversions insuffisant",
-            "detail": f"~{round(weekly_rate, 1)} Purchase/semaine sur la période — Meta recommande environ 50 conversions/semaine par ensemble de publicités pour sortir de la phase d'apprentissage.",
+            "detail": f"~{round(weekly_rate, 1)} Purchase/semaine en moyenne SUR LES {range_days} DERNIERS JOURS ({purchase_count} Purchase au total) — Meta recommande environ 50 conversions/semaine par ensemble de publicités pour sortir de la phase d'apprentissage. Ce chiffre est une moyenne sur toute la période sélectionnée ; le compteur \"cette semaine\" affiché ailleurs (Qualité du Tracking, liste des campagnes) porte sur les 7 derniers jours glissants uniquement et peut légitimement afficher un statut différent.",
             "fix": "Regrouper les ensembles de publicités trop fragmentés, ou élargir le ciblage/budget pour accumuler plus de conversions.",
         })
 
@@ -3413,7 +3425,16 @@ def get_learning_diagnostics(
                 "event_match_quality": avg_emq, "emq_sample_size": m["sample_size"],
                 "backfill_pct": backfill_pct, "avg_latency_ms": avg_latency_ms,
                 "retry_pct": retry_pct, "weekly_purchase_rate": round(weekly_rate, 1),
-                "population": f"{purchase_count} Purchase CAPI réussis sur la période ({range_days} jours).",
+                # Deux nombres distincts et volontairement différents :
+                # purchase_count = TOUS les Purchase réussis de la période ;
+                # emq_sample_size = seulement ceux dont le payload est encore
+                # stocké (payload IS NOT NULL, plafonné à 500) et donc
+                # exploitable pour recalculer l'EMQ après coup. Un envoi
+                # réussi avant le correctif "stocker le payload aussi sur
+                # succès" n'a pas de payload — d'où un emq_sample_size
+                # souvent bien plus petit que purchase_count sur une longue
+                # période (ex: 17 sur 180), ce n'est jamais un bug de lecture.
+                "population": f"{purchase_count} Purchase CAPI réussis sur la période ({range_days} jours) — dont {m['sample_size']} avec payload encore disponible pour recalculer l'EMQ.",
             },
         },
     }
@@ -3671,6 +3692,11 @@ def get_campaign_learning_health(
             "estimated_gains": estimated_gains,
             "field_completeness": field_completeness,
             "diagnosis": reasons,
+            # Population scopée à CETTE campagne uniquement (order_ids), donc
+            # un échantillon plus petit et non plafonné à 500 (contrairement
+            # au Signal Quality Center store-wide) — un nombre différent
+            # d'un écran à l'autre est attendu, pas une incohérence.
+            "population": f"{success} Purchase CAPI réussis pour cette campagne sur la période — dont {n_payloads} avec payload exploitable pour l'EMQ.",
         },
     }
 

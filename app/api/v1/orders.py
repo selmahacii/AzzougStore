@@ -3716,7 +3716,7 @@ def get_capi_tracking_quality_v2(
             "learning": {
                 "status": learning_status, "label": learning_label,
                 "explanation": learning_explanation, "purchases_7d": purchases_7d,
-                "note": "Fenêtre glissante de 7 jours, INDÉPENDANTE de la période sélectionnée ci-dessus (la phase d'apprentissage Meta se réévalue en continu, pas sur une période de dashboard).",
+                "note": "Fenêtre glissante de 7 jours, INDÉPENDANTE de la période sélectionnée ci-dessus (la phase d'apprentissage Meta se réévalue en continu, pas sur une période de dashboard). Le diagnostic \"Volume de conversions insuffisant\" affiché dans Diagnostics/Learning est une MOYENNE sur toute la période choisie (7/30/90 jours) — les deux peuvent légitimement afficher un statut différent au même moment sans que ce soit une erreur.",
             },
             "tracking_score": tracking_score_global,
             "tracking_score_classified": tracking_score_classified,
@@ -3726,6 +3726,10 @@ def get_capi_tracking_quality_v2(
             "ecart_reel": ecart,
             "performance_count": performance_count,
             "methodology": "Calculé depuis les commandes ERP (CONFIRMED/SHIPPED/DELIVERED, hors MANUAL) jointes à meta_capi_logs sur la période sélectionnée — realtime/backfill classés par écart entre l'envoi CAPI et la création de la commande OU la reprise d'un panier abandonné (référence différente de Signal Quality Center, qui utilise toujours la création de commande).",
+            # Population de CETTE vue (centrée-commandes ERP), pour comparer
+            # avec les autres écrans qui partent de meta_capi_logs directement
+            # (population différente = nombre différent, normal) :
+            "population": f"{total_erp} commande(s) ERP confirmée(s)/expédiée(s)/livrée(s) sur la période — dont {_m['sample_size'] if _m else 0} avec payload CAPI exploitable pour le Match Quality.",
         },
     }
     set_cached(_cache_key, result, DEFAULT_TTL_SECONDS)
