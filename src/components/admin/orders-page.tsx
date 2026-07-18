@@ -640,10 +640,19 @@ const [timeLeft, setTimeLeft] = useState('');
      refetchInterval: 5 * 60 * 1000,
    });
 
-   // Counts per status tab (unfiltered by search for accurate badges)
+   // Counts per status tab (unfiltered by search, but DOIT suivre le même
+   // filtre de date que la liste — sinon "Aujourd'hui" filtre la liste mais
+   // les badges d'onglets continuent d'afficher les totaux toutes-dates,
+   // ce qui donne l'impression que les commandes d'hier sont "mélangées"
+   // dans la vue d'aujourd'hui alors que c'est juste le badge qui ment).
    const countsQuery = useQuery<Record<string, number>>({
-     queryKey: ['orders-counts', storeId],
-     queryFn: () => apiFetch(`/api/v1/orders/counts?store_id=${storeId}`),
+     queryKey: ['orders-counts', storeId, startDate, endDate],
+     queryFn: () => {
+       const params = new URLSearchParams({ store_id: storeId });
+       if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
+       if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
+       return apiFetch(`/api/v1/orders/counts?${params.toString()}`);
+     },
      enabled: !!storeId,
      staleTime: 30_000,
      refetchInterval: 5 * 60 * 1000,

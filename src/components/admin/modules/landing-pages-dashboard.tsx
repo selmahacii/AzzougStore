@@ -146,8 +146,12 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
   // this dialog isn't opened often enough to justify a refetch interval.
   const rangeDays = Math.max(1, Math.min(90, Math.round((new Date(dEnd).getTime() - new Date(dStart).getTime()) / 86400000) || 30));
   const trackingQuery = useQuery<any>({
-    queryKey: ['lp-tracking-quality', lp.id, rangeDays],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?range_days=${rangeDays}`),
+    // date_from/date_to (les VRAIES dates choisies, pas seulement leur écart
+    // en jours) priment sur range_days côté backend — sinon un intervalle
+    // personnalisé ne se terminant pas aujourd'hui était silencieusement
+    // recalé sur "aujourd'hui - rangeDays", ignorant la date de fin choisie.
+    queryKey: ['lp-tracking-quality', lp.id, dStart, dEnd],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?range_days=${rangeDays}&date_from=${dStart}T00:00:00.000Z&date_to=${dEnd}T23:59:59.999Z`),
     refetchOnWindowFocus: false,
   });
   const tq = trackingQuery.data?.data;

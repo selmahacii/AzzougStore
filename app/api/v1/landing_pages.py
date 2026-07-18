@@ -612,6 +612,8 @@ def get_landing_page_analytics(
 def get_landing_page_tracking_quality(
     lp_id: str,
     range_days: int = Query(30, ge=1, le=90),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     _auth: Any = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -620,8 +622,16 @@ def get_landing_page_tracking_quality(
     ONE grouped/aggregated SQL query (no per-order Python loop, no N+1) so
     opening this tab costs a fixed, small number of queries regardless of
     how many orders the landing page has.
+
+    date_from/date_to (same names/parsing as the sibling /analytics
+    endpoint) take priority over range_days when provided — before this,
+    this endpoint always anchored its window to "now - range_days"
+    regardless of which dates were actually picked in the modal, so a
+    custom past range (not ending today) silently showed a DIFFERENT,
+    more recent period instead — the filter looked like it did nothing.
     """
     from datetime import timedelta
+    from app.core.dates import parse_local_date_filter
     from app.models.order import Order, OrderItem
     from app.models.marketing import MetaCapiLog, MetaAdsCampaign, MetaAdsDailyInsight
 
@@ -634,6 +644,17 @@ def get_landing_page_tracking_quality(
 
     now = datetime.utcnow()
     since = now - timedelta(days=range_days)
+    until = now
+    if date_from:
+        try:
+            since = parse_local_date_filter(date_from)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            until = parse_local_date_filter(date_to)
+        except ValueError:
+            pass
 
     # Correlated EXISTS instead of a JOIN to order_items: a JOIN fans out one
     # row per matching OrderItem, so an order with N lines of this product
@@ -656,7 +677,7 @@ def get_landing_page_tracking_quality(
             Order.store_id == lp.store_id,
             has_product,
             Order.is_deleted == False,
-            Order.created_at >= since,
+            Order.created_at >= since, Order.created_at <= until,
         )
         .first()
     )
@@ -689,7 +710,7 @@ def get_landing_page_tracking_quality(
             Order.store_id == lp.store_id,
             has_product,
             Order.is_deleted == False,
-            Order.created_at >= since,
+            Order.created_at >= since, Order.created_at <= until,
             Order.status.in_(_CAPI_ELIGIBLE_STATUSES),
             func.coalesce(Order.source, "") != "MANUAL",
         )
@@ -704,7 +725,7 @@ def get_landing_page_tracking_quality(
             has_product,
             Order.store_id == lp.store_id,
             MetaCapiLog.event_name == "Purchase",
-            Order.created_at >= since,
+            Order.created_at >= since, Order.created_at <= until,
         )
         .group_by(MetaCapiLog.status)
         .all()
@@ -730,7 +751,7 @@ def get_landing_page_tracking_quality(
     success_rows = (
         db.query(Order.id, Order.created_at, MetaCapiLog.created_at)
         .join(MetaCapiLog, and_(MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase"))
-        .filter(has_product, Order.store_id == lp.store_id, Order.created_at >= since, MetaCapiLog.status == "success")
+        .filter(has_product, Order.store_id == lp.store_id, Order.created_at >= since, Order.created_at <= until, MetaCapiLog.status == "success")
         .all()
     )
     _order_ids_success = [r[0] for r in success_rows]
@@ -763,7 +784,7 @@ def get_landing_page_tracking_quality(
     if _camp_ids:
         meta_ads_purchases = db.query(func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0)).filter(
             MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
-            MetaAdsDailyInsight.date >= since.date(),
+            MetaAdsDailyInsight.date >= since.date(), MetaAdsDailyInsight.date <= until.date(),
         ).scalar()
         meta_ads_purchases = int(meta_ads_purchases or 0)
 
@@ -828,7 +849,7 @@ def get_landing_page_tracking_quality(
             Order.store_id == lp.store_id,
             has_product,
             Order.is_deleted == False,
-            Order.created_at >= since,
+            Order.created_at >= since, Order.created_at <= until,
             Order.status.in_(_CAPI_ELIGIBLE_STATUSES),
             func.coalesce(Order.source, "") != "MANUAL",
             func.coalesce(MetaCapiLog.status, "none") != "success",
@@ -861,7 +882,7 @@ def get_landing_page_tracking_quality(
             Order.store_id == lp.store_id,
             has_product,
             Order.is_deleted == False,
-            Order.created_at >= since,
+            Order.created_at >= since, Order.created_at <= until,
             Order.status.notin_(("MERGED", "ABANDONED")),
             func.coalesce(Order.source, "") != "MANUAL",
         )
