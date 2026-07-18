@@ -23,14 +23,9 @@ _GUEST_STORES_TTL = 10.0
 
 # Domain→store routing cache. This endpoint fires on EVERY storefront page
 # load, from every visitor — it was one of the most frequent DB hits in the
-# HF access logs, keeping Neon's compute awake with reads whose answer
-# almost never changes (a store's domain/slug mapping changes at most when
-# the admin edits store settings). 5-minute TTL: a domain change takes at
-# most 5 min to propagate, which is negligible next to DNS itself. Negative
-# results are cached too (unknown Vercel preview domains were re-querying
-# the DB on every hit, 4-5 times in a row in the logs).
-_domain_lookup_cache: dict = {}   # {domain: (payload_or_None, cached_at_monotonic)}
-_DOMAIN_LOOKUP_TTL = 300.0
+# HF access logs. Now lives entirely in app/core/cache.py's unified L1
+# (in-process, 45s) + L2 (Upstash, 30min) cache — see lookup_domain() below —
+# rather than a second hand-rolled cache dict.
 
 
 STORE_TEMPLATES = {
@@ -300,48 +295,25 @@ def lookup_domain(
     import logging
     logger = logging.getLogger("app.stores")
 
-    from app.core.cache import get_json as _cache_get, set_json as _cache_set
+    from app.core.cache import get_or_set
 
-    cached = _domain_lookup_cache.get(domain)
-    if cached is not None and _time.monotonic() - cached[1] < _DOMAIN_LOOKUP_TTL:
-        payload = cached[0]
-        if payload is None:
-            raise HTTPException(status_code=404, detail="Store not found for this domain")
-        return payload
+    _MISS = {"__miss__": True}
 
-    # In-process cache missed (cold worker or expired) — try the shared cache
-    # before hitting Postgres, so a redeploy/new worker doesn't re-pay the DB
-    # hit for a domain another worker already resolved.
-    shared_key = f"domain_lookup:{domain}"
-    shared = _cache_get(shared_key)
-    if shared is not None:
-        payload = shared if shared != {"__miss__": True} else None
-        if len(_domain_lookup_cache) < 500:
-            _domain_lookup_cache[domain] = (payload, _time.monotonic())
-        if payload is None:
-            raise HTTPException(status_code=404, detail="Store not found for this domain")
-        return payload
+    def _compute():
+        logger.info(f"[LookupDomain] Query: domain={domain!r}")
+        store = db.query(Store).filter(
+            (Store.domain == domain) | (Store.slug == domain),
+            Store.is_deleted == False
+        ).first()
+        if not store:
+            logger.warning(f"[LookupDomain] Store NOT found for domain={domain!r}")
+            return _MISS
+        logger.info(f"[LookupDomain] Found store: id={store.id!r}, slug={store.slug!r}, domain={store.domain!r}")
+        return {"storeId": store.id, "storeSlug": store.slug}
 
-    logger.info(f"[LookupDomain] Query: domain={domain!r}")
-
-    store = db.query(Store).filter(
-        (Store.domain == domain) | (Store.slug == domain),
-        Store.is_deleted == False
-    ).first()
-
-    if not store:
-        logger.warning(f"[LookupDomain] Store NOT found for domain={domain!r}")
-        # Bound the cache so junk domains can't grow it without limit
-        if len(_domain_lookup_cache) < 500:
-            _domain_lookup_cache[domain] = (None, _time.monotonic())
-        _cache_set(shared_key, {"__miss__": True}, 1800)
+    payload = get_or_set(f"domain_lookup:{domain}", _compute, l1_ttl=45, l2_ttl=1800)
+    if payload == _MISS:
         raise HTTPException(status_code=404, detail="Store not found for this domain")
-
-    logger.info(f"[LookupDomain] Found store: id={store.id!r}, slug={store.slug!r}, domain={store.domain!r}")
-    payload = {"storeId": store.id, "storeSlug": store.slug}
-    if len(_domain_lookup_cache) < 500:
-        _domain_lookup_cache[domain] = (payload, _time.monotonic())
-    _cache_set(shared_key, payload, 1800)
     return payload
 
 
@@ -355,24 +327,35 @@ def read_store(
     """
     Get store by ID with counts. Sensitive credentials (fb_access_token) are hidden from public requests.
     """
+    is_admin = current_user is not None and getattr(current_user, "role", None) in ("SUPER_ADMIN", "ADMIN", "MANAGER")
+
+    # Only the public (non-admin) response is cached — it's already stripped
+    # of marketing_config.fb_access_token below before it would ever reach
+    # the cache, and never merged with an admin read, so a cached entry can
+    # never leak the token to a public request.
+    if not is_admin:
+        from app.core.cache import get_or_set
+
+        def _compute_public():
+            store = db.query(Store).filter(Store.id == id, Store.is_deleted == False).first()
+            if not store:
+                return None
+            data = _enrich_store_with_counts(db, store)
+            m_config = data.get("marketing_config") or {}
+            if isinstance(m_config, dict):
+                m_config.pop("fb_access_token", None)
+                data["marketing_config"] = m_config
+            return data
+
+        store_data = get_or_set(f"store_config:{id}", _compute_public, l1_ttl=45, l2_ttl=60)
+        if store_data is None:
+            raise HTTPException(status_code=404, detail="Store not found")
+        return store_data
+
     store = db.query(Store).filter(Store.id == id, Store.is_deleted == False).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
-        
-    store_data = _enrich_store_with_counts(db, store)
-    
-    # ── Security filtering ────────────────────────────────────
-    is_admin = current_user is not None and getattr(current_user, "role", None) in ("SUPER_ADMIN", "ADMIN", "MANAGER")
-    
-    # If not admin, purge credentials from marketing_config
-    if not is_admin:
-        m_config = store_data.get("marketing_config") or {}
-        if isinstance(m_config, dict):
-            # Keep pixel IDs for storefront tracking, delete token
-            m_config.pop("fb_access_token", None)
-            store_data["marketing_config"] = m_config
-
-    return store_data
+    return _enrich_store_with_counts(db, store)
 
 
 @router.put("/{id}", response_model=dict)
@@ -455,9 +438,10 @@ def update_store(
 
     db.commit()
     db.refresh(store)
-    # A store edit may have changed domain/slug — drop the routing cache so
-    # the new mapping is served immediately instead of after the 5-min TTL.
-    _domain_lookup_cache.clear()
+    # A store edit may have changed domain/slug — drop the routing/config
+    # cache so the new mapping is served immediately instead of after the TTL.
+    from app.core.cache import invalidate as _cache_invalidate
+    _cache_invalidate(f"store_config:{store.id}", f"domain_lookup:{store.domain}", f"domain_lookup:{store.slug}")
     return _enrich_store_with_counts(db, store)
 
 
