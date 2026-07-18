@@ -150,9 +150,24 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // ─── 2. /api/v1/* — pass through (proxied to FastAPI by next.config rewrites) ─
+  // ─── 2. /api/v1/* — inject real user identity, then pass through ────────
   // FastAPI handles auth, rate limiting, and CSRF for all /api/v1/* routes.
+  // The proxy at src/app/api/[...path]/route.ts always attaches the internal
+  // API key, so without x-user-id, app/api/deps.py's get_current_user falls
+  // back to the first SUPER_ADMIN in the DB for EVERY request — misattributing
+  // every action (order status changes, etc.) to that account regardless of
+  // who is actually logged in. Decode the session cookie here so the real
+  // actor is forwarded.
   if (pathname.startsWith('/api/v1/')) {
+    const sessionCookie = request.cookies.get(COOKIE_NAME);
+    if (sessionCookie?.value) {
+      const payload = _decodeJwtPayload(sessionCookie.value);
+      if (payload?.userId) {
+        const requestHeaders = new Headers(request.headers);
+        requestHeaders.set('x-user-id', payload.userId);
+        return NextResponse.next({ request: { headers: requestHeaders } });
+      }
+    }
     return NextResponse.next();
   }
 

@@ -83,6 +83,37 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       resHeaders.set(key, value);
     });
 
+    // ── CDN cache override for safe, non-personalized public GET endpoints ──
+    // Only applied when: GET request, 2xx response, no Set-Cookie on the
+    // response, and (for endpoints whose backend response can vary by role —
+    // products/stores widen results for staff) no __session cookie on the
+    // INCOMING request, so a staff-scoped response can never be cached and
+    // served back to an anonymous shopper. Prices/stock/promos still come
+    // straight from the backend on every request past s-maxage — this only
+    // shaves off repeat hits within a short revalidation window.
+    if (request.method === 'GET' && response.ok && !resHeaders.has('set-cookie')) {
+      const hasSession = !!request.cookies.get('__session');
+      if (subPath === 'v1/reviews' || subPath.startsWith('v1/reviews')) {
+        // Public reviews list — no current_user dependency in the backend, never personalized.
+        resHeaders.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+      } else if (subPath === 'v1/stores/lookup/domain') {
+        // Pure domain→store lookup, no auth dependency at all.
+        resHeaders.set('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=600');
+      } else if (
+        !hasSession &&
+        (subPath === 'v1/products' || subPath.startsWith('v1/products/') || subPath === 'v1/products/categories')
+      ) {
+        // Product list/detail widens for staff (draft/inactive items) — only cache anonymous requests.
+        resHeaders.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=120');
+      } else if (!hasSession && subPath === 'v1/stores') {
+        // Store list is scoped per staff role — only cache anonymous requests.
+        resHeaders.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=120');
+      }
+    } else if (subPath === 'v1/auth/me' || subPath.startsWith('v1/auth/')) {
+      // Session-specific — never let a shared cache serve this across users.
+      resHeaders.set('Cache-Control', 'private, no-store');
+    }
+
     const responseData = await response.arrayBuffer();
 
     return new NextResponse(responseData, {
