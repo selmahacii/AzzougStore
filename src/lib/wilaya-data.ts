@@ -26,9 +26,20 @@ export const WILAYAS = [
   'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
   'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
   'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-  'Ghardaïa', 'Relizane', 'El M\'Ghair', 'El Meniaa', 'Ouled Djellal',
-  'Bordj Baji Mokhtar', 'Béni Abbès', 'Timimoun', 'Touggourt', 'Djanet',
-  'In Salah', 'In Guezzam'
+  'Ghardaïa', 'Relizane',
+  // Les 10 wilayas créées en 2019 (49-58) — l'ORDRE ici DOIT correspondre à
+  // leur numéro officiel, car wilayaId est dérivé de la position dans ce
+  // tableau (WILAYAS.indexOf(nom) + 1), utilisé pour filtrer les bureaux
+  // Noest ET les grilles tarifaires. Le tableau les listait dans un ORDRE
+  // DIFFÉRENT du numéro officiel (ex: "El Meniaa" à la position 50 au lieu
+  // de 58) — chaque bureau Noest (noest-bureaux-data.ts) est codé avec le
+  // VRAI numéro officiel (ex: "58A" = El Meniaa = wilaya 58), donc le
+  // bureau ne matchait plus jamais son wilayaId calculé et disparaissait
+  // du menu déroulant. Confirmé bureau par bureau (49A=Timimoun,
+  // 51A=Ouled Djellal, 52A=Béni Abbès, 53A=In Salah, 55A=Touggourt,
+  // 56A=Djanet, 58A=El Meniaa) avant correction.
+  'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal', 'Béni Abbès',
+  'In Salah', 'In Guezzam', 'Touggourt', 'Djanet', 'El M\'Ghair', 'El Meniaa',
 ] as const;
 
 export const DEFAULT_DELIVERY_FEE = { home: 700, office: 400 };

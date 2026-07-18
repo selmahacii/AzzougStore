@@ -1455,8 +1455,20 @@ const [timeLeft, setTimeLeft] = useState('');
                           )}
                         </div>
                         <span className="text-[10px] font-bold text-[#4b7bec] mt-0.5">{order.customer_phone}</span>
-                        {/* Origine métier (ne change jamais) + micro-badges */}
+                        {/* Origine métier (ne change jamais) + micro-badges — le
+                            badge "source" (Manuel/Meta Ads/Landing Page) vivait
+                            SEUL dans une colonne cachée sous 2xl (hidden 2xl:table-cell,
+                            voir plus haut) ; ajouté ici aussi pour qu'il reste
+                            visible sur la même ligne que les autres badges, à
+                            toutes les largeurs d'écran. */}
                         <div className="flex items-center gap-1 flex-wrap mt-1">
+                          {order.source === 'MANUAL' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 text-purple-700 border border-purple-200 uppercase">Manuel</span>
+                          ) : order.source === 'FACEBOOK' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase">Meta Ads</span>
+                          ) : order.source ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-indigo-100 text-indigo-700 border border-indigo-200 uppercase">{order.source === 'landing_page' ? 'Landing Page' : order.source}</span>
+                          ) : null}
                           <OrderTypeBadge order={order} size="xs" short />
                           {(order.nrp_count || 0) > 0 && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-100 text-rose-700 border border-rose-200 uppercase">🟥 NRP {order.nrp_count}</span>
