@@ -238,7 +238,10 @@ export default function AuditPage() {
                                        {hasDiff && (isExpanded ? <ChevronUp className="size-4 mx-auto text-[#2D3436]" /> : <ChevronDown className="size-4 mx-auto text-[#B2BEC3]" />)}
                                     </td>
                                     <td className="px-4 py-3 text-xs font-semibold text-[#636E72] font-mono">{formatDate(log.created_at)}</td>
-                                    <td className="px-4 py-3 text-sm font-bold text-[#2D3436]">{log.actor?.name ?? 'SYSTÈME'}</td>
+                                    <td className="px-4 py-3 text-sm font-bold text-[#2D3436]">
+                                       {log.actor?.name ?? 'SYSTÈME'}
+                                       {log.actor?.role && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wider text-[#B2BEC3]">({log.actor.role})</span>}
+                                    </td>
                                     <td className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-[#636E72]">{ENTITY_TYPES.find(e => e.value === log.entity)?.label ?? log.entity}</td>
                                     <td className="px-4 py-3">
                                        <span className="px-2 py-1 rounded-[4px] text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: aColor.bg, color: aColor.text }}>

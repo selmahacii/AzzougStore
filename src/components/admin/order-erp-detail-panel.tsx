@@ -72,7 +72,7 @@ export function OrderErpDetailPanel({ orderId }: { orderId: string }) {
                   {d.status_history.map((h, i) => (
                      <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50">
                         <span className="font-bold text-slate-700">{h.from_status || 'Création'} → {h.to_status}</span>
-                        <span className="text-slate-400">{h.actor}{h.date ? ` · ${new Date(h.date).toLocaleString('fr-FR')}` : ''}</span>
+                        <span className="text-slate-400">{h.actor}{h.actor_role ? ` (${h.actor_role})` : ''}{h.date ? ` · ${new Date(h.date).toLocaleString('fr-FR')}` : ''}</span>
                      </div>
                   ))}
                </div>

@@ -420,7 +420,7 @@ export interface AuditLog {
   ip_address: string | null;
   user_agent: string | null;
   created_at: string;
-  actor?: Pick<User, 'id' | 'name' | 'avatar'>;
+  actor?: Pick<User, 'id' | 'name' | 'avatar' | 'role'>;
 }
 
 // ─── Analytics ──────────────────────────────────────────────
