@@ -1235,10 +1235,16 @@ def create_order(
                             # app.main.resume_pending_queues on the next boot —
                             # this is what closes the exact gap that silently
                             # lost 22 real ORD-* Purchases in production.
-                            enqueue_purchase_for_order(db, existing)
-                            db.commit()
                             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                             user_agent = request.headers.get("user-agent")
+                            # Persisted on the order (not just passed to this one
+                            # synchronous call) so a LATER retry/backfill of this
+                            # same Purchase can still recover them — see
+                            # _handle_claimed_row's fallback in meta_capi.py.
+                            existing.client_ip = client_ip
+                            existing.client_user_agent = user_agent
+                            enqueue_purchase_for_order(db, existing)
+                            db.commit()
                             background_tasks.add_task(
                                 send_purchase_for_order,
                                 order_id=str(existing.id),
@@ -1375,10 +1381,12 @@ def create_order(
                 # ORD-* orders got ZERO CAPI attempt (not even a failed one)
                 # because nothing was ever written before the old
                 # BackgroundTasks callback started running.
-                enqueue_purchase_for_order(db, order)
-                db.commit()
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
+                order.client_ip = client_ip
+                order.client_user_agent = user_agent
+                enqueue_purchase_for_order(db, order)
+                db.commit()
                 background_tasks.add_task(
                     send_purchase_for_order,
                     order_id=str(order.id),
@@ -2094,10 +2102,17 @@ def update_order(
                 meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
                 if meta_config and meta_config.pixel_id and meta_config.access_token:
                     from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
-                    enqueue_purchase_for_order(db, updated)
-                    db.commit()
                     client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                     user_agent = request.headers.get("user-agent")
+                    # Same values as today's synchronous send (the customer's own
+                    # session is gone, so this is the confirmatrice's browser —
+                    # an existing, unchanged trade-off); persisted so a later
+                    # retry of this same Purchase resends the same value instead
+                    # of nothing.
+                    updated.client_ip = client_ip
+                    updated.client_user_agent = user_agent
+                    enqueue_purchase_for_order(db, updated)
+                    db.commit()
                     background_tasks.add_task(
                         send_purchase_for_order,
                         order_id=str(updated.id),

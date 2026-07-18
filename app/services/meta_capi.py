@@ -576,6 +576,23 @@ def purchase_event_id(order_id: str) -> str:
     return f"purchase-{order_id}"
 
 
+def resolve_client_context(order, client_ip: Optional[str], user_agent: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """
+    Repli sur les valeurs capturées à la création de la commande
+    (order.client_ip / order.client_user_agent) quand l'appelant n'a plus
+    de requête HTTP vivante pour les fournir — retry_pending_events, le
+    sweep de rattrapage nocturne, une récupération de panier abandonné.
+    Avant que ces deux colonnes existent, un retry perdait ces champs pour
+    toujours, dégradant l'Event Match Quality précisément pour les Purchase
+    qui avaient déjà eu un incident d'envoi. Jamais l'inverse : une valeur
+    "live" passée explicitement prime toujours sur celle stockée.
+    """
+    return (
+        client_ip or getattr(order, "client_ip", None),
+        user_agent or getattr(order, "client_user_agent", None),
+    )
+
+
 def build_purchase_event(
     order, *, client_ip: Optional[str], user_agent: Optional[str],
     ad_currency: str = "DZD", exchange_rate: float = 1.0,
@@ -2494,8 +2511,10 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             logger.warning("[MetaCAPI] queue: order=%s skipped — no valid Meta config", order_id)
             return
 
+        effective_client_ip, effective_user_agent = resolve_client_context(order, client_ip, user_agent)
+
         event = build_purchase_event(
-            order, client_ip=client_ip, user_agent=user_agent,
+            order, client_ip=effective_client_ip, user_agent=effective_user_agent,
             ad_currency=config.currency or "DZD",
             exchange_rate=config.exchange_rate if config.exchange_rate else 1.0,
         )

@@ -72,6 +72,14 @@ class Order(Base):
     fbc = Column(String, nullable=True)
     referrer = Column(String, nullable=True)
     event_source_url = Column(String, nullable=True)
+    # Captured at order creation so a LATER Purchase resend (retry queue,
+    # nightly backfill sweep, abandoned-cart recovery) can still include
+    # client_ip_address/client_user_agent in the CAPI event — these only
+    # exist on the live HTTP request otherwise, and were silently lost on
+    # every resend before this column existed (see meta_capi.py
+    # retry_pending_events / _handle_claimed_row).
+    client_ip = Column(String, nullable=True)
+    client_user_agent = Column(String, nullable=True)
     
     notes = Column(Text, nullable=True)
     # Staff-only note — NEVER pushed to the carrier (unlike `notes`, which is
