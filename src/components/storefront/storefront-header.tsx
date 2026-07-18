@@ -231,7 +231,7 @@ export function StorefrontHeader() {
   // même clé — un seul appel réseau, partagé par les deux composants.
   const { data: categoriesData } = useQuery({
     queryKey: ['store-categories', activeStore?.id],
-    queryFn: () => apiFetch<{ categories?: string[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=1&is_active=true`),
+    queryFn: () => apiFetch<{ categories?: string[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=1&is_active=true&include_categories=true`),
     enabled: !!activeStore?.id,
     staleTime: 5 * 60 * 1000,
   });
