@@ -184,6 +184,31 @@ def test_pageview_exceeded_by_viewcontent_is_informational_not_an_anomaly(db_ses
     assert not any(b["id"] == "funnel_incoherence" for b in bottlenecks)
 
 
+def test_addtocart_exceeded_by_viewcontent_is_also_informational(db_session):
+    """
+    Same audit, second confirmed case: product-card.tsx has a "quick add to
+    cart" button on category/listing grids that calls onAddToCart directly
+    (stopPropagation, never navigates to the product page) -- so AddToCart
+    can legitimately exceed ViewContent too. Must also be "info", not an
+    actionable bottleneck.
+    """
+    store_id = "s8"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(days=7)
+    for _ in range(3):
+        db_session.add(_log(store_id, "ViewContent", now - timedelta(hours=1)))
+    for _ in range(10):
+        db_session.add(_log(store_id, "AddToCart", now - timedelta(hours=1)))
+    db_session.commit()
+
+    funnel = engine.compute_conversion_funnel(db_session, store_id, since, now)
+    issue = next(i for i in funnel["coherence_issues"] if i["stage"] == "AddToCart")
+    assert issue["severity"] == "info"
+
+    bottlenecks = engine.detect_bottlenecks(db_session, store_id, since, now)
+    assert not any(b["id"] == "funnel_incoherence" for b in bottlenecks)
+
+
 def test_initiate_checkout_exceeded_by_addtocart_stays_a_real_anomaly(db_session):
     """
     Unlike PageView, AddToCart/InitiateCheckout/Purchase are all per-attempt
