@@ -4,6 +4,8 @@ import { useAppStore } from '@/store/app-store';
 import { Facebook, Instagram, ShieldCheck, Phone, Mail, MapPin, Truck, RotateCcw, HelpCircle, PackageSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api-client';
 
 function TikTokIcon({ className }: { className?: string }) {
   return (
@@ -95,18 +97,22 @@ export function StorefrontFooter() {
   const social = (activeStore?.social_links ?? {}) as Record<string, string>;
   const logoUrl = activeStore?.logo_url || activeStore?.logo || (activeStore?.theme_config?.logo as string) || null;
 
-  // Load real categories from the products API
+  // Même queryKey que storefront-header.tsx — voir le commentaire là-bas :
+  // les deux composants demandaient indépendamment la même liste de
+  // catégories via fetch() brut (donc sans cache/dédoublonnage), causant
+  // deux appels réseau identiques à chaque chargement de page. React Query
+  // fusionne les deux useQuery en un seul appel partagé.
+  const { data: categoriesData } = useQuery({
+    queryKey: ['store-categories', activeStore?.id],
+    queryFn: () => apiFetch<{ categories?: string[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=1&is_active=true`),
+    enabled: !!activeStore?.id,
+    staleTime: 5 * 60 * 1000,
+  });
   useEffect(() => {
-    if (!activeStore?.id) return;
-    fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=1&is_active=true`)
-      .then(r => r.json())
-      .then(json => {
-        if (json.categories && json.categories.length > 0) {
-          setShopLinks(json.categories.slice(0, 5));
-        }
-      })
-      .catch(() => {});
-  }, [activeStore?.id]);
+    if (categoriesData?.categories && categoriesData.categories.length > 0) {
+      setShopLinks(categoriesData.categories.slice(0, 5));
+    }
+  }, [categoriesData]);
 
   const handleHelpAction = (label: string) => {
     if (label === 'Suivi de commande') {

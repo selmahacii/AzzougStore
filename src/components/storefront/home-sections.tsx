@@ -3,6 +3,8 @@
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { ProductCard } from './product-card';
 import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon } from 'lucide-react';
@@ -31,21 +33,34 @@ export function HomeSections() {
   const [loading, setLoading] = useState(true);
   const [apiReviews, setApiReviews] = useState<any[]>([]);
 
+  // Mêmes clés que hero-section.tsx pour ces deux mêmes requêtes — les deux
+  // composants sont montés simultanément sur la page d'accueil et
+  // demandaient chacun leur propre fetch() brut (donc sans cache/
+  // dédoublonnage) pour les MÊMES produits vedettes, confirmé en réseau
+  // (deux appels identiques par chargement de page). React Query fusionne
+  // les useQuery de même clé en un seul appel réseau partagé.
+  const featuredQuery = useQuery({
+    queryKey: ['store-products', activeStore?.id, 'featured', 4],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_featured=true&is_active=true`),
+    enabled: !!activeStore,
+    staleTime: 60 * 1000,
+  });
+  const activeQuery = useQuery({
+    queryKey: ['store-products', activeStore?.id, 'active', 4],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_active=true`),
+    enabled: !!activeStore,
+    staleTime: 60 * 1000,
+  });
   useEffect(() => {
     if (!activeStore) return;
-    const load = async () => {
-      try {
-        const [f, n] = await Promise.all([
-          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_featured=true&is_active=true`).then(r => r.json()),
-          fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_active=true`).then(r => r.json()),
-        ]);
-        const featuredData = f.data && f.data.length > 0 ? f.data : (n.data ?? []);
-        setFeatured(featuredData);
-        setNewArrivals(n.data ?? []);
-      } catch { /* silent */ } finally { setLoading(false); }
-    };
-    load();
-  }, [activeStore]);
+    if (featuredQuery.isLoading || activeQuery.isLoading) { setLoading(true); return; }
+    const f = featuredQuery.data;
+    const n = activeQuery.data;
+    const featuredData = f?.data && f.data.length > 0 ? f.data : (n?.data ?? []);
+    setFeatured(featuredData);
+    setNewArrivals(n?.data ?? []);
+    setLoading(false);
+  }, [activeStore, featuredQuery.data, featuredQuery.isLoading, activeQuery.data, activeQuery.isLoading]);
 
   useEffect(() => {
     if (!activeStore) return;

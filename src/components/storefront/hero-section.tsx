@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { Package, ArrowRight, ShoppingBag, ChevronDown, Zap } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store/app-store';
 import type { Product, Store } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
+import { apiFetch } from '@/lib/api-client';
 
 // ─── Template helpers ─────────────────────────────────────────
 function getHeroTheme(store: Store) {
@@ -578,45 +580,39 @@ export function HeroSection() {
   const setSelectedCategory = useAppStore((s) => s.setSelectedCategory);
 
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Même queryKey que home-sections.tsx pour cette même requête — les deux
+  // sections sont montées ensemble sur la page d'accueil et chacune
+  // déclenchait indépendamment un fetch() brut identique (confirmé en
+  // réseau : appel dupliqué à chaque chargement). React Query dédoublonne
+  // les useQuery de même clé en un seul appel réseau partagé.
+  const featuredQuery = useQuery({
+    queryKey: ['store-products', activeStore?.id, 'featured', 4],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_featured=true&is_active=true`),
+    enabled: !!activeStore,
+    staleTime: 60 * 1000,
+  });
+  // Repli sur les produits actifs UNIQUEMENT si le store n'a aucun produit
+  // vedette — comportement inchangé, juste sourcé via la même queryKey
+  // partagée que home-sections.tsx utilise pour sa propre section "Nouveautés".
+  const hasNoFeatured = featuredQuery.isSuccess && (!featuredQuery.data?.data || featuredQuery.data.data.length === 0);
+  const fallbackQuery = useQuery({
+    queryKey: ['store-products', activeStore?.id, 'active', 4],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_active=true`),
+    enabled: !!activeStore && hasNoFeatured,
+    staleTime: 60 * 1000,
+  });
+  const loading = featuredQuery.isLoading || (hasNoFeatured && fallbackQuery.isLoading);
 
   useEffect(() => {
-    if (!activeStore) { setLoading(false); return; }
-    const controller = new AbortController();
-    const fetchFeatured = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `/api/v1/products?store_id=${activeStore.id}&is_featured=true&pageSize=4&is_active=true`,
-          { signal: controller.signal }
-        );
-        if (!res.ok) throw new Error('Fetch failed');
-        const json = await res.json();
-        if (json.success && json.data && json.data.length > 0) {
-          setFeaturedProducts(json.data);
-        } else {
-          // Fallback to active products
-          const resFallback = await fetch(
-            `/api/v1/products?store_id=${activeStore.id}&pageSize=4&is_active=true`,
-            { signal: controller.signal }
-          );
-          if (resFallback.ok) {
-            const jsonFallback = await resFallback.json();
-            if (jsonFallback.success) {
-              setFeaturedProducts(jsonFallback.data ?? []);
-            }
-          }
-        }
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setFeaturedProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchFeatured();
-    return () => controller.abort();
-  }, [activeStore]);
+    if (featuredQuery.data?.success && featuredQuery.data.data && featuredQuery.data.data.length > 0) {
+      setFeaturedProducts(featuredQuery.data.data);
+    } else if (hasNoFeatured && fallbackQuery.data?.success) {
+      setFeaturedProducts(fallbackQuery.data.data ?? []);
+    } else if (!activeStore) {
+      setFeaturedProducts([]);
+    }
+  }, [activeStore, featuredQuery.data, hasNoFeatured, fallbackQuery.data]);
 
   const { t } = useTranslation();
 

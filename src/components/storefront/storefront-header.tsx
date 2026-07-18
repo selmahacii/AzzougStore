@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
@@ -221,16 +222,22 @@ export function StorefrontHeader() {
   const T = getTheme(activeStore);
   const contact = activeStore?.theme_config?.contact as { phone?: string; email?: string } | undefined;
 
-  // Fetch categories for dropdown
+  // Catégories du store — MÊME queryKey que storefront-footer.tsx (qui a
+  // besoin de la même liste, juste tronquée différemment) : header ET
+  // footer montés simultanément déclenchaient chacun leur propre fetch()
+  // brut vers ce endpoint (confirmé en réseau : la requête
+  // pageSize=1&is_active=true partait deux fois au chargement de chaque
+  // page). React Query dédoublonne automatiquement deux useQuery avec la
+  // même clé — un seul appel réseau, partagé par les deux composants.
+  const { data: categoriesData } = useQuery({
+    queryKey: ['store-categories', activeStore?.id],
+    queryFn: () => apiFetch<{ categories?: string[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=1&is_active=true`),
+    enabled: !!activeStore?.id,
+    staleTime: 5 * 60 * 1000,
+  });
   useEffect(() => {
-    if (!activeStore?.id) return;
-    fetch(`/api/v1/products?store_id=${activeStore.id}&pageSize=1&is_active=true`)
-      .then(r => r.json())
-      .then(json => {
-        if (json.categories) setCategories(json.categories.slice(0, 12));
-      })
-      .catch(() => {});
-  }, [activeStore?.id]);
+    if (categoriesData?.categories) setCategories(categoriesData.categories.slice(0, 12));
+  }, [categoriesData]);
 
   const { scrollY } = useScroll();
   useMotionValueEvent(scrollY, 'change', (v) => {
