@@ -300,9 +300,24 @@ def lookup_domain(
     import logging
     logger = logging.getLogger("app.stores")
 
+    from app.core.cache import get_json as _cache_get, set_json as _cache_set
+
     cached = _domain_lookup_cache.get(domain)
     if cached is not None and _time.monotonic() - cached[1] < _DOMAIN_LOOKUP_TTL:
         payload = cached[0]
+        if payload is None:
+            raise HTTPException(status_code=404, detail="Store not found for this domain")
+        return payload
+
+    # In-process cache missed (cold worker or expired) — try the shared cache
+    # before hitting Postgres, so a redeploy/new worker doesn't re-pay the DB
+    # hit for a domain another worker already resolved.
+    shared_key = f"domain_lookup:{domain}"
+    shared = _cache_get(shared_key)
+    if shared is not None:
+        payload = shared if shared != {"__miss__": True} else None
+        if len(_domain_lookup_cache) < 500:
+            _domain_lookup_cache[domain] = (payload, _time.monotonic())
         if payload is None:
             raise HTTPException(status_code=404, detail="Store not found for this domain")
         return payload
@@ -319,12 +334,14 @@ def lookup_domain(
         # Bound the cache so junk domains can't grow it without limit
         if len(_domain_lookup_cache) < 500:
             _domain_lookup_cache[domain] = (None, _time.monotonic())
+        _cache_set(shared_key, {"__miss__": True}, 1800)
         raise HTTPException(status_code=404, detail="Store not found for this domain")
 
     logger.info(f"[LookupDomain] Found store: id={store.id!r}, slug={store.slug!r}, domain={store.domain!r}")
     payload = {"storeId": store.id, "storeSlug": store.slug}
     if len(_domain_lookup_cache) < 500:
         _domain_lookup_cache[domain] = (payload, _time.monotonic())
+    _cache_set(shared_key, payload, 1800)
     return payload
 
 

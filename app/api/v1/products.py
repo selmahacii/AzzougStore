@@ -90,7 +90,15 @@ def get_categories(
 ):
     """
     Get all distinct categories for a store (used in sidebar filters).
+    Quasi-static — changes only when a product's category is added/edited.
     """
+    from app.core.cache import get_json, set_json
+
+    cache_key = f"product_categories:{store_id or 'all'}"
+    cached = get_json(cache_key)
+    if cached is not None:
+        return cached
+
     query = db.query(Product.category).filter(
         Product.is_active == True,
         Product.category.isnot(None)
@@ -99,7 +107,9 @@ def get_categories(
         query = query.filter(Product.store_id == store_id)
 
     categories = query.distinct().all()
-    return [c[0] for c in categories if c[0]]
+    result = [c[0] for c in categories if c[0]]
+    set_json(cache_key, result, 1800)  # 30 min — quasi-static per audit guidance
+    return result
 
 
 @router.get("/", response_model=ProductList)
@@ -220,10 +230,15 @@ def read_products(
     # use it but were paying for it on every single list call.
     categories_list = []
     if include_categories:
-        cat_query = db.query(Product.category).filter(Product.is_active == True, Product.category.isnot(None))
-        if store_id:
-            cat_query = cat_query.filter(Product.store_id == store_id)
-        categories_list = [c[0] for c in cat_query.distinct().all() if c[0]]
+        from app.core.cache import get_json as _cache_get, set_json as _cache_set
+        _cache_key = f"product_categories:{store_id or 'all'}"
+        categories_list = _cache_get(_cache_key)
+        if categories_list is None:
+            cat_query = db.query(Product.category).filter(Product.is_active == True, Product.category.isnot(None))
+            if store_id:
+                cat_query = cat_query.filter(Product.store_id == store_id)
+            categories_list = [c[0] for c in cat_query.distinct().all() if c[0]]
+            _cache_set(_cache_key, categories_list, 1800)
 
     return {
         "data": products,
@@ -349,6 +364,10 @@ def create_product(
 
     db.commit()
     db.refresh(product)
+
+    from app.core.cache import delete as cache_delete
+    cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
+
     return product
 
 
@@ -461,6 +480,10 @@ def update_product(
     db.add(product)
     db.commit()
     db.refresh(product)
+
+    from app.core.cache import delete as cache_delete
+    cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
+
     return product
 
 
@@ -656,9 +679,12 @@ def delete_product(
 
     # If the product has order history, soft-delete (deactivate) to preserve records
     has_orders = db.query(OrderItem).filter(OrderItem.product_id == id).first() is not None
+    from app.core.cache import delete as cache_delete
+
     if has_orders:
         product.is_active = False  # type: ignore[assignment]
         db.commit()
+        cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
         return {"success": True, "id": id, "soft": True, "message": "Produit désactivé (historique de commandes conservé)."}
 
     # No order history — safe to hard-delete after clearing other FK refs
@@ -667,8 +693,10 @@ def delete_product(
     db.execute(text("UPDATE pos_sale_items  SET product_id = NULL WHERE product_id = :pid"), {"pid": id})
     db.execute(text("UPDATE return_items    SET product_id = NULL WHERE product_id = :pid"), {"pid": id})
 
+    store_id_for_cache = product.store_id
     db.delete(product)
     db.commit()
+    cache_delete(f"product_categories:{store_id_for_cache}", "product_categories:all")
     return {"success": True, "id": id, "soft": False, "message": "Produit supprimé définitivement."}
 
 
