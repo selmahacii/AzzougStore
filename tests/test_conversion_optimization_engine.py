@@ -22,6 +22,7 @@ from app.db.base_class import Base
 from app.models.marketing import MetaCapiLog
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.models.audit import AuditLog
 from app.services import conversion_optimization_engine as engine
 
 
@@ -29,7 +30,7 @@ from app.services import conversion_optimization_engine as engine
 def db_session():
     eng = create_engine("sqlite://")
     Base.metadata.create_all(eng, tables=[
-        MetaCapiLog.__table__, Order.__table__, OrderItem.__table__, Product.__table__,
+        MetaCapiLog.__table__, Order.__table__, OrderItem.__table__, Product.__table__, AuditLog.__table__,
     ])
     Session = sessionmaker(bind=eng)
     session = Session()
@@ -151,3 +152,30 @@ def test_benchmark_never_fabricates_sector_average(db_session):
     benchmark = engine.compute_benchmark(db_session, store_id, since, now)
     assert benchmark["sector_average"] is None
     assert "non disponible" in benchmark["sector_average_note"].lower() or "Non disponible" in benchmark["sector_average_note"]
+
+
+def test_funnel_flags_incoherence_when_a_stage_exceeds_the_previous_one(db_session):
+    """
+    A funnel stage can never legitimately exceed the stage before it. If it
+    does (tracking gap, duplicated event under a different event_id), the
+    engine must surface it as an explicit anomaly rather than silently
+    display a nonsensical tunnel or a fabricated negative loss.
+    """
+    store_id = "s6"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(days=7)
+    # PageView under-tracked (5) while ViewContent (20) fires correctly -- impossible in a sane funnel.
+    for _ in range(5):
+        db_session.add(_log(store_id, "PageView", now - timedelta(hours=1)))
+    for _ in range(20):
+        db_session.add(_log(store_id, "ViewContent", now - timedelta(hours=1)))
+    db_session.commit()
+
+    funnel = engine.compute_conversion_funnel(db_session, store_id, since, now)
+    assert len(funnel["coherence_issues"]) == 1
+    assert funnel["coherence_issues"][0]["stage"] == "ViewContent"
+    assert funnel["coherence_issues"][0]["stage_volume"] == 20
+    assert funnel["coherence_issues"][0]["previous_stage_volume"] == 5
+
+    bottlenecks = engine.detect_bottlenecks(db_session, store_id, since, now)
+    assert any(b["id"] == "funnel_incoherence" for b in bottlenecks)
