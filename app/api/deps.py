@@ -42,15 +42,19 @@ def get_current_user(
             )
         user = db.query(User).filter(User.id == x_user_id).first()
 
-    # 2. Allow bypass for internal Next.js proxy calls via API key without user ID
-    if not user and internal_key_matches:
-        system_user = db.query(User).filter(User.role == "SUPER_ADMIN").first()
-        if not system_user:
-            system_user = db.query(User).first()
-        if system_user:
-            user = system_user
-        else:
-            raise HTTPException(status_code=401, detail="Internal bypass failed: No users in database")
+    # 2. [REMOVED — CRITICAL AUTH BYPASS] This used to default to the first
+    # SUPER_ADMIN in the database whenever x-internal-key matched but no
+    # x-user-id was present. The Next.js proxy (src/app/api/[...path]/route.ts)
+    # attaches x-internal-key to EVERY proxied request unconditionally —
+    # authenticated or not — so ANY anonymous request through the public
+    # frontend domain (no session cookie at all) was silently authenticated
+    # as a real SUPER_ADMIN with full privileges. Confirmed exploitable live:
+    # an unauthenticated curl to a SUPER_ADMIN-only endpoint returned 200
+    # with real data. No legitimate internal caller was found relying on
+    # this (checked: meta_ads.py's internal-key usages all target the
+    # external Next.js relay, not this backend's own endpoints; orders.py's
+    # guest-checkout actor resolution already wraps this in try/except and
+    # correctly degrades to an anonymous order when unauthenticated).
 
     # 3. Check for JWT token in cookie if not found in Authorization header
     if not user:
