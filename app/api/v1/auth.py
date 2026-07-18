@@ -30,6 +30,7 @@ from app.core.session import (
     rotate_refresh_token,
     revoke_refresh_token,
     revoke_all_user_tokens,
+    REFRESH_TOKEN_EXPIRE_SECONDS,
 )
 from app.models.user import User
 from app.models.customer import Customer
@@ -188,7 +189,7 @@ def register(
         token,
         refresh_token,
         int(expires.total_seconds()),
-        7 * 24 * 60 * 60,
+        REFRESH_TOKEN_EXPIRE_SECONDS,
     )
 
     logger.info("New customer registered: %s (id=%s)", email, user.id)
@@ -255,7 +256,7 @@ def login_json(
         token,
         refresh_token,
         int(expires.total_seconds()),
-        7 * 24 * 60 * 60,
+        REFRESH_TOKEN_EXPIRE_SECONDS,
     )
 
     # Clear brute-force counters (Disabled)
@@ -304,7 +305,7 @@ def login_oauth2(
         token,
         refresh_token,
         int(expires.total_seconds()),
-        7 * 24 * 60 * 60,
+        REFRESH_TOKEN_EXPIRE_SECONDS,
     )
     return {
         "access_token": token,
@@ -382,7 +383,7 @@ def refresh_session(
         token,
         new_refresh_token,
         int(expires.total_seconds()),
-        7 * 24 * 60 * 60,
+        REFRESH_TOKEN_EXPIRE_SECONDS,
     )
     return {"success": True, "message": "Session rafraîchie avec succès."}
 
