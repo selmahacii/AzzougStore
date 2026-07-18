@@ -92,24 +92,19 @@ def get_categories(
     Get all distinct categories for a store (used in sidebar filters).
     Quasi-static — changes only when a product's category is added/edited.
     """
-    from app.core.cache import get_json, set_json
+    from app.core.cache import get_or_set
 
-    cache_key = f"product_categories:{store_id or 'all'}"
-    cached = get_json(cache_key)
-    if cached is not None:
-        return cached
+    def _compute():
+        query = db.query(Product.category).filter(
+            Product.is_active == True,
+            Product.category.isnot(None)
+        )
+        if store_id:
+            query = query.filter(Product.store_id == store_id)
+        categories = query.distinct().all()
+        return [c[0] for c in categories if c[0]]
 
-    query = db.query(Product.category).filter(
-        Product.is_active == True,
-        Product.category.isnot(None)
-    )
-    if store_id:
-        query = query.filter(Product.store_id == store_id)
-
-    categories = query.distinct().all()
-    result = [c[0] for c in categories if c[0]]
-    set_json(cache_key, result, 1800)  # 30 min — quasi-static per audit guidance
-    return result
+    return get_or_set(f"product_categories:{store_id or 'all'}", _compute, l1_ttl=45, l2_ttl=1800)
 
 
 @router.get("/", response_model=ProductList)
@@ -220,9 +215,55 @@ def read_products(
         except ValueError:
             pass
 
-    total = query.count()
-    skip = (page - 1) * pageSize
-    products = query.order_by(Product.created_at.desc()).offset(skip).limit(pageSize).all()
+    # Cache only the plain "list N products for a store" pattern used by the
+    # storefront (hero/home-sections/header/footer: featured/new-arrivals
+    # widgets, categories probe) — never for staff (is_active widens, sees
+    # inactive/draft items) or any filtered/searched query (too many key
+    # permutations to be worth it, and search freshness matters more).
+    _cacheable_listing = (
+        not is_staff and not search and not slug and not category
+        and min_price is None and max_price is None and not promo
+        and not start_date and not end_date and not in_stock
+        and not upsell_only and not include_upsell_only
+    )
+
+    def _compute_listing():
+        total = query.count()
+        skip = (page - 1) * pageSize
+        rows = query.order_by(Product.created_at.desc()).offset(skip).limit(pageSize).all()
+        products_json = [
+            {
+                "id": p.id, "store_id": p.store_id, "name": p.name, "slug": p.slug,
+                "sku": p.sku, "barcode": p.barcode, "description": p.description,
+                "price": p.price, "compare_price": p.compare_price,
+                "stock": p.stock, "reserved_stock": p.reserved_stock,
+                "low_stock_threshold": p.low_stock_threshold,
+                "main_image": p.main_image, "images": p.images, "variants": p.variants,
+                "brand": p.brand, "category": p.category, "tags": p.tags,
+                "is_active": p.is_active, "is_featured": p.is_featured,
+                "is_pack": p.is_pack, "pack_items": p.pack_items,
+                "shipping_model": p.shipping_model, "allowed_carriers": p.allowed_carriers,
+                "delivery_fees": p.delivery_fees,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            }
+            for p in rows
+        ]
+        return {"total": total, "products": products_json}
+
+    if _cacheable_listing:
+        from app.core.cache import get_or_set
+        _listing_key = (
+            f"product_listing:{store_id or 'all'}:{page}:{pageSize}:"
+            f"{effective_featured}:{is_active}"
+        )
+        listing = get_or_set(_listing_key, _compute_listing, l1_ttl=45, l2_ttl=120)
+        total = listing["total"]
+        products = listing["products"]
+    else:
+        total = query.count()
+        skip = (page - 1) * pageSize
+        products = query.order_by(Product.created_at.desc()).offset(skip).limit(pageSize).all()
     logger.debug(f"[Products] Found {total} products for store_id={store_id!r}, page={page}")
 
     # Categories for sidebar — only computed when explicitly requested (extra
@@ -230,15 +271,15 @@ def read_products(
     # use it but were paying for it on every single list call.
     categories_list = []
     if include_categories:
-        from app.core.cache import get_json as _cache_get, set_json as _cache_set
-        _cache_key = f"product_categories:{store_id or 'all'}"
-        categories_list = _cache_get(_cache_key)
-        if categories_list is None:
+        from app.core.cache import get_or_set
+
+        def _compute_categories():
             cat_query = db.query(Product.category).filter(Product.is_active == True, Product.category.isnot(None))
             if store_id:
                 cat_query = cat_query.filter(Product.store_id == store_id)
-            categories_list = [c[0] for c in cat_query.distinct().all() if c[0]]
-            _cache_set(_cache_key, categories_list, 1800)
+            return [c[0] for c in cat_query.distinct().all() if c[0]]
+
+        categories_list = get_or_set(f"product_categories:{store_id or 'all'}", _compute_categories, l1_ttl=45, l2_ttl=1800)
 
     return {
         "data": products,
@@ -365,7 +406,7 @@ def create_product(
     db.commit()
     db.refresh(product)
 
-    from app.core.cache import delete as cache_delete
+    from app.core.cache import invalidate as cache_delete
     cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
 
     return product
@@ -481,7 +522,7 @@ def update_product(
     db.commit()
     db.refresh(product)
 
-    from app.core.cache import delete as cache_delete
+    from app.core.cache import invalidate as cache_delete
     cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
 
     return product
@@ -679,7 +720,7 @@ def delete_product(
 
     # If the product has order history, soft-delete (deactivate) to preserve records
     has_orders = db.query(OrderItem).filter(OrderItem.product_id == id).first() is not None
-    from app.core.cache import delete as cache_delete
+    from app.core.cache import invalidate as cache_delete
 
     if has_orders:
         product.is_active = False  # type: ignore[assignment]

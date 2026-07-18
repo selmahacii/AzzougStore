@@ -16,7 +16,8 @@ a request that would otherwise succeed by reading straight from Postgres.
 
 import json
 import logging
-from typing import Any, Optional
+import time
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -91,3 +92,50 @@ def delete(*keys: str) -> None:
         client.post("/", json=["DEL", *keys])
     except Exception as exc:
         logger.debug("[Cache] delete(%s) failed: %s", keys, exc)
+
+
+# ─── Unified L1 (in-process, short-TTL) + L2 (Upstash) + Postgres fallback ──
+# One caching system, not two: every cached endpoint in the app should go
+# through get_or_set() rather than hand-rolling its own in-process dict or
+# reaching for the separate local-Redis analytics_cache module. L1 absorbs
+# the burst of identical requests within the same worker process (dashboard
+# tab switches, retries) without even paying Upstash's network hop; L2
+# survives redeploys and is shared across workers; Postgres is the fallback
+# of last resort, exactly once per L2 miss.
+_l1_store: dict = {}  # key -> (value, expires_at_monotonic)
+_stats: dict = {"l1_hits": 0, "l2_hits": 0, "misses": 0}
+
+
+def get_or_set(key: str, compute: Callable[[], Any], l1_ttl: int = 45, l2_ttl: int = 1800) -> Any:
+    now = time.monotonic()
+    l1 = _l1_store.get(key)
+    if l1 is not None and l1[1] > now:
+        _stats["l1_hits"] += 1
+        return l1[0]
+
+    l2_value = get_json(key)
+    if l2_value is not None:
+        _stats["l2_hits"] += 1
+        _l1_store[key] = (l2_value, now + l1_ttl)
+        return l2_value
+
+    _stats["misses"] += 1
+    value = compute()
+    set_json(key, value, l2_ttl)
+    _l1_store[key] = (value, now + l1_ttl)
+    return value
+
+
+def invalidate(*keys: str) -> None:
+    for k in keys:
+        _l1_store.pop(k, None)
+    delete(*keys)
+
+
+def get_stats() -> dict:
+    total = sum(_stats.values())
+    return {
+        **_stats,
+        "total": total,
+        "hit_ratio": round((_stats["l1_hits"] + _stats["l2_hits"]) / total, 3) if total else None,
+    }

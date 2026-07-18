@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from sqlalchemy import func, case, and_, distinct
+from sqlalchemy import func, case, and_, distinct, text
 
 from app.api import deps
 from app.db.session import get_db
@@ -360,16 +360,29 @@ def get_by_slug(
     store_id: str = Query(...),
     db: Session = Depends(get_db),
 ) -> Any:
-    lp = db.query(LandingPage).filter(
-        LandingPage.slug == slug,
-        LandingPage.store_id == store_id,
-        LandingPage.is_active == True,
-    ).first()
-    if not lp:
+    from app.core.cache import get_or_set
+
+    def _compute():
+        lp = db.query(LandingPage).filter(
+            LandingPage.slug == slug,
+            LandingPage.store_id == store_id,
+            LandingPage.is_active == True,
+        ).first()
+        return _serialize(lp) if lp else None
+
+    data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
+    if data is None:
         raise HTTPException(404, "Landing page introuvable")
-    lp.views = (lp.views or 0) + 1
+
+    # View counting stays real-time on every request, cache hit or not — a
+    # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
+    db.execute(
+        text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
+        {"slug": slug, "store_id": store_id},
+    )
     db.commit()
-    return {"success": True, "data": _serialize(lp)}
+
+    return {"success": True, "data": data}
 
 
 # ─── Get one ──────────────────────────────────────────────────────────────────
@@ -1131,6 +1144,8 @@ def update_landing_page(
 
     db.commit()
     db.refresh(lp)
+    from app.core.cache import invalidate as _cache_invalidate
+    _cache_invalidate(f"landing_page:{lp.store_id}:{lp.slug}")
     return {"success": True, "data": _serialize(lp)}
 
 
@@ -1145,8 +1160,11 @@ def delete_landing_page(
     lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
     if not lp:
         raise HTTPException(404, "Landing page introuvable")
+    store_id, slug = lp.store_id, lp.slug
     db.delete(lp)
     db.commit()
+    from app.core.cache import invalidate as _cache_invalidate
+    _cache_invalidate(f"landing_page:{store_id}:{slug}")
     return {"success": True}
 
 
@@ -1181,4 +1199,6 @@ def toggle_landing_page(
     )
 
     db.commit()
+    from app.core.cache import invalidate as _cache_invalidate
+    _cache_invalidate(f"landing_page:{lp.store_id}:{lp.slug}")
     return {"success": True, "is_active": lp.is_active}
