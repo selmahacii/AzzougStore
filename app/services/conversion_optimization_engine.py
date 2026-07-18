@@ -165,9 +165,27 @@ def compute_conversion_funnel(db: Session, store_id: str, since: datetime, until
             f"({worst_loss_pct}% de perte à cette étape)."
         )
 
+    # Cohérence logique du tunnel : chaque étape ne PEUT PAS légitimement
+    # dépasser la précédente (on ne voit pas plus de gens ajouter au panier
+    # que de gens ayant vu la page). Si ça arrive quand même, ce n'est
+    # jamais "corrigé" en tronquant le chiffre (ce serait fabriquer une
+    # donnée) — c'est signalé tel quel comme une anomalie de tracking
+    # réelle (ex: Pixel qui ne se charge pas sur certaines pages, event
+    # dupliqué avec un event_id différent, ad-blocker asymétrique).
+    coherence_issues = []
+    for i in range(1, len(_FUNNEL_STAGES)):
+        prev_stage, stage = _FUNNEL_STAGES[i - 1], _FUNNEL_STAGES[i]
+        if counts[stage] > counts[prev_stage]:
+            coherence_issues.append({
+                "stage": stage, "previous_stage": prev_stage,
+                "stage_volume": counts[stage], "previous_stage_volume": counts[prev_stage],
+                "message": f"{_FUNNEL_LABELS[stage]} ({counts[stage]}) dépasse {_FUNNEL_LABELS[prev_stage]} ({counts[prev_stage]}) — anomalie de tracking, pas une perte négative réelle.",
+            })
+
     return {
         "stages": stages,
         "primary_bottleneck": {"stage": worst_stage, "loss_pct": worst_loss_pct if worst_stage else None, "message": bottleneck_message},
+        "coherence_issues": coherence_issues,
         "population": f"{counts['PageView']} PageView, {counts['Purchase']} Purchase sur la période.",
     }
 
@@ -220,6 +238,12 @@ def detect_bottlenecks(db: Session, store_id: str, since: datetime, until: datet
              f"Learning Score à {m['learning_score']['score']}/100",
              "Le score de qualité de signal global est critique — Meta manque de données fiables pour optimiser la diffusion publicitaire.",
              "Voir le détail des composants du Learning Score (Signal Quality Center) pour identifier le composant le plus faible en priorité.")
+
+    for issue in funnel.get("coherence_issues", []):
+        _add("funnel_incoherence", "medium", "high",
+             f"{issue['message']}",
+             "Le tunnel devrait être strictement décroissant (on ne peut pas ajouter au panier plus de monde qu'il n'y a eu de visites) — ce dépassement signale un vrai problème de tracking, pas juste un chiffre à ignorer.",
+             "Vérifier que le Pixel/CAPI se déclenche sur TOUTES les pages (pas seulement certaines), et que les event_id ne sont pas dupliqués entre deux event_name différents.")
 
     bottleneck = funnel["primary_bottleneck"]
     if bottleneck["stage"] and bottleneck["loss_pct"] and bottleneck["loss_pct"] > 50:
