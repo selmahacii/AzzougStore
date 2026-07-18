@@ -197,13 +197,25 @@ function FunnelTab({ d }: { d: any }) {
   const maxVolume = Math.max(1, ...stages.map((s: any) => s.volume));
   return (
     <div className="space-y-4">
-      {d.funnel?.coherence_issues?.length > 0 && (
+      {d.funnel?.coherence_issues?.filter((i: any) => i.severity === 'anomaly').length > 0 && (
         <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: C.warning + '55', backgroundColor: C.warningBg }}>
           <AlertTriangle className="size-4 shrink-0 mt-0.5" style={{ color: '#B7791F' }} />
           <div>
             <p className="text-xs font-black mb-1" style={{ color: '#B7791F' }}>Anomalie de tracking détectée</p>
-            {d.funnel.coherence_issues.map((issue: any, i: number) => (
+            {d.funnel.coherence_issues.filter((i: any) => i.severity === 'anomaly').map((issue: any, i: number) => (
               <p key={i} className="text-xs font-bold" style={{ color: '#B7791F' }}>{issue.message}</p>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Observations neutres (SPA : PageView=sessions, ViewContent/AddToCart=produits
+          consultés — pas une anomalie), affichées séparément, sans alarme visuelle. */}
+      {d.funnel?.coherence_issues?.filter((i: any) => i.severity === 'info').length > 0 && (
+        <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: C.border, backgroundColor: C.bg }}>
+          <Info className="size-4 shrink-0 mt-0.5 text-slate-400" />
+          <div>
+            {d.funnel.coherence_issues.filter((i: any) => i.severity === 'info').map((issue: any, i: number) => (
+              <p key={i} className="text-xs text-slate-500">{issue.message}</p>
             ))}
           </div>
         </div>

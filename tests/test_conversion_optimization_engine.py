@@ -154,28 +154,55 @@ def test_benchmark_never_fabricates_sector_average(db_session):
     assert "non disponible" in benchmark["sector_average_note"].lower() or "Non disponible" in benchmark["sector_average_note"]
 
 
-def test_funnel_flags_incoherence_when_a_stage_exceeds_the_previous_one(db_session):
+def test_pageview_exceeded_by_viewcontent_is_informational_not_an_anomaly(db_session):
     """
-    A funnel stage can never legitimately exceed the stage before it. If it
-    does (tracking gap, duplicated event under a different event_id), the
-    engine must surface it as an explicit anomaly rather than silently
-    display a nonsensical tunnel or a fabricated negative loss.
+    Audit finding (2026-07-18, verified against real production data + code:
+    the storefront is a single-page app, zero <a href> product links,
+    navigation via internal state): PageView fires ONCE per session
+    (StorefrontIntegrations' useEffect depends only on config?.pixel_id,
+    which never changes mid-session), while ViewContent fires once per
+    product actually viewed — several per session is normal. Comparing them
+    1:1 and calling it a tracking "anomaly" was itself the bug (audited and
+    confirmed false-positive). It must now surface as severity="info" and
+    NOT be raised as an actionable bottleneck.
     """
     store_id = "s6"
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     since = now - timedelta(days=7)
-    # PageView under-tracked (5) while ViewContent (20) fires correctly -- impossible in a sane funnel.
-    for _ in range(5):
-        db_session.add(_log(store_id, "PageView", now - timedelta(hours=1)))
-    for _ in range(20):
+    # One session (1 PageView) browsing 4 products (4 ViewContent) -- entirely normal.
+    db_session.add(_log(store_id, "PageView", now - timedelta(hours=1)))
+    for _ in range(4):
         db_session.add(_log(store_id, "ViewContent", now - timedelta(hours=1)))
     db_session.commit()
 
     funnel = engine.compute_conversion_funnel(db_session, store_id, since, now)
     assert len(funnel["coherence_issues"]) == 1
     assert funnel["coherence_issues"][0]["stage"] == "ViewContent"
-    assert funnel["coherence_issues"][0]["stage_volume"] == 20
-    assert funnel["coherence_issues"][0]["previous_stage_volume"] == 5
+    assert funnel["coherence_issues"][0]["severity"] == "info"
+
+    bottlenecks = engine.detect_bottlenecks(db_session, store_id, since, now)
+    assert not any(b["id"] == "funnel_incoherence" for b in bottlenecks)
+
+
+def test_initiate_checkout_exceeded_by_addtocart_stays_a_real_anomaly(db_session):
+    """
+    Unlike PageView, AddToCart/InitiateCheckout/Purchase are all per-attempt
+    events (not per-session) -- comparable 1:1. If InitiateCheckout somehow
+    exceeds AddToCart, that IS a genuine tracking anomaly and must still be
+    flagged as an actionable bottleneck.
+    """
+    store_id = "s7"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since = now - timedelta(days=7)
+    for _ in range(5):
+        db_session.add(_log(store_id, "AddToCart", now - timedelta(hours=1)))
+    for _ in range(12):
+        db_session.add(_log(store_id, "InitiateCheckout", now - timedelta(hours=1)))
+    db_session.commit()
+
+    funnel = engine.compute_conversion_funnel(db_session, store_id, since, now)
+    issue = next(i for i in funnel["coherence_issues"] if i["stage"] == "InitiateCheckout")
+    assert issue["severity"] == "anomaly"
 
     bottlenecks = engine.detect_bottlenecks(db_session, store_id, since, now)
     assert any(b["id"] == "funnel_incoherence" for b in bottlenecks)
