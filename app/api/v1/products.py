@@ -56,7 +56,10 @@ def search_products_lightweight(
     Lightweight product search for order creation dropdowns.
     Returns minimal fields for fast typeahead.
     """
-    query = db.query(Product).filter(Product.is_active == True)
+    query = db.query(
+        Product.id, Product.name, Product.sku, Product.price, Product.stock,
+        Product.reserved_stock, Product.images, Product.category,
+    ).filter(Product.is_active == True)
 
     if store_id:
         query = query.filter(Product.store_id == store_id)
@@ -69,7 +72,15 @@ def search_products_lightweight(
             (Product.barcode.ilike(f"%{q}%"))
         )
 
-    return query.limit(limit).all()
+    rows = query.limit(limit).all()
+    return [
+        {
+            "id": r.id, "name": r.name, "sku": r.sku, "price": r.price,
+            "stock": r.stock, "reserved_stock": r.reserved_stock or 0,
+            "images": r.images or [], "category": r.category,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/categories", response_model=List[str])
@@ -111,6 +122,7 @@ def read_products(
     end_date: Optional[str] = None,
     include_upsell_only: bool = Query(False),
     upsell_only: bool = Query(False),
+    include_categories: bool = Query(False),
     current_user: Optional[Any] = Depends(deps.get_current_user_optional)
 ) -> Any:
     """
@@ -203,11 +215,15 @@ def read_products(
     products = query.order_by(Product.created_at.desc()).offset(skip).limit(pageSize).all()
     logger.debug(f"[Products] Found {total} products for store_id={store_id!r}, page={page}")
 
-    # Categories for sidebar
-    cat_query = db.query(Product.category).filter(Product.is_active == True, Product.category.isnot(None))
-    if store_id:
-        cat_query = cat_query.filter(Product.store_id == store_id)
-    categories_list = [c[0] for c in cat_query.distinct().all() if c[0]]
+    # Categories for sidebar — only computed when explicitly requested (extra
+    # DISTINCT scan), since most callers (featured/new-arrivals widgets) never
+    # use it but were paying for it on every single list call.
+    categories_list = []
+    if include_categories:
+        cat_query = db.query(Product.category).filter(Product.is_active == True, Product.category.isnot(None))
+        if store_id:
+            cat_query = cat_query.filter(Product.store_id == store_id)
+        categories_list = [c[0] for c in cat_query.distinct().all() if c[0]]
 
     return {
         "data": products,

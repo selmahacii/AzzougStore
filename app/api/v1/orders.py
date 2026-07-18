@@ -1915,10 +1915,14 @@ def get_order_erp_detail(
     }
     cost_products = 0
     margin_known = True
+    _item_product_ids = [it.product_id for it in order.items if it.product_id]
+    _cost_by_product_id = dict(
+        db.query(Product.id, Product.cost_price).filter(Product.id.in_(_item_product_ids)).all()
+    ) if _item_product_ids else {}
     for it in order.items:
-        prod = db.query(Product.cost_price).filter(Product.id == it.product_id).first() if it.product_id else None
-        if prod and prod[0] is not None:
-            cost_products += prod[0] * it.quantity
+        cost_price = _cost_by_product_id.get(it.product_id) if it.product_id else None
+        if cost_price is not None:
+            cost_products += cost_price * it.quantity
         else:
             margin_known = False
     kpis["cout_produits_estime"] = cost_products if margin_known else None
@@ -2532,12 +2536,9 @@ def bulk_update_status(
         from app.core.exceptions import ValidationError
         raise ValidationError(message="order_ids et status sont requis.")
 
-    updated = 0
-    for oid in order_ids:
-        order = db.query(Order).filter(Order.id == oid, Order.is_deleted == False).first()
-        if order:
-            order.status = new_status  # type: ignore[assignment]
-            updated += 1
+    updated = db.query(Order).filter(
+        Order.id.in_(order_ids), Order.is_deleted == False
+    ).update({"status": new_status}, synchronize_session=False)
 
     db.commit()
     logger.info("Bulk status update: %d orders → %s by %s", updated, new_status, current_user.id)

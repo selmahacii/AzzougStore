@@ -209,6 +209,7 @@ class OrderEventRead(BaseModel):
     id: str
     order_id: str
     actor_id: Optional[str] = None
+    actor_role: Optional[str] = None
     from_status: Optional[str] = None
     to_status: str
     note: Optional[str] = None

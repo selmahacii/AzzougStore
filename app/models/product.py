@@ -11,6 +11,7 @@ class Product(Base):
         UniqueConstraint('store_id', 'slug', name='uq_store_product_slug'),
         Index('idx_product_store_active', 'store_id', 'is_active'),
         Index('idx_product_store_category', 'store_id', 'category'),
+        Index('idx_product_store_active_created', 'store_id', 'is_active', 'created_at'),
     )
 
     id = Column(String, primary_key=True, index=True)
