@@ -91,7 +91,10 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     // served back to an anonymous shopper. Prices/stock/promos still come
     // straight from the backend on every request past s-maxage — this only
     // shaves off repeat hits within a short revalidation window.
-    if (request.method === 'GET' && response.ok && !resHeaders.has('set-cookie')) {
+    if (subPath === 'v1/auth/me' || subPath.startsWith('v1/auth/')) {
+      // Session-specific — never let a shared cache serve this across users.
+      resHeaders.set('Cache-Control', 'private, no-store');
+    } else if (request.method === 'GET' && response.ok && !resHeaders.has('set-cookie')) {
       const hasSession = !!request.cookies.get('__session');
       if (subPath === 'v1/reviews' || subPath.startsWith('v1/reviews')) {
         // Public reviews list — no current_user dependency in the backend, never personalized.
@@ -109,9 +112,6 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
         // Store list is scoped per staff role — only cache anonymous requests.
         resHeaders.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=120');
       }
-    } else if (subPath === 'v1/auth/me' || subPath.startsWith('v1/auth/')) {
-      // Session-specific — never let a shared cache serve this across users.
-      resHeaders.set('Cache-Control', 'private, no-store');
     }
 
     const responseData = await response.arrayBuffer();
