@@ -175,6 +175,12 @@ def update_meta_ads_config(payload: MetaAdsConfigCreate, db: Session = Depends(g
     config.currency = payload.currency or "USD"
     db.commit()
     db.refresh(config)
+
+    # Drop this worker's in-process cache entry (see meta_capi._META_CONFIG_CACHE)
+    # so an edited pixel/token/currency takes effect on the next send immediately
+    # instead of waiting out the 60s TTL.
+    from app.services.meta_capi import _META_CONFIG_CACHE
+    _META_CONFIG_CACHE.pop(payload.store_id, None)
     return {"success": True, "data": {
         "store_id": config.store_id,
         "access_token": config.access_token,

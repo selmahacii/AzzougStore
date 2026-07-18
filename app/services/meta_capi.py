@@ -72,6 +72,41 @@ logger = logging.getLogger("app.meta_capi")
 
 GRAPH_VERSION = "v21.0"
 
+# ─── In-process, per-worker MetaAdsConfig cache ───────────────────────────
+# Purpose: avoid a DB round-trip (measured ~100ms, network/pooler latency —
+# decryption of the encrypted access_token itself is negligible, <0.001ms)
+# on every Purchase CAPI send. Deliberately NOT Redis: access_token is
+# encrypted at rest (EncryptedString) and must never exist decrypted in a
+# shared cache — this keeps the plaintext confined to this process's memory,
+# same trust boundary as holding it in a local variable. Short TTL (60s)
+# bounds staleness after a config update; no cross-process invalidation
+# needed since a 60s-stale token/pixel is an acceptable, self-healing delay
+# for this send path (it just retries on the next queue pass).
+_META_CONFIG_CACHE: Dict[str, tuple] = {}
+_META_CONFIG_CACHE_TTL = 60
+
+
+def _get_meta_config_cached(db: Session, store_id: str) -> Optional[Dict[str, Any]]:
+    from app.models.marketing import MetaAdsConfig
+
+    cached = _META_CONFIG_CACHE.get(store_id)
+    if cached and cached[1] > time.monotonic():
+        return cached[0]
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    if not config:
+        _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
+        return None
+
+    snapshot = {
+        "pixel_id": config.pixel_id,
+        "access_token": config.access_token,
+        "currency": config.currency,
+        "exchange_rate": config.exchange_rate,
+    }
+    _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
+    return snapshot
+
 # Immediate retries (within the same request, e.g. during order creation's
 # background task) — short-lived, for blips that resolve in seconds.
 _IMMEDIATE_RETRIES = 3        # total immediate attempts = 1 + this
@@ -2517,8 +2552,8 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             logger.info("[MetaCAPI] queue: order=%s skipped (source=%s status=%s)", order_id, order.source, order.status)
             return
 
-        config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
-        if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
+        config = _get_meta_config_cached(db, order.store_id)
+        if not config or not config["pixel_id"] or not config["access_token"] or len(config["access_token"]) < 15:
             row.status = "skipped"
             row.error_message = "no valid meta config"
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -2530,8 +2565,8 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
 
         event = build_purchase_event(
             order, client_ip=effective_client_ip, user_agent=effective_user_agent,
-            ad_currency=config.currency or "DZD",
-            exchange_rate=config.exchange_rate if config.exchange_rate else 1.0,
+            ad_currency=config["currency"] or "DZD",
+            exchange_rate=config["exchange_rate"] if config["exchange_rate"] else 1.0,
         )
 
         # Contrôle avant envoi — jamais un blocage (aucune donnée n'est
@@ -2566,7 +2601,7 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             )
 
         result = send_events(
-            config.pixel_id, config.access_token, [event],
+            config["pixel_id"], config["access_token"], [event],
             store_label=order.store.name if order.store else str(order.store_id),
             order_label=f"#{order.order_number}",
         )
