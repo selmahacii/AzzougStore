@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Callable, Dict
 
-from app.core.cache import get_json, set_json
+from app.core.cache import get_json, set_json, _metrics as _cache_metrics
 
 logger = logging.getLogger("app.analytics_cache")
 
@@ -32,6 +32,7 @@ def get_cached(cache_key: str) -> Any:
     now = time.monotonic()
     l1 = _l1.get(cache_key)
     if l1 is not None and l1[1] > now:
+        _cache_metrics["l1_hits"] += 1
         cached_value = l1[0]
         if isinstance(cached_value, dict) and isinstance(cached_value.get("data"), dict):
             cached_value["data"]["_cache"] = {"hit": True}
@@ -39,7 +40,11 @@ def get_cached(cache_key: str) -> Any:
 
     result = get_json(_PREFIX + cache_key)
     if result is None:
+        # Not counted as a "miss" here — the caller (cached_response, or a
+        # manual get_cached/set_cached pair) is what decides whether this
+        # was ultimately a full Postgres fallback; see set_cached's role.
         return None
+    _cache_metrics["l2_hits"] += 1
     if isinstance(result, dict) and isinstance(result.get("data"), dict):
         result["data"]["_cache"] = {"hit": True}
     _l1[cache_key] = (result, now + _L1_TTL_SECONDS)
@@ -48,6 +53,11 @@ def get_cached(cache_key: str) -> Any:
 
 def set_cached(cache_key: str, result: Dict[str, Any], ttl_seconds: int = DEFAULT_TTL_SECONDS) -> None:
     """Best-effort write-through — never raises, a cache write failure must never break the response."""
+    # A set_cached() call means the caller just ran compute() itself after a
+    # get_cached() miss — this IS the Postgres-fallback event these 4
+    # endpoints' hundreds-of-lines-long compute paths can't cleanly funnel
+    # through get_or_set(), so count it explicitly here instead.
+    _cache_metrics["misses"] += 1
     if isinstance(result, dict) and isinstance(result.get("data"), dict):
         result["data"]["_cache"] = {"hit": False}
     set_json(_PREFIX + cache_key, result, ttl_seconds)

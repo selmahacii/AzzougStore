@@ -13,7 +13,7 @@ from app.api.v1 import (
     reviews, chat, suppliers, purchases, returns, expenses, marketing,
     partners, delivery_partners, upload, landing_pages, api_keys,
     meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
-    notifications, conversion_optimization,
+    notifications, conversion_optimization, internal,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -355,6 +355,7 @@ include_v1(landing_pages.router,  "landing-pages",  ["🚀 Landing Pages"])
 include_v1(api_keys.router,       "api-keys",       ["🔑 Clés API"])
 include_v1(locations.router,      "locations",      ["🌍 Locations"])
 include_v1(notifications.router,  "notifications",  ["🔔 Notifications"])
+include_v1(internal.router,       "internal",       ["🛠️ Internal / Observability"])
 
 # ─── Carrier Proxies (outside /api/v1 — own prefix) ─────────────────────────
 app.include_router(yalidine_carrier.router, prefix="/api/yalidine", tags=["🚀 Yalidine"])
