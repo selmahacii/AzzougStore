@@ -12,7 +12,7 @@ from app.core.redis import get_redis_client
 
 logger = logging.getLogger("app.session")
 
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+REFRESH_TOKEN_EXPIRE_DAYS = 3650  # ~10 years — effectively "never" per explicit request: sessions must not require re-login
 REFRESH_TOKEN_EXPIRE_SECONDS = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 GRACE_PERIOD_SECONDS = 30  # Allow concurrently running client requests to reuse token within 30s
 
