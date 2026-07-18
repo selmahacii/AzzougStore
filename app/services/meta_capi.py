@@ -472,21 +472,36 @@ def normalize_phone(phone: Optional[str]) -> Optional[str]:
 
 
 def normalize_name(name: Optional[str]) -> Optional[str]:
-    """Lowercase, no accents, letters only (Meta: a-z only, no punctuation)."""
+    """
+    Lowercase, whitespace/punctuation stripped, hashed — per Meta's Advanced
+    Matching spec (developers.facebook.com/docs/marketing-api/conversions-api/
+    parameters/customer-information-parameters), which hashes the UTF-8 bytes
+    and does NOT require Latin script.
+
+    BUG FIXED (confirmed against real production data, order ABN-20260715-
+    A4C468, customer_name="عصنون صالح"): the previous `re.sub(r"[^a-z]", ...)`
+    kept ONLY ASCII a-z, so every Arabic-script name — extremely common for
+    Algerian customers — was reduced to an empty string and silently sent as
+    fn=None/ln=None. `_strip_accents` (NFD decomposition) is a no-op on
+    Arabic (it has no composed accent marks to strip), so this wasn't a
+    partial degradation, it was a complete wipe. `\\w` with re.UNICODE keeps
+    any Unicode letter/digit (Arabic, Latin, accented, etc.) while still
+    dropping spaces/punctuation — matching Meta's actual requirement.
+    """
     if not name:
         return None
-    cleaned = re.sub(r"[^a-z]", "", _strip_accents(name.strip().lower()))
+    cleaned = re.sub(r"[^\w]", "", _strip_accents(name.strip().lower()), flags=re.UNICODE)
     return _sha256(cleaned) if cleaned else None
 
 
 def normalize_city(city: Optional[str]) -> Optional[str]:
-    """Lowercase, no accents, no spaces/punctuation."""
+    """Lowercase, no accents/whitespace/punctuation — same Unicode-letter fix as normalize_name."""
     if not city:
         return None
     # Drop arabic/annotated prefixes like "القبة · Kouba"
     if "·" in city:
         city = city.split("·")[-1]
-    cleaned = re.sub(r"[^a-z]", "", _strip_accents(city.strip().lower()))
+    cleaned = re.sub(r"[^\w]", "", _strip_accents(city.strip().lower()), flags=re.UNICODE)
     return _sha256(cleaned) if cleaned else None
 
 
