@@ -165,34 +165,39 @@ def compute_conversion_funnel(db: Session, store_id: str, since: datetime, until
             f"({worst_loss_pct}% de perte à cette étape)."
         )
 
-    # Cohérence logique du tunnel — MAIS PageView n'est PAS comparable 1:1 à
-    # ViewContent/AddToCart dans cette architecture : StorefrontIntegrations
-    # déclenche PageView UNE SEULE FOIS par useEffect (dépendance
-    # `[config?.pixel_id]`, qui ne change jamais pendant une session), alors
-    # que le storefront est une SPA (navigation par état interne, aucune
-    # balise <a href> sur les cartes produit — vérifié sur le code, pas une
-    # supposition) : un visiteur qui consulte 3 produits dans la MÊME
-    # session génère 1 PageView mais 3 ViewContent, LÉGITIMEMENT. Comparer
-    # PageView à ViewContent/AddToCart revient donc à comparer "sessions" à
-    # "produits consultés" — deux granularités différentes, pas une seule
-    # population qui devrait être strictement décroissante. En revanche,
-    # InitiateCheckout et Purchase restent des événements par TENTATIVE DE
-    # COMMANDE (pas par session), donc réellement comparables entre eux et
-    # à AddToCart — ce contrôle reste strict pour ces étapes-là.
-    _SESSION_LEVEL_STAGES = {"PageView"}
+    # Cohérence logique du tunnel — MAIS deux transitions ne sont PAS
+    # comparables 1:1 dans cette architecture précise (vérifié sur le code,
+    # pas supposé) :
+    #  - PageView -> ViewContent : StorefrontIntegrations déclenche PageView
+    #    UNE SEULE FOIS par useEffect (dépendance `[config?.pixel_id]`, qui
+    #    ne change jamais pendant une session) sur un storefront SPA
+    #    (navigation par état interne, zéro balise <a href> sur les cartes
+    #    produit) — un visiteur qui consulte 3 produits dans la MÊME
+    #    session génère 1 PageView mais 3 ViewContent, légitimement.
+    #  - ViewContent -> AddToCart : product-card.tsx a un bouton "ajout
+    #    rapide au panier" sur les grilles produit/catégorie qui appelle
+    #    onAddToCart directement (`e.stopPropagation()`), SANS jamais
+    #    naviguer vers la page produit qui déclenche ViewContent — un ajout
+    #    au panier n'implique donc pas toujours un ViewContent préalable.
+    # En revanche InitiateCheckout et Purchase restent des événements par
+    # TENTATIVE DE COMMANDE (pas par session/grille), réellement comparables
+    # 1:1 — ce contrôle reste strict pour cette transition.
+    _NON_1TO1_TRANSITIONS = {
+        "ViewContent": "Visites compte les SESSIONS (une fois par visite, application monopage), {stage_label} compte les PRODUITS consultés (plusieurs par session)",
+        "AddToCart": "un bouton \"ajout rapide au panier\" existe sur les grilles produit et ne passe jamais par la page produit (donc pas toujours un Vue Produit préalable)",
+    }
     coherence_issues = []
     for i in range(1, len(_FUNNEL_STAGES)):
         prev_stage, stage = _FUNNEL_STAGES[i - 1], _FUNNEL_STAGES[i]
         if counts[stage] <= counts[prev_stage]:
             continue
-        if prev_stage in _SESSION_LEVEL_STAGES:
-            # Attendu dans une SPA : plusieurs produits vus par session — pas
-            # une anomalie, une observation informative seulement.
+        explanation = _NON_1TO1_TRANSITIONS.get(stage)
+        if explanation:
             coherence_issues.append({
                 "stage": stage, "previous_stage": prev_stage,
                 "stage_volume": counts[stage], "previous_stage_volume": counts[prev_stage],
                 "severity": "info",
-                "message": f"{_FUNNEL_LABELS[stage]} ({counts[stage]}) dépasse {_FUNNEL_LABELS[prev_stage]} ({counts[prev_stage]}) — normal sur ce site (application monopage) : {_FUNNEL_LABELS[prev_stage]} compte les SESSIONS (une fois par visite), {_FUNNEL_LABELS[stage]} compte les PRODUITS consultés (plusieurs par session) ; ce n'est pas une perte négative réelle ni un défaut de tracking.",
+                "message": f"{_FUNNEL_LABELS[stage]} ({counts[stage]}) dépasse {_FUNNEL_LABELS[prev_stage]} ({counts[prev_stage]}) — normal sur ce site : {explanation.format(stage_label=_FUNNEL_LABELS[stage])} ; ce n'est pas une perte négative réelle ni un défaut de tracking.",
             })
         else:
             coherence_issues.append({
