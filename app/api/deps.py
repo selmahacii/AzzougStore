@@ -24,6 +24,23 @@ def get_current_user(
     x_user_id: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> User:
+    import time as _time_mod
+    from app.core import timing as _timing
+    _auth_t0 = _time_mod.perf_counter()
+    try:
+        return _get_current_user_impl(request, db, token, x_internal_key, x_user_id, authorization)
+    finally:
+        _timing.record("auth", (_time_mod.perf_counter() - _auth_t0) * 1000)
+
+
+def _get_current_user_impl(
+    request: Request,
+    db: Session,
+    token: Optional[str],
+    x_internal_key: Optional[str],
+    x_user_id: Optional[str],
+    authorization: Optional[str],
+) -> User:
     raw_auth = authorization or ""
     bearer_val = raw_auth.replace("Bearer ", "").strip() if raw_auth.startswith("Bearer ") else ""
     internal_key_matches = (

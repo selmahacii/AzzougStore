@@ -154,18 +154,22 @@ def _sliding_window_check(
     This is atomic per-key and scales across multiple app instances
     because all state lives in Redis, not in process memory.
     """
+    from app.core import timing as _timing
+
     now = int(time.time())
     reset_at = now + window_seconds
 
     try:
-        pipe = redis_client.pipeline(transaction=True)
-        pipe.incr(key)
-        pipe.ttl(key)
-        count, ttl = pipe.execute()
+        with _timing.Timer("ratelimit_redis_pipeline"):
+            pipe = redis_client.pipeline(transaction=True)
+            pipe.incr(key)
+            pipe.ttl(key)
+            count, ttl = pipe.execute()
 
         # Key is brand new (TTL = -1): set expiry
         if ttl == -1:
-            redis_client.expire(key, window_seconds)
+            with _timing.Timer("ratelimit_redis_expire"):
+                redis_client.expire(key, window_seconds)
             ttl = window_seconds
 
         reset_at = now + max(ttl, 0)
@@ -194,10 +198,14 @@ def check_rate_limit(
     Public entrypoint for rate limit checks.
     Returns an open/allowed result if Redis is unavailable.
     """
-    client = _get_redis()
+    from app.core import timing as _timing
+
+    with _timing.Timer("ratelimit_redis_connect"):
+        client = _get_redis()
     if client is None:
         # No Redis: use in-memory sliding window (works for single-instance deployments like HF Spaces)
-        return _mem_sliding_window_check(key, limit, window_seconds)
+        with _timing.Timer("ratelimit_mem_fallback"):
+            return _mem_sliding_window_check(key, limit, window_seconds)
 
     return _sliding_window_check(client, key, limit, window_seconds)
 
@@ -254,6 +262,13 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        from app.core import timing as _timing
+
+        # This is the outermost middleware — start the per-request timing
+        # bag here so everything downstream (tenant middleware, get_db(),
+        # get_current_user(), the Upstash cache calls) can record into it.
+        _timing.start()
+
         path = request.url.path
         method = request.method
 
@@ -261,37 +276,39 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
         if not path.startswith(settings.API_V1_STR):
             return await call_next(request)
 
-        client = _get_redis()
+        _rl_t0 = time.perf_counter()
 
         # Extract identifiers
-        ip = (
-            request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-            or request.headers.get("X-Real-Ip", "")
-            or "127.0.0.1"
-        )
-        user_id = request.headers.get("X-User-Id")
-        store_id = tenant_store_id.get()
-
-        is_write = method in ("POST", "PUT", "PATCH", "DELETE")
-        ip_limit = IP_LIMIT_WRITE if is_write else IP_LIMIT_GET
+        with _timing.Timer("ratelimit_key_generation"):
+            ip = (
+                request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or request.headers.get("X-Real-Ip", "")
+                or "127.0.0.1"
+            )
+            user_id = request.headers.get("X-User-Id")
+            store_id = tenant_store_id.get()
+            is_write = method in ("POST", "PUT", "PATCH", "DELETE")
+            ip_limit = IP_LIMIT_WRITE if is_write else IP_LIMIT_GET
 
         # ── Layer 1: IP rate limit ────────────────────────────────
-        ip_result = check_rate_limit(
-            key=f"rl:ip:{ip}:{'w' if is_write else 'r'}",
-            limit=ip_limit,
-            window_seconds=WINDOW_SECONDS,
-        )
+        with _timing.Timer("ratelimit_layer_ip"):
+            ip_result = check_rate_limit(
+                key=f"rl:ip:{ip}:{'w' if is_write else 'r'}",
+                limit=ip_limit,
+                window_seconds=WINDOW_SECONDS,
+            )
         if not ip_result.allowed:
             logger.warning("Rate limit [IP] exceeded: ip=%s path=%s", ip, path)
             return self._rate_limit_response(ip_result, "IP quota exceeded.")
 
         # ── Layer 2: Per-User (authenticated) ─────────────────────
         if user_id and is_write:
-            user_result = check_rate_limit(
-                key=f"rl:user:{user_id}:w",
-                limit=USER_LIMIT_WRITE,
-                window_seconds=WINDOW_SECONDS,
-            )
+            with _timing.Timer("ratelimit_layer_user"):
+                user_result = check_rate_limit(
+                    key=f"rl:user:{user_id}:w",
+                    limit=USER_LIMIT_WRITE,
+                    window_seconds=WINDOW_SECONDS,
+                )
             if not user_result.allowed:
                 logger.warning("Rate limit [USER] exceeded: user=%s path=%s", user_id, path)
                 return self._rate_limit_response(user_result, "Quota utilisateur dépassé.")
@@ -299,11 +316,12 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
         # ── Layer 3: Per-Store (tenant plan) ──────────────────────
         if store_id and store_id != "SUPER_ADMIN_MODE":
             store_limit = STORE_PLAN_LIMITS[StorePlan.STARTER]  # Default; upgrade from DB/cache
-            store_result = check_rate_limit(
-                key=f"rl:store:{store_id}",
-                limit=store_limit,
-                window_seconds=WINDOW_SECONDS,
-            )
+            with _timing.Timer("ratelimit_layer_store"):
+                store_result = check_rate_limit(
+                    key=f"rl:store:{store_id}",
+                    limit=store_limit,
+                    window_seconds=WINDOW_SECONDS,
+                )
             if not store_result.allowed:
                 logger.warning("Rate limit [STORE] exceeded: store=%s path=%s", store_id, path)
                 return self._rate_limit_response(
@@ -311,11 +329,21 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
                     "Quota de requêtes de votre boutique dépassé. Passez au plan supérieur.",
                 )
 
+        _timing.record("ratelimit_total", (time.perf_counter() - _rl_t0) * 1000)
+
         # ── Pass through with rate limit headers ──────────────────
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(ip_limit)
         response.headers["X-RateLimit-Remaining"] = str(ip_result.remaining)
         response.headers["X-RateLimit-Reset"] = str(ip_result.reset_at)
+
+        # This is the outermost middleware — everything downstream (tenant,
+        # auth, database queries, Upstash cache calls, the handler itself)
+        # has already recorded into the timing bag by the time call_next()
+        # returns here, so this is the only correct place to emit the header.
+        server_timing = _timing.to_server_timing_header()
+        if server_timing:
+            response.headers["Server-Timing"] = server_timing
         return response
 
     @staticmethod
