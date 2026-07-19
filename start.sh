@@ -134,12 +134,12 @@ print('Schema created successfully')
 fi
 
 echo "Starting FastAPI server..."
-# No --workers before this line meant ONE process handling every request on
-# ONE event loop — under concurrent dashboard load (multiple stores, each
-# firing ~10 requests on open) requests queued up and HuggingFace's own
-# gateway timed the slow ones out as a bare 500 with zero trace in our logs
-# (confirmed live: every completed request logged 200, nothing ever threw).
-# 2 workers uses both vCPUs on the cpu-basic tier. See
-# app.main._acquire_scheduler_leader_lock for why the background scheduler
-# doesn't just duplicate itself across workers.
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+# REVERTED to 1 worker: tried --workers 2 to fix gateway-timeout 500s under
+# concurrent load, but live testing showed failure rate got WORSE (up to
+# ~45%, including runs of consecutive failures) — each worker is a
+# separate Python process that reloads pandas/numpy/SQLAlchemy/every route
+# module independently, so 2 workers roughly doubles baseline memory on a
+# tier where that headroom apparently isn't there. Reverting to 1 while
+# the actual constraint (confirmed memory vs. something else) gets
+# checked directly against the Space's live resource graph.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000
