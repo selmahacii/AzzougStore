@@ -1358,6 +1358,7 @@ class MetaEventPayload(BaseModel):
     event_time: Optional[int] = None
     event_source_url: Optional[str] = None
     event_id: Optional[str] = None
+    order_id: Optional[str] = None  # storefront-known order — lets Purchase failures be traced back to an ERP order
     user_data: Optional[MetaEventUserData] = None
     custom_data: Optional[MetaEventCustomData] = None
     action_source: Optional[str] = "website"
@@ -1370,25 +1371,26 @@ def _dispatch_capi_event(
     access_token: str,
     event: Dict[str, Any],
     store_id: str,
+    order_id: Optional[str] = None,
 ) -> None:
     """Background task: ship one browser-mirrored event with retries + log."""
     from datetime import datetime, timedelta, timezone
     from app.db.session import SessionLocal
     from app.services.meta_capi import send_events, _log_send, _QUEUE_BACKOFF_MINUTES
 
-    result = send_events(pixel_id, access_token, [event], store_label=store_id, order_label=None)
+    result = send_events(pixel_id, access_token, [event], store_label=store_id, order_label=order_id)
     db = SessionLocal()
     try:
         if result["success"]:
             _log_send(
-                db, store_id=store_id, order_id=None,
+                db, store_id=store_id, order_id=order_id,
                 event_name=event["event_name"], event_id=event["event_id"],
                 status="success", events_received=result["events_received"],
                 latency_ms=result.get("latency_ms"),
             )
         elif result.get("retryable"):
             _log_send(
-                db, store_id=store_id, order_id=None,
+                db, store_id=store_id, order_id=order_id,
                 event_name=event["event_name"], event_id=event["event_id"],
                 status="pending_retry", error_message=result["error"],
                 error_category=result.get("error_category"), payload=event,
@@ -1397,10 +1399,10 @@ def _dispatch_capi_event(
             )
         else:
             _log_send(
-                db, store_id=store_id, order_id=None,
+                db, store_id=store_id, order_id=order_id,
                 event_name=event["event_name"], event_id=event["event_id"],
                 status="error", error_message=result["error"],
-                error_category=result.get("error_category"),
+                error_category=result.get("error_category"), payload=event,
             )
     finally:
         db.close()
@@ -1467,7 +1469,7 @@ def send_meta_event(
             event["custom_data"] = cd
 
     background_tasks.add_task(
-        _dispatch_capi_event, config.pixel_id, config.access_token, event, payload.store_id
+        _dispatch_capi_event, config.pixel_id, config.access_token, event, payload.store_id, payload.order_id
     )
     return {"success": True, "sent": True, "event_id": event_id}
 

@@ -436,10 +436,36 @@ def get_order_counts(
             pass
     received_duplicate = duplicate_q.scalar() or 0
 
+    # "Manuelle" — orders entered directly by staff (source='MANUAL'), same
+    # period/filters as the rest of this block — feeds the single unified
+    # badge row on the orders page (replaces the old separate KPI grid +
+    # "Reçues" line, which duplicated the same underlying counts in two
+    # different layouts).
+    manual_q = db.query(sqlfunc.count(Order.id)).filter(
+        Order.store_id == store_id,
+        Order.is_deleted == False,
+        Order.status != "MERGED",
+        sqlfunc.upper(Order.source) == "MANUAL",
+    )
+    if start_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            manual_q = manual_q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            manual_q = manual_q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    received_manual = manual_q.scalar() or 0
+
     counts["_received"] = {
         "normal": received_normal,
         "abandoned": received_abandoned,
         "duplicate": received_duplicate,
+        "manual": received_manual,
     }
     return counts
 
@@ -1082,8 +1108,12 @@ def list_orders(
         # endpoint does), so a parent's duplicate history was invisible from
         # the list itself — the admin had to open every order one by one to
         # discover it had absorbed duplicates at all.
-        _dup_counts = dict(
-            db.query(Order.parent_order_id, sqlfunc.count(Order.id))
+        # Also the most recent duplicate's timestamp per parent, so the list
+        # badge can show WHEN the last resubmit came in without fetching
+        # full child_orders details for every row on the page (that stays a
+        # lazy, on-demand fetch — see GET /orders/{id}).
+        _dup_rows = (
+            db.query(Order.parent_order_id, sqlfunc.count(Order.id), sqlfunc.max(Order.created_at))
             .filter(
                 Order.parent_order_id.in_([o.id for o in orders]),
                 Order.status == "MERGED",
@@ -1091,8 +1121,11 @@ def list_orders(
             .group_by(Order.parent_order_id)
             .all()
         )
+        _dup_counts = {r[0]: r[1] for r in _dup_rows}
+        _dup_last_at = {r[0]: r[2] for r in _dup_rows}
         for o in orders:
             o.duplicate_count = _dup_counts.get(o.id, 0)  # type: ignore[attr-defined]
+            o.last_duplicate_at = _dup_last_at.get(o.id)  # type: ignore[attr-defined]
 
     return {
         "success": True,

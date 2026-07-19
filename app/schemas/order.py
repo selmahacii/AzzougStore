@@ -148,6 +148,10 @@ class OrderRead(BaseModel):
     # exactly what made "Meta Ads says 5, ERP says 1" look like a bug instead
     # of the merge count it actually is.
     duplicate_count: Optional[int] = None
+    # When the most recent duplicate was merged into this order — shown on
+    # the list badge itself (not just inside the expanded detail panel) so
+    # the time is visible at a glance, per explicit request.
+    last_duplicate_at: Optional[datetime] = None
     created_at:      datetime
     updated_at:      Optional[datetime] = None
     tracking_number: Optional[str] = None
@@ -197,6 +201,7 @@ class OrderRead(BaseModel):
     @field_serializer(
         "created_at", "updated_at", "recovered_at",
         "confirmation_start_time", "next_callback_time", "merged_at",
+        "last_duplicate_at",
     )
     def _serialize_utc(self, value: Optional[datetime]) -> Optional[str]:
         # Timestamps are stored as naive UTC (func.now() on a UTC DB session).
