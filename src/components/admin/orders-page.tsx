@@ -288,11 +288,16 @@ const [timeLeft, setTimeLeft] = useState('');
   // in the backend logs as "Auto-merged N duplicate(s)..." constantly).
   const duplicateStatsQuery = useQuery({
     queryKey: ['duplicate-stats-badge', storeId],
-    queryFn: () => apiFetch<{ success: boolean; data: { child_orders: number } }>(`/api/v1/orders/duplicate-stats?store_id=${storeId}`),
+    queryFn: () => apiFetch<{ success: boolean; data: { child_orders: number; duplicate_groups: number } }>(`/api/v1/orders/duplicate-stats?store_id=${storeId}`),
     enabled: !!storeId,
     staleTime: 60_000,
   });
-  const storeWideDuplicateCount = duplicateStatsQuery.data?.data?.child_orders ?? 0;
+  // duplicate_groups = number of ORDERS that absorbed at least one
+  // duplicate (what the badge count means to the admin: "how many of my
+  // orders had a duplicate") — NOT child_orders, which counts every
+  // individual resubmit and would overstate it (one order can absorb
+  // several duplicates and still be "1 order with a duplicate problem").
+  const storeWideDuplicateCount = duplicateStatsQuery.data?.data?.duplicate_groups ?? 0;
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [viewMode, setViewMode] = useState<'NEW' | 'EN ATTENTE' | 'CONFIRMED' | 'FOLLOWUP' | 'COMPLETED' | 'CANCELLED' | 'ABANDONED' | 'ALL'>((adminSubView as any) || 'NEW');
   // Edit order modal
@@ -878,9 +883,15 @@ const [timeLeft, setTimeLeft] = useState('');
     { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
     { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
     { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
-    { id: 'DUPLICATE', label: '🟣 Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => !!o.is_duplicate || isDuplicatePhone(o.customer_phone) },
-    { id: 'PARENTS',   label: '🟣 Parents (groupes)', color: 'bg-purple-50 text-purple-700 border-purple-200',  match: (o) => !!(o as any).child_orders?.length },
-    { id: 'MERGED',    label: '🟣 Fusionnées',      color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => !!(o.child_orders && o.child_orders.length > 0) },
+    // Matches orders that ABSORBED at least one duplicate (duplicate_count
+    // attached by GET /orders, see orders.py) — was previously matching
+    // is_duplicate/isDuplicatePhone, which flags the MERGED CHILD, not the
+    // parent — and MERGED children are excluded from the default listing
+    // entirely, so this filter almost always showed zero results even with
+    // real duplicates in the store. This is what actually answers "why does
+    // Meta Ads show more orders than the ERP" — click it to see exactly
+    // which orders absorbed a resubmit, and how many.
+    { id: 'DUPLICATE', label: '🟣 Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => (o.duplicate_count ?? 0) > 0 },
     { id: 'NRP',       label: '🟥 NRP',             color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
     { id: 'UPSELL',    label: '💸 Upsell',          color: 'bg-green-50 text-green-700 border-green-200',       match: (o) => !!o.is_upsell },
     { id: 'PACK',      label: '📦 Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
@@ -1511,6 +1522,20 @@ const [timeLeft, setTimeLeft] = useState('');
                           <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
                           {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
                             <Badge className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5">🟣 Doublon</Badge>
+                          )}
+                          {/* Distinct from "🟣 Doublon" above (which flags THIS
+                              order as itself being a resubmit): this shows how
+                              many OTHER submissions were absorbed INTO this
+                              order — the concrete "why Meta Ads counts more
+                              than the ERP" answer, visible per-order instead
+                              of only as a store-wide total. */}
+                          {!!order.duplicate_count && order.duplicate_count > 0 && (
+                            <Badge
+                              className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5"
+                              title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande`}
+                            >
+                              🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
+                            </Badge>
                           )}
                         </div>
                         <span className="text-[10px] font-bold text-[#4b7bec] mt-0.5">{order.customer_phone}</span>

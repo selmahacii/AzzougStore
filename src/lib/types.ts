@@ -221,6 +221,10 @@ export interface Order {
   updated_at: string;
   returned_at?: string | null;
   is_duplicate?: boolean;
+  // How many duplicate submissions were merged INTO this order — attached
+  // by GET /orders (list) the same way as events_count, so the admin can
+  // see "this order absorbed N resubmits" without opening every order.
+  duplicate_count?: number | null;
   is_pack?: boolean;
   is_upsell?: boolean;
   is_abandoned_cart?: boolean;
