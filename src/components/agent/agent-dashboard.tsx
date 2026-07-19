@@ -357,6 +357,25 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const [yalidineCenters, setYalidineCenters] = useState<any[]>([]);
   const [loadingCenters, setLoadingCenters] = useState(false);
 
+  // GET /orders (list) attaches duplicate_count but never the full merged
+  // orders (only GET /orders/{id} does) — fetched here so the confirmatrice
+  // sees exactly which resubmits were merged, same as the admin view, and
+  // can see why a Meta Ads count doesn't match her queue even for a single
+  // duplicate.
+  const [duplicateDetails, setDuplicateDetails] = useState<any[] | null>(null);
+  const [loadingDuplicateDetails, setLoadingDuplicateDetails] = useState(false);
+  useEffect(() => {
+    if (!order.duplicate_count || order.duplicate_count <= 0) {
+      setDuplicateDetails(null);
+      return;
+    }
+    setLoadingDuplicateDetails(true);
+    apiFetch<any>(`/api/v1/orders/${order.id}`)
+      .then((full) => setDuplicateDetails(full?.child_orders ?? []))
+      .catch((err) => console.error('Failed to load duplicate details for order', order.id, err))
+      .finally(() => setLoadingDuplicateDetails(false));
+  }, [order.id, order.duplicate_count]);
+
   useEffect(() => {
     if (!storeId) return;
     setLoadingCenters(true);
@@ -1181,6 +1200,23 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       <span className="text-[10px] text-amber-500 uppercase tracking-wider font-bold block mb-0.5">Note de la commande</span>
                       {order.notes}
                     </div>
+                  </div>
+                )}
+                {!!order.duplicate_count && order.duplicate_count > 0 && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 mt-1 space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-purple-700">
+                      🟣 {order.duplicate_count} resoumission{order.duplicate_count > 1 ? 's' : ''} du même client fusionnée{order.duplicate_count > 1 ? 's' : ''} ici
+                    </p>
+                    {loadingDuplicateDetails ? (
+                      <p className="text-[10px] text-purple-500 font-bold">Chargement…</p>
+                    ) : (
+                      (duplicateDetails ?? []).map((child: any) => (
+                        <div key={child.id} className="text-[10px] text-purple-800 font-semibold flex items-center justify-between gap-2">
+                          <span>{child.order_number}</span>
+                          <span className="text-purple-500">{child.created_at ? new Date(child.created_at).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
                 {/* Micro-détails commande */}
@@ -2231,6 +2267,19 @@ export default function AgentDashboard() {
                                ) : order.is_duplicate && (
                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0">
                                    🟣 Doublon
+                                 </span>
+                               )}
+                               {/* How many resubmits were merged INTO this
+                                   order — visible to the confirmatrice too,
+                                   not just the admin, so she can see why a
+                                   Meta Ads count doesn't match what's in her
+                                   queue even for a single duplicate. */}
+                               {!!order.duplicate_count && order.duplicate_count > 0 && (
+                                 <span
+                                   className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0"
+                                   title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande`}
+                                 >
+                                   🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
                                  </span>
                                )}
                                {order.store?.name && (

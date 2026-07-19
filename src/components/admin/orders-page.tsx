@@ -308,6 +308,12 @@ const [timeLeft, setTimeLeft] = useState('');
   const [editIsAbandonedCart, setEditIsAbandonedCart] = useState(false);
   const [editRecoveryFee, setEditRecoveryFee] = useState(0);
   const [expandedMergedOrders, setExpandedMergedOrders] = useState<Set<string>>(new Set());
+  // GET /orders (list) never populates child_orders — only GET /orders/{id}
+  // does — so the "duplicate details" expand panel had nothing to render
+  // even when duplicate_count showed real duplicates existed. Fetched
+  // lazily per order the first time it's expanded, keyed by order id.
+  const [childOrdersById, setChildOrdersById] = useState<Record<string, any[]>>({});
+  const [loadingChildOrdersId, setLoadingChildOrdersId] = useState<string | null>(null);
 
   // Noest/Yalidine Bureau states
   const [createBureauCode, setCreateBureauCode] = useState('');
@@ -941,14 +947,30 @@ const [timeLeft, setTimeLeft] = useState('');
     assignMutation.mutate({ orderId: assignOrderId, assignedTo: selectedEmployeeId }); 
   };
 
-  const toggleExpandMerged = (orderId: string) => {
+  const toggleExpandMerged = async (orderId: string) => {
     const next = new Set(expandedMergedOrders);
-    if (next.has(orderId)) {
+    const wasExpanded = next.has(orderId);
+    if (wasExpanded) {
       next.delete(orderId);
     } else {
       next.add(orderId);
     }
     setExpandedMergedOrders(next);
+
+    // Fetch the actual duplicate details (order numbers, items, dates) the
+    // first time this order is expanded — GET /orders (list) only gives us
+    // duplicate_count, not the merged orders themselves.
+    if (!wasExpanded && !childOrdersById[orderId]) {
+      setLoadingChildOrdersId(orderId);
+      try {
+        const full = await apiFetch<any>(`/api/v1/orders/${orderId}`);
+        setChildOrdersById(prev => ({ ...prev, [orderId]: full?.child_orders ?? [] }));
+      } catch (err) {
+        console.error('Failed to load duplicate details for order', orderId, err);
+      } finally {
+        setLoadingChildOrdersId(null);
+      }
+    }
   };
 
   const handleUnmerge = async (childId: string, orderNumber: string) => {
@@ -1605,13 +1627,14 @@ const [timeLeft, setTimeLeft] = useState('');
                             </button>
                           )}
                         </div>
-                        {order.child_orders && order.child_orders.length > 0 && (
+                        {!!order.duplicate_count && order.duplicate_count > 0 && (
                           <button
                             onClick={() => toggleExpandMerged(order.id)}
                             className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none"
+                            title="Voir le détail des commandes fusionnées"
                           >
                             <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                            🟣 {order.child_orders.length} {order.child_orders.length > 1 ? 'doublons' : 'doublon'}
+                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'} — voir détails
                           </button>
                         )}
                         {order.notes && (
@@ -1774,13 +1797,16 @@ const [timeLeft, setTimeLeft] = useState('');
                       </div>
                     </td>
                   </tr>
-                  {order.child_orders && order.child_orders.length > 0 && expandedMergedOrders.has(order.id) && (
+                  {!!order.duplicate_count && order.duplicate_count > 0 && expandedMergedOrders.has(order.id) && (
                     <tr className="bg-purple-50/10 border-l-4 border-purple-400">
                       <td colSpan={10} className="px-3 xl:px-4 py-5">
                         <div className="flex flex-col gap-4">
                           <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-purple-600">Historique des commandes doublons fusionnées</h4>
+                          {loadingChildOrdersId === order.id ? (
+                            <div className="text-xs text-slate-400 font-bold py-4">Chargement des détails…</div>
+                          ) : (
                           <div className="divide-y divide-purple-100/50 bg-white/70 backdrop-blur-md rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
-                            {order.child_orders.map((child: any) => (
+                            {(childOrdersById[order.id] ?? []).map((child: any) => (
                               <div key={child.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="flex flex-col gap-1">
                                   <div className="flex items-center gap-2">
@@ -1838,6 +1864,7 @@ const [timeLeft, setTimeLeft] = useState('');
                               </div>
                             ))}
                           </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1929,13 +1956,14 @@ const [timeLeft, setTimeLeft] = useState('');
                           Note: {order.notes}
                         </div>
                       )}
-                      {order.child_orders && order.child_orders.length > 0 && (
+                      {!!order.duplicate_count && order.duplicate_count > 0 && (
                         <button
                           onClick={() => toggleExpandMerged(order.id)}
                           className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none"
+                          title="Voir le détail des commandes fusionnées"
                         >
                           <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          🟣 {order.child_orders.length} {order.child_orders.length > 1 ? 'doublons' : 'doublon'}
+                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'} — voir détails
                         </button>
                       )}
                     </div>
@@ -2027,11 +2055,14 @@ const [timeLeft, setTimeLeft] = useState('');
                       </div>
                     </div>
                   </div>
-                  {order.child_orders && order.child_orders.length > 0 && expandedMergedOrders.has(order.id) && (
+                  {!!order.duplicate_count && order.duplicate_count > 0 && expandedMergedOrders.has(order.id) && (
                     <div className="bg-purple-50/20 border-l-4 border-purple-400 p-4 rounded-xl space-y-4 mt-2">
                       <h4 className="text-[10px] font-black uppercase tracking-wider text-purple-600">Doublons fusionnés</h4>
+                      {loadingChildOrdersId === order.id ? (
+                        <div className="text-xs text-slate-400 font-bold py-2">Chargement des détails…</div>
+                      ) : (
                       <div className="space-y-3">
-                        {order.child_orders.map((child: any) => (
+                        {(childOrdersById[order.id] ?? []).map((child: any) => (
                           <div key={child.id} className="bg-white p-3 rounded-lg border border-purple-100 shadow-sm space-y-2">
                             <div className="flex justify-between items-center">
                               <span className="text-xs font-bold text-slate-800">{child.order_number}</span>
@@ -2060,13 +2091,14 @@ const [timeLeft, setTimeLeft] = useState('');
                           </div>
                         ))}
                       </div>
+                      )}
                     </div>
                   )}
                 </div>
               ))
             )}
           </div>
-          
+
           {/* Data Table Footer - Smart Pagination */}
           <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: C.border }}>
             <div className="flex items-center gap-3 text-[10px] sm:text-xs font-bold text-slate-400 text-center sm:text-left">
