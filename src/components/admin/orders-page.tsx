@@ -674,7 +674,7 @@ const [timeLeft, setTimeLeft] = useState('');
    // Reçues = commandes jamais touchées par un agent (ni assignées, ni
    // démarrées), séparées uniquement Normal/Panier abandonné — pas éclatées
    // par les 8 statuts d'onglets — pour un calcul rapide par l'administrateur.
-   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number } | undefined;
+   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number; duplicate?: number } | undefined;
 
    const productsQuery = useQuery<ApiResponse<any[]>>({
     queryKey: ['admin-products-lite', storeId],
@@ -1288,6 +1288,24 @@ const [timeLeft, setTimeLeft] = useState('');
               <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
                 {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
               </span>
+              {/* Doublons reçus — même fenêtre de dates que le reste de la
+                  ligne "Reçues" ci-dessus, mais compte les commandes MERGED
+                  (resoumissions fusionnées dans leur commande parente), pas
+                  de nouvelles ventes. Répond directement à "pourquoi Meta Ads
+                  affiche 5 commandes et l'ERP 1 ?" — ce ne sont pas 4
+                  commandes manquantes, ce sont 4 doublons déjà comptés une
+                  fois dans la commande parente. */}
+              {(receivedCounts.duplicate ?? 0) > 0 && (() => {
+                const dupCount = receivedCounts.duplicate ?? 0;
+                return (
+                  <span
+                    className="px-2 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200"
+                    title="Resoumissions du même client fusionnées dans une commande existante — pas des ventes en plus, déjà comptées une fois."
+                  >
+                    🟣 {dupCount} doublon{dupCount > 1 ? 's' : ''} reçu{dupCount > 1 ? 's' : ''}
+                  </span>
+                );
+              })()}
               <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
                 {receivedCounts.normal + receivedCounts.abandoned} au total
               </span>
