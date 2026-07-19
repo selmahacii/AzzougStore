@@ -1004,6 +1004,19 @@ def list_orders(
             joinedload(Order.livreur),
             joinedload(Order.carrier),
             joinedload(Order.store),
+            # THE actual N+1 here: response_model=OrderList wraps
+            # List[OrderReadFull] (schemas/order.py), which — unlike the
+            # plainer OrderRead used elsewhere — declares an `events` field.
+            # Without this eager load, Pydantic's from_attributes access to
+            # order.events lazy-loads ONE QUERY PER ORDER on this list
+            # endpoint (and OrderEventRead.actor lazy-loads a second query
+            # per order on top of that). Confirmed in prod via the new
+            # sql=Xms(Nq) request logging: ~56 queries for ~50 orders,
+            # essentially unchanged by the earlier item.product batching fix
+            # (that N+1 was real but minor next to this one). Mirrors the
+            # same eager load already used on the single-order detail
+            # endpoint below.
+            joinedload(Order.events).joinedload(OrderEvent.actor),
         ).order_by(Order.created_at.desc())
     
     logger.debug(f"[Orders] Query result: store_id={store_id!r}, total={total}, page={page}")
