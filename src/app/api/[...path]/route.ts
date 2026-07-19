@@ -61,6 +61,19 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       headers.set('x-internal-key', process.env.INTERNAL_API_KEY);
     }
 
+    // The real browser-facing host (chicoutfit.azghub.com, www.azghub.com,
+    // a custom store domain...) is stripped above along with Host/Origin —
+    // deliberately, since blindly forwarding those confused the backend's
+    // own routing. But the auth endpoints need it to scope the session
+    // cookie's Domain correctly: with no way to know the original host,
+    // login always fell back to Domain=<exact request host>, so a session
+    // created on one subdomain was invisible on any other (confirmed: a
+    // confirmatrice logged in via one store domain got "refresh token
+    // manquant" — 0-byte cookie header — the moment she was on
+    // www.azghub.com). Passed as a distinct header so it survives the
+    // exclusion filter above untouched.
+    headers.set('x-original-host', request.headers.get('host') || '');
+
     const fetchOptions: RequestInit = {
       method: request.method,
       headers,

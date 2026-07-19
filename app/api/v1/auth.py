@@ -48,14 +48,40 @@ _REFRESH_COOKIE_NAME = "__refresh"
 _SAME_SITE = "lax"
 
 
+def _resolve_cookie_domain(request: Request) -> "str | None":
+    """
+    Domain= for the session/refresh cookies. An explicit SESSION_COOKIE_DOMAIN
+    setting always wins. Otherwise, derived from x-original-host — the
+    browser-facing host, forwarded by the Next.js proxy in its own header
+    since it strips the real Host/Origin before reaching us (see
+    src/app/api/[...path]/route.ts). Without this, domain fell back to None,
+    which scopes the cookie to the EXACT host that issued it — so a session
+    from chicoutfit.azghub.com was invisible on www.azghub.com or any other
+    store subdomain. Confirmed in prod: a confirmatrice hit "refresh token
+    manquant" (0-byte cookie header) the moment she was on a different
+    subdomain than the one she'd logged in on. Sharing the cookie across
+    every *.azghub.com subdomain fixes that; a fully custom external store
+    domain still gets domain=None (correctly scoped to just that host —
+    there's nothing to share it with).
+    """
+    configured = settings.SESSION_COOKIE_DOMAIN or None
+    if configured:
+        return configured
+    original_host = (request.headers.get("x-original-host") or "").split(":")[0].lower()
+    if original_host.endswith("azghub.com"):
+        return ".azghub.com"
+    return None
+
+
 def _set_auth_cookies(
+    request: Request,
     response: Response,
     access_token: str,
     refresh_token: str,
     access_max_age: int,
     refresh_max_age: int,
 ) -> None:
-    cookie_domain = settings.SESSION_COOKIE_DOMAIN or None
+    cookie_domain = _resolve_cookie_domain(request)
     response.set_cookie(
         key=_COOKIE_NAME,
         value=access_token,
@@ -80,8 +106,8 @@ def _set_auth_cookies(
     )
 
 
-def _clear_auth_cookies(response: Response) -> None:
-    cookie_domain = settings.SESSION_COOKIE_DOMAIN or None
+def _clear_auth_cookies(request: Request, response: Response) -> None:
+    cookie_domain = _resolve_cookie_domain(request)
     # domain must match what was used at set_cookie time, otherwise the
     # browser treats it as a different cookie and the old one lingers.
     response.delete_cookie(key=_COOKIE_NAME, path="/", samesite=_SAME_SITE, domain=cookie_domain)
@@ -185,6 +211,7 @@ def register(
     )
     refresh_token = create_refresh_token(user.id)
     _set_auth_cookies(
+        request,
         response,
         token,
         refresh_token,
@@ -252,6 +279,7 @@ def login_json(
     )
     refresh_token = create_refresh_token(user.id)
     _set_auth_cookies(
+        request,
         response,
         token,
         refresh_token,
@@ -301,6 +329,7 @@ def login_oauth2(
     )
     refresh_token = create_refresh_token(user.id)
     _set_auth_cookies(
+        request,
         response,
         token,
         refresh_token,
@@ -354,7 +383,7 @@ def refresh_session(
     try:
         new_refresh_token, user_id = rotate_refresh_token(refresh_token)
     except ValueError as exc:
-        _clear_auth_cookies(response)
+        _clear_auth_cookies(request, response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc)
@@ -362,7 +391,7 @@ def refresh_session(
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not user.is_active:
-        _clear_auth_cookies(response)
+        _clear_auth_cookies(request, response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utilisateur inactif ou introuvable."
@@ -379,6 +408,7 @@ def refresh_session(
         },
     )
     _set_auth_cookies(
+        request,
         response,
         token,
         new_refresh_token,
@@ -396,7 +426,7 @@ def logout(request: Request, response: Response):
     refresh_token = request.cookies.get("__refresh")
     if refresh_token:
         revoke_refresh_token(refresh_token)
-    _clear_auth_cookies(response)
+    _clear_auth_cookies(request, response)
     return {"success": True, "message": "Déconnecté avec succès."}
 
 
@@ -404,10 +434,11 @@ def logout(request: Request, response: Response):
 
 @router.post("/logout-all", response_model=Any)
 def logout_all(
+    request: Request,
     response: Response,
     current_user: User = Depends(deps.get_current_active_user)
 ):
     """Revoke ALL sessions/refresh tokens for the current user."""
     revoke_all_user_tokens(current_user.id)
-    _clear_auth_cookies(response)
+    _clear_auth_cookies(request, response)
     return {"success": True, "message": "Toutes les sessions ont été déconnectées."}
