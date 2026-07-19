@@ -24,7 +24,10 @@ function heroText(store: Store, defaults: { headline: string; subtitle: string; 
     headline: (tc.heroHeadline as string | undefined) || defaults.headline,
     subtitle: (tc.heroSubtitle as string | undefined) || store.description || defaults.subtitle,
     cta: (tc.heroCta as string | undefined) || defaults.cta,
-    cta2: defaults.cta2,
+    // heroCta2 was previously never read here — the secondary button text
+    // was hardcoded to a fixed translation string in every hero variant,
+    // unlike the primary CTA which was already store-configurable.
+    cta2: (tc.heroCta2 as string | undefined) || defaults.cta2,
     fontWeight:
       tc.heroFont === 'light' ? 'font-thin' :
       tc.heroFont === 'normal' ? 'font-bold' :
@@ -239,6 +242,9 @@ function CleanHero({
   const headline = (tc.heroHeadline as string | undefined) ?? store.name;
   const subtitle  = (tc.heroSubtitle  as string | undefined) ?? store.description ?? t('heroSubtitleDefault');
   const cta       = (tc.heroCta       as string | undefined) ?? t('viewCollection');
+  // Was hardcoded to t('seeAll') at both call sites below — never
+  // configurable per store, unlike the primary CTA.
+  const cta2      = (tc.heroCta2      as string | undefined) ?? t('seeAll');
   const isFullLayout = tc.heroLayout === 'full';
 
   // Elegant Google Font override based on store settings
@@ -309,7 +315,7 @@ function CleanHero({
                 onClick={onScroll}
                 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/80 hover:text-white border-b border-white/20 hover:border-white pb-1.5 transition-all duration-300 flex items-center gap-2"
               >
-                {t('seeAll')} <ChevronDown className="size-3" />
+                {cta2} <ChevronDown className="size-3" />
               </motion.button>
             </div>
           </motion.div>
@@ -363,7 +369,7 @@ function CleanHero({
                   onClick={onScroll}
                   className="px-9 py-4.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-neutral-800 bg-transparent border border-neutral-200 hover:border-neutral-900 transition-all duration-300 rounded-none flex items-center justify-center"
                 >
-                  {t('seeAll')}
+                  {cta2}
                 </motion.button>
               </div>
             </motion.div>

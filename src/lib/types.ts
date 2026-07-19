@@ -16,6 +16,10 @@ export interface ThemeConfig {
   heroHeadline?: string | null;
   heroSubtitle?: string | null;
   heroCta?: string | null;
+  // Secondary button text (e.g. "Voir tout") — was hardcoded to a fixed
+  // translation string in every hero variant; now editable per store like
+  // the primary CTA already was.
+  heroCta2?: string | null;
   heroFont?: 'bold' | 'normal' | 'light' | 'serif';
   // Dynamic hero elements (all optional — hidden if not set)
   heroTag?: string | null;

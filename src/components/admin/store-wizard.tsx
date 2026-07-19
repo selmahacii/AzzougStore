@@ -77,6 +77,9 @@ interface FormData {
   hero_headline: string;
   hero_subtitle: string;
   hero_cta: string;
+  hero_cta2: string;
+  hero_tag: string;
+  hero_stats: Array<{ label: string; value: string }>;
   hero_font: 'bold' | 'normal' | 'light' | 'serif';
   assignment_active: boolean;
   assignment_logic: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
@@ -105,6 +108,9 @@ const DEFAULT_FORM: FormData = {
   hero_headline: "L'Élégance Épurée",
   hero_subtitle: "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.",
   hero_cta: "Explorer le catalogue",
+  hero_cta2: '',
+  hero_tag: '',
+  hero_stats: [],
   hero_font: 'bold',
   assignment_active: false,
   assignment_logic: 'MANUAL',
@@ -159,6 +165,9 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           hero_headline: initialData.theme_config?.heroHeadline || '',
           hero_subtitle: initialData.theme_config?.heroSubtitle || '',
           hero_cta: initialData.theme_config?.heroCta || '',
+          hero_cta2: initialData.theme_config?.heroCta2 || '',
+          hero_tag: initialData.theme_config?.heroTag || '',
+          hero_stats: initialData.theme_config?.heroStats || [],
           hero_font: initialData.theme_config?.heroFont || 'bold',
           assignment_active: initialData.assignment_active || false,
           assignment_logic: initialData.assignment_logic || 'MANUAL',
@@ -234,6 +243,11 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         heroHeadline: form.hero_headline || null,
         heroSubtitle: form.hero_subtitle || null,
         heroCta: form.hero_cta || null,
+        heroCta2: form.hero_cta2 || null,
+        heroTag: form.hero_tag || null,
+        heroStats: form.hero_stats.filter(s => s.label.trim() && s.value.trim()).length > 0
+          ? form.hero_stats.filter(s => s.label.trim() && s.value.trim())
+          : null,
         heroFont: form.hero_font,
         footerTagline: form.footer_tagline || null,
         footerCopyright: form.footer_copyright || `© ${new Date().getFullYear()} ${form.name}. Tous droits réservés.`,
@@ -785,6 +799,76 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                               onChange={e => setForm(f => ({ ...f, hero_subtitle: e.target.value }))}
                               className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50/50 text-sm font-medium resize-none outline-none focus:ring-2 focus:ring-slate-300 shadow-inner focus:bg-white transition-all min-h-[70px]"
                             />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Tag */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Badge / Étiquette (optionnel)</label>
+                              <Input
+                                placeholder="Ex: Nouvelle Collection"
+                                value={form.hero_tag}
+                                onChange={e => setForm(f => ({ ...f, hero_tag: e.target.value }))}
+                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
+                              />
+                            </div>
+
+                            {/* Secondary CTA */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Texte du bouton secondaire</label>
+                              <Input
+                                placeholder="Ex: Voir tout"
+                                value={form.hero_cta2}
+                                onChange={e => setForm(f => ({ ...f, hero_cta2: e.target.value }))}
+                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
+                              />
+                              <p className="text-[9px] text-slate-400 mt-1 font-medium">Laissez vide pour le texte par défaut ("Voir tout").</p>
+                            </div>
+                          </div>
+
+                          {/* Stats — repeatable label/value pairs, max 4 */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Statistiques affichées (optionnel, max 4)</label>
+                              {form.hero_stats.length < 4 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setForm(f => ({ ...f, hero_stats: [...f.hero_stats, { label: '', value: '' }] }))}
+                                  className="text-[10px] font-black uppercase tracking-wider text-[#4b7bec] hover:text-[#3867d6]"
+                                >
+                                  + Ajouter
+                                </button>
+                              )}
+                            </div>
+                            {form.hero_stats.length === 0 ? (
+                              <p className="text-[9px] text-slate-400 font-medium">Ex: "500+" Clients satisfaits, "24h" Livraison express — masqué si aucune n'est renseignée.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {form.hero_stats.map((stat, i) => (
+                                  <div key={i} className="flex items-center gap-2">
+                                    <Input
+                                      placeholder="Valeur (ex: 500+)"
+                                      value={stat.value}
+                                      onChange={e => setForm(f => ({ ...f, hero_stats: f.hero_stats.map((s, idx) => idx === i ? { ...s, value: e.target.value } : s) }))}
+                                      className="h-10 rounded-lg border-slate-200 bg-slate-50/50 text-xs font-bold shadow-inner focus-visible:bg-white w-1/3"
+                                    />
+                                    <Input
+                                      placeholder="Libellé (ex: Clients satisfaits)"
+                                      value={stat.label}
+                                      onChange={e => setForm(f => ({ ...f, hero_stats: f.hero_stats.map((s, idx) => idx === i ? { ...s, label: e.target.value } : s) }))}
+                                      className="h-10 rounded-lg border-slate-200 bg-slate-50/50 text-xs font-bold shadow-inner focus-visible:bg-white flex-1"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setForm(f => ({ ...f, hero_stats: f.hero_stats.filter((_, idx) => idx !== i) }))}
+                                      className="size-10 shrink-0 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                                    >
+                                      <X className="size-4" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

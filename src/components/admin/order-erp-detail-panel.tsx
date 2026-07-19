@@ -47,27 +47,34 @@ export function OrderErpDetailPanel({ orderId }: { orderId: string }) {
    if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-slate-300" /></div>;
    if (!d) return null;
 
+   // Minimalisme : n'afficher que les KPI qui ont réellement une valeur —
+   // une grille de 10 cases dont la moitié affiche "—"/"0" pour une commande
+   // toute jeune (pas encore expédiée, pas encore de marge calculée) est du
+   // bruit visuel pur, pas de l'information.
+   const populatedKpis = Object.entries(KPI_LABELS).filter(([key]) => d.kpis[key] != null);
+
    return (
       <div className="space-y-5">
-         {/* KPI du cycle de vie */}
-         <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5"><Clock className="size-3" /> Cycle de vie</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-               {Object.entries(KPI_LABELS).map(([key, label]) => (
-                  <div key={key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                     <p className="text-xs font-black text-slate-800 tabular-nums">{formatKpi(key, d.kpis[key] ?? null)}</p>
-                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">{label}</p>
-                  </div>
-               ))}
+         {/* KPI du cycle de vie — masqué entièrement tant qu'aucune donnée n'existe */}
+         {populatedKpis.length > 0 && (
+            <div>
+               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5"><Clock className="size-3" /> Cycle de vie</p>
+               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {populatedKpis.map(([key, label]) => (
+                     <div key={key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                        <p className="text-xs font-black text-slate-800 tabular-nums">{formatKpi(key, d.kpis[key] ?? null)}</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">{label}</p>
+                     </div>
+                  ))}
+               </div>
             </div>
-         </div>
+         )}
 
-         {/* Historique des statuts */}
-         <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Historique des statuts</p>
-            {d.status_history.length === 0 ? (
-               <p className="text-xs text-slate-400">Aucun changement de statut enregistré</p>
-            ) : (
+         {/* Historique des statuts — masqué s'il n'y a rien à montrer, plutôt
+             qu'une ligne "Aucun changement..." qui n'apporte rien. */}
+         {d.status_history.length > 0 && (
+            <div>
+               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Historique des statuts</p>
                <div className="space-y-1.5">
                   {d.status_history.map((h, i) => (
                      <div key={i} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-50">
@@ -76,8 +83,8 @@ export function OrderErpDetailPanel({ orderId }: { orderId: string }) {
                      </div>
                   ))}
                </div>
-            )}
-         </div>
+            </div>
+         )}
 
          {/* Appels / confirmations */}
          {d.call_history.length > 0 && (

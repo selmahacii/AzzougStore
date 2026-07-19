@@ -2273,21 +2273,25 @@ const [timeLeft, setTimeLeft] = useState('');
 
                    {/* Right col: Logistics + Actions */}
                    <div className="space-y-6">
-                      {/* Logistics */}
+                      {/* Logistics — grille compacte 2 colonnes au lieu de blocs
+                          empilés pleine largeur avec beaucoup d'air entre chaque
+                          label/valeur ; promo/commission restent des lignes à
+                          part car elles ont besoin de plus de place (montant +
+                          contexte). */}
                       <div className="space-y-3">
                          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Truck className="size-3.5" /> Logistique</h3>
-                         <div className="bg-slate-50 rounded-2xl p-5 space-y-4">
+                         <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-2 gap-x-4 gap-y-3">
                             <div>
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">N° de suivi</p>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">N° de suivi</p>
                                <p className={cn("text-sm font-black font-mono", selectedOrder.tracking_number ? "text-slate-800" : "text-slate-300 italic")}>
                                   {selectedOrder.tracking_number || 'Non assigné'}
                                </p>
                             </div>
                             <div>
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Transporteur</p>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Transporteur</p>
                                {selectedOrder.carrier ? (
-                                 <div className="flex items-center gap-2">
-                                   {selectedOrder.carrier.logo_url && <img src={selectedOrder.carrier.logo_url} alt={selectedOrder.carrier.name} className="h-5 w-auto object-contain" />}
+                                 <div className="flex items-center gap-1.5">
+                                   {selectedOrder.carrier.logo_url && <img src={selectedOrder.carrier.logo_url} alt={selectedOrder.carrier.name} className="h-4 w-auto object-contain" />}
                                    <p className="text-sm font-black text-slate-800">{selectedOrder.carrier.name}</p>
                                  </div>
                                ) : (
@@ -2295,25 +2299,25 @@ const [timeLeft, setTimeLeft] = useState('');
                                )}
                             </div>
                             <div>
-                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Frais de livraison</p>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Frais de livraison</p>
                                <p className="text-sm font-black text-slate-800 tabular-nums">{formatPrice(selectedOrder.delivery_fee || 0)}</p>
                             </div>
+                            <div>
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Créé le</p>
+                               <p className="text-sm font-bold text-slate-600">{new Date(selectedOrder.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                            </div>
                             {selectedOrder.promo_code && (
-                               <div>
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Code promo</p>
+                               <div className="col-span-2">
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Code promo</p>
                                   <p className="text-sm font-black text-[#6C5CE7] font-mono">{selectedOrder.promo_code} (−{formatPrice(selectedOrder.discount || 0)})</p>
                                </div>
                             )}
                             {selectedOrder.is_abandoned_cart && (
-                                <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
+                                <div className="col-span-2 bg-amber-50 p-3 rounded-xl border border-amber-100">
                                    <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Commission Agent</p>
                                    <p className="text-sm font-black text-amber-800 tabular-nums">+{formatPrice(selectedOrder.abandoned_cart_recovery_fee || 0)}</p>
                                 </div>
                              )}
-                             <div>
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Créé le</p>
-                                <p className="text-sm font-bold text-slate-600">{new Date(selectedOrder.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                             </div>
                          </div>
                       </div>
 
