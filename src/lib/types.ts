@@ -225,6 +225,8 @@ export interface Order {
   // by GET /orders (list) the same way as events_count, so the admin can
   // see "this order absorbed N resubmits" without opening every order.
   duplicate_count?: number | null;
+  // When the most recent duplicate was merged into this order.
+  last_duplicate_at?: string | null;
   is_pack?: boolean;
   is_upsell?: boolean;
   is_abandoned_cart?: boolean;

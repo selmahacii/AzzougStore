@@ -601,21 +601,6 @@ const [timeLeft, setTimeLeft] = useState('');
     MERGED: 'ALL',
   };
 
-  // KPI widget click → filter the list by that status (click again to clear)
-  const handleKpiClick = (status: string) => {
-    if (statusFilter === status) {
-      setStatusFilter('all');
-      setViewMode('ALL');
-      setAdminSubView('ALL');
-    } else {
-      setStatusFilter(status);
-      const mode = STATUS_TO_MODE[status] ?? 'ALL';
-      setViewMode(mode as any);
-      setAdminSubView(mode);
-    }
-    setPage(1);
-  };
-
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [listViewMode, setListViewMode] = useState<'LIST' | 'KANBAN' | 'MAP'>('LIST');
 
@@ -685,7 +670,7 @@ const [timeLeft, setTimeLeft] = useState('');
    // Reçues = commandes jamais touchées par un agent (ni assignées, ni
    // démarrées), séparées uniquement Normal/Panier abandonné — pas éclatées
    // par les 8 statuts d'onglets — pour un calcul rapide par l'administrateur.
-   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number; duplicate?: number } | undefined;
+   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number; duplicate?: number; manual?: number } | undefined;
 
    const productsQuery = useQuery<ApiResponse<any[]>>({
     queryKey: ['admin-products-lite', storeId],
@@ -1055,6 +1040,7 @@ const [timeLeft, setTimeLeft] = useState('');
   };
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const formatDupTime = (dateStr: string) => `${new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ${new Date(dateStr).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
 
   return (
     <div className="flex flex-col min-h-screen bg-[#F8F9FC] animate-in fade-in duration-500">
@@ -1220,136 +1206,51 @@ const [timeLeft, setTimeLeft] = useState('');
           </div>
         </div>
 
-        {/* ─── KPI Statuts des commandes (cliquer pour filtrer) ─── */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Activity className="size-4 text-[#4b7bec]" />
-              Statuts des commandes
-            </h2>
-            {statusFilter !== 'all' && (
-              <button
-                onClick={() => handleKpiClick(statusFilter)}
-                className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-600 transition-colors"
+        {/* ─── Badges de synthèse (période = filtre date uniquement) ───
+            Remplace l'ancienne grille de statuts cliquables (NEW/ASSIGNED/
+            CONFIRMED/.../TOTAL/DOUBLONS) + la ligne "Reçues" séparée en
+            dessous : les deux affichaient des comptages qui se recoupaient
+            (ex. panier abandonné et doublons apparaissaient dans les deux
+            blocs, avec des libellés différents pour le même chiffre). Le
+            filtrage par statut détaillé reste disponible via les onglets
+            Nouvelles/En Cours/Confirmées/... plus bas — cette ligne est
+            uniquement informative, pas cliquable, et suit le même filtre
+            date que le reste de la page. */}
+        {!!receivedCounts && (receivedCounts.normal + receivedCounts.abandoned) > 0 && (
+          <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold text-slate-500">
+            <span className="uppercase tracking-wider">📥 Reçues :</span>
+            <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+              {receivedCounts.normal + receivedCounts.abandoned} commande{(receivedCounts.normal + receivedCounts.abandoned) > 1 ? 's' : ''}
+            </span>
+            {/* Doublons — nombre de COMMANDES ayant reçu au moins une
+                resoumission du même client, pas le nombre brut de doublons
+                fusionnés (une commande qui a absorbé 3 resoumissions compte
+                pour 1 ici, pas 3). */}
+            {(receivedCounts.duplicate ?? 0) > 0 && (
+              <span
+                className="px-2 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200"
+                title="Nombre de commandes ayant reçu au moins une resoumission du même client, fusionnée automatiquement — pas des ventes en plus, déjà comptées une fois."
               >
-                <X className="size-3" /> Retirer le filtre statut
-              </button>
+                🟣 {receivedCounts.duplicate} commande{(receivedCounts.duplicate ?? 0) > 1 ? 's' : ''} avec doublon{(receivedCounts.duplicate ?? 0) > 1 ? 's' : ''}
+              </span>
+            )}
+            {(tabCounts['SHIPPED'] ?? 0) > 0 && (
+              <span className="px-2 py-1 rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-200">
+                🚚 {tabCounts['SHIPPED']} en livraison
+              </span>
+            )}
+            {(receivedCounts.manual ?? 0) > 0 && (
+              <span className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+                ✍️ {receivedCounts.manual} manuelle{(receivedCounts.manual ?? 0) > 1 ? 's' : ''}
+              </span>
+            )}
+            {receivedCounts.abandoned > 0 && (
+              <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
+                🛒 {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
+              </span>
             )}
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-1.5">
-            {/* Total card — operational orders (physical orders minus merged duplicates) */}
-            <button
-              type="button"
-              onClick={() => handleModeChange('ALL')}
-              className={cn(
-                'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
-                statusFilter === 'all' ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
-              )}
-              style={{ borderColor: statusFilter === 'all' ? undefined : C.border }}
-              title="Afficher toutes les commandes opérationnelles"
-            >
-              <div className="flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-[#4b7bec] shrink-0" />
-                <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">Total</span>
-              </div>
-              <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
-                {countsQuery.isLoading ? '…' : Object.entries(tabCounts).reduce((a, [k, v]) => (k === 'MERGED' || k === '_received') ? a : a + (v as number), 0)}
-              </div>
-            </button>
-            {/* Merged duplicates card — physical orders fused into a parent */}
-            {(tabCounts['MERGED'] ?? 0) > 0 && (() => {
-              const mergedCount = tabCounts['MERGED'] ?? 0;
-              const active = statusFilter === 'MERGED';
-              return (
-                <button
-                  type="button"
-                  onClick={() => handleKpiClick('MERGED')}
-                  className={cn(
-                    'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
-                    active ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
-                  )}
-                  style={{ borderColor: active ? undefined : C.border }}
-                  title={active ? 'Cliquer pour retirer le filtre' : 'Voir les doublons fusionnés'}
-                >
-                  <div className="flex items-center gap-1">
-                    <span className="size-1.5 rounded-full bg-amber-500 shrink-0" />
-                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">Doublons</span>
-                  </div>
-                  <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
-                    {countsQuery.isLoading ? '…' : mergedCount}
-                  </div>
-                </button>
-              );
-            })()}
-            {(['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'RETURNED', 'CANCELLED', 'ABANDONED'] as OrderStatus[]).map((status) => {
-              const active = statusFilter === status;
-              const count = tabCounts[status] ?? 0;
-              return (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => handleKpiClick(status)}
-                  className={cn(
-                    'bg-white rounded-lg border p-1.5 text-left transition-all hover:shadow-sm',
-                    active ? 'ring-1 ring-[#4b7bec] border-transparent shadow-sm' : ''
-                  )}
-                  style={{ borderColor: active ? undefined : C.border }}
-                  title={active ? 'Cliquer pour retirer le filtre' : `Filtrer : ${ORDER_STATUS_LABELS[status]}`}
-                >
-                  <div className="flex items-center gap-1">
-                    <span className={cn('size-1.5 rounded-full shrink-0', ORDER_STATUS_DOT[status])} />
-                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">{ORDER_STATUS_LABELS[status]}</span>
-                  </div>
-                  <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
-                    {countsQuery.isLoading ? '…' : count}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          {/* Reçues — total des commandes jamais touchées par un agent, pour
-              la période/filtre courant. Volontairement PAS éclaté par les 8
-              statuts d'onglets ci-dessus (juste Normal / Panier abandonné) :
-              l'administrateur veut un chiffre "combien reçu" à additionner
-              rapidement, pas à recalculer en sommant chaque badge de statut. */}
-          {!!receivedCounts && (receivedCounts.normal + receivedCounts.abandoned) > 0 && (
-            <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold text-slate-500">
-              <span className="uppercase tracking-wider">📥 Reçues :</span>
-              <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
-                {receivedCounts.normal} normale{receivedCounts.normal > 1 ? 's' : ''}
-              </span>
-              <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
-                {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
-              </span>
-              {/* Doublons reçus — même fenêtre de dates que le reste de la
-                  ligne "Reçues" ci-dessus, mais compte les commandes MERGED
-                  (resoumissions fusionnées dans leur commande parente), pas
-                  de nouvelles ventes. Répond directement à "pourquoi Meta Ads
-                  affiche 5 commandes et l'ERP 1 ?" — ce ne sont pas 4
-                  commandes manquantes, ce sont 4 doublons déjà comptés une
-                  fois dans la commande parente. */}
-              {(receivedCounts.duplicate ?? 0) > 0 && (() => {
-                // Number of ORDERS affected by a duplicate, not the raw
-                // count of resubmit rows — an order that absorbed 3
-                // resubmits is "1 commande avec un doublon", not 3
-                // (backend counts distinct parent_order_id, see
-                // GET /orders/counts).
-                const dupOrderCount = receivedCounts.duplicate ?? 0;
-                return (
-                  <span
-                    className="px-2 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200"
-                    title="Nombre de commandes ayant reçu au moins une resoumission du même client, fusionnée automatiquement — pas des ventes en plus, déjà comptées une fois."
-                  >
-                    🟣 {dupOrderCount} commande{dupOrderCount > 1 ? 's' : ''} avec doublon{dupOrderCount > 1 ? 's' : ''}
-                  </span>
-                );
-              })()}
-              <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                {receivedCounts.normal + receivedCounts.abandoned} au total
-              </span>
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Tactical Filter Rack */}
         <div className="bg-white rounded-2xl sm:rounded-[32px] border px-4 sm:px-8 py-4 sm:py-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 sm:gap-6 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/90" style={{ borderColor: C.border }}>
@@ -1559,7 +1460,7 @@ const [timeLeft, setTimeLeft] = useState('');
                           {!!order.duplicate_count && order.duplicate_count > 0 && (
                             <Badge
                               className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5"
-                              title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande`}
+                              title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande${order.last_duplicate_at ? ` — dernière le ${formatDupTime(order.last_duplicate_at)}` : ''}`}
                             >
                               🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
                             </Badge>
@@ -1634,7 +1535,7 @@ const [timeLeft, setTimeLeft] = useState('');
                             title="Voir le détail des commandes fusionnées"
                           >
                             <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'} — voir détails
+                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir détails
                           </button>
                         )}
                         {order.notes && (
@@ -1963,7 +1864,7 @@ const [timeLeft, setTimeLeft] = useState('');
                           title="Voir le détail des commandes fusionnées"
                         >
                           <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'} — voir détails
+                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir détails
                         </button>
                       )}
                     </div>

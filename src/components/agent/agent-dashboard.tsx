@@ -1206,6 +1206,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 mt-1 space-y-2">
                     <p className="text-[10px] font-black uppercase tracking-wider text-purple-700">
                       🟣 {order.duplicate_count} resoumission{order.duplicate_count > 1 ? 's' : ''} du même client fusionnée{order.duplicate_count > 1 ? 's' : ''} ici
+                      {order.last_duplicate_at && ` · dernière le ${new Date(order.last_duplicate_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ${new Date(order.last_duplicate_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
                     </p>
                     {loadingDuplicateDetails ? (
                       <p className="text-[10px] text-purple-500 font-bold">Chargement…</p>
@@ -2277,7 +2278,7 @@ export default function AgentDashboard() {
                                {!!order.duplicate_count && order.duplicate_count > 0 && (
                                  <span
                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0"
-                                   title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande`}
+                                   title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande${order.last_duplicate_at ? ` — dernière le ${new Date(order.last_duplicate_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ${new Date(order.last_duplicate_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
                                  >
                                    🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
                                  </span>

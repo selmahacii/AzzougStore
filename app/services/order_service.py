@@ -29,6 +29,14 @@ from app.models.user import User
 from app.services.inventory_service import inventory_service
 from app.services.notification_service import notify
 from app.services.audit_service import audit_service
+from app.services.order_similarity_engine import (
+    DEFAULT_SIMILARITY_WEIGHTS,
+    DEFAULT_SIMILARITY_THRESHOLDS,
+    DEFAULT_TIME_WINDOW,
+    SimilarityResult,
+    classify_similarity,
+    compute_similarity,
+)
 
 logger = logging.getLogger("app.order_service")
 
@@ -75,6 +83,19 @@ DEFAULT_OPERATIONS_CONFIG: dict = {
     "max_nrp_abandoned": 12,    # auto-cancel an abandoned cart after N NRP attempts
     "nrp_callback_hours": 2.0,  # automatic callback delay after each NRP
     "auto_merge_duplicates": True,  # fuse same-phone orders into one operational order
+    # Weighted-similarity duplicate detection (app.services.order_similarity_engine)
+    # — every number here is store-overridable via Store.operations_config,
+    # never a hardcoded threshold used directly by auto_merge_duplicates.
+    # Phone match alone is no longer sufficient to auto-merge: a same-phone
+    # pair with disjoint product baskets scores far below auto_merge_threshold
+    # and is left as two distinct orders (this is the exact false-positive
+    # class — "genuinely two different purchases" — the old phone-only rule
+    # used to silently fuse, losing the second sale's Meta conversion).
+    "duplicate_detection": {
+        "weights": dict(DEFAULT_SIMILARITY_WEIGHTS),
+        "thresholds": dict(DEFAULT_SIMILARITY_THRESHOLDS),
+        "time_window": dict(DEFAULT_TIME_WINDOW),
+    },
 }
 
 
@@ -311,8 +332,24 @@ def merge_child_into_parent(
 
 def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = None) -> int:
     """
-    Automatically fuse every same-phone, same-store ACTIVE order into a single
-    operational parent order carrying the AGGREGATED basket.
+    Automatically fuse near-certain duplicate orders (same store, weighted-
+    similarity score above the configured auto-merge threshold — see
+    app.services.order_similarity_engine) into a single operational parent
+    order carrying the AGGREGATED basket.
+
+    Phone match ALONE is no longer sufficient to merge. A same-phone sibling
+    with a disjoint product basket, a very different amount, or created days
+    apart scores far below the auto-merge threshold and is left as its own
+    standalone order — this is the fix for the false-positive class the
+    previous phone-only rule produced: two genuinely different purchases by
+    the same customer used to be silently fused into one, which also meant
+    the second sale's Purchase conversion never reached Meta (this function
+    runs synchronously before that send — see orders.py's POST / handler).
+
+    A sibling that scores in the "needs_review" band (similar, but not
+    certain enough to auto-merge) is NOT merged — both orders are flagged
+    is_duplicate=True instead, visible on the orders page's existing
+    "🟣 Doublon" badge, for a human to decide.
 
     - Detection ignores cancelled / returned / deleted / already-merged orders
       and anything already at the carrier (tracking number set).
@@ -325,7 +362,8 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     - The parent inherits an assignee from its children when it has none, so
       the confirmatrice always manages exactly ONE logical basket per client.
 
-    Returns the number of orders merged.
+    Returns the number of orders actually merged (needs_review flags are not
+    counted — they didn't merge anything, they flagged it for a human).
     """
     phone = (order.customer_phone or "").strip()
     # A MANUAL order is deliberately entered by staff who already know the
@@ -350,14 +388,21 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     cfg = get_operations_config(db, str(order.store_id))
     if not cfg.get("auto_merge_duplicates", True):
         return 0
+    dedup_cfg = cfg.get("duplicate_detection") or {}
+    weights = dedup_cfg.get("weights") or DEFAULT_SIMILARITY_WEIGHTS
+    thresholds = dedup_cfg.get("thresholds") or DEFAULT_SIMILARITY_THRESHOLDS
+    time_window = dedup_cfg.get("time_window") or DEFAULT_TIME_WINDOW
 
     # Active candidates: confirmation-stage orders + CONFIRMED ones not yet at
     # the carrier (a confirmed parent can still absorb a late duplicate).
     # ...and never swept up as a sibling into someone else's merge either —
-    # same reasoning, both directions.
+    # same reasoning, both directions. Phone match here is only the FIRST,
+    # cheap filter to bound the candidate set at the SQL level — it is NOT
+    # the merge decision; every candidate still goes through the similarity
+    # engine below before anything is touched.
     candidate_states = list(_MERGEABLE_STATES) + ["CONFIRMED"]
     from sqlalchemy import or_ as _or_manual
-    siblings = (
+    phone_siblings = (
         db.query(Order)
         .filter(
             Order.store_id == order.store_id,
@@ -371,7 +416,37 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
         .all()
     )
     # Never touch anything already at the carrier
-    siblings = [s for s in siblings if not s.tracking_number]
+    phone_siblings = [s for s in phone_siblings if not s.tracking_number]
+    if not phone_siblings:
+        return 0
+
+    siblings: list[Order] = []
+    review_flagged: list[tuple[Order, SimilarityResult]] = []
+    for sibling in phone_siblings:
+        result = compute_similarity(order, sibling, weights=weights, time_window=time_window)
+        classification = classify_similarity(result, thresholds=thresholds)
+        if classification == "auto_merge":
+            siblings.append(sibling)
+        elif classification == "needs_review":
+            review_flagged.append((sibling, result))
+        # "distinct" — same phone, but similarity too low: left completely
+        # untouched, not even flagged. This is the actual false-positive fix:
+        # e.g. same phone, disjoint basket, days apart never reaches here.
+
+    if review_flagged:
+        order.is_duplicate = True
+        for sibling, result in review_flagged:
+            sibling.is_duplicate = True
+            note = (
+                f"Doublon marketing potentiel (score {result.normalized_score:.0f}%) avec {sibling.order_number} — "
+                f"{'; '.join(result.reasons) or 'signal faible'} — fusion automatique NON appliquée, vérification manuelle requise."
+            )
+            _log_event(db, order_id=order.id, actor_id=actor_id, from_status=str(order.status), to_status=str(order.status), note=note)
+            logger.info(
+                "Duplicate REVIEW flagged (not merged): %s <-> %s score=%.0f%% reasons=%s",
+                order.order_number, sibling.order_number, result.normalized_score, result.reasons,
+            )
+
     if not siblings:
         return 0
 
@@ -392,7 +467,7 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             continue
         if child.tracking_number:  # already at the carrier — never touch
             continue
-        merge_child_into_parent(db, parent, child, actor_id, reason="fusion automatique — doublon même téléphone")
+        merge_child_into_parent(db, parent, child, actor_id, reason="fusion automatique — doublon détecté par similarité pondérée")
         merged_numbers.append(str(child.order_number))
 
     if not merged_numbers:
@@ -857,6 +932,12 @@ class OrderService:
         except Exception as exc:
             logger.warning("Guest customer upsert failed for order %s: %s", order.order_number, exc)
 
+        # NOTE: auto_merge_duplicates is deliberately NOT called here.
+        # create_order's sole caller (POST /orders in orders.py) already runs
+        # it synchronously — and commits — BEFORE enqueueing this order's
+        # Purchase CAPI event, which is what actually needs the merge
+        # decision made first. Duplicating that call here would just re-run
+        # the same query a second time for no behavioral difference.
         logger.info("Order created: %s (store=%s, status=%s, agent=%s)", order.order_number, store_id, initial_status, explicit_agent)
         return order
 

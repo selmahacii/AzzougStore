@@ -27,6 +27,7 @@ export interface MetaTrackingOptions {
   pixelId?: string;
   storeId?: string;
   eventId?: string;
+  orderId?: string;
   userData?: MetaUserDataInput;
   externalId?: string;
   value?: number;
@@ -229,6 +230,7 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
     event_id: eventId,
+    order_id: options.orderId,
     event_source_url: options.eventSourceUrl || window.location.href,
     user_data: {
       em: options.userData?.email || undefined,

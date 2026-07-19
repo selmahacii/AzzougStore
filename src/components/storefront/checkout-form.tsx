@@ -584,27 +584,20 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       console.log('Order response status:', res.status, 'data:', json);
       // FastAPI returns the order object directly (not wrapped in { success, data })
       if (res.ok && (json.id || json.order_number || json.orderNumber)) {
-        const orderNum = json.order_number ?? json.orderNumber ?? json.id ?? '';
-        void trackMetaEvent('Purchase', {
-          value: finalTotal,
-          currency: 'DZD',
-          content_type: 'product',
-          content_ids: orderItems.map(item => item.product_id),
-          contents: orderItems.map(item => ({ id: item.product_id, quantity: item.quantity })),
-          order_id: String(orderNum),
-        }, {
-          eventId: `purchase-${orderNum}`,
-          value: finalTotal,
-          currency: 'DZD',
-          contents: orderItems.map(item => ({ id: item.product_id, quantity: item.quantity })),
-          userData: {
-            first_name: customerInfo.firstName.trim(),
-            last_name: customerInfo.lastName.trim(),
-            city: customerInfo.commune.trim(),
-            wilaya: customerInfo.wilaya,
-            phone: customerInfo.phone.trim(),
-          },
-        });
+        // Purchase is DELIBERATELY never fired from here. It used to be
+        // sent immediately on this 201, before the backend had any chance
+        // to decide whether this submission is a duplicate of an existing
+        // order (auto_merge_duplicates only runs synchronously in the
+        // backend, right after order_service.create_order returns — see
+        // orders.py's POST / handler). A duplicate double-submit (double-
+        // click, page refresh) would still get merged correctly in the
+        // ERP, but Meta had already permanently counted a Purchase for a
+        // submission that no longer operationally exists as its own order
+        // — the exact root cause of "Meta shows more Purchases than the
+        // ERP has orders". The backend is now the SOLE sender of Purchase
+        // (see orders.py's send_purchase_for_order queue, triggered only
+        // after the merge decision is committed) — the frontend only ever
+        // sends navigation events (ViewContent/AddToCart/InitiateCheckout).
         setOrderNumber(json.order_number ?? json.orderNumber ?? json.id ?? '');
         setOrderDiscount(json.discount ?? 0);
         clearCart();
