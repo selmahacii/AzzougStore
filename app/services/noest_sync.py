@@ -661,7 +661,19 @@ async def background_loop() -> None:
         CLOUDINARY_MIGRATION_INTERVAL_MINUTES, META_AUDIT_INTERVAL_MINUTES, REMINDER_SCAN_INTERVAL_SECONDS,
     )
     seconds_since_sync = SYNC_INTERVAL_MINUTES * 60  # poll immediately at boot
-    seconds_since_meta_sync = META_ADS_SYNC_INTERVAL_MINUTES * 60  # sync immediately at boot
+    # Meta Ads sync used to also fire immediately at boot — but it does several
+    # sequential outbound HTTP calls PER STORE (account details, campaigns,
+    # insights, per-ad breakdown), right as the container is still cold and
+    # the dashboard's first page load is hitting the API with its own burst
+    # of ~8 concurrent requests. On the constrained cpu-basic HF tier this
+    # collision was the likely cause of gateway-level 500s clustered right
+    # after every restart (no app-level traceback, consistent with the
+    # request timing out before the single shared vCPU got to it). Deferring
+    # this sync to the first natural interval — same treatment as the CAPI
+    # cleanup and Meta audit sweeps below — avoids stacking it on the boot
+    # burst; Meta Ads data is then at most one interval (default 180 min)
+    # stale after a restart, an acceptable tradeoff since restarts are rare.
+    seconds_since_meta_sync = 0.0
     seconds_since_cloudinary_sync = CLOUDINARY_MIGRATION_INTERVAL_MINUTES * 60  # migrate immediately at boot
     seconds_since_capi_cleanup = 0.0  # not urgent at boot — wait one full interval
     seconds_since_meta_audit = 0.0  # not urgent at boot — wait one full interval
