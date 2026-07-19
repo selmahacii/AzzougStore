@@ -119,43 +119,49 @@ export function OrderTrackingReport({ orderId }: OrderTrackingReportProps) {
         <p className="text-[10px] text-slate-400">Confiance : {d.attribution.confidence}</p>
       </div>
 
-      {/* Origine du trafic */}
+      {/* Origine du trafic — 2 colonnes par ligne, plus lisible qu'une longue liste verticale */}
       <div className="rounded-xl border border-slate-100 p-3">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Origine du Trafic</p>
-        <Field label="Source" value={d.traffic_origin.source} />
-        <Field label="Medium" value={d.traffic_origin.utm_medium} />
-        <Field label="Campaign" value={d.traffic_origin.utm_campaign} />
-        <Field label="Content" value={d.traffic_origin.utm_content} />
-        <Field label="Term" value={d.traffic_origin.utm_term} />
-        <Field label="Referrer" value={d.traffic_origin.referrer} />
-        <Field label="Landing Page" value={d.traffic_origin.landing_page_url} />
-        <Field label="Heure de commande" value={d.traffic_origin.order_time ? new Date(d.traffic_origin.order_time).toLocaleString('fr-FR') : null} />
-        <Field label="Première page visitée" value={d.traffic_origin.first_page_visited} />
-        <Field label="Dernière page avant achat" value={d.traffic_origin.last_page_before_purchase} />
+        <div className="grid grid-cols-2 gap-x-4">
+          <Field label="Source" value={d.traffic_origin.source} />
+          <Field label="Medium" value={d.traffic_origin.utm_medium} />
+          <Field label="Campaign" value={d.traffic_origin.utm_campaign} />
+          <Field label="Content" value={d.traffic_origin.utm_content} />
+          <Field label="Term" value={d.traffic_origin.utm_term} />
+          <Field label="Referrer" value={d.traffic_origin.referrer} />
+          <Field label="Landing Page" value={d.traffic_origin.landing_page_url} />
+          <Field label="Heure de commande" value={d.traffic_origin.order_time ? new Date(d.traffic_origin.order_time).toLocaleString('fr-FR') : null} />
+          <Field label="Première page visitée" value={d.traffic_origin.first_page_visited} />
+          <Field label="Dernière page avant achat" value={d.traffic_origin.last_page_before_purchase} />
+        </div>
       </div>
 
       {/* Meta */}
       <div className="rounded-xl border border-slate-100 p-3">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Informations Meta</p>
-        <Field label="Pixel ID" value={d.meta_info.pixel_id} />
-        <Field label="Event ID" value={d.meta_info.event_id} />
-        <Field label="Event Name" value={d.meta_info.event_name} />
-        <Field label="Event Time" value={d.meta_info.event_time ? new Date(d.meta_info.event_time).toLocaleString('fr-FR') : null} />
-        <Field label="FBP" value={d.meta_info.fbp} />
-        <Field label="FBC" value={d.meta_info.fbc} />
-        <Field label="FBCLID" value={d.meta_info.fbclid} />
+        <div className="grid grid-cols-2 gap-x-4">
+          <Field label="Pixel ID" value={d.meta_info.pixel_id} />
+          <Field label="Event ID" value={d.meta_info.event_id} />
+          <Field label="Event Name" value={d.meta_info.event_name} />
+          <Field label="Event Time" value={d.meta_info.event_time ? new Date(d.meta_info.event_time).toLocaleString('fr-FR') : null} />
+          <Field label="FBP" value={d.meta_info.fbp} />
+          <Field label="FBC" value={d.meta_info.fbc} />
+          <Field label="FBCLID" value={d.meta_info.fbclid} />
+        </div>
       </div>
 
       {/* Campagne */}
       {(d.campaign_info.campaign_id || d.campaign_info.campaign_name) && (
         <div className="rounded-xl border border-slate-100 p-3">
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Campagne Meta</p>
-          <Field label="Campagne" value={d.campaign_info.campaign_name} />
-          <Field label="Ad Set" value={d.campaign_info.adset_name} />
-          <Field label="Publicité" value={d.campaign_info.ad_name} />
-          <Field label="Campaign ID" value={d.campaign_info.campaign_id} />
-          <Field label="AdSet ID" value={d.campaign_info.adset_id} />
-          <Field label="Ad ID" value={d.campaign_info.ad_id} />
+          <div className="grid grid-cols-2 gap-x-4">
+            <Field label="Campagne" value={d.campaign_info.campaign_name} />
+            <Field label="Ad Set" value={d.campaign_info.adset_name} />
+            <Field label="Publicité" value={d.campaign_info.ad_name} />
+            <Field label="Campaign ID" value={d.campaign_info.campaign_id} />
+            <Field label="AdSet ID" value={d.campaign_info.adset_id} />
+            <Field label="Ad ID" value={d.campaign_info.ad_id} />
+          </div>
         </div>
       )}
 

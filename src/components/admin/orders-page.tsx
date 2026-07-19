@@ -48,7 +48,6 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -77,7 +76,6 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
   ORDER_STATUS_DOT,
-  VALID_TRANSITIONS,
 } from '@/lib/types';
 import type {
   Order,
@@ -101,7 +99,7 @@ import { ZRExpressTrackingPanel } from '@/components/admin/zr-express-tracking-p
 import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-panel';
 import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderErpDetailPanel } from '@/components/admin/order-erp-detail-panel';
-import { DeliveryProofUpload, InvoiceButton, OrdersKanbanView, OrdersMapView } from '@/components/admin/order-erp-features';
+import { InvoiceButton, OrdersKanbanView, OrdersMapView } from '@/components/admin/order-erp-features';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
 const ALL_STATUSES: { value: string; label: string }[] = [
@@ -158,8 +156,6 @@ const REGISTRY_COLUMNS = [
   { key: 'items', label: 'Articles', hideBelow: 'xl' as const },
   { key: 'total', label: 'Finances' },
   { key: 'status', label: 'Statut' },
-  { key: 'assignee', label: 'Agent', hideBelow: '2xl' as const },
-  { key: 'created_at', label: 'Date & Heure', hideBelow: 'xl' as const },
 ];
 
 const HIDE_BELOW_CLASS: Record<string, string> = {
@@ -1218,9 +1214,14 @@ const [timeLeft, setTimeLeft] = useState('');
             date que le reste de la page. */}
         {!!receivedCounts && (receivedCounts.normal + receivedCounts.abandoned) > 0 && (
           <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold text-slate-500">
+            {/* "Reçues" = commandes normales UNIQUEMENT, sur la même fenêtre
+                de date que le reste de la page (countsQuery passe déjà
+                start_date/end_date au backend — voir get_order_counts).
+                Les paniers abandonnés ont leur propre badge juste après ;
+                les additionner ici les aurait comptés deux fois à l'écran. */}
             <span className="uppercase tracking-wider">📥 Reçues :</span>
             <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
-              {receivedCounts.normal + receivedCounts.abandoned} commande{(receivedCounts.normal + receivedCounts.abandoned) > 1 ? 's' : ''}
+              {receivedCounts.normal} commande{receivedCounts.normal > 1 ? 's' : ''}
             </span>
             {/* Doublons — nombre de COMMANDES ayant reçu au moins une
                 resoumission du même client, pas le nombre brut de doublons
@@ -1271,9 +1272,18 @@ const [timeLeft, setTimeLeft] = useState('');
             
             <div className="hidden md:block h-8 w-px bg-slate-100" />
             
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-              <Tabs value={viewMode} onValueChange={handleModeChange} className="w-full sm:w-auto">
-                <TabsList className="bg-slate-50/50 p-1 rounded-xl sm:rounded-2xl border border-slate-100/50 h-auto flex flex-wrap sm:flex-nowrap">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* Onglets de statut convertis en dropdown — la rangée horizontale
+                  scrollable (Nouvelles/En Cours/.../Tous) prenait trop de place
+                  et nécessitait un défilement latéral même sur un écran normal. */}
+              <Select
+                value={viewMode}
+                onValueChange={(v) => handleModeChange(v)}
+              >
+                <SelectTrigger className="h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold w-full sm:w-[220px]">
+                  <SelectValue placeholder="Filtrer par statut" />
+                </SelectTrigger>
+                <SelectContent>
                   {[
                     { id: 'NEW',        label: 'Nouvelles',  statusKey: 'NEW' },
                     { id: 'EN ATTENTE', label: 'En Cours',   statusKey: 'ASSIGNED' },
@@ -1303,16 +1313,18 @@ const [timeLeft, setTimeLeft] = useState('');
                       ? (tabCounts['ASSIGNED'] ?? 0) + (tabCounts['CALLED'] ?? 0) + (tabCounts['IN_PROGRESS'] ?? 0) + (tabCounts['RESCHEDULED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
                     return (
-                      <TabsTrigger key={tab.id} value={tab.id} className="rounded-lg sm:rounded-xl px-3 sm:px-5 py-2 text-[10px] sm:text-xs font-bold data-[state=active]:bg-white data-[state=active]:text-[#4b7bec] data-[state=active]:shadow-sm transition-all focus-visible:ring-0 whitespace-nowrap">
-                        {tab.label}
-                        {count !== undefined && count > 0 && (
-                          <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-100 data-[state=active]:bg-indigo-50 text-slate-500">{count}</span>
-                        )}
-                      </TabsTrigger>
+                      <SelectItem key={tab.id} value={tab.id} className="text-xs font-bold">
+                        <span className="flex items-center gap-2">
+                          {tab.label}
+                          {count !== undefined && count > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-500">{count}</span>
+                          )}
+                        </span>
+                      </SelectItem>
                     );
                   })}
-                </TabsList>
-              </Tabs>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           
@@ -1632,39 +1644,6 @@ const [timeLeft, setTimeLeft] = useState('');
                           <CallbackCountdown nextCallbackTime={order.next_callback_time} />
                         )}
                       </div>
-                    </td>
-                    <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
-                      {order.assignee ? (
-                        <div className="flex items-center gap-2">
-                          <div className="size-6 rounded-lg bg-indigo-50 flex items-center justify-center text-[10px] font-black text-[#4b7bec]">{order.assignee.name.charAt(0)}</div>
-                          <span className="text-xs font-bold text-slate-700">{order.assignee.name}</span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-300 italic">Non assigné</span>
-                      )}
-                    </td>
-                    <td className="px-3 xl:px-4 py-6 text-xs font-medium text-slate-400 hidden xl:table-cell">
-                      {(() => {
-                        const createdAt = order.created_at ? new Date(order.created_at) : null;
-                        const isReturn = order.status === 'RETURNED' || order.status === 'CANCELLED';
-                        const returnRaw = (order as any).returned_at ?? (isReturn ? order.updated_at : null);
-                        const returnAt = returnRaw ? new Date(returnRaw) : null;
-                        const validReturn = returnAt && createdAt && returnAt >= createdAt ? returnAt : null;
-                        
-                        return (
-                          <div className="flex flex-col gap-0.5">
-                            {createdAt ? (
-                              <>
-                                <span className="text-slate-700 font-bold">{createdAt.toLocaleDateString('fr-FR')}</span>
-                                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{createdAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-                              </>
-                            ) : <span>---</span>}
-                            {validReturn && (
-                              <span className="text-rose-400 text-[10px] font-bold mt-1">Retour: {validReturn.toLocaleDateString('fr-FR')}</span>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </td>
                     <td className="px-3 xl:px-4 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -2159,44 +2138,36 @@ const [timeLeft, setTimeLeft] = useState('');
                 </div>
              </div>
 
-             {/* Status Pipeline */}
+             {/* Progression du dossier — mode badge, dérivé directement de
+                 selectedOrder.status donc se met à jour automatiquement dès
+                 qu'un changement de statut est appliqué ailleurs (le badge
+                 React re-render suit l'état, pas besoin de logique dédiée).
+                 Le changement de statut reste possible via "Modifier" et le
+                 menu d'actions de la ligne dans le tableau. */}
              <div className="bg-slate-50 px-5 sm:px-10 py-4 border-b border-slate-100 shrink-0">
                 <div className="flex items-center gap-2 mb-3">
                    <TrendingUp className="size-3.5 text-slate-400" />
                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Progression du dossier</span>
                 </div>
-                <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
-                   {(['NEW','ASSIGNED','CALLED','CONFIRMED','SHIPPED','DELIVERED'] as OrderStatus[]).map((s, i, arr) => {
-                      const isActive = s === selectedOrder.status;
-                      const isPast = arr.indexOf(selectedOrder.status) > i;
-                      const isNext = VALID_TRANSITIONS[selectedOrder.status]?.includes(s);
+                <div className="flex items-center gap-3 flex-wrap">
+                   <Badge className={cn("text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none rounded-xl", ORDER_STATUS_COLORS[selectedOrder.status])}>
+                      {ORDER_STATUS_LABELS[selectedOrder.status]}
+                   </Badge>
+                   {(() => {
+                      const pipeline: OrderStatus[] = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'DELIVERED'];
+                      const idx = pipeline.indexOf(selectedOrder.status);
+                      if (idx === -1) return null; // CANCELLED/RETURNED/RESCHEDULED — hors du parcours linéaire
                       return (
-                         <React.Fragment key={s}>
-                            <button
-                               disabled={!isNext}
-                               onClick={() => { handleStatusChange(selectedOrder.id, s); setSelectedOrder(prev => prev ? { ...prev, status: s } : prev); }}
-                               className={cn(
-                                  "flex-1 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all text-center",
-                                  isActive ? "bg-[#4b7bec] text-white shadow-lg shadow-indigo-200" :
-                                  isPast ? "bg-emerald-100 text-emerald-700" :
-                                  isNext ? "bg-white border-2 border-dashed border-[#4b7bec] text-[#4b7bec] hover:bg-[#F0F5FF] cursor-pointer" :
-                                  "bg-slate-100 text-slate-300 cursor-default"
-                               )}
-                            >
-                               {ORDER_STATUS_LABELS[s]}
-                            </button>
-                            {i < arr.length - 1 && <div className={cn("w-4 h-px shrink-0", isPast ? "bg-emerald-300" : "bg-slate-200")} />}
-                         </React.Fragment>
+                         <>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Étape {idx + 1}/{pipeline.length}</span>
+                            <div className="flex items-center gap-1">
+                               {pipeline.map((s, i) => (
+                                  <span key={s} className={cn("size-1.5 rounded-full", i <= idx ? "bg-emerald-400" : "bg-slate-200")} title={ORDER_STATUS_LABELS[s]} />
+                               ))}
+                            </div>
+                         </>
                       );
-                   })}
-                   <div className="w-4 h-px shrink-0 bg-slate-200" />
-                   <button
-                      disabled={!VALID_TRANSITIONS[selectedOrder.status]?.includes('RETURNED') && !VALID_TRANSITIONS[selectedOrder.status]?.includes('CANCELLED')}
-                      onClick={() => handleStatusChange(selectedOrder.id, 'CANCELLED', selectedOrder.order_number)}
-                      className={cn("px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all", selectedOrder.status === 'CANCELLED' ? "bg-rose-500 text-white" : "bg-rose-50 text-rose-400 hover:bg-rose-100 disabled:opacity-30")}
-                   >
-                      Annulé
-                   </button>
+                   })()}
                 </div>
              </div>
 
@@ -2279,6 +2250,16 @@ const [timeLeft, setTimeLeft] = useState('');
                                <span className="text-lg font-black text-slate-900 tabular-nums">{formatPrice(selectedOrder.total)}</span>
                             </div>
                          </div>
+                      </div>
+
+                      {/* ── Marketing Attribution Report — sous les produits commandés ── */}
+                      <div className="space-y-3">
+                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                          <Activity className="size-3.5" /> Rapport d'Attribution Marketing
+                        </h3>
+                        <div className="max-h-[500px] overflow-y-auto pr-1">
+                          <OrderTrackingReport orderId={selectedOrder.id} />
+                        </div>
                       </div>
 
                       {/* Notes */}
@@ -2424,9 +2405,6 @@ const [timeLeft, setTimeLeft] = useState('');
                         </div>
                         <div className="max-h-[600px] overflow-y-auto pr-1 space-y-4">
                           <OrderErpDetailPanel orderId={selectedOrder.id} />
-                          <div className="pt-3 border-t border-slate-100">
-                            <DeliveryProofUpload orderId={selectedOrder.id} />
-                          </div>
                         </div>
                       </div>
 
@@ -2437,16 +2415,6 @@ const [timeLeft, setTimeLeft] = useState('');
                         </h3>
                         <div className="max-h-[400px] overflow-y-auto pr-1">
                           <OrderTraceabilityPanel orderId={selectedOrder.id} />
-                        </div>
-                      </div>
-
-                      {/* ── Marketing Attribution Report ── */}
-                      <div className="space-y-3 pt-4 border-t border-slate-100">
-                        <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                          <Activity className="size-3.5" /> Rapport d'Attribution Marketing
-                        </h3>
-                        <div className="max-h-[500px] overflow-y-auto pr-1">
-                          <OrderTrackingReport orderId={selectedOrder.id} />
                         </div>
                       </div>
                    </div>
