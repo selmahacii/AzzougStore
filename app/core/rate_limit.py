@@ -344,6 +344,16 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
         server_timing = _timing.to_server_timing_header()
         if server_timing:
             response.headers["Server-Timing"] = server_timing
+        # Same reasoning, exposed as plain headers so RequestLoggingMiddleware
+        # (a DIFFERENT asyncio task per BaseHTTPMiddleware's own dispatch —
+        # see app/core/timing.py get_summary()) can log them without needing
+        # its own copy of the timing contextvar, which would always read
+        # empty. Internal-only — RequestLoggingMiddleware strips these
+        # before the response leaves the process.
+        sql_ms, sql_count, redis_ms = _timing.get_summary()
+        response.headers["X-Internal-Sql-Ms"] = f"{sql_ms:.1f}"
+        response.headers["X-Internal-Sql-Count"] = str(sql_count)
+        response.headers["X-Internal-Redis-Ms"] = f"{redis_ms:.1f}"
         return response
 
     @staticmethod

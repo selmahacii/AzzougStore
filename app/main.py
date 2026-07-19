@@ -56,11 +56,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # someone opens devtools mid-incident), never logged server-side.
         # Answers "was this request slow because of SQL, Redis, or our own
         # code" from the container logs alone, after the fact.
-        from app.core import timing as _timing
-        _entries = _timing.get_all()
-        sql_ms = sum(d for n, d in _entries if n == "database")
-        sql_count = sum(1 for n, _ in _entries if n == "database")
-        redis_ms = sum(d for n, d in _entries if n in ("redis",) or n.startswith("ratelimit_redis"))
+        #
+        # Read from response headers, NOT app.core.timing's contextvar
+        # directly: BaseHTTPMiddleware runs each middleware's dispatch() in
+        # its own asyncio task, so a ContextVar.set() done deeper in the
+        # chain (DistributedRateLimitMiddleware calls timing.start()) is
+        # invisible from this task's own context — reading the contextvar
+        # here always returned an empty bag (confirmed in prod: every
+        # access log line showed sql=0.0ms(0q) regardless of actual query
+        # activity). DistributedRateLimitMiddleware is the correct place
+        # that already computes this correctly for the Server-Timing
+        # header; it also stamps these X-Internal-* headers for us to read.
+        sql_ms = float(response.headers.get("X-Internal-Sql-Ms", "0") or 0)
+        sql_count = int(response.headers.get("X-Internal-Sql-Count", "0") or 0)
+        redis_ms = float(response.headers.get("X-Internal-Redis-Ms", "0") or 0)
+        for _h in ("X-Internal-Sql-Ms", "X-Internal-Sql-Count", "X-Internal-Redis-Ms"):
+            if _h in response.headers:
+                del response.headers[_h]
 
         access_logger.info(
             "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s sql=%.1fms(%dq) redis=%.1fms",

@@ -31,6 +31,19 @@ def get_all() -> List[Tuple[str, float]]:
     return _timings.get() or []
 
 
+def get_summary() -> Tuple[float, int, float]:
+    """(sql_ms, sql_query_count, redis_ms) — must be called from the same
+    task context where start() ran (see rate_limit.py's comment on why:
+    BaseHTTPMiddleware runs each middleware layer in its own asyncio task,
+    and a ContextVar.set() in a child task never becomes visible to an
+    ancestor task's own context)."""
+    entries = get_all()
+    sql_ms = sum(d for n, d in entries if n == "database")
+    sql_count = sum(1 for n, _ in entries if n == "database")
+    redis_ms = sum(d for n, d in entries if n == "redis" or n.startswith("ratelimit_redis"))
+    return sql_ms, sql_count, redis_ms
+
+
 def to_server_timing_header() -> str:
     """
     Renders collected entries as a Server-Timing header value. Repeated
