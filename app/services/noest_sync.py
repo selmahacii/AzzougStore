@@ -216,19 +216,17 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
     data = r.json() if isinstance(r.json(), dict) else {}
     updated = 0
     stage_writes = 0
+    # Was one WARNING log line per missing tracking, every 15-min poll cycle
+    # — with ~29 stuck orders that's 29 lines every cycle, drowning out any
+    # real signal (app exceptions, tracebacks) in the container logs. The
+    # underlying issue (order can never resolve to DELIVERED/RETURNED until
+    # fixed) is unchanged and still worth surfacing — just as one summary
+    # line instead of a per-order flood.
+    missing_trackings = []
     for order in orders:
         parcel = data.get(str(order.tracking_number))
         if not isinstance(parcel, dict):
-            # Noest's own response has no entry for this tracking number at
-            # all — the order can NEVER resolve to DELIVERED/RETURNED until
-            # this is fixed (wrong/stale tracking_number, or Noest genuinely
-            # lost the parcel). Previously silent; this is exactly the class
-            # of "order stuck forever, nobody notices" bug reported live.
-            logger.warning(
-                "[NoestSync] Aucune donnée Noest pour tracking=%s order=%s (statut actuel=%s) — "
-                "vérifier que ce numéro de suivi existe bien côté Noest.",
-                order.tracking_number, order.order_number, order.status,
-            )
+            missing_trackings.append(f"{order.tracking_number}({order.order_number})")
             continue
         new_status = _extract_terminal_status(parcel)
 
@@ -348,6 +346,11 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
         except Exception as exc:
             logger.warning("Noest sync: transition %s → %s refused for %s: %s",
                            order.status, new_status, order.order_number, exc)
+    if missing_trackings:
+        logger.warning(
+            "[NoestSync] %d colis sans donnée Noest (statut à vérifier côté Noest) : %s",
+            len(missing_trackings), ", ".join(missing_trackings),
+        )
     if updated or stage_writes:
         db.commit()
     return updated
