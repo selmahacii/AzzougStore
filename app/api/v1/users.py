@@ -19,7 +19,7 @@ from app.core.security import get_password_hash
 from app.services.salary_service import compute_salary
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func, and_, or_, case
 
 router = APIRouter()
 
@@ -601,11 +601,24 @@ def get_user_performance(
     if until:
         base_q = base_q.filter(Order.created_at <= until)
 
-    total_assigned   = base_q.count()
-    confirmed_count  = base_q.filter(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"])).count()
-    delivered_count  = base_q.filter(Order.status == "DELIVERED").count()
-    returned_count   = base_q.filter(Order.status == "RETURNED").count()
-    cancelled_count  = base_q.filter(Order.status == "CANCELLED").count()
+    # Was 5 sequential .count() round trips against the same base_q, plus a
+    # 7-day loop issuing one more .count() per day (~13 queries total) — on
+    # the Supabase pooler each round trip ran 100-300ms, so this endpoint
+    # alone took 2-5s (matches the 2-5s latencies seen in prod), long enough
+    # to trip the HF gateway's request timeout (503) under load. Collapsed
+    # into a single conditional-aggregation query.
+    totals_row = base_q.with_entities(
+        func.count().label("total"),
+        func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
+        func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered"),
+        func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
+        func.sum(case((Order.status == "CANCELLED", 1), else_=0)).label("cancelled"),
+    ).one()
+    total_assigned   = totals_row.total or 0
+    confirmed_count  = totals_row.confirmed or 0
+    delivered_count  = totals_row.delivered or 0
+    returned_count   = totals_row.returned or 0
+    cancelled_count  = totals_row.cancelled or 0
 
     # Salary via service (uses DELIVERED orders only, respects payment_type),
     # now scoped to the same since/until window as the stats above.
@@ -623,22 +636,27 @@ def get_user_performance(
     )
 
     chart_days = min(period_days, 7)
+    range_start = (datetime.now() - timedelta(days=chart_days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: DTZ005
+    daily_rows = db.query(
+        func.date(Order.created_at).label("day"),
+        func.count().label("count"),
+    ).filter(
+        and_(
+            store_filter,
+            Order.assigned_to == user_id,
+            Order.status      == "DELIVERED",
+            Order.is_deleted  == False,
+            Order.created_at  >= range_start,
+        )
+    ).group_by(func.date(Order.created_at)).all()
+    counts_by_day = {row.day.strftime("%d/%m") if hasattr(row.day, "strftime") else row.day: row.count for row in daily_rows}
+
     daily = []
     for i in range(chart_days - 1, -1, -1):
         day       = datetime.now() - timedelta(days=i)  # noqa: DTZ005
         day_start = day.replace(hour=0,  minute=0,  second=0,  microsecond=0)
-        day_end   = day.replace(hour=23, minute=59, second=59, microsecond=999999)
-        count = db.query(Order).filter(
-            and_(
-                store_filter,
-                Order.assigned_to == user_id,
-                Order.status      == "DELIVERED",
-                Order.is_deleted  == False,
-                Order.created_at  >= day_start,
-                Order.created_at  <= day_end,
-            )
-        ).count()
-        daily.append({"date": day_start.strftime("%d/%m"), "count": count})
+        key = day_start.strftime("%d/%m")
+        daily.append({"date": key, "count": counts_by_day.get(key, 0)})
 
     return {
         "user": {
