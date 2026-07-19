@@ -142,6 +142,32 @@ def delete(*keys: str) -> None:
 # survives redeploys and is shared across workers; Postgres is the fallback
 # of last resort, exactly once per L2 miss.
 _l1_store: dict = {}  # key -> (value, expires_at_monotonic)
+# Distinct keys here are store_id x date-range x params — under real traffic
+# across many stores/dashboards this grows without bound if expired entries
+# are never removed (only logically ignored on read), since nothing ever
+# calls dict.pop on expiry. That's an unbounded in-process memory leak that
+# eventually OOM-kills the worker; the sweep below caps how large this can
+# get and reclaims dead entries opportunistically on every write.
+_L1_MAX_ENTRIES = 2000
+_L1_SWEEP_EVERY = 200
+_l1_writes_since_sweep = 0
+
+
+def _l1_sweep_if_due(now: float) -> None:
+    global _l1_writes_since_sweep
+    _l1_writes_since_sweep += 1
+    if _l1_writes_since_sweep < _L1_SWEEP_EVERY and len(_l1_store) < _L1_MAX_ENTRIES:
+        return
+    _l1_writes_since_sweep = 0
+    expired = [k for k, v in _l1_store.items() if v[1] <= now]
+    for k in expired:
+        _l1_store.pop(k, None)
+    # Still oversized after sweeping expired entries (many keys with long
+    # TTLs alive at once) — drop the oldest-expiring entries as a hard cap.
+    if len(_l1_store) > _L1_MAX_ENTRIES:
+        overflow = sorted(_l1_store.items(), key=lambda kv: kv[1][1])[: len(_l1_store) - _L1_MAX_ENTRIES]
+        for k, _ in overflow:
+            _l1_store.pop(k, None)
 
 
 def get_or_set(key: str, compute: Callable[[], Any], l1_ttl: int = 45, l2_ttl: int = 1800) -> Any:
@@ -157,12 +183,14 @@ def get_or_set(key: str, compute: Callable[[], Any], l1_ttl: int = 45, l2_ttl: i
         if l2_value is not None:
             _metrics["l2_hits"] += 1
             _l1_store[key] = (l2_value, now + l1_ttl)
+            _l1_sweep_if_due(now)
             return l2_value
 
         _metrics["misses"] += 1
         value = compute()
         set_json(key, value, l2_ttl)
         _l1_store[key] = (value, now + l1_ttl)
+        _l1_sweep_if_due(now)
         return value
     finally:
         _metrics["lookup_latency_total_ms"] += (time.monotonic() - t_start) * 1000
