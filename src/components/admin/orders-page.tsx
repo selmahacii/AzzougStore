@@ -1307,13 +1307,18 @@ const [timeLeft, setTimeLeft] = useState('');
                   commandes manquantes, ce sont 4 doublons déjà comptés une
                   fois dans la commande parente. */}
               {(receivedCounts.duplicate ?? 0) > 0 && (() => {
-                const dupCount = receivedCounts.duplicate ?? 0;
+                // Number of ORDERS affected by a duplicate, not the raw
+                // count of resubmit rows — an order that absorbed 3
+                // resubmits is "1 commande avec un doublon", not 3
+                // (backend counts distinct parent_order_id, see
+                // GET /orders/counts).
+                const dupOrderCount = receivedCounts.duplicate ?? 0;
                 return (
                   <span
                     className="px-2 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200"
-                    title="Resoumissions du même client fusionnées dans une commande existante — pas des ventes en plus, déjà comptées une fois."
+                    title="Nombre de commandes ayant reçu au moins une resoumission du même client, fusionnée automatiquement — pas des ventes en plus, déjà comptées une fois."
                   >
-                    🟣 {dupCount} doublon{dupCount > 1 ? 's' : ''} reçu{dupCount > 1 ? 's' : ''}
+                    🟣 {dupOrderCount} commande{dupOrderCount > 1 ? 's' : ''} avec doublon{dupOrderCount > 1 ? 's' : ''}
                   </span>
                 );
               })()}
