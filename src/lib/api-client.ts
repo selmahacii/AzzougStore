@@ -46,7 +46,8 @@ interface ApiClientOptions extends RequestInit {
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
-let _refreshPromise: Promise<boolean> | null = null;
+type RefreshOutcome = 'ok' | 'invalid' | 'unavailable';
+let _refreshPromise: Promise<RefreshOutcome> | null = null;
 
 // ─── Global in-flight concurrency gate ─────────────────────────────────────
 // Dashboard pages fire 15-20 independent GETs in parallel on mount (each
@@ -144,9 +145,13 @@ async function _apiFetchInner<T = unknown>(
   // change, NRP mark, note a confirmatrice makes) are REST-idempotent: they
   // set fields to absolute values, so replaying one that silently died at
   // the gateway reaches the same end state, never a duplicate. POST stays
-  // excluded (e.g. creating an order) since replaying it could double-create.
+  // excluded in general (e.g. creating an order) since replaying it could
+  // double-create — EXCEPT login (POST /api/v1/auth), which has no such
+  // risk (authenticating twice just issues a new session) and was reported
+  // hard-failing on repeat gateway 500s with no fallback.
   const httpMethod = (rest.method ?? 'GET').toUpperCase();
-  const isRetryable = httpMethod === 'GET' || httpMethod === 'PATCH' || httpMethod === 'PUT' || httpMethod === 'DELETE';
+  const isLogin = httpMethod === 'POST' && path === '/api/v1/auth';
+  const isRetryable = httpMethod === 'GET' || httpMethod === 'PATCH' || httpMethod === 'PUT' || httpMethod === 'DELETE' || isLogin;
   const maxAttempts = isRetryable ? 3 : 1;
   let response: Response;
   let attempt = 0;
@@ -184,8 +189,8 @@ async function _apiFetchInner<T = unknown>(
     }
 
     if (_refreshPromise) {
-      const refreshed = await _refreshPromise;
-      if (refreshed) {
+      const outcome = await _refreshPromise;
+      if (outcome === 'ok') {
         // Call the inner fetcher directly, not apiFetch() — this call already
       // holds a concurrency slot (acquired by the outer apiFetch), and
       // re-entering apiFetch() would try to acquire a second one while
@@ -196,27 +201,49 @@ async function _apiFetchInner<T = unknown>(
       // a deadlock.
       return _apiFetchInner<T>(path, options);
       }
+      if (outcome === 'unavailable') {
+        throw new ApiClientError(
+          'Service temporairement indisponible. Réessayez.',
+          503,
+          'REFRESH_UNAVAILABLE',
+        );
+      }
       _clearSession(silent);
       throw new ApiClientError('Session expirée', 401, 'SESSION_EXPIRED');
     }
 
+    // 'invalid' = server explicitly said the refresh token itself is bad
+    // (401/403) — genuinely log out. 'ok' = refresh succeeded. Anything else
+    // (a 500/502/503/504 gateway blip, or the request not completing at all)
+    // must NOT log the user out — was previously treated as "refresh
+    // failed" -> _clearSession(), so a single transient gateway hiccup
+    // during a routine token refresh force-logged-out a confirmatrice mid-
+    // shift even though her session was perfectly valid. Retries first
+    // (same gateway flakiness GETs already retry for); only gives up as
+    // "infra unavailable" (not logout) if every attempt fails that way.
     _refreshPromise = (async () => {
-      try {
-        const refreshRes = await fetch('/api/v1/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        });
-        return refreshRes.ok;
-      } catch {
-        return false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const refreshRes = await fetch('/api/v1/auth/refresh', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          if (refreshRes.ok) return 'ok' as const;
+          if (refreshRes.status === 401 || refreshRes.status === 403) return 'invalid' as const;
+          // Gateway-class error — retry before giving up.
+        } catch {
+          // Network-level failure — same retry treatment as a gateway error.
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 400 * attempt));
       }
+      return 'unavailable' as const;
     })();
 
-    const refreshed = await _refreshPromise;
+    const refreshOutcome = await _refreshPromise;
     _refreshPromise = null;
 
-    if (refreshed) {
+    if (refreshOutcome === 'ok') {
       // Call the inner fetcher directly, not apiFetch() — this call already
       // holds a concurrency slot (acquired by the outer apiFetch), and
       // re-entering apiFetch() would try to acquire a second one while
@@ -226,6 +253,18 @@ async function _apiFetchInner<T = unknown>(
       // waiting for a free slot that only frees once ITS retry completes —
       // a deadlock.
       return _apiFetchInner<T>(path, options);
+    }
+
+    if (refreshOutcome === 'unavailable') {
+      // Do NOT clear the session — the user is very likely still logged in,
+      // the gateway just couldn't confirm it right now. Surface a distinct,
+      // non-logout error so callers can show "réessayez" instead of a
+      // session-expired prompt.
+      throw new ApiClientError(
+        'Service temporairement indisponible. Réessayez.',
+        503,
+        'REFRESH_UNAVAILABLE',
+      );
     }
 
     _clearSession(silent);
