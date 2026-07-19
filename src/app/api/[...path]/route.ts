@@ -78,10 +78,28 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
 
     // Build the proxied response headers
     const resHeaders = new Headers();
-    response.headers.forEach((value, key) => {
-      // Forward Set-Cookie and other safe headers
-      resHeaders.set(key, value);
-    });
+    // Backend responses that set both __session and __refresh (login, refresh)
+    // emit TWO Set-Cookie headers. Headers.set() overwrites same-key entries,
+    // so the second Set-Cookie was silently clobbering the first — only one
+    // of the two cookies ever reached the browser. append() preserves both.
+    if (typeof (response.headers as any).getSetCookie === 'function') {
+      for (const cookie of (response.headers as any).getSetCookie()) {
+        resHeaders.append('set-cookie', cookie);
+      }
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() !== 'set-cookie') {
+          resHeaders.set(key, value);
+        }
+      });
+    } else {
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie') {
+          resHeaders.append(key, value);
+        } else {
+          resHeaders.set(key, value);
+        }
+      });
+    }
 
     // ── CDN cache override for safe, non-personalized public GET endpoints ──
     // Only applied when: GET request, 2xx response, no Set-Cookie on the
