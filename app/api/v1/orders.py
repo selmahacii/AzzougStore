@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, List, Optional
 import uuid
@@ -1142,43 +1143,64 @@ def update_abandoned_cart(
             order_product_ids = [item.product_id for item in order_in.items if item.product_id]
             db_order.assigned_to = _auto_assign(db, store, order_product_ids) if store else None
         
-        # Release reservations for old items
-        for old_item in db_order.items:
-            try:
-                inv_svc.release_reservation(
-                    db,
-                    product_id=old_item.product_id,
-                    quantity=old_item.quantity,
-                    order_id=db_order.id,
-                    variant_details=old_item.variant_details
-                )
-            except Exception as exc:
-                logger.warning(f"Could not release reservation for old abandoned cart item {old_item.id}: {exc}")
+        # This endpoint is hit on every ~2s-debounced keystroke while the
+        # customer types their contact info on the storefront — the CART
+        # ITEMS themselves are unchanged on the vast majority of those
+        # calls. Unconditionally release+delete+recreate+reserve every item
+        # on every single call (previous behavior) cost ~20-30 extra SQL
+        # round trips per save even when nothing about the items changed —
+        # confirmed in prod: POST /orders/abandoned averaged ~3000ms across
+        # 33-34 queries, concurrent instances of which were starving the
+        # single-worker container enough to make unrelated requests (login,
+        # a confirmatrice's status updates) time out at the Vercel proxy.
+        # Skip the whole release/reserve cycle when the item set is
+        # byte-for-byte identical to what's already stored.
+        _new_signature = sorted(
+            (i.product_id, i.quantity, i.unit_price, json.dumps(i.variant_details, sort_keys=True) if i.variant_details else None)
+            for i in order_in.items
+        )
+        _old_signature = sorted(
+            (i.product_id, i.quantity, i.unit_price, json.dumps(i.variant_details, sort_keys=True) if i.variant_details else None)
+            for i in db_order.items
+        )
+        if _new_signature != _old_signature:
+            # Release reservations for old items
+            for old_item in db_order.items:
+                try:
+                    inv_svc.release_reservation(
+                        db,
+                        product_id=old_item.product_id,
+                        quantity=old_item.quantity,
+                        order_id=db_order.id,
+                        variant_details=old_item.variant_details
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not release reservation for old abandoned cart item {old_item.id}: {exc}")
 
-        # Replace items
-        db.query(OrderItem).filter(OrderItem.order_id == db_order.id).delete()
-        import uuid
-        for item_in in order_in.items:
-            item_data = item_in.model_dump()
-            db_item = OrderItem(
-                id=str(uuid.uuid4()),
-                order_id=db_order.id,
-                **{k: v for k, v in item_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
-            )
-            db.add(db_item)
-            
-            # Reserve stock for new items
-            try:
-                inv_svc.reserve_stock(
-                    db,
-                    product_id=db_item.product_id,
-                    quantity=db_item.quantity,
+            # Replace items
+            db.query(OrderItem).filter(OrderItem.order_id == db_order.id).delete()
+            import uuid
+            for item_in in order_in.items:
+                item_data = item_in.model_dump()
+                db_item = OrderItem(
+                    id=str(uuid.uuid4()),
                     order_id=db_order.id,
-                    variant_details=db_item.variant_details
+                    **{k: v for k, v in item_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
                 )
-            except Exception as exc:
-                logger.warning(f"Could not reserve stock for abandoned cart item {db_item.product_id}: {exc}")
-            
+                db.add(db_item)
+
+                # Reserve stock for new items
+                try:
+                    inv_svc.reserve_stock(
+                        db,
+                        product_id=db_item.product_id,
+                        quantity=db_item.quantity,
+                        order_id=db_order.id,
+                        variant_details=db_item.variant_details
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not reserve stock for abandoned cart item {db_item.product_id}: {exc}")
+
         db.commit()
         db.refresh(db_order)
         return {"success": True, "id": db_order.id, "message": "Panier abandonné mis à jour"}
