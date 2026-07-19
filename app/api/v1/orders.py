@@ -1073,6 +1073,24 @@ def list_orders(
         for o in orders:
             o.events_count = _counts.get(o.id, 0)  # type: ignore[attr-defined]
 
+        # Same pattern for duplicate_count — how many resubmits were merged
+        # into each parent order on this page. list_orders never eager-loads
+        # the full child_orders relationship (only the single-order detail
+        # endpoint does), so a parent's duplicate history was invisible from
+        # the list itself — the admin had to open every order one by one to
+        # discover it had absorbed duplicates at all.
+        _dup_counts = dict(
+            db.query(Order.parent_order_id, sqlfunc.count(Order.id))
+            .filter(
+                Order.parent_order_id.in_([o.id for o in orders]),
+                Order.status == "MERGED",
+            )
+            .group_by(Order.parent_order_id)
+            .all()
+        )
+        for o in orders:
+            o.duplicate_count = _dup_counts.get(o.id, 0)  # type: ignore[attr-defined]
+
     return {
         "success": True,
         "data": orders,

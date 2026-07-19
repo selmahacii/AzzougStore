@@ -139,6 +139,15 @@ class OrderRead(BaseModel):
     notes:           Optional[str] = None
     internal_notes:  Optional[str] = None
     events_count:    Optional[int] = None  # attached in list_orders — one grouped query per page
+    # How many duplicate submissions were merged INTO this order (0 for an
+    # order that's never had a duplicate, N for a parent that absorbed N
+    # resubmits) — attached in list_orders the same way as events_count.
+    # The list endpoint never eager-loads the full child_orders relationship
+    # (only the single-order detail endpoint does), so without this a parent
+    # order's duplicate history was completely invisible from the list view —
+    # exactly what made "Meta Ads says 5, ERP says 1" look like a bug instead
+    # of the merge count it actually is.
+    duplicate_count: Optional[int] = None
     created_at:      datetime
     updated_at:      Optional[datetime] = None
     tracking_number: Optional[str] = None
