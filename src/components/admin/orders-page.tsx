@@ -645,7 +645,7 @@ const [timeLeft, setTimeLeft] = useState('');
    // les badges d'onglets continuent d'afficher les totaux toutes-dates,
    // ce qui donne l'impression que les commandes d'hier sont "mélangées"
    // dans la vue d'aujourd'hui alors que c'est juste le badge qui ment).
-   const countsQuery = useQuery<Record<string, number>>({
+   const countsQuery = useQuery<Record<string, number | { normal: number; abandoned: number }>>({
      queryKey: ['orders-counts', storeId, startDate, endDate],
      queryFn: () => {
        const params = new URLSearchParams({ store_id: storeId });
@@ -658,6 +658,10 @@ const [timeLeft, setTimeLeft] = useState('');
      refetchInterval: 5 * 60 * 1000,
    });
    const tabCounts: Record<string, number> = (countsQuery.data as any) ?? {};
+   // Reçues = commandes jamais touchées par un agent (ni assignées, ni
+   // démarrées), séparées uniquement Normal/Panier abandonné — pas éclatées
+   // par les 8 statuts d'onglets — pour un calcul rapide par l'administrateur.
+   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number } | undefined;
 
    const productsQuery = useQuery<ApiResponse<any[]>>({
     queryKey: ['admin-products-lite', storeId],
@@ -1203,7 +1207,7 @@ const [timeLeft, setTimeLeft] = useState('');
                 <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 truncate">Total</span>
               </div>
               <div className="text-sm font-black text-slate-900 mt-0.5 tabular-nums">
-                {countsQuery.isLoading ? '…' : Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)}
+                {countsQuery.isLoading ? '…' : Object.entries(tabCounts).reduce((a, [k, v]) => (k === 'MERGED' || k === '_received') ? a : a + (v as number), 0)}
               </div>
             </button>
             {/* Merged duplicates card — physical orders fused into a parent */}
@@ -1257,6 +1261,25 @@ const [timeLeft, setTimeLeft] = useState('');
               );
             })}
           </div>
+          {/* Reçues — total des commandes jamais touchées par un agent, pour
+              la période/filtre courant. Volontairement PAS éclaté par les 8
+              statuts d'onglets ci-dessus (juste Normal / Panier abandonné) :
+              l'administrateur veut un chiffre "combien reçu" à additionner
+              rapidement, pas à recalculer en sommant chaque badge de statut. */}
+          {!!receivedCounts && (receivedCounts.normal + receivedCounts.abandoned) > 0 && (
+            <div className="flex items-center gap-2 flex-wrap text-[10px] font-bold text-slate-500">
+              <span className="uppercase tracking-wider">📥 Reçues :</span>
+              <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                {receivedCounts.normal} normale{receivedCounts.normal > 1 ? 's' : ''}
+              </span>
+              <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
+                {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
+              </span>
+              <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                {receivedCounts.normal + receivedCounts.abandoned} au total
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Tactical Filter Rack */}
@@ -1467,10 +1490,14 @@ const [timeLeft, setTimeLeft] = useState('');
                               xl:table-cell, colonne dédiée plus loin dans la
                               ligne) : sur un écran/fenêtre plus étroit que 1280px,
                               cette info disparaissait entièrement. Dupliqué ici en
-                              badge compact pour rester visible à toute largeur. */}
-                          {order.created_at && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase" title="Date de réception de la commande">
-                              🕐 {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                              badge compact pour rester visible à toute largeur.
+                              Réservé aux commandes qu'AUCUN agent n'a encore
+                              touchées (ni assignée, ni démarrée) — dès qu'une
+                              action a lieu, ce badge "reçue" laisse place aux
+                              badges de statut/traitement ci-dessous. */}
+                          {order.created_at && !order.assigned_to && !order.confirmation_start_time && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase" title="Commande reçue dans l'ERP, pas encore traitée">
+                              📥 Reçue le {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                           {order.source === 'MANUAL' ? (

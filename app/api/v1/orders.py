@@ -353,7 +353,39 @@ def get_order_counts(
         except ValueError:
             pass
     rows = q.group_by(Order.status).all()
-    return {r.status: r.cnt for r in rows}
+    counts = {r.status: r.cnt for r in rows}
+
+    # "Reçues" — orders received into the ERP that no agent has touched yet
+    # (never assigned, never started) i.e. purely a receipt count. Split only
+    # by Normal/Abandoned-cart origin — not by every workflow status — so the
+    # admin can read "how many did I receive" without adding up 8 tab badges.
+    received_q = (
+        db.query(Order.is_abandoned_cart, sqlfunc.count(Order.id).label("cnt"))
+        .filter(
+            Order.store_id == store_id,
+            Order.is_deleted == False,
+            Order.status != "MERGED",
+            Order.assigned_to.is_(None),
+            Order.confirmation_start_time.is_(None),
+        )
+    )
+    if start_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            received_q = received_q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            received_q = received_q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    received_rows = received_q.group_by(Order.is_abandoned_cart).all()
+    received_normal = sum(r.cnt for r in received_rows if not r.is_abandoned_cart)
+    received_abandoned = sum(r.cnt for r in received_rows if r.is_abandoned_cart)
+    counts["_received"] = {"normal": received_normal, "abandoned": received_abandoned}
+    return counts
 
 
 # ─── GET /orders/agent-counts — Sidebar module counts for confirmatrices ─────

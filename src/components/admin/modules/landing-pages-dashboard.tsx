@@ -2299,6 +2299,13 @@ export default function LandingPagesDashboard() {
   const [analyticsLP, setAnalyticsLP] = useState<LandingPage | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  // Filtres qui agissent réellement sur la liste affichée — le sélecteur de
+  // dates ci-dessus ne filtre QUE les métriques (vues/commandes) de chaque
+  // carte, jamais les pages elles-mêmes (c'est voulu côté backend), ce qui
+  // donnait l'impression que "les filtres ne marchent pas". Ceux-ci changent
+  // vraiment quelles cartes apparaissent.
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const buildQueryStr = () => {
     const params = new URLSearchParams({ store_id: storeId });
@@ -2322,6 +2329,17 @@ export default function LandingPagesDashboard() {
   });
 
   const pages: LandingPage[] = raw?.data ?? raw ?? [];
+
+  const filteredPages = pages.filter(p => {
+    if (statusFilter === 'active' && !p.is_active) return false;
+    if (statusFilter === 'inactive' && p.is_active) return false;
+    if (searchTerm.trim()) {
+      const q = searchTerm.trim().toLowerCase();
+      const haystack = [p.slug, p.headline, p.product_name].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) => apiFetch(`/api/v1/landing-pages/${id}/toggle`, { method: 'PATCH' }),
@@ -2388,7 +2406,23 @@ export default function LandingPagesDashboard() {
             <p className="text-sm text-slate-500 mt-1">Créez des pages de vente pour mettre en avant vos produits.</p>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-             <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 shrink-0">
+             <input
+               type="text"
+               value={searchTerm}
+               onChange={e => setSearchTerm(e.target.value)}
+               placeholder="Rechercher (nom, produit, slug)…"
+               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 outline-none w-full sm:w-[220px]"
+             />
+             <select
+               value={statusFilter}
+               onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+               className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 text-sm font-bold text-slate-600 outline-none shrink-0"
+             >
+               <option value="all">Toutes les pages</option>
+               <option value="active">Actives</option>
+               <option value="inactive">Inactives</option>
+             </select>
+             <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 shrink-0" title="Filtre les statistiques (vues/commandes) de chaque page, pas la liste elle-même">
                 <Calendar className="size-4 text-slate-400" />
                 <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
                 <span className="text-slate-300">-</span>
@@ -2457,9 +2491,15 @@ export default function LandingPagesDashboard() {
             <Plus className="size-4 mr-2" /> Créer une page
           </Button>
         </div>
+      ) : filteredPages.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-slate-300">
+          <LayoutTemplate className="size-10 mx-auto text-slate-300 mb-4" />
+          <p className="text-base font-bold text-slate-700 mb-1">Aucun résultat</p>
+          <p className="text-sm text-slate-500">Aucune page ne correspond à ce filtre ou à cette recherche.</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {pages.map(lp => (
+          {filteredPages.map(lp => (
             <LandingPageCard
               key={lp.id}
               lp={lp}
