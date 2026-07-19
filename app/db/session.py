@@ -36,12 +36,31 @@ def _before_cursor_execute(conn, cursor, statement, parameters, context, execute
     context._query_start_time = _time_mod.perf_counter()
 
 
+_SLOW_QUERY_THRESHOLD_MS = 500
+_slow_query_logger = None  # lazy — logging isn't configured yet at import time
+
+
 @_sa_event.listens_for(engine, "after_cursor_execute")
 def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
     start = getattr(context, "_query_start_time", None)
-    if start is not None:
-        from app.core import timing as _timing
-        _timing.record("database", (_time_mod.perf_counter() - start) * 1000)
+    if start is None:
+        return
+    duration_ms = (_time_mod.perf_counter() - start) * 1000
+    from app.core import timing as _timing
+    _timing.record("database", duration_ms)
+
+    if duration_ms > _SLOW_QUERY_THRESHOLD_MS:
+        global _slow_query_logger
+        if _slow_query_logger is None:
+            import logging as _logging_mod
+            _slow_query_logger = _logging_mod.getLogger("app.slow_query")
+        # Single-line, truncated statement — full text isn't needed to spot
+        # which query/table is the offender, and this fires per slow query
+        # so keeping it compact matters under load.
+        _slow_query_logger.warning(
+            "SLOWQUERY %.1fms: %s",
+            duration_ms, " ".join(str(statement).split())[:300],
+        )
 
 
 def get_db():

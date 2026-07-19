@@ -51,8 +51,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             request.headers.get("x-forwarded-for", "").split(",")[0].strip()
             or (request.client.host if request.client else "-")
         )
+        # Breakdown of where the time actually went — previously only
+        # exposed via the Server-Timing response header (invisible unless
+        # someone opens devtools mid-incident), never logged server-side.
+        # Answers "was this request slow because of SQL, Redis, or our own
+        # code" from the container logs alone, after the fact.
+        from app.core import timing as _timing
+        _entries = _timing.get_all()
+        sql_ms = sum(d for n, d in _entries if n == "database")
+        sql_count = sum(1 for n, _ in _entries if n == "database")
+        redis_ms = sum(d for n, d in _entries if n in ("redis",) or n.startswith("ratelimit_redis"))
+
         access_logger.info(
-            "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s",
+            "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s sql=%.1fms(%dq) redis=%.1fms",
             request.method,
             request.url.path,
             response.status_code,
@@ -61,6 +72,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             host,
             client_ip,
             request_id,
+            sql_ms,
+            sql_count,
+            redis_ms,
         )
         # Propagate correlation ID back to client
         response.headers["X-Request-Id"] = request_id
