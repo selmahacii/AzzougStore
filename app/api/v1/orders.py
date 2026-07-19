@@ -407,17 +407,20 @@ def get_order_counts(
     received_normal = sum(r.cnt for r in received_rows if not r.is_abandoned_cart)
     received_abandoned = sum(r.cnt for r in received_rows if r.is_abandoned_cart)
 
-    # "Doublons reçus" — of everything that came in this period, how many
-    # were actually a resubmit of an existing order (merged into its
-    # parent), not a genuine separate sale. Answers the admin's recurring
-    # "Meta Ads shows 5 orders, the ERP shows 1 — is that a bug?" question
-    # directly at a glance: no, those 4 extra were duplicates, already
-    # counted once. Excluded from received_normal/received_abandoned above
-    # (Order.status != "MERGED"), counted here from the same date window.
-    duplicate_q = db.query(sqlfunc.count(Order.id)).filter(
+    # "Doublons reçus" — how many ORDERS (not raw resubmit rows) had at
+    # least one duplicate merged into them in this period. Counts DISTINCT
+    # parent_order_id, not count(*) on MERGED rows: one order that absorbed
+    # 3 resubmits is "1 order with a duplicate problem", not 3 — the admin
+    # explicitly wants "combien de commande a un doublons", not the raw
+    # number of duplicate submissions. Answers the recurring "Meta Ads
+    # shows 5 orders, the ERP shows 1 — is that a bug?" question directly:
+    # no, that's 1 order (this count) that absorbed multiple resubmits.
+    from sqlalchemy import distinct as _distinct
+    duplicate_q = db.query(sqlfunc.count(_distinct(Order.parent_order_id))).filter(
         Order.store_id == store_id,
         Order.is_deleted == False,
         Order.status == "MERGED",
+        Order.parent_order_id.isnot(None),
     )
     if start_date:
         from app.core.dates import parse_local_date_filter
