@@ -1482,7 +1482,7 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
     - Revenue from UTM-tagged orders
     - Net profitability after ad costs
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, or_
 
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     # 1. Meta Ads campaigns totals
@@ -1510,25 +1510,31 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
     tx_count = len(ad_transactions)
 
     # 4. Revenue from UTM-linked orders
+    # Was: db.query(Order).filter(...).all() with no utm_campaign filter —
+    # loaded the store's ENTIRE non-cancelled/non-merged order history as
+    # full ORM objects just to check a single column and sum one field.
+    # Under concurrent dashboard load on a memory-constrained container this
+    # was one of the largest single allocations per request. Fixed by
+    # pushing the utm_campaign IN-filter into SQL (case-insensitive via
+    # func.lower to match the prior Python-side .lower() comparison) and
+    # selecting only the two columns actually used.
     campaign_names = [c.campaign_name.lower() for c in campaigns]
     campaign_ids = [c.campaign_id for c in campaigns]
-    orders = db.query(Order).filter(
-        Order.store_id == store_id,
-        Order.status != "CANCELLED",
-        # Exclude auto-merged duplicate children — same fix as list_campaigns,
-        # otherwise a customer's repeat submission counted as an extra sale.
-        Order.status != "MERGED",
-        Order.is_deleted == False
-    ).all()
-    utm_orders = [
-        o for o in orders
-        if o.utm_campaign and (
-            o.utm_campaign.lower() in campaign_names or
-            o.utm_campaign in campaign_ids
-        )
-    ]
-    total_utm_revenue = sum(o.total for o in utm_orders)
-    total_utm_orders = len(utm_orders)
+    utm_rows = []
+    if campaign_names or campaign_ids:
+        utm_rows = db.query(Order.total, Order.utm_campaign).filter(
+            Order.store_id == store_id,
+            Order.status != "CANCELLED",
+            Order.status != "MERGED",
+            Order.is_deleted == False,
+            Order.utm_campaign.isnot(None),
+            or_(
+                func.lower(Order.utm_campaign).in_(campaign_names),
+                Order.utm_campaign.in_(campaign_ids),
+            ),
+        ).all()
+    total_utm_revenue = sum(r.total or 0 for r in utm_rows)
+    total_utm_orders = len(utm_rows)
 
     # 5. Net profitability
     net_profit_after_ads = total_utm_revenue - total_ads_spend_dzd
