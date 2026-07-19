@@ -86,11 +86,29 @@ export async function apiFetch<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(path, {
-    ...rest,
-    headers,
-    credentials: 'include', // Always send __session cookie
-  });
+  // HF Space's free-tier gateway intermittently returns a bare 500/502/503/504
+  // (HTML, not our JSON) before the request ever reaches the app — confirmed by
+  // comparing browser-side failures against the app's own access log, which
+  // shows 100% 200s for the exact same requests in the exact same window. GET
+  // requests are safe to retry blindly since they have no side effects.
+  const isRetryable = (rest.method ?? 'GET').toUpperCase() === 'GET';
+  const maxAttempts = isRetryable ? 3 : 1;
+  let response: Response;
+  let attempt = 0;
+  for (;;) {
+    attempt++;
+    response = await fetch(path, {
+      ...rest,
+      headers,
+      credentials: 'include', // Always send __session cookie
+    });
+    const isGatewayError = [500, 502, 503, 504].includes(response.status);
+    if (isRetryable && isGatewayError && attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+      continue;
+    }
+    break;
+  }
 
   // ── Silent token refresh on 401 ─────────────────────────────────────────
   if (response.status === 401) {
