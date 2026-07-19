@@ -405,7 +405,38 @@ def get_order_counts(
     received_rows = received_q.group_by(Order.is_abandoned_cart).all()
     received_normal = sum(r.cnt for r in received_rows if not r.is_abandoned_cart)
     received_abandoned = sum(r.cnt for r in received_rows if r.is_abandoned_cart)
-    counts["_received"] = {"normal": received_normal, "abandoned": received_abandoned}
+
+    # "Doublons reçus" — of everything that came in this period, how many
+    # were actually a resubmit of an existing order (merged into its
+    # parent), not a genuine separate sale. Answers the admin's recurring
+    # "Meta Ads shows 5 orders, the ERP shows 1 — is that a bug?" question
+    # directly at a glance: no, those 4 extra were duplicates, already
+    # counted once. Excluded from received_normal/received_abandoned above
+    # (Order.status != "MERGED"), counted here from the same date window.
+    duplicate_q = db.query(sqlfunc.count(Order.id)).filter(
+        Order.store_id == store_id,
+        Order.is_deleted == False,
+        Order.status == "MERGED",
+    )
+    if start_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            duplicate_q = duplicate_q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            duplicate_q = duplicate_q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    received_duplicate = duplicate_q.scalar() or 0
+
+    counts["_received"] = {
+        "normal": received_normal,
+        "abandoned": received_abandoned,
+        "duplicate": received_duplicate,
+    }
     return counts
 
 
