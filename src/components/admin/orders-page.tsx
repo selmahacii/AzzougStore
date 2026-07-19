@@ -280,6 +280,19 @@ const [timeLeft, setTimeLeft] = useState('');
   const [isAbandonedCart, setIsAbandonedCart] = useState(false);
   const [recoveryFee, setRecoveryFee] = useState(0);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  // Store-wide duplicate count for the "🟣 Doublons" quick-filter badge —
+  // was computed only from the currently-loaded page's `orders` array, so
+  // it silently vanished (count===0 hides every non-ALL badge, see below)
+  // whenever the current page/status-tab happened to have zero duplicates
+  // on it, even with real merged duplicates elsewhere in the store (visible
+  // in the backend logs as "Auto-merged N duplicate(s)..." constantly).
+  const duplicateStatsQuery = useQuery({
+    queryKey: ['duplicate-stats-badge', storeId],
+    queryFn: () => apiFetch<{ success: boolean; data: { child_orders: number } }>(`/api/v1/orders/duplicate-stats?store_id=${storeId}`),
+    enabled: !!storeId,
+    staleTime: 60_000,
+  });
+  const storeWideDuplicateCount = duplicateStatsQuery.data?.data?.child_orders ?? 0;
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [viewMode, setViewMode] = useState<'NEW' | 'EN ATTENTE' | 'CONFIRMED' | 'FOLLOWUP' | 'COMPLETED' | 'CANCELLED' | 'ABANDONED' | 'ALL'>((adminSubView as any) || 'NEW');
   // Edit order modal
@@ -1376,7 +1389,12 @@ const [timeLeft, setTimeLeft] = useState('');
         {/* ─── Filtres par type de commande (micro-détails) ─── */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {ORDER_TYPE_FILTERS.map((f) => {
-            const count = f.id === 'ALL' ? orders.length : orders.filter(f.match).length;
+            const pageCount = f.id === 'ALL' ? orders.length : orders.filter(f.match).length;
+            // "Doublons" reflects the whole store (see storeWideDuplicateCount
+            // above), not just whatever duplicates happen to be on the
+            // currently-loaded page — every other badge stays page-scoped,
+            // which is correct for a quick filter over what's visible.
+            const count = f.id === 'DUPLICATE' ? Math.max(pageCount, storeWideDuplicateCount) : pageCount;
             if (f.id !== 'ALL' && count === 0) return null;
             const active = typeFilter === f.id;
             return (
