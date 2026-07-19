@@ -24,16 +24,25 @@ Meta CAPI flow, auto_merge_duplicates, dashboards, or carrier sync while
 this migration lands. The engine only starts writing here once code in a
 later commit calls it, and only in 'shadow' mode by default.
 
-Revision ID: q0r1s2t3u4v5
-Revises: p9q0r1s2t3u4
+Revision ID: r1s2t3u4v5w6
+Revises: q0r1s2t3u4v5
 Create Date: 2026-07-19
+
+NOTE: originally authored as revision 'q0r1s2t3u4v5' against a local repo
+that didn't yet have the deployed backend's own q0r1s2t3u4v5
+(enable_rls_meta_ads_ad_insights, a critical security fix already live in
+production). Renamed to r1s2t3u4v5w6 and rechained onto that migration
+instead of onto p9q0r1s2t3u4 directly, once the collision was discovered —
+both migrations' DDL were already present in production before the rename
+(this file's tables were created under the old id during the mixup; the
+rename only corrects the bookkeeping, no DDL changed).
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = 'q0r1s2t3u4v5'
-down_revision = 'p9q0r1s2t3u4'
+revision = 'r1s2t3u4v5w6'
+down_revision = 'q0r1s2t3u4v5'
 branch_labels = None
 depends_on = None
 
