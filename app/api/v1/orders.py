@@ -355,18 +355,18 @@ def get_order_counts(
     rows = q.group_by(Order.status).all()
     counts = {r.status: r.cnt for r in rows}
 
-    # "Reçues" — orders received into the ERP that no agent has touched yet
-    # (never assigned, never started) i.e. purely a receipt count. Split only
-    # by Normal/Abandoned-cart origin — not by every workflow status — so the
-    # admin can read "how many did I receive" without adding up 8 tab badges.
+    # "Reçues" — how many orders came into the ERP in this period, period.
+    # Counts EVERY order regardless of whether an agent has since acted on
+    # it (assigned, called, confirmed...) — the receipt date never changes,
+    # only the status does. Split only by Normal/Abandoned-cart origin — not
+    # by every workflow status — so the admin can read "how many did I
+    # receive" without adding up 8 tab badges.
     received_q = (
         db.query(Order.is_abandoned_cart, sqlfunc.count(Order.id).label("cnt"))
         .filter(
             Order.store_id == store_id,
             Order.is_deleted == False,
             Order.status != "MERGED",
-            Order.assigned_to.is_(None),
-            Order.confirmation_start_time.is_(None),
         )
     )
     if start_date:

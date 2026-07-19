@@ -1491,11 +1491,10 @@ const [timeLeft, setTimeLeft] = useState('');
                               ligne) : sur un écran/fenêtre plus étroit que 1280px,
                               cette info disparaissait entièrement. Dupliqué ici en
                               badge compact pour rester visible à toute largeur.
-                              Réservé aux commandes qu'AUCUN agent n'a encore
-                              touchées (ni assignée, ni démarrée) — dès qu'une
-                              action a lieu, ce badge "reçue" laisse place aux
-                              badges de statut/traitement ci-dessous. */}
-                          {order.created_at && !order.assigned_to && !order.confirmation_start_time && (
+                              S'affiche sur TOUTES les commandes sans exception —
+                              même celles déjà traitées/actionnées : la date de
+                              réception ne bouge jamais, contrairement au statut. */}
+                          {order.created_at && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase" title="Commande reçue dans l'ERP, pas encore traitée">
                               📥 Reçue le {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
