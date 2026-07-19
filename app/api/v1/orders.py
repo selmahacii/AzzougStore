@@ -183,7 +183,7 @@ def _capi_reference_time(db: Session, order: Order):
     return order.created_at
 
 
-def _sync_item_images_from_product(orders) -> None:
+def _sync_item_images_from_product(db: Session, orders) -> None:
     """
     Order items store image_url as a one-time snapshot taken when the item
     was added (see OrderItem model comment). Left as-is, replacing a
@@ -194,12 +194,33 @@ def _sync_item_images_from_product(orders) -> None:
     (in-memory only, never committed) makes every photo update visible
     everywhere immediately, while still falling back to the snapshot for
     items whose product was deleted.
+
+    Was: accessing item.product per item — that relationship is never
+    eager-loaded on this query (see the joinedload comment on final_query
+    above: the full Product row was deliberately dropped from the eager
+    load as wasted transfer), so every access lazy-loaded ONE extra SQL
+    query per item. Confirmed in prod: GET /orders (pageSize=50) issued 58
+    queries totalling 4456ms — 55 more than the 3 the endpoint actually
+    needs — and this loop was the source. Batched into a single query for
+    just the (id, main_image) columns actually used here.
     """
+    product_ids = {
+        item.product_id
+        for order in orders
+        for item in (order.items or [])
+        if item.product_id
+    }
+    if not product_ids:
+        return
+    from app.models.product import Product
+    images_by_product = dict(
+        db.query(Product.id, Product.main_image).filter(Product.id.in_(product_ids)).all()
+    )
     for order in orders:
         for item in (order.items or []):
-            product = getattr(item, "product", None)
-            if product is not None and getattr(product, "main_image", None):
-                item.image_url = product.main_image
+            main_image = images_by_product.get(item.product_id)
+            if main_image:
+                item.image_url = main_image
 
 
 @router.get("/check-duplicate")
@@ -452,11 +473,15 @@ def get_agent_counts(
             except ValueError:
                 pass
 
-    def _count(*criteria):
-        return base.filter(*criteria).count()
-
-    def _count_wide(*criteria):
-        return base_wide.filter(*criteria).count()
+    # Was 23-24 separate .count() round trips (one per badge — base and
+    # base_wide filtered ~10 and ~13 times respectively). Confirmed in prod:
+    # GET /orders/agent-counts took ~2000ms, 1759ms (24 queries) of it SQL —
+    # at the Supabase pooler's ~70-100ms/round-trip, this endpoint's cost
+    # WAS the round-trip count, not any single query's complexity. Collapsed
+    # into 2 conditional-aggregation queries (one per base query, since
+    # `base` and `base_wide` differ in their own WHERE scoping for
+    # CONFIRMATEUR — they can't share a single SELECT).
+    from sqlalchemy import case as _case
 
     # Mirror of list_orders' exclusion: an order handed to an internal
     # delivery agent counts ONLY in internal_delivery, never in the
@@ -466,62 +491,71 @@ def get_agent_counts(
         Order.livreur_id.is_(None),
         and_(Order.tracking_number.isnot(None), Order.tracking_number != ""),
     )
+    _now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    counts = {
-        "all":       base.filter(Order.status.notin_(["CANCELLED", "RETURNED"])).count(),
-        "new":       _count(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])),
-        "pending":   _count(
+    def _sum(*criteria):
+        return sqlfunc.sum(_case((and_(*criteria), 1), else_=0))
+
+    base_row = base.with_entities(
+        _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
+        _sum(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
+        _sum(
             _not_internal,
             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
             or_(Order.nrp_count == None, Order.nrp_count == 0),
-        ),
-        "confirmed": _count(_not_internal, Order.status == "CONFIRMED"),
-        "shipped":   _count_wide(Order.status == "SHIPPED"),
-        "delivered": _count_wide(Order.status == "DELIVERED"),
+        ).label("pending"),
+        _sum(_not_internal, Order.status == "CONFIRMED").label("confirmed"),
+        _sum(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp"),
+        _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
+             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp_abandoned"),
+        _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
+             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])).label("nrp_normal"),
+        _sum(_not_internal, Order.is_abandoned_cart == True,
+             Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])).label("abandoned_in_progress"),
+        _sum(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
+        # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
+        # sans heure de rappel programmée, ou dont l'heure est déjà passée.
+        _sum(
+            _not_internal,
+            Order.nrp_count > 0,
+            Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
+            or_(Order.next_callback_time == None, Order.next_callback_time <= _now),
+        ).label("recall"),
+    ).one()
+
+    wide_row = base_wide.with_entities(
+        _sum(Order.status == "SHIPPED").label("shipped"),
+        _sum(Order.status == "DELIVERED").label("delivered"),
         # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
         # counts['returned'] — this key never existed, so that lookup was
         # always undefined ?? 0, and the badge's `count > 0` render guard
         # was permanently false. The badge wasn't wrong, it was invisible.
-        "returned":  _count_wide(Order.status == "RETURNED"),
-        "cancelled": _count_wide(Order.status == "CANCELLED"),
-        "nrp":       _count(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
-        "nrp_abandoned": _count(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
-                                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])),
-        "nrp_normal": _count(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
-                             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])),
-        "abandoned_in_progress": _count(_not_internal, Order.is_abandoned_cart == True,
-                                        Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])),
-        "recovered": _count(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
-        # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
-        # scoped to SHIPPED since that's the only state a carrier_stage is
-        # meaningful for (before dispatch there's nothing to poll; after
-        # DELIVERED/RETURNED our own status already says so). Store-wide
-        # (_count_wide) for the same reason as shipped/delivered/returned.
-        **{
-            f"carrier_{bucket}": _count_wide(Order.status == "SHIPPED", Order.carrier_stage.in_(keys))
-            for bucket, keys in CARRIER_STAGE_BUCKETS.items()
-        },
-        "internal_delivery": _count_wide(
+        _sum(Order.status == "RETURNED").label("returned"),
+        _sum(Order.status == "CANCELLED").label("cancelled"),
+        _sum(
             Order.livreur_id.isnot(None),
             or_(Order.tracking_number == None, Order.tracking_number == ""),
             Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
-        ),
-        "archived":  _count_wide(Order.status.in_(["CANCELLED", "RETURNED"])),
-        # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
-        # sans heure de rappel programmée, ou dont l'heure est déjà passée.
-        "recall": _count(
-            _not_internal,
-            Order.nrp_count > 0,
-            Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
-            or_(Order.next_callback_time == None, Order.next_callback_time <= datetime.now(timezone.utc).replace(tzinfo=None)),
-        ),
+        ).label("internal_delivery"),
+        _sum(Order.status.in_(["CANCELLED", "RETURNED"])).label("archived"),
         # "Commandes Manuelles" sidebar badge — store-wide like shipped/
         # delivered/returned above, not scoped to the confirmatrice's own
         # `base`: a manually-entered order can be created by any agent/admin,
         # and whoever's checking this count should see the store's total,
         # not just their own.
-        "manual": _count_wide(sqlfunc.coalesce(Order.source, "") == "MANUAL"),
-    }
+        _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+        # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
+        # scoped to SHIPPED since that's the only state a carrier_stage is
+        # meaningful for (before dispatch there's nothing to poll; after
+        # DELIVERED/RETURNED our own status already says so).
+        *[
+            _sum(Order.status == "SHIPPED", Order.carrier_stage.in_(keys)).label(f"carrier_{bucket}")
+            for bucket, keys in CARRIER_STAGE_BUCKETS.items()
+        ],
+    ).one()
+
+    counts = {k: (v or 0) for k, v in base_row._mapping.items()}
+    counts.update({k: (v or 0) for k, v in wide_row._mapping.items()})
     return {"success": True, "counts": counts}
 
 
@@ -956,7 +990,7 @@ def list_orders(
     logger.debug(f"[Orders] Query result: store_id={store_id!r}, total={total}, page={page}")
 
     orders = final_query.offset(skip).limit(pageSize).all()
-    _sync_item_images_from_product(orders)
+    _sync_item_images_from_product(db, orders)
 
     # Attach a per-order event count so the UI can show "🕘 N événements" right
     # in the list without opening the detail drawer for every order — one
@@ -1569,7 +1603,7 @@ def get_order(
         raise OrderNotFoundError()
 
     _assert_order_access(order, current_user)
-    _sync_item_images_from_product([order])
+    _sync_item_images_from_product(db, [order])
 
     # Attach merged duplicates for the duplication-history panel
     children = db.query(Order).filter(
