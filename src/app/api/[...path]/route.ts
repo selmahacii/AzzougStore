@@ -74,7 +74,25 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       }
     }
 
-    const response = await fetch(targetUrl, fetchOptions);
+    // Without a timeout here, a slow/unreachable backend (e.g. right after
+    // an HF Space redeploy/restart, while the container is still booting)
+    // leaves this fetch() hanging until VERCEL'S OWN platform-level function
+    // timeout kills it — which bypasses our try/catch entirely and returns
+    // a raw Vercel-branded HTML 500 page (confirmed in prod: response had
+    // `server: Vercel`, text/html, none of our JSON error shape below).
+    // That's slow (waits out the full platform timeout, ~10s+) AND opaque
+    // to the frontend's retry logic, which expects a normal HTTP status.
+    // Aborting at 8s guarantees OUR catch block runs first every time,
+    // producing the same fast, structured 503 JSON as any other proxy
+    // failure — which api-client.ts already retries.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // Build the proxied response headers
     const resHeaders = new Headers();
