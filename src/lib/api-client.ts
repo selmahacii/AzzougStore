@@ -252,7 +252,18 @@ async function _apiFetchInner<T = unknown>(
           ? (body.detail as any[]).map((e) => e.message ?? e.msg ?? String(e)).join('; ')
           : `Erreur serveur (${response.status})`);
 
-    if (!silent) {
+    // 500/502/503/504 after retries are exhausted are, in practice, the HF
+    // free-tier gateway dying under load — not a genuine app/business error
+    // (confirmed via RAWENTRY/RAWEXIT tracing: requests that reach our
+    // process succeed). Surfacing every one as an intrusive toast trained
+    // users to see "erreur 500" as a constant, when it's really transient
+    // infra noise most of the time already retried away. Still fully logged
+    // to the console and still thrown (callers can show inline state) —
+    // just not a popup.
+    const isGatewayNoise = [500, 502, 503, 504].includes(response.status);
+    if (isGatewayNoise) {
+      console.error(`[API] ${path} → ${response.status} (gateway, not shown to user):`, message);
+    } else if (!silent) {
       toast.error(message);
     }
     throw new ApiClientError(message, response.status, errorCode, json);
