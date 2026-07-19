@@ -129,10 +129,39 @@ def run_db_migrations():
     # Python loop (1 MAX + 1 COMMIT per row) was removed.
     print("✅ Startup migrations finished — database connection is live.")
 
+def _acquire_scheduler_leader_lock() -> bool:
+    """
+    True iff this process wins an exclusive, non-blocking lock — used to run
+    background_loop() in exactly one worker. Below this app ran uvicorn with
+    no --workers flag (single process), which meant one Python event loop
+    serialized every request; concurrent dashboard loads across 2+ stores
+    (each firing ~10 requests) queued up and HuggingFace's own gateway
+    timed the slow ones out as a 500 with no trace in our own logs (the
+    request never got a chance to run). Multiple workers fixes that, but
+    each worker's startup event fires independently — without this lock,
+    N workers would each spin up their own background_loop(), meaning N
+    duplicate Meta Ads syncs, N duplicate reminder notifications sent to
+    staff/customers, N duplicate Cloudinary migration passes, etc. All
+    workers share the container filesystem, so flock on a fixed path is a
+    simple, dependency-free way to pick exactly one leader.
+    """
+    import fcntl
+    try:
+        lock_file = open("/tmp/azzougshop_scheduler.lock", "w")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        globals()["_scheduler_lock_fh"] = lock_file  # keep FD alive for process lifetime
+        return True
+    except (OSError, BlockingIOError):
+        return False
+
+
 @app.on_event("startup")
 async def start_background_sync():
-    """Noest polling + reminder scheduler (see app/services/noest_sync.py)."""
+    """Noest polling + reminder scheduler (see app/services/noest_sync.py) — leader-only, see _acquire_scheduler_leader_lock."""
     import asyncio
+    if not _acquire_scheduler_leader_lock():
+        logging.getLogger("app.startup").info("[Scheduler] Another worker already holds the leader lock — skipping background_loop in this worker.")
+        return
     from app.services.noest_sync import background_loop
     asyncio.create_task(background_loop())
 
