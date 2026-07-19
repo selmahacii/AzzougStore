@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
+import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
 
 // ─── TEMPLATE DEFINITIONS ───────────────────────────────────
 export const STORE_TEMPLATES = [
@@ -81,6 +82,7 @@ interface FormData {
   hero_tag: string;
   hero_stats: Array<{ label: string; value: string }>;
   hero_font: 'bold' | 'normal' | 'light' | 'serif';
+  sections_config: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }>;
   assignment_active: boolean;
   assignment_logic: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
 }
@@ -112,6 +114,7 @@ const DEFAULT_FORM: FormData = {
   hero_tag: '',
   hero_stats: [],
   hero_font: 'bold',
+  sections_config: DEFAULT_HOME_SECTIONS,
   assignment_active: false,
   assignment_logic: 'MANUAL',
 };
@@ -125,7 +128,13 @@ interface StoreWizardProps {
   initialData?: any;
 }
 
-const STEPS = ['Template', 'Identité', 'Design', 'Assignation', 'Aperçu & Lancer'];
+const STEPS = ['Template', 'Identité', 'Design', 'Sections', 'Assignation', 'Aperçu & Lancer'];
+
+const SECTION_LABELS: Record<string, string> = {
+  bestSellers: 'Meilleures ventes',
+  newArrivals: 'Nouveautés',
+  testimonials: 'Avis clients',
+};
 
 export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: StoreWizardProps) {
   const [step, setStep] = useState(0);
@@ -168,6 +177,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           hero_cta2: initialData.theme_config?.heroCta2 || '',
           hero_tag: initialData.theme_config?.heroTag || '',
           hero_stats: initialData.theme_config?.heroStats || [],
+          sections_config: initialData.theme_config?.sectionsConfig || DEFAULT_HOME_SECTIONS,
           hero_font: initialData.theme_config?.heroFont || 'bold',
           assignment_active: initialData.assignment_active || false,
           assignment_logic: initialData.assignment_logic || 'MANUAL',
@@ -249,6 +259,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           ? form.hero_stats.filter(s => s.label.trim() && s.value.trim())
           : null,
         heroFont: form.hero_font,
+        sectionsConfig: form.sections_config,
         footerTagline: form.footer_tagline || null,
         footerCopyright: form.footer_copyright || `© ${new Date().getFullYear()} ${form.name}. Tous droits réservés.`,
         contact: {
@@ -877,8 +888,71 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                 </div>
               )}
 
-              {/* STEP 3 — Assignation */}
+              {/* STEP 3 — Sections (activer/désactiver + réordonner) */}
               {step === 3 && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 mb-1">Sections de la page d'accueil</h3>
+                    <p className="text-sm text-slate-400 font-medium">Activez, désactivez et réordonnez les sections affichées sous le Hero de votre boutique.</p>
+                  </div>
+
+                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-3">
+                    {form.sections_config.map((section, i) => (
+                      <div
+                        key={section.key}
+                        className={cn(
+                          "flex items-center gap-4 p-4 rounded-2xl border transition-all",
+                          section.enabled ? "bg-slate-50/50 border-slate-100" : "bg-slate-50/20 border-slate-100 opacity-50"
+                        )}
+                      >
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button
+                            type="button"
+                            disabled={i === 0}
+                            onClick={() => setForm(f => {
+                              const next = [...f.sections_config];
+                              [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                              return { ...f, sections_config: next };
+                            })}
+                            className="size-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                          >
+                            <ChevronLeft className="size-3.5 rotate-90" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={i === form.sections_config.length - 1}
+                            onClick={() => setForm(f => {
+                              const next = [...f.sections_config];
+                              [next[i], next[i + 1]] = [next[i + 1], next[i]];
+                              return { ...f, sections_config: next };
+                            })}
+                            className="size-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                          >
+                            <ChevronRight className="size-3.5 rotate-90" />
+                          </button>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-black text-slate-800">{SECTION_LABELS[section.key]}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">Position {i + 1}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, sections_config: f.sections_config.map(s => s.key === section.key ? { ...s, enabled: !s.enabled } : s) }))}
+                          className={cn(
+                            "relative w-11 h-6 rounded-full transition-colors shrink-0",
+                            section.enabled ? "bg-[#4b7bec]" : "bg-slate-200"
+                          )}
+                        >
+                          <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform", section.enabled ? "translate-x-5" : "translate-x-0.5")} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4 — Assignation */}
+              {step === 4 && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div>
                     <h3 className="text-base font-black text-slate-900 mb-1">Assignation & Équipe</h3>
@@ -948,8 +1022,8 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                 </div>
               )}
 
-              {/* STEP 4 — Review */}
-              {step === 4 && (
+              {/* STEP 5 — Review */}
+              {step === 5 && (
                 <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div>
                     <h3 className="text-base font-black text-slate-900 mb-1">{isEdit ? 'Prêt à modifier !' : 'Prêt à déployer !'}</h3>

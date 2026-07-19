@@ -36,8 +36,21 @@ export interface ThemeConfig {
   labelNewArrivalsTag?: string | null;
   // Help messages (configurable)
   helpMessages?: Record<string, string> | null;
+  // Section visibility + order for the storefront homepage (below the
+  // Hero, which stays a fixed top element rendered by a separate
+  // component). Array order = display order. A section not enabled=true
+  // is hidden entirely. Falls back to all sections enabled, default order,
+  // when unset — so existing stores without this field render exactly as
+  // before (purely additive, no migration required).
+  sectionsConfig?: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }> | null;
   [key: string]: unknown;
 }
+
+export const DEFAULT_HOME_SECTIONS: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }> = [
+  { key: 'bestSellers', enabled: true },
+  { key: 'newArrivals', enabled: true },
+  { key: 'testimonials', enabled: true },
+];
 
 export interface Store {
   id: string;

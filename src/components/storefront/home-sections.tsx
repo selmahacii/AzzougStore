@@ -2,10 +2,11 @@
 
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
+import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
 import { ProductCard } from './product-card';
 import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -98,14 +99,18 @@ export function HomeSections() {
     tpl === 'luxe' ? 'bg-[#0C0F1A] text-white min-h-screen' :
     'bg-white text-neutral-900 min-h-screen';
 
-  return (
-    <div className={bgClass} dir={dir}>
+  // Section visibility + order — configurable per store via
+  // theme_config.sectionsConfig (see store-wizard.tsx's Sections step).
+  // Falls back to all 3 enabled in the original fixed order when unset,
+  // so a store that never touched this config renders exactly as before.
+  const sectionsOrder = (activeStore.theme_config?.sectionsConfig ?? DEFAULT_HOME_SECTIONS)
+    .filter(s => s.enabled)
+    .map(s => s.key);
 
-
-
-      {/* ── BEST SELLERS ──────────────────────────────────────────── */}
-      <section 
-        id="best-sellers" 
+  const bestSellersSection = (
+      <section
+        key="bestSellers"
+        id="best-sellers"
         className={cn(
           tpl === 'clean' 
             ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
@@ -201,11 +206,11 @@ export function HomeSections() {
           </div>
         )}
       </section>
+  );
 
-
-      {/* ── NEW ARRIVALS ──────────────────────────────────────────── */}
-      {newArrivals.length > 0 && (
-        <section 
+  const newArrivalsSection = newArrivals.length > 0 ? (
+        <section
+          key="newArrivals"
           className={cn(
             tpl === 'clean' 
               ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
@@ -263,11 +268,13 @@ export function HomeSections() {
             ))}
           </div>
         </section>
-      )}
+  ) : null;
 
-      {/* ── ROLLING TESTIMONIALS — only shown if real API reviews exist ──── */}
-      {tpl !== 'clean' && testimonials.length > 0 && (
-        <section className={cn(
+  // Testimonials — only shown if real API reviews exist AND the config
+  // enables the section (tpl==='clean' has never shown this section by
+  // design, regardless of config — kept unchanged).
+  const testimonialsSection = tpl !== 'clean' && testimonials.length > 0 ? (
+        <section key="testimonials" className={cn(
           "py-24 sm:py-32 overflow-hidden border-t",
           tpl === 'clean' ? 'bg-white border-neutral-100' :
           tpl === 'luxe' ? 'bg-[#0C0F1A] border-white/5' :
@@ -374,8 +381,17 @@ export function HomeSections() {
             </motion.div>
           </div>
         </section>
-      )}
+  ) : null;
 
+  const SECTION_MAP: Record<string, ReactNode> = {
+    bestSellers: bestSellersSection,
+    newArrivals: newArrivalsSection,
+    testimonials: testimonialsSection,
+  };
+
+  return (
+    <div className={bgClass} dir={dir}>
+      {sectionsOrder.map(key => SECTION_MAP[key])}
     </div>
   );
 }
