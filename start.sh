@@ -134,4 +134,12 @@ print('Schema created successfully')
 fi
 
 echo "Starting FastAPI server..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+# No --workers before this line meant ONE process handling every request on
+# ONE event loop — under concurrent dashboard load (multiple stores, each
+# firing ~10 requests on open) requests queued up and HuggingFace's own
+# gateway timed the slow ones out as a bare 500 with zero trace in our logs
+# (confirmed live: every completed request logged 200, nothing ever threw).
+# 2 workers uses both vCPUs on the cpu-basic tier. See
+# app.main._acquire_scheduler_leader_lock for why the background scheduler
+# doesn't just duplicate itself across workers.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
