@@ -312,20 +312,62 @@ app.add_middleware(TenantMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
 # ─── Vercel Service Prefix Routing Middleware ────────────────
+# Registered LAST → Starlette makes it the OUTERMOST middleware, i.e. the
+# very first code of ours that runs for any request and the very last that
+# runs on the way out. Every prior production incident where the browser saw
+# a 500/502/503 showed ZERO trace anywhere in our logs (register_error_handlers
+# catches and logs every exception that reaches FastAPI's routing/handlers —
+# see app/core/error_handlers.py — so an exception THERE always leaves a
+# line). That left one unproven possibility: a request dies before even
+# reaching FastAPI's routing (inside this ASGI layer, or never delivered by
+# uvicorn at all). RAWENTRY/RAWEXIT below is unconditional — it runs before
+# any routing, auth, or FastAPI exception handling — so it settles the
+# question with direct evidence instead of inference:
+#   - RAWENTRY with no matching RAWEXIT/RAWERROR  → hung/killed inside our
+#     process (a real, fixable app-level bug — investigate from there).
+#   - The browser's failed request has NO RAWENTRY line at all           → it
+#     never reached this process; confirmed external (HF's gateway/proxy),
+#     nothing left to fix in application code.
+import logging as _rawlog_module
+_raw_logger = _rawlog_module.getLogger("app.rawentry")
+
 class VercelPrefixMiddleware:
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            path = scope.get("path", "")
-            if path.startswith("/_/backend"):
-                scope["path"] = path[len("/_/backend"):]
-                raw_path = scope.get("raw_path", b"")
-                if raw_path.startswith(b"/_/backend"):
-                    scope["raw_path"] = raw_path[len(b"/_/backend"):]
-                scope["root_path"] = "/_/backend"
-        await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path.startswith("/_/backend"):
+            scope["path"] = path[len("/_/backend"):]
+            raw_path = scope.get("raw_path", b"")
+            if raw_path.startswith(b"/_/backend"):
+                scope["raw_path"] = raw_path[len(b"/_/backend"):]
+            scope["root_path"] = "/_/backend"
+
+        req_id = str(uuid.uuid4())[:8]
+        method = scope.get("method", "?")
+        log_path = scope.get("path", "?")
+        _raw_logger.info("RAWENTRY[%s] %s %s", req_id, method, log_path)
+        status_holder = {}
+
+        async def _send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send_wrapper)
+        except BaseException as exc:
+            # Anything escaping here bypassed FastAPI's own exception
+            # handlers entirely — genuinely unprecedented if it ever fires.
+            _raw_logger.critical("RAWERROR[%s] %s %s: %r", req_id, method, log_path, exc, exc_info=True)
+            raise
+        else:
+            _raw_logger.info("RAWEXIT[%s] %s %s status=%s", req_id, method, log_path, status_holder.get("status", "?"))
 
 app.add_middleware(VercelPrefixMiddleware)
 
