@@ -48,6 +48,40 @@ interface ApiClientOptions extends RequestInit {
 
 let _refreshPromise: Promise<boolean> | null = null;
 
+// ─── Global in-flight concurrency gate ─────────────────────────────────────
+// Dashboard pages fire 15-20 independent GETs in parallel on mount (each
+// react-query hook fires the instant its `enabled` condition is true, with
+// no built-in stagger). Against the backend's 2-vCPU free-tier container,
+// bursts that size can take long enough to drain that HF's own front-door
+// gateway times out the tail of the queue with a bare 500/502/503 — before
+// our request even reaches the app (confirmed: the app's own access/error
+// logs show zero trace for these, see production incident 2026-07-19).
+// Capping how many requests this tab has in flight at once doesn't fix the
+// backend's capacity, but it means we no longer fire the exact burst size
+// that trips the gateway's own limit.
+const MAX_CONCURRENT_REQUESTS = 6;
+let _activeRequests = 0;
+const _requestQueue: Array<() => void> = [];
+
+function _acquireSlot(): Promise<void> {
+  if (_activeRequests < MAX_CONCURRENT_REQUESTS) {
+    _activeRequests++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    _requestQueue.push(() => {
+      _activeRequests++;
+      resolve();
+    });
+  });
+}
+
+function _releaseSlot(): void {
+  _activeRequests--;
+  const next = _requestQueue.shift();
+  if (next) next();
+}
+
 /**
  * apiFetch<T> — typed fetch wrapper.
  *
@@ -62,6 +96,20 @@ export async function apiFetch<T = unknown>(
   const { skipCsrf = false, silent = false, allStores = false, headers: customHeaders, ...rest } = options;
 
   console.log(`[API] ${rest.method ?? 'GET'} ${path}`);
+
+  await _acquireSlot();
+  try {
+    return await _apiFetchInner<T>(path, { skipCsrf, silent, allStores, headers: customHeaders, ...rest });
+  } finally {
+    _releaseSlot();
+  }
+}
+
+async function _apiFetchInner<T = unknown>(
+  path: string,
+  options: ApiClientOptions = {},
+): Promise<T> {
+  const { skipCsrf = false, silent = false, allStores = false, headers: customHeaders, ...rest } = options;
 
   const headers = new Headers(customHeaders);
 
@@ -121,7 +169,15 @@ export async function apiFetch<T = unknown>(
     if (_refreshPromise) {
       const refreshed = await _refreshPromise;
       if (refreshed) {
-        return apiFetch<T>(path, options);
+        // Call the inner fetcher directly, not apiFetch() — this call already
+      // holds a concurrency slot (acquired by the outer apiFetch), and
+      // re-entering apiFetch() would try to acquire a second one while
+      // still holding the first. Harmless normally, but if MAX_CONCURRENT
+      // requests all hit 401 at once (e.g. session genuinely expired while
+      // a dashboard's queries are in flight), every one of them would block
+      // waiting for a free slot that only frees once ITS retry completes —
+      // a deadlock.
+      return _apiFetchInner<T>(path, options);
       }
       _clearSession(silent);
       throw new ApiClientError('Session expirée', 401, 'SESSION_EXPIRED');
@@ -144,7 +200,15 @@ export async function apiFetch<T = unknown>(
     _refreshPromise = null;
 
     if (refreshed) {
-      return apiFetch<T>(path, options);
+      // Call the inner fetcher directly, not apiFetch() — this call already
+      // holds a concurrency slot (acquired by the outer apiFetch), and
+      // re-entering apiFetch() would try to acquire a second one while
+      // still holding the first. Harmless normally, but if MAX_CONCURRENT
+      // requests all hit 401 at once (e.g. session genuinely expired while
+      // a dashboard's queries are in flight), every one of them would block
+      // waiting for a free slot that only frees once ITS retry completes —
+      // a deadlock.
+      return _apiFetchInner<T>(path, options);
     }
 
     _clearSession(silent);
