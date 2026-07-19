@@ -481,81 +481,100 @@ def get_agent_counts(
     # into 2 conditional-aggregation queries (one per base query, since
     # `base` and `base_wide` differ in their own WHERE scoping for
     # CONFIRMATEUR — they can't share a single SELECT).
+    #
+    # Beyond the query count itself: this endpoint is polled repeatedly by
+    # every open dashboard tab (sidebar badges refresh on an interval), so
+    # the SAME aggregate gets recomputed dozens of times a minute across
+    # concurrent users on the same store. On the free tier we can't add
+    # capacity, so instead: cache the result. 8s is short enough that a
+    # confirmatrice never perceives stale badge counts, long enough to
+    # collapse a burst of near-simultaneous polls (multiple tabs, multiple
+    # dashboard widgets on one page load) into a single DB round trip.
     from sqlalchemy import case as _case
+    from app.core.cache import get_or_set as _cache_get_or_set
 
-    # Mirror of list_orders' exclusion: an order handed to an internal
-    # delivery agent counts ONLY in internal_delivery, never in the
-    # confirmation-stage badges — else the sidebar numbers disagree with
-    # what each module actually lists.
-    _not_internal = or_(
-        Order.livreur_id.is_(None),
-        and_(Order.tracking_number.isnot(None), Order.tracking_number != ""),
+    _cache_key = (
+        f"agent_counts:{current_user.id}:{current_user.role}:"
+        f"{store_id or '-'}:{start_date or '-'}:{end_date or '-'}"
     )
-    _now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    def _sum(*criteria):
-        return sqlfunc.sum(_case((and_(*criteria), 1), else_=0))
+    def _compute_counts() -> dict:
+        # Mirror of list_orders' exclusion: an order handed to an internal
+        # delivery agent counts ONLY in internal_delivery, never in the
+        # confirmation-stage badges — else the sidebar numbers disagree with
+        # what each module actually lists.
+        _not_internal = or_(
+            Order.livreur_id.is_(None),
+            and_(Order.tracking_number.isnot(None), Order.tracking_number != ""),
+        )
+        _now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    base_row = base.with_entities(
-        _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
-        _sum(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
-        _sum(
-            _not_internal,
-            Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
-            or_(Order.nrp_count == None, Order.nrp_count == 0),
-        ).label("pending"),
-        _sum(_not_internal, Order.status == "CONFIRMED").label("confirmed"),
-        _sum(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp"),
-        _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
-             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp_abandoned"),
-        _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
-             Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])).label("nrp_normal"),
-        _sum(_not_internal, Order.is_abandoned_cart == True,
-             Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])).label("abandoned_in_progress"),
-        _sum(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
-        # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
-        # sans heure de rappel programmée, ou dont l'heure est déjà passée.
-        _sum(
-            _not_internal,
-            Order.nrp_count > 0,
-            Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
-            or_(Order.next_callback_time == None, Order.next_callback_time <= _now),
-        ).label("recall"),
-    ).one()
+        def _sum(*criteria):
+            return sqlfunc.sum(_case((and_(*criteria), 1), else_=0))
 
-    wide_row = base_wide.with_entities(
-        _sum(Order.status == "SHIPPED").label("shipped"),
-        _sum(Order.status == "DELIVERED").label("delivered"),
-        # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
-        # counts['returned'] — this key never existed, so that lookup was
-        # always undefined ?? 0, and the badge's `count > 0` render guard
-        # was permanently false. The badge wasn't wrong, it was invisible.
-        _sum(Order.status == "RETURNED").label("returned"),
-        _sum(Order.status == "CANCELLED").label("cancelled"),
-        _sum(
-            Order.livreur_id.isnot(None),
-            or_(Order.tracking_number == None, Order.tracking_number == ""),
-            Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
-        ).label("internal_delivery"),
-        _sum(Order.status.in_(["CANCELLED", "RETURNED"])).label("archived"),
-        # "Commandes Manuelles" sidebar badge — store-wide like shipped/
-        # delivered/returned above, not scoped to the confirmatrice's own
-        # `base`: a manually-entered order can be created by any agent/admin,
-        # and whoever's checking this count should see the store's total,
-        # not just their own.
-        _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
-        # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
-        # scoped to SHIPPED since that's the only state a carrier_stage is
-        # meaningful for (before dispatch there's nothing to poll; after
-        # DELIVERED/RETURNED our own status already says so).
-        *[
-            _sum(Order.status == "SHIPPED", Order.carrier_stage.in_(keys)).label(f"carrier_{bucket}")
-            for bucket, keys in CARRIER_STAGE_BUCKETS.items()
-        ],
-    ).one()
+        base_row = base.with_entities(
+            _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
+            _sum(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
+            _sum(
+                _not_internal,
+                Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
+                or_(Order.nrp_count == None, Order.nrp_count == 0),
+            ).label("pending"),
+            _sum(_not_internal, Order.status == "CONFIRMED").label("confirmed"),
+            _sum(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp"),
+            _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
+                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp_abandoned"),
+            _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
+                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])).label("nrp_normal"),
+            _sum(_not_internal, Order.is_abandoned_cart == True,
+                 Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])).label("abandoned_in_progress"),
+            _sum(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
+            # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
+            # sans heure de rappel programmée, ou dont l'heure est déjà passée.
+            _sum(
+                _not_internal,
+                Order.nrp_count > 0,
+                Order.status.in_(["IN_PROGRESS", "CALLED", "RESCHEDULED", "ASSIGNED", "ABANDONED"]),
+                or_(Order.next_callback_time == None, Order.next_callback_time <= _now),
+            ).label("recall"),
+        ).one()
 
-    counts = {k: (v or 0) for k, v in base_row._mapping.items()}
-    counts.update({k: (v or 0) for k, v in wide_row._mapping.items()})
+        wide_row = base_wide.with_entities(
+            _sum(Order.status == "SHIPPED").label("shipped"),
+            _sum(Order.status == "DELIVERED").label("delivered"),
+            # The sidebar's "Retournées" badge (agent-dashboard.tsx) looks up
+            # counts['returned'] — this key never existed, so that lookup was
+            # always undefined ?? 0, and the badge's `count > 0` render guard
+            # was permanently false. The badge wasn't wrong, it was invisible.
+            _sum(Order.status == "RETURNED").label("returned"),
+            _sum(Order.status == "CANCELLED").label("cancelled"),
+            _sum(
+                Order.livreur_id.isnot(None),
+                or_(Order.tracking_number == None, Order.tracking_number == ""),
+                Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
+            ).label("internal_delivery"),
+            _sum(Order.status.in_(["CANCELLED", "RETURNED"])).label("archived"),
+            # "Commandes Manuelles" sidebar badge — store-wide like shipped/
+            # delivered/returned above, not scoped to the confirmatrice's own
+            # `base`: a manually-entered order can be created by any agent/admin,
+            # and whoever's checking this count should see the store's total,
+            # not just their own.
+            _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+            # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
+            # scoped to SHIPPED since that's the only state a carrier_stage is
+            # meaningful for (before dispatch there's nothing to poll; after
+            # DELIVERED/RETURNED our own status already says so).
+            *[
+                _sum(Order.status == "SHIPPED", Order.carrier_stage.in_(keys)).label(f"carrier_{bucket}")
+                for bucket, keys in CARRIER_STAGE_BUCKETS.items()
+            ],
+        ).one()
+
+        counts = {k: (v or 0) for k, v in base_row._mapping.items()}
+        counts.update({k: (v or 0) for k, v in wide_row._mapping.items()})
+        return counts
+
+    counts = _cache_get_or_set(_cache_key, _compute_counts, l1_ttl=8, l2_ttl=20)
     return {"success": True, "counts": counts}
 
 
