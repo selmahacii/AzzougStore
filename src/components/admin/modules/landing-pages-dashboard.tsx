@@ -1595,8 +1595,9 @@ function LandingPageModal({
                                         className="h-9 text-xs rounded-lg bg-white"
                                       />
                                     </div>
-                                    {v.name.toLowerCase().includes('couleur') && (
-                                      <div className="space-y-1">
+                                    {/* Toute variante (Couleur, Motif, Modèle…) peut avoir sa
+                                        propre photo — plus limité aux seules variantes "Couleur". */}
+                                    <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Photo de la variante</label>
                                         <div className="flex items-center gap-2">
                                           {v.image && (
@@ -1628,7 +1629,6 @@ function LandingPageModal({
                                           </div>
                                         </div>
                                       </div>
-                                    )}
                                   </div>
                                 </div>
                               ))}

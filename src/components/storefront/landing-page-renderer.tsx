@@ -305,13 +305,22 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const productDesc = data.product_desc || data.product?.description;
   const discount = comparePrice && price ? Math.round((1 - price / comparePrice) * 100) : 0;
 
-  const offers = (data as any).offers && (data as any).offers.length > 0 ? (data as any).offers : [
-    { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
-    { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
-  ];
+  // Une landing page n'a pas TOUJOURS d'offre par palier configurée — quand
+  // le champ Offres est laissé vide côté admin, le client doit pouvoir
+  // choisir librement la quantité de chaque variante (pas de palier imposé),
+  // au lieu de forcer un choix entre deux paliers fictifs "1 pièce"/"2 pièces".
+  const hasRealOffers = !!((data as any).offers && (data as any).offers.length > 0);
+  const offers = hasRealOffers ? (data as any).offers : [];
+  const currentOffer = hasRealOffers
+    ? (offers[selectedOfferIndex] || offers[0])
+    : {
+        quantity,
+        price: (price ?? 0) * quantity,
+        compare_price: (comparePrice ?? 0) * quantity,
+        name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
+      };
 
   useEffect(() => {
-    const currentOffer = offers[selectedOfferIndex] || offers[0];
     const qty = currentOffer.quantity;
 
     // ── Case 1: Landing page WITH a linked product ────────────────────────────
@@ -369,7 +378,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers]);
+  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, currentOffer.price, currentOffer.quantity]);
 
   if (!mounted) {
     return (
@@ -516,8 +525,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
 
               {price !== null && (() => {
-                const currentPrice = offers[selectedOfferIndex]?.price || (selectedVariants[0]?.price || price);
-                const currentComparePrice = offers[selectedOfferIndex]?.compare_price || comparePrice;
+                const currentPrice = currentOffer?.price || (selectedVariants[0]?.price || price);
+                const currentComparePrice = currentOffer?.compare_price || comparePrice;
                 const currentDiscount = currentComparePrice && currentPrice ? Math.round((1 - currentPrice / currentComparePrice) * 100) : 0;
                 return (
                   <div className="flex items-end gap-3 mb-6">
@@ -861,11 +870,50 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       );
                     })()}
 
-                    {/* Quantity Pack Selector */}
+                    {/* Quantity Pack Selector — paliers d'offre SI configurés,
+                        sinon un choix libre de quantité (aucune offre remplie
+                        par l'admin ne doit jamais forcer un palier fictif). */}
                     <div className="mb-6 space-y-3 pt-4 border-t border-slate-100 dark:border-white/10">
                       <p className={cn("text-sm sm:text-base font-black uppercase tracking-wider", isDark ? "text-white/75" : "text-slate-800")}>
                         {t('chooseQuantity')}
                       </p>
+                      {!hasRealOffers ? (
+                        <div className={cn(
+                          "flex items-center justify-between gap-4 p-4 rounded-2xl border",
+                          isDark ? "border-white/10 bg-white/[0.02]" : "border-slate-200 bg-white"
+                        )}>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                              disabled={quantity <= 1}
+                              className={cn(
+                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
+                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                              )}
+                            >
+                              −
+                            </button>
+                            <span className={cn("min-w-[2ch] text-center text-lg font-black", isDark ? "text-white" : "text-slate-900")}>{quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => setQuantity(quantity + 1)}
+                              className={cn(
+                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all",
+                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                              )}
+                            >
+                              +
+                            </button>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
+                            {currentOffer.compare_price > currentOffer.price && (
+                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-1 gap-3">
                         {offers.map((offer: any, idx: number) => {
                           const isSelected = selectedOfferIndex === idx;
@@ -907,6 +955,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   </CheckoutForm>
                 </div>
