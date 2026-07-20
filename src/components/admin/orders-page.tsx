@@ -91,6 +91,7 @@ import { downloadCSV } from '@/lib/export-helper';
 import { exportToCSV, formatCSVDate, formatCSVPrice } from '@/lib/export';
 import { cn } from '@/lib/utils';
 import { WILAYAS } from '@/lib/wilaya-data';
+import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 import { apiFetch } from '@/lib/api-client';
 import { NoestTrackingPanel } from '@/components/admin/noest-tracking-panel';
@@ -317,6 +318,21 @@ const [timeLeft, setTimeLeft] = useState('');
   const [editDeliveryType, setEditDeliveryType] = useState('home');
   const [editWilaya, setEditWilaya] = useState('');
 
+  // Noest's own commune list per wilaya is what actually matters for
+  // shipment creation (exact name match required), but it can lag behind
+  // real administrative changes/additions — merging in our own static
+  // ALGERIAN_COMMUNES list (deduped by name) guarantees the dropdown is
+  // never MISSING a real commune just because Noest's copy hasn't caught
+  // up, without ever dropping a Noest-provided name.
+  const mergeWithLocalCommunes = (wilayaName: string, fromApi: any[]): any[] => {
+    const local = ALGERIAN_COMMUNES[wilayaName] || [];
+    const seen = new Set((fromApi || []).map((c: any) => (c?.name || '').trim().toLowerCase()));
+    const extra = local
+      .filter(c => !seen.has(c.nameAscii.trim().toLowerCase()))
+      .map(c => ({ name: c.nameAscii }));
+    return [...(fromApi || []), ...extra];
+  };
+
   useEffect(() => {
     if (!orderWilaya) { setCreateCommunes([]); return; }
     const wid = WILAYAS.indexOf(orderWilaya as any) + 1;
@@ -324,8 +340,8 @@ const [timeLeft, setTimeLeft] = useState('');
       setLoadingCreateCommunes(true);
       fetch(`/api/v1/locations/communes?wilaya_id=${wid}&store_id=${activeStore?.id || ''}`)
         .then(r => r.json())
-        .then(d => { setCreateCommunes(d || []); setLoadingCreateCommunes(false); })
-        .catch(() => setLoadingCreateCommunes(false));
+        .then(d => { setCreateCommunes(mergeWithLocalCommunes(orderWilaya, d)); setLoadingCreateCommunes(false); })
+        .catch(() => { setCreateCommunes(mergeWithLocalCommunes(orderWilaya, [])); setLoadingCreateCommunes(false); });
     }
   }, [orderWilaya, activeStore?.id]);
 
@@ -336,8 +352,8 @@ const [timeLeft, setTimeLeft] = useState('');
       setLoadingEditCommunes(true);
       fetch(`/api/v1/locations/communes?wilaya_id=${wid}&store_id=${activeStore?.id || ''}`)
         .then(r => r.json())
-        .then(d => { setEditCommunes(d || []); setLoadingEditCommunes(false); })
-        .catch(() => setLoadingEditCommunes(false));
+        .then(d => { setEditCommunes(mergeWithLocalCommunes(editWilaya, d)); setLoadingEditCommunes(false); })
+        .catch(() => { setEditCommunes(mergeWithLocalCommunes(editWilaya, [])); setLoadingEditCommunes(false); });
     }
   }, [editWilaya, activeStore?.id]);
 
@@ -867,7 +883,12 @@ const [timeLeft, setTimeLeft] = useState('');
   // ─── Micro-detail order type filters (client-side, over the loaded page) ───
   const ORDER_TYPE_FILTERS: { id: string; label: string; color: string; match: (o: Order) => boolean }[] = [
     { id: 'ALL',       label: 'Toutes',            color: 'bg-slate-100 text-slate-700 border-slate-200',      match: () => true },
-    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    // "Normales" = reçues via un canal réel (landing page, Meta Ads, storefront...),
+    // JAMAIS les commandes saisies manuellement par un agent — ce sont deux
+    // catégories distinctes (voir le filtre "Manuelle" ci-dessous), une
+    // commande manuelle ne doit jamais compter dans les deux à la fois.
+    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    { id: 'MANUAL',    label: '✍️ Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' },
     { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
     { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
     // Matches orders that ABSORBED at least one duplicate (duplicate_count
