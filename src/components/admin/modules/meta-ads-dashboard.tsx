@@ -59,7 +59,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics' | 'quality'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -119,6 +119,49 @@ export default function MetaAdsDashboard() {
     refetchOnWindowFocus: false,
   });
   const trackingQuality = trackingQualityData?.data;
+
+  // --- Query Signal Quality Center (Learning Score, EMQ, realtime/backfill,
+  // dedup, latence, attribution, recommandations, anomalies détectées) ---
+  const { data: signalQualityData, isLoading: isLoadingSignalQuality } = useQuery({
+    queryKey: ['meta_signal_quality', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/signal-quality?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id && activeTab === 'quality',
+    refetchOnWindowFocus: false,
+  });
+  const signalQuality = signalQualityData?.data;
+
+  // --- Query full Meta Diagnostics (pixel/CAPI config, retry queue detail,
+  // latence p95/p99, attribution FBP/FBC/UTM, problèmes catalogue) ---
+  const { data: fullDiagnosticsData, isLoading: isLoadingFullDiagnostics } = useQuery({
+    queryKey: ['meta_full_diagnostics', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/diagnostics?store_id=${activeStore?.id}`
+    ),
+    enabled: !!activeStore?.id && activeTab === 'quality',
+    refetchOnWindowFocus: false,
+  });
+  const fullDiagnostics = fullDiagnosticsData?.data;
+
+  // --- Query Circuit Breaker + connectivity (via /health) ---
+  const { data: metaHealthData, isLoading: isLoadingMetaHealth } = useQuery({
+    queryKey: ['meta_health_circuit', activeStore?.id],
+    queryFn: () => apiFetch<any>(`/api/v1/meta-ads/health?store_id=${activeStore?.id}`),
+    enabled: !!activeStore?.id && activeTab === 'quality',
+    refetchOnWindowFocus: false,
+  });
+
+  // --- Query KPI Validation (invariants mathématiques vérifiés en direct) ---
+  const { data: kpiValidationData, isLoading: isLoadingKpiValidation } = useQuery({
+    queryKey: ['meta_kpi_validation', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; data: any }>(
+      `/api/v1/meta-ads/kpi-validation?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id && activeTab === 'quality',
+    refetchOnWindowFocus: false,
+  });
+  const kpiValidation = kpiValidationData?.data;
 
   // --- Mutations ---
   const saveConfigMutation = useMutation({
@@ -641,6 +684,17 @@ export default function MetaAdsDashboard() {
           )}
         >
           <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Diagnostics</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('quality')}
+          className={cn(
+            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === 'quality'
+              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
+              : "text-[#B2BEC3] hover:text-[#636E72]"
+          )}
+        >
+          <span className="flex items-center gap-1.5"><Zap className="size-3.5" /> Signal Quality Center</span>
         </button>
       </div>
 
@@ -1300,6 +1354,241 @@ export default function MetaAdsDashboard() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: SIGNAL QUALITY CENTER — Learning Score, EMQ, temps réel/
+          backfill, dédup, latence, attribution, Circuit Breaker, Retry
+          Queue, KPI Validation, recommandations, anomalies détectées. ─── */}
+      {activeTab === 'quality' && (
+        <div className="space-y-4">
+          {/* Learning Score + Signal Score */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                    <Zap className="size-4 text-[#6C5CE7]" /> Learning Score
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-1">Score global de qualité des signaux envoyés à Meta.</p>
+                </div>
+              </div>
+              {isLoadingSignalQuality ? (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              ) : signalQuality?.learning_score ? (
+                <div className="flex items-center gap-6">
+                  <div className="text-center shrink-0">
+                    <p className={cn(
+                      'text-4xl font-black leading-none tabular-nums',
+                      signalQuality.learning_score.score >= 90 ? 'text-[#00B894]' : signalQuality.learning_score.score >= 55 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                    )}>{signalQuality.learning_score.score}<span className="text-sm text-slate-300">/100</span></p>
+                    <Badge className={cn(
+                      "border-none rounded-md px-1.5 py-0.5 text-[9px] font-black mt-1.5",
+                      signalQuality.meta_health?.label === 'Excellent' || signalQuality.meta_health?.label === 'Bon' ? "bg-[#E6FFF8] text-[#00B894]" : "bg-[#FFF8E6] text-[#FDCB6E]"
+                    )}>{signalQuality.meta_health?.label || '—'}</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 flex-1">
+                    {[
+                      { label: 'Temps réel', value: `${signalQuality.learning_score.realtime_pct ?? '—'}%`, sub: `${signalQuality.learning_score.realtime_count ?? 0}` },
+                      { label: 'Backfill', value: `${signalQuality.learning_score.backfill_pct ?? '—'}%`, sub: `${signalQuality.learning_score.backfill_count ?? 0}` },
+                      { label: 'Déduplication', value: signalQuality.learning_score.dedup_pct != null ? `${signalQuality.learning_score.dedup_pct}%` : '—', sub: 'event_id' },
+                      { label: 'Attribution', value: signalQuality.learning_score.attribution_pct != null ? `${signalQuality.learning_score.attribution_pct}%` : '—', sub: 'campagne connue' },
+                    ].map(s => (
+                      <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
+                        <p className="text-sm font-black tabular-nums text-slate-700">{s.value}</p>
+                        <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle className="size-4 text-[#0984E3]" /> Event Match Quality (EMQ)
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-1">Complétude des champs envoyés (téléphone, FBP, FBC, IP, User-Agent…).</p>
+                </div>
+                {signalQuality?.avg_emq != null && (
+                  <div className="text-right shrink-0">
+                    <p className={cn(
+                      'text-2xl font-black leading-none',
+                      signalQuality.avg_emq >= 80 ? 'text-[#00B894]' : signalQuality.avg_emq >= 55 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                    )}>{signalQuality.avg_emq}%</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">{signalQuality.emq_sample_size} échantillon(s)</p>
+                  </div>
+                )}
+              </div>
+              {isLoadingSignalQuality ? (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              ) : Array.isArray(signalQuality?.field_coverage) && signalQuality.field_coverage.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {signalQuality.field_coverage.map((f: any) => (
+                    <div key={f.key} className="flex items-center justify-between text-[11px] p-2 rounded-lg bg-slate-50">
+                      <span className="text-slate-600 font-semibold">{f.label}</span>
+                      <span className={cn(
+                        'font-black tabular-nums',
+                        f.coverage_pct >= 80 ? 'text-[#00B894]' : f.coverage_pct >= 40 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                      )}>{f.coverage_pct != null ? `${f.coverage_pct}%` : '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Circuit Breaker + Retry Queue */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-4">
+                <Activity className="size-4 text-[#6C5CE7]" /> Circuit Breaker
+              </h3>
+              {isLoadingMetaHealth ? (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              ) : metaHealthData?.circuit_breaker ? (
+                <div className="space-y-3">
+                  <Badge className={cn(
+                    "border-none rounded-md px-2 py-1 text-[10px] font-black",
+                    metaHealthData.circuit_breaker.is_open ? "bg-[#FFEDE9] text-[#E17055]" : "bg-[#E6FFF8] text-[#00B894]"
+                  )}>
+                    {metaHealthData.circuit_breaker.is_open ? 'OUVERT — envois suspendus' : 'FERMÉ — envois normaux'}
+                  </Badge>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Échecs consécutifs', value: metaHealthData.circuit_breaker.consecutive_failures },
+                      { label: 'Seuil', value: metaHealthData.circuit_breaker.threshold },
+                      { label: 'Reprise dans', value: metaHealthData.circuit_breaker.is_open ? `${metaHealthData.circuit_breaker.seconds_until_reset}s` : '—' },
+                    ].map(s => (
+                      <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
+                        <p className="text-sm font-black tabular-nums text-slate-700">{s.value}</p>
+                        <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Indisponible.</div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-4">
+                <RefreshCw className="size-4 text-[#FDCB6E]" /> Retry Queue
+              </h3>
+              {isLoadingFullDiagnostics ? (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              ) : fullDiagnostics?.queue ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'En attente', value: fullDiagnostics.queue.pending_count, color: fullDiagnostics.queue.pending_count > 0 ? '#FDCB6E' : '#00B894' },
+                    { label: 'Échecs définitifs', value: fullDiagnostics.queue.failed_count, color: fullDiagnostics.queue.failed_count > 0 ? '#E17055' : '#00B894' },
+                    { label: 'Latence moy.', value: fullDiagnostics.queue.avg_latency_ms != null ? `${fullDiagnostics.queue.avg_latency_ms}ms` : '—', color: '#6C5CE7' },
+                    { label: 'Latence P95', value: fullDiagnostics.queue.p95_latency_ms != null ? `${fullDiagnostics.queue.p95_latency_ms}ms` : '—', color: '#0984E3' },
+                  ].map(s => (
+                    <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Indisponible.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Recommandations automatiques */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-4">
+              <Sparkles className="size-4 text-[#6C5CE7]" /> Recommandations automatiques
+            </h3>
+            {isLoadingSignalQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : Array.isArray(signalQuality?.recommendations) && signalQuality.recommendations.length > 0 ? (
+              <div className="space-y-2">
+                {signalQuality.recommendations.map((r: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-[11px] text-slate-600 p-3 rounded-xl bg-slate-50">
+                    <span>💡</span>
+                    <div>
+                      <p className="font-semibold text-slate-700">{r.title || r.message || r}</p>
+                      {r.detail && <p className="text-slate-500 mt-0.5">{r.detail}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune recommandation pour l'instant — signaux en bonne santé.</div>
+            )}
+          </div>
+
+          {/* Problèmes détectés (anomalies) */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-4">
+              <AlertCircle className="size-4 text-[#E17055]" /> Problèmes détectés
+            </h3>
+            {isLoadingSignalQuality ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : Array.isArray(signalQuality?.anomalies) && signalQuality.anomalies.length > 0 ? (
+              <div className="space-y-2">
+                {signalQuality.anomalies.map((a: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-[11px] p-3 rounded-xl bg-slate-50">
+                    <Badge className={cn(
+                      "border-none rounded-md px-1.5 py-0.5 text-[9px] font-black shrink-0",
+                      a.severity === 'high' ? "bg-[#FFEDE9] text-[#E17055]" : a.severity === 'medium' ? "bg-[#FFF8E6] text-[#FDCB6E]" : "bg-slate-200 text-slate-600"
+                    )}>{a.type}</Badge>
+                    <div>
+                      <p className="text-slate-700">{a.detail}</p>
+                      {a.fix && <p className="text-slate-400 mt-0.5">{a.fix}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-[#E6FFF8] p-6 text-sm text-[#00B894] font-semibold">✅ Aucune anomalie détectée (event_id dupliqués, valeur/devise manquante, FBP/FBC absents…).</div>
+            )}
+          </div>
+
+          {/* KPI Validation */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                <CheckCircle className="size-4 text-[#6C5CE7]" /> KPI Validation
+              </h3>
+              {kpiValidation && (
+                <Badge className={cn(
+                  "border-none rounded-md px-2 py-1 text-[10px] font-black",
+                  kpiValidation.all_passed ? "bg-[#E6FFF8] text-[#00B894]" : "bg-[#FFEDE9] text-[#E17055]"
+                )}>
+                  {kpiValidation.all_passed ? 'Tous les invariants passent' : 'Divergence détectée'}
+                </Badge>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 mb-4">Vérifie que les chiffres affichés respectent leurs relations mathématiques attendues — recalculés indépendamment.</p>
+            {isLoadingKpiValidation ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : Array.isArray(kpiValidation?.checks) && kpiValidation.checks.length > 0 ? (
+              <div className="space-y-2">
+                {kpiValidation.checks.map((c: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-[11px] p-3 rounded-xl bg-slate-50">
+                    <span>{c.passed ? '✅' : '❌'}</span>
+                    <div>
+                      <p className="font-semibold text-slate-700">{c.name}</p>
+                      <p className="text-slate-500 mt-0.5">{c.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
             )}
           </div>
         </div>

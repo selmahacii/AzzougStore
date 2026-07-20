@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, Boolean, JSON, DateTime, Date, Float, UniqueConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, Boolean, JSON, DateTime, Date, Float, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base_class import Base
@@ -103,6 +103,10 @@ class TikTokAdsConfig(Base):
     advertiser_id = Column(String, nullable=True)
     pixel_id = Column(String, nullable=True)
     app_id = Column(String, nullable=True)
+    # TikTok Catalog Manager's catalog identifier — distinct from
+    # advertiser_id/pixel_id, required by the Catalog API (product/create,
+    # product/update, product/delete) to know which catalog to push into.
+    catalog_id = Column(String, nullable=True)
     is_connected = Column(Boolean, default=False)
     exchange_rate = Column(Float, default=1.0, nullable=True)
     currency = Column(String, default="USD", nullable=True)
@@ -275,4 +279,145 @@ class MetaCapiLog(Base):
     processing_worker = Column(String, nullable=True)  # hostname:pid, diagnostic only
 
     store = relationship("Store")
+
+
+class TikTokCapiLog(Base):
+    """
+    TikTok equivalent of MetaCapiLog — one row per server-side TikTok Events
+    API send, same durable-queue contract (queued/processing/retry/
+    pending_retry/success/failed/skipped) and same dual role: powers the
+    TikTok diagnostics dashboard AND is the persistent retry queue.
+
+    Deliberately its OWN table rather than a shared "ad_platform_capi_logs"
+    with a platform column: MetaCapiLog is queried by 13+ endpoints with
+    store_id/event_name/status/created_at predicates baked into every
+    index — merging platforms into one table would mean every one of those
+    indexes gains a platform column, and every existing Meta query gains an
+    unnecessary extra filter. Two tables, one proven schema shape, is safer
+    than a risky migration of a table already in production. Composite index
+    on (store_id, event_name, created_at) applied from day 1 here — the
+    2026-07-20 Meta audit found this missing from meta_capi_logs only after
+    the table had years of production data; TikTok starts with it.
+    """
+    __tablename__ = "tiktok_capi_logs"
+    __table_args__ = (
+        Index("ix_tiktok_capi_logs_store_event_created", "store_id", "event_name", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=True, index=True)
+    order_id = Column(String, nullable=True, index=True)
+    event_name = Column(String, nullable=False, index=True)  # ViewContent | AddToCart | InitiateCheckout | CompletePayment | PlaceAnOrder
+    event_id = Column(String, nullable=False, index=True)    # shared dedup key with the browser Pixel (ttq.track)
+    status = Column(String, nullable=False, index=True)      # queued | processing | retry | pending_retry | success | failed | skipped
+    error_message = Column(Text, nullable=True)
+    error_category = Column(String, nullable=True, index=True)  # network_timeout | network_error | api_4xx | api_5xx | other
+    events_received = Column(Integer, nullable=True)
+
+    # Retry queue
+    payload = Column(JSON, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    latency_ms = Column(Integer, nullable=True)
+
+    # Durable-queue fields — same contract as MetaCapiLog.
+    processing_started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_http_status = Column(Integer, nullable=True)
+    processing_worker = Column(String, nullable=True)
+
+    store = relationship("Store")
+
+
+class TikTokAdsDailyInsight(Base):
+    """
+    TikTok twin of MetaAdsDailyInsight — one row per campaign per calendar
+    day, upserted by (campaign_id, date) from TikTok's Reporting API with
+    a daily time granularity, so "combien TikTok a déclaré AUJOURD'HUI ?"
+    is answerable without waiting for a full resync of the running
+    TikTokAdsCampaign snapshot.
+    """
+    __tablename__ = "tiktok_ads_daily_insights"
+    __table_args__ = (UniqueConstraint("campaign_id", "date", name="uq_tiktok_daily_campaign_date"),)
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    campaign_id = Column(String, nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    spend = Column(Float, default=0.0)          # converted to DZD
+    raw_spend = Column(Float, default=0.0)      # ad-account currency
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    reach = Column(Integer, default=0)
+    tiktok_conversions = Column(Integer, default=0)
+    tiktok_conversion_value = Column(Float, default=0.0)
+
+
+class TikTokAdsAdInsight(Base):
+    """
+    TikTok twin of MetaAdsAdInsight — one row per individual AD (TikTok
+    hierarchy: Campaign > Ad Group > Ad), upserted by ad_id. Covers both
+    the "Ad Groups" and "Ads" audit items in one table, same as Meta's
+    ad_insight covers both ad-set and ad — TikTok's Reporting API returns
+    adgroup_id/adgroup_name alongside ad_id/ad_name at AUCTION_AD level,
+    exactly the shape MetaAdsAdInsight already models for adset_id/ad_id.
+    """
+    __tablename__ = "tiktok_ads_ad_insights"
+    __table_args__ = (UniqueConstraint("ad_id", name="uq_tiktok_ad_insight_ad_id"),)
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    campaign_id = Column(String, nullable=False, index=True)
+    ad_id = Column(String, nullable=False, index=True)
+    ad_name = Column(String, nullable=False)
+    adgroup_id = Column(String, nullable=True, index=True)
+    adgroup_name = Column(String, nullable=True)
+    spend = Column(Float, default=0.0)          # converted to DZD
+    raw_spend = Column(Float, default=0.0)      # ad-account currency
+    currency = Column(String, default="USD", nullable=True)
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    reach = Column(Integer, default=0)
+    tiktok_conversions = Column(Integer, default=0)
+    tiktok_conversion_value = Column(Float, default=0.0)
+    date_start = Column(DateTime, nullable=True)
+    date_end = Column(DateTime, nullable=True)
+
+
+class TikTokCatalogSyncLog(Base):
+    """
+    TikTok Catalog Feed Enterprise (2026-07-20) — durable queue for
+    per-product Catalog API pushes (create/update/delete), same contract
+    as TikTokCapiLog: a row is written BEFORE the network call, retried on
+    transient failure, never silently dropped. One row per (product_id,
+    action) — a product updated twice before the first push settles
+    upserts the same row rather than spawning a duplicate.
+
+    Powers the Catalog Health dashboard: how many products are tracked,
+    how many succeeded/failed/are pending, per-error-category breakdown,
+    last successful sync per product.
+    """
+    __tablename__ = "tiktok_catalog_sync_logs"
+    __table_args__ = (
+        Index("ix_tiktok_catalog_sync_store_product", "store_id", "product_id"),
+    )
+
+    id = Column(String, primary_key=True, index=True)
+    store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
+    product_id = Column(String, ForeignKey("products.id"), nullable=False, index=True)
+    tiktok_item_id = Column(String, nullable=True, index=True)  # TikTok's own sku_id once accepted
+    action = Column(String, nullable=False)     # create | update | delete
+    status = Column(String, nullable=False, index=True)  # queued | processing | retry | pending_retry | success | failed | skipped
+    error_message = Column(Text, nullable=True)
+    error_category = Column(String, nullable=True, index=True)  # validation | network_timeout | network_error | api_4xx | api_5xx | other
+    payload = Column(JSON, nullable=True)        # the catalog item dict actually sent, replayable as-is
+    retry_count = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    latency_ms = Column(Integer, nullable=True)
+    processing_started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    last_http_status = Column(Integer, nullable=True)
+
+    store = relationship("Store")
+    product = relationship("Product")
 
