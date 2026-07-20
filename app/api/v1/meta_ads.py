@@ -2003,6 +2003,47 @@ def get_meta_diagnostics(
         .first()
     )
 
+    # ── Réconciliation Meta ↔ ERP (fenêtre 30j) — explique EXACTEMENT
+    # pourquoi Meta peut afficher +N par rapport au nombre de commandes ERP,
+    # au lieu de laisser l'écart mystérieux ("7 vs 6"). Aucun événement Meta
+    # n'est modifié : on COMPTE seulement les catégories de divergence.
+    #   - erp_real_orders      : commandes réelles (non MERGED/supprimées).
+    #   - meta_purchase_success: Purchase 'success' comptés côté Meta.
+    #   - merged_after_send    : Purchase 'success' rattachés à une commande
+    #     désormais MERGED — Meta les a comptés AVANT la fusion, l'ERP non.
+    #     C'est la cause n°1 de l'écart (irréductible côté Meta Ads Manager,
+    #     mais désormais prévenue à la source : la fusion s'exécute avant
+    #     l'envoi dans le pipeline actuel).
+    #   - orphan_no_order      : Purchase 'success' sans order_id (ancien
+    #     chemin relais navigateur — non rattachables après coup).
+    recon_erp_real = (
+        db.query(func.count(Order.id))
+        .filter(Order.store_id == store_id, Order.is_deleted == False,
+                Order.status != "MERGED", Order.created_at >= month_ago)
+        .scalar() or 0
+    )
+    recon_meta_success = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.created_at >= month_ago)
+        .scalar() or 0
+    )
+    recon_merged_after_send = (
+        db.query(func.count(MetaCapiLog.id))
+        .join(Order, Order.id == MetaCapiLog.order_id)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.created_at >= month_ago,
+                Order.status == "MERGED")
+        .scalar() or 0
+    )
+    recon_orphan = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
+                MetaCapiLog.status == "success", MetaCapiLog.order_id.is_(None),
+                MetaCapiLog.created_at >= month_ago)
+        .scalar() or 0
+    )
+
     # Attribution coverage on last-30-days orders
     order_filters = [
         Order.store_id == store_id, Order.is_deleted == False,
@@ -2082,6 +2123,18 @@ def get_meta_diagnostics(
                 "with_utm_campaign": utm_cov,
                 "fbp_rate": round(fbp_cov / orders_30d * 100, 1) if orders_30d else 0,
                 "utm_rate": round(utm_cov / orders_30d * 100, 1) if orders_30d else 0,
+            },
+            "reconciliation": {
+                "window_days": 30,
+                "erp_real_orders": recon_erp_real,
+                "meta_purchase_success": recon_meta_success,
+                "merged_after_send": recon_merged_after_send,
+                "orphan_no_order": recon_orphan,
+                # Écart Meta − ERP entièrement expliqué : les Purchase comptés
+                # côté Meta au-delà des commandes réelles = fusions post-envoi
+                # + orphelins relais. Reste inexpliqué = à investiguer (idéal 0).
+                "explained_gap": recon_merged_after_send + recon_orphan,
+                "unexplained_gap": max(0, (recon_meta_success - recon_erp_real) - (recon_merged_after_send + recon_orphan)),
             },
             "catalog": {
                 "active_products": len(products),

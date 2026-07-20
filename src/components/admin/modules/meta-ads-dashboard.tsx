@@ -1510,6 +1510,38 @@ export default function MetaAdsDashboard() {
             </div>
           </div>
 
+          {/* Réconciliation Meta ↔ ERP — explique l'écart "Meta affiche +N" */}
+          {fullDiagnostics?.reconciliation && (
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-1">
+                <CheckCircle className="size-4 text-[#0984E3]" /> Réconciliation Meta ↔ ERP (30j)
+              </h3>
+              <p className="text-[10px] text-slate-400 mb-4">Pourquoi Meta peut afficher plus de Purchase que le nombre réel de commandes — chaque écart est expliqué, jamais mystérieux.</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                {[
+                  { label: 'Commandes réelles ERP', value: fullDiagnostics.reconciliation.erp_real_orders, color: '#0984E3' },
+                  { label: 'Purchase comptés Meta', value: fullDiagnostics.reconciliation.meta_purchase_success, color: '#6C5CE7' },
+                  { label: 'Fusionnés après envoi', value: fullDiagnostics.reconciliation.merged_after_send, color: '#FDCB6E' },
+                  { label: 'Orphelins (relais)', value: fullDiagnostics.reconciliation.orphan_no_order, color: '#B2BEC3' },
+                ].map((s: any) => (
+                  <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
+                    <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              {fullDiagnostics.reconciliation.unexplained_gap === 0 ? (
+                <div className="rounded-xl bg-[#E6FFF8] border border-[#00B894]/20 p-3 text-[11px] text-[#00B894] font-semibold">
+                  ✅ Écart entièrement expliqué : les {fullDiagnostics.reconciliation.explained_gap} Purchase Meta en trop = commandes fusionnées après l'envoi + orphelins relais. Aucun écart inexpliqué.
+                </div>
+              ) : (
+                <div className="rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 p-3 text-[11px] text-slate-700 font-semibold">
+                  ⚠️ {fullDiagnostics.reconciliation.unexplained_gap} Purchase inexpliqué(s) — à investiguer via l'audit de réconciliation SQL.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Recommandations automatiques */}
           <div className="bg-white rounded-3xl border shadow-sm p-6">
             <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-4">

@@ -474,10 +474,23 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     group = [order] + siblings
 
     def parent_rank(o: Order):
+        # Départage à 3 niveaux — sorted() prend le PREMIER (le plus petit) :
+        #   1. une vraie commande (non abandonnée) l'emporte sur un panier
+        #      abandonné ;
+        #   2. à égalité, le statut le plus avancé l'emporte (on ne rétrograde
+        #      jamais une commande déjà confirmée en la fusionnant dans une
+        #      NEW) ;
+        #   3. à égalité de statut, la PLUS RÉCENTE devient la commande active
+        #      (avant : la plus ancienne). Cas d'usage explicite : deux paniers
+        #      abandonnés du même client fusionnés — la confirmatrice doit
+        #      pouvoir confirmer la DERNIÈRE tentative du client, pas la
+        #      première. `-timestamp` fait remonter la plus récente en tête ;
+        #      created_at NULL retombe en dernier (jamais préférée).
+        _recency = -o.created_at.timestamp() if o.created_at else float("inf")
         return (
             1 if o.is_abandoned_cart else 0,                       # normal first
             -_PARENT_STATUS_PRIORITY.get(str(o.status), 0),        # advanced status first
-            o.created_at or datetime.min,                          # oldest first
+            _recency,                                              # most recent first
         )
 
     parent = sorted(group, key=parent_rank)[0]

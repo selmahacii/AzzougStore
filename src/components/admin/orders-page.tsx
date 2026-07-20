@@ -616,8 +616,20 @@ const [timeLeft, setTimeLeft] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [listViewMode, setListViewMode] = useState<'LIST' | 'KANBAN' | 'MAP'>('LIST');
 
+  // ── Filtres rapides « type » (Normales / Doublons / Manuelle / Packs…) ──
+  // Ces filtres sont appliqués côté client sur les lignes chargées. Pour
+  // qu'ils ne montrent PAS seulement les résultats de la page courante (la
+  // source de confusion « perdu de ouf » : filtrer Doublons n'affichait que
+  // les doublons des 20 lignes visibles), quand UN filtre-type est actif on
+  // charge tout le jeu statut+période en une fois (jusqu'à FILTER_MODE_CAP) et
+  // on masque la pagination classique au profit d'un compteur exact.
+  const FILTER_MODE_CAP = 500;
+  const isTypeFiltered = typeFilter !== 'ALL';
+  const effectivePageSize = isTypeFiltered ? FILTER_MODE_CAP : pageSize;
+  const effectivePage = isTypeFiltered ? 1 : page;
+
   const buildQueryParams = useCallback(() => {
-    const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString() });
+    const params = new URLSearchParams({ store_id: storeId, page: effectivePage.toString(), pageSize: effectivePageSize.toString() });
     if (statusFilter !== 'all') params.set('status', statusFilter);
     if (debouncedSearch) params.set('search', debouncedSearch);
     if (filterWilaya) params.set('wilaya', filterWilaya);
@@ -625,7 +637,7 @@ const [timeLeft, setTimeLeft] = useState('');
     if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
     if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
     return params.toString();
-  }, [storeId, page, statusFilter, debouncedSearch, pageSize, filterWilaya, filterSource, startDate, endDate]);
+  }, [storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, startDate, endDate]);
 
    const [newOrderItems, setNewOrderItems] = useState<{ productId: string; quantity: number }[]>([]);
    const [customerData, setCustomerData] = useState({ name: '', phone: '', wilaya: '', address: '' });
@@ -655,7 +667,7 @@ const [timeLeft, setTimeLeft] = useState('');
    }, [selectedPartnerId, orderWilaya, deliveryType, newOrderItems]);
 
    const ordersQuery = useQuery<PaginatedResponse<Order>>({
-     queryKey: ['orders', storeId, page, statusFilter, debouncedSearch, pageSize, filterWilaya, filterSource, startDate, endDate],
+     queryKey: ['orders', storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
      refetchInterval: 5 * 60 * 1000,
@@ -1410,8 +1422,8 @@ const [timeLeft, setTimeLeft] = useState('');
             );
           })}
           {typeFilter !== 'ALL' && (
-            <span className="text-[10px] font-bold text-slate-400 ml-1">
-              {displayOrders.length} / {orders.length} commandes affichées (page courante)
+            <span className="text-[10px] font-bold text-slate-500 ml-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-100">
+              {displayOrders.length} commande{displayOrders.length > 1 ? 's' : ''} — filtre appliqué sur tout ce statut/période
             </span>
           )}
         </div>
@@ -2006,52 +2018,75 @@ const [timeLeft, setTimeLeft] = useState('');
             )}
           </div>
 
-          {/* Data Table Footer - Smart Pagination */}
+          {/* Data Table Footer — pagination (mode normal) OU compteur exact
+              (mode filtre-type actif : plus de pagination trompeuse). */}
           <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: C.border }}>
-            <div className="flex items-center gap-3 text-[10px] sm:text-xs font-bold text-slate-400 text-center sm:text-left">
-              <span>Affichage {orders.length} sur {total} commande{total > 1 ? 's' : ''}</span>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[10px] sm:text-xs font-bold text-slate-600"
-                title="Commandes par page"
-              >
-                {[20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page === 1}
-                onClick={() => setPage(1)}
-                className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
-              >
-                Début
-              </button>
-              <button
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronLeft className="size-4 sm:size-5 text-slate-600" />
-              </button>
-              <div className="flex items-center gap-1 px-3 sm:px-4 text-[13px] sm:text-sm font-bold text-slate-700">
-                {page} <span className="opacity-30">/</span> {totalPages}
-              </div>
-              <button
-                disabled={page === totalPages}
-                onClick={() => setPage(page + 1)}
-                className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
-              >
-                <ChevronRight className="size-4 sm:size-5 text-slate-600" />
-              </button>
-              <button
-                disabled={page === totalPages}
-                onClick={() => setPage(totalPages)}
-                className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
-              >
-                Fin
-              </button>
-            </div>
+            {isTypeFiltered ? (
+              <>
+                <div className="flex items-center gap-2 text-[10px] sm:text-xs font-bold text-slate-500 text-center sm:text-left">
+                  <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700">
+                    Filtre actif : <b>{ORDER_TYPE_FILTERS.find(f => f.id === typeFilter)?.label || typeFilter}</b>
+                  </span>
+                  <span>
+                    {displayOrders.length} commande{displayOrders.length > 1 ? 's' : ''} correspondante{displayOrders.length > 1 ? 's' : ''}
+                    {' '}(sur {orders.length} chargée{orders.length > 1 ? 's' : ''} pour ce statut/période{orders.length >= FILTER_MODE_CAP ? `, plafonné à ${FILTER_MODE_CAP}` : ''})
+                  </span>
+                </div>
+                <button
+                  onClick={() => setTypeFilter('ALL')}
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-black text-slate-600 transition-all"
+                >
+                  ✕ Retirer le filtre & repaginer
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 text-[10px] sm:text-xs font-bold text-slate-400 text-center sm:text-left">
+                  <span>Affichage {orders.length} sur {total} commande{total > 1 ? 's' : ''}</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[10px] sm:text-xs font-bold text-slate-600"
+                    title="Commandes par page"
+                  >
+                    {[20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                    className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
+                  >
+                    Début
+                  </button>
+                  <button
+                    disabled={page === 1}
+                    onClick={() => setPage(page - 1)}
+                    className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                  >
+                    <ChevronLeft className="size-4 sm:size-5 text-slate-600" />
+                  </button>
+                  <div className="flex items-center gap-1 px-3 sm:px-4 text-[13px] sm:text-sm font-bold text-slate-700">
+                    {page} <span className="opacity-30">/</span> {totalPages}
+                  </div>
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => setPage(page + 1)}
+                    className="p-2 sm:p-3 rounded-lg sm:rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                  >
+                    <ChevronRight className="size-4 sm:size-5 text-slate-600" />
+                  </button>
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => setPage(totalPages)}
+                    className="hidden sm:inline-flex px-2.5 py-2 rounded-xl border border-slate-100 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none text-[10px] font-bold text-slate-500 transition-all"
+                  >
+                    Fin
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
         </>
