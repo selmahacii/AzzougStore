@@ -573,11 +573,18 @@ def get_agent_counts(
         def _sum(*criteria):
             return sqlfunc.sum(_case((and_(*criteria), 1), else_=0))
 
+        # "Nouvelles Commandes" et "En attente" représentent le flux NORMAL
+        # (landing page, Meta Ads, storefront...) que la confirmatrice traite —
+        # une commande saisie manuellement (source == 'MANUAL') a déjà sa
+        # propre case "Commandes Manuelles" (wide_row, ci-dessous) ; sans cette
+        # exclusion elle comptait dans les DEUX badges à la fois.
+        _not_manual = sqlfunc.coalesce(Order.source, "") != "MANUAL"
+
         base_row = base.with_entities(
             _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
-            _sum(_not_internal, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
+            _sum(_not_internal, _not_manual, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
             _sum(
-                _not_internal,
+                _not_internal, _not_manual,
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
                 or_(Order.nrp_count == None, Order.nrp_count == 0),
             ).label("pending"),
@@ -917,17 +924,27 @@ def list_orders(
                 )
             )
         elif status.upper() == "NEW":
-            query = query.filter(Order.status.in_(["NEW", "ASSIGNED"]))
+            # "Nouvelles Commandes" = flux normal (landing page/Meta Ads/
+            # storefront) — une commande saisie manuellement a déjà son propre
+            # module "Commandes Manuelles" (voir status.upper() == "MANUAL"
+            # plus bas / GET /orders/agent-counts) ; sans cette exclusion elle
+            # apparaissait dans les deux listes à la fois.
+            query = query.filter(
+                Order.status.in_(["NEW", "ASSIGNED"]),
+                sqlfunc.coalesce(Order.source, "") != "MANUAL",
+            )
         elif status.upper() == "PENDING_CONFIRMATION":
             # Orders moved directly to a pending status (IN_PROGRESS/RESCHEDULED)
             # without ever going through "Signaler NRP" — nrp_count stays 0.
             # Excludes NRP-driven ones deliberately: those already have their
             # own dedicated modules (NRP Commandes / NRP Paniers Aband.),
-            # showing them again here would just duplicate that view.
+            # showing them again here would just duplicate that view. Also
+            # excludes MANUAL orders — same reasoning as "NEW" above.
             from sqlalchemy import or_ as _or_pending
             query = query.filter(
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
                 _or_pending(Order.nrp_count == None, Order.nrp_count == 0),
+                sqlfunc.coalesce(Order.source, "") != "MANUAL",
             )
         elif status.upper() == "NRP":
             query = query.filter(
