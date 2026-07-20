@@ -178,6 +178,16 @@ def _absorb_child_items(db: Session, parent: Order, child: Order, actor_id: Opti
     """
     parent_confirmed = str(parent.status) in _CONFIRMED_STATES
     added: list[str] = []
+    # Items whose stock hold failed — NOT added to the parent's basket (see
+    # below). Surfaced loudly (order note + event) instead of the previous
+    # silent logger.warning-only failure: that left parent.items ahead of
+    # what was ACTUALLY reserved, so a later confirmation attempt failed
+    # with InsufficientStockError deducting a quantity that was never truly
+    # held — a merged order stuck permanently unable to confirm or dispatch,
+    # with no visible reason why. Skipping the absorption keeps the parent's
+    # basket always in sync with its real stock hold; a human sees exactly
+    # which item(s) couldn't be merged and can restock/adjust manually.
+    failed: list[str] = []
     for c_item in list(child.items or []):
         for sub in _expand_order_item(c_item):
             qty = int(sub.get("quantity") or 0)
@@ -197,6 +207,9 @@ def _absorb_child_items(db: Session, parent: Order, child: Order, actor_id: Opti
             except Exception as exc:
                 logger.warning("Merge: stock hold for absorbed item %s failed on parent %s: %s",
                                sub["product_id"], parent.id, exc)
+                variant = _variant_key_from_details(variant_details)
+                failed.append(f"{sub['product_name']}{f' [{variant}]' if variant else ''} x{qty}")
+                continue
 
             match = next(
                 (p for p in (parent.items or [])
@@ -226,6 +239,14 @@ def _absorb_child_items(db: Session, parent: Order, child: Order, actor_id: Opti
             from_status=str(parent.status), to_status=str(parent.status),
             note=f"Panier fusionné depuis {child.order_number} : + {', '.join(added)}. "
                  f"Nouveau total : {int(parent.total or 0)} DA.",
+        )
+    if failed:
+        _log_event(
+            db, order_id=parent.id, actor_id=actor_id,
+            from_status=str(parent.status), to_status=str(parent.status),
+            note=f"⚠️ Fusion partielle depuis {child.order_number} : {', '.join(failed)} NON absorbé(s) "
+                 f"(stock insuffisant au moment de la fusion) — vérifier le stock puis rajouter "
+                 f"manuellement si nécessaire. Le reste de la commande n'est pas bloqué.",
         )
 
 
