@@ -909,6 +909,12 @@ const [timeLeft, setTimeLeft] = useState('');
     { id: 'MANUAL',    label: '✍️ Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' },
     { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
     { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
+    // Deux catégories d'annulation, jamais confondues : une commande NORMALE
+    // annulée (vraie commande passée puis annulée) n'a rien à voir, côté
+    // diagnostic, avec un simple PANIER ABANDONNÉ jamais confirmé — les
+    // mélanger masquait le vrai taux d'annulation des ventes réelles.
+    { id: 'CANCELLED_NORMAL',   label: '❌ Annulée (Normale)',           color: 'bg-red-50 text-red-700 border-red-200',     match: (o) => o.status === 'CANCELLED' && !o.is_abandoned_cart },
+    { id: 'CANCELLED_ABANDONED', label: '❌🟧 Annulée (Panier Aband.)',  color: 'bg-orange-50 text-red-700 border-orange-200', match: (o) => o.status === 'CANCELLED' && !!o.is_abandoned_cart },
     // Matches orders that ABSORBED at least one duplicate (duplicate_count
     // attached by GET /orders, see orders.py) — was previously matching
     // is_duplicate/isDuplicatePhone, which flags the MERGED CHILD, not the
@@ -1395,6 +1401,10 @@ const [timeLeft, setTimeLeft] = useState('');
         </div>
 
         {/* ─── Filtres par type de commande (micro-détails) ─── */}
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-300">Filtrer par type</span>
+          <span className="h-px flex-1 bg-slate-100 min-w-[16px]" />
+        </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {ORDER_TYPE_FILTERS.map((f) => {
             const pageCount = f.id === 'ALL' ? orders.length : orders.filter(f.match).length;
