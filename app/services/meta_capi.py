@@ -595,6 +595,7 @@ def build_user_data(
     fbp: Optional[str] = None,
     fbc: Optional[str] = None,
     fbclid: Optional[str] = None,
+    fbc_reference_time: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Assemble a fully-normalized Meta user_data dict (max Event Match Quality)."""
     if full_name and not (first_name or last_name):
@@ -630,8 +631,21 @@ def build_user_data(
     if fbc:
         ud["fbc"] = fbc
     elif fbclid:
-        # Rebuild fbc from a raw fbclid per Meta spec: fb.1.<ms>.<fbclid>
-        ud["fbc"] = f"fb.1.{int(time.time() * 1000)}.{fbclid}"
+        # Rebuild fbc from a raw fbclid per Meta spec: fb.1.<ms>.<fbclid>.
+        # The timestamp MUST anchor the real click moment, not "now" — this
+        # used to be int(time.time()*1000), i.e. whenever THIS send happens.
+        # For a same-session checkout that's a few seconds of drift, harmless.
+        # For an abandoned cart recovered by a confirmatrice hours/days
+        # later, it fabricated a click time days after the real click —
+        # Meta's own click record for that fbclid still has the true time,
+        # and a fbc claiming otherwise can silently fall outside the ad
+        # set's attribution window: Events Manager still accepts the event
+        # (it never validates this timestamp), but Ads Manager quietly
+        # refuses to attribute it to the ad. fbc_reference_time (pass
+        # order.created_at) keeps this anchored to the real click regardless
+        # of how long the order sat before its Purchase was actually sent.
+        reference_ms = int((fbc_reference_time if fbc_reference_time is not None else time.time()) * 1000)
+        ud["fbc"] = f"fb.1.{reference_ms}.{fbclid}"
     return ud
 
 
@@ -720,6 +734,10 @@ def build_purchase_event(
             fbp=getattr(order, "fbp", None),
             fbc=getattr(order, "fbc", None),
             fbclid=getattr(order, "fbclid", None),
+            # Same reference instant as event_time above — the real click is
+            # never later than the order's own creation, so this is always a
+            # closer anchor to the true click than "whenever this send runs".
+            fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
             "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),

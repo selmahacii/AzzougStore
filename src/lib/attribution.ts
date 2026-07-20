@@ -38,9 +38,17 @@ export interface Attribution {
   referrer?: string;
   landing_url?: string;
   captured_at?: string;
+  /** ms epoch of the page load that actually carried this fbclid — the real
+   * click moment. Kept separate from `captured_at` (which is overwritten on
+   * every later page load, incl. return visits with no fresh ad click) so a
+   * fallback fbc built days later never embeds today's date as if it were
+   * the click time — see getFbc() below. */
+  fbclid_captured_at?: number;
 }
 
-const PARAM_KEYS: (keyof Attribution)[] = [
+type StringAttrKey = 'utm_source' | 'utm_medium' | 'utm_campaign' | 'utm_content' | 'utm_term'
+  | 'campaign_id' | 'adset_id' | 'ad_id' | 'fbclid';
+const PARAM_KEYS: StringAttrKey[] = [
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
   'campaign_id', 'adset_id', 'ad_id', 'fbclid',
 ];
@@ -64,6 +72,11 @@ export function captureAttribution(): void {
         referrer: document.referrer || existing.referrer || undefined,
         landing_url: window.location.href.slice(0, 500),
         captured_at: new Date().toISOString(),
+        // Only stamped on a FRESH fbclid (this page load actually carried
+        // one) — never touched on a later revisit with no new ad click, so
+        // it stays pinned to the true click moment for as long as the
+        // 30-day window keeps this fbclid alive.
+        fbclid_captured_at: hasSignal && fresh.fbclid ? Date.now() : existing.fbclid_captured_at,
       };
       localStorage.setItem(KEY, JSON.stringify(hasSignal ? merged : { ...existing, ...merged }));
     }
@@ -100,13 +113,30 @@ export function getFbp(): string | undefined {
   return readCookie('_fbp');
 }
 
-/** Meta click id cookie, or rebuilt from a captured fbclid. */
+/**
+ * Meta click id cookie, or rebuilt from a captured fbclid.
+ *
+ * BUG FIXED HERE: this used to stamp the fallback with `Date.now()` — the
+ * moment getFbc() happens to run, not the moment of the actual ad click.
+ * For a normal same-session checkout that's a few seconds off, harmless.
+ * But for an ABANDONED CART recovered by a confirmatrice DAYS later, the
+ * same stale fbclid gets replayed from localStorage (by design — 30-day
+ * window) while the embedded timestamp silently jumps to "now". Meta's own
+ * click record for that fbclid still has the REAL click time; a fbc that
+ * claims the click happened days later than it did is a fabricated click
+ * time that can push the event outside the ad set's attribution window and
+ * make Meta quietly refuse to attribute an otherwise correctly-received
+ * Purchase to the ad — exactly the "Events Manager shows it, Ads Manager
+ * shows 0" symptom. Using the ORIGINAL capture time keeps the fbc anchored
+ * to the true click regardless of how long a cart sits abandoned.
+ */
 export function getFbc(): string | undefined {
   const cookie = readCookie('_fbc');
   if (cookie) return cookie;
-  const { fbclid } = getAttribution();
-  if (fbclid) return `fb.1.${Date.now()}.${fbclid}`;
-  return undefined;
+  const a = getAttribution();
+  if (!a.fbclid) return undefined;
+  const clickTime = a.fbclid_captured_at ?? (a.captured_at ? Date.parse(a.captured_at) : Date.now());
+  return `fb.1.${clickTime}.${a.fbclid}`;
 }
 
 /** Everything the order payload needs, ready to spread. */
