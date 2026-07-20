@@ -285,11 +285,16 @@ def _compute_match_quality_sample(
     sample_n = len(sample)
     avg_emq = round(sum(emq_scores) / sample_n, 1) if sample_n else None
     avg_completeness_pct = round(sum(completeness_scores) / sample_n, 1) if sample_n else None
+    from app.services.meta_capi import _META_FIELD_CLASSIFICATION
     field_coverage = [
         {
             "key": key, "label": label,
             "coverage_pct": _pct(field_present_counts[key], sample_n),
             "missing_pct": _pct(sample_n - field_present_counts[key], sample_n),
+            # Expose la classification pour que le dashboard affiche
+            # explicitement "Non applicable" (email sur un funnel COD) au lieu
+            # d'un pourcentage qui laisserait croire à un défaut à corriger.
+            "classification": _META_FIELD_CLASSIFICATION.get(key, "recommended"),
         }
         for key, label in _MATCH_QUALITY_FIELDS
     ]

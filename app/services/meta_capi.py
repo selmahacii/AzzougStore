@@ -1260,6 +1260,19 @@ def scan_payload_quality(payload: Optional[dict]) -> dict:
     pour rester testable sans dépendre de la base.
     """
     p = payload or {}
+    # Robustesse structurelle : un payload peut avoir été stocké soit comme
+    # l'événement seul (build_purchase_event / durable queue — event_time en
+    # haut niveau, custom_data.currency imbriqué), soit, historiquement, comme
+    # le wrapper complet envoyé à Meta {"data": [event], ...}. Sans ce
+    # déballage, un payload au format wrapper faisait remonter event_time ET
+    # currency comme "absents" à tort — la source exacte des faux positifs
+    # "Purchase sans event_time / sans devise" signalés sur le dashboard alors
+    # que ces champs SONT bien envoyés depuis le cutover du 16/07. On ne
+    # change rien à ce qui est envoyé à Meta : on lit juste le champ au bon
+    # endroit quel que soit le format de stockage.
+    data = p.get("data")
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        p = data[0]
     cd = p.get("custom_data") or {}
     currency = cd.get("currency")
     return {
@@ -1942,18 +1955,31 @@ def estimate_learning_score_gains_by_field(components: dict, field_coverage_pct:
     field_coverage_pct : dict {clé EMQ: pourcentage de présence 0-100},
     typiquement `field_coverage` du Signal Quality Center ou
     field_completeness d'une campagne, restreint aux 12 clés EMQ.
+
+    NB : depuis la pondération COD de l'EMQ (MATCH_QUALITY_WEIGHTS), porter
+    un champ K de X% à 100% relève l'EMQ moyen de EXACTEMENT
+    (poids_K / poids_total) × (100 - X) — plus la vieille formule (100-X)/12
+    non pondérée. Les champs classés "not_applicable" (email sur ce funnel
+    COD) sont EXCLUS : recommander de « corriger l'email » sur un tunnel qui
+    ne le collecte jamais serait un conseil impossible à suivre — d'où la
+    demande explicite qu'il n'apparaisse plus dans les recommandations.
     """
     base_emq = components.get("event_match_quality", 0.0) or 0.0
     base = compute_learning_score(components)
     base_score = base["score"]
-    n_fields = len(_MATCH_QUALITY_FIELDS)
+    total_weight = sum(_MATCH_QUALITY_WEIGHTS.get(key, 1.0) for key, _ in _MATCH_QUALITY_FIELDS) or 1.0
 
     gains = []
     for key, _label in _MATCH_QUALITY_FIELDS:
+        # Un champ structurellement absent de ce funnel (email en COD) ne
+        # doit jamais générer une recommandation d'amélioration.
+        if _META_FIELD_CLASSIFICATION.get(key, "recommended") == "not_applicable":
+            continue
         coverage = field_coverage_pct.get(key)
         if coverage is None or coverage >= 100:
             continue
-        delta_emq = (100 - coverage) / n_fields
+        weight = _MATCH_QUALITY_WEIGHTS.get(key, 1.0)
+        delta_emq = (weight / total_weight) * (100 - coverage)
         hypothetical_emq = min(100.0, base_emq + delta_emq)
         hypothetical = dict(components)
         hypothetical["event_match_quality"] = hypothetical_emq

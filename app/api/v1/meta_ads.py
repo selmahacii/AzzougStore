@@ -1902,7 +1902,19 @@ def get_meta_diagnostics(
     )
     pending_count = pending_q.count()
     oldest_pending = pending_q.order_by(MetaCapiLog.created_at.asc()).first()
+    # Échecs définitifs : DEUX chiffres explicites plutôt qu'un seul global
+    # ambigu (avant : un COUNT sans fenêtre, incohérent avec tout le reste du
+    # dashboard qui est borné à la fenêtre 7j). `failed_count` suit désormais
+    # la même fenêtre que le reste ; `failed_count_all_time` reste disponible
+    # pour la vue opérationnelle (un Purchase mort le reste quelle que soit sa
+    # date), mais clairement étiqueté comme global côté frontend.
     failed_count = (
+        db.query(func.count(MetaCapiLog.id))
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "failed",
+                MetaCapiLog.created_at >= week_ago, MetaCapiLog.created_at <= now)
+        .scalar() or 0
+    )
+    failed_count_all_time = (
         db.query(func.count(MetaCapiLog.id))
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.status == "failed")
         .scalar() or 0
@@ -2043,6 +2055,8 @@ def get_meta_diagnostics(
             "queue": {
                 "pending_count": pending_count,
                 "failed_count": failed_count,
+                "failed_count_all_time": failed_count_all_time,
+                "failed_count_window": "7d",
                 "retried_count_7d": retried_count,
                 "oldest_pending_at": oldest_pending.created_at.isoformat() if oldest_pending and oldest_pending.created_at else None,
                 "oldest_pending_event": oldest_pending.event_name if oldest_pending else None,
@@ -4351,7 +4365,7 @@ def get_kpi_validation(
     from app.core.dates import parse_local_date_filter
     from app.services.meta_capi import (
         compute_match_quality, classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
-        verify_percentage_matches_counter,
+        verify_percentage_matches_counter, _MATCH_QUALITY_WEIGHTS,
     )
     from app.services.meta_analytics_engine import resolve_metrics_time_window
 
@@ -4387,10 +4401,34 @@ def get_kpi_validation(
     )
     raw_by_status = {s: c for s, c in raw_status_rows}
     raw_total = sum(raw_by_status.values())
+    # Validation réelle (avant : ce check n'avait AUCUN champ `passed`, donc
+    # le frontend le rendait en ❌ rouge perpétuel bien qu'il soit sain) :
+    # on compare cette répartition BRUTE (GROUP BY direct) à celle produite
+    # par le moteur canonique compute_meta_metrics — c'est exactement ce que
+    # la description promet ("doit égaler purchase_breakdown de Signal
+    # Quality Center"). Toute divergence signale qu'un des deux chemins a
+    # dévié ; l'égalité prouve que le dashboard n'invente rien.
+    from app.services.meta_analytics_engine import compute_meta_metrics as _cmm
+    _canon = _cmm(db, store_id, since, until, include_legacy_data=include_legacy_data)
+    _canon_retry = raw_by_status.get("retry", 0) + raw_by_status.get("pending_retry", 0)
+    _canon_pending = raw_by_status.get("queued", 0) + raw_by_status.get("processing", 0)
+    breakdown_matches = (
+        _canon["success"] == raw_by_status.get("success", 0)
+        and _canon["failed"] == raw_by_status.get("failed", 0)
+        and _canon["retry"] == _canon_retry
+        and _canon["pending"] == _canon_pending
+        and _canon["skipped"] == raw_by_status.get("skipped", 0)
+    )
     checks.append({
         "name": "purchase_status_breakdown_raw",
         "description": "Répartition brute des statuts Purchase (GROUP BY direct, sans logique de score) — doit égaler purchase_breakdown affiché par Signal Quality Center pour la même période.",
-        "raw_values": {**raw_by_status, "total": raw_total},
+        "raw_values": {
+            **raw_by_status, "total": raw_total,
+            "canonical_success": _canon["success"], "canonical_failed": _canon["failed"],
+            "canonical_retry": _canon["retry"], "canonical_pending": _canon["pending"],
+            "canonical_skipped": _canon["skipped"],
+        },
+        "passed": breakdown_matches,
         "traceable_query": "SELECT status, COUNT(*) FROM meta_capi_logs WHERE store_id=:store_id AND event_name='Purchase' AND created_at BETWEEN :since AND :until GROUP BY status",
     })
 
@@ -4457,12 +4495,25 @@ def get_kpi_validation(
                 field_present_counts[f["key"]] += 1
     n = len(sample)
     avg_emq_direct = round(sum(emq_scores) / n, 1) if n else None
-    field_coverage_avg = round(sum(field_present_counts.values()) / (n * len(_MATCH_QUALITY_FIELDS)) * 100, 1) if n else None
+    # Invariant CORRIGÉ pour l'EMQ pondéré (avant : moyenne simple sur 12
+    # champs — la prémisse est devenue fausse depuis la pondération COD, ce
+    # qui condamnait ce check à échouer en permanence). compute_match_quality
+    # calcule score = Σ(poids_k présents) / Σ(poids_k total). La couverture
+    # par champ étant la fréquence de présence de chaque champ, la moyenne
+    # PONDÉRÉE de ces couvertures (Σ coverage_k·poids_k / Σ poids_k) égale
+    # EXACTEMENT l'EMQ moyen — c'est le vrai invariant mathématique.
+    total_weight = sum(_MATCH_QUALITY_WEIGHTS.get(key, 1.0) for key, _ in _MATCH_QUALITY_FIELDS) or 1.0
+    weighted_coverage_avg = round(
+        sum(
+            (field_present_counts[key] / n * 100) * _MATCH_QUALITY_WEIGHTS.get(key, 1.0)
+            for key, _ in _MATCH_QUALITY_FIELDS
+        ) / total_weight, 1
+    ) if n else None
     checks.append({
         "name": "emq_matches_field_coverage_average",
-        "description": "La moyenne des 12 pourcentages de couverture par champ DOIT égaler l'EMQ moyen affiché, par construction mathématique de compute_match_quality.",
-        "raw_values": {"avg_emq": avg_emq_direct, "field_coverage_average": field_coverage_avg, "sample_size": n},
-        "passed": avg_emq_direct is None or field_coverage_avg is None or abs(avg_emq_direct - field_coverage_avg) < 0.2,
+        "description": "La moyenne PONDÉRÉE des pourcentages de couverture par champ (selon MATCH_QUALITY_WEIGHTS) DOIT égaler l'EMQ moyen affiché, par construction mathématique de compute_match_quality (score pondéré COD).",
+        "raw_values": {"avg_emq": avg_emq_direct, "weighted_field_coverage_average": weighted_coverage_avg, "sample_size": n},
+        "passed": avg_emq_direct is None or weighted_coverage_avg is None or abs(avg_emq_direct - weighted_coverage_avg) < 0.2,
     })
 
     all_passed = all(c.get("passed", True) for c in checks)

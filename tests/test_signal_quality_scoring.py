@@ -410,16 +410,28 @@ def test_validate_purchase_event_consistency_handles_none_without_crashing():
 # ─── estimate_learning_score_gains_by_field — exact per-field math ─────────
 
 def test_estimate_learning_score_gains_by_field_exact_math():
+    from app.services.meta_capi import _MATCH_QUALITY_FIELDS, _MATCH_QUALITY_WEIGHTS
     components = {"event_match_quality": 50.0}
-    # fbp à 0% de couverture -> le porter à 100% relève l'EMQ moyen
-    # exactement de (100-0)/12 points de pourcentage.
+    # EMQ PONDÉRÉ (contexte COD) : porter fbp de 0% à 100% relève l'EMQ moyen
+    # de EXACTEMENT (poids_fbp / poids_total) × (100 - 0), pas (100-0)/12.
     coverage = {"fbp": 0.0}
     gains = estimate_learning_score_gains_by_field(components, coverage)
     assert len(gains) == 1
-    expected_new_emq = 50.0 + (100.0 / 12)
+    total_weight = sum(_MATCH_QUALITY_WEIGHTS.get(k, 1.0) for k, _ in _MATCH_QUALITY_FIELDS)
+    delta_emq = (_MATCH_QUALITY_WEIGHTS["fbp"] / total_weight) * 100.0
+    expected_new_emq = 50.0 + delta_emq
     expected_score = compute_learning_score({**components, "event_match_quality": expected_new_emq})["score"]
     base_score = compute_learning_score(components)["score"]
     assert gains[0]["gain_points"] == round(expected_score - base_score, 1)
+
+
+def test_estimate_learning_score_gains_by_field_excludes_not_applicable_email():
+    # Email est not_applicable sur un funnel COD — même à 0% de couverture,
+    # il ne doit JAMAIS générer une recommandation d'amélioration.
+    gains = estimate_learning_score_gains_by_field({"event_match_quality": 40.0}, {"em": 0.0, "ph": 0.0})
+    keys = {g["field"] for g in gains}
+    assert "em" not in keys
+    assert "ph" in keys  # téléphone (required) reste bien recommandé
 
 
 def test_estimate_learning_score_gains_by_field_skips_fields_already_at_100():

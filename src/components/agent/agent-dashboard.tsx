@@ -275,11 +275,15 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
           <div className="space-y-1.5">
             <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
             {/* Same transition a manual order goes through like any other
-                (NEW/ASSIGNED/CALLED -> CONFIRMED is already valid per the
-                state machine) — just a one-click shortcut right where the
-                confirmatrice is trying to dispatch, instead of making her
-                hunt for the "Confirmer" action elsewhere in the drawer. */}
-            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED'].includes(order.status) && onStatusChange && (
+                (NEW/ASSIGNED/CALLED/ABANDONED -> CONFIRMED is already valid
+                per _VALID_TRANSITIONS) — just a one-click shortcut right where
+                the confirmatrice is trying to dispatch, instead of making her
+                hunt for the "Confirmer" action elsewhere in the drawer.
+                ABANDONED inclus : une confirmatrice a explicitement le droit
+                de confirmer un panier abandonné récupéré au téléphone (le cas
+                d'usage même du module Paniers Abandonnés) — l'exclure ici
+                l'empêchait de dispatcher la commande qu'elle vient de sauver. */}
+            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED'].includes(order.status) && onStatusChange && (
               <button
                 type="button"
                 disabled={isPending}
@@ -1645,6 +1649,19 @@ export default function AgentDashboard() {
     placeholderData: (prev) => prev,
     refetchInterval: 30000,
   });
+
+  // Garde-fou pagination : après une action (confirmation, annulation,
+  // assignation…) qui retire des commandes du filtre courant, le nombre de
+  // pages peut chuter sous la page affichée — sans ce clamp, la
+  // confirmatrice se retrouvait bloquée sur une page VIDE, sans résultat et
+  // sans moyen évident de revenir (bug de pagination récurrent signalé). On
+  // ramène automatiquement à la dernière page réellement peuplée.
+  useEffect(() => {
+    const tp = (ordersQuery.data as any)?.totalPages;
+    if (typeof tp === 'number' && tp >= 1 && page > tp) {
+      setPage(tp);
+    }
+  }, [ordersQuery.data, page]);
 
   const perfQuery = useQuery({
     queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores],

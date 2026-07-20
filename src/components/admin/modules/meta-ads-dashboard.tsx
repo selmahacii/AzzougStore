@@ -1433,10 +1433,14 @@ export default function MetaAdsDashboard() {
                   {signalQuality.field_coverage.map((f: any) => (
                     <div key={f.key} className="flex items-center justify-between text-[11px] p-2 rounded-lg bg-slate-50">
                       <span className="text-slate-600 font-semibold">{f.label}</span>
-                      <span className={cn(
-                        'font-black tabular-nums',
-                        f.coverage_pct >= 80 ? 'text-[#00B894]' : f.coverage_pct >= 40 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
-                      )}>{f.coverage_pct != null ? `${f.coverage_pct}%` : '—'}</span>
+                      {f.classification === 'not_applicable' ? (
+                        <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider" title="Ce champ n'est pas collecté sur un tunnel COD — son absence n'est pas un défaut.">Non applicable</span>
+                      ) : (
+                        <span className={cn(
+                          'font-black tabular-nums',
+                          f.coverage_pct >= 80 ? 'text-[#00B894]' : f.coverage_pct >= 40 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
+                        )}>{f.coverage_pct != null ? `${f.coverage_pct}%` : '—'}</span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1489,12 +1493,12 @@ export default function MetaAdsDashboard() {
               ) : fullDiagnostics?.queue ? (
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    { label: 'En attente', value: fullDiagnostics.queue.pending_count, color: fullDiagnostics.queue.pending_count > 0 ? '#FDCB6E' : '#00B894' },
-                    { label: 'Échecs définitifs', value: fullDiagnostics.queue.failed_count, color: fullDiagnostics.queue.failed_count > 0 ? '#E17055' : '#00B894' },
+                    { label: 'En attente (global)', value: fullDiagnostics.queue.pending_count, color: fullDiagnostics.queue.pending_count > 0 ? '#FDCB6E' : '#00B894' },
+                    { label: `Échecs définitifs (${fullDiagnostics.queue.failed_count_window || '7j'})`, value: fullDiagnostics.queue.failed_count, color: fullDiagnostics.queue.failed_count > 0 ? '#E17055' : '#00B894', hint: fullDiagnostics.queue.failed_count_all_time != null ? `${fullDiagnostics.queue.failed_count_all_time} au total (toutes périodes)` : undefined },
                     { label: 'Latence moy.', value: fullDiagnostics.queue.avg_latency_ms != null ? `${fullDiagnostics.queue.avg_latency_ms}ms` : '—', color: '#6C5CE7' },
                     { label: 'Latence P95', value: fullDiagnostics.queue.p95_latency_ms != null ? `${fullDiagnostics.queue.p95_latency_ms}ms` : '—', color: '#0984E3' },
-                  ].map(s => (
-                    <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
+                  ].map((s: any) => (
+                    <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50" title={s.hint || undefined}>
                       <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
                       <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
                     </div>

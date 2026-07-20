@@ -847,6 +847,12 @@ const [timeLeft, setTimeLeft] = useState('');
   const orders = ordersQuery.data?.data ?? [];
   const totalPages = ordersQuery.data?.totalPages ?? 1;
   const total = ordersQuery.data?.total ?? 0;
+  // Garde-fou pagination : si le nombre de pages chute sous la page courante
+  // (suppression, changement de filtre serveur, action de masse…), on évite
+  // de rester bloqué sur une page vide en revenant à la dernière page peuplée.
+  useEffect(() => {
+    if (totalPages >= 1 && page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
   const employees = (Array.isArray(employeesQuery.data) ? employeesQuery.data : employeesQuery.data?.data) ?? [];
 
   // Auto-open order from notification click
