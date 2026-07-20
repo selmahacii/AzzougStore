@@ -284,8 +284,19 @@ const [timeLeft, setTimeLeft] = useState('');
   // on it, even with real merged duplicates elsewhere in the store (visible
   // in the backend logs as "Auto-merged N duplicate(s)..." constantly).
   const duplicateStatsQuery = useQuery({
-    queryKey: ['duplicate-stats-badge', storeId],
-    queryFn: () => apiFetch<{ success: boolean; data: { child_orders: number; duplicate_groups: number } }>(`/api/v1/orders/duplicate-stats?store_id=${storeId}`),
+    // Scoped to the SAME start/end date as the rest of the dashboard — this
+    // used to be a lifetime, store-wide count with no date param at all, so
+    // "Doublons" could show more than "Toutes" (e.g. 22 vs 20) whenever the
+    // selected period was narrower than the store's full history. That
+    // mismatch wasn't a bug in the count itself, just two different time
+    // windows compared side by side without saying so.
+    queryKey: ['duplicate-stats-badge', storeId, startDate, endDate],
+    queryFn: () => {
+      const params = new URLSearchParams({ store_id: storeId });
+      if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
+      if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
+      return apiFetch<{ success: boolean; data: { child_orders: number; duplicate_groups: number } }>(`/api/v1/orders/duplicate-stats?${params.toString()}`);
+    },
     enabled: !!storeId,
     staleTime: 60_000,
   });
@@ -1408,10 +1419,12 @@ const [timeLeft, setTimeLeft] = useState('');
         <div className="flex items-center gap-1.5 flex-wrap">
           {ORDER_TYPE_FILTERS.map((f) => {
             const pageCount = f.id === 'ALL' ? orders.length : orders.filter(f.match).length;
-            // "Doublons" reflects the whole store (see storeWideDuplicateCount
-            // above), not just whatever duplicates happen to be on the
-            // currently-loaded page — every other badge stays page-scoped,
-            // which is correct for a quick filter over what's visible.
+            // "Doublons" uses a dedicated store-wide-but-DATE-SCOPED count
+            // (see duplicateStatsQuery above, now filtered by the same
+            // startDate/endDate as the rest of the dashboard) instead of
+            // just whatever duplicates happen to be on the currently-loaded
+            // page — every other badge stays page-scoped, which is correct
+            // for a quick filter over what's visible.
             const count = f.id === 'DUPLICATE' ? Math.max(pageCount, storeWideDuplicateCount) : pageCount;
             if (f.id !== 'ALL' && count === 0) return null;
             const active = typeFilter === f.id;

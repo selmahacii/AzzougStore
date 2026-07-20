@@ -651,6 +651,8 @@ def get_agent_counts(
 @router.get("/duplicate-stats")
 def get_duplicate_stats(
     store_id: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -659,12 +661,23 @@ def get_duplicate_stats(
     total orders, duplicate groups, child orders, duplicate rate,
     recovered duplicates, merged basket value, shipments prevented and the
     commission that would have been paid twice without the merge.
+
+    start_date/end_date scope every count to the SAME period as the rest of
+    the dashboard — without this, "Doublons" showed a lifetime, store-wide
+    total (e.g. 22) next to type-filter pills scoped to "today" (e.g. a
+    total of 20 orders), an impossible-looking mismatch that was really just
+    two different time windows silently compared side by side.
     """
     from sqlalchemy import func, distinct
+    from datetime import datetime as _dt
 
     base_filters = [Order.is_deleted == False]
     if store_id:
         base_filters.append(Order.store_id == store_id)
+    if start_date:
+        base_filters.append(Order.created_at >= _dt.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None))
+    if end_date:
+        base_filters.append(Order.created_at <= _dt.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None))
 
     total_orders = db.query(func.count(Order.id)).filter(*base_filters).scalar() or 0
     child_orders = db.query(func.count(Order.id)).filter(
