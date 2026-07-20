@@ -2573,9 +2573,18 @@ def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
 
     Returns the new log row id, or None if a Purchase row already exists
     for this order (idempotent no-op; also enforced at the DB level by
-    uq_meta_capi_purchase_per_order).
+    uq_meta_capi_purchase_per_order), or if the order is a MERGED duplicate
+    (a merged child is never the real sale — Meta must count the active
+    parent, which already carries the absorbed value; queueing a Purchase
+    for the child here is exactly the historical bug that inflated Meta's
+    count above the ERP's real order count. Centralized here so every call
+    site is protected, not just the ones that remembered to check).
     """
     from app.models.marketing import MetaCapiLog
+
+    if str(getattr(order, "status", "")) == "MERGED":
+        logger.info("[MetaCAPI] skip enqueue: order=%s is MERGED (duplicate) — parent already carries the value", order.id)
+        return None
 
     existing = (
         db.query(MetaCapiLog.id)

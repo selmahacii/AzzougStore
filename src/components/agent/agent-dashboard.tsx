@@ -568,6 +568,17 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, editData.carrier_id, editData.customer_wilaya, editData.delivery_type]);
 
+  const unmergeMutation = useMutation({
+    mutationFn: async () => apiFetch(`/api/v1/orders/${order.id}/unmerge`, { method: 'POST', headers: { 'X-Store-Id': order.store_id } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-events', order.id] });
+      toast.success('Commande réactivée — c\'est maintenant la tentative active du client.');
+    },
+    onError: (err: any) => toast.error(err?.message || "Échec de la réactivation de la commande."),
+  });
+
   const updateMutation = useMutation({
     mutationFn: async (data: typeof editData) => {
       console.log("[DEBUG FRONTEND] updateMutation mutationFn triggered with editData:", JSON.parse(JSON.stringify(data)));
@@ -680,13 +691,33 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   {loadingParentOrder ? (
                     <p className="mt-2 text-purple-500">Recherche de la commande active…</p>
                   ) : parentOrder ? (
-                    <button
-                      type="button"
-                      onClick={() => onOrderUpdate && onOrderUpdate(parentOrder)}
-                      className="mt-2 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-purple-700 transition-colors"
-                    >
-                      → Ouvrir la commande active {parentOrder.order_number ? `(N°${parentOrder.order_number})` : ''}
-                    </button>
+                    <div className="mt-2 flex flex-wrap gap-2 items-center">
+                      <button
+                        type="button"
+                        onClick={() => onOrderUpdate && onOrderUpdate(parentOrder)}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-purple-700 transition-colors"
+                      >
+                        → Ouvrir la commande active {parentOrder.order_number ? `(N°${parentOrder.order_number})` : ''}
+                      </button>
+                      {/* Cette commande fusionnée est en réalité la tentative la
+                          plus RÉCENTE du client (créée après son parent actuel) —
+                          la confirmatrice doit pouvoir la réactiver pour confirmer
+                          la dernière tentative, pas la première. */}
+                      {order.created_at && parentOrder.created_at && new Date(order.created_at) > new Date(parentOrder.created_at) && (
+                        <button
+                          type="button"
+                          disabled={unmergeMutation.isPending}
+                          onClick={() => {
+                            if (window.confirm("Cette commande est la tentative la plus récente du client. La rendre active à la place de son parent ?")) {
+                              unmergeMutation.mutate();
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-purple-300 text-purple-700 text-[10px] font-black uppercase tracking-wider hover:bg-purple-100 transition-colors disabled:opacity-50"
+                        >
+                          {unmergeMutation.isPending ? 'Réactivation…' : '↺ Rendre CETTE commande active (plus récente)'}
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <p className="mt-2 text-purple-500">Commande active introuvable (peut-être supprimée) — contactez un administrateur.</p>
                   )}
