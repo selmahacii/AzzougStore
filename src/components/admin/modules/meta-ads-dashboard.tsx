@@ -1517,10 +1517,14 @@ export default function MetaAdsDashboard() {
               <div className="space-y-2">
                 {signalQuality.recommendations.map((r: any, i: number) => (
                   <div key={i} className="flex items-start gap-2 text-[11px] text-slate-600 p-3 rounded-xl bg-slate-50">
-                    <span>💡</span>
-                    <div>
-                      <p className="font-semibold text-slate-700">{r.title || r.message || r}</p>
-                      {r.detail && <p className="text-slate-500 mt-0.5">{r.detail}</p>}
+                    <span className="text-amber-500 tracking-tighter shrink-0">{r.stars || '★★★☆☆'}</span>
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-700">{r.action || String(r)}</p>
+                      <p className="text-slate-500 mt-0.5">
+                        {r.category === 'event_match_quality_field' ? 'Champ EMQ' : 'Composant Learning Score'}
+                        {r.current != null && ` — actuellement ${r.current}%`}
+                        {r.gain_points != null && ` · gain estimé +${r.gain_points} pts`}
+                      </p>
                     </div>
                   </div>
                 ))}
