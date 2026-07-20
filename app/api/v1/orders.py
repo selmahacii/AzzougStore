@@ -1770,6 +1770,16 @@ def get_order(
     from app.schemas.order import OrderReadFull as _OrderReadFull, OrderRead as _OrderRead
     result = _OrderReadFull.model_validate(order)
     result.child_orders = [_OrderRead.model_validate(c) for c in children]
+    # This order is itself a MERGED child — attach the parent it was
+    # absorbed into so the confirmatrice can navigate straight to the
+    # order she should actually be confirming/dispatching (see
+    # parent_order's docstring in schemas/order.py for why this matters).
+    if order.parent_order_id:
+        parent = db.query(Order).filter(
+            Order.id == order.parent_order_id, Order.is_deleted == False,
+        ).first()
+        if parent:
+            result.parent_order = _OrderRead.model_validate(parent)
     return result
 
 
@@ -2385,6 +2395,22 @@ def update_order_info(
         raise OrderNotFoundError()
 
     _assert_order_access(order, current_user)
+
+    # A MERGED order is a dead, absorbed duplicate — its own basket/address/
+    # delivery fee are frozen for audit, and _VALID_TRANSITIONS deliberately
+    # allows NO outgoing status change from MERGED. Editing it here used to
+    # silently succeed (wilaya, commune, carrier, delivery fee all changed
+    # article-by-article) while doing NOTHING for the actual order being
+    # fulfilled — that lives entirely on parent_order_id instead. Confirmed
+  # in production (order #595): a confirmatrice spent 20+ minutes editing a
+    # merged child, unaware her changes had no effect on the real shipment.
+    if order.status == "MERGED":
+        parent = db.query(Order).filter(Order.id == order.parent_order_id).first() if order.parent_order_id else None
+        parent_hint = f" Gérez plutôt la commande {parent.order_number}." if parent else ""
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cette commande a été fusionnée dans une autre — elle n'est plus modifiable.{parent_hint}"
+        )
 
     if order.status in _LOCKED_STATUSES:
         if order.status == "SHIPPED" and not order.tracking_number:

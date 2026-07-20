@@ -364,17 +364,31 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // duplicate.
   const [duplicateDetails, setDuplicateDetails] = useState<any[] | null>(null);
   const [loadingDuplicateDetails, setLoadingDuplicateDetails] = useState(false);
+  // parent_order — this order is itself a MERGED child, so we need the
+  // order it was absorbed INTO (a MERGED order carries no duplicate_count
+  // of its own, so the fetch above never triggered for it — without this,
+  // opening a merged order gave no way to find the real, active order to
+  // confirm/dispatch instead. Confirmed in production: order #595).
+  const [parentOrder, setParentOrder] = useState<any | null>(null);
+  const [loadingParentOrder, setLoadingParentOrder] = useState(false);
   useEffect(() => {
-    if (!order.duplicate_count || order.duplicate_count <= 0) {
+    const needsDuplicates = !!order.duplicate_count && order.duplicate_count > 0;
+    const needsParent = order.status === 'MERGED';
+    if (!needsDuplicates && !needsParent) {
       setDuplicateDetails(null);
+      setParentOrder(null);
       return;
     }
-    setLoadingDuplicateDetails(true);
+    if (needsDuplicates) setLoadingDuplicateDetails(true);
+    if (needsParent) setLoadingParentOrder(true);
     apiFetch<any>(`/api/v1/orders/${order.id}`)
-      .then((full) => setDuplicateDetails(full?.child_orders ?? []))
-      .catch((err) => console.error('Failed to load duplicate details for order', order.id, err))
-      .finally(() => setLoadingDuplicateDetails(false));
-  }, [order.id, order.duplicate_count]);
+      .then((full) => {
+        setDuplicateDetails(full?.child_orders ?? []);
+        setParentOrder(full?.parent_order ?? null);
+      })
+      .catch((err) => console.error('Failed to load order detail for order', order.id, err))
+      .finally(() => { setLoadingDuplicateDetails(false); setLoadingParentOrder(false); });
+  }, [order.id, order.duplicate_count, order.status]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -649,6 +663,30 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <span>
                   Ce panier a été abandonné. Appelez le client immédiatement au numéro ci-dessous pour tenter de récupérer la commande !
                 </span>
+              </div>
+            )}
+            {order.status === 'MERGED' && (
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-800 font-semibold leading-relaxed flex gap-2 items-start">
+                <AlertCircle className="size-4 shrink-0 text-purple-500 mt-0.5" />
+                <div className="flex-1">
+                  <p>
+                    Cette commande a été fusionnée dans une autre — elle n'est plus active et ne peut plus être
+                    confirmée ni expédiée ici. Toute modification doit se faire sur la commande active ci-dessous.
+                  </p>
+                  {loadingParentOrder ? (
+                    <p className="mt-2 text-purple-500">Recherche de la commande active…</p>
+                  ) : parentOrder ? (
+                    <button
+                      type="button"
+                      onClick={() => onOrderUpdate && onOrderUpdate(parentOrder)}
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-purple-700 transition-colors"
+                    >
+                      → Ouvrir la commande active {parentOrder.order_number ? `(N°${parentOrder.order_number})` : ''}
+                    </button>
+                  ) : (
+                    <p className="mt-2 text-purple-500">Commande active introuvable (peut-être supprimée) — contactez un administrateur.</p>
+                  )}
+                </div>
               </div>
             )}
             {isEditing ? (
@@ -1165,7 +1203,9 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       </span>
                     )}
                   </div>
-                  <button onClick={() => setIsEditing(true)} className="text-xs text-blue-600 hover:underline">Modifier</button>
+                  {order.status !== 'MERGED' && (
+                    <button onClick={() => setIsEditing(true)} className="text-xs text-blue-600 hover:underline">Modifier</button>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="size-4 text-slate-400" />

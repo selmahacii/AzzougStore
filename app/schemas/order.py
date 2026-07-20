@@ -249,6 +249,11 @@ class OrderReadFull(OrderRead):
     store: Optional[StoreRef] = None
     # Merged duplicates pointing to this order (populated by get_order)
     child_orders: List["OrderRead"] = []
+    # The order THIS one was merged INTO, when this order itself is a MERGED
+    # child (populated by get_order) — without this, a confirmatrice opening
+    # a merged/absorbed order has no way to find the actual active order she
+    # should be confirming/dispatching instead.
+    parent_order: Optional["OrderRead"] = None
 
     class Config:
         from_attributes = True
