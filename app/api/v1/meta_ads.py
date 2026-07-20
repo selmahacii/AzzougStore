@@ -114,7 +114,11 @@ class MetaAdsConfigOut(BaseModel):
         from_attributes = True
 
 @router.get("/config", response_model=dict)
-def get_meta_ads_config(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_meta_ads_config(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     # Explicitly scoped by the store_id param and read across stores (admin
     # dashboard loads all 3 configs), so bypass the SELECT tenant auto-filter.
     # Otherwise it hid the EXISTING config whenever X-Store-Id didn't match the
@@ -155,7 +159,11 @@ def get_meta_ads_config(store_id: str = Query(...), db: Session = Depends(get_db
     }}
 
 @router.post("/config", response_model=dict)
-def update_meta_ads_config(payload: MetaAdsConfigCreate, db: Session = Depends(get_db)):
+def update_meta_ads_config(
+    payload: MetaAdsConfigCreate,
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     # Same rationale as the GET: scoped by store_id, edited across stores.
     db.info["skip_tenant_isolation"] = True
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
@@ -197,6 +205,7 @@ def link_campaign_product(
     campaign_id: str,
     body: dict,
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     """
     Manually link (or unlink, product_id=None) a Meta campaign to a
@@ -229,6 +238,7 @@ def link_campaign_product(
 def list_campaign_ads(
     campaign_id: str,
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     """
     Per-ad breakdown for one campaign — same rollup Meta's own "Publicité"
@@ -274,7 +284,8 @@ def list_campaigns(
     store_id: str = Query(...),
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     # Scoped by store_id, read across stores (each store shows its own Meta
     # indicators) — bypass the tenant auto-filter so a cross-store admin view
@@ -824,6 +835,7 @@ def sync_meta_ads(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
@@ -1475,7 +1487,11 @@ def send_meta_event(
 
 
 @router.get("/integration-summary", response_model=dict)
-def get_integration_summary(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_integration_summary(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     """
     Cross-module integration summary:
     - Meta Ads spend (marketing module)
@@ -1648,13 +1664,22 @@ def get_integration_summary(store_id: str = Query(...), db: Session = Depends(ge
 # existed, so every load 404'd; the tab silently showed "0 événements".
 
 @router.get("/events/diagnostics", response_model=dict)
-def get_meta_events_diagnostics(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_meta_events_diagnostics(
+    store_id: str = Query(...),
+    include_legacy_data: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     from sqlalchemy import func
     from app.models.marketing import MetaCapiLog
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    week_ago = now - timedelta(days=7)
+    # Default window unchanged (7 days) — only the RESOLUTION moved to the
+    # single central function, so the 2026-07-16 cutover now applies here
+    # too (it never did before this migration).
+    window = resolve_metrics_time_window(now - timedelta(days=7), now, include_legacy_data=include_legacy_data)
 
     rows = (
         db.query(
@@ -1663,7 +1688,8 @@ def get_meta_events_diagnostics(store_id: str = Query(...), db: Session = Depend
             func.count(MetaCapiLog.id),
             func.max(MetaCapiLog.created_at),
         )
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.created_at >= week_ago)
+        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.created_at >= window.effective_since,
+                MetaCapiLog.created_at <= window.effective_until)
         .group_by(MetaCapiLog.event_name, MetaCapiLog.status)
         .all()
     )
@@ -1707,6 +1733,7 @@ def get_meta_events_diagnostics(store_id: str = Query(...), db: Session = Depend
                 "successful_events": total_success,
                 "failed_events": total_failures,
             },
+            "time_window": window.as_dict(),
         },
         "count": len(events),
     }
@@ -1723,26 +1750,31 @@ def get_meta_funnel(
     store_id: str = Query(...),
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    include_legacy_data: bool = Query(False),
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     from sqlalchemy import func
     from app.core.dates import parse_local_date_filter
     from app.services.meta_capi import detect_funnel_bottleneck
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    d_start = now - timedelta(days=30)
-    d_end = now
+    requested_start = now - timedelta(days=30)
+    requested_end = now
     if date_start:
         try:
-            d_start = parse_local_date_filter(date_start)
+            requested_start = parse_local_date_filter(date_start)
         except ValueError:
             pass
     if date_end:
         try:
-            d_end = parse_local_date_filter(date_end)
+            requested_end = parse_local_date_filter(date_end)
         except ValueError:
             pass
+    window = resolve_metrics_time_window(requested_start, requested_end, include_legacy_data=include_legacy_data)
+    d_start, d_end = window.effective_since, window.effective_until
 
     # Impressions/clicks: Meta's own numbers for this store's campaigns —
     # these already cover the requested window (campaign rows are a single
@@ -1799,13 +1831,19 @@ def get_meta_funnel(
         "stages": stages,
         "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate},
         "bottleneck": detect_funnel_bottleneck(stages),
+        "time_window": window.as_dict(),
     }
 
 
 # ─── GET /meta-ads/diagnostics — tracking health for the dashboard ───────────
 
 @router.get("/diagnostics", response_model=dict)
-def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_meta_diagnostics(
+    store_id: str = Query(...),
+    include_legacy_data: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     """
     Automatic tracking health report:
     - Pixel / CAPI configuration status
@@ -1818,11 +1856,18 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
     from app.models.marketing import MetaCapiLog
     from app.models.product import Product
     from app.services.meta_capi import _MAX_QUEUE_RETRIES
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    week_ago = now - timedelta(days=7)
-    month_ago = now - timedelta(days=30)
+    # Two distinct windows, same as before this migration (7d for CAPI
+    # delivery/latency/retry, 30d for attribution coverage) — both now
+    # resolved through the single central function so the 2026-07-16
+    # cutover applies to each consistently instead of neither.
+    window_7d = resolve_metrics_time_window(now - timedelta(days=7), now, include_legacy_data=include_legacy_data)
+    window_30d = resolve_metrics_time_window(now - timedelta(days=30), now, include_legacy_data=include_legacy_data)
+    week_ago = window_7d.effective_since
+    month_ago = window_30d.effective_since
 
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
     pixel_ok = bool(config and config.pixel_id)
@@ -2031,6 +2076,8 @@ def get_meta_diagnostics(store_id: str = Query(...), db: Session = Depends(get_d
                 "missing_description": missing_desc,
                 "invalid_price": bad_price,
             },
+            "time_window_7d": window_7d.as_dict(),
+            "time_window_30d": window_30d.as_dict(),
         },
     }
 
@@ -2046,6 +2093,7 @@ def get_meta_capi_logs(
     date_to: Optional[str] = Query(None, description="ISO date, inclusive"),
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     """Raw CAPI log rows for the monitoring dashboard, filterable by
     store/date/event type/status — the operational counterpart to the
@@ -2091,6 +2139,7 @@ def purge_pending_capi_logs(
     store_id: str = Query(...),
     max_age_hours: Optional[int] = Query(None, description="Only purge events older than N hours. Omit to purge all."),
     db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     """Mark pending_retry events as failed/cancelled. Optionally restrict to events older than max_age_hours."""
     from app.models.marketing import MetaCapiLog
@@ -2115,6 +2164,7 @@ def purge_pending_capi_logs(
 def trigger_capi_retry(
     store_id: str = Query(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: "User" = Depends(deps.get_current_active_user),
 ):
     """Immediately trigger the retry sweep for pending CAPI events (runs in background)."""
     from app.services.meta_capi import retry_pending_events
@@ -2126,7 +2176,11 @@ def trigger_capi_retry(
 # ─── GET /meta-ads/health — live connectivity diagnostic ──────────────────────
 
 @router.get("/health", response_model=dict)
-def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_meta_health(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     """
     Live diagnostic: DNS + TCP + TLS probe to graph.facebook.com, circuit breaker
     state, queue stats, last success/error from DB, token validity, runtime versions.
@@ -2323,7 +2377,12 @@ def get_meta_health(store_id: str = Query(...), db: Session = Depends(get_db)):
 # ─── GET /meta-ads/recommendations — rule-based optimization engine ───────────
 
 @router.get("/recommendations", response_model=dict)
-def get_meta_recommendations(store_id: str = Query(...), db: Session = Depends(get_db)):
+def get_meta_recommendations(
+    store_id: str = Query(...),
+    include_legacy_data: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     """
     Actionable optimization recommendations:
     campaign ROAS outliers, low CTR, weak landing pages, high-abandonment
@@ -2334,9 +2393,11 @@ def get_meta_recommendations(store_id: str = Query(...), db: Session = Depends(g
     from app.models.landing_page import LandingPage
     from app.models.order import OrderItem
     from app.models.product import Product
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    month_ago = now - timedelta(days=30)
+    window = resolve_metrics_time_window(now - timedelta(days=30), now, include_legacy_data=include_legacy_data)
+    month_ago = window.effective_since
     recos: List[Dict[str, Any]] = []
 
     # Campaign ROAS: spend vs attributed DELIVERED revenue
@@ -2466,7 +2527,7 @@ def get_meta_recommendations(store_id: str = Query(...), db: Session = Depends(g
 
     order_sev = {"high": 0, "medium": 1, "info": 2}
     recos.sort(key=lambda r: order_sev.get(r["severity"], 3))
-    return {"success": True, "data": recos}
+    return {"success": True, "data": recos, "time_window": window.as_dict()}
 
 
 # ─── GET /meta-ads/catalog-feed — Meta product feed (CSV, public) ─────────────
@@ -2537,7 +2598,10 @@ def get_catalog_feed(store_id: str = Query(...), db: Session = Depends(get_db)):
 # ─── GET /meta-ads/connectivity-test — raw network diagnostic ─────────────────
 
 @router.get("/connectivity-test", response_model=dict)
-def connectivity_test(target: str = Query("graph", description="graph | relay")):
+def connectivity_test(
+    target: str = Query("graph", description="graph | relay"),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
     """
     Standalone network probe — runs entirely outside CAPI business logic.
     Tests several transport paths to graph.facebook.com (target=graph, default)
@@ -2927,6 +2991,10 @@ def get_signal_quality(
     range_days: int = Query(30, ge=1, le=90),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    include_legacy_data: bool = Query(
+        False,
+        description="Si True, inclut les données antérieures au cutover du 16/07/2026 (nouveau moteur CAPI durable) au lieu de les exclure par défaut.",
+    ),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -2996,7 +3064,7 @@ def get_signal_quality(
     # localement : évite la divergence historique attribution_pct/dedup_pct/
     # total_sent entre les deux endpoints. ──
     from app.services.meta_analytics_engine import compute_meta_metrics
-    m = compute_meta_metrics(db, store_id, since, until)
+    m = compute_meta_metrics(db, store_id, since, until, include_legacy_data=include_legacy_data)
 
     success, failed, retry, pending, skipped = m["success"], m["failed"], m["retry"], m["pending"], m["skipped"]
     network_failed, total_sent = m["network_failed"], m["total_sent"]
@@ -3043,10 +3111,16 @@ def get_signal_quality(
             "fix": "Vérifier que le worker CAPI tourne (Meta Queue).",
         })
 
-    # event_id dupliqués — signature exacte d'un double-envoi, jamais permis
-    # par uq_meta_capi_purchase_per_order en théorie, donc un signal fort si
-    # ça arrive (payload corrompu, ancienne ligne pré-index unique).
-    dup_event_ids = (
+    # event_id apparaissant plusieurs fois dans meta_capi_logs — PAS
+    # automatiquement un double-envoi réel à Meta. La ligne durable-queue
+    # (queued->processing->retry->success|failed) est mise à JOUR EN PLACE
+    # pour un retry normal (même event_id, même id de ligne) — donc 2 LIGNES
+    # distinctes avec le même event_id ne peuvent venir que d'un scénario
+    # anormal : un vieux payload pré-contrainte-unique, une resoumission
+    # manuelle (Bons d'Achat/replay), ou — le seul cas qui compte
+    # réellement — un vrai doublon envoyé à Meta. On ne peut trancher qu'en
+    # regardant le STATUT de chaque ligne, pas juste le compte brut.
+    dup_groups = (
         db.query(MetaCapiLog.event_id, func.count(MetaCapiLog.id).label("cnt"))
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
                 MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
@@ -3054,12 +3128,48 @@ def get_signal_quality(
         .having(func.count(MetaCapiLog.id) > 1)
         .all()
     )
-    if dup_event_ids:
-        anomalies.append({
-            "type": "EVENT_ID_DUPLIQUE", "count": len(dup_event_ids), "severity": "high",
-            "detail": f"{len(dup_event_ids)} event_id apparaissent plus d'une fois — risque de double comptage Purchase côté Meta.",
-            "fix": "Investiguer manuellement (contraire à la contrainte unique attendue) : voir Bons d'Achat > Meta Queue > CAPI Logs pour ces event_id.",
-        })
+    if dup_groups:
+        dup_event_id_list = [row.event_id for row in dup_groups]
+        dup_rows = (
+            db.query(MetaCapiLog.event_id, MetaCapiLog.status, MetaCapiLog.id)
+            .filter(MetaCapiLog.event_id.in_(dup_event_id_list))
+            .all()
+        )
+        rows_by_event_id: Dict[str, List[str]] = {}
+        for event_id, status, _id in dup_rows:
+            rows_by_event_id.setdefault(event_id, []).append(status)
+
+        # Seul groupe qui constitue un VRAI risque de double comptage côté
+        # Meta : 2+ lignes ayant chacune réellement atteint status='success'
+        # (donc 2 appels HTTP distincts que Meta a effectivement acceptés).
+        real_double_send = [eid for eid, statuses in rows_by_event_id.items() if statuses.count("success") >= 2]
+        # 1 seul succès, le reste en échec/retry/annulé — c'est le pattern
+        # normal d'un retry qui a fini par réussir, aucun double comptage.
+        retry_then_success = [eid for eid, statuses in rows_by_event_id.items() if statuses.count("success") == 1 and len(statuses) > 1]
+        # Aucun succès du tout parmi les lignes dupliquées — jamais envoyé
+        # à Meta avec succès, donc pas de risque de double comptage non plus
+        # (juste une anomalie de logging à investiguer séparément si besoin).
+        never_succeeded = [eid for eid, statuses in rows_by_event_id.items() if statuses.count("success") == 0]
+
+        if real_double_send:
+            anomalies.append({
+                "type": "EVENT_ID_DOUBLE_ENVOI_REEL", "count": len(real_double_send), "severity": "high",
+                "detail": f"{len(real_double_send)} event_id ont réellement reçu 2+ envois 'success' — double comptage Purchase confirmé côté Meta.",
+                "fix": "Investiguer ces event_id précis en priorité (voir Bons d'Achat > Meta Queue > CAPI Logs) — c'est le seul cas qui affecte réellement les statistiques Meta.",
+                "event_ids": real_double_send[:20],
+            })
+        if retry_then_success:
+            anomalies.append({
+                "type": "EVENT_ID_RETRY_NORMAL", "count": len(retry_then_success), "severity": "info",
+                "detail": f"{len(retry_then_success)} event_id ont plusieurs lignes dans les logs mais un seul envoi 'success' — pattern normal de retry, aucun double comptage.",
+                "fix": None,
+            })
+        if never_succeeded:
+            anomalies.append({
+                "type": "EVENT_ID_JAMAIS_ENVOYE", "count": len(never_succeeded), "severity": "medium",
+                "detail": f"{len(never_succeeded)} event_id ont plusieurs lignes mais AUCUNE en 'success' — jamais reçus par Meta, pas de double comptage, mais un vrai échec d'envoi à corriger.",
+                "fix": "Voir la catégorie PURCHASE_REJETE / Meta Queue pour ces event_id.",
+            })
 
     # Champs manquants sur les Purchase envoyés avec succès (échantillon déjà chargé)
     if sample_n > 0:
@@ -3201,6 +3311,7 @@ def get_signal_quality(
             "period": {
                 "source": period_source, "since": since.isoformat(), "until": until.isoformat(),
             },
+            "time_window": m["time_window"],
             # Section 4 (rapport) : distinguer explicitement le moment du
             # calcul et l'événement le plus récent analysé, pour qu'aucun
             # chiffre affiché ne soit pris pour une valeur mise en cache.
@@ -3267,6 +3378,10 @@ def get_signal_quality(
 def get_learning_diagnostics(
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=90),
+    include_legacy_data: bool = Query(
+        False,
+        description="Si True, inclut les données antérieures au cutover du 16/07/2026 (nouveau moteur CAPI durable) au lieu de les exclure par défaut.",
+    ),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -3317,7 +3432,7 @@ def get_learning_diagnostics(
     # aucun recalcul local d'EMQ/backfill/latence/retry/volume ici. ──
     from app.services.meta_analytics_engine import compute_meta_metrics
     until = datetime.now(timezone.utc).replace(tzinfo=None)
-    m = compute_meta_metrics(db, store_id, since, until)
+    m = compute_meta_metrics(db, store_id, since, until, include_legacy_data=include_legacy_data)
 
     purchase_count = m["success"]
     # Moyenne sur TOUTE la période sélectionnée (range_days), pas les 7
@@ -3430,6 +3545,7 @@ def get_learning_diagnostics(
         "success": True,
         "data": {
             "range_days": range_days,
+            "time_window": m["time_window"],
             "reasons": reasons,
             "healthy": len(reasons) == 0,
             # Métriques brutes du moteur canonique + leur population exacte —
@@ -3507,6 +3623,10 @@ def get_campaign_learning_health(
     campaign_id: str,
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=90),
+    include_legacy_data: bool = Query(
+        False,
+        description="Si True, inclut les données antérieures au cutover du 16/07/2026 (nouveau moteur CAPI durable) au lieu de les exclure par défaut.",
+    ),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -3571,7 +3691,7 @@ def get_campaign_learning_health(
     # l'incluait déjà — les deux sont maintenant strictement identiques par
     # construction (compute_meta_metrics est la seule implémentation). ──
     from app.services.meta_analytics_engine import compute_meta_metrics
-    m = compute_meta_metrics(db, store_id, since, datetime.now(timezone.utc).replace(tzinfo=None), order_ids=order_ids)
+    m = compute_meta_metrics(db, store_id, since, datetime.now(timezone.utc).replace(tzinfo=None), order_ids=order_ids, include_legacy_data=include_legacy_data)
 
     success, failed, retry, pending, skipped = m["success"], m["failed"], m["retry"], m["pending"], m["skipped"]
     network_failed, total_sent = m["network_failed"], m["total_sent"]
@@ -3657,6 +3777,7 @@ def get_campaign_learning_health(
         "success": True,
         "data": {
             "range_days": range_days,
+            "time_window": m["time_window"],
             "general": {
                 "campaign_name": camp.campaign_name,
                 "campaign_id": camp.campaign_id,
@@ -3721,6 +3842,7 @@ def get_campaign_orders_detail(
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=90),
     limit: int = Query(100, ge=1, le=500),
+    include_legacy_data: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -3732,6 +3854,7 @@ def get_campaign_orders_detail(
     from app.models.marketing import MetaCapiLog
     from app.models.audit import AuditLog
     from app.services.meta_capi import classify_capi_log_timing
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
     camp = (
@@ -3742,7 +3865,9 @@ def get_campaign_orders_detail(
     if not camp:
         return {"success": False, "error": "Campagne introuvable"}
 
-    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    window = resolve_metrics_time_window(now - timedelta(days=range_days), now, include_legacy_data=include_legacy_data)
+    since = window.effective_since
     orders, _ = _match_campaign_orders(db, store_id, camp, since=since)
     orders = sorted(orders, key=lambda o: o.created_at or datetime.min, reverse=True)[:limit]
     order_ids = [o.id for o in orders]
@@ -3795,6 +3920,7 @@ def get_campaign_orders_detail(
         "data": data,
         "count": len(data),
         "note": "Purchase Pixel non inclus — non mesurable côté serveur.",
+        "time_window": window.as_dict(),
     }
 
 
@@ -3803,6 +3929,7 @@ def get_campaign_history(
     campaign_id: str,
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=90),
+    include_legacy_data: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -3816,9 +3943,14 @@ def get_campaign_history(
     from sqlalchemy import func
     from app.models.marketing import MetaAdsDailyInsight, MetaCapiLog
     from app.services.meta_capi import detect_metric_regressions
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
-    since_date = (datetime.now(timezone.utc) - timedelta(days=range_days)).date()
+    # NEW_ENGINE_CUTOVER_DATE is a naive datetime — normalize to naive
+    # BEFORE resolving the window, or max(naive, aware) raises TypeError.
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    window = resolve_metrics_time_window(now_naive - timedelta(days=range_days), now_naive, include_legacy_data=include_legacy_data)
+    since_date = window.effective_since.date()
 
     daily_insights = (
         db.query(MetaAdsDailyInsight)
@@ -3887,6 +4019,7 @@ def get_campaign_history(
     return {
         "success": True, "data": history, "performance_trends": performance_trends,
         "trends_note": "Compare la 2e moitié de la période à la 1re (moyennes réelles issues de meta_ads_daily_insights) — variations en pourcentage, seuils indicatifs documentés dans _REGRESSION_THRESHOLDS, pas des seuils Meta officiels.",
+        "time_window": window.as_dict(),
     }
 
 
@@ -4025,6 +4158,7 @@ def get_order_event_timeline(
 def get_learning_history(
     store_id: str = Query(...),
     range_days: int = Query(30, ge=1, le=365),
+    include_legacy_data: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -4044,9 +4178,12 @@ def get_learning_history(
         compute_match_quality, compute_learning_score, _MATCH_QUALITY_FIELDS,
         detect_metric_regressions, generate_signal_alerts,
     )
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
-    since_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=range_days)
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    window = resolve_metrics_time_window(now_naive - timedelta(days=range_days), now_naive, include_legacy_data=include_legacy_data)
+    since_dt = window.effective_since
 
     # Filtre sur created_at brut (sargable) plutôt que func.date(created_at)
     # >= X : envelopper la colonne filtrée dans une fonction empêcherait
@@ -4147,6 +4284,7 @@ def get_learning_history(
         "regressions": regressions,
         "alerts": latest_alerts,
         "note": "learning_score ici n'inclut PAS realtime/backfill/dedup/attribution (nécessiteraient des jointures Order supplémentaires par jour) — sous-ensemble honnête EMQ+validité+latence, pas le score complet du Signal Quality Center.",
+        "time_window": window.as_dict(),
     }
 
 
@@ -4188,6 +4326,7 @@ def get_kpi_validation(
     store_id: str = Query(...),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    include_legacy_data: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -4197,8 +4336,12 @@ def get_kpi_validation(
     puis vérifie des invariants mathématiques que les chiffres affichés
     ailleurs DOIVENT respecter par construction. Comparer un calcul à
     lui-même ne prouverait rien — cette page réimplémente volontairement
-    en minimal/indépendant pour détecter une vraie divergence si elle
-    apparaît un jour (bug de filtre, fenêtre de date oubliée, etc.).
+    SES FORMULES en minimal/indépendant pour détecter une vraie divergence
+    si elle apparaît un jour (bug de filtre, fenêtre de date oubliée,
+    etc.). La résolution de la FENÊTRE de date, elle, passe par
+    resolve_metrics_time_window comme partout ailleurs — ce n'est pas une
+    "formule à valider", c'est la garantie que cette page vérifie
+    exactement la même période que les autres, pas une coïncidence.
 
     Chaque check retourne les valeurs brutes utilisées, jamais juste un
     verdict — traçable jusqu'aux lignes ayant servi au calcul.
@@ -4210,20 +4353,24 @@ def get_kpi_validation(
         compute_match_quality, classify_capi_log_timing, _MATCH_QUALITY_FIELDS,
         verify_percentage_matches_counter,
     )
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
 
     db.info["skip_tenant_isolation"] = True
-    until = datetime.now(timezone.utc).replace(tzinfo=None)
-    since = until - timedelta(days=30)
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    requested_since = now_naive - timedelta(days=30)
+    requested_until = now_naive
     if date_from:
         try:
-            since = parse_local_date_filter(date_from)
+            requested_since = parse_local_date_filter(date_from)
         except ValueError:
             pass
     if date_to:
         try:
-            until = parse_local_date_filter(date_to)
+            requested_until = parse_local_date_filter(date_to)
         except ValueError:
             pass
+    window = resolve_metrics_time_window(requested_since, requested_until, include_legacy_data=include_legacy_data)
+    since, until = window.effective_since, window.effective_until
 
     checks = []
 
@@ -4323,6 +4470,7 @@ def get_kpi_validation(
         "success": True,
         "data": {
             "period": {"since": since.isoformat(), "until": until.isoformat()},
+            "time_window": window.as_dict(),
             "checks": checks,
             "all_passed": all_passed,
         },

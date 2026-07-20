@@ -72,6 +72,22 @@ logger = logging.getLogger("app.meta_capi")
 
 GRAPH_VERSION = "v21.0"
 
+# The durable-queue rework (BackgroundTasks -> queued/processing/retry rows
+# written BEFORE the network call, dedup constraint, EMQ fixes) went live
+# 2026-07-16. Every Purchase sent before this date can carry defects the
+# rework fixed (missing IP/UA on retries, double-sends, no currency on
+# relay-authored payloads, event_time bugs) — none of that reflects the
+# CURRENT engine's quality. Diagnostics/scores computed over a window that
+# silently includes pre-cutover rows understate today's real numbers and
+# raise false positives (e.g. "Purchase sans devise" from a legacy relay
+# payload the current code path can no longer produce).
+# compute_meta_metrics() floors `since` to this date by default (see its
+# own docstring) so every metric that goes through it treats 2026-07-16 as
+# day one, without needing per-endpoint changes. Never used to hide or
+# discard historical data — the raw MetaCapiLog rows are untouched; this
+# only changes what the LIVE diagnostics choose to measure by default.
+NEW_ENGINE_CUTOVER_DATE = datetime(2026, 7, 16)
+
 # ─── In-process, per-worker MetaAdsConfig cache ───────────────────────────
 # Purpose: avoid a DB round-trip (measured ~100ms, network/pooler latency —
 # decryption of the encrypted access_token itself is negligible, <0.001ms)
@@ -1109,22 +1125,129 @@ _MATCH_QUALITY_FIELDS = [
     ("client_user_agent", "User Agent"), ("fbp", "FBP"), ("fbc", "FBC"),
 ]
 
+# Poids EMQ — reflète le contexte COD de cette plateforme, pas une
+# opinion générique. Les landing pages COD ne demandent quasiment jamais
+# d'email (le paiement se fait à la livraison, aucun formulaire de
+# paiement ne le requiert) : avec le poids égal précédent (1/12 chacun),
+# l'absence STRUCTURELLE d'email pénalisait chaque commande exactement
+# autant que l'absence de téléphone ou de fbp/fbc — des signaux réellement
+# disponibles et à fort impact ici. Le score reflète maintenant "la
+# qualité du signal réellement envoyable dans ce contexte métier", pas un
+# manque artificiel sur un champ qu'aucune commande COD ne fournira
+# jamais. Rien n'est envoyé différemment à Meta — seul ce score de
+# diagnostic change. Poids documentés, jamais ajustés à l'aveugle :
+#   - téléphone / external_id / fbp / fbc / IP / user-agent : signaux
+#     first-party à haute fiabilité, systématiquement disponibles pour
+#     une commande COD réelle (formulaire de commande + navigateur) —
+#     poids forts, comme demandé explicitement.
+#   - email / prénom / nom / ville / wilaya / pays : utiles quand présents
+#     (l'email, notamment, reste un fort signal Meta s'il existe) mais
+#     structurellement absents ou secondaires sur ce type de funnel —
+#     poids réduits pour ne plus dominer artificiellement le score.
+# ── Configurable weight surface ──────────────────────────────────────────
+# THIS is the dict to edit to retune EMQ weighting — human-readable keys,
+# no knowledge of Meta's internal field codes (ph/em/fn/...) required.
+# Everything below derives from it; nothing else in this module needs to
+# change when weights are retuned.
+MATCH_QUALITY_WEIGHTS: dict[str, float] = {
+    "phone": 3.0,
+    "external_id": 2.5,
+    "fbp": 2.0,
+    "fbc": 2.0,
+    "ip": 1.5,
+    "user_agent": 1.5,
+    "email": 1.0,
+    "first_name": 0.5,
+    "last_name": 0.5,
+    "city": 0.5,
+    "state": 0.5,
+    "country": 0.5,
+}
+
+# Field classification — drives whether a missing field is reported as a
+# real defect or silently excluded from "missing" entirely. "not_applicable"
+# means: this platform's COD checkout structurally never collects this
+# field, so its absence is not a diagnostic finding, just an expected fact.
+# "required"/"recommended" fields still show up in `missing` exactly as
+# before. Distinct from the WEIGHT above (a not_applicable field can still
+# carry a small weight if a store happens to have it — e.g. email — see
+# MATCH_QUALITY_WEIGHTS; classification only controls what counts as a
+# reportable problem, not the score itself).
+FIELD_CLASSIFICATION: dict[str, str] = {
+    "phone": "required",           # primary identifier for a COD order
+    "external_id": "required",     # deterministic, always derivable server-side
+    "fbp": "recommended",
+    "fbc": "recommended",
+    "ip": "recommended",
+    "user_agent": "recommended",
+    "email": "not_applicable",     # COD landing pages don't have an email field
+    "first_name": "recommended",
+    "last_name": "recommended",
+    "city": "recommended",
+    "state": "recommended",
+    "country": "recommended",
+}
+
+# Human-readable key -> Meta's own Conversions API field code. Internal
+# lookup only — compute_match_quality still keys off _MATCH_QUALITY_FIELDS
+# (the actual payload shape sent to Meta), this dict just translates the
+# editable config above onto it.
+_HUMAN_TO_META_FIELD: dict[str, str] = {
+    "phone": "ph", "external_id": "external_id", "fbp": "fbp", "fbc": "fbc",
+    "ip": "client_ip_address", "user_agent": "client_user_agent",
+    "email": "em", "first_name": "fn", "last_name": "ln",
+    "city": "ct", "state": "st", "country": "country",
+}
+
+_MATCH_QUALITY_WEIGHTS: dict[str, float] = {
+    _HUMAN_TO_META_FIELD[human_key]: weight for human_key, weight in MATCH_QUALITY_WEIGHTS.items()
+}
+_META_FIELD_CLASSIFICATION: dict[str, str] = {
+    _HUMAN_TO_META_FIELD[human_key]: level for human_key, level in FIELD_CLASSIFICATION.items()
+}
+
 
 def compute_match_quality(user_data: Optional[dict]) -> dict:
     """
-    Score de complétude des paramètres envoyés à Meta pour cet événement —
-    un proxy honnête de l'Event Match Quality (le score EXACT que Meta
-    calcule en interne n'est jamais exposé par aucune API, seulement visible
-    dans Events Manager). Compte les champs réellement présents sur les 12
-    recommandés par Meta, jamais un chiffre inventé.
+    Score de complétude PONDÉRÉ des paramètres envoyés à Meta pour cet
+    événement — un proxy honnête de l'Event Match Quality (le score EXACT
+    que Meta calcule en interne n'est jamais exposé par aucune API,
+    seulement visible dans Events Manager). Pondéré selon
+    MATCH_QUALITY_WEIGHTS (configurable — voir sa docstring pour la
+    justification COD), jamais une moyenne simple qui traiterait un champ
+    structurellement absent (email) comme équivalent à un champ à fort
+    impact absent (téléphone, fbp/fbc) — jamais un chiffre inventé : les
+    poids sont documentés et appliqués identiquement à chaque événement.
+
+    `missing` ne liste que les champs "required"/"recommended" (voir
+    FIELD_CLASSIFICATION) — un champ "not_applicable" (email, sur ce
+    funnel COD) absent n'est PAS un défaut à signaler, donc n'apparaît
+    plus dans `missing`, mais reste visible dans `fields` avec son statut
+    exact pour audit complet.
     """
     user_data = user_data or {}
     present = {key: bool(user_data.get(key)) for key, _ in _MATCH_QUALITY_FIELDS}
-    score = round(sum(present.values()) / len(_MATCH_QUALITY_FIELDS) * 100, 1)
+    total_weight = sum(_MATCH_QUALITY_WEIGHTS.get(key, 1.0) for key, _ in _MATCH_QUALITY_FIELDS)
+    earned_weight = sum(_MATCH_QUALITY_WEIGHTS.get(key, 1.0) for key, _ in _MATCH_QUALITY_FIELDS if present[key])
+    score = round(earned_weight / total_weight * 100, 1) if total_weight else 0.0
     return {
         "score": score,
-        "fields": [{"key": key, "label": label, "present": present[key]} for key, label in _MATCH_QUALITY_FIELDS],
-        "missing": [label for key, label in _MATCH_QUALITY_FIELDS if not present[key]],
+        "fields": [
+            {
+                "key": key, "label": label, "present": present[key],
+                "weight": _MATCH_QUALITY_WEIGHTS.get(key, 1.0),
+                "classification": _META_FIELD_CLASSIFICATION.get(key, "recommended"),
+            }
+            for key, label in _MATCH_QUALITY_FIELDS
+        ],
+        "missing": [
+            label for key, label in _MATCH_QUALITY_FIELDS
+            if not present[key] and _META_FIELD_CLASSIFICATION.get(key, "recommended") != "not_applicable"
+        ],
+        "not_applicable": [
+            label for key, label in _MATCH_QUALITY_FIELDS
+            if not present[key] and _META_FIELD_CLASSIFICATION.get(key, "recommended") == "not_applicable"
+        ],
     }
 
 

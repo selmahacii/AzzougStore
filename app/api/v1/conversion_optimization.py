@@ -26,6 +26,10 @@ def get_conversion_optimization_dashboard(
     range_days: int = Query(30, ge=1, le=90),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    include_legacy_data: bool = Query(
+        False,
+        description="Si True, inclut les données antérieures au cutover du 16/07/2026 (nouveau moteur CAPI durable) au lieu de les exclure par défaut — s'applique uniquement à la section 'bottlenecks' (seule section dérivée de compute_meta_metrics).",
+    ),
     db: Session = Depends(get_db),
     current_user: "object" = Depends(deps.get_current_active_user),
 ):
@@ -55,16 +59,26 @@ def get_conversion_optimization_dashboard(
         except ValueError:
             pass
 
-    cache_key = f"conversion_optimization:{store_id}:{range_days}:{date_from}:{date_to}"
+    cache_key = f"conversion_optimization:{store_id}:{range_days}:{date_from}:{date_to}:{include_legacy_data}"
     cached = get_cached(cache_key)
     if cached is not None:
         return cached
 
     db.info["skip_tenant_isolation"] = True
 
+    from app.services.meta_analytics_engine import resolve_metrics_time_window
+
+    # Scoped to "bottlenecks" only: it's the sole section here derived from
+    # compute_meta_metrics() (Meta CAPI health). Every other section (funnel,
+    # products, campaigns, opportunity, benchmark, history) reads PageView/
+    # Order rows directly and is NOT subject to the 16/07/2026 cutover floor
+    # by design — labeling this as a blanket "period" would incorrectly
+    # imply the whole dashboard is floored when only one section is.
+    bottlenecks_time_window = resolve_metrics_time_window(since, until, include_legacy_data=include_legacy_data)
+
     overview = engine.compute_conversion_overview(db, store_id, now=until)
     funnel = engine.compute_conversion_funnel(db, store_id, since, until)
-    bottlenecks = engine.detect_bottlenecks(db, store_id, since, until)
+    bottlenecks = engine.detect_bottlenecks(db, store_id, since, until, include_legacy_data=include_legacy_data)
     products = engine.compute_product_conversion_analysis(db, store_id, since, until)
     campaigns = engine.compute_campaign_conversion_intelligence(db, store_id, since, until)
     opportunity = engine.compute_opportunity_score(db, store_id, since, until)
@@ -80,6 +94,7 @@ def get_conversion_optimization_dashboard(
             "overview": overview,
             "funnel": funnel,
             "bottlenecks": bottlenecks,
+            "bottlenecks_time_window": bottlenecks_time_window.as_dict(),
             "products": products,
             "campaigns": campaigns,
             "opportunity_score": opportunity,

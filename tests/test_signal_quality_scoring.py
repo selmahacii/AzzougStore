@@ -41,18 +41,56 @@ def test_field_list_matches_meta_recommended_set():
     }
 
 
-def test_score_is_fraction_of_present_fields():
-    # Exactly half the fields present -> 50%.
+def test_score_is_weighted_not_a_flat_average():
+    # em(1.0)+ph(3.0)+fn(0.5)+ln(0.5)+ct(0.5)+st(0.5) = 6.0 earned weight,
+    # out of 16.0 total weight -> 37.5%, NOT the flat 50% a 6-of-12 count
+    # would give. Locks in the weighted formula (see _MATCH_QUALITY_WEIGHTS)
+    # so a future refactor can't silently revert to an unweighted average.
     ud = {"em": ["x"], "ph": ["x"], "fn": ["x"], "ln": ["x"], "ct": ["x"], "st": ["x"]}
     result = compute_match_quality(ud)
-    assert result["score"] == 50.0
+    assert result["score"] == 37.5
     assert len(result["missing"]) == 6
+
+
+def test_cod_context_missing_email_barely_dents_the_score():
+    # The actual fix: a COD order with every high-impact identifier (phone,
+    # external_id, fbp, fbc, IP, user agent) but NO email — normal for a
+    # COD landing page that never asks for one — must score highly, not be
+    # dragged down as if email were as important as phone/fbp/fbc.
+    ud = {
+        "ph": ["x"], "external_id": ["x"], "fbp": ["x"], "fbc": ["x"],
+        "client_ip_address": ["x"], "client_user_agent": ["x"],
+    }
+    result = compute_match_quality(ud)
+    # 3.0+2.5+2.0+2.0+1.5+1.5 = 12.5 of 16.0 -> 78.1%, a genuinely strong
+    # score despite email being entirely absent.
+    assert result["score"] == 78.1
+    # Email is classified "not_applicable" for this COD platform (see
+    # FIELD_CLASSIFICATION) — its absence is a fact, not a defect, so it
+    # must NOT appear in `missing` (that list is for real problems only).
+    assert "Email" not in result["missing"]
+    assert "Email" in result["not_applicable"]
+
+
+def test_missing_phone_hurts_more_than_missing_email():
+    # Same total count missing (1 field), opposite business impact: losing
+    # phone (weight 3.0, the primary COD identifier) must cost more than
+    # losing email (weight 1.0) — proves the weights actually differentiate
+    # fields instead of all being interchangeable.
+    all_fields_ud = {k: ["x"] for k, _ in _MATCH_QUALITY_FIELDS}
+    missing_email = {k: v for k, v in all_fields_ud.items() if k != "em"}
+    missing_phone = {k: v for k, v in all_fields_ud.items() if k != "ph"}
+    score_missing_email = compute_match_quality(missing_email)["score"]
+    score_missing_phone = compute_match_quality(missing_phone)["score"]
+    assert score_missing_phone < score_missing_email
 
 
 def test_missing_list_names_absent_fields():
     ud = {"ph": ["x"], "country": ["x"]}
     result = compute_match_quality(ud)
-    assert "Email" in result["missing"]
+    # Email absent too, but not_applicable for COD -> excluded from `missing`.
+    assert "Email" not in result["missing"]
+    assert "Email" in result["not_applicable"]
     assert "FBP" in result["missing"]
     assert "Téléphone" not in result["missing"]
     assert "Pays" not in result["missing"]

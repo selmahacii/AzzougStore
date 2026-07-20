@@ -83,7 +83,10 @@ def test_measured_emq_impact_of_recovering_ip_and_user_agent_on_retry():
     after = compute_match_quality(after_user_data)
 
     assert after["score"] > before["score"]
-    # 2 recovered fields out of 12 tracked -> ~+16.7 points on this event's own
-    # EMQ (66.7% -> 83.3%); each score is independently rounded to 1 decimal
-    # by compute_match_quality, so allow the resulting +/-0.1 rounding drift.
-    assert abs((after["score"] - before["score"]) - (2 / 12 * 100)) < 0.2
+    # Weighted (see _MATCH_QUALITY_WEIGHTS): before = em1+ph3+fn.5+ln.5+ct.5+
+    # st.5+country.5+external_id2.5 = 9.0/16.0 = 56.2%; recovering IP(1.5)+
+    # user_agent(1.5) adds 3.0 -> after = 12.0/16.0 = 75.0%, a +18.75-point
+    # gain — bigger than the old flat +16.7%, because IP/UA are weighted
+    # ABOVE the COD-irrelevant fields this event already had. Each score is
+    # independently rounded to 1 decimal, so allow +/-0.2 rounding drift.
+    assert abs((after["score"] - before["score"]) - (3.0 / 16 * 100)) < 0.2

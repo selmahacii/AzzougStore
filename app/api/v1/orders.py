@@ -3676,6 +3676,10 @@ def get_capi_tracking_quality_v2(
     mode: str = Query("meta", pattern="^(meta|realtime)$"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    include_legacy_data: bool = Query(
+        False,
+        description="Si True, inclut les données antérieures au cutover du 16/07/2026 (nouveau moteur CAPI durable) au lieu de les exclure par défaut.",
+    ),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -3684,7 +3688,7 @@ def get_capi_tracking_quality_v2(
     from app.core.dates import parse_local_date_filter
     from app.core.analytics_cache import get_cached, set_cached, DEFAULT_TTL_SECONDS
 
-    _cache_key = f"tracking_quality_v2:{store_id}:{mode}:{date_from}:{date_to}"
+    _cache_key = f"tracking_quality_v2:{store_id}:{mode}:{date_from}:{date_to}:{include_legacy_data}"
     _cached = get_cached(_cache_key)
     if _cached is not None:
         return _cached
@@ -3774,9 +3778,13 @@ def get_capi_tracking_quality_v2(
     from app.services.meta_analytics_engine import compute_meta_metrics
     _emq_since = min((o.created_at for o, _ in rows), default=_dt.now() - _td(days=90))
     _emq_until = _dt.now()
-    _m = compute_meta_metrics(db, store_id, _emq_since, _emq_until, order_ids=order_ids) if order_ids else None
+    _m = (
+        compute_meta_metrics(db, store_id, _emq_since, _emq_until, order_ids=order_ids, include_legacy_data=include_legacy_data)
+        if order_ids else None
+    )
     avg_match_quality = _m["event_match_quality"] if _m else None
     signal_field_coverage = _m["field_coverage"] if _m else []
+    emq_time_window = _m["time_window"] if _m else None
 
     # ── Délais moyens du pipeline (commande → confirmation → expédition →
     # livraison, + création → envoi CAPI) — calculés depuis les VRAIS
@@ -3932,6 +3940,7 @@ def get_capi_tracking_quality_v2(
             "failed": failed,
             "avg_match_quality": avg_match_quality,
             "signal_field_coverage": signal_field_coverage,
+            "emq_time_window": emq_time_window,
             "pipeline_delays": pipeline_delays,
             "loss_analysis": loss_analysis,
             "learning": {

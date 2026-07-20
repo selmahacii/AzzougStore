@@ -260,3 +260,87 @@ def test_emq_identical_across_learning_score_signal_quality_and_diagnostics(db_s
     }
     assert len(set(emqs.values())) == 1, f"EMQ diverged across views: {emqs}"
     assert emqs["signal_quality"] is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Priorité 4 (2026-07-20) — include_legacy_data parity across the three
+# endpoints that call compute_meta_metrics() directly (get_signal_quality,
+# get_learning_diagnostics, get_campaign_learning_health, all in
+# app/api/v1/meta_ads.py). Each now forwards its own include_legacy_data
+# query param straight through, so this exercises exactly the code path
+# those endpoints run — no need to spin up the FastAPI app/DB for it.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _make_pre_cutover_log(store_id, order_id):
+    """A log dated well before NEW_ENGINE_CUTOVER_DATE (2026-07-16)."""
+    return _make_log(store_id, order_id, status="success", created_at=datetime(2026, 6, 1))
+
+
+def test_include_legacy_data_false_floors_since_to_cutover(db_session):
+    store_id = "store-legacy-1"
+    order = _make_order(store_id, campaign_id="camp-L1", created_at=datetime(2026, 6, 1))
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(_make_pre_cutover_log(store_id, order.id))
+    db_session.commit()
+
+    since = datetime(2026, 1, 1)
+    until = datetime(2026, 7, 20)
+    m = compute_meta_metrics(db_session, store_id, since, until, include_legacy_data=False)
+
+    # Pre-cutover log falls entirely outside the floored window -> excluded.
+    assert m["total_sent"] == 0
+    assert m["cutover_applied"] is True
+    assert m["requested_since"] == since
+    assert m["time_window"]["cutover_applied"] is True
+    assert m["time_window"]["include_legacy_data"] is False
+
+
+def test_include_legacy_data_true_includes_pre_cutover_rows(db_session):
+    store_id = "store-legacy-2"
+    order = _make_order(store_id, campaign_id="camp-L2", created_at=datetime(2026, 6, 1))
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(_make_pre_cutover_log(store_id, order.id))
+    db_session.commit()
+
+    since = datetime(2026, 1, 1)
+    until = datetime(2026, 7, 20)
+    m = compute_meta_metrics(db_session, store_id, since, until, include_legacy_data=True)
+
+    assert m["total_sent"] == 1
+    assert m["cutover_applied"] is False
+    assert m["time_window"]["include_legacy_data"] is True
+
+
+def test_signal_quality_learning_diagnostics_campaign_health_share_same_window_contract(db_session):
+    """
+    The three endpoints identified in the Priorité 4 audit as calling
+    compute_meta_metrics() directly (rather than going through
+    resolve_metrics_time_window() themselves) must still expose an
+    identical time_window contract to their frontend — proven here by
+    calling compute_meta_metrics() the exact same way each of them now
+    does (store-wide store-wide, and per-campaign via order_ids), with
+    include_legacy_data threaded through in every case.
+    """
+    store_id = "store-legacy-3"
+    order = _make_order(store_id, campaign_id="camp-L3", created_at=datetime(2026, 6, 1))
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(_make_pre_cutover_log(store_id, order.id))
+    db_session.commit()
+
+    since = datetime(2026, 1, 1)
+    until = datetime(2026, 7, 20)
+
+    signal_quality_view = compute_meta_metrics(db_session, store_id, since, until, include_legacy_data=True)
+    learning_diagnostics_view = compute_meta_metrics(db_session, store_id, since, until, include_legacy_data=True)
+    campaign_health_view = compute_meta_metrics(
+        db_session, store_id, since, until, order_ids=[order.id], include_legacy_data=True,
+    )
+
+    for view in (signal_quality_view, learning_diagnostics_view, campaign_health_view):
+        for key in ("requested_since", "effective_since", "effective_until", "cutover_applied"):
+            assert key in view["time_window"], f"{key} missing from time_window: {view['time_window']}"
+        assert view["time_window"]["include_legacy_data"] is True
+        assert view["cutover_applied"] is False  # legacy data explicitly included -> no floor applied

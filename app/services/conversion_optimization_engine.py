@@ -220,11 +220,12 @@ def compute_conversion_funnel(db: Session, store_id: str, since: datetime, until
 # recomputes EMQ/Learning Score/tracking coverage/dedup/attribution.
 # ─────────────────────────────────────────────────────────────────────────
 
-def detect_bottlenecks(db: Session, store_id: str, since: datetime, until: datetime) -> List[Dict[str, Any]]:
+def detect_bottlenecks(
+    db: Session, store_id: str, since: datetime, until: datetime, *, include_legacy_data: bool = False,
+) -> List[Dict[str, Any]]:
     from app.models.product import Product
-    from app.models.order import Order
 
-    m = compute_meta_metrics(db, store_id, since, until)
+    m = compute_meta_metrics(db, store_id, since, until, include_legacy_data=include_legacy_data)
     funnel = compute_conversion_funnel(db, store_id, since, until)
     findings: List[Dict[str, Any]] = []
 

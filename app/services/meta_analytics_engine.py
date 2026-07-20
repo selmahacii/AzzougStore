@@ -27,7 +27,7 @@ its exact formula, population, period and source.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +35,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.services.meta_capi import (
+    NEW_ENGINE_CUTOVER_DATE,
     compute_match_quality,
     scan_payload_quality,
     classify_capi_log_timing,
@@ -43,8 +44,6 @@ from app.services.meta_capi import (
     compute_component_scores,
     compute_meta_optimization_score,
     meta_health_label,
-    campaign_classification_label,
-    meta_optimization_label,
     detect_funnel_bottleneck,
     _MATCH_QUALITY_FIELDS,
 )
@@ -75,6 +74,95 @@ def classify(score: Optional[float], label_fn) -> Dict[str, Any]:
     return {"score": score, "label": label, "color": _LEVEL_COLORS.get(label, _LEVEL_COLORS["Non disponible"])}
 
 
+@dataclass
+class MetricsTimeWindow:
+    """
+    Everything a diagnostic endpoint needs to know about the period it's
+    computing over, and NOTHING it should ever derive itself. Every field
+    here answers a question a frontend widget (or a human reading a JSON
+    response) can legitimately ask:
+      - requested_since / requested_until: what the caller asked for,
+        verbatim — never silently discarded, so a mismatch is visible.
+      - effective_since / effective_until: what was ACTUALLY used to
+        query the database — this is what every KPI number reflects.
+      - cutover_applied: True when effective_since was pulled forward to
+        NEW_ENGINE_CUTOVER_DATE because the caller asked for something
+        earlier and did not explicitly opt into legacy data.
+      - include_legacy_data: echoes the caller's own choice back, so it's
+        never ambiguous whether pre-cutover rows were deliberately
+        included or accidentally excluded.
+      - label: a ready-to-display French string ("16/07/2026 → 20/07/2026
+        (donnée historique exclue)") — every widget shows the SAME
+        wording instead of each one formatting the window differently.
+    """
+    requested_since: datetime
+    requested_until: datetime
+    effective_since: datetime
+    effective_until: datetime
+    cutover_applied: bool
+    include_legacy_data: bool
+    label: str
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "requested_since": self.requested_since, "requested_until": self.requested_until,
+            "effective_since": self.effective_since, "effective_until": self.effective_until,
+            "cutover_applied": self.cutover_applied, "include_legacy_data": self.include_legacy_data,
+            "label": self.label,
+        }
+
+
+def resolve_metrics_time_window(
+    since: datetime,
+    until: datetime,
+    *,
+    include_legacy_data: bool = False,
+    cutover_date: Optional[datetime] = None,
+) -> MetricsTimeWindow:
+    """
+    THE single place that decides what date range an ad-platform diagnostic
+    actually queries over. Every endpoint that currently does its own
+    `now - timedelta(days=N)` (see the Priorité 2 audit — 8 endpoints do
+    this independently, with 7/30-day values hardcoded and no cutover
+    awareness) should call this instead and use its `.effective_since`/
+    `.effective_until` for every query, and expose `.as_dict()` in its
+    response so the frontend can render the period unambiguously — no
+    endpoint should ever compute or format a date window on its own.
+
+    `cutover_date` defaults to NEW_ENGINE_CUTOVER_DATE (Meta's 16/07/2026
+    durable-queue go-live) — omit it for every Meta call site, unchanged
+    behavior. Pass a different date for another platform's own durable-
+    queue go-live (e.g. TikTok Ads Enterprise, see
+    app/services/tiktok_analytics_engine.py's TIKTOK_ENGINE_LAUNCH_DATE) —
+    this is what makes the function genuinely platform-generic instead of
+    Meta needing a second, duplicated copy of this same resolution logic.
+
+    Applies the same cutover floor already used by compute_meta_metrics
+    (kept in perfect sync: this function is now that logic's only
+    implementation — compute_meta_metrics delegates to it rather than
+    repeating it).
+    """
+    cutover = cutover_date if cutover_date is not None else NEW_ENGINE_CUTOVER_DATE
+    effective_since = since if include_legacy_data else max(since, cutover)
+    cutover_applied = effective_since != since
+
+    cutover_label = cutover.strftime("%d/%m/%Y")
+    since_label = effective_since.strftime("%d/%m/%Y")
+    until_label = until.strftime("%d/%m/%Y")
+    label = f"{since_label} → {until_label}"
+    if cutover_applied:
+        label += f" (données antérieures au {cutover_label} exclues)"
+    elif include_legacy_data and since < cutover:
+        label += f" (inclut des données antérieures au {cutover_label} — comparaison explicite avant/après)"
+
+    return MetricsTimeWindow(
+        requested_since=since, requested_until=until,
+        effective_since=effective_since, effective_until=until,
+        cutover_applied=cutover_applied, include_legacy_data=include_legacy_data,
+        label=label,
+    )
+
+
 def compute_funnel_metrics(stages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Ré-exporté depuis meta_capi.detect_funnel_bottleneck — point d'entrée
@@ -96,47 +184,19 @@ def _pct(numerator: float, denominator: float) -> Optional[float]:
     return round(numerator / denominator * 100, 1)
 
 
-def compute_meta_metrics(
-    db: Session,
-    store_id: str,
-    since: datetime,
-    until: datetime,
-    *,
-    order_ids: Optional[List[str]] = None,
-    sample_cap: int = 500,
-    timing_cap: int = 1000,
-) -> Dict[str, Any]:
-    """
-    Canonical Meta CAPI health metrics for a date window.
+# ─────────────────────────────────────────────────────────────────────────
+# Priorité 2 (2026-07-20) — compute_meta_metrics() extracted into the
+# sub-functions below, one per section it already had (status counts /
+# match quality sample / timing+dedup / attribution / composite scores).
+# Pure refactor: same queries, same formulas, same populations, same
+# return shapes — compute_meta_metrics() just orchestrates these instead
+# of inlining ~250 lines. No caller-visible behavior change.
+# ─────────────────────────────────────────────────────────────────────────
 
-    - order_ids=None: store-wide (every Purchase MetaCapiLog for this
-      store in [since, until]).
-    - order_ids=[...]: scoped to those orders only (per-campaign view) —
-      SAME formulas, SAME populations as store-wide, just filtered to a
-      smaller order set, so results are directly comparable.
-
-    Every percentage is None when its sample is empty (see `_pct`) —
-    never silently coerced to 0.0. Callers decide how to render None
-    (typically "N/A" / "Aucune donnée disponible").
-    """
+def _compute_status_metrics(db: Session, base_filters: list) -> Dict[str, Any]:
+    """Section 1: envoi status counts + the percentages/scores derived from them."""
     from app.models.marketing import MetaCapiLog
-    from app.models.order import Order
-    from app.models.audit import AuditLog
 
-    base_filters = [
-        MetaCapiLog.store_id == store_id,
-        MetaCapiLog.event_name == "Purchase",
-        MetaCapiLog.created_at >= since,
-        MetaCapiLog.created_at <= until,
-    ]
-    if order_ids is not None:
-        # order_ids == [] (campagne sans commande matchée) doit renvoyer un
-        # jeu de résultats vide, jamais tout le store — in_([]) le fait déjà
-        # nativement en SQLAlchemy (génère une condition toujours fausse).
-        base_filters.append(MetaCapiLog.order_id.in_(order_ids))
-
-    # ── 1. Statuts — total_sent inclut TOUJOURS skipped (harmonisé : avant
-    # cet engine, le store-wide l'omettait et le par-campagne l'incluait). ──
     status_rows = (
         db.query(MetaCapiLog.status, MetaCapiLog.error_category, func.count(MetaCapiLog.id))
         .filter(*base_filters)
@@ -176,11 +236,25 @@ def compute_meta_metrics(
         .scalar()
     ) if total_sent else None
 
-    # ── 2. Event Match Quality — moyenne + couverture par champ, sur un
-    # échantillon PLAFONNÉ des Purchase réussis (payload contient user_data
-    # depuis le correctif de stockage-sur-succès). None si aucun succès sur
-    # la fenêtre (jamais 0%, qui laisserait croire à des champs vides alors
-    # qu'il n'y a simplement eu aucun envoi réussi à mesurer). ──
+    return {
+        "success": success, "failed": failed, "retry": retry, "pending": pending, "skipped": skipped,
+        "total_sent": total_sent, "network_failed": network_failed,
+        "valid_purchase_pct": valid_purchase_pct, "rejected_pct": rejected_pct,
+        "retry_pct": retry_pct, "pending_pct": pending_pct,
+        "coverage_score": coverage_score, "reliability_score": reliability_score,
+        "calculated_at": calculated_at, "last_success_at": last_success_at,
+    }
+
+
+def _compute_match_quality_sample(
+    db: Session, base_filters: list, order_ids: Optional[List[str]], sample_cap: int,
+) -> Dict[str, Any]:
+    """Section 2: Event Match Quality — moyenne + couverture par champ, sur un
+    échantillon plafonné des Purchase réussis. None si aucun succès sur la
+    fenêtre (jamais 0%, qui laisserait croire à des champs vides alors
+    qu'il n'y a simplement eu aucun envoi réussi à mesurer)."""
+    from app.models.marketing import MetaCapiLog
+
     _sample_query = (
         db.query(MetaCapiLog.payload)
         .filter(*base_filters, MetaCapiLog.status == "success", MetaCapiLog.payload.isnot(None))
@@ -223,16 +297,35 @@ def compute_meta_metrics(
     missing_currency_pct = _pct(missing_currency, sample_n)
     missing_event_time_pct = _pct(missing_event_time, sample_n)
 
-    # ── 3. Temps réel / Backfill / Latence / Déduplication — UNE requête
-    # jointe bornée par date et plafonnée. dedup_pct est désormais calculé
-    # sur `total_sent` (tous statuts) et non plus sur les seuls succès
-    # plafonnés — sinon un doublon parmi des envois `failed`/`retry` restait
-    # invisible côté store-wide. ──
+    return {
+        "sample_n": sample_n, "avg_emq": avg_emq, "avg_completeness_pct": avg_completeness_pct,
+        "field_coverage": field_coverage, "field_present_counts": field_present_counts,
+        "value_present_pct": value_present_pct,
+        "missing_value": missing_value, "missing_currency": missing_currency,
+        "missing_currency_pct": missing_currency_pct,
+        "missing_event_time": missing_event_time, "missing_event_time_pct": missing_event_time_pct,
+        "wrong_currency": wrong_currency,
+    }
+
+
+def _compute_timing_and_dedup(
+    db: Session, base_filters: list, order_ids: Optional[List[str]],
+    effective_since: datetime, until: datetime, timing_cap: int, total_sent: int,
+) -> Dict[str, Any]:
+    """Section 3: Temps réel / Backfill / Latence / Déduplication — UNE requête
+    jointe bornée par date et plafonnée. dedup_pct est calculé sur
+    `total_sent` (tous statuts), pas seulement les succès plafonnés —
+    sinon un doublon parmi des envois `failed`/`retry` restait invisible
+    côté store-wide."""
+    from app.models.marketing import MetaCapiLog
+    from app.models.order import Order
+    from app.models.audit import AuditLog
+
     backfill_order_ids = {
         row[0] for row in (
             db.query(AuditLog.entity_id)
             .filter(AuditLog.action == "capi_marked_backfill", AuditLog.entity == "order",
-                    AuditLog.created_at >= since, AuditLog.created_at <= until)
+                    AuditLog.created_at >= effective_since, AuditLog.created_at <= until)
             .all()
         )
     }
@@ -247,7 +340,6 @@ def compute_meta_metrics(
 
     realtime_n = backfill_n = 0
     latencies: List[int] = []
-    event_id_counts: Dict[str, int] = {}
     for oid, log_created_at, latency_ms, event_id, order_created_at in timing_rows:
         is_backfill = oid in backfill_order_ids or classify_capi_log_timing(log_created_at, order_created_at) == "backfill"
         if is_backfill:
@@ -256,7 +348,6 @@ def compute_meta_metrics(
             realtime_n += 1
         if latency_ms is not None:
             latencies.append(latency_ms)
-        event_id_counts[event_id] = event_id_counts.get(event_id, 0) + 1
     timing_n = realtime_n + backfill_n
     realtime_pct = _pct(realtime_n, timing_n)
     backfill_pct = _pct(backfill_n, timing_n)
@@ -276,12 +367,21 @@ def compute_meta_metrics(
     dup_n = sum(1 for c in all_event_id_counts.values() if c > 1)
     dedup_pct = round((1 - dup_n / total_sent) * 100, 1) if total_sent else None
 
-    # ── 4. Attribution — UNE SEULE définition partout : parmi les Purchase
-    # envoyés avec succès, la part rattachable à une campagne connue
-    # (order.campaign_id ou utm_campaign). Ex-Advisor utilisait
-    # (orders_count - no_utm_count)/orders_count (population = commandes
-    # brutes, pas CAPI réussis) — c'était la régression : deux dénominateurs
-    # différents sous le même nom. ──
+    return {
+        "realtime_n": realtime_n, "backfill_n": backfill_n, "timing_n": timing_n,
+        "realtime_pct": realtime_pct, "backfill_pct": backfill_pct,
+        "avg_latency_ms": avg_latency_ms, "max_latency_ms": max_latency_ms,
+        "dedup_pct": dedup_pct,
+    }
+
+
+def _compute_attribution(db: Session, base_filters: list, success: int) -> Dict[str, Any]:
+    """Section 4: Attribution — UNE SEULE définition partout : parmi les
+    Purchase envoyés avec succès, la part rattachable à une campagne connue
+    (order.campaign_id ou utm_campaign)."""
+    from app.models.marketing import MetaCapiLog
+    from app.models.order import Order
+
     orphan_campaign = (
         db.query(func.count(MetaCapiLog.id))
         .join(Order, Order.id == MetaCapiLog.order_id)
@@ -290,9 +390,17 @@ def compute_meta_metrics(
         .scalar() or 0
     )
     attribution_pct = _pct(success - orphan_campaign, success)
+    return {"attribution_pct": attribution_pct, "orphan_campaign": orphan_campaign}
 
-    # ── 5. Scores composés — chaque sous-score réutilise un chiffre déjà
-    # calculé ci-dessus, jamais recalculé indépendamment. ──
+
+def _compute_composite_scores(
+    *, coverage_score, avg_emq, reliability_score, realtime_pct, valid_purchase_pct,
+    dedup_pct, value_present_pct, attribution_pct, avg_latency_ms, total_sent, success,
+    network_failed, retry_pct, pending_pct, avg_completeness_pct, effective_since, until,
+    field_coverage,
+) -> Dict[str, Any]:
+    """Section 5: Scores composés — chaque sous-score réutilise un chiffre
+    déjà calculé en amont, jamais recalculé indépendamment."""
     emq_for_scoring = avg_emq if avg_emq is not None else 0.0
     global_score = round(
         sum(v if v is not None else 0.0 for v in (coverage_score, emq_for_scoring, reliability_score)) / 3, 1
@@ -315,7 +423,7 @@ def compute_meta_metrics(
         "event_match_quality": emq_for_scoring, "attribution_pct": attribution_pct or 0.0,
         "avg_completeness_pct": avg_completeness_pct or 0.0,
     })
-    weekly_purchase_rate = success / max((until - since).days / 7, 1)
+    weekly_purchase_rate = success / max((until - effective_since).days / 7, 1)
     optimization_score = compute_meta_optimization_score(
         learning_score["score"], component_scores, {"purchase": weekly_purchase_rate}
     )
@@ -337,7 +445,123 @@ def compute_meta_metrics(
     ]
 
     return {
-        "since": since, "until": until,
+        "global_score": global_score, "global_score_classified": global_score_classified,
+        "learning_score_classified": learning_score_classified,
+        "component_scores": component_scores, "component_scores_classified": component_scores_classified,
+        "optimization_score": optimization_score,
+        "field_coverage_classified": field_coverage_classified,
+    }
+
+
+def compute_meta_metrics(
+    db: Session,
+    store_id: str,
+    since: datetime,
+    until: datetime,
+    *,
+    order_ids: Optional[List[str]] = None,
+    sample_cap: int = 500,
+    timing_cap: int = 1000,
+    include_legacy_data: bool = False,
+) -> Dict[str, Any]:
+    """
+    Canonical Meta CAPI health metrics for a date window.
+
+    - order_ids=None: store-wide (every Purchase MetaCapiLog for this
+      store in [since, until]).
+    - order_ids=[...]: scoped to those orders only (per-campaign view) —
+      SAME formulas, SAME populations as store-wide, just filtered to a
+      smaller order set, so results are directly comparable.
+
+    Every percentage is None when its sample is empty (see `_pct`) —
+    never silently coerced to 0.0. Callers decide how to render None
+    (typically "N/A" / "Aucune donnée disponible").
+
+    `since` is floored to NEW_ENGINE_CUTOVER_DATE (2026-07-16) unless
+    include_legacy_data=True is passed explicitly — a caller asking for
+    "last 90 days" three months from now should still not silently drag
+    pre-cutover rows (known defects fixed by the durable-queue rework)
+    into a metric presented as reflecting the current engine's quality.
+    Pass include_legacy_data=True for the rare case an admin explicitly
+    wants a before/after comparison across the cutover.
+    """
+    from app.models.marketing import MetaCapiLog
+
+    window = resolve_metrics_time_window(since, until, include_legacy_data=include_legacy_data)
+    effective_since = window.effective_since
+
+    base_filters = [
+        MetaCapiLog.store_id == store_id,
+        MetaCapiLog.event_name == "Purchase",
+        MetaCapiLog.created_at >= effective_since,
+        MetaCapiLog.created_at <= until,
+    ]
+    if order_ids is not None:
+        # order_ids == [] (campagne sans commande matchée) doit renvoyer un
+        # jeu de résultats vide, jamais tout le store — in_([]) le fait déjà
+        # nativement en SQLAlchemy (génère une condition toujours fausse).
+        base_filters.append(MetaCapiLog.order_id.in_(order_ids))
+
+    status = _compute_status_metrics(db, base_filters)
+    success, failed, retry, pending, skipped = (
+        status["success"], status["failed"], status["retry"], status["pending"], status["skipped"]
+    )
+    total_sent, network_failed = status["total_sent"], status["network_failed"]
+    valid_purchase_pct, rejected_pct = status["valid_purchase_pct"], status["rejected_pct"]
+    retry_pct, pending_pct = status["retry_pct"], status["pending_pct"]
+    coverage_score, reliability_score = status["coverage_score"], status["reliability_score"]
+    calculated_at, last_success_at = status["calculated_at"], status["last_success_at"]
+
+    match_quality = _compute_match_quality_sample(db, base_filters, order_ids, sample_cap)
+    sample_n, avg_emq = match_quality["sample_n"], match_quality["avg_emq"]
+    avg_completeness_pct = match_quality["avg_completeness_pct"]
+    field_coverage = match_quality["field_coverage"]
+    field_present_counts = match_quality["field_present_counts"]
+    value_present_pct = match_quality["value_present_pct"]
+    missing_value, missing_currency = match_quality["missing_value"], match_quality["missing_currency"]
+    missing_currency_pct = match_quality["missing_currency_pct"]
+    missing_event_time, missing_event_time_pct = (
+        match_quality["missing_event_time"], match_quality["missing_event_time_pct"]
+    )
+    wrong_currency = match_quality["wrong_currency"]
+
+    timing = _compute_timing_and_dedup(db, base_filters, order_ids, effective_since, until, timing_cap, total_sent)
+    realtime_n, backfill_n, timing_n = timing["realtime_n"], timing["backfill_n"], timing["timing_n"]
+    realtime_pct, backfill_pct = timing["realtime_pct"], timing["backfill_pct"]
+    avg_latency_ms, max_latency_ms = timing["avg_latency_ms"], timing["max_latency_ms"]
+    dedup_pct = timing["dedup_pct"]
+
+    attribution = _compute_attribution(db, base_filters, success)
+    attribution_pct, orphan_campaign = attribution["attribution_pct"], attribution["orphan_campaign"]
+
+    scores = _compute_composite_scores(
+        coverage_score=coverage_score, avg_emq=avg_emq, reliability_score=reliability_score,
+        realtime_pct=realtime_pct, valid_purchase_pct=valid_purchase_pct, dedup_pct=dedup_pct,
+        value_present_pct=value_present_pct, attribution_pct=attribution_pct, avg_latency_ms=avg_latency_ms,
+        total_sent=total_sent, success=success, network_failed=network_failed, retry_pct=retry_pct,
+        pending_pct=pending_pct, avg_completeness_pct=avg_completeness_pct,
+        effective_since=effective_since, until=until, field_coverage=field_coverage,
+    )
+    global_score, global_score_classified = scores["global_score"], scores["global_score_classified"]
+    learning_score_classified = scores["learning_score_classified"]
+    component_scores, component_scores_classified = scores["component_scores"], scores["component_scores_classified"]
+    optimization_score = scores["optimization_score"]
+    field_coverage_classified = scores["field_coverage_classified"]
+
+    return {
+        # "since" is the window ACTUALLY used (post-cutover floor unless
+        # include_legacy_data=True) — what every number below was computed
+        # over. "requested_since" preserves what the caller originally
+        # asked for, so a widget can show both ("Fenêtre : 16/07/2026 →
+        # aujourd'hui" even if the caller requested 90 days back) instead
+        # of silently reporting a period that doesn't match the data.
+        # "time_window" carries the full MetricsTimeWindow (incl. the
+        # ready-to-display `label`) for callers that want it directly
+        # instead of reassembling it from the individual keys below.
+        "since": effective_since, "until": until,
+        "requested_since": since,
+        "cutover_applied": window.cutover_applied,
+        "time_window": window.as_dict(),
         "calculated_at": calculated_at, "last_success_at": last_success_at,
         "calculation_mode": "realtime_on_demand",
         "total_sent": total_sent, "success": success, "failed": failed,

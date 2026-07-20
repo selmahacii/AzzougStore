@@ -231,3 +231,46 @@ def test_initiate_checkout_exceeded_by_addtocart_stays_a_real_anomaly(db_session
 
     bottlenecks = engine.detect_bottlenecks(db_session, store_id, since, now)
     assert any(b["id"] == "funnel_incoherence" for b in bottlenecks)
+
+
+def test_detect_bottlenecks_respects_include_legacy_data(db_session):
+    """
+    Meta Ads roadmap (2026-07-20): detect_bottlenecks() is the only function
+    in this engine that reads Meta CAPI health data, and it delegates
+    entirely to compute_meta_metrics() -- this proves include_legacy_data
+    reaches that call exactly like it does for the meta_ads.py endpoints
+    (see tests/test_meta_analytics_engine.py's include_legacy_data tests).
+    """
+    store_id = "store-bottleneck-legacy"
+    order = Order(
+        id=str(uuid.uuid4()), store_id=store_id, order_number="ORD-BN01",
+        status="DELIVERED", total=5000, subtotal=5000,
+        customer_name="Test", customer_phone="0555000000",
+        customer_wilaya="Alger", customer_commune="Alger Centre", customer_address="rue test",
+        created_at=datetime(2026, 6, 1),  # pre-cutover
+    )
+    db_session.add(order)
+    db_session.commit()
+    db_session.add(MetaCapiLog(
+        id=str(uuid.uuid4()), store_id=store_id, order_id=order.id,
+        event_name="Purchase", status="success", event_id="purchase-bn01",
+        created_at=datetime(2026, 6, 1),
+        payload={
+            "event_time": int(datetime(2026, 6, 1).timestamp()),
+            "custom_data": {"value": 5000, "currency": "DZD"},
+            "user_data": {},  # empty -> EMQ 0.0 when counted -> triggers low_emq
+        },
+    ))
+    db_session.commit()
+
+    since, until = datetime(2026, 1, 1), datetime(2026, 7, 20)
+
+    # Excluded by default: pre-cutover log falls outside the floored window
+    # -> no successful sends counted -> EMQ is None -> no low_emq finding.
+    floored = engine.detect_bottlenecks(db_session, store_id, since, until, include_legacy_data=False)
+    assert not any(f["id"] == "low_emq" for f in floored)
+
+    # Explicitly included -> the pre-cutover log is now counted -> EMQ=0.0
+    # (empty user_data) -> low_emq finding fires.
+    with_legacy = engine.detect_bottlenecks(db_session, store_id, since, until, include_legacy_data=True)
+    assert any(f["id"] == "low_emq" for f in with_legacy)

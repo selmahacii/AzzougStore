@@ -83,13 +83,21 @@ def test_match_quality_partial_data():
         "client_ip_address": "1.2.3.4", "client_user_agent": "ua", "fbp": "fb.1.x",
     }
     result = compute_match_quality(user_data)
-    # 10 of 12 fields present.
-    assert result["score"] == round(10 / 12 * 100, 1)
-    assert "Email" in result["missing"]
+    # Weighted (see _MATCH_QUALITY_WEIGHTS): present weight
+    # ph3+fn.5+ln.5+ct.5+st.5+country.5+external_id2.5+ip1.5+ua1.5+fbp2 = 13.0
+    # of 16.0 total -> 81.2%. Missing only em(1.0)+fbc(2.0) — a COD order
+    # missing just email costs far less than the old flat 2/12=16.7%.
+    assert result["score"] == 81.2
+    # Email not_applicable for COD -> excluded from `missing` (see
+    # FIELD_CLASSIFICATION); FBC has no such exemption, still a real gap.
+    assert "Email" not in result["missing"]
+    assert "Email" in result["not_applicable"]
     assert "FBC" in result["missing"]
 
 
 def test_match_quality_empty_data_never_crashes():
     result = compute_match_quality(None)
     assert result["score"] == 0.0
-    assert len(result["missing"]) == 12
+    # 11 real gaps + email counted separately in not_applicable (COD context).
+    assert len(result["missing"]) == 11
+    assert result["not_applicable"] == ["Email"]
