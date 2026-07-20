@@ -1477,7 +1477,10 @@ const [timeLeft, setTimeLeft] = useState('');
                   <tr><td colSpan={10} className="px-3 xl:px-4 py-20 text-center text-slate-400 font-medium">Aucune commande trouvée</td></tr>
                 ) : displayOrders.map((order) => (
                   <React.Fragment key={order.id}>
-                    <tr className="hover:bg-slate-50/50 transition-colors group">
+                    <tr
+                      className="hover:bg-slate-50/60 transition-colors group relative"
+                      style={{ boxShadow: `inset 3px 0 0 0 ${ORDER_STATUS_COLORS[order.status] || '#E2E8F0'}` }}
+                    >
                       <td className="px-3 xl:px-4 py-6"><Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} /></td>
                     <td className="px-3 xl:px-4 py-6 hidden 2xl:table-cell">
                       {order.source === 'MANUAL' ? (
@@ -1495,20 +1498,30 @@ const [timeLeft, setTimeLeft] = useState('');
                       )}
                     </td>
                     <td className="px-3 xl:px-4 py-6">
-                      <div className="flex flex-col">
+                      <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors">{formatOrderRef(order, 'admin')}</span>
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900 group-hover:bg-[#4b7bec] transition-colors text-white text-[11px] font-black tracking-tight tabular-nums">
+                            {formatOrderRef(order, 'admin')}
+                          </span>
                           {order.status === 'NEW' && (
                             <span className="size-2 bg-rose-500 rounded-full animate-pulse" title="Nouveau" />
                           )}
                         </div>
-                        <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">ID: {order.id.split('-')[0]}</span>
+                        <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest pl-0.5">ID: {order.id.split('-')[0]}</span>
                       </div>
                     </td>
                     <td className="px-3 xl:px-4 py-6">
-                      <div className="flex flex-col">
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className="size-8 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black text-white uppercase select-none"
+                          style={{ backgroundColor: ORDER_STATUS_COLORS[order.status] || '#94A3B8' }}
+                          title={order.customer_name}
+                        >
+                          {(order.customer_name || '?').trim().slice(0, 2)}
+                        </div>
+                        <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
+                          <span className="text-sm font-bold text-slate-800 truncate">{order.customer_name}</span>
                           {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
                             <Badge className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5">🟣 Doublon</Badge>
                           )}
@@ -1604,7 +1617,8 @@ const [timeLeft, setTimeLeft] = useState('');
                             Note: {order.notes}
                           </span>
                         )}
-                      </div>
+                        </div>
+                        </div>
                     </td>
                     <td className="px-3 xl:px-4 py-6 hidden lg:table-cell">
                       <Badge className="bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold shadow-none px-2.5 py-1 truncate max-w-[120px]">
