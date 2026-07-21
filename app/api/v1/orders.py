@@ -609,6 +609,18 @@ def get_agent_counts(
     elif current_user.role == "MANAGER" and current_user.employee_store_id:
         base = base_query.filter(Order.store_id == current_user.employee_store_id)
         base_wide = base
+    elif current_user.role == "LIVREUR":
+        # Was completely unscoped before this fix (fell through to the
+        # `else` branch below) — a livreur's sidebar badges showed the
+        # ENTIRE store's Logistique numbers (every confirmatrice's shipped/
+        # delivered/returned totals), not just the orders in his own
+        # assigned territory. Same region+livreur_id match as list_orders,
+        # and the same carrier-tracked exclusion (once a parcel has a real
+        # tracking number it's the transporteur's job, not his).
+        _livreur_scope = or_(Order.livreur_id == current_user.id, _region_owned_by_agent_criterion(current_user.id))
+        _livreur_no_carrier = or_(Order.tracking_number.is_(None), Order.tracking_number == "")
+        base = base_query.filter(_livreur_scope, _livreur_no_carrier)
+        base_wide = base
     else:
         base = base_query
         base_wide = base_query
@@ -719,6 +731,7 @@ def get_agent_counts(
             # and whoever's checking this count should see the store's total,
             # not just their own.
             _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+            _sum(Order.is_upsell == True).label("upsell"),
             # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
             # scoped to SHIPPED since that's the only state a carrier_stage is
             # meaningful for (before dispatch there's nothing to poll; after
@@ -1109,6 +1122,11 @@ def list_orders(
             # stage like the filters above: a manually-entered order is
             # still "manual" whether it's still NEW or already DELIVERED.
             query = query.filter(sqlfunc.coalesce(Order.source, "") == "MANUAL")
+        elif status.upper() == "UPSELL":
+            # An extra product added on-call (agent-dashboard.tsx's "Ajouter
+            # un produit existant (Upsell)" during order editing) — flagged
+            # via Order.is_upsell, whatever its current status.
+            query = query.filter(Order.is_upsell == True)
         elif status.upper().startswith("CARRIER_") and status.upper()[len("CARRIER_"):].lower() in CARRIER_STAGE_BUCKETS:
             # Noest's own granular carrier stage (see CARRIER_STAGE_BUCKETS) —
             # e.g. status=CARRIER_OUT_FOR_DELIVERY for the "En livraison"

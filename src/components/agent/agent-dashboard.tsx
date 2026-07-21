@@ -81,6 +81,14 @@ function getModules(isLivreur: boolean): Module[] { return [
       // d'une commande storefront/landing page dans le suivi quotidien).
       // Un livreur ne saisit jamais de commande manuelle — non pertinent.
       ...(isLivreur ? [] : [{ id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck }]),
+      // Upsell + Retours : déjà comptés/filtrables côté backend (Order.
+      // is_upsell, status=RETURNED) mais jamais exposés comme onglet dans
+      // Commandes — ajoutés pour le livreur uniquement, sans toucher
+      // l'interface de la confirmatrice.
+      ...(isLivreur ? [
+        { id: 'orders-upsell', label: 'Upsell', filter: 'UPSELL', icon: TrendingUp },
+        { id: 'orders-returned', label: 'Retours', filter: 'RETURNED', icon: XCircle },
+      ] : []),
     ]
   },
   {
@@ -91,15 +99,18 @@ function getModules(isLivreur: boolean): Module[] { return [
       { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
       { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
       { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
-      // Noest's own real-time granular carrier stage (see backend
-      // CARRIER_STAGE_BUCKETS / Order.carrier_stage, updated every poll
-      // cycle) — breaks "En livraison" down the same way Noest's own
-      // dashboard does, instead of one coarse SHIPPED bucket.
-      { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
-      { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
-      { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
-      { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
-      { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
+      // Noest's own real-time granular carrier stage (CARRIER_STAGE_BUCKETS)
+      // only ever applies to a CARRIER-tracked SHIPPED parcel — a livreur's
+      // internal deliveries never have a tracking number, so these would
+      // always show 0 for him. Dropped for his view only; the
+      // confirmatrice's Logistique keeps every carrier stage unchanged.
+      ...(isLivreur ? [] : [
+        { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
+        { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
+        { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
+        { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
+        { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
+      ]),
       { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
       { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
     ]

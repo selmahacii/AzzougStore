@@ -166,3 +166,92 @@ def test_livreur_sees_region_orders_that_predate_the_rule_and_confirmatrice_no_l
         assert confirmatrice_detail.status_code == 403, confirmatrice_detail.text
     finally:
         _cleanup([order_id], [livreur_id, confirmatrice_id], product_id, store_id, [rule_id])
+
+
+def test_livreur_agent_counts_scoped_to_his_own_territory_not_store_wide():
+    """
+    Regression test: GET /orders/agent-counts had NO branch for LIVREUR at
+    all — it fell through to the unscoped `else`, so a livreur's sidebar
+    badges (Livrées, Retournées, En livraison...) showed the ENTIRE store's
+    numbers instead of just his own territory. Also proves the new UPSELL
+    pseudo-status filter/count works.
+    """
+    client = TestClient(app)
+    suffix = str(uuid.uuid4())[:8]
+    db = SessionLocal()
+    try:
+        store = Store(
+            id=str(uuid.uuid4()), name=f"Counts Shop {suffix}", slug=f"counts-shop-{suffix}",
+            domain=f"counts-shop-{suffix}.com", template_id="modern", owner_id="SYSTEM_ADMIN",
+        )
+        db.add(store)
+        db.flush()
+
+        product = Product(
+            id=str(uuid.uuid4()), store_id=store.id, name=f"Counts Product {suffix}",
+            slug=f"counts-product-{suffix}", description="x", price=1000, stock=10,
+            category="General", sku=f"SKU-COUNTS-{suffix}", is_active=True,
+        )
+        db.add(product)
+
+        livreur_email = f"livreur-counts-{suffix}@test.com"
+        livreur_password = "test-only-password"
+        livreur = User(
+            id=str(uuid.uuid4()), email=livreur_email, name="Test Livreur Counts",
+            hashed_password=get_password_hash(livreur_password), role="LIVREUR",
+            employee_store_id=store.id, is_active=True,
+        )
+        db.add(livreur)
+        db.flush()
+
+        commune = f"CommuneCounts{suffix}"
+        rule = AssignmentRule(
+            id=str(uuid.uuid4()), rule_type="COMMUNE", target_id=commune,
+            agent_id=livreur.id, is_exclusion=False, is_active=True,
+        )
+        db.add(rule)
+        db.flush()
+
+        # DELIVERED order in his territory — must be counted.
+        his_order = Order(
+            id=str(uuid.uuid4()), order_number=f"ORD-COUNTS-HIS-{suffix}", store_id=store.id,
+            customer_name="Client Counts His", customer_phone="0561" + suffix,
+            customer_address="Adresse test", customer_wilaya="Alger", customer_commune=commune,
+            delivery_type="HOME", delivery_fee=0, subtotal=1000, discount=0, total=1000,
+            source="landing_page", status="DELIVERED", is_upsell=True,
+        )
+        # DELIVERED order OUTSIDE his territory — must NOT be counted for him.
+        other_order = Order(
+            id=str(uuid.uuid4()), order_number=f"ORD-COUNTS-OTHER-{suffix}", store_id=store.id,
+            customer_name="Client Counts Other", customer_phone="0562" + suffix,
+            customer_address="Adresse test", customer_wilaya="Oran", customer_commune="AutreCommune",
+            delivery_type="HOME", delivery_fee=0, subtotal=1000, discount=0, total=1000,
+            source="landing_page", status="DELIVERED",
+        )
+        db.add(his_order)
+        db.add(other_order)
+        db.commit()
+
+        order_ids = [his_order.id, other_order.id]
+        store_id, livreur_id, product_id, rule_id = store.id, livreur.id, product.id, rule.id
+    finally:
+        db.close()
+
+    login = client.post(
+        f"{settings.API_V1_STR}/auth/login/access-token",
+        data={"username": livreur_email, "password": livreur_password},
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+
+    try:
+        res = client.get(
+            f"{settings.API_V1_STR}/orders/agent-counts?store_id={store_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200, res.text
+        counts = res.json()["counts"]
+        assert counts["delivered"] == 1, "must count only his own territory's delivered order, not the whole store's"
+        assert counts["upsell"] == 1
+    finally:
+        _cleanup(order_ids, [livreur_id], product_id, store_id, [rule_id])
