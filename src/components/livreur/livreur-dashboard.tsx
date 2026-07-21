@@ -348,10 +348,17 @@ interface OrderCardProps {
 }
 
 function OrderCard({ order, tab, isPending, onQuickStatus, onOpen }: OrderCardProps) {
+  // Une commande auto-assignée par règle commune/wilaya (voir
+  // resolve_courier_rule côté backend) arrive DIRECTEMENT chez le livreur
+  // sans jamais passer par une confirmatrice — NEW/ABANDONED sans aucune
+  // autre action possible ne veut pas dire "en attente confirmatrice" dans
+  // ce cas, ça veut dire que LUI doit confirmer. Le backend autorise déjà
+  // ce statut pour un livreur (2026-07-21) ; il manquait le bouton.
+  const canConfirm = ['NEW', 'ABANDONED'].includes(order.status);
   const canShip    = order.status === 'CONFIRMED';
   const canDeliver = order.status === 'SHIPPED';
   const canReturn  = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED'].includes(order.status);
-  const hasActions = canShip || canDeliver || canReturn;
+  const hasActions = canConfirm || canShip || canDeliver || canReturn;
 
   return (
     <div
@@ -445,6 +452,14 @@ function OrderCard({ order, tab, isPending, onQuickStatus, onOpen }: OrderCardPr
             </p>
           ) : (
             <div className={cn('flex items-center gap-2', isPending && 'opacity-50 pointer-events-none')}>
+              {canConfirm && (
+                <button
+                  onClick={() => onQuickStatus(order.id, 'CONFIRMED')}
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase shadow-sm hover:bg-indigo-700 transition-colors"
+                >
+                  <CheckCircle className="size-3.5" /> Confirmer
+                </button>
+              )}
               {canShip && (
                 <button
                   onClick={() => onQuickStatus(order.id, 'SHIPPED')}
@@ -491,6 +506,9 @@ interface DrawerProps {
 function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: DrawerProps) {
   const [note, setNote] = useState('');
 
+  // Auto-assignée par règle commune/wilaya, jamais passée par une
+  // confirmatrice — voir OrderCard ci-dessus pour le même raisonnement.
+  const canConfirm  = ['NEW', 'ABANDONED'].includes(order.status);
   const canShip     = order.status === 'CONFIRMED';
   const canDeliver  = order.status === 'SHIPPED';
   const canReturn   = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED'].includes(order.status);
@@ -499,7 +517,7 @@ function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: Drawer
   // accepts RESCHEDULED). Annulée: any non-terminal stage.
   const canPostpone = ['ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'IN_PROGRESS'].includes(order.status);
   const canCancel   = ['NEW', 'ASSIGNED', 'CALLED', 'CONFIRMED', 'SHIPPED', 'IN_PROGRESS', 'RESCHEDULED'].includes(order.status);
-  const hasActions = canShip || canDeliver || canReturn || canPostpone || canCancel;
+  const hasActions = canConfirm || canShip || canDeliver || canReturn || canPostpone || canCancel;
   const isTerminal = ['DELIVERED', 'RETURNED'].includes(order.status);
 
   // Build a Google Maps search URL from the customer address
@@ -731,6 +749,15 @@ function OrderDetailDrawer({ order, isPending, onClose, onStatusChange }: Drawer
 
               {/* Action buttons — large, full-width, easy to tap */}
               <div className={cn('grid gap-3', isPending && 'opacity-50 pointer-events-none')}>
+                {canConfirm && (
+                  <button
+                    onClick={() => handleStatus('CONFIRMED')}
+                    className="flex items-center justify-center gap-2 w-full h-14 rounded-2xl bg-indigo-600 text-white font-black text-sm uppercase tracking-wide shadow-md hover:bg-indigo-700 active:scale-[0.98] transition-all"
+                  >
+                    {isPending ? <Loader2 className="size-5 animate-spin" /> : <CheckCircle className="size-5" />}
+                    Confirmer la commande
+                  </button>
+                )}
                 {canShip && (
                   <button
                     onClick={() => handleStatus('SHIPPED')}

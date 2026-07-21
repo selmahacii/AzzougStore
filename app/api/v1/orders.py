@@ -2354,13 +2354,23 @@ def update_order(
     # A delivery agent can move his parcels through the delivery pipeline
     # (in delivery / delivered / failed-return / cancelled), optionally with
     # a note — never reassign or change anything else.
+    # CONFIRMED added (2026-07-21): a courier auto-assignment rule (COMMUNE/
+    # WILAYA — see resolve_courier_rule) hands an order directly to a
+    # livreur, bypassing the confirmatrice workflow ENTIRELY — no
+    # confirmatrice ever touches that order, so no one else can ever move
+    # it NEW/ABANDONED -> CONFIRMED. The livreur must be able to do exactly
+    # what a confirmatrice would (confirm, cancel, mark returned) for these
+    # orders — the one thing he still never does is create the shipment at
+    # the carrier (Noest/Yalidine), which stays an explicit admin/
+    # confirmatrice action. _VALID_TRANSITIONS still governs which FROM
+    # status can legally reach CONFIRMED — this only widens WHO may attempt it.
     if current_user.role == "LIVREUR":
         requested = (status_update.status or "").upper() if status_update.status else None
         # RESCHEDULED = "Reportée" — the driver couldn't deliver today (client
         # absent, reporté à demain...) and hands the order back to the
         # confirmation pipeline instead of forcing a terminal outcome.
-        if requested and requested not in ("SHIPPED", "DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED"):
-            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur (En livraison, Livrée, Retour, Reportée ou Annulée uniquement).")
+        if requested and requested not in ("SHIPPED", "DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED", "CONFIRMED"):
+            raise HTTPException(status_code=403, detail="Statut non autorisé pour un livreur (Confirmée, En livraison, Livrée, Retour, Reportée ou Annulée uniquement).")
         if status_update.assigned_to or status_update.livreur_id:
             raise HTTPException(status_code=403, detail="Un livreur ne peut pas réassigner une commande.")
 
