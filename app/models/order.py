@@ -83,6 +83,14 @@ class Order(Base):
     fbc = Column(String, nullable=True)
     referrer = Column(String, nullable=True)
     event_source_url = Column(String, nullable=True)
+    # Première page visitée (premier contact — src/lib/attribution.ts
+    # capture ceci en localStorage dès l'arrivée sur le site et l'envoie
+    # dans attributionPayload() à chaque soumission de commande). Existait
+    # déjà côté frontend mais était silencieusement perdu : aucune colonne
+    # ne le recevait, donc le rapport de tracking affichait "Non
+    # disponible" pour une donnée pourtant déjà captée — pas une nouvelle
+    # capture, juste la fin du câblage qui manquait.
+    landing_url = Column(String, nullable=True)
     # Captured at order creation so a LATER Purchase resend (retry queue,
     # nightly backfill sweep, abandoned-cart recovery) can still include
     # client_ip_address/client_user_agent in the CAPI event — these only

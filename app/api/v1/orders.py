@@ -1832,10 +1832,21 @@ def get_order_tracking(
         "landing_page_url": _or_na(order.event_source_url),
         "full_url": _or_na(order.event_source_url),
         "order_time": order.created_at.isoformat() if order.created_at else None,
-        # Genuinely not captured anywhere in this system today — no page-view
-        # history mechanism exists client-side. Not fabricated.
-        "first_page_visited": None,
-        "last_page_before_purchase": None,
+        # first_page_visited was hardcoded None with a comment claiming
+        # "genuinely not captured anywhere" — that was WRONG: the storefront
+        # (src/lib/attribution.ts) already captures the true first-touch
+        # landing page and sends it on every order submission via
+        # attributionPayload(); the field was just silently dropped because
+        # no column ever existed to receive it (fixed by the landing_url
+        # migration — root cause, not a new capture mechanism).
+        "first_page_visited": _or_na(order.landing_url),
+        # last_page_before_purchase: no true multi-page browsing history
+        # exists (only first-touch + submission-time URL are captured), so
+        # this is honestly the same event_source_url already shown above as
+        # landing_page_url/full_url — for a single-page landing-page funnel
+        # (this business model) that page IS the last one before purchase.
+        # Not a distinct capture, not fabricated as one.
+        "last_page_before_purchase": _or_na(order.event_source_url),
         "arrival_time": None,
     }
 

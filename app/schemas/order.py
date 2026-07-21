@@ -76,6 +76,7 @@ class OrderCreate(BaseModel):
     fbc: Optional[str] = None
     referrer: Optional[str] = None
     event_source_url: Optional[str] = None
+    landing_url: Optional[str] = None
 
 
 class CarrierRef(BaseModel):
@@ -207,6 +208,7 @@ class OrderRead(BaseModel):
     placement: Optional[str] = None
     site_source_name: Optional[str] = None
     referrer: Optional[str] = None
+    landing_url: Optional[str] = None
 
     @field_serializer(
         "created_at", "updated_at", "recovered_at",
