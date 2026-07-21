@@ -96,6 +96,17 @@ def compute_salary(
     payment_type   = employee.payment_type    # "PER_DELIVERED_ORDER" | "MONTHLY_SALARY" | None
     payment_amount = employee.payment_amount  # DA
 
+    # A livreur is paid a fixed salary, never a per-basket/per-delivery
+    # commission (2026-07-21, explicit Selma requirement) — the
+    # PER_DELIVERED_ORDER fallback a few lines below exists for
+    # confirmatrices/agents whose payment_type was never configured, but
+    # applying it to an unconfigured livreur would silently pay him a
+    # commission he was never meant to get. Only kicks in when the admin
+    # hasn't explicitly picked a payment_type for him; an explicit
+    # PER_DELIVERED_ORDER choice is still honored if ever configured.
+    if payment_type is None and getattr(employee, "role", None) == "LIVREUR":
+        payment_type = "MONTHLY_SALARY"
+
     recovered_rate = getattr(employee, "payment_recovered_cart", 0) or 0
     lost_rate      = getattr(employee, "payment_lost_cart", 0) or 0
 

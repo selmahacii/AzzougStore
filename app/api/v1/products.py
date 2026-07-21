@@ -28,6 +28,39 @@ logger = logging.getLogger("app.products")
 _STAFF_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR", "AGENT", "AGENT_MANAGER", "MARKETER")
 
 
+def _confirmateur_product_scope_criterion(user):
+    """
+    Mirrors orders.py's _confirmateur_scope_criterion: a confirmatrice
+    with a configured scope (assigned_store_ids/employee_store_id and/or
+    assigned_product_ids) must only ever see products from her assigned
+    store(s), PLUS her individually-assigned products from other stores —
+    never the whole catalogue. Unconfigured (no store, no product) means
+    no restriction was ever set up for her — falls through to full
+    visibility rather than showing nothing, matching prior behavior for
+    accounts that predate this scoping.
+    """
+    from sqlalchemy import or_
+
+    raw_stores = getattr(user, "assigned_store_ids", None)
+    stores = list(raw_stores) if isinstance(raw_stores, list) else []
+    employee_store_id = getattr(user, "employee_store_id", None)
+    if employee_store_id and employee_store_id not in stores:
+        stores.append(employee_store_id)
+
+    raw_products = getattr(user, "assigned_product_ids", None)
+    products = raw_products if isinstance(raw_products, list) else []
+
+    if not stores and not products:
+        return None  # nothing configured — no restriction (existing behavior)
+
+    crits = []
+    if stores:
+        crits.append(Product.store_id.in_(stores))
+    if products:
+        crits.append(Product.id.in_(products))
+    return or_(*crits) if len(crits) > 1 else crits[0]
+
+
 def _generate_slug(name: str) -> str:
     """Generate URL-friendly slug from product name."""
     import re
@@ -177,6 +210,24 @@ def read_products(
 
     if store_id:
         query = query.filter(Product.store_id == store_id)
+        # Defense in depth: even with an explicit store_id, a scoped
+        # confirmatrice must not see a store outside her assignment (e.g. a
+        # stale/forged param) — unless that store's products are reachable
+        # via her individually-assigned product ids instead.
+        if current_user is not None and getattr(current_user, "role", None) == "CONFIRMATEUR":
+            _scope_crit = _confirmateur_product_scope_criterion(current_user)
+            if _scope_crit is not None:
+                query = query.filter(_scope_crit)
+    elif current_user is not None and getattr(current_user, "role", None) == "CONFIRMATEUR":
+        # No explicit store_id ("Toutes mes boutiques") — without this, a
+        # confirmatrice with a configured scope saw EVERY store's catalogue
+        # instead of just her assigned store(s)/products (this endpoint had
+        # no scoping at all beyond the store_id param). Product-specific
+        # assignments to OTHER stores stay visible too, matching orders.py's
+        # equivalent scope for her order queue.
+        _scope_crit = _confirmateur_product_scope_criterion(current_user)
+        if _scope_crit is not None:
+            query = query.filter(_scope_crit)
     if search:
         query = query.filter(
             (Product.name.ilike(f"%{search}%")) |

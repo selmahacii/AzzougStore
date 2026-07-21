@@ -1676,6 +1676,20 @@ export default function AgentDashboard() {
   }, [isMobile, setSidebarCollapsed]);
   
   const [activeModule, setActiveModule] = useState('orders');
+  // Sidebar module sections are collapsible — a livreur's/confirmatrice's
+  // full nav (Commandes/Logistique/Inventaire/Produits/Mon Espace) is long
+  // once every module is spelled out; letting a section fold away keeps the
+  // sidebar scannable without losing any of it. Nothing collapsed by
+  // default so existing behavior/visibility doesn't change unless the user
+  // explicitly folds a section.
+  const [collapsedModules, setCollapsedModules] = useState<Set<string>>(new Set());
+  const toggleModuleCollapsed = (moduleId: string) => {
+    setCollapsedModules(prev => {
+      const next = new Set(prev);
+      if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
+      return next;
+    });
+  };
   const [activeSubModule, setActiveSubModule] = useState('orders-all');
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -2038,12 +2052,27 @@ export default function AgentDashboard() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-          {MODULES.map(module => (
+          {MODULES.map(module => {
+            const isFolded = collapsedModules.has(module.id);
+            return (
             <div key={module.id} className="space-y-1">
-              <div className={cn("flex items-center gap-2 px-3 py-2 text-slate-400", sidebarCollapsed && "justify-center px-0")}>
+              <button
+                type="button"
+                onClick={() => toggleModuleCollapsed(module.id)}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-slate-600 transition-colors",
+                  sidebarCollapsed && "justify-center px-0"
+                )}
+              >
                 <module.icon className="size-4 shrink-0" />
-                {!sidebarCollapsed && <span className="text-[10px] font-bold uppercase tracking-widest">{module.label}</span>}
-              </div>
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="text-[10px] font-bold uppercase tracking-widest flex-1 text-left">{module.label}</span>
+                    <ChevronRight className={cn("size-3 shrink-0 transition-transform", !isFolded && "rotate-90")} />
+                  </>
+                )}
+              </button>
+              {(!isFolded || sidebarCollapsed) && (
               <div className="space-y-0.5">
                 {module.subModules.map(sub => {
                    const count = sub.filter ? (agentCountsQuery.data?.counts?.[sub.filter.toLowerCase() === 'pending_confirmation' ? 'pending' : sub.filter.toLowerCase() === 'abandoned_in_progress' ? 'abandoned_in_progress' : sub.filter.toLowerCase()] ?? 0) : 0;
@@ -2080,8 +2109,10 @@ export default function AgentDashboard() {
                    );
                  })}
               </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-4 border-t bg-slate-50 shrink-0">

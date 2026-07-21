@@ -146,12 +146,89 @@ def _confirmateur_scope_ok(order: Order, user: User) -> bool:
     return store_ok or product_ok
 
 
-def _assert_order_access(order: Order, current_user: User) -> None:
+def _region_owned_by_agent_criterion(agent_id: str):
+    """
+    SQLAlchemy criterion, query-side twin of _region_courier_owner: True
+    when Order.customer_commune/wilaya resolves (COMMUNE > WILAYA priority)
+    to this specific livreur. Used to INCLUDE those orders in his list —
+    covers orders that predate the rule or a rule added after order
+    creation, not just ones with Order.livreur_id already stamped.
+    """
+    from sqlalchemy import exists, select, and_, or_
+    from app.models.assignment_rule import AssignmentRule
+
+    def _rule_exists(rule_type, target_col, agent=None):
+        conds = [
+            AssignmentRule.rule_type == rule_type,
+            AssignmentRule.target_id == target_col,
+            AssignmentRule.is_exclusion == False,
+            AssignmentRule.is_active == True,
+        ]
+        if agent is not None:
+            conds.append(AssignmentRule.agent_id == agent)
+        return exists(select(1).where(*conds))
+
+    commune_owned_by_agent = _rule_exists("COMMUNE", Order.customer_commune, agent_id)
+    commune_owned_by_anyone = _rule_exists("COMMUNE", Order.customer_commune)
+    wilaya_owned_by_agent = _rule_exists("WILAYA", Order.customer_wilaya, agent_id)
+    return or_(commune_owned_by_agent, and_(~commune_owned_by_anyone, wilaya_owned_by_agent))
+
+
+def _region_owned_by_any_livreur_criterion():
+    """
+    SQLAlchemy criterion: True when Order.customer_commune/wilaya is ANY
+    livreur's exclusive territory (regardless of which one). Used to
+    EXCLUDE these orders from the confirmatrice's scope entirely — that
+    territory belongs to whichever livreur the rule names, not her, even
+    for orders that still have no Order.livreur_id stamped or that are in
+    a status she'd normally see (abandoned cart, shipped, etc).
+    """
+    from sqlalchemy import exists, select, or_
+    from app.models.assignment_rule import AssignmentRule
+
+    def _rule_exists(rule_type, target_col):
+        return exists(select(1).where(
+            AssignmentRule.rule_type == rule_type,
+            AssignmentRule.target_id == target_col,
+            AssignmentRule.is_exclusion == False,
+            AssignmentRule.is_active == True,
+        ))
+    return or_(_rule_exists("COMMUNE", Order.customer_commune), _rule_exists("WILAYA", Order.customer_wilaya))
+
+
+def _region_courier_owner(db: Optional[Session], order: Order) -> Optional[str]:
+    """
+    Who "owns" this order's delivery region right now, per the Assignment
+    Rule Engine (COMMUNE > WILAYA priority) — live-resolved, NOT just
+    whatever Order.livreur_id was stamped with at creation time. A rule
+    created AFTER the order already existed (or an order created before
+    any rule existed) must still resolve correctly: territory ownership is
+    a property of the region + the CURRENT rules, not a one-time snapshot.
+    Returns the livreur's user id, or None if no rule covers this region.
+    db may be None (best-effort call sites) — treated as "no rule applies".
+    """
+    if db is None:
+        return None
+    from app.services.order_service import resolve_courier_rule
+    try:
+        return resolve_courier_rule(db, order.customer_wilaya, order.customer_commune)
+    except Exception:
+        return None
+
+
+def _assert_order_access(order: Order, current_user: User, db: Optional[Session] = None) -> None:
     """
     CONFIRMATEUR can access orders assigned to them, or unassigned orders in
-    their responsibility scope (see _confirmateur_scope_criterion).
+    their responsibility scope (see _confirmateur_scope_criterion) — EXCEPT
+    an order whose delivery region is a livreur's exclusive territory (see
+    _region_courier_owner): that territory is his alone, whether or not
+    Order.livreur_id was ever stamped on this particular order.
     MANAGER can only access orders in their store.
     ADMIN/SUPER_ADMIN: full access.
+    LIVREUR: orders explicitly handed to them (Order.livreur_id), OR any
+    order whose delivery region currently resolves to them via a COMMUNE/
+    WILAYA rule — covers orders that predate the rule, or a rule added
+    after the order existed, not just ones stamped at creation time.
     """
     if current_user.role == "CONFIRMATEUR":
         is_assigned = order.assigned_to == current_user.id
@@ -164,12 +241,15 @@ def _assert_order_access(order: Order, current_user: User) -> None:
 
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")
+        if _region_courier_owner(db, order):
+            raise PermissionError(message="Accès refusé : cette commande appartient à la zone exclusive d'un livreur.")
     elif current_user.role == "MANAGER":
         if current_user.employee_store_id and order.store_id != current_user.employee_store_id:
             raise PermissionError(message="Accès refusé : commande hors de votre boutique.")
     elif current_user.role == "LIVREUR":
-        # A delivery agent only sees the orders handed to them
-        if order.livreur_id != current_user.id:
+        # A delivery agent sees orders explicitly handed to them, OR any
+        # order whose region currently resolves to them via a rule.
+        if order.livreur_id != current_user.id and _region_courier_owner(db, order) != current_user.id:
             raise PermissionError(message="Accès refusé : cette livraison ne vous est pas assignée.")
 
 
@@ -883,16 +963,26 @@ def list_orders(
                 query = query.filter(or_(assigned_to_me, scope_crit))
             else:
                 query = query.filter(or_(assigned_to_me, unassigned_matching))
+
+            # A courier auto-assignment rule (COMMUNE/WILAYA) makes that
+            # region a livreur's EXCLUSIVE territory — the confirmatrice
+            # never sees those orders, regardless of status or whether
+            # Order.livreur_id was already stamped (an order created before
+            # the rule existed must not stay wrongly visible to her either).
+            query = query.filter(~_region_owned_by_any_livreur_criterion())
         elif current_user.role == "MANAGER" and current_user.employee_store_id:
             query = query.filter(Order.store_id == current_user.employee_store_id)
         elif current_user.role == "LIVREUR":
-            # A delivery agent only lists the orders handed to them for an
-            # INTERNAL delivery — never a carrier-tracked one. Once a NOEST/
-            # Yalidine/ZR tracking number exists, that parcel is the
-            # transporteur's job, whatever livreur_id still says.
+            # A delivery agent lists orders explicitly handed to them, OR
+            # any order whose delivery region currently resolves to them
+            # via a COMMUNE/WILAYA rule — covers orders that predate the
+            # rule (or a rule added after the order existed), not just ones
+            # with Order.livreur_id already stamped at creation time. Never
+            # a carrier-tracked parcel — once a NOEST/Yalidine/ZR tracking
+            # number exists, that's the transporteur's job.
             from sqlalchemy import or_ as _or_liv
             query = query.filter(
-                Order.livreur_id == current_user.id,
+                _or_liv(Order.livreur_id == current_user.id, _region_owned_by_agent_criterion(current_user.id)),
                 _or_liv(Order.tracking_number.is_(None), Order.tracking_number == ""),
             )
         else:
@@ -1799,7 +1889,7 @@ def get_order(
     if not order:
         raise OrderNotFoundError()
 
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
     _sync_item_images_from_product(db, [order])
 
     # Attach merged duplicates for the duplication-history panel
@@ -1843,7 +1933,7 @@ def get_order_tracking(
     order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
     if not order:
         raise OrderNotFoundError()
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
 
     def _or_na(v):
         return v if v not in (None, "") else None
@@ -2111,7 +2201,7 @@ def get_order_erp_detail(
     )
     if not order:
         raise OrderNotFoundError()
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
 
     events = sorted(order.events, key=lambda e: e.created_at or order.created_at)
 
@@ -2256,7 +2346,7 @@ def unmerge_order(
     order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not order:
         raise OrderNotFoundError()
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
     if order.status != "MERGED":
         raise HTTPException(status_code=400, detail="Cette commande n'est pas une fusion (statut != MERGED).")
 
@@ -2349,7 +2439,7 @@ def update_order(
     # this condition can only be true once per order's lifetime).
     _was_abandoned = str(order.status) == "ABANDONED"
 
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
 
     # A delivery agent can move his parcels through the delivery pipeline
     # (in delivery / delivered / failed-return / cancelled), optionally with
@@ -2455,7 +2545,7 @@ def update_order_info(
     if not order:
         raise OrderNotFoundError()
 
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
 
     # A livreur may correct the customer's own info (name/phone/address/
     # notes/items) on his own orders, matching the confirmatrice — but the
@@ -2811,7 +2901,7 @@ def get_order_events(
     if not order:
         raise OrderNotFoundError()
 
-    _assert_order_access(order, current_user)
+    _assert_order_access(order, current_user, db)
 
     events = (
         db.query(OrderEvent)
@@ -2901,7 +2991,7 @@ def merge_duplicate_orders(
     parent = db.query(Order).filter(Order.id == id, Order.is_deleted == False).with_for_update().first()
     if not parent:
         raise HTTPException(status_code=404, detail="Commande parente introuvable.")
-    _assert_order_access(parent, current_user)
+    _assert_order_access(parent, current_user, db)
     if parent.status == "MERGED":
         raise HTTPException(status_code=400, detail="La commande parente est elle-même déjà fusionnée.")
 
