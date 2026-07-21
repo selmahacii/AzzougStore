@@ -26,6 +26,7 @@ import {
   Package,
   Zap,
   ArrowDownRight,
+  Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1537,6 +1538,40 @@ export default function MetaAdsDashboard() {
               ) : (
                 <div className="rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 p-3 text-[11px] text-slate-700 font-semibold">
                   ⚠️ {fullDiagnostics.reconciliation.unexplained_gap} Purchase inexpliqué(s) — à investiguer via l'audit de réconciliation SQL.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Attribuabilité réelle — sépare "commandes que Meta peut
+              attribuer" (clic pub valide) de "commandes qui ne le pourront
+              jamais" (organique/direct, ou fbc corrompu) — l'écart ERP↔Meta
+              n'est plus mystérieux : il devient une limite physique visible. */}
+          {fullDiagnostics?.attribution_readiness && (
+            <div className="bg-white rounded-3xl border shadow-sm p-6">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-1">
+                <Target className="size-4 text-[#00B894]" /> Attribuabilité réelle (30j)
+              </h3>
+              <p className="text-[10px] text-slate-400 mb-4">Seules les commandes avec un clic publicitaire valide peuvent être attribuées par Meta — le reste ne pourra jamais l'être, quelle que soit la configuration.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                {[
+                  { label: 'Attribuables (fbc valide)', value: fullDiagnostics.attribution_readiness.attributable_valid_fbc, color: '#00B894' },
+                  { label: 'fbc corrompu (à corriger)', value: fullDiagnostics.attribution_readiness.malformed_fbc_unfixable_client_side, color: '#E17055' },
+                  { label: 'Organique/direct (normal)', value: fullDiagnostics.attribution_readiness.no_ad_click_signal_organic_direct, color: '#B2BEC3' },
+                ].map((s: any) => (
+                  <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
+                    <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              {fullDiagnostics.attribution_readiness.malformed_fbc_unfixable_client_side > 0 ? (
+                <div className="rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 p-3 text-[11px] text-slate-700 font-semibold">
+                  ⚠️ {fullDiagnostics.attribution_readiness.malformed_fbc_unfixable_client_side} commande(s) ont un fbc mal formé — Meta accepte l'événement sans erreur mais ne peut jamais l'attribuer. Ce sont d'anciennes commandes (avant le correctif de format fbc) ; les nouvelles commandes ne devraient plus jamais tomber dans cette catégorie.
+                </div>
+              ) : (
+                <div className="rounded-xl bg-[#E6FFF8] border border-[#00B894]/20 p-3 text-[11px] text-[#00B894] font-semibold">
+                  ✅ Aucun fbc corrompu — toutes les commandes avec un signal de clic publicitaire ont un fbc structurellement valide, donc attribuable côté Meta.
                 </div>
               )}
             </div>

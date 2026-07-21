@@ -22,7 +22,7 @@ closest real anchor to the actual click) through to build_user_data,
 so the fallback fbc always reflects when the order/click actually
 happened — never "whenever this Purchase happens to be sent".
 """
-from app.services.meta_capi import build_user_data
+from app.services.meta_capi import build_user_data, is_well_formed_fbc
 
 
 def test_fbc_fallback_anchors_to_reference_time_not_now():
@@ -53,3 +53,15 @@ def test_stored_fbc_always_wins_over_any_fallback():
         fbc_reference_time=1_752_000_000.0,
     )
     assert ud["fbc"] == "fb.1.1700000000000.already-stored"
+
+
+def test_is_well_formed_fbc_accepts_valid_format():
+    assert is_well_formed_fbc("fb.1.1700000000000.abc123fbclid") is True
+
+
+def test_is_well_formed_fbc_rejects_malformed_values():
+    assert is_well_formed_fbc(None) is False
+    assert is_well_formed_fbc("") is False
+    assert is_well_formed_fbc("not-a-real-fbc") is False
+    assert is_well_formed_fbc("fb.1.abc123fbclid") is False  # missing timestamp segment
+    assert is_well_formed_fbc("fb..1700000000000.abc123fbclid") is False  # empty subdomain index

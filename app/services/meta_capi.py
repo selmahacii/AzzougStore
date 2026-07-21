@@ -579,6 +579,25 @@ def normalize_external_id(external_id: Optional[str]) -> Optional[str]:
     return _hash_if_needed(str(external_id))
 
 
+_FBC_FORMAT_RE = re.compile(r"^fb\.\d+\.\d+\..+$")
+
+
+def is_well_formed_fbc(fbc: Optional[str]) -> bool:
+    """
+    Structural check of Meta's documented fbc format: fb.<subdomainIndex>.
+    <creationTime>.<fbclid> (developers.facebook.com/docs/marketing-api/
+    conversions-api/parameters/fbp-and-fbc). A malformed fbc (truncated,
+    wrong separators, missing fbclid segment) is silently unusable for
+    Meta's click matching — Events Manager still accepts and shows the
+    Purchase (this field isn't validated at ingestion), but Ads Manager has
+    nothing valid to match against, producing exactly "reçu mais jamais
+    attribué" with zero visible error anywhere. Used to audit historical
+    orders and flag ones that structurally can never be attributed, instead
+    of leaving that gap unexplained.
+    """
+    return bool(fbc) and bool(_FBC_FORMAT_RE.match(fbc))
+
+
 def build_user_data(
     *,
     email: Optional[str] = None,

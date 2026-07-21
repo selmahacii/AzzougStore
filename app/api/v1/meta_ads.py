@@ -2058,6 +2058,23 @@ def get_meta_diagnostics(
     fbc_cov = _cov(Order.fbc)
     utm_cov = _cov(Order.utm_campaign)
 
+    # ── Attribuabilité réelle (30j) — un fbc mal formé (tronqué, mauvais
+    # séparateurs, segment fbclid manquant) est accepté sans broncher par
+    # Events Manager (ce champ n'est jamais validé à l'ingestion) mais
+    # inutilisable par le moteur de matching d'Ads Manager : la commande ne
+    # POURRA jamais être attribuée, structurellement, quel que soit le
+    # reste du payload. Distinct de "fbc absent" (trafic organique/direct —
+    # normal, jamais attribuable non plus, mais pas un défaut de qualité).
+    from app.services.meta_capi import is_well_formed_fbc as _is_well_formed_fbc
+    _fbc_rows = (
+        db.query(Order.fbc)
+        .filter(*order_filters, Order.fbc.isnot(None), Order.fbc != "")
+        .all()
+    )
+    fbc_well_formed = sum(1 for (v,) in _fbc_rows if _is_well_formed_fbc(v))
+    fbc_malformed = fbc_cov - fbc_well_formed
+    orders_no_ad_click_signal = orders_30d - fbc_cov  # organique/direct — jamais attribuable, normal
+
     # Catalog issues
     products = db.query(Product).filter(
         Product.store_id == store_id, Product.is_active == True,
@@ -2123,6 +2140,20 @@ def get_meta_diagnostics(
                 "with_utm_campaign": utm_cov,
                 "fbp_rate": round(fbp_cov / orders_30d * 100, 1) if orders_30d else 0,
                 "utm_rate": round(utm_cov / orders_30d * 100, 1) if orders_30d else 0,
+            },
+            "attribution_readiness": {
+                "window_days": 30,
+                "orders_total": orders_30d,
+                # Ces commandes ONT un clic publicitaire valide (fbc bien
+                # formé) — ce sont les seules que Meta peut structurellement
+                # attribuer à une annonce. Le reste ne pourra JAMAIS être
+                # attribué, quel que soit l'état de la configuration
+                # Business Manager — ce n'est pas un écart à corriger, c'est
+                # une limite physique (pas de clic pub = rien à attribuer).
+                "attributable_valid_fbc": fbc_well_formed,
+                "malformed_fbc_unfixable_client_side": fbc_malformed,
+                "no_ad_click_signal_organic_direct": orders_no_ad_click_signal,
+                "attributable_rate_pct": round(fbc_well_formed / orders_30d * 100, 1) if orders_30d else 0,
             },
             "reconciliation": {
                 "window_days": 30,
