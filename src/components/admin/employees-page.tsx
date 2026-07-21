@@ -34,6 +34,7 @@ import {
    X,
    Calendar,
    Trash,
+   Target,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ import { ROLE_LABELS } from '@/lib/types';
 import { formatPrice } from '@/lib/format';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
+import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 
 // ═══════════════════════════════════════════════════════════════
 // Human Made Design System (Denim Blue)
@@ -110,6 +112,7 @@ const TABS = [
    { id: 'admins', label: 'Administration', icon: UserCheck },
    { id: 'agents', label: 'Force de Vente', icon: Users },
    { id: 'marketers', label: 'Affiliés & Médias', icon: Megaphone },
+   { id: 'assignment-rules', label: "Règles d'Assignation", icon: Target },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -840,6 +843,253 @@ interface MarketerPerformance {
     budget: number;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Assignment Rules View — configuration du moteur d'assignation
+// (confirmatrices : PRODUCT > STORE > CATEGORY > BRAND, avec exceptions ;
+// livreurs : COMMUNE > WILAYA, auto-assignation directe). Consomme
+// /api/v1/assignment-rules — aucune logique de résolution ici, seulement
+// du CRUD sur les règles ; la résolution vit côté backend
+// (order_service.py resolve_assignment_rule / resolve_courier_rule).
+// ═══════════════════════════════════════════════════════════════
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+   PRODUCT: 'Produit', STORE: 'Boutique', CATEGORY: 'Catégorie', BRAND: 'Marque',
+   COMMUNE: 'Commune', WILAYA: 'Wilaya',
+};
+
+function AssignmentRulesView({ employees }: { employees: any[] }) {
+   const qc = useQueryClient();
+   const [section, setSection] = useState<'confirmatrices' | 'livreurs'>('confirmatrices');
+
+   const rulesQuery = useQuery<any>({
+      queryKey: ['assignment-rules'],
+      queryFn: () => apiFetch('/api/v1/assignment-rules/'),
+   });
+   const storesQuery = useQuery<any>({
+      queryKey: ['stores'],
+      queryFn: () => apiFetch('/api/v1/stores'),
+   });
+
+   const allRules: any[] = (Array.isArray(rulesQuery.data) ? rulesQuery.data : rulesQuery.data?.data) ?? [];
+   const confirmatriceRules = allRules.filter(r => ['PRODUCT', 'STORE', 'CATEGORY', 'BRAND'].includes(r.rule_type));
+   const courierRules = allRules.filter(r => ['COMMUNE', 'WILAYA'].includes(r.rule_type));
+   const stores: any[] = (Array.isArray(storesQuery.data) ? storesQuery.data : storesQuery.data?.data) ?? [];
+
+   const confirmatriceAgents = employees.filter(e => ['CONFIRMATEUR', 'AGENT', 'AGENT_MANAGER'].includes(e.role));
+   const livreurAgents = employees.filter(e => e.role === 'LIVREUR');
+
+   const deactivateMutation = useMutation({
+      mutationFn: (ruleId: string) => apiFetch(`/api/v1/assignment-rules/${ruleId}/deactivate`, { method: 'PATCH' }),
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignment-rules'] }); toast.success('Règle désactivée.'); },
+      onError: (e: any) => toast.error(e?.message || 'Échec de la désactivation.'),
+   });
+
+   const createRuleMutation = useMutation({
+      mutationFn: (payload: any) => apiFetch('/api/v1/assignment-rules/', { method: 'POST', body: JSON.stringify(payload) }),
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignment-rules'] }); toast.success('Règle créée.'); },
+      onError: (e: any) => toast.error(e?.message || 'Échec de la création — vérifiez qu\'aucune règle active ne cible déjà cette cible.'),
+   });
+
+   const courierZonesMutation = useMutation({
+      mutationFn: (payload: any) => apiFetch('/api/v1/assignment-rules/courier-zones', { method: 'POST', body: JSON.stringify(payload) }),
+      onSuccess: (res: any) => {
+         qc.invalidateQueries({ queryKey: ['assignment-rules'] });
+         const created = res?.data?.created?.length ?? 0;
+         const skipped = res?.data?.skipped?.length ?? 0;
+         toast.success(`${created} zone(s) associée(s)${skipped ? `, ${skipped} ignorée(s) (déjà prises)` : ''}.`);
+      },
+      onError: (e: any) => toast.error(e?.message || 'Échec de l\'association.'),
+   });
+
+   // ── Formulaire règle confirmatrice ──
+   const [ruleType, setRuleType] = useState<'PRODUCT' | 'STORE' | 'CATEGORY' | 'BRAND'>('STORE');
+   const [ruleTargetId, setRuleTargetId] = useState('');
+   const [ruleAgentId, setRuleAgentId] = useState('');
+   const [ruleIsExclusion, setRuleIsExclusion] = useState(false);
+
+   // ── Formulaire zones livreur (bulk) ──
+   const [courierAgentId, setCourierAgentId] = useState('');
+   const [courierWilaya, setCourierWilaya] = useState('');
+   const [selectedCommunes, setSelectedCommunes] = useState<string[]>([]);
+   const communesForWilaya = courierWilaya ? (ALGERIAN_COMMUNES[courierWilaya] || []) : [];
+
+   const agentName = (id: string) => employees.find(e => e.id === id)?.name || id;
+
+   return (
+      <div className="space-y-6">
+         <div className="flex items-center gap-2 bg-white rounded-2xl border p-1.5 w-fit">
+            {([['confirmatrices', 'Confirmatrices'], ['livreurs', 'Livreurs']] as const).map(([id, label]) => (
+               <button key={id} onClick={() => setSection(id)}
+                  className={cn('px-4 py-2 rounded-xl text-xs font-bold transition-all',
+                     section === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50')}>
+                  {label}
+               </button>
+            ))}
+         </div>
+
+         {section === 'confirmatrices' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+               <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Nouvelle règle</h3>
+                  <p className="text-[11px] text-slate-400 -mt-2">Priorité : Produit &gt; Boutique &gt; Catégorie &gt; Marque — la plus spécifique gagne toujours.</p>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-bold text-slate-500 uppercase">Type de règle</label>
+                     <select value={ruleType} onChange={e => { setRuleType(e.target.value as any); setRuleTargetId(''); }} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                        <option value="STORE">Boutique — responsable de toute la boutique</option>
+                        <option value="PRODUCT">Produit — responsable d'un produit précis (gagne même hors de sa boutique)</option>
+                        <option value="CATEGORY">Catégorie</option>
+                        <option value="BRAND">Marque</option>
+                     </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-bold text-slate-500 uppercase">
+                        {ruleType === 'STORE' ? 'Boutique' : ruleType === 'PRODUCT' ? 'ID du produit' : ruleType === 'CATEGORY' ? 'Nom de la catégorie' : 'Nom de la marque'}
+                     </label>
+                     {ruleType === 'STORE' ? (
+                        <select value={ruleTargetId} onChange={e => setRuleTargetId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                           <option value="">Sélectionner une boutique…</option>
+                           {stores.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                     ) : (
+                        <Input value={ruleTargetId} onChange={e => setRuleTargetId(e.target.value)}
+                           placeholder={ruleType === 'PRODUCT' ? 'Coller l\'ID du produit (page Produits)' : 'Ex: Bagagerie'}
+                           className="h-10 text-xs rounded-xl" />
+                     )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-bold text-slate-500 uppercase">Agent responsable</label>
+                     <select value={ruleAgentId} onChange={e => setRuleAgentId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                        <option value="">Sélectionner un agent…</option>
+                        {confirmatriceAgents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                     </select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
+                     <input type="checkbox" checked={ruleIsExclusion} onChange={e => setRuleIsExclusion(e.target.checked)} className="size-4 rounded" />
+                     Exception (cet agent est EXCLU de cette cible, malgré une règle plus large)
+                  </label>
+
+                  <Button
+                     disabled={!ruleTargetId || !ruleAgentId || createRuleMutation.isPending}
+                     onClick={() => createRuleMutation.mutate({ rule_type: ruleType, target_id: ruleTargetId, agent_id: ruleAgentId, is_exclusion: ruleIsExclusion })}
+                     className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-black"
+                  >
+                     {createRuleMutation.isPending ? 'Création…' : 'Créer la règle'}
+                  </Button>
+               </div>
+
+               <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm p-6">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-4">Règles actives ({confirmatriceRules.length})</h3>
+                  {rulesQuery.isLoading ? (
+                     <div className="text-xs text-slate-400 font-bold py-8 text-center">Chargement…</div>
+                  ) : confirmatriceRules.length === 0 ? (
+                     <div className="text-xs text-slate-400 font-bold py-8 text-center italic">Aucune règle configurée — l'assignation automatique classique (spécialiste produit / boutique / moins chargé) s'applique.</div>
+                  ) : (
+                     <div className="space-y-2">
+                        {confirmatriceRules.map((r: any) => (
+                           <div key={r.id} className={cn("flex items-center justify-between p-3 rounded-2xl border", r.is_exclusion ? "bg-rose-50 border-rose-100" : "bg-slate-50 border-slate-100")}>
+                              <div className="flex items-center gap-3">
+                                 <Badge className={cn("text-[9px] font-black uppercase rounded-lg border-none", r.is_exclusion ? "bg-rose-100 text-rose-700" : "bg-slate-900 text-white")}>
+                                    {r.is_exclusion ? 'Exception' : RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
+                                 </Badge>
+                                 <span className="text-xs font-bold text-slate-800">{r.target_id}</span>
+                                 <span className="text-xs text-slate-400">→</span>
+                                 <span className="text-xs font-bold text-[#4b7bec]">{agentName(r.agent_id)}</span>
+                              </div>
+                              <button onClick={() => deactivateMutation.mutate(r.id)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider">
+                                 Désactiver
+                              </button>
+                           </div>
+                        ))}
+                     </div>
+                  )}
+               </div>
+            </div>
+         ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+               <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-4">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Zones d'un livreur</h3>
+                  <p className="text-[11px] text-slate-400 -mt-2">Les commandes de ces communes lui sont attribuées directement, sans passer par une confirmatrice.</p>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-bold text-slate-500 uppercase">Livreur</label>
+                     <select value={courierAgentId} onChange={e => setCourierAgentId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                        <option value="">Sélectionner un livreur…</option>
+                        {livreurAgents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                     </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-bold text-slate-500 uppercase">Wilaya</label>
+                     <select value={courierWilaya} onChange={e => { setCourierWilaya(e.target.value); setSelectedCommunes([]); }} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                        <option value="">Sélectionner une wilaya…</option>
+                        {Object.keys(ALGERIAN_COMMUNES).map(w => <option key={w} value={w}>{w}</option>)}
+                     </select>
+                  </div>
+
+                  {courierWilaya && (
+                     <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Communes ({selectedCommunes.length} sélectionnée{selectedCommunes.length > 1 ? 's' : ''})</label>
+                        <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50">
+                           {communesForWilaya.map(c => (
+                              <label key={c.id} className="flex items-center gap-2 text-[11px] font-bold text-slate-600 px-2 py-1 rounded-lg hover:bg-white cursor-pointer">
+                                 <input
+                                    type="checkbox"
+                                    checked={selectedCommunes.includes(c.nameAscii)}
+                                    onChange={e => setSelectedCommunes(prev => e.target.checked ? [...prev, c.nameAscii] : prev.filter(v => v !== c.nameAscii))}
+                                    className="size-3.5 rounded"
+                                 />
+                                 {c.nameAscii}
+                              </label>
+                           ))}
+                        </div>
+                     </div>
+                  )}
+
+                  <Button
+                     disabled={!courierAgentId || selectedCommunes.length === 0 || courierZonesMutation.isPending}
+                     onClick={() => courierZonesMutation.mutate({ agent_id: courierAgentId, communes: selectedCommunes })}
+                     className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-black"
+                  >
+                     {courierZonesMutation.isPending ? 'Association…' : `Associer ${selectedCommunes.length || ''} commune${selectedCommunes.length > 1 ? 's' : ''}`}
+                  </Button>
+               </div>
+
+               <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm p-6">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-4">Zones actives ({courierRules.length})</h3>
+                  {rulesQuery.isLoading ? (
+                     <div className="text-xs text-slate-400 font-bold py-8 text-center">Chargement…</div>
+                  ) : courierRules.length === 0 ? (
+                     <div className="text-xs text-slate-400 font-bold py-8 text-center italic">Aucune zone configurée — toutes les commandes passent par le workflow confirmatrice normal.</div>
+                  ) : (
+                     <div className="space-y-2">
+                        {courierRules.map((r: any) => (
+                           <div key={r.id} className="flex items-center justify-between p-3 rounded-2xl border bg-slate-50 border-slate-100">
+                              <div className="flex items-center gap-3">
+                                 <Badge className="text-[9px] font-black uppercase rounded-lg border-none bg-slate-900 text-white">
+                                    {RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
+                                 </Badge>
+                                 <span className="text-xs font-bold text-slate-800">{r.target_id}</span>
+                                 <span className="text-xs text-slate-400">→</span>
+                                 <span className="text-xs font-bold text-[#4b7bec]">{agentName(r.agent_id)}</span>
+                              </div>
+                              <button onClick={() => deactivateMutation.mutate(r.id)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider">
+                                 Désactiver
+                              </button>
+                           </div>
+                        ))}
+                     </div>
+                  )}
+               </div>
+            </div>
+         )}
+      </div>
+   );
+}
+
 function MarketersView({ marketers, isLoading, onCreate }: { marketers: MarketerPerformance[]; isLoading: boolean; onCreate: () => void }) {
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
@@ -1520,6 +1770,7 @@ export default function EmployeesPage() {
             {activeTab === 'admins' && <AdminsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
             {activeTab === 'agents' && <AgentsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onDelete={handleDelete} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
             {activeTab === 'marketers' && <MarketersView marketers={(Array.isArray(marketersQuery.data) ? marketersQuery.data : marketersQuery.data?.data) || []} isLoading={marketersQuery.isLoading} onCreate={handleCreate} />}
+            {activeTab === 'assignment-rules' && <AssignmentRulesView employees={employees} />}
          </div>
 
          {/* ── Employee Form Dialog ── */}
