@@ -111,5 +111,6 @@ export const NOEST_BUREAUX: NoestBureau[] = [
   { code: '53A', name: 'In Salah', address: 'Près de la Direction des travaux publics, en face de l\'entrée du radar d\'Algérie Télécom', phones: ['0560362803'], wilayaId: 53 },
   { code: '55A', name: 'Touggourt', address: 'Cité Sidi Abdeslam (Prés de la banque BEA), Touggourt', phones: ['0770610683'], wilayaId: 55 },
   { code: '56A', name: 'Djanet', address: 'Centre-ville Tine Khatema, à côté du dentiste, Djanet', phones: ['0563026716'], wilayaId: 56 },
+  { code: '57A', name: 'El M\'Ghair', address: 'Centre-ville, à côté du café Jneidi – El M\'Ghair.', phones: ['0770580860', '0550429422'], wilayaId: 57 },
   { code: '58A', name: 'El Meniaa', address: 'Rue de l\'unite Africaine (À côté de la boulangerie Boussaid) Il se trouve à 20 mètres de la mosquée saad beno abi elouas', phones: ['0770602445'], wilayaId: 58 },
 ];
