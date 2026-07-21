@@ -9,18 +9,20 @@ prevention, two different consumers. Reserved to ADMIN/SUPER_ADMIN/
 MANAGER — this directly controls who gets paid commission on which
 orders, and who gets which deliveries.
 """
+import logging
 import uuid
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.models.assignment_rule import AssignmentRule, RULE_TYPE_PRIORITY, COURIER_RULE_TYPE_PRIORITY
 from app.models.user import User
 
+logger = logging.getLogger("app.assignment_rules")
 router = APIRouter()
 
 ALL_RULE_TYPES = RULE_TYPE_PRIORITY + COURIER_RULE_TYPE_PRIORITY
@@ -29,6 +31,25 @@ ALL_RULE_TYPES = RULE_TYPE_PRIORITY + COURIER_RULE_TYPE_PRIORITY
 def _require_admin(current_user: User):
     if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
         raise HTTPException(status_code=403, detail="Réservé aux administrateurs et managers — ceci contrôle qui est commissionné sur quelles commandes, et qui livre où.")
+
+
+def _run_or_schema_error(db: Session, fn):
+    """
+    Defensive wrapper — a schema mismatch (migration not yet applied on
+    this environment: missing table/column) must surface as a clear,
+    actionable 503, never a raw 500 stack trace to the admin UI. Rolls
+    back first: a failed query leaves the session's transaction aborted,
+    so any later query in the SAME request would also fail without it.
+    """
+    try:
+        return fn()
+    except ProgrammingError as exc:
+        db.rollback()
+        logger.error("Assignment Rules schema error (migration likely not applied yet): %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Le moteur d'assignation n'est pas encore prêt sur cet environnement (migration en cours d'application) — réessayez dans une minute. Si ça persiste, contactez le support.",
+        )
 
 
 class AssignmentRuleCreate(BaseModel):
@@ -61,16 +82,20 @@ def list_assignment_rules(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     _require_admin(current_user)
-    q = db.query(AssignmentRule)
-    if rule_type:
-        q = q.filter(AssignmentRule.rule_type == rule_type)
-    if agent_id:
-        q = q.filter(AssignmentRule.agent_id == agent_id)
-    if active_only:
-        q = q.filter(AssignmentRule.is_active == True)
-    rows = q.order_by(AssignmentRule.rule_type).all()
-    return {"success": True, "data": [AssignmentRuleOut.model_validate(r).model_dump() for r in rows],
-            "rule_type_priority": RULE_TYPE_PRIORITY}
+
+    def _do():
+        q = db.query(AssignmentRule)
+        if rule_type:
+            q = q.filter(AssignmentRule.rule_type == rule_type)
+        if agent_id:
+            q = q.filter(AssignmentRule.agent_id == agent_id)
+        if active_only:
+            q = q.filter(AssignmentRule.is_active == True)
+        rows = q.order_by(AssignmentRule.rule_type).all()
+        return {"success": True, "data": [AssignmentRuleOut.model_validate(r).model_dump() for r in rows],
+                "rule_type_priority": RULE_TYPE_PRIORITY}
+
+    return _run_or_schema_error(db, _do)
 
 
 @router.post("/", response_model=dict, status_code=201)
@@ -115,6 +140,13 @@ def create_assignment_rule(
             status_code=409,
             detail="Une règle active existe déjà pour cette cible — un seul agent peut être responsable d'une même cible à la fois. Désactivez l'ancienne règle d'abord.",
         )
+    except ProgrammingError as exc:
+        db.rollback()
+        logger.error("Assignment Rules schema error on create (migration likely not applied yet): %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Le moteur d'assignation n'est pas encore prêt sur cet environnement (migration en cours d'application) — réessayez dans une minute.",
+        )
     db.refresh(rule)
     return {"success": True, "data": AssignmentRuleOut.model_validate(rule).model_dump()}
 
@@ -148,9 +180,10 @@ def assign_courier_zones(
     if agent.role != "LIVREUR":
         raise HTTPException(status_code=400, detail="L'auto-assignation par commune/wilaya cible uniquement des agents de rôle LIVREUR.")
 
-    created: List[dict] = []
-    skipped: List[dict] = []
-    for rule_type, values in (("COMMUNE", payload.communes), ("WILAYA", payload.wilayas)):
+    def _do():
+      created: List[dict] = []
+      skipped: List[dict] = []
+      for rule_type, values in (("COMMUNE", payload.communes), ("WILAYA", payload.wilayas)):
         for target_id in values:
             target_id = (target_id or "").strip()
             if not target_id:
@@ -173,8 +206,10 @@ def assign_courier_zones(
             )
             db.add(rule)
             created.append({"rule_type": rule_type, "target_id": target_id})
-    db.commit()
-    return {"success": True, "data": {"created": created, "skipped": skipped}}
+      db.commit()
+      return {"success": True, "data": {"created": created, "skipped": skipped}}
+
+    return _run_or_schema_error(db, _do)
 
 
 @router.patch("/{rule_id}/deactivate", response_model=dict)
@@ -184,12 +219,16 @@ def deactivate_assignment_rule(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     _require_admin(current_user)
-    rule = db.query(AssignmentRule).filter(AssignmentRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Règle introuvable.")
-    rule.is_active = False
-    db.commit()
-    return {"success": True, "message": "Règle désactivée."}
+
+    def _do():
+        rule = db.query(AssignmentRule).filter(AssignmentRule.id == rule_id).first()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Règle introuvable.")
+        rule.is_active = False
+        db.commit()
+        return {"success": True, "message": "Règle désactivée."}
+
+    return _run_or_schema_error(db, _do)
 
 
 @router.delete("/{rule_id}", response_model=dict)
@@ -199,9 +238,13 @@ def delete_assignment_rule(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     _require_admin(current_user)
-    rule = db.query(AssignmentRule).filter(AssignmentRule.id == rule_id).first()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Règle introuvable.")
-    db.delete(rule)
-    db.commit()
-    return {"success": True, "message": "Règle supprimée."}
+
+    def _do():
+        rule = db.query(AssignmentRule).filter(AssignmentRule.id == rule_id).first()
+        if not rule:
+            raise HTTPException(status_code=404, detail="Règle introuvable.")
+        db.delete(rule)
+        db.commit()
+        return {"success": True, "message": "Règle supprimée."}
+
+    return _run_or_schema_error(db, _do)
