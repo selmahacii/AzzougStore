@@ -624,70 +624,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </div>
                   )}
 
-                  {/* Variant Selector */}
-                  {data.product?.variants && data.product.variants.length > 0 && (() => {
-                    const colorVariants = data.product.variants.filter((v: any) => v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color') || v.color);
-                    const textVariants = data.product.variants.filter((v: any) => !(v.name.toLowerCase().includes('couleur') || v.name.toLowerCase().includes('color') || v.color));
-                    
-                    return (
-                      <div className="space-y-4 bg-slate-50/50 border border-slate-100 p-4 rounded-2xl w-full">
-                        {colorVariants.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                              {dir === 'rtl' ? 'اللون' : 'Couleur'}: <span className={isDark ? "text-white" : "text-slate-800"}>{(Object.values(selectedVariants[0] || {}).find((val: any) => val?.name?.toLowerCase().includes('couleur') || val?.color) as any)?.value || ''}</span>
-                            </label>
-                            <div className="flex flex-wrap gap-3">
-                              {colorVariants.map((v: any, i: number) => {
-                                const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value);
-                                const colorHex = getVariantColor(v.value, v.color);
-                                const imgStyle = v.image || data.product?.main_image || heroImage;
-                                
-                                return (
-                                  <button
-                                    key={`col-${i}`}
-                                    type="button"
-                                    onClick={() => handleSelectVariant(v)}
-                                    className={cn(
-                                      "relative size-12 sm:size-14 rounded-full border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5 bg-white shadow-sm",
-                                      isSelected 
-                                        ? "ring-2 ring-offset-1 ring-slate-800/20" 
-                                        : "border-slate-200 hover:border-slate-300"
-                                    )}
-                                    style={{ 
-                                      borderColor: isSelected ? primary : '#e2e8f0'
-                                    }}
-                                    title={v.value}
-                                  >
-                                    {imgStyle ? (
-                                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} />
-                                    ) : (
-                                      <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
-                                    )}
-
-                                    {isSelected && (
-                                      <div 
-                                        className="absolute -top-1 -right-1 size-5 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-sm border border-white"
-                                        style={{ backgroundColor: primary }}
-                                      >
-                                        ✓
-                                      </div>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Le sélecteur "Option" (textVariants, boutons) a été
-                            retiré ici — doublon exact du sélecteur "اختر
-                            خيارك" du formulaire de commande (checkout-form.tsx)
-                            qui pilote déjà ces mêmes variantes. Le reste
-                            (couleurs ci-dessus, quantité plus bas) reste
-                            inchangé. */}
-                      </div>
-                    );
-                  })()}
+                  {/* Le bloc "Variant Selector" (couleurs en cercles + options
+                      en boutons) a été entièrement retiré — doublon exact de :
+                      1. la galerie de miniatures juste au-dessus (photos des
+                         variantes, sous la photo principale) ;
+                      2. le sélecteur "اختر خيارك" du formulaire de commande.
+                      Sous la photo principale, on ne garde donc QUE la galerie
+                      de miniatures, puis directement le container d'infos/détails. */}
                 </div>
               );
             })()}
