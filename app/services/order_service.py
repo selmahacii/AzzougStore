@@ -741,21 +741,18 @@ def _auto_assign(
     for stores she was never actually assigned to. Such an order stays
     unassigned until an admin configures or manually assigns it.
     """
-    if not force:
-        if not store.assignment_active or store.assignment_logic == "MANUAL":
-            logger.info(
-                "[AutoAssign] store=%s (%s) SKIPPED: assignment_active=%s, logic=%s — order stays unassigned",
-                store.id, getattr(store, "name", "?"), store.assignment_active, store.assignment_logic,
-            )
-            return None
-
     order_pid_set: set = set(order_product_ids) if order_product_ids else set()
 
-    # Assignment Rule Engine first — explicit PRODUCT/STORE/CATEGORY/BRAND
-    # configuration always wins over the generic specialist/least-loaded
-    # pool below. Only used if it actually resolves an agent (respecting
-    # exclude_agent_id and requiring the agent still be active); otherwise
-    # falls through unchanged to the pre-existing pool logic.
+    # Assignment Rule Engine FIRST — before the store.assignment_active/
+    # MANUAL gate below. That gate exists to disable the generic specialist/
+    # least-loaded POOL heuristic (an admin choosing "je gère les
+    # assignations moi-même" for a store) — it was never meant to silently
+    # ignore an admin's own EXPLICIT PRODUCT/STORE/CATEGORY/BRAND rule too.
+    # Bug confirmed 2026-07-22: a store with assignment_logic=MANUAL made
+    # every configured rule for that store a dead letter — the order stayed
+    # unassigned, then became visible to whichever OTHER confirmatrice had
+    # a broad "Toutes les boutiques" legacy scope (_confirmateur_scope_
+    # criterion in orders.py), not the agent the rule explicitly named.
     # Defensive: same rollback-on-failure guard as _auto_assign_courier
     # below — a missing table/query error here must never break the
     # existing specialist/least-loaded pool this function has always run.
@@ -779,6 +776,14 @@ def _auto_assign(
             "[AutoAssign] Assignment Rule Engine resolved agent=%s but they are inactive/wrong role — falling back to pool",
             rule_agent_id,
         )
+
+    if not force:
+        if not store.assignment_active or store.assignment_logic == "MANUAL":
+            logger.info(
+                "[AutoAssign] store=%s (%s) SKIPPED (no rule matched either): assignment_active=%s, logic=%s — order stays unassigned",
+                store.id, getattr(store, "name", "?"), store.assignment_active, store.assignment_logic,
+            )
+            return None
 
     # Fetch ALL active agents — we need product-specialists from any store
     all_agents = (
