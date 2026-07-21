@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: "Azzougshop",
   description: "Gérez plusieurs boutiques en ligne depuis une seule interface",
   icons: {
-    icon: "/iazzougshop_logo.png",
+    icon: "/azzougshop_logo.png",
   },
 };
 

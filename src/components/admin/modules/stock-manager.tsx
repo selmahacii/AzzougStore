@@ -92,6 +92,19 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
     enabled: !!storeId,
   });
 
+  // Retours (réapprovisionnement) ventilés par variante — une seule requête
+  // pour toute la boutique, réutilisée par chaque ligne produit ci-dessous
+  // plutôt qu'un appel par produit. Clé de storeId : ne se mélange jamais
+  // entre boutiques en changeant de sélection.
+  const returnsByVariantQuery = useQuery({
+    queryKey: ['admin-returns-by-variant', storeId],
+    queryFn: () => apiFetch<{ success: boolean; data: Record<string, Record<string, number>> }>(
+      `/api/v1/stock/returns-by-variant?store_id=${storeId}`
+    ),
+    enabled: !!storeId,
+  });
+  const returnsByVariant = returnsByVariantQuery.data?.data ?? {};
+
   const adjustMutation = useMutation({
     mutationFn: async (data: { store_id: string; product_id: string; reason: string; adjustments: Array<{ variantStr?: string; quantity: number }> }) => {
       if (data.adjustments.length === 0) return;
@@ -137,8 +150,12 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
 
   const getProductVariantItems = (product: any) => {
     if (!product || !product.variants || product.variants.length === 0) return [];
-    const items: Array<{ variantStr: string; stock: number; reserved: number }> = [];
-    
+    const items: Array<{ variantStr: string; stock: number; reserved: number; returned: number }> = [];
+    // Matches the exact string inventory_service.return_restock writes into
+    // StockMovement.reason ("... (VariantName)"), re-extracted server-side
+    // by GET /stock/returns-by-variant — see returnsByVariant above.
+    const productReturns = returnsByVariant[product?.id] || {};
+
     product.variants.forEach((v: any) => {
       let vars = v;
       if (typeof vars === 'string') {
@@ -146,17 +163,21 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
       }
       if (vars.sub_variants && vars.sub_variants.length > 0) {
         vars.sub_variants.forEach((sv: any) => {
+          const variantStr = `${vars.name}: ${vars.value}, ${sv.name || 'Taille'}: ${sv.value}`;
           items.push({
-            variantStr: `${vars.name}: ${vars.value}, ${sv.name || 'Taille'}: ${sv.value}`,
+            variantStr,
             stock: sv.stock || 0,
-            reserved: sv.reserved || 0
+            reserved: sv.reserved || 0,
+            returned: productReturns[variantStr] || 0,
           });
         });
       } else {
+        const variantStr = `${vars.name}: ${vars.value}`;
         items.push({
-          variantStr: `${vars.name}: ${vars.value}`,
+          variantStr,
           stock: vars.stock || 0,
-          reserved: vars.reserved || 0
+          reserved: vars.reserved || 0,
+          returned: productReturns[variantStr] || 0,
         });
       }
     });
@@ -361,6 +382,11 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                                         >
                                            {vi.variantStr.length > 18 ? vi.variantStr.slice(0, 18) + '…' : vi.variantStr}
                                            <span className="opacity-70">· {vAvailable} dispo{vi.reserved > 0 ? ` / ${vi.reserved} résa` : ''}</span>
+                                           {/* Réapprovisionnement issu des retours, par variante — pas
+                                               seulement le total produit. */}
+                                           {vi.returned > 0 && (
+                                              <span className="opacity-70">· ↩ {vi.returned} retour{vi.returned > 1 ? 's' : ''}</span>
+                                           )}
                                         </span>
                                      );
                                   })}
@@ -459,7 +485,10 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
                                     <div className="flex justify-between items-start">
                                        <div className="flex flex-col text-start">
                                           <span className="text-xs font-black text-slate-700">{item.variantStr}</span>
-                                          <span className="text-[10px] text-slate-400 font-bold mt-0.5">Actuel : {item.stock} units · {item.reserved} réservés</span>
+                                          <span className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                             Actuel : {item.stock} units · {item.reserved} réservés
+                                             {item.returned > 0 && ` · ↩ ${item.returned} retour${item.returned > 1 ? 's' : ''}`}
+                                          </span>
                                        </div>
                                     </div>
                                     <div className="flex items-center gap-3">
