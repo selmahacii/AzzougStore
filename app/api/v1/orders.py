@@ -1356,10 +1356,30 @@ def update_abandoned_cart(
     # Set correct source
     order_data["source"] = order_in.source or "abandoned_cart"
     order_data["is_abandoned_cart"] = True
-    
+
     from app.services.inventory_service import InventoryService
     inv_svc = InventoryService()
-    
+
+    # Serialize concurrent saves for the SAME customer — a customer clicking
+    # the checkout button several times in quick succession (or a flaky
+    # connection retrying) fires several of these 2s-debounced requests
+    # close enough together that the phone-fallback SELECT below (find-
+    # existing-or-create) is a classic check-then-act race: each request
+    # sees "no existing cart yet" before any of the others has committed
+    # its INSERT, so every one of them creates its own ABN-* row instead of
+    # updating a shared one. Confirmed in production: a single customer
+    # produced 16 near-identical ABN-20260714-* orders within one minute.
+    # pg_advisory_xact_lock is transaction-scoped — it releases automatically
+    # at commit/rollback, no manual unlock needed, and blocks concurrent
+    # requests for the same (store, phone) until the first one finishes.
+    _lock_phone = (order_data.get("customer_phone") or "").strip()
+    if _lock_phone and _lock_phone.lower() != "inconnu":
+        from sqlalchemy import text as _sql_text
+        db.execute(
+            _sql_text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"{order_in.store_id}:{_lock_phone}"},
+        )
+
     # If we have an existing abandoned cart ID, try to update it
     db_order = None
     if order_in.abandoned_cart_id:
