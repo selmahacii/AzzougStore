@@ -512,6 +512,7 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
         inherited = next((c.assigned_to for c in group if c.id != parent.id and c.assigned_to), None)
         if inherited:
             parent.assigned_to = inherited
+            snapshot_commission(db, parent, inherited)
             if str(parent.status) == "NEW":
                 parent.status = "ASSIGNED"
     parent.is_duplicate = False
@@ -813,6 +814,40 @@ def _auto_assign(
     return None
 
 
+def snapshot_commission(db: Session, order: Order, agent_id: Optional[str]) -> None:
+    """
+    Commission historique figée (2026-07-21) — appelée à CHAQUE écriture de
+    order.assigned_to (création OU réassignation manuelle), jamais ailleurs.
+    Copie les réglages de paie ACTUELS de l'agent sur la commande elle-même
+    : un changement ultérieur de son taux/type de paiement ne modifie plus
+    jamais les commissions déjà figées ici (voir compute_salary dans
+    salary_service.py, qui lit ces colonnes en priorité sur les réglages
+    live de l'employé).
+
+    agent_id=None efface le snapshot (commande désassignée) — cohérent
+    avec le fait qu'une commande sans agent ne génère aucune commission.
+    """
+    if not agent_id:
+        order.commission_agent_id = None
+        order.commission_payment_type = None
+        order.commission_payment_amount = None
+        order.commission_recovered_rate = None
+        order.commission_lost_rate = None
+        order.commission_snapshot_at = None
+        return
+
+    agent = db.query(User).filter(User.id == agent_id).first()
+    if not agent:
+        return
+
+    order.commission_agent_id = agent_id
+    order.commission_payment_type = agent.payment_type
+    order.commission_payment_amount = agent.payment_amount
+    order.commission_recovered_rate = getattr(agent, "payment_recovered_cart", 0) or 0
+    order.commission_lost_rate = getattr(agent, "payment_lost_cart", 0) or 0
+    order.commission_snapshot_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # ─── Order Event Logger ────────────────────────────────────────────────────────
 
 def _log_event(
@@ -1045,6 +1080,7 @@ class OrderService:
         )
         db.add(order)
         db.flush()  # Get ID without committing
+        snapshot_commission(db, order, explicit_agent)
 
         # Expand combined variants if any (e.g. "P1: Couleur: Noir | P2: Couleur: Bordeaux")
         items_data = expand_combined_variant_items(items_data)
@@ -1427,6 +1463,7 @@ class OrderService:
         if new_assignee is not None and new_assignee != order.assigned_to:
             old_assignee = order.assigned_to
             order.assigned_to = new_assignee
+            snapshot_commission(db, order, new_assignee)
             cur_status = str(order.status)
             _log_event(
                 db,

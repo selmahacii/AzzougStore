@@ -51,6 +51,18 @@ class Order(Base):
     # Status & Assignment
     status = Column(String, default="NEW") # NEW|ASSIGNED|CALLED|CONFIRMED|SHIPPED|DELIVERED|RETURNED
     assigned_to = Column(String, ForeignKey("users.id"), nullable=True)
+    # Commission historique figée (2026-07-21) — capturé au moment EXACT où
+    # assigned_to est écrit (création OU réassignation), jamais recalculé
+    # depuis les réglages ACTUELS de l'employé. Si son taux ou son type de
+    # paiement change ensuite, les commissions déjà figées ici ne bougent
+    # jamais — seules les nouvelles assignations utilisent le nouveau taux.
+    # Voir _snapshot_commission() dans order_service.py.
+    commission_agent_id = Column(String, ForeignKey("users.id"), nullable=True)
+    commission_payment_type = Column(String, nullable=True)
+    commission_payment_amount = Column(Integer, nullable=True)
+    commission_recovered_rate = Column(Integer, nullable=True)
+    commission_lost_rate = Column(Integer, nullable=True)
+    commission_snapshot_at = Column(DateTime, nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
     
     # Acquisition & Source

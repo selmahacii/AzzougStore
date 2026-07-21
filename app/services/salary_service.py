@@ -105,9 +105,24 @@ def compute_salary(
     total_delivered     = normal_delivered + recovered_delivered
     returned_count      = _count_returned(db, employee.id, store_id, since, until)
 
-    # Recovery bonus is always additive regardless of payment_type
-    abandoned_bonus  = recovered_delivered * recovered_rate
-    returned_penalty = returned_count * lost_rate
+    # Commission historique figée (2026-07-21) : ces bonus/pénalités
+    # utilisent le taux FIGÉ sur chaque commande (snapshot_commission dans
+    # order_service.py), pas le taux ACTUEL de l'employé — un changement
+    # de payment_recovered_cart/payment_lost_cart aujourd'hui ne modifie
+    # plus les commissions déjà figées sur des commandes passées.
+    # fallback_rate couvre les commandes antérieures à cette
+    # fonctionnalité (snapshot NULL), à l'identique du comportement
+    # précédent.
+    abandoned_bonus = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=True,
+        snapshot_column=Order.commission_recovered_rate, fallback_rate=recovered_rate,
+    )
+    returned_penalty = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="RETURNED", is_abandoned_cart=None,
+        snapshot_column=Order.commission_lost_rate, fallback_rate=lost_rate,
+    )
 
     # ÔöÇÔöÇ Branch by payment type ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     if payment_type == "MONTHLY_SALARY":
@@ -132,8 +147,16 @@ def compute_salary(
         )
 
     # PER_DELIVERED_ORDER (explicit or implicit fallback when payment_type is None)
+    # Commission historique figée : somme le taux FIGÉ par commande
+    # (commission_payment_amount), pas normal_delivered * taux ACTUEL —
+    # sinon un changement de payment_amount aujourd'hui réécrirait
+    # silencieusement toutes les commissions déjà versées de cet employé.
     effective_rate = payment_amount if payment_amount is not None else FALLBACK_RATE_PER_ORDER
-    base_salary    = normal_delivered * effective_rate
+    base_salary    = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=False,
+        snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
+    )
     salary         = max(0, base_salary + abandoned_bonus - returned_penalty)
 
     return _build_result(
@@ -261,6 +284,48 @@ def _count_returned(
     ] + _build_time_filters(since, until)
 
     return db.query(Order).filter(and_(*filters)).count()
+
+
+def _sum_frozen_amount(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+    *,
+    status: str,
+    is_abandoned_cart: Optional[bool],
+    snapshot_column,
+    fallback_rate: int,
+) -> int:
+    """
+    Commission historique figée (2026-07-21) — somme le taux FIGÉ sur
+    chaque commande (commission_payment_amount / commission_recovered_rate
+    / commission_lost_rate, selon snapshot_column) au lieu de multiplier un
+    compte de commandes par le taux ACTUEL de l'employé. Une commande dont
+    le snapshot est NULL (créée avant cette fonctionnalité, ou assignée
+    avant que l'employé n'ait de taux configuré) retombe sur fallback_rate
+    — le même taux "actuel" utilisé partout ailleurs, donc aucun
+    changement de comportement pour l'historique pré-existant.
+    """
+    from sqlalchemy import func as _func, case as _case
+
+    store_filter = _build_store_filter(db, user_id, store_id)
+    filters = [
+        store_filter,
+        Order.assigned_to == user_id,
+        Order.status == status,
+        Order.is_deleted == False,
+    ] + _build_time_filters(since, until)
+    if is_abandoned_cart is not None:
+        filters.append(Order.is_abandoned_cart == is_abandoned_cart)
+
+    total = (
+        db.query(_func.sum(_case((snapshot_column.isnot(None), snapshot_column), else_=fallback_rate)))
+        .filter(and_(*filters))
+        .scalar()
+    )
+    return int(total or 0)
 
 
 def _build_result(

@@ -1233,10 +1233,11 @@ def update_abandoned_cart(
         # Try to auto-assign if currently unassigned
         if not db_order.assigned_to:
             from app.models.store import Store
-            from app.services.order_service import _auto_assign
+            from app.services.order_service import _auto_assign, snapshot_commission
             store = db.query(Store).filter(Store.id == db_order.store_id).first()
             order_product_ids = [item.product_id for item in order_in.items if item.product_id]
             db_order.assigned_to = _auto_assign(db, store, order_product_ids) if store else None
+            snapshot_commission(db, db_order, db_order.assigned_to)
         
         # This endpoint is hit on every ~2s-debounced keystroke while the
         # customer types their contact info on the storefront — the CART
@@ -1307,11 +1308,11 @@ def update_abandoned_cart(
     order_number = f"ABN-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
     
     from app.models.store import Store
-    from app.services.order_service import _auto_assign
+    from app.services.order_service import _auto_assign, snapshot_commission
     store = db.query(Store).filter(Store.id == order_in.store_id).first()
     order_product_ids = [item.product_id for item in order_in.items if item.product_id]
     assigned_agent = _auto_assign(db, store, order_product_ids) if store else None
-    
+
     # Avoid duplicate parameter error
     order_data.pop("is_abandoned_cart", None)
     order_data.pop("assigned_to", None)
@@ -1332,6 +1333,7 @@ def update_abandoned_cart(
     )
     db.add(db_order)
     db.flush()
+    snapshot_commission(db, db_order, assigned_agent)
     
     for item_in in order_in.items:
         item_data = item_in.model_dump()
