@@ -1231,13 +1231,20 @@ def update_abandoned_cart(
             setattr(db_order, key, value)
             
         # Try to auto-assign if currently unassigned
-        if not db_order.assigned_to:
+        if not db_order.assigned_to and not db_order.livreur_id:
             from app.models.store import Store
-            from app.services.order_service import _auto_assign, snapshot_commission
-            store = db.query(Store).filter(Store.id == db_order.store_id).first()
-            order_product_ids = [item.product_id for item in order_in.items if item.product_id]
-            db_order.assigned_to = _auto_assign(db, store, order_product_ids) if store else None
-            snapshot_commission(db, db_order, db_order.assigned_to)
+            from app.services.order_service import _auto_assign, _auto_assign_courier, snapshot_commission
+            # Courier auto-assignment by destination (chantier #3) checked
+            # first — a matching commune/wilaya goes straight to the
+            # livreur, bypassing the confirmatrice pool entirely.
+            resolved_courier_id = _auto_assign_courier(db, db_order.customer_wilaya, db_order.customer_commune)
+            if resolved_courier_id:
+                db_order.livreur_id = resolved_courier_id
+            else:
+                store = db.query(Store).filter(Store.id == db_order.store_id).first()
+                order_product_ids = [item.product_id for item in order_in.items if item.product_id]
+                db_order.assigned_to = _auto_assign(db, store, order_product_ids) if store else None
+                snapshot_commission(db, db_order, db_order.assigned_to)
         
         # This endpoint is hit on every ~2s-debounced keystroke while the
         # customer types their contact info on the storefront — the CART

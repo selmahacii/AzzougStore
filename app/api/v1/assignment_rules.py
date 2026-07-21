@@ -3,8 +3,11 @@ Assignment Rule Engine — admin API.
 
 Configure PRODUCT > STORE > CATEGORY > BRAND assignment rules for the
 confirmatrice auto-assignment engine (app/services/order_service.py
-resolve_assignment_rule). Reserved to ADMIN/SUPER_ADMIN/MANAGER — this
-directly controls who gets paid commission on which orders.
+resolve_assignment_rule), AND COMMUNE > WILAYA rules for direct courier
+auto-assignment (resolve_courier_rule) — same table, same conflict-
+prevention, two different consumers. Reserved to ADMIN/SUPER_ADMIN/
+MANAGER — this directly controls who gets paid commission on which
+orders, and who gets which deliveries.
 """
 import uuid
 from typing import Optional, List
@@ -15,15 +18,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.models.assignment_rule import AssignmentRule, RULE_TYPE_PRIORITY
+from app.models.assignment_rule import AssignmentRule, RULE_TYPE_PRIORITY, COURIER_RULE_TYPE_PRIORITY
 from app.models.user import User
 
 router = APIRouter()
 
+ALL_RULE_TYPES = RULE_TYPE_PRIORITY + COURIER_RULE_TYPE_PRIORITY
+
 
 def _require_admin(current_user: User):
     if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
-        raise HTTPException(status_code=403, detail="Réservé aux administrateurs et managers — ceci contrôle qui est commissionné sur quelles commandes.")
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs et managers — ceci contrôle qui est commissionné sur quelles commandes, et qui livre où.")
 
 
 class AssignmentRuleCreate(BaseModel):
@@ -76,12 +81,21 @@ def create_assignment_rule(
 ):
     _require_admin(current_user)
 
-    if payload.rule_type not in RULE_TYPE_PRIORITY:
-        raise HTTPException(status_code=400, detail=f"rule_type doit être l'un de : {', '.join(RULE_TYPE_PRIORITY)}")
+    if payload.rule_type not in ALL_RULE_TYPES:
+        raise HTTPException(status_code=400, detail=f"rule_type doit être l'un de : {', '.join(ALL_RULE_TYPES)}")
 
     agent = db.query(User).filter(User.id == payload.agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent introuvable.")
+
+    # Un rôle qui ne correspond pas au type de règle est presque toujours
+    # une erreur de configuration (ex: assigner un livreur à un produit, ou
+    # une confirmatrice à une commune) — on prévient plutôt que de laisser
+    # une règle silencieusement inefficace.
+    if payload.rule_type in COURIER_RULE_TYPE_PRIORITY and agent.role != "LIVREUR":
+        raise HTTPException(status_code=400, detail="Les règles COMMUNE/WILAYA (auto-assignation directe) doivent cibler un agent de rôle LIVREUR.")
+    if payload.rule_type in RULE_TYPE_PRIORITY and agent.role not in ("CONFIRMATEUR", "AGENT", "AGENT_MANAGER"):
+        raise HTTPException(status_code=400, detail="Les règles PRODUCT/STORE/CATEGORY/BRAND doivent cibler un agent de rôle CONFIRMATEUR, AGENT ou AGENT_MANAGER.")
 
     rule = AssignmentRule(
         id=str(uuid.uuid4()),
@@ -103,6 +117,64 @@ def create_assignment_rule(
         )
     db.refresh(rule)
     return {"success": True, "data": AssignmentRuleOut.model_validate(rule).model_dump()}
+
+
+class CourierZonesCreate(BaseModel):
+    agent_id: str
+    communes: List[str] = []
+    wilayas: List[str] = []
+    notes: Optional[str] = None
+
+
+@router.post("/courier-zones", response_model=dict, status_code=201)
+def assign_courier_zones(
+    payload: CourierZonesCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Convenience bulk endpoint: associate ONE livreur with several communes
+    and/or wilayas in a single call — e.g. Selma's example, Ahmed covering
+    Hussein Dey + Kouba (wilaya Alger) — instead of one POST / per zone.
+    Each zone becomes its own row in assignment_rules (rule_type=COMMUNE
+    or WILAYA); zones that already have a conflicting active rule for a
+    DIFFERENT agent are skipped and reported, not silently overwritten.
+    """
+    _require_admin(current_user)
+
+    agent = db.query(User).filter(User.id == payload.agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent introuvable.")
+    if agent.role != "LIVREUR":
+        raise HTTPException(status_code=400, detail="L'auto-assignation par commune/wilaya cible uniquement des agents de rôle LIVREUR.")
+
+    created: List[dict] = []
+    skipped: List[dict] = []
+    for rule_type, values in (("COMMUNE", payload.communes), ("WILAYA", payload.wilayas)):
+        for target_id in values:
+            target_id = (target_id or "").strip()
+            if not target_id:
+                continue
+            existing = (
+                db.query(AssignmentRule)
+                .filter(AssignmentRule.rule_type == rule_type, AssignmentRule.target_id == target_id,
+                        AssignmentRule.is_exclusion == False, AssignmentRule.is_active == True)
+                .first()
+            )
+            if existing and existing.agent_id != payload.agent_id:
+                skipped.append({"rule_type": rule_type, "target_id": target_id, "reason": f"déjà assigné à un autre livreur (agent_id={existing.agent_id})"})
+                continue
+            if existing:
+                skipped.append({"rule_type": rule_type, "target_id": target_id, "reason": "déjà assigné à ce livreur"})
+                continue
+            rule = AssignmentRule(
+                id=str(uuid.uuid4()), rule_type=rule_type, target_id=target_id,
+                agent_id=payload.agent_id, is_exclusion=False, is_active=True, notes=payload.notes,
+            )
+            db.add(rule)
+            created.append({"rule_type": rule_type, "target_id": target_id})
+    db.commit()
+    return {"success": True, "data": {"created": created, "skipped": skipped}}
 
 
 @router.patch("/{rule_id}/deactivate", response_model=dict)

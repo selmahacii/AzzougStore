@@ -642,6 +642,69 @@ def resolve_assignment_rule(
     return None
 
 
+def resolve_courier_rule(
+    db: Session,
+    wilaya: Optional[str],
+    commune: Optional[str],
+) -> Optional[str]:
+    """
+    Direct livreur auto-assignment by delivery destination (2026-07-21,
+    chantier #3) — COMMUNE > WILAYA priority, same assignment_rules table
+    and conflict-prevention as the confirmatrice engine
+    (resolve_assignment_rule), just a different target dimension (order
+    destination instead of product/store) and a different consumer:
+    orders matching a configured commune/wilaya go DIRECTLY to a livreur,
+    bypassing the confirmatrice workflow entirely (see _auto_assign_courier
+    below) — everything else keeps the normal confirmatrice pipeline.
+
+    No exclusion logic here (unlike resolve_assignment_rule): a courier
+    rule is a hard geographic dispatch decision, not a broad ownership
+    rule that needs per-item carve-outs — if a future need for "Ahmed
+    covers Kouba except X" emerges, the same is_exclusion column already
+    supports it without a schema change.
+    """
+    from app.models.assignment_rule import AssignmentRule, COURIER_RULE_TYPE_PRIORITY
+
+    target_map = {"COMMUNE": [commune] if commune else [], "WILAYA": [wilaya] if wilaya else []}
+
+    for rule_type in COURIER_RULE_TYPE_PRIORITY:
+        targets = [t for t in (target_map.get(rule_type) or []) if t]
+        if not targets:
+            continue
+        rule = (
+            db.query(AssignmentRule)
+            .filter(
+                AssignmentRule.rule_type == rule_type,
+                AssignmentRule.target_id.in_(targets),
+                AssignmentRule.is_exclusion == False,
+                AssignmentRule.is_active == True,
+            )
+            .first()
+        )
+        if rule:
+            logger.info("[CourierAutoAssign] rule_type=%s target=%s -> livreur=%s", rule_type, rule.target_id, rule.agent_id)
+            return rule.agent_id
+
+    return None
+
+
+def _auto_assign_courier(db: Session, wilaya: Optional[str], commune: Optional[str]) -> Optional[str]:
+    """
+    Wraps resolve_courier_rule with the same "must still be a real, active
+    LIVREUR" guard _auto_assign applies to confirmatrice rule results —
+    a deactivated/deleted/role-changed livreur's stale rule must never
+    silently assign an order to someone who can no longer handle it.
+    """
+    agent_id = resolve_courier_rule(db, wilaya, commune)
+    if not agent_id:
+        return None
+    livreur = db.query(User).filter(User.id == agent_id, User.role == "LIVREUR", User.is_active == True).first()
+    if not livreur:
+        logger.warning("[CourierAutoAssign] resolved livreur=%s but they are inactive/wrong role — order stays on the normal workflow", agent_id)
+        return None
+    return agent_id
+
+
 def _auto_assign(
     db: Session,
     store: Store,
@@ -1029,20 +1092,33 @@ class OrderService:
 
         # Determine initial status / assignment
         order_product_ids = [item["product_id"] for item in items_data if item.get("product_id")]
-        
+
+        # Courier auto-assignment by destination (chantier #3, 2026-07-21) —
+        # checked FIRST, before any confirmatrice logic: a commune/wilaya
+        # explicitly configured for a livreur goes directly to them,
+        # bypassing the confirmatrice workflow entirely (assigned_to stays
+        # unset). Everything else continues the normal pipeline below,
+        # unchanged.
+        resolved_courier_id = _auto_assign_courier(
+            db, order_data.get("customer_wilaya"), order_data.get("customer_commune"),
+        )
+
         # If the creator (actor) is a CONFIRMATEUR (confirmation agent), force the assignment to them.
         creator_confirmatrice = None
-        if actor_id:
+        if actor_id and not resolved_courier_id:
             from app.models.user import User
             creator_confirmatrice = db.query(User).filter(User.id == actor_id, User.role == "CONFIRMATEUR").first()
-            
-        if creator_confirmatrice:
+
+        if resolved_courier_id:
+            order_data.pop("assigned_to", None)
+            explicit_agent = None
+        elif creator_confirmatrice:
             order_data.pop("assigned_to", None)
             explicit_agent = creator_confirmatrice.id
         else:
             auto_agent = _auto_assign(db, store, order_product_ids)
             explicit_agent = order_data.pop("assigned_to", None) or auto_agent
-            
+
         initial_status = "ASSIGNED" if explicit_agent else "NEW"
 
         promo_code = order_data.get("promo_code")
@@ -1076,7 +1152,8 @@ class OrderService:
             store_sequence_number=store_sequence_number,
             status=initial_status,
             assigned_to=explicit_agent,
-            **{k: v for k, v in order_data.items() if k != "assigned_to"},
+            livreur_id=resolved_courier_id,
+            **{k: v for k, v in order_data.items() if k not in ("assigned_to", "livreur_id")},
         )
         db.add(order)
         db.flush()  # Get ID without committing

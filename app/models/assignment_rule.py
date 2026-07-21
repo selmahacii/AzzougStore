@@ -26,8 +26,15 @@ from sqlalchemy import Boolean, Column, ForeignKey, Index, String
 
 from app.db.base_class import Base
 
-# Priority order, most specific first — resolve_assignment() walks this list.
+# Priority order, most specific first — resolve_assignment_rule() (confirmatrice
+# engine, order_service.py) walks this list.
 RULE_TYPE_PRIORITY = ["PRODUCT", "STORE", "CATEGORY", "BRAND"]
+
+# Same table, same conflict-prevention mechanism, DIFFERENT consumer:
+# resolve_courier_rule() (order_service.py) — direct livreur auto-assignment
+# by delivery destination, bypassing the confirmatrice workflow entirely.
+# COMMUNE beats WILAYA (most specific wins, same philosophy as above).
+COURIER_RULE_TYPE_PRIORITY = ["COMMUNE", "WILAYA"]
 
 
 class AssignmentRule(Base):
