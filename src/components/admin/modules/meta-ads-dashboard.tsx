@@ -60,7 +60,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics' | 'quality'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics' | 'quality' | 'registry'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -144,6 +144,33 @@ export default function MetaAdsDashboard() {
     refetchOnWindowFocus: false,
   });
   const fullDiagnostics = fullDiagnosticsData?.data;
+
+  // --- Event Registry — source de vérité unique de chaque évènement envoyé
+  // à Meta, enrichi du parcours publicitaire complet (Phase 1) ---
+  const [registryPage, setRegistryPage] = useState(1);
+  const [registryEventFilter, setRegistryEventFilter] = useState<string>('');
+  const { data: registryData, isLoading: isLoadingRegistry } = useQuery({
+    queryKey: ['meta_event_registry', activeStore?.id, dateStart, dateEnd, registryPage, registryEventFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ store_id: activeStore?.id || '', page: String(registryPage), limit: '50', date_from: dateStart, date_to: dateEnd });
+      if (registryEventFilter) params.set('event_name', registryEventFilter);
+      return apiFetch<{ success: boolean; data: any[]; total: number; totalPages: number }>(`/api/v1/meta-ads/capi-logs?${params.toString()}`);
+    },
+    enabled: !!activeStore?.id && activeTab === 'registry',
+    refetchOnWindowFocus: false,
+  });
+
+  // --- Instrumentation demandée avant de retirer PageView/AddToWishlist du
+  // miroir CAPI — volume/succès/latence RÉELS par évènement, pas une
+  // hypothèse (voir la doc de l'endpoint côté backend). ---
+  const { data: volumeByEventData, isLoading: isLoadingVolumeByEvent } = useQuery({
+    queryKey: ['meta_capi_volume_by_event', activeStore?.id, dateStart, dateEnd],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
+      `/api/v1/meta-ads/capi-logs/volume-by-event?store_id=${activeStore?.id}&date_from=${dateStart}&date_to=${dateEnd}`
+    ),
+    enabled: !!activeStore?.id && activeTab === 'registry',
+    refetchOnWindowFocus: false,
+  });
 
   // --- Query Circuit Breaker + connectivity (via /health) ---
   const { data: metaHealthData, isLoading: isLoadingMetaHealth } = useQuery({
@@ -696,6 +723,17 @@ export default function MetaAdsDashboard() {
           )}
         >
           <span className="flex items-center gap-1.5"><Zap className="size-3.5" /> Signal Quality Center</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('registry')}
+          className={cn(
+            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
+            activeTab === 'registry'
+              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
+              : "text-[#B2BEC3] hover:text-[#636E72]"
+          )}
+        >
+          <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Registre d'évènements</span>
         </button>
       </div>
 
@@ -1695,6 +1733,142 @@ export default function MetaAdsDashboard() {
               </div>
             ) : (
               <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: EVENT REGISTRY — source de vérité unique ─── */}
+      {activeTab === 'registry' && (
+        <div className="space-y-4">
+          {/* Instrumentation volume/coût par évènement — mesure demandée
+              avant toute décision de retirer PageView/AddToWishlist du
+              miroir CAPI, pas une hypothèse. */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-1">
+              <Activity className="size-4 text-[#6C5CE7]" /> Volume & coût par évènement (période sélectionnée)
+            </h3>
+            <p className="text-[10px] text-slate-400 mb-4">Le volume CAPI est un proxy fiable du volume Pixel (chaque déclenchement Pixel actuel tente un miroir CAPI par défaut). L'usage réel dans le Learning Meta n'est jamais mesurable depuis notre système — jamais inventé ici.</p>
+            {isLoadingVolumeByEvent ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : Array.isArray(volumeByEventData?.data) && volumeByEventData.data.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Évènement</th>
+                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Volume CAPI</th>
+                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Succès</th>
+                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Latence moy.</th>
+                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">event_id uniques</th>
+                      <th className="py-2 font-black text-slate-400 uppercase tracking-wider text-[10px]">Usage Learning Meta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {volumeByEventData.data.map((e: any) => (
+                      <tr key={e.event_name} className="border-b border-slate-50 last:border-0">
+                        <td className="py-2.5 pr-4 font-bold text-slate-800">{e.event_name}</td>
+                        <td className="py-2.5 pr-4 tabular-nums font-bold">{e.capi_attempts_total}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{e.capi_success_rate_pct != null ? `${e.capi_success_rate_pct}%` : '—'}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{e.avg_latency_ms != null ? `${e.avg_latency_ms}ms` : '—'}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{e.unique_event_ids}</td>
+                        <td className="py-2.5 text-[10px] text-slate-400 italic">{e.meta_learning_usage}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+            )}
+          </div>
+
+          {/* Registre central — chaque ligne = un évènement envoyé, avec son
+              parcours publicitaire complet et son statut de synchronisation/
+              déduplication. C'est la source de vérité : tout autre chiffre du
+              dashboard doit pouvoir remonter jusqu'ici. */}
+          <div className="bg-white rounded-3xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="size-4 text-[#00B894]" /> Registre d'évènements
+              </h3>
+              <select
+                value={registryEventFilter}
+                onChange={e => { setRegistryEventFilter(e.target.value); setRegistryPage(1); }}
+                className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3"
+              >
+                <option value="">Tous les évènements</option>
+                {['PageView', 'ViewContent', 'AddToWishlist', 'AddToCart', 'InitiateCheckout', 'Purchase'].map(ev => (
+                  <option key={ev} value={ev}>{ev}</option>
+                ))}
+              </select>
+            </div>
+            {isLoadingRegistry ? (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+            ) : Array.isArray(registryData?.data) && registryData.data.length > 0 ? (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Évènement</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Étape</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Source</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">État Meta</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Dédup</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Commande</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Campagne</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Adset</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Annonce</th>
+                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Placement</th>
+                        <th className="py-2 font-black text-slate-400 uppercase tracking-wider text-[10px]">Reçu le</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {registryData.data.map((e: any) => (
+                        <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                          <td className="py-2.5 pr-3 font-bold text-slate-800">{e.event_name}</td>
+                          <td className="py-2.5 pr-3 tabular-nums text-slate-500">{e.funnel_step ?? '—'}</td>
+                          <td className="py-2.5 pr-3">
+                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase", e.source === 'CAPI uniquement' ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>{e.source}</span>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase",
+                              e.sync_status === 'success' ? "bg-emerald-50 text-emerald-700" :
+                              ['error', 'failed'].includes(e.sync_status) ? "bg-rose-50 text-rose-700" :
+                              "bg-amber-50 text-amber-700"
+                            )}>{e.meta_state}</span>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase",
+                              e.dedup_status === 'doublon_reel' ? "bg-rose-50 text-rose-700" :
+                              e.dedup_status === 'unique' ? "bg-slate-50 text-slate-500" : "bg-amber-50 text-amber-700"
+                            )} title={e.dedup_status === 'doublon_reel' ? 'Double comptage réel confirmé côté Meta' : e.dedup_status === 'retry_normal' ? 'Retry normal, un seul succès' : e.dedup_status === 'jamais_synchronise' ? 'Jamais synchronisé avec succès' : 'Aucun doublon'}>
+                              {e.dedup_status === 'doublon_reel' ? '⚠️ Doublon' : e.dedup_status === 'retry_normal' ? 'Retry OK' : e.dedup_status === 'jamais_synchronise' ? 'Jamais sync.' : 'Unique'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 pr-3 font-bold text-slate-600">{e.order_number || '—'}</td>
+                          <td className="py-2.5 pr-3 text-slate-500 max-w-[120px] truncate" title={e.campaign_name || e.campaign_id || ''}>{e.campaign_name || e.campaign_id || '—'}</td>
+                          <td className="py-2.5 pr-3 text-slate-500 max-w-[100px] truncate" title={e.adset_name || e.adset_id || ''}>{e.adset_name || e.adset_id || '—'}</td>
+                          <td className="py-2.5 pr-3 text-slate-500 max-w-[100px] truncate" title={e.ad_name || e.ad_id || ''}>{e.ad_name || e.ad_id || '—'}</td>
+                          <td className="py-2.5 pr-3 text-slate-500">{e.placement || '—'}</td>
+                          <td className="py-2.5 text-slate-400 whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400">{registryData.total} évènement{registryData.total > 1 ? 's' : ''} au total</span>
+                  <div className="flex items-center gap-2">
+                    <button disabled={registryPage <= 1} onClick={() => setRegistryPage(p => Math.max(1, p - 1))} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold disabled:opacity-30">← Précédent</button>
+                    <span className="text-xs font-bold text-slate-500">{registryPage} / {registryData.totalPages || 1}</span>
+                    <button disabled={registryPage >= (registryData.totalPages || 1)} onClick={() => setRegistryPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold disabled:opacity-30">Suivant →</button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucun évènement sur cette période.</div>
             )}
           </div>
         </div>

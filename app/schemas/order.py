@@ -66,6 +66,11 @@ class OrderCreate(BaseModel):
     campaign_id: Optional[str] = None
     adset_id: Optional[str] = None
     ad_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+    adset_name: Optional[str] = None
+    ad_name: Optional[str] = None
+    placement: Optional[str] = None
+    site_source_name: Optional[str] = None
     fbclid: Optional[str] = None
     fbp: Optional[str] = None
     fbc: Optional[str] = None
@@ -196,6 +201,11 @@ class OrderRead(BaseModel):
     campaign_id: Optional[str] = None
     adset_id: Optional[str] = None
     ad_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+    adset_name: Optional[str] = None
+    ad_name: Optional[str] = None
+    placement: Optional[str] = None
+    site_source_name: Optional[str] = None
     referrer: Optional[str] = None
 
     @field_serializer(

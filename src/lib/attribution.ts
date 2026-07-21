@@ -20,6 +20,17 @@
  *   utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}
  *   &utm_content={{ad.name}}&campaign_id={{campaign.id}}
  *   &adset_id={{adset.id}}&ad_id={{ad.id}}
+ *   &campaign_name={{campaign.name}}&adset_name={{adset.name}}&ad_name={{ad.name}}
+ *   &placement={{placement}}&site_source_name={{site_source_name}}
+ *
+ * campaign_name/adset_name/ad_name/placement/site_source_name are Meta's
+ * own real dynamic URL macros (verified: Meta ads support exactly 8 —
+ * campaign.name/id, adset.name/id, ad.name/id, placement, site_source_name
+ * — facebook.com/business/help/2360940870872492). Deliberately NOT
+ * capturing "creative_id" or "device_platform": these are NOT real Meta
+ * URL macros — Meta has no such dynamic parameter, so any code claiming to
+ * capture them would be fabricating data. ad_id already identifies the
+ * creative in the vast majority of real ad setups (1 ad = 1 creative).
  */
 
 const KEY = 'azg_attribution_v1';
@@ -34,6 +45,11 @@ export interface Attribution {
   campaign_id?: string;
   adset_id?: string;
   ad_id?: string;
+  campaign_name?: string;
+  adset_name?: string;
+  ad_name?: string;
+  placement?: string;
+  site_source_name?: string;
   fbclid?: string;
   referrer?: string;
   landing_url?: string;
@@ -47,10 +63,12 @@ export interface Attribution {
 }
 
 type StringAttrKey = 'utm_source' | 'utm_medium' | 'utm_campaign' | 'utm_content' | 'utm_term'
-  | 'campaign_id' | 'adset_id' | 'ad_id' | 'fbclid';
+  | 'campaign_id' | 'adset_id' | 'ad_id' | 'campaign_name' | 'adset_name' | 'ad_name'
+  | 'placement' | 'site_source_name' | 'fbclid';
 const PARAM_KEYS: StringAttrKey[] = [
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
-  'campaign_id', 'adset_id', 'ad_id', 'fbclid',
+  'campaign_id', 'adset_id', 'ad_id', 'campaign_name', 'adset_name', 'ad_name',
+  'placement', 'site_source_name', 'fbclid',
 ];
 
 /** Capture attribution from the current URL (first touch wins). */
@@ -151,6 +169,11 @@ export function attributionPayload(): Record<string, string | undefined> {
     campaign_id: a.campaign_id,
     adset_id: a.adset_id,
     ad_id: a.ad_id,
+    campaign_name: a.campaign_name,
+    adset_name: a.adset_name,
+    ad_name: a.ad_name,
+    placement: a.placement,
+    site_source_name: a.site_source_name,
     fbclid: a.fbclid,
     fbp: getFbp(),
     fbc: getFbc(),

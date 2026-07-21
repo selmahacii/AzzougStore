@@ -67,6 +67,17 @@ class Order(Base):
     campaign_id = Column(String, nullable=True, index=True)
     adset_id = Column(String, nullable=True)
     ad_id = Column(String, nullable=True)
+    # Noms lisibles (campaign_id/adset_id/ad_id restent la clé stable pour
+    # les jointures/dashboards — les *_name sont capturés en plus pour
+    # l'affichage humain, sans jamais remplacer les ID). placement et
+    # site_source_name sont les 2 seules autres macros d'URL Meta réelles
+    # (facebook.com/business/help/2360940870872492) — "creative_id" et
+    # "device_platform" ne sont PAS des macros Meta, volontairement absents.
+    campaign_name = Column(String, nullable=True)
+    adset_name = Column(String, nullable=True)
+    ad_name = Column(String, nullable=True)
+    placement = Column(String, nullable=True)
+    site_source_name = Column(String, nullable=True)
     fbclid = Column(String, nullable=True)
     fbp = Column(String, nullable=True)
     fbc = Column(String, nullable=True)

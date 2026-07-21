@@ -810,7 +810,15 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           <div className="flex flex-wrap gap-2.5">
                                           {optionVariants.map((v: any, i: number) => {
                                             const isSelected = selectedVal === v.value;
-                                            const isOutOfStock = ((v.stock || 0) - (v.reserved || 0)) <= 0;
+                                            // Synchronisé sur le stock RÉEL restant, pas juste "en rupture ou pas" :
+                                            // si 2 unités sont en stock et que 2 des N produits de la commande
+                                            // ont déjà choisi cette valeur, la 3e ne peut plus la choisir non
+                                            // plus, même si stock > 0 dans l'absolu.
+                                            const availableForValue = (v.stock || 0) - (v.reserved || 0);
+                                            const selectedElsewhere = selectedVariants.reduce(
+                                              (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
+                                            );
+                                            const isOutOfStock = !isSelected && selectedElsewhere >= availableForValue;
                                             const colorHex = getVariantColor(v.value, v.color);
                                             const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -892,7 +900,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           >
                                             <option value="" disabled>{dir === 'rtl' ? 'اختر المقاس / الخيار' : 'Sélectionnez une option'}</option>
                                             {optionVariants.map((v, i) => {
-                                              const isOutOfStock = ((v.stock || 0) - (v.reserved || 0)) <= 0;
+                                              const availableForValue = (v.stock || 0) - (v.reserved || 0);
+                                              const selectedElsewhere = selectedVariants.reduce(
+                                                (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
+                                              );
+                                              const isOutOfStock = selectedVal !== v.value && selectedElsewhere >= availableForValue;
                                               return (
                                                 <option key={`opt-${v.id || i}`} value={v.value} disabled={isOutOfStock} className={isDark ? "bg-neutral-900 text-white" : "bg-white text-slate-800"}>
                                                   {v.value} {isOutOfStock ? (dir === 'rtl' ? '(غير متوفر)' : '(Rupture)') : ''}
@@ -966,22 +978,33 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       <div className="grid grid-cols-1 gap-3">
                         {offers.map((offer: any, idx: number) => {
                           const isSelected = selectedOfferIndex === idx;
+                          // Un palier d'offre (ex: "3 Pièces") configuré par
+                          // l'admin ne vérifiait jamais le stock réel — un
+                          // client pouvait cliquer "3 Pièces" alors qu'il ne
+                          // reste que 2 unités en stock. Désactivé dès que la
+                          // quantité du palier dépasse ce qui est réellement
+                          // disponible (maxOrderableQuantity, calculé plus haut).
+                          const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
                           return (
                             <button
                               key={idx}
                               type="button"
+                              disabled={offerExceedsStock}
                               onClick={() => {
+                                  if (offerExceedsStock) return;
                                   setSelectedOfferIndex(idx);
                                   setQuantity(offer.quantity);
                               }}
                               className={cn(
                                 "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
-                                isSelected
+                                offerExceedsStock
+                                  ? "opacity-40 cursor-not-allowed grayscale"
+                                  : isSelected
                                   ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
                                   : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
                               )}
                             >
-                              {offer.popular && (
+                              {offer.popular && !offerExceedsStock && (
                                 <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
                                   {t('popular')}
                                 </div>
@@ -990,11 +1013,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                 <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
                                   {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                                 </p>
-                                {offer.desc && (
+                                {offerExceedsStock ? (
+                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
+                                ) : offer.desc && (
                                   <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
                                 )}
                               </div>
-                              <div className={cn("text-right", offer.popular ? "mr-3" : "")}>
+                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
                                 <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
                                 {offer.compare_price > offer.price && (
                                   <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>

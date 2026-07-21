@@ -2212,20 +2212,65 @@ def get_meta_diagnostics(
 
 # ─── GET /meta-ads/capi-logs — filterable operational log view ───────────────
 
+# Ordre canonique du funnel — sert à situer chaque évènement dans le
+# parcours, PageView -> ... -> Purchase. Search/AddPaymentInfo délibérément
+# absents (non implémentés dans ce funnel COD — voir l'audit du 2026-07-21).
+_FUNNEL_STEP_ORDER = {
+    "PageView": 1,
+    "ViewContent": 2,
+    "AddToWishlist": 3,
+    "AddToCart": 4,
+    "InitiateCheckout": 5,
+    "Purchase": 6,
+}
+
+# Purchase est volontairement CAPI SEUL (Pixel désactivé côté navigateur —
+# voir checkout-form.tsx — pour éliminer le double comptage historique).
+# Tous les autres évènements actuellement déclenchés le sont en Pixel +
+# CAPI miroir (event_id partagé, voir src/lib/meta-tracking.ts). Purement
+# déclaratif ici — reflète l'architecture réelle, ne l'invente pas.
+_CAPI_ONLY_EVENTS = {"Purchase"}
+
+
+def _meta_state_label(status: str) -> str:
+    return {
+        "success": "Envoyé & accepté",
+        "error": "Rejeté",
+        "failed": "Échec définitif",
+        "pending_retry": "Retry programmé",
+        "retry": "Retry en cours",
+        "queued": "En file (jamais tenté)",
+        "processing": "En cours d'envoi",
+        "skipped": "Ignoré (garde-fou)",
+    }.get(status, status)
+
+
 @router.get("/capi-logs", response_model=dict)
 def get_meta_capi_logs(
     store_id: str = Query(...),
     status: Optional[str] = Query(None, description="success | error | pending_retry | failed"),
     event_name: Optional[str] = Query(None),
+    order_id: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None, description="ISO date, inclusive"),
     date_to: Optional[str] = Query(None, description="ISO date, inclusive"),
+    page: int = Query(1, ge=1),
     limit: int = Query(100, le=500),
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
-    """Raw CAPI log rows for the monitoring dashboard, filterable by
-    store/date/event type/status — the operational counterpart to the
-    rolled-up /diagnostics summary."""
+    """
+    Event Registry — le registre central de chaque évènement Meta envoyé
+    par l'ERP, enrichi du parcours publicitaire complet (campagne, adset,
+    annonce, placement, site_source_name — Phase 1 de l'attribution
+    enterprise) et de son rattachement à la commande. C'est la source de
+    vérité unique : chaque chiffre affiché ailleurs doit pouvoir remonter
+    à une ligne précise ici.
+
+    Étend l'ancien /capi-logs (log brut filtrable) au lieu de dupliquer un
+    nouvel endpoint séparé — mêmes champs qu'avant + les nouveaux, aucun
+    consommateur existant cassé (aucun frontend n'appelait encore cet
+    endpoint avant cette version).
+    """
     from app.models.marketing import MetaCapiLog
 
     q = db.query(MetaCapiLog).filter(MetaCapiLog.store_id == store_id)
@@ -2233,31 +2278,173 @@ def get_meta_capi_logs(
         q = q.filter(MetaCapiLog.status == status)
     if event_name:
         q = q.filter(MetaCapiLog.event_name == event_name)
+    if order_id:
+        q = q.filter(MetaCapiLog.order_id == order_id)
     if date_from:
         q = q.filter(MetaCapiLog.created_at >= date_from)
     if date_to:
         q = q.filter(MetaCapiLog.created_at <= date_to)
 
-    rows = q.order_by(MetaCapiLog.created_at.desc()).limit(limit).all()
+    total = q.count()
+    rows = (
+        q.order_by(MetaCapiLog.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
+
+    # ── Statut de déduplication — RÉUTILISE exactement la même
+    # classification que l'audit d'anomalies Purchase plus haut
+    # (real_double_send / retry_then_success / never_succeeded), généralisée
+    # à TOUS les types d'évènement plutôt que dupliquée pour Purchase seul.
+    # Une seule requête groupée, pas de N+1 par ligne affichée.
+    event_ids_on_page = [r.event_id for r in rows]
+    dup_status_by_event_id: Dict[str, str] = {}
+    if event_ids_on_page:
+        dup_rows = (
+            db.query(MetaCapiLog.event_id, MetaCapiLog.status)
+            .filter(MetaCapiLog.event_id.in_(event_ids_on_page))
+            .all()
+        )
+        statuses_by_eid: Dict[str, List[str]] = {}
+        for eid, st in dup_rows:
+            statuses_by_eid.setdefault(eid, []).append(st)
+        for eid, statuses in statuses_by_eid.items():
+            if len(statuses) <= 1:
+                dup_status_by_event_id[eid] = "unique"
+            elif statuses.count("success") >= 2:
+                dup_status_by_event_id[eid] = "doublon_reel"
+            elif statuses.count("success") == 1:
+                dup_status_by_event_id[eid] = "retry_normal"
+            else:
+                dup_status_by_event_id[eid] = "jamais_synchronise"
+
+    # ── Parcours publicitaire — jointure Order pour les champs capturés en
+    # Phase 1 (campaign_name/adset_name/ad_name/placement/site_source_name)
+    # + les ID stables déjà existants. Une seule requête groupée par
+    # order_id, pas une jointure SQL par ligne.
+    order_ids_on_page = [r.order_id for r in rows if r.order_id]
+    orders_by_id: Dict[str, Any] = {}
+    if order_ids_on_page:
+        order_rows = (
+            db.query(Order.id, Order.order_number, Order.campaign_id, Order.adset_id, Order.ad_id,
+                      Order.campaign_name, Order.adset_name, Order.ad_name,
+                      Order.placement, Order.site_source_name, Order.utm_campaign)
+            .filter(Order.id.in_(order_ids_on_page))
+            .all()
+        )
+        orders_by_id = {o.id: o for o in order_rows}
+
+    def _row_to_registry_entry(r) -> Dict[str, Any]:
+        o = orders_by_id.get(r.order_id)
+        return {
+            "id": r.id,
+            "event_id": r.event_id,
+            "event_name": r.event_name,
+            "funnel_step": _FUNNEL_STEP_ORDER.get(r.event_name),
+            "source": "CAPI uniquement" if r.event_name in _CAPI_ONLY_EVENTS else "Pixel + CAPI",
+            "sync_status": r.status,
+            "meta_state": _meta_state_label(r.status),
+            "dedup_status": dup_status_by_event_id.get(r.event_id, "unique"),
+            "order_id": r.order_id,
+            "order_number": o.order_number if o else None,
+            "campaign_id": o.campaign_id if o else None,
+            "adset_id": o.adset_id if o else None,
+            "ad_id": o.ad_id if o else None,
+            "campaign_name": o.campaign_name if o else None,
+            "adset_name": o.adset_name if o else None,
+            "ad_name": o.ad_name if o else None,
+            "placement": o.placement if o else None,
+            "site_source_name": o.site_source_name if o else None,
+            "utm_campaign": o.utm_campaign if o else None,
+            "error_message": r.error_message,
+            "retry_count": r.retry_count,
+            "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
+            "latency_ms": r.latency_ms,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+
     return {
         "success": True,
-        "data": [
-            {
-                "id": r.id,
-                "order_id": r.order_id,
-                "event_name": r.event_name,
-                "event_id": r.event_id,
-                "status": r.status,
-                "error_message": r.error_message,
-                "retry_count": r.retry_count,
-                "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
-                "latency_ms": r.latency_ms,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-            }
-            for r in rows
-        ],
+        "data": [_row_to_registry_entry(r) for r in rows],
+        "page": page,
+        "pageSize": limit,
+        "total": total,
+        "totalPages": max(1, (total + limit - 1) // limit),
     }
+
+
+@router.get("/capi-logs/volume-by-event", response_model=dict)
+def get_capi_volume_by_event(
+    store_id: str = Query(...),
+    date_from: Optional[str] = Query(None, description="ISO date, inclusive"),
+    date_to: Optional[str] = Query(None, description="ISO date, inclusive"),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Instrumentation demandée avant toute décision de retirer PageView/
+    AddToWishlist du miroir CAPI : volume RÉEL, taux de succès et coût
+    serveur mesurés par type d'évènement — pas une hypothèse.
+
+    Ce qui EST mesurable depuis notre système et exposé ici :
+    - volume CAPI (tentatives d'envoi = proxy du volume Pixel, puisque
+      chaque déclenchement Pixel actuel tente un miroir CAPI par défaut) ;
+    - taux de succès/échec, latence moyenne (proxy du coût serveur réel :
+      chaque ligne = 1 tâche de fond + 1 écriture DB, sur un hébergement
+      gratuit c'est le coût qui compte) ;
+    - taux de doublon détecté.
+
+    Ce qui N'EST PAS mesurable depuis notre système, quelle que soit
+    l'instrumentation ajoutée ici : si Meta utilise réellement tel
+    évènement dans son algorithme de Learning/optimisation — Meta n'expose
+    aucune API confirmant cela évènement par évènement. Volontairement
+    absent des chiffres retournés plutôt que de l'inventer.
+    """
+    from sqlalchemy import func, case
+    from app.models.marketing import MetaCapiLog
+
+    filters = [MetaCapiLog.store_id == store_id]
+    if date_from:
+        filters.append(MetaCapiLog.created_at >= date_from)
+    if date_to:
+        filters.append(MetaCapiLog.created_at <= date_to)
+
+    rows = (
+        db.query(
+            MetaCapiLog.event_name,
+            func.count(MetaCapiLog.id).label("total"),
+            func.sum(case((MetaCapiLog.status == "success", 1), else_=0)).label("success"),
+            func.avg(MetaCapiLog.latency_ms).label("avg_latency_ms"),
+        )
+        .filter(*filters)
+        .group_by(MetaCapiLog.event_name)
+        .all()
+    )
+
+    by_event = []
+    for event_name, total, success, avg_latency in rows:
+        success = success or 0
+        dup_count = (
+            db.query(func.count(func.distinct(MetaCapiLog.event_id)))
+            .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == event_name,
+                    *([MetaCapiLog.created_at >= date_from] if date_from else []),
+                    *([MetaCapiLog.created_at <= date_to] if date_to else []))
+            .scalar() or 0
+        )
+        by_event.append({
+            "event_name": event_name,
+            "capi_attempts_total": total,
+            "capi_success": success,
+            "capi_success_rate_pct": round(success / total * 100, 1) if total else None,
+            "avg_latency_ms": round(avg_latency, 1) if avg_latency else None,
+            "unique_event_ids": dup_count,
+            "duplicate_rows_detected": max(0, total - dup_count),
+            "meta_learning_usage": "NON MESURABLE — Meta n'expose aucune API confirmant l'usage d'un évènement dans son Learning",
+        })
+
+    return {"success": True, "data": by_event}
 
 
 # ─── DELETE /meta-ads/capi-logs/pending — purge stuck queue ──────────────────
