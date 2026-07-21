@@ -756,7 +756,15 @@ def _auto_assign(
     # pool below. Only used if it actually resolves an agent (respecting
     # exclude_agent_id and requiring the agent still be active); otherwise
     # falls through unchanged to the pre-existing pool logic.
-    rule_agent_id = resolve_assignment_rule(db, store.id, list(order_pid_set))
+    # Defensive: same rollback-on-failure guard as _auto_assign_courier
+    # below — a missing table/query error here must never break the
+    # existing specialist/least-loaded pool this function has always run.
+    try:
+        rule_agent_id = resolve_assignment_rule(db, store.id, list(order_pid_set))
+    except Exception as rule_err:
+        db.rollback()
+        logger.warning("Assignment Rule Engine failed, falling back to pool logic: %s", rule_err)
+        rule_agent_id = None
     if rule_agent_id and rule_agent_id != exclude_agent_id:
         rule_agent = (
             db.query(User)
@@ -1099,9 +1107,23 @@ class OrderService:
         # bypassing the confirmatrice workflow entirely (assigned_to stays
         # unset). Everything else continues the normal pipeline below,
         # unchanged.
-        resolved_courier_id = _auto_assign_courier(
-            db, order_data.get("customer_wilaya"), order_data.get("customer_commune"),
-        )
+        #
+        # Defensive: this is a NEW, non-critical feature bolted onto the
+        # most critical path in the whole app (order creation) — a missing
+        # table (migration not yet applied in some environment) or any
+        # other query failure here must NEVER take down real order
+        # creation. rollback() is required, not optional: a failed query
+        # leaves the session's transaction aborted, so every subsequent
+        # query in this same request (stock reservation, the order INSERT
+        # itself) would also fail without it.
+        try:
+            resolved_courier_id = _auto_assign_courier(
+                db, order_data.get("customer_wilaya"), order_data.get("customer_commune"),
+            )
+        except Exception as courier_err:
+            db.rollback()
+            logger.warning("Courier auto-assignment failed, continuing without it: %s", courier_err)
+            resolved_courier_id = None
 
         # If the creator (actor) is a CONFIRMATEUR (confirmation agent), force the assignment to them.
         creator_confirmatrice = None

@@ -1236,8 +1236,16 @@ def update_abandoned_cart(
             from app.services.order_service import _auto_assign, _auto_assign_courier, snapshot_commission
             # Courier auto-assignment by destination (chantier #3) checked
             # first — a matching commune/wilaya goes straight to the
-            # livreur, bypassing the confirmatrice pool entirely.
-            resolved_courier_id = _auto_assign_courier(db, db_order.customer_wilaya, db_order.customer_commune)
+            # livreur, bypassing the confirmatrice pool entirely. Defensive:
+            # this debounced draft-save fires on nearly every keystroke —
+            # a query failure here (e.g. migration lag) must never break
+            # saving the customer's cart draft.
+            try:
+                resolved_courier_id = _auto_assign_courier(db, db_order.customer_wilaya, db_order.customer_commune)
+            except Exception as courier_err:
+                db.rollback()
+                logger.warning("Courier auto-assignment failed, continuing without it: %s", courier_err)
+                resolved_courier_id = None
             if resolved_courier_id:
                 db_order.livreur_id = resolved_courier_id
             else:

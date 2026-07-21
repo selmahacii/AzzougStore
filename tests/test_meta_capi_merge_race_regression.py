@@ -144,36 +144,48 @@ def test_duplicate_order_is_merged_before_purchase_would_ever_send(db, store_wit
     # Exact sequence orders.py's POST / handler runs, in order:
     merged_count = auto_merge_duplicates(db, order_b, actor_id=None)
     db.commit()
+    db.refresh(order_a)
     db.refresh(order_b)
 
-    assert merged_count == 1, "order_b should have been detected as a same-phone duplicate and merged"
-    assert order_b.status == "MERGED", "the actual bug fix: order_b must be MERGED before any Purchase is ever attempted for it"
+    assert merged_count == 1, "one of the two same-phone orders should have been detected as a duplicate and merged"
+    # Which one becomes the MERGED child is a deliberate business decision
+    # (parent_rank in order_service.py: same status/abandoned-tier ties are
+    # broken by MOST RECENT wins, so the confirmatrice always follows the
+    # client's latest attempt) — NOT the thing this test is about. This
+    # test only proves the merge happens BEFORE any Purchase could ever be
+    # attempted, so it determines parent/child dynamically rather than
+    # assuming which one, matching test_auto_merge_duplicates.py's pattern.
+    assert {order_a.status, order_b.status} == {"MERGED", "ASSIGNED"} or "MERGED" in {order_a.status, order_b.status}
+    child, parent = (order_a, order_b) if order_a.status == "MERGED" else (order_b, order_a)
+    assert child.status == "MERGED"
+    assert parent.status != "MERGED"
 
-    # enqueue_purchase_for_order does not itself check status (documented
-    # behavior — see its docstring) — it always writes a 'queued' row. The
-    # real protection is _handle_claimed_row re-reading status at send
-    # time, exercised below via the real send_purchase_for_order path.
-    log_id_a = meta_capi.enqueue_purchase_for_order(db, order_a)
-    log_id_b = meta_capi.enqueue_purchase_for_order(db, order_b)
+    # enqueue_purchase_for_order now refuses OUTRIGHT for a MERGED order
+    # (a later hardening added this session, on top of the original fix
+    # this test was written for — _handle_claimed_row's own send-time
+    # status re-check, exercised below via send_purchase_for_order) — so
+    # the child never even gets a queue row now, which is strictly better
+    # defense-in-depth than "queued then skipped at send time".
+    log_id_parent = meta_capi.enqueue_purchase_for_order(db, parent)
+    log_id_child = meta_capi.enqueue_purchase_for_order(db, child)
     db.commit()
-    assert log_id_a is not None
-    assert log_id_b is not None  # a row IS queued...
+    assert log_id_parent is not None
+    assert log_id_child is None, "enqueue_purchase_for_order must refuse a MERGED order before ever writing a queue row"
 
-    # ...but the actual send must never call Meta for order_b.
-    meta_capi.send_purchase_for_order(order_id=order_b.id, client_ip=None, user_agent=None)
-    meta_capi.send_purchase_for_order(order_id=order_a.id, client_ip=None, user_agent=None)
+    # ...and the actual send must never call Meta for the merged child either.
+    meta_capi.send_purchase_for_order(order_id=child.id, client_ip=None, user_agent=None)
+    meta_capi.send_purchase_for_order(order_id=parent.id, client_ip=None, user_agent=None)
 
-    assert order_b.order_number not in sent_orders, "order_b (MERGED duplicate) must NEVER reach Meta — this is the exact production bug"
-    assert order_a.order_number in sent_orders, "order_a (the real, still-standalone order) must still send normally"
+    assert child.order_number not in sent_orders, "the MERGED child must NEVER reach Meta — this is the exact production bug"
+    assert parent.order_number in sent_orders, "the active parent (the real, still-standalone order) must still send normally"
 
-    row_b = db.query(MetaCapiLog).filter(MetaCapiLog.id == log_id_b).first()
-    db.refresh(row_b)
-    assert row_b.status == "skipped"
-    assert "MERGED" in (row_b.error_message or "")
+    # No MetaCapiLog row at all for the child — never queued, never sent.
+    child_rows = db.query(MetaCapiLog).filter(MetaCapiLog.order_id == child.id, MetaCapiLog.event_name == "Purchase").all()
+    assert child_rows == []
 
-    row_a = db.query(MetaCapiLog).filter(MetaCapiLog.id == log_id_a).first()
-    db.refresh(row_a)
-    assert row_a.status == "success"
+    row_parent = db.query(MetaCapiLog).filter(MetaCapiLog.id == log_id_parent).first()
+    db.refresh(row_parent)
+    assert row_parent.status == "success"
 
 
 def test_audit_script_reports_zero_gap_for_this_scenario(db, store_with_meta_config, monkeypatch):

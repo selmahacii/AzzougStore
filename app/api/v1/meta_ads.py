@@ -1786,17 +1786,24 @@ def get_meta_funnel(
     ).filter(MetaAdsCampaign.store_id == store_id).first()
     impressions, clicks = int(camp_totals[0] or 0), int(camp_totals[1] or 0)
 
-    # ViewContent / InitiateCheckout: our own CAPI send counts — the real
-    # count of shoppers who reached each step, browser + server combined.
+    # ViewContent / AddToCart / InitiateCheckout: our own CAPI send counts —
+    # the real count of shoppers who reached each step, browser + server
+    # combined. AddToCart was missing here (audit 2026-07-21) even though
+    # it's already tracked (src/store/cart-store.ts fires it Pixel+CAPI) —
+    # without it the funnel jumped straight from ViewContent to
+    # InitiateCheckout, so the requested monotonicity check (ViewContent ≤
+    # AddToCart ≤ InitiateCheckout ≤ Purchase) couldn't even be verified.
     from app.models.marketing import MetaCapiLog
-    view_content = db.query(func.count(MetaCapiLog.id)).filter(
-        MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "ViewContent",
-        MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
-    ).scalar() or 0
-    initiate_checkout = db.query(func.count(MetaCapiLog.id)).filter(
-        MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "InitiateCheckout",
-        MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
-    ).scalar() or 0
+
+    def _capi_success_count(event_name: str) -> int:
+        return db.query(func.count(MetaCapiLog.id)).filter(
+            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == event_name,
+            MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
+        ).scalar() or 0
+
+    view_content = _capi_success_count("ViewContent")
+    add_to_cart = _capi_success_count("AddToCart")
+    initiate_checkout = _capi_success_count("InitiateCheckout")
 
     # Purchase / Recovered / Delivered: real orders — same exclusions used
     # everywhere else in the ERP (MERGED duplicates, MANUAL agent orders).
@@ -1816,11 +1823,25 @@ def get_meta_funnel(
         {"name": "Impressions", "count": impressions},
         {"name": "Clics", "count": clicks},
         {"name": "Vues Produit", "count": view_content},
+        {"name": "Ajout au Panier", "count": add_to_cart},
         {"name": "Paiement Initié", "count": initiate_checkout},
         {"name": "Achats", "count": purchases},
         {"name": "Paniers Récupérés", "count": recovered},
         {"name": "Livrées", "count": delivered},
     ]
+
+    # Intégrité du funnel — vérifie ViewContent ≤ AddToCart ≤ InitiateCheckout
+    # ≤ Achats (audit 2026-07-21). Un funnel réel peut légitimement ne PAS
+    # être strictement monotone (ex: "Achats" vient des vraies commandes
+    # ERP tandis que les 3 étapes précédentes viennent des envois CAPI
+    # réussis — un envoi CAPI en échec n'empêche jamais la commande
+    # d'exister côté ERP) : signalé comme information, pas caché ni corrigé
+    # artificiellement.
+    funnel_steps_in_order = [view_content, add_to_cart, initiate_checkout, purchases]
+    funnel_is_monotonic = all(
+        funnel_steps_in_order[i] <= funnel_steps_in_order[i + 1]
+        for i in range(len(funnel_steps_in_order) - 1)
+    )
 
     ctr = round(clicks / impressions * 100, 2) if impressions > 0 else 0.0
     cr = round(purchases / clicks * 100, 2) if clicks > 0 else 0.0
@@ -1831,6 +1852,10 @@ def get_meta_funnel(
         "stages": stages,
         "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate},
         "bottleneck": detect_funnel_bottleneck(stages),
+        "funnel_integrity": {
+            "is_monotonic": funnel_is_monotonic,
+            "checked_steps": ["ViewContent", "AddToCart", "InitiateCheckout", "Achats"],
+        },
         "time_window": window.as_dict(),
     }
 
@@ -2016,12 +2041,24 @@ def get_meta_diagnostics(
     #     l'envoi dans le pipeline actuel).
     #   - orphan_no_order      : Purchase 'success' sans order_id (ancien
     #     chemin relais navigateur — non rattachables après coup).
-    recon_erp_real = (
-        db.query(func.count(Order.id))
-        .filter(Order.store_id == store_id, Order.is_deleted == False,
-                Order.status != "MERGED", Order.created_at >= month_ago)
-        .scalar() or 0
-    )
+    # Définie ICI (avant sa première utilisation) et réutilisée par TOUT le
+    # reste de cet endpoint (recon_erp_real, orders_30d, fbp/fbc/utm_cov,
+    # attribution_readiness) — audit du 2026-07-21 : deux définitions
+    # séparées de "commande réelle" coexistaient dans cette même fonction
+    # (recon_erp_real omettait l'exclusion des commandes MANUAL que
+    # order_filters appliquait déjà plus bas), donnant des totaux
+    # incohérents entre le panneau Réconciliation et le reste du dashboard
+    # pour la même période. Une commande MANUAL (saisie par un agent, aucun
+    # clic pub n'a jamais eu lieu) ne doit jamais être comptée comme une
+    # "vraie commande" dans les métriques d'attribution Meta — cohérent
+    # avec le funnel (/meta-ads/funnel) qui excluait déjà MANUAL depuis le
+    # début.
+    order_filters = [
+        Order.store_id == store_id, Order.is_deleted == False,
+        Order.created_at >= month_ago, Order.status != "MERGED",
+        func.coalesce(Order.source, "") != "MANUAL",
+    ]
+    recon_erp_real = db.query(func.count(Order.id)).filter(*order_filters).scalar() or 0
     recon_meta_success = (
         db.query(func.count(MetaCapiLog.id))
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == "Purchase",
@@ -2044,12 +2081,10 @@ def get_meta_diagnostics(
         .scalar() or 0
     )
 
-    # Attribution coverage on last-30-days orders
-    order_filters = [
-        Order.store_id == store_id, Order.is_deleted == False,
-        Order.created_at >= month_ago, Order.status != "MERGED",
-    ]
-    orders_30d = db.query(func.count(Order.id)).filter(*order_filters).scalar() or 0
+    # Attribution coverage on last-30-days orders — réutilise order_filters
+    # défini plus haut (une seule définition de "commande réelle" dans tout
+    # cet endpoint, voir commentaire ci-dessus).
+    orders_30d = recon_erp_real
 
     def _cov(col):
         return db.query(func.count(Order.id)).filter(*order_filters, col.isnot(None), col != "").scalar() or 0
