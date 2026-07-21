@@ -679,33 +679,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                           </div>
                         )}
 
-                        {textVariants.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                              {dir === 'rtl' ? 'الخيار' : 'Option'}: <span className={isDark ? "text-white" : "text-slate-800"}>{selectedVariants[0]?.value}</span>
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                              {textVariants.map((v: any, i: number) => {
-                                const isSelected = selectedVariants[0]?.value === v.value;
-                                return (
-                                  <button
-                                    key={`txt-${i}`}
-                                    type="button"
-                                    onClick={() => handleSelectVariant(v)}
-                                    className={cn(
-                                      "px-4 py-2 rounded-xl border text-xs font-bold transition-all active:scale-95",
-                                      isSelected
-                                        ? "bg-slate-900 border-slate-900 text-white"
-                                        : "border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
-                                    )}
-                                  >
-                                    {v.value}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                        {/* Le sélecteur "Option" (textVariants, boutons) a été
+                            retiré ici — doublon exact du sélecteur "اختر
+                            خيارك" du formulaire de commande (checkout-form.tsx)
+                            qui pilote déjà ces mêmes variantes. Le reste
+                            (couleurs ci-dessus, quantité plus bas) reste
+                            inchangé. */}
                       </div>
                     );
                   })()}
