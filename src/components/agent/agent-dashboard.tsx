@@ -1523,7 +1523,11 @@ function SalaryView({ perf, user }: any) {
   const confirmedCount = stats.confirmed_count ?? 0;
   const deliveredCount = stats.delivered_count ?? 0;
   const totalAssigned = stats.total_assigned ?? 0;
-  
+  const cancelledCount = stats.cancelled_count ?? 0;
+  const upsellCount = stats.upsell_count ?? 0;
+  const normalDeliveredCount = stats.normal_delivered_count ?? 0;
+  const recoveredDeliveredCount = stats.recovered_delivered_count ?? 0;
+
   const recoveredCount = stats.recovered_count ?? 0;
   const lostCount = stats.lost_count ?? 0;
   const paymentRecovered = stats.payment_recovered_cart ?? user?.payment_recovered_cart ?? 0;
@@ -1548,13 +1552,20 @@ function SalaryView({ perf, user }: any) {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-       {/* High Level Stats Grid */}
+       {/* High Level Stats Grid — chaque badge demandé (paniers abandonnés
+           récupérés, livrées, annulées, retours, upsell) est maintenant
+           visible ; les données existaient déjà côté backend
+           (get_user_performance) mais n'étaient pas toutes rendues ici. */}
        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50' },
             { label: 'Livraisons', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50' },
             { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50' },
             { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50' },
+            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50' },
+            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50' },
+            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50' },
+            { label: 'Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50' },
           ].map(s => (
             <div key={s.label} className={cn("p-4 border rounded-xl bg-white", s.bg)}>
                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
@@ -1592,6 +1603,23 @@ function SalaryView({ perf, user }: any) {
                             <p className="text-[10px] text-slate-400">{recoveredCount} paniers récupérés × {formatPrice(paymentRecovered)}</p>
                          </div>
                          <span className="font-bold text-emerald-600">+{formatPrice(recoveredCount * paymentRecovered)}</span>
+                      </div>
+                   </div>
+                )}
+
+                {/* Returns penalty breakdown — computed backend-side
+                    (returned_penalty) but never rendered anywhere before. */}
+                {lostCount > 0 && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">
+                         Retours (Pénalité)
+                      </p>
+                      <div className="flex items-center justify-between text-xs">
+                         <div className="space-y-0.5">
+                            <p className="font-bold text-slate-700">Commandes retournées</p>
+                            <p className="text-[10px] text-slate-400">{lostCount} retour{lostCount > 1 ? 's' : ''} × {formatPrice(paymentLost)}</p>
+                         </div>
+                         <span className="font-bold text-rose-600">-{formatPrice(stats.returned_penalty ?? (lostCount * paymentLost))}</span>
                       </div>
                    </div>
                 )}
@@ -1776,12 +1804,24 @@ export default function AgentDashboard() {
   }, [ordersQuery.data, page]);
 
   const perfQuery = useQuery({
-    queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores],
+    // startDate/endDate were never in this key — picking a date range in
+    // "Mon Salaire" had zero effect: the salary/activity numbers stayed
+    // all-time regardless. The backend (GET /users/{id}/performance)
+    // already accepts start_date/end_date and scopes both the order-count
+    // stats AND the salary computation to them — it just never received
+    // them from here.
+    queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores, startDate, endDate],
     queryFn: () => {
-      let url = `/api/v1/users/${user?.id}/performance`;
-      if (!showAllStores && activeStore?.id) {
-        url += `?store_id=${activeStore.id}`;
+      const params = new URLSearchParams();
+      if (!showAllStores && activeStore?.id) params.set('store_id', activeStore.id);
+      if (startDate) params.set('start_date', new Date(startDate).toISOString());
+      if (endDate) {
+        const d = new Date(endDate);
+        d.setHours(23, 59, 59, 999);
+        params.set('end_date', d.toISOString());
       }
+      const qs = params.toString();
+      const url = `/api/v1/users/${user?.id}/performance${qs ? `?${qs}` : ''}`;
       // Same rationale as ordersQuery: never let the active-store tenant
       // header intersect the results — explicit params + RBAC do the scoping.
       return apiFetch<any>(url, { allStores: true });
@@ -2347,7 +2387,40 @@ export default function AgentDashboard() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-24 sm:pb-8 custom-scrollbar bg-slate-50/50">
           {activeSubModule === 'salary-details' ? (
-            <SalaryView perf={perfQuery.data} user={user} />
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 className="text-xl font-bold tracking-tight">Mon Salaire</h2>
+                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border shadow-sm w-full md:w-auto justify-between md:justify-start">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Du</span>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Au</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
+                    />
+                  </div>
+                  {(startDate || endDate) && (
+                    <button
+                      onClick={() => { setStartDate(''); setEndDate(''); }}
+                      className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
+              </div>
+              <SalaryView perf={perfQuery.data} user={user} />
+            </div>
           ) : activeSubModule === 'products-catalog' ? (
             // Avantage préexistant du livreur : gestion produit complète
             // (pas la vue Inventaire allégée de la confirmatrice ci-dessous).

@@ -1284,37 +1284,73 @@ const [timeLeft, setTimeLeft] = useState('');
                 de date que le reste de la page (countsQuery passe déjà
                 start_date/end_date au backend — voir get_order_counts).
                 Les paniers abandonnés ont leur propre badge juste après ;
-                les additionner ici les aurait comptés deux fois à l'écran. */}
+                les additionner ici les aurait comptés deux fois à l'écran.
+                Chaque badge est maintenant cliquable — bascule le pill
+                "Filtre type" existant (typeFilter/ORDER_TYPE_FILTERS,
+                déjà utilisé plus bas) au lieu d'être purement informatif. */}
             <span className="uppercase tracking-wider">📥 Reçues :</span>
-            <span className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+            <button
+              type="button"
+              onClick={() => setTypeFilter(prev => prev === 'NORMAL' ? 'ALL' : 'NORMAL')}
+              className={cn(
+                "px-2 py-1 rounded-lg border transition-colors",
+                typeFilter === 'NORMAL' ? "bg-blue-600 text-white border-blue-600" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              )}
+            >
               {receivedCounts.normal} commande{receivedCounts.normal > 1 ? 's' : ''}
-            </span>
+            </button>
             {/* Doublons — nombre de COMMANDES ayant reçu au moins une
                 resoumission du même client, pas le nombre brut de doublons
                 fusionnés (une commande qui a absorbé 3 resoumissions compte
                 pour 1 ici, pas 3). */}
             {(receivedCounts.duplicate ?? 0) > 0 && (
-              <span
-                className="px-2 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-200"
+              <button
+                type="button"
+                onClick={() => setTypeFilter(prev => prev === 'DUPLICATE' ? 'ALL' : 'DUPLICATE')}
                 title="Nombre de commandes ayant reçu au moins une resoumission du même client, fusionnée automatiquement — pas des ventes en plus, déjà comptées une fois."
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  typeFilter === 'DUPLICATE' ? "bg-purple-600 text-white border-purple-600" : "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                )}
               >
                 🟣 {receivedCounts.duplicate} commande{(receivedCounts.duplicate ?? 0) > 1 ? 's' : ''} avec doublon{(receivedCounts.duplicate ?? 0) > 1 ? 's' : ''}
-              </span>
+              </button>
             )}
             {(tabCounts['SHIPPED'] ?? 0) > 0 && (
-              <span className="px-2 py-1 rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-200">
+              <button
+                type="button"
+                onClick={() => handleModeChange('FOLLOWUP')}
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  viewMode === 'FOLLOWUP' ? "bg-cyan-600 text-white border-cyan-600" : "bg-cyan-50 text-cyan-700 border-cyan-200 hover:bg-cyan-100"
+                )}
+              >
                 🚚 {tabCounts['SHIPPED']} en livraison
-              </span>
+              </button>
             )}
             {(receivedCounts.manual ?? 0) > 0 && (
-              <span className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <button
+                type="button"
+                onClick={() => setTypeFilter(prev => prev === 'MANUAL' ? 'ALL' : 'MANUAL')}
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  typeFilter === 'MANUAL' ? "bg-indigo-600 text-white border-indigo-600" : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+                )}
+              >
                 ✍️ {receivedCounts.manual} manuelle{(receivedCounts.manual ?? 0) > 1 ? 's' : ''}
-              </span>
+              </button>
             )}
             {receivedCounts.abandoned > 0 && (
-              <span className="px-2 py-1 rounded-lg bg-orange-50 text-orange-700 border border-orange-200">
+              <button
+                type="button"
+                onClick={() => setTypeFilter(prev => prev === 'ABANDONED' ? 'ALL' : 'ABANDONED')}
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  typeFilter === 'ABANDONED' ? "bg-orange-600 text-white border-orange-600" : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
+                )}
+              >
                 🛒 {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
-              </span>
+              </button>
             )}
           </div>
         )}
