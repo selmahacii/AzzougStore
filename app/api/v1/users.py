@@ -613,12 +613,14 @@ def get_user_performance(
         func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered"),
         func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
         func.sum(case((Order.status == "CANCELLED", 1), else_=0)).label("cancelled"),
+        func.sum(case((Order.is_upsell == True, 1), else_=0)).label("upsell"),
     ).one()
     total_assigned   = totals_row.total or 0
     confirmed_count  = totals_row.confirmed or 0
     delivered_count  = totals_row.delivered or 0
     returned_count   = totals_row.returned or 0
     cancelled_count  = totals_row.cancelled or 0
+    upsell_count     = totals_row.upsell or 0
 
     # Salary via service (uses DELIVERED orders only, respects payment_type),
     # now scoped to the same since/until window as the stats above.
@@ -674,6 +676,7 @@ def get_user_performance(
             "delivered_count":   delivered_count,
             "returned_count":    returned_count,
             "cancelled_count":   cancelled_count,
+            "upsell_count":      upsell_count,
             "salary":                    salary_data["salary"],
             "payment_type":              salary_data["payment_type"],
             "payment_amount":            salary_data["payment_amount"],
