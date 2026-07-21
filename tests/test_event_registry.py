@@ -36,3 +36,14 @@ def test_meta_state_label_maps_every_known_status():
 
 def test_meta_state_label_falls_back_to_raw_value_for_unknown_status():
     assert _meta_state_label("some_future_status") == "some_future_status"
+
+
+def test_attribution_readiness_weights_sum_to_100():
+    """The SQL-side average score in /diagnostics (production audit
+    2026-07-21: pushed from Python row-by-row scoring into a single Postgres
+    AVG() to avoid loading the whole orders table into memory) assumes the
+    weights sum to exactly 100 so the raw weighted sum IS the percentage
+    directly, with no extra division needed. If this weight table changes
+    without updating that assumption, this test catches it."""
+    from app.services.meta_capi import ATTRIBUTION_READINESS_WEIGHTS
+    assert sum(ATTRIBUTION_READINESS_WEIGHTS.values()) == 100.0

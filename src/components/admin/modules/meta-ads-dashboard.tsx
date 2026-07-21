@@ -146,19 +146,44 @@ export default function MetaAdsDashboard() {
   const fullDiagnostics = fullDiagnosticsData?.data;
 
   // --- Event Registry — source de vérité unique de chaque évènement envoyé
-  // à Meta, enrichi du parcours publicitaire complet (Phase 1) ---
+  // à Meta, enrichi du parcours publicitaire complet (Phase 1). Filtres
+  // complets nécessaires dès que le volume dépasse quelques centaines de
+  // lignes (audit de production 2026-07-21) : event_id, order_id (via la
+  // recherche libre "commande/téléphone" ci-dessous), téléphone, campagne,
+  // adset, annonce, event_name, dedup_status, source, période. ---
   const [registryPage, setRegistryPage] = useState(1);
   const [registryEventFilter, setRegistryEventFilter] = useState<string>('');
+  const [registryDedupFilter, setRegistryDedupFilter] = useState<string>('');
+  const [registrySourceFilter, setRegistrySourceFilter] = useState<string>('');
+  const [registryEventIdSearch, setRegistryEventIdSearch] = useState<string>('');
+  const [registryPhoneSearch, setRegistryPhoneSearch] = useState<string>('');
+  const [registryCampaignSearch, setRegistryCampaignSearch] = useState<string>('');
+  const [registryAdsetSearch, setRegistryAdsetSearch] = useState<string>('');
+  const [registryAdSearch, setRegistryAdSearch] = useState<string>('');
   const { data: registryData, isLoading: isLoadingRegistry } = useQuery({
-    queryKey: ['meta_event_registry', activeStore?.id, dateStart, dateEnd, registryPage, registryEventFilter],
+    queryKey: ['meta_event_registry', activeStore?.id, dateStart, dateEnd, registryPage, registryEventFilter,
+      registryDedupFilter, registrySourceFilter, registryEventIdSearch, registryPhoneSearch,
+      registryCampaignSearch, registryAdsetSearch, registryAdSearch],
     queryFn: () => {
       const params = new URLSearchParams({ store_id: activeStore?.id || '', page: String(registryPage), limit: '50', date_from: dateStart, date_to: dateEnd });
       if (registryEventFilter) params.set('event_name', registryEventFilter);
+      if (registryDedupFilter) params.set('dedup_status', registryDedupFilter);
+      if (registrySourceFilter) params.set('source', registrySourceFilter);
+      if (registryEventIdSearch) params.set('event_id', registryEventIdSearch);
+      if (registryPhoneSearch) params.set('phone', registryPhoneSearch);
+      if (registryCampaignSearch) params.set('campaign', registryCampaignSearch);
+      if (registryAdsetSearch) params.set('adset', registryAdsetSearch);
+      if (registryAdSearch) params.set('ad', registryAdSearch);
       return apiFetch<{ success: boolean; data: any[]; total: number; totalPages: number }>(`/api/v1/meta-ads/capi-logs?${params.toString()}`);
     },
     enabled: !!activeStore?.id && activeTab === 'registry',
     refetchOnWindowFocus: false,
   });
+  const resetRegistryFilters = () => {
+    setRegistryEventFilter(''); setRegistryDedupFilter(''); setRegistrySourceFilter('');
+    setRegistryEventIdSearch(''); setRegistryPhoneSearch(''); setRegistryCampaignSearch('');
+    setRegistryAdsetSearch(''); setRegistryAdSearch(''); setRegistryPage(1);
+  };
 
   // --- Instrumentation demandée avant de retirer PageView/AddToWishlist du
   // miroir CAPI — volume/succès/latence RÉELS par évènement, pas une
@@ -1792,17 +1817,40 @@ export default function MetaAdsDashboard() {
               <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
                 <Layers className="size-4 text-[#00B894]" /> Registre d'évènements
               </h3>
-              <select
-                value={registryEventFilter}
-                onChange={e => { setRegistryEventFilter(e.target.value); setRegistryPage(1); }}
-                className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3"
-              >
+              <span className="text-[10px] font-bold text-slate-400">{registryData?.total ?? 0} évènement{(registryData?.total ?? 0) > 1 ? 's' : ''} — période sélectionnée en haut de page</span>
+            </div>
+
+            {/* Barre de filtres complète — indispensable dès que le volume
+                dépasse quelques centaines de lignes (audit de production
+                2026-07-21). Chaque champ déclenche un filtre SQL côté
+                serveur, jamais un filtrage côté client sur la page chargée. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
+              <select value={registryEventFilter} onChange={e => { setRegistryEventFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
                 <option value="">Tous les évènements</option>
                 {['PageView', 'ViewContent', 'AddToWishlist', 'AddToCart', 'InitiateCheckout', 'Purchase'].map(ev => (
                   <option key={ev} value={ev}>{ev}</option>
                 ))}
               </select>
+              <select value={registrySourceFilter} onChange={e => { setRegistrySourceFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                <option value="">Toutes les sources</option>
+                <option value="capi_only">CAPI uniquement</option>
+                <option value="pixel_capi">Pixel + CAPI</option>
+              </select>
+              <select value={registryDedupFilter} onChange={e => { setRegistryDedupFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
+                <option value="">Tout statut dédup.</option>
+                <option value="unique">Unique</option>
+                <option value="doublon_reel">⚠️ Doublon réel</option>
+                <option value="retry_normal">Retry normal</option>
+                <option value="jamais_synchronise">Jamais synchronisé</option>
+              </select>
+              <input value={registryEventIdSearch} onChange={e => { setRegistryEventIdSearch(e.target.value); setRegistryPage(1); }} placeholder="event_id…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
+              <input value={registryPhoneSearch} onChange={e => { setRegistryPhoneSearch(e.target.value); setRegistryPage(1); }} placeholder="Téléphone…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
+              <input value={registryCampaignSearch} onChange={e => { setRegistryCampaignSearch(e.target.value); setRegistryPage(1); }} placeholder="Campagne…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
+              <input value={registryAdsetSearch} onChange={e => { setRegistryAdsetSearch(e.target.value); setRegistryPage(1); }} placeholder="Adset…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
+              <input value={registryAdSearch} onChange={e => { setRegistryAdSearch(e.target.value); setRegistryPage(1); }} placeholder="Annonce…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
+              <button onClick={resetRegistryFilters} className="h-9 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors">✕ Réinitialiser</button>
             </div>
+
             {isLoadingRegistry ? (
               <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
             ) : Array.isArray(registryData?.data) && registryData.data.length > 0 ? (

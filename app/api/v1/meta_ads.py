@@ -1852,7 +1852,7 @@ def get_meta_diagnostics(
     - Attribution coverage on recent orders (fbp/fbc/utm presence)
     - Catalog issues (missing images, ephemeral URLs, missing descriptions)
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, case
     from app.models.marketing import MetaCapiLog
     from app.models.product import Product
     from app.services.meta_capi import _MAX_QUEUE_RETRIES
@@ -2065,43 +2065,48 @@ def get_meta_diagnostics(
     # POURRA jamais être attribuée, structurellement, quel que soit le
     # reste du payload. Distinct de "fbc absent" (trafic organique/direct —
     # normal, jamais attribuable non plus, mais pas un défaut de qualité).
-    from app.services.meta_capi import is_well_formed_fbc as _is_well_formed_fbc
-    _fbc_rows = (
-        db.query(Order.fbc)
-        .filter(*order_filters, Order.fbc.isnot(None), Order.fbc != "")
-        .all()
+    #
+    # Poussé en SQL (regex Postgres ~) plutôt que chargé en mémoire Python —
+    # audit de production du 2026-07-21 : charger toutes les commandes de la
+    # fenêtre pour les valider une par une en Python ne passe pas à l'échelle
+    # de centaines de milliers de commandes. count() seul, aucune ligne
+    # rapatriée côté application.
+    fbc_well_formed = (
+        db.query(func.count(Order.id))
+        .filter(*order_filters, Order.fbc.isnot(None), Order.fbc != "",
+                Order.fbc.op("~")(r"^fb\.\d+\.\d+\..+$"))
+        .scalar() or 0
     )
-    fbc_well_formed = sum(1 for (v,) in _fbc_rows if _is_well_formed_fbc(v))
     fbc_malformed = fbc_cov - fbc_well_formed
     orders_no_ad_click_signal = orders_30d - fbc_cov  # organique/direct — jamais attribuable, normal
 
     # ── Score d'attribution PRÉDICTIF (30j) — calculable AVANT l'envoi,
-    # contrairement à l'EMQ (qui note ce que Meta a déjà reçu). Répond
-    # directement à "Meta aura-t-il de bonnes chances d'attribuer ce
-    # Purchase ?" en pondérant fbc valide, fbp, téléphone, external_id, IP,
-    # user agent, event_time, value, currency, event_id — pas juste la
-    # qualité de matching utilisateur (EMQ) mais la chance RÉELLE
-    # d'attribution publicitaire.
-    from app.services.meta_capi import compute_attribution_readiness as _compute_readiness
-    _readiness_rows = (
-        db.query(Order.fbc, Order.fbp, Order.customer_phone, Order.client_ip,
-                 Order.client_user_agent, Order.created_at, Order.total)
-        .filter(*order_filters)
-        .all()
+    # contrairement à l'EMQ (qui note ce que Meta a déjà reçu). Mêmes poids
+    # que compute_attribution_readiness() (meta_capi.py) — RÉUTILISÉS ici,
+    # jamais redéfinis en dur, pour ne jamais diverger de la même logique —
+    # mais évalués en un seul AVG() côté Postgres au lieu de rapatrier
+    # chaque commande pour la noter en Python (même audit de production :
+    # aucun endpoint ne doit charger la table entière en mémoire).
+    # currency/event_id/event_time sont TOUJOURS vrais au moment de l'envoi
+    # réel (voir build_purchase_event) donc leur poids est une constante
+    # ajoutée telle quelle plutôt qu'une colonne à tester.
+    from app.services.meta_capi import ATTRIBUTION_READINESS_WEIGHTS as _W
+    _always_true_weight = _W["event_time"] + _W["currency"] + _W["event_id"]
+    _score_case = (
+        _W["fbc_valid"] * case((Order.fbc.op("~")(r"^fb\.\d+\.\d+\..+$"), 1), else_=0)
+        + _W["fbp"] * case((Order.fbp.isnot(None), 1), else_=0)
+        + (_W["phone"] + _W["external_id"]) * case((Order.customer_phone.isnot(None), 1), else_=0)
+        + _W["client_ip"] * case((Order.client_ip.isnot(None), 1), else_=0)
+        + _W["user_agent"] * case((Order.client_user_agent.isnot(None), 1), else_=0)
+        + _W["value"] * case((Order.total > 0, 1), else_=0)
+        + _always_true_weight
     )
-    _readiness_scores = [
-        _compute_readiness(
-            fbc=r.fbc, fbp=r.fbp, phone=r.customer_phone,
-            external_id=r.customer_phone, client_ip=r.client_ip,
-            user_agent=r.client_user_agent,
-            event_time=int(r.created_at.timestamp()) if r.created_at else None,
-            value=float(r.total) if r.total else None,
-            currency="DZD",  # toujours fourni au send — voir build_purchase_event
-            event_id="present",  # toujours généré déterministe — voir purchase_event_id
-        )["score"]
-        for r in _readiness_rows
-    ]
-    attribution_readiness_score = round(sum(_readiness_scores) / len(_readiness_scores), 1) if _readiness_scores else None
+    avg_score_raw = (
+        db.query(func.avg(_score_case))
+        .filter(*order_filters)
+        .scalar()
+    )
+    attribution_readiness_score = round(float(avg_score_raw), 1) if avg_score_raw is not None else None
 
     # Catalog issues
     products = db.query(Product).filter(
@@ -2251,6 +2256,13 @@ def get_meta_capi_logs(
     status: Optional[str] = Query(None, description="success | error | pending_retry | failed"),
     event_name: Optional[str] = Query(None),
     order_id: Optional[str] = Query(None),
+    event_id: Optional[str] = Query(None, description="Recherche partielle sur event_id"),
+    phone: Optional[str] = Query(None, description="Recherche partielle sur le téléphone client (via commande liée)"),
+    campaign: Optional[str] = Query(None, description="Recherche partielle sur campaign_id OU campaign_name"),
+    adset: Optional[str] = Query(None, description="Recherche partielle sur adset_id OU adset_name"),
+    ad: Optional[str] = Query(None, description="Recherche partielle sur ad_id OU ad_name"),
+    dedup_status: Optional[str] = Query(None, description="unique | doublon_reel | retry_normal | jamais_synchronise"),
+    source: Optional[str] = Query(None, description="capi_only | pixel_capi"),
     date_from: Optional[str] = Query(None, description="ISO date, inclusive"),
     date_to: Optional[str] = Query(None, description="ISO date, inclusive"),
     page: int = Query(1, ge=1),
@@ -2260,32 +2272,78 @@ def get_meta_capi_logs(
 ):
     """
     Event Registry — le registre central de chaque évènement Meta envoyé
-    par l'ERP, enrichi du parcours publicitaire complet (campagne, adset,
-    annonce, placement, site_source_name — Phase 1 de l'attribution
-    enterprise) et de son rattachement à la commande. C'est la source de
-    vérité unique : chaque chiffre affiché ailleurs doit pouvoir remonter
-    à une ligne précise ici.
+    par l'ERP. C'EST UNE VUE, pas une table : jointure de meta_capi_logs +
+    orders, calculée à la volée — aucune table event_registry n'existe ni
+    ne doit exister (voir la revue de production du 2026-07-21).
 
-    Étend l'ancien /capi-logs (log brut filtrable) au lieu de dupliquer un
-    nouvel endpoint séparé — mêmes champs qu'avant + les nouveaux, aucun
-    consommateur existant cassé (aucun frontend n'appelait encore cet
-    endpoint avant cette version).
+    dedup_status est calculé en SQL via une sous-requête groupée par
+    event_id (row_count + success_count), pas en Python après coup — c'est
+    ce qui permet de le FILTRER réellement à l'échelle (page 40 000 sur
+    500 000 lignes doit rester rapide), contrairement à la version
+    précédente qui le calculait après la pagination et ne pouvait donc pas
+    filtrer dessus sans casser le comptage total.
     """
+    from sqlalchemy import case, or_
     from app.models.marketing import MetaCapiLog
 
-    q = db.query(MetaCapiLog).filter(MetaCapiLog.store_id == store_id)
+    # Sous-requête : row_count + success_count par event_id, scopée au
+    # store (utilise ix_meta_capi_logs_store_event_created) — UNE seule
+    # agrégation groupée, jamais recalculée par ligne affichée.
+    dedup_subq = (
+        db.query(
+            MetaCapiLog.event_id.label("de_event_id"),
+            func.count(MetaCapiLog.id).label("row_count"),
+            func.sum(case((MetaCapiLog.status == "success", 1), else_=0)).label("success_count"),
+        )
+        .filter(MetaCapiLog.store_id == store_id)
+        .group_by(MetaCapiLog.event_id)
+        .subquery()
+    )
+    dedup_status_expr = case(
+        (dedup_subq.c.row_count <= 1, "unique"),
+        (dedup_subq.c.success_count >= 2, "doublon_reel"),
+        (dedup_subq.c.success_count == 1, "retry_normal"),
+        else_="jamais_synchronise",
+    )
+
+    q = (
+        db.query(MetaCapiLog, Order, dedup_status_expr.label("dedup_status"))
+        .outerjoin(Order, Order.id == MetaCapiLog.order_id)
+        .join(dedup_subq, dedup_subq.c.de_event_id == MetaCapiLog.event_id)
+        .filter(MetaCapiLog.store_id == store_id)
+    )
     if status:
         q = q.filter(MetaCapiLog.status == status)
     if event_name:
         q = q.filter(MetaCapiLog.event_name == event_name)
     if order_id:
         q = q.filter(MetaCapiLog.order_id == order_id)
+    if event_id:
+        q = q.filter(MetaCapiLog.event_id.ilike(f"%{event_id}%"))
+    if phone:
+        q = q.filter(Order.customer_phone.ilike(f"%{phone}%"))
+    if campaign:
+        q = q.filter(or_(Order.campaign_id.ilike(f"%{campaign}%"), Order.campaign_name.ilike(f"%{campaign}%")))
+    if adset:
+        q = q.filter(or_(Order.adset_id.ilike(f"%{adset}%"), Order.adset_name.ilike(f"%{adset}%")))
+    if ad:
+        q = q.filter(or_(Order.ad_id.ilike(f"%{ad}%"), Order.ad_name.ilike(f"%{ad}%")))
+    if dedup_status:
+        q = q.filter(dedup_status_expr == dedup_status)
+    if source == "capi_only":
+        q = q.filter(MetaCapiLog.event_name.in_(_CAPI_ONLY_EVENTS))
+    elif source == "pixel_capi":
+        q = q.filter(MetaCapiLog.event_name.notin_(_CAPI_ONLY_EVENTS))
     if date_from:
         q = q.filter(MetaCapiLog.created_at >= date_from)
     if date_to:
         q = q.filter(MetaCapiLog.created_at <= date_to)
 
-    total = q.count()
+    # count() sur une requête multi-entités compterait les lignes du
+    # produit cartésien tel quel (correct ici : 1 log = 1 ligne malgré les
+    # jointures, Order/dedup_subq sont chacun au plus 1:1) — explicite via
+    # count(MetaCapiLog.id) pour ne jamais dépendre de ce détail.
+    total = q.with_entities(func.count(MetaCapiLog.id)).scalar() or 0
     rows = (
         q.order_by(MetaCapiLog.created_at.desc())
         .offset((page - 1) * limit)
@@ -2293,81 +2351,39 @@ def get_meta_capi_logs(
         .all()
     )
 
-    # ── Statut de déduplication — RÉUTILISE exactement la même
-    # classification que l'audit d'anomalies Purchase plus haut
-    # (real_double_send / retry_then_success / never_succeeded), généralisée
-    # à TOUS les types d'évènement plutôt que dupliquée pour Purchase seul.
-    # Une seule requête groupée, pas de N+1 par ligne affichée.
-    event_ids_on_page = [r.event_id for r in rows]
-    dup_status_by_event_id: Dict[str, str] = {}
-    if event_ids_on_page:
-        dup_rows = (
-            db.query(MetaCapiLog.event_id, MetaCapiLog.status)
-            .filter(MetaCapiLog.event_id.in_(event_ids_on_page))
-            .all()
-        )
-        statuses_by_eid: Dict[str, List[str]] = {}
-        for eid, st in dup_rows:
-            statuses_by_eid.setdefault(eid, []).append(st)
-        for eid, statuses in statuses_by_eid.items():
-            if len(statuses) <= 1:
-                dup_status_by_event_id[eid] = "unique"
-            elif statuses.count("success") >= 2:
-                dup_status_by_event_id[eid] = "doublon_reel"
-            elif statuses.count("success") == 1:
-                dup_status_by_event_id[eid] = "retry_normal"
-            else:
-                dup_status_by_event_id[eid] = "jamais_synchronise"
-
-    # ── Parcours publicitaire — jointure Order pour les champs capturés en
-    # Phase 1 (campaign_name/adset_name/ad_name/placement/site_source_name)
-    # + les ID stables déjà existants. Une seule requête groupée par
-    # order_id, pas une jointure SQL par ligne.
-    order_ids_on_page = [r.order_id for r in rows if r.order_id]
-    orders_by_id: Dict[str, Any] = {}
-    if order_ids_on_page:
-        order_rows = (
-            db.query(Order.id, Order.order_number, Order.campaign_id, Order.adset_id, Order.ad_id,
-                      Order.campaign_name, Order.adset_name, Order.ad_name,
-                      Order.placement, Order.site_source_name, Order.utm_campaign)
-            .filter(Order.id.in_(order_ids_on_page))
-            .all()
-        )
-        orders_by_id = {o.id: o for o in order_rows}
-
-    def _row_to_registry_entry(r) -> Dict[str, Any]:
-        o = orders_by_id.get(r.order_id)
+    def _row_to_registry_entry(log: "MetaCapiLog", order: Optional["Order"], dedup: str) -> Dict[str, Any]:
         return {
-            "id": r.id,
-            "event_id": r.event_id,
-            "event_name": r.event_name,
-            "funnel_step": _FUNNEL_STEP_ORDER.get(r.event_name),
-            "source": "CAPI uniquement" if r.event_name in _CAPI_ONLY_EVENTS else "Pixel + CAPI",
-            "sync_status": r.status,
-            "meta_state": _meta_state_label(r.status),
-            "dedup_status": dup_status_by_event_id.get(r.event_id, "unique"),
-            "order_id": r.order_id,
-            "order_number": o.order_number if o else None,
-            "campaign_id": o.campaign_id if o else None,
-            "adset_id": o.adset_id if o else None,
-            "ad_id": o.ad_id if o else None,
-            "campaign_name": o.campaign_name if o else None,
-            "adset_name": o.adset_name if o else None,
-            "ad_name": o.ad_name if o else None,
-            "placement": o.placement if o else None,
-            "site_source_name": o.site_source_name if o else None,
-            "utm_campaign": o.utm_campaign if o else None,
-            "error_message": r.error_message,
-            "retry_count": r.retry_count,
-            "next_retry_at": r.next_retry_at.isoformat() if r.next_retry_at else None,
-            "latency_ms": r.latency_ms,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "id": log.id,
+            "event_id": log.event_id,
+            "event_name": log.event_name,
+            "funnel_step": _FUNNEL_STEP_ORDER.get(log.event_name),
+            "source": "CAPI uniquement" if log.event_name in _CAPI_ONLY_EVENTS else "Pixel + CAPI",
+            "sync_status": log.status,
+            "meta_state": _meta_state_label(log.status),
+            "dedup_status": dedup,
+            "order_id": log.order_id,
+            "order_number": order.order_number if order else None,
+            "customer_phone": order.customer_phone if order else None,
+            "campaign_id": order.campaign_id if order else None,
+            "adset_id": order.adset_id if order else None,
+            "ad_id": order.ad_id if order else None,
+            "campaign_name": order.campaign_name if order else None,
+            "adset_name": order.adset_name if order else None,
+            "ad_name": order.ad_name if order else None,
+            "placement": order.placement if order else None,
+            "site_source_name": order.site_source_name if order else None,
+            "utm_campaign": order.utm_campaign if order else None,
+            "error_message": log.error_message,
+            "retry_count": log.retry_count,
+            "next_retry_at": log.next_retry_at.isoformat() if log.next_retry_at else None,
+            "latency_ms": log.latency_ms,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "updated_at": log.updated_at.isoformat() if log.updated_at else None,
         }
 
     return {
         "success": True,
-        "data": [_row_to_registry_entry(r) for r in rows],
+        "data": [_row_to_registry_entry(log, order, dedup) for log, order, dedup in rows],
         "page": page,
         "pageSize": limit,
         "total": total,
@@ -2411,12 +2427,18 @@ def get_capi_volume_by_event(
     if date_to:
         filters.append(MetaCapiLog.created_at <= date_to)
 
+    # UNE SEULE requête groupée — total, succès, latence ET event_id uniques
+    # dans la même agrégation. La version précédente refaisait une requête
+    # COUNT(DISTINCT event_id) par type d'évènement DANS la boucle Python
+    # (N+1 réel : ~6-8 requêtes supplémentaires) — corrigé suite à l'audit
+    # de production du 2026-07-21.
     rows = (
         db.query(
             MetaCapiLog.event_name,
             func.count(MetaCapiLog.id).label("total"),
             func.sum(case((MetaCapiLog.status == "success", 1), else_=0)).label("success"),
             func.avg(MetaCapiLog.latency_ms).label("avg_latency_ms"),
+            func.count(func.distinct(MetaCapiLog.event_id)).label("unique_event_ids"),
         )
         .filter(*filters)
         .group_by(MetaCapiLog.event_name)
@@ -2424,15 +2446,9 @@ def get_capi_volume_by_event(
     )
 
     by_event = []
-    for event_name, total, success, avg_latency in rows:
+    for event_name, total, success, avg_latency, dup_count in rows:
         success = success or 0
-        dup_count = (
-            db.query(func.count(func.distinct(MetaCapiLog.event_id)))
-            .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == event_name,
-                    *([MetaCapiLog.created_at >= date_from] if date_from else []),
-                    *([MetaCapiLog.created_at <= date_to] if date_to else []))
-            .scalar() or 0
-        )
+        dup_count = dup_count or 0
         by_event.append({
             "event_name": event_name,
             "capi_attempts_total": total,
