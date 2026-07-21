@@ -112,9 +112,49 @@ def _confirmateur_resolved_stores(user: User) -> list:
     return stores
 
 
+def _assignment_rule_claimed_by_other_criterion(user_id: str):
+    """
+    SQLAlchemy criterion: True when a PRODUCT or STORE Assignment Rule
+    (app/models/assignment_rule.py) already claims this order's product(s)
+    or store for a DIFFERENT agent. Used to EXCLUDE such orders from a
+    confirmatrice's broad legacy scope (assigned_store_ids/
+    assigned_product_ids) — without this, an order that stayed unassigned
+    (e.g. its store's assignment_logic is MANUAL, or it predates the rule)
+    was visible to ANY confirmatrice whose legacy scope happened to
+    overlap, even though an admin explicitly configured a specific PRODUCT/
+    STORE rule naming someone else as the owner. Mirrors the livreur
+    territory-exclusivity fix (_region_owned_by_any_livreur_criterion) —
+    same class of bug: an explicit rule must always beat a broad fallback
+    scope, whether or not Order.assigned_to happened to get stamped yet.
+    CATEGORY/BRAND rules aren't checked here (lower priority, resolve_
+    assignment_rule already applies them correctly at auto-assign time;
+    this is defense-in-depth for the two levels actually implicated).
+    """
+    from sqlalchemy import exists, select, or_, and_
+    from app.models.assignment_rule import AssignmentRule
+    from app.models.order import OrderItem
+
+    product_claimed_by_other = exists(select(1).where(
+        OrderItem.order_id == Order.id,
+        AssignmentRule.rule_type == "PRODUCT",
+        AssignmentRule.target_id == OrderItem.product_id,
+        AssignmentRule.agent_id != user_id,
+        AssignmentRule.is_exclusion == False,
+        AssignmentRule.is_active == True,
+    ))
+    store_claimed_by_other = exists(select(1).where(
+        AssignmentRule.rule_type == "STORE",
+        AssignmentRule.target_id == Order.store_id,
+        AssignmentRule.agent_id != user_id,
+        AssignmentRule.is_exclusion == False,
+        AssignmentRule.is_active == True,
+    ))
+    return or_(product_claimed_by_other, store_claimed_by_other)
+
+
 def _confirmateur_scope_criterion(user: User):
     """SQLAlchemy criterion version of the scope, for list/count queries."""
-    from sqlalchemy import or_
+    from sqlalchemy import or_, and_
     from app.models.order import OrderItem
 
     raw_products = getattr(user, "assigned_product_ids", None)
@@ -129,10 +169,11 @@ def _confirmateur_scope_criterion(user: User):
 
     if not crits:
         return False  # nothing configured → no unassigned visibility (strict isolation)
-    return or_(*crits) if len(crits) > 1 else crits[0]
+    broad_match = or_(*crits) if len(crits) > 1 else crits[0]
+    return and_(broad_match, ~_assignment_rule_claimed_by_other_criterion(user.id))
 
 
-def _confirmateur_scope_ok(order: Order, user: User) -> bool:
+def _confirmateur_scope_ok(order: Order, user: User, db: Optional[Session] = None) -> bool:
     """Python version of the same scope, for single-order access checks."""
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
@@ -143,7 +184,21 @@ def _confirmateur_scope_ok(order: Order, user: User) -> bool:
 
     store_ok = bool(stores) and order.store_id in stores
     product_ok = bool(products) and any(item.product_id in products for item in (order.items or []))
-    return store_ok or product_ok
+    if not (store_ok or product_ok):
+        return False
+
+    # Same exclusion as the SQL criterion above — an explicit PRODUCT/STORE
+    # rule naming a DIFFERENT agent always wins over her broad legacy scope.
+    if db is not None:
+        from app.services.order_service import resolve_assignment_rule
+        try:
+            item_pids = [item.product_id for item in (order.items or []) if item.product_id]
+            claimed_by = resolve_assignment_rule(db, order.store_id, item_pids)
+        except Exception:
+            claimed_by = None
+        if claimed_by and claimed_by != user.id:
+            return False
+    return True
 
 
 def _region_owned_by_agent_criterion(agent_id: str):
@@ -237,7 +292,7 @@ def _assert_order_access(order: Order, current_user: User, db: Optional[Session]
         # A confirmatrice can access an order if:
         # 1. It is assigned to them
         # 2. It is unassigned and inside their responsibility scope
-        is_accessible = is_assigned or (is_unassigned and _confirmateur_scope_ok(order, current_user))
+        is_accessible = is_assigned or (is_unassigned and _confirmateur_scope_ok(order, current_user, db))
 
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")

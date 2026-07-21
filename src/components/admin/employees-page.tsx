@@ -1220,6 +1220,28 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
    });
    const productsList = (Array.isArray(allProductsData) ? allProductsData : (allProductsData?.data ?? [])) as Product[];
 
+   // Conflict awareness: a PRODUCT/STORE Assignment Rule (Règles
+   // d'Assignation widget) always wins over this form's Produits/Boutique
+   // Assignés for a CONFIRMATEUR (see resolve_assignment_rule) — assigning
+   // a product here to someone a rule already claims for a DIFFERENT agent
+   // is exactly the silent-conflict configuration mistake that caused
+   // orders to keep routing to the wrong confirmatrice (2026-07-22 fix).
+   // Surfaced here so the admin sees it BEFORE saving, not after.
+   const { data: assignmentRulesData } = useQuery({
+      queryKey: ['assignment-rules-for-conflict-check'],
+      queryFn: () => apiFetch<any>('/api/v1/assignment-rules/?active_only=true'),
+      enabled: open,
+   });
+   const activeRules: any[] = assignmentRulesData?.data ?? [];
+   const productRuleOwner: Record<string, { agentId: string; agentName: string }> = {};
+   const storeRuleOwner: Record<string, { agentId: string; agentName: string }> = {};
+   for (const r of activeRules) {
+      if (r.is_exclusion) continue;
+      const owner = { agentId: r.agent_id, agentName: r.agent_name || r.agent_id };
+      if (r.rule_type === 'PRODUCT') productRuleOwner[r.target_id] = owner;
+      if (r.rule_type === 'STORE') storeRuleOwner[r.target_id] = owner;
+   }
+
    const [formData, setFormData] = useState({
       name: '', email: '', password: '', phone: '',
       role: '' as UserRole | '', daily_target: 10, is_active: true,
@@ -1399,7 +1421,16 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                         <div className="max-h-[150px] overflow-y-auto custom-scrollbar space-y-1.5 pr-1">
                            {filteredProducts
                              .filter(p => p.name.toLowerCase().includes(productSearch))
-                             .map((prod: any) => (
+                             .map((prod: any) => {
+                              // A PRODUCT or STORE rule already claiming this
+                              // product for a DIFFERENT agent always wins over
+                              // this checkbox (resolve_assignment_rule) — flag
+                              // it here so the conflict is visible BEFORE
+                              // saving, not discovered later as "orders keep
+                              // going to the wrong person".
+                              const owner = productRuleOwner[prod.id] || storeRuleOwner[prod.store_id];
+                              const isConflict = !!owner && owner.agentId !== editingEmployee?.id;
+                              return (
                               <button
                                  key={prod.id}
                                  type="button"
@@ -1407,7 +1438,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                     const exist = formData.assigned_product_ids.includes(prod.id);
                                     setFormData(p => ({
                                        ...p,
-                                       assigned_product_ids: exist 
+                                       assigned_product_ids: exist
                                           ? p.assigned_product_ids.filter(id => id !== prod.id)
                                           : [...p.assigned_product_ids, prod.id]
                                     }));
@@ -1420,10 +1451,16 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                  <div className="flex flex-col items-start truncate">
                                     <span className="truncate">{prod.name}</span>
                                     <span className="text-[8px] opacity-60 uppercase tracking-wider">{storesList.find(s => s.id === prod.store_id)?.name || 'Boutique Inconnue'}</span>
+                                    {isConflict && (
+                                       <span className="text-[8px] font-black text-amber-600 uppercase tracking-wider" title="Une règle d'assignation (Produit/Boutique) plus prioritaire donnera toujours cette commande à cet agent, quoi que vous cochiez ici.">
+                                          ⚠ Déjà assigné à {owner!.agentName} par une règle
+                                       </span>
+                                    )}
                                  </div>
                                  {formData.assigned_product_ids.includes(prod.id) ? <Check className="size-3" /> : <Plus className="size-3 text-slate-300" />}
                               </button>
-                           ))}
+                              );
+                           })}
                            {filteredProducts.filter(p => p.name.toLowerCase().includes(productSearch)).length === 0 && (
                               <div className="text-center py-6 border-2 border-dashed border-slate-100 rounded-xl">
                                  <Package className="size-6 mx-auto mb-2 text-slate-200" />

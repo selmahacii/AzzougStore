@@ -65,6 +65,7 @@ class AssignmentRuleOut(BaseModel):
     rule_type: str
     target_id: str
     agent_id: str
+    agent_name: Optional[str] = None
     is_exclusion: bool
     is_active: bool
     notes: Optional[str] = None
@@ -92,8 +93,18 @@ def list_assignment_rules(
         if active_only:
             q = q.filter(AssignmentRule.is_active == True)
         rows = q.order_by(AssignmentRule.rule_type).all()
-        return {"success": True, "data": [AssignmentRuleOut.model_validate(r).model_dump() for r in rows],
-                "rule_type_priority": RULE_TYPE_PRIORITY}
+
+        # agent_name resolved server-side — every consumer (this widget,
+        # the New Employee modal's conflict check) gets it for free instead
+        # of re-fetching /users and cross-referencing agent_id client-side.
+        agent_ids = {r.agent_id for r in rows}
+        agent_names = dict(db.query(User.id, User.name).filter(User.id.in_(agent_ids)).all()) if agent_ids else {}
+        data = []
+        for r in rows:
+            out = AssignmentRuleOut.model_validate(r).model_dump()
+            out["agent_name"] = agent_names.get(r.agent_id)
+            data.append(out)
+        return {"success": True, "data": data, "rule_type_priority": RULE_TYPE_PRIORITY}
 
     return _run_or_schema_error(db, _do)
 
