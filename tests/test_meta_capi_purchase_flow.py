@@ -256,8 +256,17 @@ async def test_abandoned_cart_completed_by_customer_fires_purchase_once(client):
 
 
 @pytest.mark.asyncio
-async def test_abandoned_cart_confirmed_by_phone_fires_purchase_once(client):
-    """PATCH /orders/{id} — confirmatrice moves ABANDONED straight to CONFIRMED."""
+async def test_abandoned_cart_confirmed_by_phone_never_fires_purchase(client):
+    """
+    PATCH /orders/{id} — confirmatrice moves ABANDONED straight to CONFIRMED.
+
+    Product decision (2026-07-21, confirmed by Selma): Purchase must NEVER
+    be sent to Meta for a recovered abandoned cart, even though it is a
+    real sale — see SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS in
+    app/api/v1/orders.py. This test used to assert the opposite (exactly 1
+    Purchase fired on phone confirmation); now asserts zero, locking in the
+    reversed decision so a future change can't silently re-enable it.
+    """
     suffix = str(uuid.uuid4())[:8]
     store_id, product = await _setup_store_with_meta(client, suffix)
     phone = "0554" + suffix[:6]
@@ -287,12 +296,12 @@ async def test_abandoned_cart_confirmed_by_phone_fires_purchase_once(client):
     db = SessionLocal()
     try:
         rows = _capi_rows(db, abn_order_id)
-        assert len(rows) == 1, f"expected exactly 1 Purchase after phone confirmation, got {len(rows)}"
+        assert len(rows) == 0, f"recovered abandoned carts must never fire Purchase, got {len(rows)}"
     finally:
         db.close()
 
-    # A later status churn (e.g. CANCELLED then re-CONFIRMED) must NOT fire a
-    # second Purchase — previous_status is no longer "ABANDONED" once left.
+    # Further status churn (CANCELLED then re-CONFIRMED) must still never
+    # fire a Purchase either.
     await client.patch(
         f"{settings.API_V1_STR}/orders/{abn_order_id}",
         json={"status": "CANCELLED"}, headers=INTERNAL_KEY_HEADER,
@@ -306,7 +315,7 @@ async def test_abandoned_cart_confirmed_by_phone_fires_purchase_once(client):
     db = SessionLocal()
     try:
         rows = _capi_rows(db, abn_order_id)
-        assert len(rows) == 1, f"CANCELLED->CONFIRMED churn must not double-fire Purchase, got {len(rows)}"
+        assert len(rows) == 0, f"CANCELLED->CONFIRMED churn must still never fire Purchase, got {len(rows)}"
     finally:
         db.close()
 
@@ -389,3 +398,10 @@ async def test_purchase_currency_matches_ad_account_not_hardcoded_dzd(client):
         db.close()
 
     await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
+
+
+def test_recovered_abandoned_cart_purchase_flag_is_off():
+    """Locks in the 2026-07-21 product decision at the source — catches an
+    accidental flip back to True without anyone noticing."""
+    from app.api.v1.orders import SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS
+    assert SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS is False

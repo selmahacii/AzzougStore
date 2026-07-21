@@ -39,6 +39,15 @@ from app.services.order_service import order_service, auto_merge_duplicates
 router = APIRouter()
 logger = logging.getLogger("app.orders")
 
+# Décision produit explicite (2026-07-21, confirmée par Selma) : ne JAMAIS
+# envoyer de Purchase à Meta pour une commande issue d'un panier abandonné
+# récupéré par téléphone — même confirmée/livrée, même si c'est une vraie
+# vente. Conséquence assumée et expliquée : le ROAS que Meta calcule
+# sous-comptera ces ventes réelles, puisqu'il n'en aura jamais connaissance.
+# Un seul interrupteur central, pas un `if False` éparpillé — pour repasser
+# à True facilement si la décision change, sans devoir retrouver chaque site.
+SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS = False
+
 
 # ─── Carrier stage buckets (Noest's own granular tracking) ───────────────────
 # Groups Noest's raw event_key (Order.carrier_stage, written by
@@ -2349,14 +2358,13 @@ def update_order(
         db.refresh(updated)
 
         # A confirmatrice just phoned the customer back and confirmed a cart
-        # that was previously abandoned — this is a genuine sale Meta never
-        # heard about (nothing fires CAPI on a plain status change), and the
-        # customer's browser session is long gone so no Pixel/relay can cover
-        # it either. Fire it exactly once here; send_purchase_for_order's own
-        # idempotency guard covers the (structurally impossible per
-        # _VALID_TRANSITIONS, but defended anyway) case of double-firing.
+        # that was previously abandoned — this WAS fired to Meta as a genuine
+        # sale (a real Purchase CAPI, exactly once, idempotency-guarded).
+        # Deliberately disabled per SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS
+        # (see top of file) — explicit product decision, not a bug: Meta will
+        # never learn about these conversions even though they are real sales.
         _REAL_SALE_STATUSES = {"CONFIRMED", "SHIPPED", "DELIVERED"}
-        if _was_abandoned and str(updated.status) in _REAL_SALE_STATUSES:
+        if SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS and _was_abandoned and str(updated.status) in _REAL_SALE_STATUSES:
             try:
                 from app.models.marketing import MetaAdsConfig
                 meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
