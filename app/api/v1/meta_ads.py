@@ -2075,6 +2075,34 @@ def get_meta_diagnostics(
     fbc_malformed = fbc_cov - fbc_well_formed
     orders_no_ad_click_signal = orders_30d - fbc_cov  # organique/direct — jamais attribuable, normal
 
+    # ── Score d'attribution PRÉDICTIF (30j) — calculable AVANT l'envoi,
+    # contrairement à l'EMQ (qui note ce que Meta a déjà reçu). Répond
+    # directement à "Meta aura-t-il de bonnes chances d'attribuer ce
+    # Purchase ?" en pondérant fbc valide, fbp, téléphone, external_id, IP,
+    # user agent, event_time, value, currency, event_id — pas juste la
+    # qualité de matching utilisateur (EMQ) mais la chance RÉELLE
+    # d'attribution publicitaire.
+    from app.services.meta_capi import compute_attribution_readiness as _compute_readiness
+    _readiness_rows = (
+        db.query(Order.fbc, Order.fbp, Order.customer_phone, Order.client_ip,
+                 Order.client_user_agent, Order.created_at, Order.total)
+        .filter(*order_filters)
+        .all()
+    )
+    _readiness_scores = [
+        _compute_readiness(
+            fbc=r.fbc, fbp=r.fbp, phone=r.customer_phone,
+            external_id=r.customer_phone, client_ip=r.client_ip,
+            user_agent=r.client_user_agent,
+            event_time=int(r.created_at.timestamp()) if r.created_at else None,
+            value=float(r.total) if r.total else None,
+            currency="DZD",  # toujours fourni au send — voir build_purchase_event
+            event_id="present",  # toujours généré déterministe — voir purchase_event_id
+        )["score"]
+        for r in _readiness_rows
+    ]
+    attribution_readiness_score = round(sum(_readiness_scores) / len(_readiness_scores), 1) if _readiness_scores else None
+
     # Catalog issues
     products = db.query(Product).filter(
         Product.store_id == store_id, Product.is_active == True,
@@ -2144,6 +2172,8 @@ def get_meta_diagnostics(
             "attribution_readiness": {
                 "window_days": 30,
                 "orders_total": orders_30d,
+                # Score prédictif moyen (0-100) — voir compute_attribution_readiness.
+                "predictive_score": attribution_readiness_score,
                 # Ces commandes ONT un clic publicitaire valide (fbc bien
                 # formé) — ce sont les seules que Meta peut structurellement
                 # attribuer à une annonce. Le reste ne pourra JAMAIS être

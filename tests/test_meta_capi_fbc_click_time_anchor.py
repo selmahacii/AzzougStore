@@ -65,3 +65,36 @@ def test_is_well_formed_fbc_rejects_malformed_values():
     assert is_well_formed_fbc("not-a-real-fbc") is False
     assert is_well_formed_fbc("fb.1.abc123fbclid") is False  # missing timestamp segment
     assert is_well_formed_fbc("fb..1700000000000.abc123fbclid") is False  # empty subdomain index
+
+
+def test_attribution_readiness_full_signals_scores_100():
+    from app.services.meta_capi import compute_attribution_readiness
+    result = compute_attribution_readiness(
+        fbc="fb.1.1700000000000.abc123",
+        fbp="fb.1.1700000000000.xyz789",
+        phone="0555123456",
+        external_id="0555123456",
+        client_ip="1.2.3.4",
+        user_agent="Mozilla/5.0",
+        event_time=1700000000,
+        value=1500.0,
+        currency="DZD",
+        event_id="purchase-ORD-1",
+    )
+    assert result["score"] == 100.0
+    assert result["missing"] == []
+
+
+def test_attribution_readiness_missing_fbc_drops_score_most():
+    from app.services.meta_capi import compute_attribution_readiness
+    with_fbc = compute_attribution_readiness(fbc="fb.1.1700000000000.abc123", phone="0555123456")
+    without_fbc = compute_attribution_readiness(fbc=None, phone="0555123456")
+    assert with_fbc["score"] > without_fbc["score"]
+    assert "fbc_valid" in without_fbc["missing"]
+
+
+def test_attribution_readiness_no_signals_scores_zero():
+    from app.services.meta_capi import compute_attribution_readiness
+    result = compute_attribution_readiness()
+    assert result["score"] == 0.0
+    assert len(result["missing"]) == 10

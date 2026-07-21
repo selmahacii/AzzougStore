@@ -598,6 +598,66 @@ def is_well_formed_fbc(fbc: Optional[str]) -> bool:
     return bool(fbc) and bool(_FBC_FORMAT_RE.match(fbc))
 
 
+# Poids d'un score PRÉDICTIF calculable AVANT l'envoi — distinct de l'EMQ
+# (qui est un score que MEta calcule après coup sur ce qu'il a déjà reçu).
+# Ici, fbc valide pèse le plus lourd car c'est le SEUL signal qui permet à
+# Meta de relier l'achat à un clic publicitaire précis (voir
+# is_well_formed_fbc ci-dessus) — sans lui, aucun autre champ ne peut
+# produire une attribution publicitaire, quelle que soit sa qualité.
+ATTRIBUTION_READINESS_WEIGHTS: Dict[str, float] = {
+    "fbc_valid": 30.0,     # seul lien vers un clic pub précis — poids dominant
+    "fbp": 15.0,           # renforce le matching navigateur/session
+    "phone": 15.0,         # identifiant déterministe le plus fiable après fbc
+    "external_id": 10.0,
+    "client_ip": 8.0,
+    "user_agent": 8.0,
+    "event_time": 6.0,     # doit être présent ET cohérent (proche du clic)
+    "value": 3.0,
+    "currency": 3.0,
+    "event_id": 2.0,       # dédup Pixel/CAPI — n'aide pas l'attribution en soi, mais évite qu'un doublon la fausse
+}
+_ATTRIBUTION_READINESS_TOTAL_WEIGHT = sum(ATTRIBUTION_READINESS_WEIGHTS.values())
+
+
+def compute_attribution_readiness(
+    *,
+    fbc: Optional[str] = None,
+    fbp: Optional[str] = None,
+    phone: Optional[str] = None,
+    external_id: Optional[str] = None,
+    client_ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    event_time: Optional[int] = None,
+    value: Optional[float] = None,
+    currency: Optional[str] = None,
+    event_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Score PRÉDICTIF (0-100) — calculable AVANT d'envoyer l'événement, pas
+    après coup comme l'EMQ. Répond directement à "Meta aura-t-il de bonnes
+    chances d'attribuer ce Purchase ?", ce que l'EMQ ne dit jamais (l'EMQ
+    mesure le matching UTILISATEUR, pas la matching PUBLICITAIRE — voir
+    is_well_formed_fbc). Retourne le score + le détail par signal, pour
+    afficher exactement ce qui manque plutôt qu'un pourcentage opaque.
+    """
+    signals = {
+        "fbc_valid": is_well_formed_fbc(fbc),
+        "fbp": bool(fbp),
+        "phone": bool(phone),
+        "external_id": bool(external_id),
+        "client_ip": bool(client_ip),
+        "user_agent": bool(user_agent),
+        "event_time": bool(event_time),
+        "value": value is not None and value > 0,
+        "currency": bool(currency),
+        "event_id": bool(event_id),
+    }
+    earned = sum(ATTRIBUTION_READINESS_WEIGHTS[k] for k, present in signals.items() if present)
+    score = round(earned / _ATTRIBUTION_READINESS_TOTAL_WEIGHT * 100, 1)
+    missing = [k for k, present in signals.items() if not present]
+    return {"score": score, "signals": signals, "missing": missing}
+
+
 def build_user_data(
     *,
     email: Optional[str] = None,

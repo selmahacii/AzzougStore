@@ -546,7 +546,13 @@ const [timeLeft, setTimeLeft] = useState('');
     setStartDate('');
     setEndDate('');
     setAnalyticsPeriod('30d');
-    
+    // "Effacer" doit tout réafficher — laisser un filtre-type (Doublons,
+    // Manuelle...) actif après un clic "Effacer" contredit son intention
+    // affichée, et la page devait aussi revenir à 1 (sinon on reste bloqué
+    // sur une page qui peut ne plus exister une fois les filtres retirés).
+    setTypeFilter('ALL');
+    setPage(1);
+
     localStorage.removeItem('orders_filter_search');
     localStorage.removeItem('orders_filter_wilaya');
     localStorage.removeItem('orders_filter_source');
@@ -601,6 +607,10 @@ const [timeLeft, setTimeLeft] = useState('');
     setAdminSubView(mode);
     setStatusFilter(MODE_TO_STATUS[mode] ?? 'all');
     setPage(1);
+    // A type-filter pill (Doublons, Manuelle...) silently carrying over to a
+    // DIFFERENT status tab reads as "filtration incorrecte" — each tab
+    // should start unfiltered by type.
+    setTypeFilter('ALL');
   };
 
   // Status → view tab. Every status the KPI grid can filter by must appear

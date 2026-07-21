@@ -1553,6 +1553,37 @@ export default function MetaAdsDashboard() {
                 <Target className="size-4 text-[#00B894]" /> Attribuabilité réelle (30j)
               </h3>
               <p className="text-[10px] text-slate-400 mb-4">Seules les commandes avec un clic publicitaire valide peuvent être attribuées par Meta — le reste ne pourra jamais l'être, quelle que soit la configuration.</p>
+
+              {/* Score prédictif — calculable AVANT l'envoi, contrairement à
+                  l'EMQ qui note ce que Meta a déjà reçu. Répond directement
+                  à "Meta aura-t-il de bonnes chances d'attribuer ce
+                  Purchase ?" au lieu d'un simple score de matching. */}
+              {typeof fullDiagnostics.attribution_readiness.predictive_score === 'number' && (
+                <div className="mb-5 p-5 rounded-2xl border bg-gradient-to-br from-[#00B894]/5 to-transparent flex items-center gap-5" style={{ borderColor: '#00B89433' }}>
+                  <div className="relative size-20 shrink-0">
+                    <svg viewBox="0 0 36 36" className="size-20 -rotate-90">
+                      <circle cx="18" cy="18" r="15.5" fill="none" stroke="#E2E8F0" strokeWidth="3" />
+                      <circle
+                        cx="18" cy="18" r="15.5" fill="none"
+                        stroke={fullDiagnostics.attribution_readiness.predictive_score >= 80 ? '#00B894' : fullDiagnostics.attribution_readiness.predictive_score >= 50 ? '#FDCB6E' : '#E17055'}
+                        strokeWidth="3" strokeLinecap="round"
+                        strokeDasharray={`${fullDiagnostics.attribution_readiness.predictive_score / 100 * 97.4} 97.4`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-lg font-black text-slate-800">{fullDiagnostics.attribution_readiness.predictive_score}%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wider text-slate-700">Attribution Readiness</p>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-md">
+                      Calculé à partir de fbc valide, fbp, téléphone, external_id, IP, user agent, event_time, value, currency, event_id —
+                      avant même l'envoi, indique si Meta aura de bonnes chances d'attribuer l'achat. Plus parlant que l'EMQ seul, qui ne mesure que le matching utilisateur.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 {[
                   { label: 'Attribuables (fbc valide)', value: fullDiagnostics.attribution_readiness.attributable_valid_fbc, color: '#00B894' },

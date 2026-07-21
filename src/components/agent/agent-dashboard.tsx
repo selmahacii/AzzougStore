@@ -568,6 +568,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing, editData.carrier_id, editData.customer_wilaya, editData.delivery_type]);
 
+  const [confirmingReactivate, setConfirmingReactivate] = useState(false);
+
   const unmergeMutation = useMutation({
     mutationFn: async () => apiFetch(`/api/v1/orders/${order.id}/unmerge`, { method: 'POST', headers: { 'X-Store-Id': order.store_id } }),
     onSuccess: () => {
@@ -575,8 +577,12 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-events', order.id] });
       toast.success('Commande réactivée — c\'est maintenant la tentative active du client.');
+      setConfirmingReactivate(false);
     },
-    onError: (err: any) => toast.error(err?.message || "Échec de la réactivation de la commande."),
+    onError: (err: any) => {
+      toast.error(err?.message || "Échec de la réactivation de la commande.");
+      setConfirmingReactivate(false);
+    },
   });
 
   const updateMutation = useMutation({
@@ -704,18 +710,39 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                           la confirmatrice doit pouvoir la réactiver pour confirmer
                           la dernière tentative, pas la première. */}
                       {order.created_at && parentOrder.created_at && new Date(order.created_at) > new Date(parentOrder.created_at) && (
-                        <button
-                          type="button"
-                          disabled={unmergeMutation.isPending}
-                          onClick={() => {
-                            if (window.confirm("Cette commande est la tentative la plus récente du client. La rendre active à la place de son parent ?")) {
-                              unmergeMutation.mutate();
-                            }
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-white border border-purple-300 text-purple-700 text-[10px] font-black uppercase tracking-wider hover:bg-purple-100 transition-colors disabled:opacity-50"
-                        >
-                          {unmergeMutation.isPending ? 'Réactivation…' : '↺ Rendre CETTE commande active (plus récente)'}
-                        </button>
+                        confirmingReactivate ? (
+                          <div className="w-full mt-1 p-3 rounded-xl bg-white border border-purple-200 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                            <p className="text-[11px] text-purple-800 font-semibold leading-relaxed mb-2.5">
+                              Cette commande est la tentative la plus récente du client. La rendre active à la place de son parent ?
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={unmergeMutation.isPending}
+                                onClick={() => unmergeMutation.mutate()}
+                                className="flex-1 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-purple-700 transition-colors disabled:opacity-50"
+                              >
+                                {unmergeMutation.isPending ? 'Réactivation…' : 'Oui, réactiver'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={unmergeMutation.isPending}
+                                onClick={() => setConfirmingReactivate(false)}
+                                className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-[10px] font-black uppercase tracking-wider hover:bg-slate-100 transition-colors disabled:opacity-50"
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingReactivate(true)}
+                            className="px-3 py-1.5 rounded-lg bg-white border border-purple-300 text-purple-700 text-[10px] font-black uppercase tracking-wider hover:bg-purple-100 transition-colors"
+                          >
+                            ↺ Rendre CETTE commande active (plus récente)
+                          </button>
+                        )
                       )}
                     </div>
                   ) : (
