@@ -311,6 +311,19 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   // au lieu de forcer un choix entre deux paliers fictifs "1 pièce"/"2 pièces".
   const hasRealOffers = !!((data as any).offers && (data as any).offers.length > 0);
   const offers = hasRealOffers ? (data as any).offers : [];
+  // Plafond de commande = stock total disponible sur le premier groupe de
+  // variantes (ex: toutes les couleurs) — un client ne doit jamais pouvoir
+  // choisir une quantité au-delà de ce que le stock permet réellement de
+  // livrer, avec ou sans offre par palier. `undefined` = pas de variantes
+  // suivies en stock sur ce produit → pas de plafond connu, pas de blocage.
+  const maxOrderableQuantity = (() => {
+    const variants = data.product?.variants;
+    if (!variants || variants.length === 0) return undefined;
+    const firstGroupName = variants[0]?.name;
+    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
+    const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
+    return total > 0 ? total : undefined;
+  })();
   const currentOffer = hasRealOffers
     ? (offers[selectedOfferIndex] || offers[0])
     : {
@@ -581,6 +594,35 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       }}
                     />
                   </div>
+
+                  {/* Galerie de miniatures des variantes — toute variante avec
+                      une photo (Couleur, Motif, Modèle…) apparaît ici en
+                      grand format sous la photo de couverture, pas seulement
+                      comme petit cercle de sélection dans le sélecteur plus
+                      bas. Cliquer une miniature sélectionne cette variante ET
+                      change la photo principale. */}
+                  {data.product?.variants && data.product.variants.some((v: any) => v.image) && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                      {data.product.variants.filter((v: any) => v.image).map((v: any, i: number) => {
+                        const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value && val?.name === v.name);
+                        return (
+                          <button
+                            key={`thumb-${i}`}
+                            type="button"
+                            onClick={() => handleSelectVariant(v)}
+                            className={cn(
+                              "relative shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95",
+                              isSelected ? "shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                            )}
+                            style={{ borderColor: isSelected ? primary : undefined }}
+                            title={v.value}
+                          >
+                            <img src={optimizeCloudinaryUrl(v.image, 160)} alt={v.value} className="size-full object-cover" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Variant Selector */}
                   {data.product?.variants && data.product.variants.length > 0 && (() => {
@@ -897,9 +939,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                             <span className={cn("min-w-[2ch] text-center text-lg font-black", isDark ? "text-white" : "text-slate-900")}>{quantity}</span>
                             <button
                               type="button"
-                              onClick={() => setQuantity(quantity + 1)}
+                              onClick={() => {
+                                if (maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity) return;
+                                setQuantity(quantity + 1);
+                              }}
+                              disabled={maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity}
                               className={cn(
-                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all",
+                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
                                 isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
                               )}
                             >
@@ -907,6 +953,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                             </button>
                           </div>
                           <div className="text-right">
+                            {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
+                              <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
+                            )}
                             <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
                             {currentOffer.compare_price > currentOffer.price && (
                               <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
