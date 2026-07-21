@@ -720,6 +720,47 @@ def get_alerts_engine(
 
 # ─── GET /stock/product/{id}/breakdown — Section 3 "Gestion Stock" enrichie ─
 
+@router.get("/returns-by-variant", response_model=dict)
+def get_returns_by_variant(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Réapprovisionnement issu des RETOURS (RETURN_RESTOCK), ventilé PAR
+    VARIANTE pour chaque produit de la boutique — pas seulement le total
+    produit (déjà couvert par stock_retourne dans /product/{id}/breakdown).
+    Sert l'indicateur "combien de retours par variante" de l'inventaire.
+
+    variant_details n'est pas une colonne structurée sur StockMovement —
+    inventory_service.return_restock encode systématiquement le nom de la
+    variante à la fin du texte `reason`, au format "... (VariantName)" (ou
+    "... (Général)" pour un produit sans variantes) ; on le réextrait ici
+    plutôt que d'ajouter une migration pour un besoin d'affichage seul.
+    One query for the whole store — the frontend calls this once and
+    matches product_id + variant string locally, instead of one request
+    per product row.
+    """
+    import re
+    rows = (
+        db.query(StockMovement.product_id, StockMovement.quantity, StockMovement.reason)
+        .join(Product, Product.id == StockMovement.product_id)
+        .filter(Product.store_id == store_id, StockMovement.type == "RETURN_RESTOCK")
+        .all()
+    )
+    _variant_re = re.compile(r"\(([^()]*)\)\s*$")
+    by_product: dict = {}
+    for product_id, quantity, reason in rows:
+        variant_name = "Général"
+        if reason:
+            m = _variant_re.search(reason)
+            if m and m.group(1):
+                variant_name = m.group(1)
+        bucket = by_product.setdefault(product_id, {})
+        bucket[variant_name] = bucket.get(variant_name, 0) + (quantity or 0)
+    return {"success": True, "data": by_product}
+
+
 @router.get("/product/{product_id}/breakdown", response_model=dict)
 def get_product_stock_breakdown(
     product_id: str,
