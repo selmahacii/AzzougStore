@@ -801,6 +801,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                     const selectedVal = itemSelection[optionName]?.value;
                                     const isColorOption = optionName.toLowerCase().includes('couleur') || optionName.toLowerCase().includes('color') || optionVariants.some(v => v.color);
 
+                                    // Cette variante est déjà entièrement sélectionnable via la
+                                    // galerie de miniatures juste au-dessus de la photo de
+                                    // couverture (toute variante avec photo) — pour une
+                                    // quantité de 1, afficher CE sélecteur en plus serait le
+                                    // même choix montré deux fois. Gardé pour quantité > 1 :
+                                    // chaque unité a besoin de son propre sélecteur (P1/P2...),
+                                    // que la galerie du haut ne couvre pas (elle ne pilote que
+                                    // la 1ère unité).
+                                    if (quantity === 1 && optionVariants.length > 0 && optionVariants.every(v => v.image)) {
+                                      return null;
+                                    }
+
                                     if (isColorOption) {
                                       return (
                                         <div key={optionName} className="flex flex-col gap-2">

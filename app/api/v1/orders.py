@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import Counter
 from typing import Any, List, Optional
 import uuid
 
@@ -2947,6 +2949,70 @@ def _clean_commune(commune_val: str | None, wilaya_name: str | None) -> str:
             
     return commune_val
 
+_NOEST_STOPWORDS_FR = {"de", "du", "des", "la", "le", "les", "et", "en", "d", "l", "un", "une"}
+
+
+def _noest_product_shortcode(product_name: str) -> str:
+    """
+    'Coussin de Voyage' -> 'cv' — première lettre de chaque mot significatif
+    (particules françaises ignorées), en minuscule. But : un libellé court
+    et lisible pour le transporteur au lieu du nom complet du produit répété
+    pour chaque variante — Noest affiche ce champ tel quel sur le bordereau,
+    où l'espace est limité.
+    """
+    words = re.findall(r"[A-Za-zÀ-ÿ]+", product_name or "")
+    letters = [w[0].lower() for w in words if w.lower() not in _NOEST_STOPWORDS_FR]
+    code = "".join(letters)
+    return code if code else (product_name or "?").strip().lower()[:3]
+
+
+def _noest_variant_values(variant_details) -> List[str]:
+    """
+    Réduit variant_details à la liste des VALEURS uniquement, une entrée par
+    unité — ex. "P1: Couleur: Noir | P2: Couleur: Noir" -> ["noir", "noir"],
+    "Couleur: Bleu, Taille: XL" -> ["bleu / xl"]. Aucun nom de groupe
+    ("Couleur:"), aucun préfixe d'unité ("P1:") : Noest n'a besoin que de la
+    valeur pour distinguer les stocks, pas de la structure interne de l'ERP.
+    """
+    if not variant_details:
+        return []
+    if isinstance(variant_details, dict):
+        text = str(variant_details.get("variant")) if "variant" in variant_details else \
+            ", ".join(str(v) for v in variant_details.values() if v)
+    else:
+        text = str(variant_details)
+    values: List[str] = []
+    for segment in text.split("|"):
+        segment = re.sub(r"^\s*P\d+:\s*", "", segment.strip())
+        pieces = []
+        for pair in segment.split(","):
+            pair = pair.strip()
+            if not pair:
+                continue
+            pieces.append(pair.split(":", 1)[1].strip() if ":" in pair else pair)
+        if pieces:
+            values.append(" / ".join(pieces).lower())
+    return values
+
+
+def _build_noest_product_line(item) -> str:
+    """
+    Format concis pour le bordereau Noest : "{code}:{variante} x{qté}",
+    unités regroupées par variante identique — ex. 2 unités "Coussin de
+    Voyage" toutes deux Noir -> "cv:noir x2" au lieu de répéter
+    "Coussin de Voyage (P1: Couleur: Noir | P2: Couleur: Noir) x2" (verbeux,
+    conçu pour la confirmatrice, pas pour un bordereau transporteur — ce
+    format détaillé reste inchangé partout ailleurs, notamment dans les
+    vues confirmatrice/admin, qui lisent item.variant_details directement).
+    """
+    code = _noest_product_shortcode(item.product_name)
+    values = _noest_variant_values(item.variant_details)
+    if not values:
+        return f"{code} x{item.quantity}"
+    counts = Counter(values)
+    return ", ".join(f"{code}:{value} x{count}" for value, count in counts.items())
+
+
 # ─── POST /orders/{id}/dispatch ────────────────────────────────────────────────
 
 @router.post("/{id}/dispatch", response_model=dict)
@@ -3005,22 +3071,13 @@ async def dispatch_order(
         logger.info("Dispatch %s: totals realigned to merged basket (subtotal=%s, total=%s)",
                     order.order_number, order.subtotal, order.total)
 
-    # Build detailed product list description for delivery partner
-    details_list = []
-    for item in order.items:
-        var_desc = ""
-        if item.variant_details:
-            if isinstance(item.variant_details, dict):
-                if "variant" in item.variant_details:
-                    var_desc = f" ({item.variant_details['variant']})"
-                else:
-                    parts = [f"{k}: {v}" for k, v in item.variant_details.items() if k != "variant"]
-                    if parts:
-                        var_desc = f" ({', '.join(parts)})"
-            elif isinstance(item.variant_details, str):
-                var_desc = f" ({item.variant_details})"
-        details_list.append(f"{item.product_name}{var_desc} x{item.quantity}")
-    
+    # Format concis pour le transporteur — "cv:noir x2" au lieu du format
+    # verbeux "Coussin de Voyage (P1: Couleur: Noir | P2: Couleur: Noir) x2"
+    # conçu pour la confirmatrice. Ce dernier reste inchangé partout
+    # ailleurs (item.variant_details n'est jamais modifié) — seul ce
+    # bordereau Noest utilise le format court (_build_noest_product_line).
+    details_list = [_build_noest_product_line(item) for item in order.items]
+
     product_details_str = " | ".join(details_list)
     if len(product_details_str) > 255:
         product_details_str = product_details_str[:252] + "..."
