@@ -542,6 +542,105 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
 
 # ─── Auto-assignment Logic ────────────────────────────────────────────────────
 
+def resolve_assignment_rule(
+    db: Session,
+    store_id: str,
+    order_product_ids: list | None = None,
+) -> Optional[str]:
+    """
+    Assignment Rule Engine (2026-07-21) — PRODUCT > STORE > CATEGORY > BRAND
+    priority, generic and configurable via the assignment_rules table (see
+    app/models/assignment_rule.py). Returns the resolved agent_id, or None
+    if no rule matches (caller then falls back to the pre-existing
+    specialist/store/least-loaded pool logic in _auto_assign, unchanged —
+    this keeps every store with zero configured rules behaving exactly as
+    before this feature, per the explicit backward-compatibility
+    requirement).
+
+    Exclusions: a rule with is_exclusion=True at a MORE specific level
+    blocks an otherwise-matching agent at a LESS specific level — e.g. an
+    agent with a STORE rule for the whole store, but a PRODUCT-level
+    exclusion for one specific product, is skipped for orders containing
+    that product; resolution then continues to the next priority level
+    (or returns None, falling through to the default pool) instead of
+    silently still assigning her.
+    """
+    from app.models.assignment_rule import AssignmentRule, RULE_TYPE_PRIORITY
+    from app.models.product import Product
+
+    order_pids = list(order_product_ids or [])
+
+    category_ids: list = []
+    brand_ids: list = []
+    if order_pids:
+        rows = (
+            db.query(Product.category, Product.brand)
+            .filter(Product.id.in_(order_pids))
+            .all()
+        )
+        category_ids = list({r[0] for r in rows if r[0]})
+        brand_ids = list({r[1] for r in rows if r[1]})
+
+    target_map = {
+        "PRODUCT": order_pids,
+        "STORE": [store_id] if store_id else [],
+        "CATEGORY": category_ids,
+        "BRAND": brand_ids,
+    }
+
+    for idx, rule_type in enumerate(RULE_TYPE_PRIORITY):
+        targets = target_map.get(rule_type) or []
+        if not targets:
+            continue
+
+        positive_rules = (
+            db.query(AssignmentRule)
+            .filter(
+                AssignmentRule.rule_type == rule_type,
+                AssignmentRule.target_id.in_(targets),
+                AssignmentRule.is_exclusion == False,
+                AssignmentRule.is_active == True,
+            )
+            .all()
+        )
+        if not positive_rules:
+            continue
+
+        more_specific_types = RULE_TYPE_PRIORITY[:idx]
+        for rule in positive_rules:
+            blocked = False
+            for ms_type in more_specific_types:
+                ms_targets = target_map.get(ms_type) or []
+                if not ms_targets:
+                    continue
+                excluded = (
+                    db.query(AssignmentRule.id)
+                    .filter(
+                        AssignmentRule.rule_type == ms_type,
+                        AssignmentRule.target_id.in_(ms_targets),
+                        AssignmentRule.agent_id == rule.agent_id,
+                        AssignmentRule.is_exclusion == True,
+                        AssignmentRule.is_active == True,
+                    )
+                    .first()
+                )
+                if excluded:
+                    blocked = True
+                    break
+            if not blocked:
+                logger.info(
+                    "[AssignmentEngine] rule_type=%s target=%s -> agent=%s",
+                    rule_type, rule.target_id, rule.agent_id,
+                )
+                return rule.agent_id
+        # Every candidate at this level was blocked by a more-specific
+        # exclusion — fall through to the next priority level rather than
+        # returning None immediately, in case a lower-priority rule
+        # (or the default pool) still resolves it.
+
+    return None
+
+
 def _auto_assign(
     db: Session,
     store: Store,
@@ -551,6 +650,15 @@ def _auto_assign(
 ) -> Optional[str]:
     """
     Pick the best confirmateur for a new order.
+
+    FIRST consults the Assignment Rule Engine (resolve_assignment_rule) —
+    PRODUCT > STORE > CATEGORY > BRAND, configured via assignment_rules.
+    If it resolves an agent, that agent is used directly (still subject to
+    the store.assignment_active/MANUAL gate below, and the caller's
+    exclude_agent_id). If no rule matches, falls through UNCHANGED to the
+    specialist/store/least-loaded pool logic that existed before this
+    feature — a store with zero configured rules behaves exactly as it did
+    previously.
 
     Eligibility rules — UNION semantics, mirroring _confirmateur_scope_criterion
     in orders.py so an agent is auto-assigned exactly what she can see, and
@@ -578,6 +686,27 @@ def _auto_assign(
             return None
 
     order_pid_set: set = set(order_product_ids) if order_product_ids else set()
+
+    # Assignment Rule Engine first — explicit PRODUCT/STORE/CATEGORY/BRAND
+    # configuration always wins over the generic specialist/least-loaded
+    # pool below. Only used if it actually resolves an agent (respecting
+    # exclude_agent_id and requiring the agent still be active); otherwise
+    # falls through unchanged to the pre-existing pool logic.
+    rule_agent_id = resolve_assignment_rule(db, store.id, list(order_pid_set))
+    if rule_agent_id and rule_agent_id != exclude_agent_id:
+        rule_agent = (
+            db.query(User)
+            .filter(User.id == rule_agent_id, User.is_active == True,
+                     User.role.in_(["CONFIRMATEUR", "AGENT", "AGENT_MANAGER"]))
+            .first()
+        )
+        if rule_agent:
+            logger.info("[AutoAssign] resolved via Assignment Rule Engine -> agent=%s", rule_agent_id)
+            return rule_agent_id
+        logger.warning(
+            "[AutoAssign] Assignment Rule Engine resolved agent=%s but they are inactive/wrong role — falling back to pool",
+            rule_agent_id,
+        )
 
     # Fetch ALL active agents — we need product-specialists from any store
     all_agents = (

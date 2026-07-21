@@ -14,6 +14,7 @@ from app.api.v1 import (
     partners, delivery_partners, upload, landing_pages, api_keys,
     meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
     notifications, conversion_optimization, internal, ads_comparison,
+    assignment_rules,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -457,6 +458,7 @@ include_v1(conversion_optimization.router, "conversion-optimization", ["🎯 Con
 include_v1(tiktok_ads.router, "tiktok-ads", ["🎵 TikTok Ads & ROAS"])
 include_v1(ads_comparison.router, "ads-comparison", ["📊 Comparatif Meta ↔ TikTok"])
 include_v1(payroll.router, "payroll", ["💵 Paie Mensuelle"])
+include_v1(assignment_rules.router, "assignment-rules", ["🎯 Moteur d'Assignation"])
 include_v1(partners.router, "partners", ["🔗 Partenaires API"])
 include_v1(delivery_partners.router, "delivery-partners", ["🚚 Carriers Livraison"])
 include_v1(upload.router,         "upload",         ["📸 Upload Fichiers"])
