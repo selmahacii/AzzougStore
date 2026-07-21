@@ -9,7 +9,7 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus,
-  Warehouse, History, Bell, Wallet, UserCheck
+  Warehouse, History, Bell, Wallet, UserCheck, Boxes
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -28,6 +28,7 @@ import { OrderTraceabilityPanel } from '@/components/admin/order-traceability-pa
 import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
 import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
+import ProductsPage from '@/components/admin/products-page';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
@@ -48,7 +49,14 @@ const STATUS_CFG: Record<string, { label: string; color: string; bg: string; nex
 type SubModule = { id: string; label: string; icon?: any; filter?: string };
 type Module = { id: string; label: string; icon: any; subModules: SubModule[] };
 
-const MODULES: Module[] = [
+// isLivreur: a livreur only ever sees orders scoped to him server-side
+// (Order.livreur_id == his id — see orders.py's list endpoint), and never
+// creates orders manually or over the phone the way a confirmatrice does
+// — "Commandes Manuelles" is dropped for him. He otherwise gets the exact
+// same Commandes/Logistique workflow, plus his pre-existing full Produits/
+// Inventaire access (kept below), matching a confirmatrice's rights except
+// for what genuinely doesn't apply to his role.
+function getModules(isLivreur: boolean): Module[] { return [
   {
     id: 'orders',
     label: 'Commandes',
@@ -71,7 +79,8 @@ const MODULES: Module[] = [
       // magasin...) plutôt que soumises par le client lui-même — quel que
       // soit leur statut actuel (utile pour distinguer une vente manuelle
       // d'une commande storefront/landing page dans le suivi quotidien).
-      { id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck },
+      // Un livreur ne saisit jamais de commande manuelle — non pertinent.
+      ...(isLivreur ? [] : [{ id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck }]),
     ]
   },
   {
@@ -115,8 +124,17 @@ const MODULES: Module[] = [
       { id: 'salary-details', label: 'Mon Salaire', icon: Banknote },
       { id: 'activity-report', label: 'Rapport d\'activité', icon: BarChart3 },
     ]
-  }
-];
+  },
+  // Un livreur garde son avantage préexistant d'accès complet Produits (la
+  // confirmatrice n'a qu'un Inventaire allégé lecture-stock, jamais la
+  // gestion produit elle-même) — ajouté seulement pour lui.
+  ...(isLivreur ? [{
+    id: 'products',
+    label: 'Produits',
+    icon: Boxes,
+    subModules: [{ id: 'products-catalog', label: 'Catalogue', icon: Boxes }],
+  }] : []),
+]; }
 
 // ─── Vue inventaire (réutilise le module admin) ─────────────
 // InventoryDashboard/StockManager already have built-in CONFIRMATEUR
@@ -876,11 +894,15 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     </select>
                   </div>
                 )}
+                {/* Transporteur/frais de livraison : un livreur ne les modifie
+                    jamais (backend renvoie 403 sur ces 2 champs pour son
+                    rôle) — les masquer plutôt que de laisser un save échouer. */}
+                {currentUser?.role !== 'LIVREUR' && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500">Entreprise de Livraison</label>
-                  <select 
-                    value={editData.carrier_id} 
-                    onChange={e => setEditData({...editData, carrier_id: e.target.value})} 
+                  <select
+                    value={editData.carrier_id}
+                    onChange={e => setEditData({...editData, carrier_id: e.target.value})}
                     className="w-full text-xs p-2 border rounded bg-white font-bold"
                   >
                     <option value="">Sélectionnez un transporteur</option>
@@ -891,15 +913,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     ))}
                   </select>
                 </div>
+                )}
+                {currentUser?.role !== 'LIVREUR' && (
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500">Frais de livraison (DA)</label>
-                  <input 
-                    type="number" 
-                    value={editData.delivery_fee} 
-                    onChange={e => setEditData({...editData, delivery_fee: parseInt(e.target.value) || 0})} 
-                    className="w-full text-xs p-2 border rounded bg-white font-bold font-mono" 
+                  <input
+                    type="number"
+                    value={editData.delivery_fee}
+                    onChange={e => setEditData({...editData, delivery_fee: parseInt(e.target.value) || 0})}
+                    className="w-full text-xs p-2 border rounded bg-white font-bold font-mono"
                   />
                 </div>
+                )}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500">Remarque (transmise à Noest lors de l'expédition)</label>
                   <textarea
@@ -1418,8 +1443,10 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               Toujours visible (même Annulée/NRP/Abandonnée) : la confirmatrice doit
               pouvoir préparer ou corriger l'assignation à tout moment. Seules les
               commandes fusionnées (MERGED, gérées via leur parent) n'ont pas de
-              livraison propre. */}
-          {order.status !== 'MERGED' && (
+              livraison propre. Un livreur ne réassigne jamais une commande à un
+              autre livreur ni ne crée de colis transporteur (backend le bloque
+              déjà, 403) — cette section n'a pas de sens depuis sa propre vue. */}
+          {order.status !== 'MERGED' && currentUser?.role !== 'LIVREUR' && (
             <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} />
           )}
 
@@ -1591,6 +1618,8 @@ function SalaryView({ perf, user }: any) {
 
 export default function AgentDashboard() {
   const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar, clearUser } = useAppStore();
+  const isLivreur = user?.role === 'LIVREUR';
+  const MODULES = useMemo(() => getModules(isLivreur), [isLivreur]);
   const queryClient = useQueryClient();
   const workTimer = useWorkTimer();
   const [showAllStores, setShowAllStores] = useState(true);
@@ -1903,7 +1932,10 @@ export default function AgentDashboard() {
       // than the currently active one — the endpoint's own access check still applies.
       const res: any = await apiFetch(`/api/v1/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(payload), allStores: true });
 
-      if (status === 'CONFIRMED') {
+      // Un livreur ne crée jamais le colis chez le transporteur lui-même
+      // (backend le refuse déjà, 403) — sauter l'appel plutôt que de
+      // déclencher un toast d'erreur transporteur à chaque confirmation.
+      if (status === 'CONFIRMED' && user?.role !== 'LIVREUR') {
         try {
           const dispatchRes: any = await apiFetch(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST', allStores: true });
           return { ...res, dispatch: dispatchRes };
@@ -2119,6 +2151,8 @@ export default function AgentDashboard() {
                 )}
              </div>
              <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+                {/* Un livreur ne saisit jamais de commande manuellement. */}
+                {!isLivreur && (
                 <div className="hidden sm:flex items-center gap-4 border-r pr-6 mr-2">
                      <button
                        onClick={() => setIsCreatingOrder(true)}
@@ -2128,6 +2162,7 @@ export default function AgentDashboard() {
                        <span>Nouvelle Commande</span>
                      </button>
                 </div>
+                )}
 
                 <Popover
                   open={showNotifications}
@@ -2256,6 +2291,7 @@ export default function AgentDashboard() {
                 <div className="text-xs font-bold text-slate-400">Boutique: {activeStore?.name}</div>
               )}
               
+              {!isLivreur && (
               <button
                 onClick={() => setIsCreatingOrder(true)}
                 className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm shrink-0"
@@ -2263,14 +2299,22 @@ export default function AgentDashboard() {
                 <Plus className="size-3.5 shrink-0" />
                 <span>Nouvelle</span>
               </button>
+              )}
            </div>
          </header>
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-24 sm:pb-8 custom-scrollbar bg-slate-50/50">
           {activeSubModule === 'salary-details' ? (
             <SalaryView perf={perfQuery.data} user={user} />
+          ) : activeSubModule === 'products-catalog' ? (
+            // Avantage préexistant du livreur : gestion produit complète
+            // (pas la vue Inventaire allégée de la confirmatrice ci-dessous).
+            <ProductsPage />
           ) : activeSubModule.startsWith('inventory-') ? (
-            <AgentInventoryView subModuleId={activeSubModule} />
+            // Un livreur garde l'accès Inventaire ADMIN complet (prix
+            // d'achat, marge, ajustement de stock) — seule la confirmatrice
+            // est bridée à la vue allégée AgentInventoryView.
+            isLivreur ? <InventoryDashboard /> : <AgentInventoryView subModuleId={activeSubModule} />
           ) : activeSubModule === 'tracking-search' ? (
             <div className="max-w-2xl mx-auto space-y-6">
                <div className="p-8 bg-white border rounded-2xl shadow-sm space-y-4">

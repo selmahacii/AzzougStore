@@ -2457,6 +2457,25 @@ def update_order_info(
 
     _assert_order_access(order, current_user)
 
+    # A livreur may correct the customer's own info (name/phone/address/
+    # notes/items) on his own orders, matching the confirmatrice — but the
+    # carrier relationship (tracking_number, carrier_id) and delivery_fee
+    # stay an explicit admin/confirmatrice decision, same boundary as
+    # dispatch_order above.
+    if current_user.role == "LIVREUR":
+        # Compare against the CURRENT stored value, not merely "was the key
+        # present" — the frontend always resubmits the full form (including
+        # untouched fields), so exclude_unset would 403 every single save.
+        _livreur_locked = {
+            "tracking_number": order.tracking_number,
+            "carrier_id": order.carrier_id,
+            "delivery_fee": order.delivery_fee,
+        }
+        _payload_dict = payload.model_dump(exclude_unset=True)
+        for _field, _current_value in _livreur_locked.items():
+            if _field in _payload_dict and _payload_dict[_field] != _current_value:
+                raise HTTPException(status_code=403, detail="Un livreur ne peut pas modifier le transporteur, le numéro de suivi ou les frais de livraison.")
+
     # A MERGED order is a dead, absorbed duplicate — its own basket/address/
     # delivery fee are frozen for audit, and _VALID_TRANSITIONS deliberately
     # allows NO outgoing status change from MERGED. Editing it here used to
@@ -3053,6 +3072,12 @@ async def dispatch_order(
     """
     from app.core.exceptions import OrderNotFoundError
     from app.models.delivery_partner import DeliveryPartner
+
+    # A courier-auto-assigned livreur updates status only (see PATCH /{id}) —
+    # he never creates the parcel at the carrier himself, that stays an
+    # explicit admin/confirmatrice action even on his own orders.
+    if current_user.role == "LIVREUR":
+        raise HTTPException(status_code=403, detail="Un livreur ne peut pas créer l'expédition chez le transporteur.")
 
     from sqlalchemy.orm import joinedload
     # See get_order for why this is redundant/harmful here.

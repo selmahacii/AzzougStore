@@ -116,3 +116,199 @@ def test_livreur_can_confirm_a_courier_auto_assigned_order():
         db.commit()
     finally:
         db.close()
+
+
+def test_livreur_cannot_dispatch_order_to_carrier():
+    """
+    Regression test: POST /orders/{id}/dispatch had NO role/ownership check
+    at all — any authenticated user, including a LIVREUR, could call it
+    directly to create a carrier shipment on any order. A livreur must
+    never create the parcel at the carrier himself (dashboard-parity work,
+    2026-07-21) — only an explicit admin/confirmatrice action.
+    """
+    client = TestClient(app)
+    suffix = str(uuid.uuid4())[:8]
+    db = SessionLocal()
+    try:
+        store = Store(
+            id=str(uuid.uuid4()), name=f"Livreur Dispatch Shop {suffix}", slug=f"livreur-dispatch-shop-{suffix}",
+            domain=f"livreur-dispatch-shop-{suffix}.com", template_id="modern", owner_id="SYSTEM_ADMIN",
+        )
+        db.add(store)
+        db.flush()
+
+        product = Product(
+            id=str(uuid.uuid4()), store_id=store.id, name=f"Livreur Dispatch Product {suffix}",
+            slug=f"livreur-dispatch-product-{suffix}", description="x", price=1000, stock=10,
+            category="General", sku=f"SKU-LIVDISP-{suffix}", is_active=True,
+        )
+        db.add(product)
+
+        livreur_email = f"livreur-dispatch-{suffix}@test.com"
+        livreur_password = "test-only-password"
+        livreur = User(
+            id=str(uuid.uuid4()), email=livreur_email, name="Test Livreur Dispatch",
+            hashed_password=get_password_hash(livreur_password), role="LIVREUR",
+            employee_store_id=store.id, is_active=True,
+        )
+        db.add(livreur)
+        db.flush()
+
+        order = Order(
+            id=str(uuid.uuid4()), order_number=f"ORD-LIVDISP-{suffix}", store_id=store.id,
+            customer_name="Client Dispatch", customer_phone="0558" + suffix,
+            customer_address="Alger", customer_wilaya="Alger", delivery_type="HOME",
+            delivery_fee=0, subtotal=1000, discount=0, total=1000, source="landing_page",
+            status="CONFIRMED", livreur_id=livreur.id, assigned_to=None,
+        )
+        db.add(order)
+        db.flush()
+        db.add(OrderItem(
+            id=str(uuid.uuid4()), order_id=order.id, product_id=product.id,
+            product_name=product.name, quantity=1, unit_price=1000,
+        ))
+        db.commit()
+        order_id, store_id, livreur_id, product_id = order.id, store.id, livreur.id, product.id
+    finally:
+        db.close()
+
+    login = client.post(
+        f"{settings.API_V1_STR}/auth/login/access-token",
+        data={"username": livreur_email, "password": livreur_password},
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+
+    dispatch = client.post(
+        f"{settings.API_V1_STR}/orders/{order_id}/dispatch",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert dispatch.status_code == 403, dispatch.text
+
+    db = SessionLocal()
+    try:
+        from app.models.events import OrderEvent
+        from app.models.notification import Notification
+        from app.models.stock import StockMovement
+        from app.models.audit import AuditLog
+        db.query(OrderEvent).filter(OrderEvent.order_id == order_id).delete()
+        db.query(Notification).filter(Notification.order_id == order_id).delete()
+        db.query(StockMovement).filter(StockMovement.order_id == order_id).delete()
+        db.query(OrderItem).filter(OrderItem.order_id == order_id).delete()
+        db.query(Order).filter(Order.id == order_id).delete()
+        db.query(AuditLog).filter(AuditLog.actor_id == livreur_id).delete()
+        db.query(User).filter(User.id == livreur_id).delete()
+        db.query(Product).filter(Product.id == product_id).delete()
+        db.query(Store).filter(Store.id == store_id).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_livreur_can_edit_customer_info_but_not_carrier_or_fee():
+    """
+    Regression test for the dashboard-parity work (2026-07-21): a livreur
+    now gets the same order-editing drawer as a confirmatrice (PATCH
+    /orders/{id}/info), but must never be able to touch the carrier
+    relationship (carrier_id, tracking_number) or delivery_fee — those stay
+    an explicit admin/confirmatrice decision, matching the dispatch-403
+    boundary. Editing his own customer info (name/address/notes) must
+    still succeed.
+    """
+    client = TestClient(app)
+    suffix = str(uuid.uuid4())[:8]
+    db = SessionLocal()
+    try:
+        store = Store(
+            id=str(uuid.uuid4()), name=f"Livreur Edit Shop {suffix}", slug=f"livreur-edit-shop-{suffix}",
+            domain=f"livreur-edit-shop-{suffix}.com", template_id="modern", owner_id="SYSTEM_ADMIN",
+        )
+        db.add(store)
+        db.flush()
+
+        product = Product(
+            id=str(uuid.uuid4()), store_id=store.id, name=f"Livreur Edit Product {suffix}",
+            slug=f"livreur-edit-product-{suffix}", description="x", price=1000, stock=10,
+            category="General", sku=f"SKU-LIVEDIT-{suffix}", is_active=True,
+        )
+        db.add(product)
+
+        livreur_email = f"livreur-edit-{suffix}@test.com"
+        livreur_password = "test-only-password"
+        livreur = User(
+            id=str(uuid.uuid4()), email=livreur_email, name="Test Livreur Edit",
+            hashed_password=get_password_hash(livreur_password), role="LIVREUR",
+            employee_store_id=store.id, is_active=True,
+        )
+        db.add(livreur)
+        db.flush()
+
+        order = Order(
+            id=str(uuid.uuid4()), order_number=f"ORD-LIVEDIT-{suffix}", store_id=store.id,
+            customer_name="Client Avant Edit", customer_phone="0557" + suffix,
+            customer_address="Alger", customer_wilaya="Alger", delivery_type="HOME",
+            delivery_fee=300, subtotal=1000, discount=0, total=1300, source="landing_page",
+            status="NEW", livreur_id=livreur.id, assigned_to=None,
+        )
+        db.add(order)
+        db.flush()
+        db.add(OrderItem(
+            id=str(uuid.uuid4()), order_id=order.id, product_id=product.id,
+            product_name=product.name, quantity=1, unit_price=1000,
+        ))
+        db.commit()
+        order_id, store_id, livreur_id, product_id = order.id, store.id, livreur.id, product.id
+    finally:
+        db.close()
+
+    login = client.post(
+        f"{settings.API_V1_STR}/auth/login/access-token",
+        data={"username": livreur_email, "password": livreur_password},
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Allowed: editing customer info/notes on his own order.
+    ok = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}/info",
+        json={"customer_name": "Client Après Edit", "notes": "Client absent, repasser demain"},
+        headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+
+    # Blocked: changing delivery_fee to a different value.
+    blocked_fee = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}/info",
+        json={"delivery_fee": 999},
+        headers=headers,
+    )
+    assert blocked_fee.status_code == 403, blocked_fee.text
+
+    # Allowed: resubmitting the SAME delivery_fee (frontend always sends the
+    # full form back, including untouched fields) must NOT 403.
+    unchanged_fee = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}/info",
+        json={"delivery_fee": 300},
+        headers=headers,
+    )
+    assert unchanged_fee.status_code == 200, unchanged_fee.text
+
+    db = SessionLocal()
+    try:
+        from app.models.events import OrderEvent
+        from app.models.notification import Notification
+        from app.models.stock import StockMovement
+        from app.models.audit import AuditLog
+        db.query(OrderEvent).filter(OrderEvent.order_id == order_id).delete()
+        db.query(Notification).filter(Notification.order_id == order_id).delete()
+        db.query(StockMovement).filter(StockMovement.order_id == order_id).delete()
+        db.query(OrderItem).filter(OrderItem.order_id == order_id).delete()
+        db.query(Order).filter(Order.id == order_id).delete()
+        db.query(AuditLog).filter(AuditLog.actor_id == livreur_id).delete()
+        db.query(User).filter(User.id == livreur_id).delete()
+        db.query(Product).filter(Product.id == product_id).delete()
+        db.query(Store).filter(Store.id == store_id).delete()
+        db.commit()
+    finally:
+        db.close()
