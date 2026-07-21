@@ -607,11 +607,34 @@ def get_order_counts(
             pass
     received_manual = manual_q.scalar() or 0
 
+    # "Upsell" — orders with at least one on-call added product (Order.
+    # is_upsell), same period/filters as the rest of this block.
+    upsell_q = db.query(sqlfunc.count(Order.id)).filter(
+        Order.store_id == store_id,
+        Order.is_deleted == False,
+        Order.status != "MERGED",
+        Order.is_upsell == True,
+    )
+    if start_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            upsell_q = upsell_q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        from app.core.dates import parse_local_date_filter
+        try:
+            upsell_q = upsell_q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    received_upsell = upsell_q.scalar() or 0
+
     counts["_received"] = {
         "normal": received_normal,
         "abandoned": received_abandoned,
         "duplicate": received_duplicate,
         "manual": received_manual,
+        "upsell": received_upsell,
     }
     return counts
 
