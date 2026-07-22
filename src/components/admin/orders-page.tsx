@@ -715,7 +715,7 @@ const [timeLeft, setTimeLeft] = useState('');
    // Reçues = commandes jamais touchées par un agent (ni assignées, ni
    // démarrées), séparées uniquement Normal/Panier abandonné — pas éclatées
    // par les 8 statuts d'onglets — pour un calcul rapide par l'administrateur.
-   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number; duplicate?: number; manual?: number } | undefined;
+   const receivedCounts = (countsQuery.data as any)?._received as { normal: number; abandoned: number; duplicate?: number; manual?: number; upsell?: number } | undefined;
 
    const productsQuery = useQuery<ApiResponse<any[]>>({
     queryKey: ['admin-products-lite', storeId],
@@ -1350,6 +1350,43 @@ const [timeLeft, setTimeLeft] = useState('');
                 )}
               >
                 🛒 {receivedCounts.abandoned} panier{receivedCounts.abandoned > 1 ? 's' : ''} abandonné{receivedCounts.abandoned > 1 ? 's' : ''}
+              </button>
+            )}
+            {(tabCounts['DELIVERED'] ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => handleModeChange('COMPLETED')}
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  viewMode === 'COMPLETED' ? "bg-green-600 text-white border-green-600" : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                )}
+              >
+                ✅ {tabCounts['DELIVERED']} livrée{(tabCounts['DELIVERED'] ?? 0) > 1 ? 's' : ''}
+              </button>
+            )}
+            {(tabCounts['RETURNED'] ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => handleModeChange('CANCELLED')}
+                title="Ouvre l'onglet Annulées/Retours (regroupe CANCELLED + RETURNED)."
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  viewMode === 'CANCELLED' ? "bg-rose-600 text-white border-rose-600" : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
+                )}
+              >
+                ↩️ {tabCounts['RETURNED']} retournée{(tabCounts['RETURNED'] ?? 0) > 1 ? 's' : ''}
+              </button>
+            )}
+            {(receivedCounts.upsell ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setTypeFilter(prev => prev === 'UPSELL' ? 'ALL' : 'UPSELL')}
+                className={cn(
+                  "px-2 py-1 rounded-lg border transition-colors",
+                  typeFilter === 'UPSELL' ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                )}
+              >
+                💸 {receivedCounts.upsell} upsell{(receivedCounts.upsell ?? 0) > 1 ? 's' : ''}
               </button>
             )}
           </div>
