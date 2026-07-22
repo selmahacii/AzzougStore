@@ -1533,6 +1533,9 @@ function SalaryView({ perf, user }: any) {
   const paymentRecovered = stats.payment_recovered_cart ?? user?.payment_recovered_cart ?? 0;
   const paymentLost = stats.payment_lost_cart ?? user?.payment_lost_cart ?? 0;
   const abandonedBonus = stats.abandoned_bonus ?? 0;
+  const upsellDeliveredCount = stats.upsell_delivered_count ?? 0;
+  const paymentUpsell = stats.payment_upsell ?? user?.payment_upsell ?? 0;
+  const upsellBonus = stats.upsell_bonus ?? 0;
   
   const totalSalary = stats.salary ?? 0;
 
@@ -1623,6 +1626,24 @@ function SalaryView({ perf, user }: any) {
                       </div>
                    </div>
                 )}
+
+                {/* Upsell bonus breakdown — flat bonus per DELIVERED order
+                    flagged is_upsell, on top of the normal/recovery
+                    commission that same order already earns. */}
+                {upsellDeliveredCount > 0 && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-amber-600 tracking-wider">
+                         Upsell (Bonus)
+                      </p>
+                      <div className="flex items-center justify-between text-xs">
+                         <div className="space-y-0.5">
+                            <p className="font-bold text-slate-700">Commandes upsell livrées</p>
+                            <p className="text-[10px] text-slate-400">{upsellDeliveredCount} commande{upsellDeliveredCount > 1 ? 's' : ''} × {formatPrice(paymentUpsell)}</p>
+                         </div>
+                         <span className="font-bold text-amber-600">+{formatPrice(upsellBonus)}</span>
+                      </div>
+                   </div>
+                )}
              </div>
           </div>
 
@@ -1642,6 +1663,12 @@ function SalaryView({ perf, user }: any) {
                    <span className="font-medium">Bonus Paniers :</span>
                    <span className="font-bold">+{formatPrice(abandonedBonus)}</span>
                 </div>
+                {upsellBonus > 0 && (
+                   <div className="flex items-center justify-between text-xs text-amber-300">
+                      <span className="font-medium">Bonus Upsell :</span>
+                      <span className="font-bold">+{formatPrice(upsellBonus)}</span>
+                   </div>
+                )}
                 <div className="p-3 bg-slate-800/50 rounded-xl flex items-start gap-2.5 text-[10px] text-slate-400 leading-normal font-medium">
                    <AlertCircle className="size-4 text-slate-500 shrink-0 mt-0.5" />
                    <span>Ce montant est calculé dynamiquement par le service de trésorerie en fonction des critères et de la grille de commissions.</span>

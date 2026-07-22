@@ -27,6 +27,10 @@ class User(Base):
     payment_amount = Column(Integer, nullable=True)   # DA — rate per order OR monthly salary
     payment_recovered_cart = Column(Integer, default=0)
     payment_lost_cart      = Column(Integer, default=0)
+    # Bonus paid per DELIVERED order that was flagged is_upsell (an extra
+    # product the confirmatrice added on-call) — same "delivered-only"
+    # rule as every other commission (see salary_service.py).
+    payment_upsell         = Column(Integer, default=0)
     # Day of month (1-28, capped to stay valid in every month) this employee
     # is due to be paid — admin-configured. Drives the personal SALARY_DUE
     # reminder (app/services/noest_sync.py scan_payday_reminders) sent

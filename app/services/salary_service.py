@@ -109,12 +109,14 @@ def compute_salary(
 
     recovered_rate = getattr(employee, "payment_recovered_cart", 0) or 0
     lost_rate      = getattr(employee, "payment_lost_cart", 0) or 0
+    upsell_rate    = getattr(employee, "payment_upsell", 0) or 0
 
     # ÔöÇÔöÇ Count delivered orders, split by classification ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     normal_delivered    = _count_normal_delivered(db, employee.id, store_id, since, until)
     recovered_delivered = _count_recovered_delivered(db, employee.id, store_id, since, until)
     total_delivered     = normal_delivered + recovered_delivered
     returned_count      = _count_returned(db, employee.id, store_id, since, until)
+    upsell_delivered    = _count_upsell_delivered(db, employee.id, store_id, since, until)
 
     # Commission historique figée (2026-07-21) : ces bonus/pénalités
     # utilisent le taux FIGÉ sur chaque commande (snapshot_commission dans
@@ -134,23 +136,37 @@ def compute_salary(
         status="RETURNED", is_abandoned_cart=None,
         snapshot_column=Order.commission_lost_rate, fallback_rate=lost_rate,
     )
+    # Upsell bonus (2026-07-22) : bonus fixe par commande DELIVERED
+    # marquée is_upsell, EN PLUS de ce que cette commande gagne déjà (taux
+    # normal ou bonus de récupération) — un produit ajouté en plus lors de
+    # l'appel est une récompense distincte, indépendante de l'économie
+    # panier-abandonné. Pas filtré sur is_abandoned_cart : un upsell peut
+    # arriver sur les deux types de commande.
+    upsell_bonus = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=None, is_upsell=True,
+        snapshot_column=Order.commission_upsell_rate, fallback_rate=upsell_rate,
+    )
 
     # ÔöÇÔöÇ Branch by payment type ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
-        salary      = max(0, base_salary + abandoned_bonus - returned_penalty)
+        salary      = max(0, base_salary + abandoned_bonus + upsell_bonus - returned_penalty)
 
         return _build_result(
             payment_type="MONTHLY_SALARY",
             payment_amount=payment_amount,
             recovered_rate=recovered_rate,
             lost_rate=lost_rate,
+            upsell_rate=upsell_rate,
             total_delivered=total_delivered,
             normal_delivered=normal_delivered,
             recovered_delivered=recovered_delivered,
+            upsell_delivered=upsell_delivered,
             returned_count=returned_count,
             base_salary=base_salary,
             abandoned_bonus=abandoned_bonus,
+            upsell_bonus=upsell_bonus,
             returned_penalty=returned_penalty,
             salary=salary,
             since=since,
@@ -168,19 +184,22 @@ def compute_salary(
         status="DELIVERED", is_abandoned_cart=False,
         snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
     )
-    salary         = max(0, base_salary + abandoned_bonus - returned_penalty)
+    salary         = max(0, base_salary + abandoned_bonus + upsell_bonus - returned_penalty)
 
     return _build_result(
         payment_type=payment_type or "PER_DELIVERED_ORDER",
         payment_amount=effective_rate,
         recovered_rate=recovered_rate,
         lost_rate=lost_rate,
+        upsell_rate=upsell_rate,
         total_delivered=total_delivered,
         normal_delivered=normal_delivered,
         recovered_delivered=recovered_delivered,
+        upsell_delivered=upsell_delivered,
         returned_count=returned_count,
         base_salary=base_salary,
         abandoned_bonus=abandoned_bonus,
+        upsell_bonus=upsell_bonus,
         returned_penalty=returned_penalty,
         salary=salary,
         since=since,
@@ -297,6 +316,32 @@ def _count_returned(
     return db.query(Order).filter(and_(*filters)).count()
 
 
+def _count_upsell_delivered(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+) -> int:
+    """
+    Count DELIVERED orders flagged is_upsell, assigned to user_id — earns
+    the upsell-specific bonus rate (payment_upsell), on top of whatever
+    else the order already earns. Not mutually exclusive with normal/
+    recovered — an upsell can happen on either kind of order.
+    """
+    store_filter = _build_store_filter(db, user_id, store_id)
+
+    filters = [
+        store_filter,
+        Order.assigned_to  == user_id,
+        Order.status       == "DELIVERED",
+        Order.is_upsell     == True,
+        Order.is_deleted   == False,
+    ] + _build_time_filters(since, until)
+
+    return db.query(Order).filter(and_(*filters)).count()
+
+
 def _sum_frozen_amount(
     db: Session,
     user_id: str,
@@ -308,16 +353,18 @@ def _sum_frozen_amount(
     is_abandoned_cart: Optional[bool],
     snapshot_column,
     fallback_rate: int,
+    is_upsell: Optional[bool] = None,
 ) -> int:
     """
     Commission historique figée (2026-07-21) — somme le taux FIGÉ sur
     chaque commande (commission_payment_amount / commission_recovered_rate
-    / commission_lost_rate, selon snapshot_column) au lieu de multiplier un
-    compte de commandes par le taux ACTUEL de l'employé. Une commande dont
-    le snapshot est NULL (créée avant cette fonctionnalité, ou assignée
-    avant que l'employé n'ait de taux configuré) retombe sur fallback_rate
-    — le même taux "actuel" utilisé partout ailleurs, donc aucun
-    changement de comportement pour l'historique pré-existant.
+    / commission_lost_rate / commission_upsell_rate, selon snapshot_column)
+    au lieu de multiplier un compte de commandes par le taux ACTUEL de
+    l'employé. Une commande dont le snapshot est NULL (créée avant cette
+    fonctionnalité, ou assignée avant que l'employé n'ait de taux
+    configuré) retombe sur fallback_rate — le même taux "actuel" utilisé
+    partout ailleurs, donc aucun changement de comportement pour
+    l'historique pré-existant.
     """
     from sqlalchemy import func as _func, case as _case
 
@@ -330,6 +377,8 @@ def _sum_frozen_amount(
     ] + _build_time_filters(since, until)
     if is_abandoned_cart is not None:
         filters.append(Order.is_abandoned_cart == is_abandoned_cart)
+    if is_upsell is not None:
+        filters.append(Order.is_upsell == is_upsell)
 
     total = (
         db.query(_func.sum(_case((snapshot_column.isnot(None), snapshot_column), else_=fallback_rate)))
@@ -345,12 +394,15 @@ def _build_result(
     payment_amount,
     recovered_rate: int,
     lost_rate: int = 0,
+    upsell_rate: int = 0,
     total_delivered: int,
     normal_delivered: int,
     recovered_delivered: int,
+    upsell_delivered: int = 0,
     returned_count: int = 0,
     base_salary: int,
     abandoned_bonus: int,
+    upsell_bonus: int = 0,
     returned_penalty: int = 0,
     salary: int,
     since: Optional[datetime],
@@ -369,6 +421,9 @@ def _build_result(
         "lost_count":                returned_count,
         "payment_lost_cart":         lost_rate,
         "returned_penalty":          returned_penalty,
+        "payment_upsell":            upsell_rate,
+        "upsell_delivered_count":    upsell_delivered,
+        "upsell_bonus":              upsell_bonus,
         "base_salary":               base_salary,
         "abandoned_bonus":           abandoned_bonus,
         "salary":                    salary,

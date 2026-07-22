@@ -324,6 +324,7 @@ def create_user(
         payment_amount=user_in.payment_amount,
         payment_recovered_cart=user_in.payment_recovered_cart or 0,
         payment_lost_cart=user_in.payment_lost_cart or 0,
+        payment_upsell=user_in.payment_upsell or 0,
         assigned_store_scope=user_in.assigned_store_scope or "ALL",
         assigned_store_ids=user_in.assigned_store_ids or [],
         assigned_product_ids=user_in.assigned_product_ids or [],
@@ -689,6 +690,9 @@ def get_user_performance(
             "recovered_delivered_count": salary_data.get("recovered_delivered_count", 0),
             "lost_count":                salary_data.get("lost_count", 0),
             "returned_penalty":          salary_data.get("returned_penalty", 0),
+            "payment_upsell":            salary_data.get("payment_upsell", 0),
+            "upsell_delivered_count":    salary_data.get("upsell_delivered_count", 0),
+            "upsell_bonus":              salary_data.get("upsell_bonus", 0),
             # commission_per_order: per-order rate (None for MONTHLY_SALARY)
             "commission_per_order": (
                 salary_data["payment_amount"]
