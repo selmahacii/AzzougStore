@@ -1249,6 +1249,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       payment_amount: '' as number | '',
       payment_recovered_cart: '' as number | '',
       payment_lost_cart: '' as number | '',
+      payment_upsell: '' as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
@@ -1274,12 +1275,13 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             payment_amount: editingEmployee.payment_amount ?? '',
             payment_recovered_cart: editingEmployee.payment_recovered_cart ?? '',
             payment_lost_cart: editingEmployee.payment_lost_cart ?? '',
+            payment_upsell: editingEmployee.payment_upsell ?? '',
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [] });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [] });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1298,6 +1300,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payment_amount: formData.payment_type ? (Number(formData.payment_amount) || 0) : null,
          payment_recovered_cart: Number(formData.payment_recovered_cart) || 0,
          payment_lost_cart: Number(formData.payment_lost_cart) || 0,
+         payment_upsell: Number(formData.payment_upsell) || 0,
       };
 
       const storePayload = formData.assigned_store_scope === 'SPECIFIC'
@@ -1596,6 +1599,29 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                             </div>
                             <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
                                La commission panier récupéré s'applique sur les paniers abandonnés récupérés qui passent à Livré.
+                            </p>
+                        </div>
+
+                        <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
+                           <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
+                              Commission Upsell
+                           </h5>
+                           <div className="space-y-1.5">
+                               <Label className="text-[10px] font-semibold text-[#636E72]">Commande Upsell livrée (DA)</Label>
+                               <div className="relative">
+                                  <Input
+                                     type="number"
+                                     min={0}
+                                     value={formData.payment_upsell}
+                                     onChange={e => setFormData(p => ({ ...p, payment_upsell: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                     placeholder="Ex: 250"
+                                     className="h-10 border-emerald-100 rounded-lg bg-white pr-12 font-black text-xs"
+                                  />
+                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
+                               </div>
+                            </div>
+                            <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
+                               Bonus versé EN PLUS de sa commission normale pour chaque commande contenant un produit ajouté en upsell, une fois livrée.
                             </p>
                         </div>
                      </div>

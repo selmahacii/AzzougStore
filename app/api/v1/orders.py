@@ -550,6 +550,7 @@ def get_order_counts(
 
     recovered_crit = _and_r(
         Order.is_abandoned_cart == True,
+        Order.is_upsell == False,
         _or_r(Order.recovered_at.isnot(None), Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
     )
     abandoned_active_crit = _and_r(
@@ -572,7 +573,7 @@ def get_order_counts(
         _sum_r(normal_crit).label("normal"),
         _sum_r(abandoned_active_crit).label("abandoned"),
         _sum_r(recovered_crit).label("recovered"),
-        _sum_r(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+        _sum_r(sqlfunc.coalesce(Order.source, "") == "MANUAL", Order.is_upsell == False).label("manual"),
         _sum_r(Order.is_upsell == True).label("upsell"),
         _sum_r(Order.status == "CANCELLED").label("cancelled"),
     ).one()
@@ -724,12 +725,17 @@ def get_agent_counts(
         # propre case "Commandes Manuelles" (wide_row, ci-dessous) ; sans cette
         # exclusion elle comptait dans les DEUX badges à la fois.
         _not_manual = sqlfunc.coalesce(Order.source, "") != "MANUAL"
+        # Upsell is its own distinct badge (see "upsell" in wide_row below) —
+        # an order flagged is_upsell must never ALSO inflate "Nouvelles"/"En
+        # attente"/"Paniers Récupérés", the same way _not_manual already
+        # keeps a manually-entered order out of those two.
+        _not_upsell = Order.is_upsell == False
 
         base_row = base.with_entities(
             _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
-            _sum(_not_internal, _not_manual, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
+            _sum(_not_internal, _not_manual, _not_upsell, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
             _sum(
-                _not_internal, _not_manual,
+                _not_internal, _not_manual, _not_upsell,
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
                 or_(Order.nrp_count == None, Order.nrp_count == 0),
             ).label("pending"),
@@ -741,7 +747,7 @@ def get_agent_counts(
                  Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])).label("nrp_normal"),
             _sum(_not_internal, Order.is_abandoned_cart == True,
                  Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])).label("abandoned_in_progress"),
-            _sum(Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
+            _sum(_not_upsell, Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
             # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
             # sans heure de rappel programmée, ou dont l'heure est déjà passée.
             _sum(
@@ -772,7 +778,7 @@ def get_agent_counts(
             # `base`: a manually-entered order can be created by any agent/admin,
             # and whoever's checking this count should see the store's total,
             # not just their own.
-            _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+            _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL", Order.is_upsell == False).label("manual"),
             _sum(Order.is_upsell == True).label("upsell"),
             # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
             # scoped to SHIPPED since that's the only state a carrier_stage is
