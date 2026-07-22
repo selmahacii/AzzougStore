@@ -526,115 +526,79 @@ def get_order_counts(
     # "Reçues" — how many orders came into the ERP in this period, period.
     # Counts EVERY order regardless of whether an agent has since acted on
     # it (assigned, called, confirmed...) — the receipt date never changes,
-    # only the status does. Split only by Normal/Abandoned-cart origin — not
-    # by every workflow status — so the admin can read "how many did I
-    # receive" without adding up 8 tab badges.
-    received_q = (
-        db.query(Order.is_abandoned_cart, sqlfunc.count(Order.id).label("cnt"))
-        .filter(
-            Order.store_id == store_id,
-            Order.is_deleted == False,
-            Order.status != "MERGED",
-        )
+    # only the status does. One shared date-filtered base query, one
+    # conditional-aggregation SELECT (was up to 6 separate round trips).
+    def _dated(q):
+        if start_date:
+            from app.core.dates import parse_local_date_filter
+            try:
+                q = q.filter(Order.created_at >= parse_local_date_filter(start_date))
+            except ValueError:
+                pass
+        if end_date:
+            from app.core.dates import parse_local_date_filter
+            try:
+                q = q.filter(Order.created_at <= parse_local_date_filter(end_date))
+            except ValueError:
+                pass
+        return q
+
+    from sqlalchemy import and_ as _and_r, or_ as _or_r, case as _case_r
+
+    def _sum_r(*criteria):
+        return sqlfunc.sum(_case_r((_and_r(*criteria), 1), else_=0))
+
+    recovered_crit = _and_r(
+        Order.is_abandoned_cart == True,
+        _or_r(Order.recovered_at.isnot(None), Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])),
     )
-    if start_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            received_q = received_q.filter(Order.created_at >= parse_local_date_filter(start_date))
-        except ValueError:
-            pass
-    if end_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            received_q = received_q.filter(Order.created_at <= parse_local_date_filter(end_date))
-        except ValueError:
-            pass
-    received_rows = received_q.group_by(Order.is_abandoned_cart).all()
-    received_normal = sum(r.cnt for r in received_rows if not r.is_abandoned_cart)
-    received_abandoned = sum(r.cnt for r in received_rows if r.is_abandoned_cart)
+    abandoned_active_crit = _and_r(
+        Order.is_abandoned_cart == True,
+        Order.recovered_at.is_(None),
+        Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED"]),
+    )
+    # "Commande normale" excludes manual entry, upsell and abandoned-cart
+    # origin — a distinct category of its own each, not a subset of
+    # "normal" (the admin's own explicit request: these must never overlap).
+    normal_crit = _and_r(
+        Order.is_abandoned_cart == False,
+        sqlfunc.coalesce(Order.source, "") != "MANUAL",
+        Order.is_upsell == False,
+    )
+
+    received_row = _dated(
+        db.query(Order).filter(Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED")
+    ).with_entities(
+        _sum_r(normal_crit).label("normal"),
+        _sum_r(abandoned_active_crit).label("abandoned"),
+        _sum_r(recovered_crit).label("recovered"),
+        _sum_r(sqlfunc.coalesce(Order.source, "") == "MANUAL").label("manual"),
+        _sum_r(Order.is_upsell == True).label("upsell"),
+        _sum_r(Order.status == "CANCELLED").label("cancelled"),
+    ).one()
 
     # "Doublons reçus" — how many ORDERS (not raw resubmit rows) had at
     # least one duplicate merged into them in this period. Counts DISTINCT
     # parent_order_id, not count(*) on MERGED rows: one order that absorbed
-    # 3 resubmits is "1 order with a duplicate problem", not 3 — the admin
-    # explicitly wants "combien de commande a un doublons", not the raw
-    # number of duplicate submissions. Answers the recurring "Meta Ads
-    # shows 5 orders, the ERP shows 1 — is that a bug?" question directly:
-    # no, that's 1 order (this count) that absorbed multiple resubmits.
+    # 3 resubmits is "1 order with a duplicate problem", not 3.
     from sqlalchemy import distinct as _distinct
-    duplicate_q = db.query(sqlfunc.count(_distinct(Order.parent_order_id))).filter(
-        Order.store_id == store_id,
-        Order.is_deleted == False,
-        Order.status == "MERGED",
-        Order.parent_order_id.isnot(None),
-    )
-    if start_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            duplicate_q = duplicate_q.filter(Order.created_at >= parse_local_date_filter(start_date))
-        except ValueError:
-            pass
-    if end_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            duplicate_q = duplicate_q.filter(Order.created_at <= parse_local_date_filter(end_date))
-        except ValueError:
-            pass
-    received_duplicate = duplicate_q.scalar() or 0
-
-    # "Manuelle" — orders entered directly by staff (source='MANUAL'), same
-    # period/filters as the rest of this block — feeds the single unified
-    # badge row on the orders page (replaces the old separate KPI grid +
-    # "Reçues" line, which duplicated the same underlying counts in two
-    # different layouts).
-    manual_q = db.query(sqlfunc.count(Order.id)).filter(
-        Order.store_id == store_id,
-        Order.is_deleted == False,
-        Order.status != "MERGED",
-        sqlfunc.upper(Order.source) == "MANUAL",
-    )
-    if start_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            manual_q = manual_q.filter(Order.created_at >= parse_local_date_filter(start_date))
-        except ValueError:
-            pass
-    if end_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            manual_q = manual_q.filter(Order.created_at <= parse_local_date_filter(end_date))
-        except ValueError:
-            pass
-    received_manual = manual_q.scalar() or 0
-
-    # "Upsell" — orders with at least one on-call added product (Order.
-    # is_upsell), same period/filters as the rest of this block.
-    upsell_q = db.query(sqlfunc.count(Order.id)).filter(
-        Order.store_id == store_id,
-        Order.is_deleted == False,
-        Order.status != "MERGED",
-        Order.is_upsell == True,
-    )
-    if start_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            upsell_q = upsell_q.filter(Order.created_at >= parse_local_date_filter(start_date))
-        except ValueError:
-            pass
-    if end_date:
-        from app.core.dates import parse_local_date_filter
-        try:
-            upsell_q = upsell_q.filter(Order.created_at <= parse_local_date_filter(end_date))
-        except ValueError:
-            pass
-    received_upsell = upsell_q.scalar() or 0
+    received_duplicate = _dated(
+        db.query(sqlfunc.count(_distinct(Order.parent_order_id))).filter(
+            Order.store_id == store_id,
+            Order.is_deleted == False,
+            Order.status == "MERGED",
+            Order.parent_order_id.isnot(None),
+        )
+    ).scalar() or 0
 
     counts["_received"] = {
-        "normal": received_normal,
-        "abandoned": received_abandoned,
+        "normal": received_row.normal or 0,
+        "abandoned": received_row.abandoned or 0,
+        "recovered": received_row.recovered or 0,
         "duplicate": received_duplicate,
-        "manual": received_manual,
-        "upsell": received_upsell,
+        "manual": received_row.manual or 0,
+        "upsell": received_row.upsell or 0,
+        "cancelled": received_row.cancelled or 0,
     }
     return counts
 
