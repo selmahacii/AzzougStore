@@ -53,9 +53,15 @@ async function fetchLandingPage(slug: string, storeId: string): Promise<LpData |
   const backendUrl = getBackendUrl();
   console.log(`[fetchLandingPage] Starting fetch for slug: ${slug}, storeId: ${storeId} using backendUrl: ${backendUrl}`);
   try {
+    // revalidate: 0 — a désactivée landing page must stop resolving
+    // IMMEDIATELY (admin expectation, not eventually-consistent). The
+    // backend's own get_or_set cache (45s L1/1800s L2, invalidated on
+    // toggle) already shields the DB from repeat hits, so this doesn't
+    // remove all caching — just the redundant, staler outer layer that
+    // let a just-deactivated page keep rendering for up to 10s.
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${slug}?store_id=${storeId}`,
-      { next: { revalidate: 10 } }
+      { next: { revalidate: 0 } }
     );
     if (!res.ok) {
       console.error(`[fetchLandingPage] Failed to fetch. Status: ${res.status} ${res.statusText}`);
@@ -99,7 +105,7 @@ export async function generateMetadata({ params, searchParams }: {
       }
     }
 
-    const lpRes = await fetch(`${backendUrl}/api/v1/landing-pages/slug/${slug}?store_id=${storeId || ''}`, { next: { revalidate: 10 } });
+    const lpRes = await fetch(`${backendUrl}/api/v1/landing-pages/slug/${slug}?store_id=${storeId || ''}`, { next: { revalidate: 0 } });
     if (lpRes.ok) {
       const lpJson = await lpRes.json();
       const lp = lpJson.data ?? null;
