@@ -614,6 +614,31 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
     },
   });
 
+  // Retroactive upsell correction (2026-07-22, Selma-requested): a
+  // confirmatrice sometimes forgets to flag an on-call upsell at the
+  // time, and the commission bonus is computed from the CURRENT
+  // is_upsell flag on DELIVERED orders — she needs to fix it after the
+  // fact so it counts. Deliberately separate from updateMutation/the
+  // full edit form: this is the ONLY field a DELIVERED order still
+  // accepts (backend enforces this too — see PATCH /orders/{id}/info),
+  // no stock/carrier/customer side-effect, purely local metadata.
+  const toggleUpsellMutation = useMutation({
+    mutationFn: async (nextValue: boolean) =>
+      apiFetch(`/api/v1/orders/${order.id}/info`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_upsell: nextValue }),
+        headers: { 'X-Store-Id': order.store_id },
+      }),
+    onSuccess: (_res, nextValue) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
+      toast.success(nextValue ? 'Commande marquée Upsell' : 'Marquage Upsell retiré');
+      if (onOrderUpdate) onOrderUpdate({ ...order, is_upsell: nextValue });
+    },
+    onError: (err: any) => toast.error(err.message || "Erreur lors de la mise à jour de l'upsell"),
+  });
+
   const updateMutation = useMutation({
     mutationFn: async (data: typeof editData) => {
       console.log("[DEBUG FRONTEND] updateMutation mutationFn triggered with editData:", JSON.parse(JSON.stringify(data)));
@@ -1374,8 +1399,25 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Source</p>
                     <p className="text-[11px] font-bold text-slate-600">{order.source || 'Direct'}</p>
-                    <div className="flex gap-1 mt-0.5">
-                      {order.is_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">Upsell</span>}
+                    <div className="flex gap-1 mt-0.5 items-center flex-wrap">
+                      {order.status === 'DELIVERED' ? (
+                        <button
+                          type="button"
+                          disabled={toggleUpsellMutation.isPending}
+                          onClick={() => toggleUpsellMutation.mutate(!order.is_upsell)}
+                          title="Corrige le marquage Upsell de cette commande livrée — la commission upsell (voir Mon Salaire) est calculée sur ce flag, aucune autre donnée n'est modifiée."
+                          className={cn(
+                            "text-[8px] font-black px-1.5 py-0.5 rounded border uppercase transition-colors disabled:opacity-50",
+                            order.is_upsell
+                              ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100"
+                              : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          {order.is_upsell ? '✓ Upsell' : '+ Marquer Upsell'}
+                        </button>
+                      ) : (
+                        order.is_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">Upsell</span>
+                      )}
                       {order.is_pack && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 uppercase">Pack</span>}
                       {order.is_abandoned_cart && (
                         ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(order.status)
