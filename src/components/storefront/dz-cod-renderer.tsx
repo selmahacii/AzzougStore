@@ -91,6 +91,16 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
+  // Plafond de commande — même garde-fou que landing-page-renderer.tsx
+  // (bug confirmé : 20 en stock, commande passée à 21 via ce stepper de
+  // quantité). Le backend (reserve_stock) reste la source de vérité ;
+  // ceci n'est qu'un garde-fou côté client.
+  const maxOrderableQuantity = (() => {
+    const p = data.product as any;
+    if (!p) return undefined;
+    const available = Math.max(0, p.stock || 0);
+    return available > 0 ? available : undefined;
+  })();
 
   useEffect(() => { 
     setMounted(true); 
@@ -618,8 +628,12 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                       <span className="flex-1 text-center font-bold text-sm">{quantity}</span>
                       <button
                         type="button"
-                        onClick={() => setQuantity(quantity + 1)}
-                        className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border"
+                        onClick={() => {
+                          if (maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity) return;
+                          setQuantity(quantity + 1);
+                        }}
+                        disabled={maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity}
+                        className="size-8 flex items-center justify-center rounded-lg hover:bg-slate-100 font-bold border disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         +
                       </button>

@@ -318,7 +318,22 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   // suivies en stock sur ce produit → pas de plafond connu, pas de blocage.
   const maxOrderableQuantity = (() => {
     const variants = data.product?.variants;
-    if (!variants || variants.length === 0) return undefined;
+    if (!variants || variants.length === 0) {
+      // Produit SANS variantes suivies (le cas le plus courant) — le
+      // plafond doit venir du stock du produit lui-même, pas rester
+      // "undefined" (= aucun plafond). Sans ce fallback, un client pouvait
+      // incrémenter le stepper de quantité au-delà du stock réel
+      // (confirmé en prod : 20 en stock, commande passée à 21).
+      // GET /landing-pages/slug/{slug} only ever sends the raw `stock`
+      // figure for a non-variant product (no reserved_stock field in this
+      // payload) — the backend's own reserve_stock() is still the
+      // authoritative gate at order-creation time regardless; this is a
+      // client-side UX guard, not the source of truth.
+      const p = data.product as any;
+      if (!p) return undefined;
+      const available = Math.max(0, p.stock || 0);
+      return available > 0 ? available : undefined;
+    }
     const firstGroupName = variants[0]?.name;
     const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
     const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
