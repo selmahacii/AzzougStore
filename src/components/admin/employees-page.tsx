@@ -703,8 +703,7 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
    const paymentAmount = agent.payment_amount ?? 0;
    const delivered = stats.delivered_count ?? 0;
    const salary = stats.salary ?? (
-      paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
-      : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
+      paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount
    );
 
    return (
@@ -1929,8 +1928,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const total_assigned = stats.total_assigned ?? 0;
 
    const computedSalary = stats.salary ?? (
-     paymentType === 'PER_DELIVERED_ORDER' ? delivered * paymentAmount
-     : paymentType === 'MONTHLY_SALARY' ? paymentAmount : 0
+     paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount
    );
    const totalSalary = computedSalary + bonus;
    const maxBar = Math.max(...(perf?.daily_chart ?? [{ count: 1 }]).map((d: any) => d.count), 1);
@@ -2023,9 +2021,18 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
 
                      {/* Salary breakdown */}
                      <div className="bg-slate-50 rounded-3xl p-6 space-y-4 border border-slate-100">
+                        {/* La rémunération de base se calcule TOUJOURS sur les
+                            commandes LIVRÉES, jamais "en cours de livraison"
+                            (SHIPPED) — compute_salary (salary_service.py)
+                            retombe sur PER_DELIVERED_ORDER dès que payment_type
+                            n'est pas explicitement configuré, donc cet
+                            affichage doit suivre la même règle plutôt que de
+                            montrer "Commandes confirmées" (qui inclut SHIPPED,
+                            voir confirmed_count dans users.py) comme si la paie
+                            en dépendait. */}
                         <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                           <span>{paymentType === 'PER_DELIVERED_ORDER' ? 'Commandes livrées' : paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes confirmées'}</span>
-                           <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${paymentType === 'PER_DELIVERED_ORDER' ? delivered : confirmed} × ${formatPrice(paymentAmount)}`}</span>
+                           <span>{paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes livrées'}</span>
+                           <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${delivered} × ${formatPrice(paymentAmount)}`}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold text-[#20bf6b]">
                            <span>Total commissions</span>
