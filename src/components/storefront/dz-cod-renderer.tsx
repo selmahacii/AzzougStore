@@ -129,8 +129,15 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
 
   useEffect(() => {
     const currentOffer = offers[selectedOfferIndex] || offers[0];
-    setQuantity(currentOffer.quantity);
-  }, [selectedOfferIndex, offers]);
+    // Un palier d'offre configuré admin (ex: "pack de 30") ne doit jamais
+    // fixer une quantité au-delà du stock réel — même bug que le stepper
+    // +/-, contourné ici puisque cet effet écrit directement dans
+    // `quantity` sans passer par le bouton.
+    const capped = maxOrderableQuantity !== undefined
+      ? Math.min(currentOffer.quantity, maxOrderableQuantity)
+      : currentOffer.quantity;
+    setQuantity(capped);
+  }, [selectedOfferIndex, offers, maxOrderableQuantity]);
 
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
@@ -199,7 +206,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
 
   useEffect(() => {
     const currentOffer = (offers && offers.length > 0) ? (offers[selectedOfferIndex] || offers[0]) : null;
-    const qty = currentOffer ? currentOffer.quantity : quantity;
+    const rawQty = currentOffer ? currentOffer.quantity : quantity;
+    const qty = maxOrderableQuantity !== undefined ? Math.min(rawQty, maxOrderableQuantity) : rawQty;
 
     // ── Case 1: Landing page WITH a linked product ────────────────────────────
     if (data.product) {
@@ -257,7 +265,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity]);
+  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, maxOrderableQuantity]);
 
   if (!mounted) {
     return (
@@ -645,27 +653,39 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     <div className="grid grid-cols-1 gap-2.5">
                       {offers.map((offer: any, idx: number) => {
                         const isSelected = selectedOfferIndex === idx;
+                        // Même garde-fou que landing-page-renderer.tsx : un
+                        // palier configuré admin (ex: "3 Pièces") ne
+                        // vérifiait jamais le stock réel disponible.
+                        const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
                         return (
                           <button
                             key={idx}
                             type="button"
+                            disabled={offerExceedsStock}
                             onClick={() => {
+                              if (offerExceedsStock) return;
                               setSelectedOfferIndex(idx);
                               setQuantity(offer.quantity);
                             }}
                           className={cn(
                             "p-3 rounded-lg border-2 text-left transition-all relative flex items-center justify-between",
-                            isSelected
+                            offerExceedsStock
+                              ? "opacity-40 cursor-not-allowed grayscale bg-white border-gray-200"
+                              : isSelected
                               ? "bg-red-50/50 border-red-500 font-bold"
                               : "bg-white border-gray-200 hover:border-gray-300"
                           )}
-                          style={isSelected ? { borderColor: primary, backgroundColor: `${primary}08` } : {}}
+                          style={!offerExceedsStock && isSelected ? { borderColor: primary, backgroundColor: `${primary}08` } : {}}
                         >
                           <div>
                             <span className="text-sm text-slate-900 font-bold">
                               {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                             </span>
-                            {offer.desc && (
+                            {offerExceedsStock ? (
+                              <span className="block text-[11px] mt-0.5 font-bold text-rose-500">
+                                {dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}
+                              </span>
+                            ) : offer.desc && (
                               <span className="block text-[11px] text-slate-500 font-medium">{offer.desc}</span>
                             )}
                           </div>

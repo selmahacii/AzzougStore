@@ -349,7 +349,16 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       };
 
   useEffect(() => {
-    const qty = currentOffer.quantity;
+    // Le stepper +/- n'est pas le SEUL moyen de fixer la quantité — un
+    // palier d'offre configuré côté admin (ex: "pack de 30") la fixe
+    // directement via selectedOfferIndex, en contournant totalement le
+    // plafond du stepper. Un seul point de vérité : quelle que soit la
+    // source, la quantité ajoutée au panier ne dépasse jamais le stock
+    // disponible (bug confirmé en prod : un palier configuré au-delà du
+    // stock réel restait commandable).
+    const qty = maxOrderableQuantity !== undefined
+      ? Math.min(currentOffer.quantity, maxOrderableQuantity)
+      : currentOffer.quantity;
 
     // ── Case 1: Landing page WITH a linked product ────────────────────────────
     if (data.product) {
@@ -406,7 +415,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, currentOffer.price, currentOffer.quantity]);
+  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   if (!mounted) {
     return (
