@@ -27,6 +27,7 @@ export function PayrollBanner() {
     queryFn: () => apiFetch<any>('/api/v1/payroll/reminders'),
     enabled: !!isSuperAdmin,
     refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const period = remindersQuery.data?.period;

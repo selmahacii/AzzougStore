@@ -60,6 +60,7 @@ export function YalidineTrackingPanel({ orderId, trackingNumber, onShipped }: Pr
         }),
     enabled: !!trackingNumber && !!storeId,
     refetchInterval: trackingNumber ? 60_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const shipMutation = useMutation({

@@ -492,6 +492,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       // insuffisant" on save.
       staleTime: 10_000,
       refetchInterval: isEditing ? 10_000 : false,
+      refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
     })),
   });
@@ -1741,6 +1742,7 @@ export default function AgentDashboard() {
     queryFn: () => apiFetch('/api/v1/notifications?limit=15'),
     // Alert channel — must stay reasonably fresh (see notifications-bell).
     refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
     enabled: !!user?.id,
   });
   const notifItems = (notifQuery.data?.data ?? []).filter((n: any) => !n.is_read).slice(0, 10);
@@ -1856,7 +1858,8 @@ export default function AgentDashboard() {
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     placeholderData: (prev) => prev,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 
   // Garde-fou pagination : après une action (confirmation, annulation,
@@ -1918,7 +1921,8 @@ export default function AgentDashboard() {
       return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 30000
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 
   let filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 

@@ -113,6 +113,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     // when it no longer is by the time she hits save.
     staleTime: 10_000,
     refetchInterval: isOpen ? 20_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const deliveryPartnersQuery = useQuery<any>({

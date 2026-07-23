@@ -380,6 +380,7 @@ function ConfirmateurPerformance({ user, kpi, storeId }: { user: any; kpi: any; 
       queryFn: () =>
          apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=5`),
       refetchInterval: 60000,
+      refetchIntervalInBackground: false,
       enabled: !!user?.id && !!storeId,
    });
 

@@ -53,6 +53,7 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
     queryFn: () => fetch(`/api/noest/sync?orderId=${orderId}`).then(r => r.json()),
     enabled: !!trackingNumber,
     refetchInterval: trackingNumber ? 60_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const syncMutation = useMutation({

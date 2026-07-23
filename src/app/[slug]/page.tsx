@@ -1,21 +1,22 @@
-export const dynamic = 'force-dynamic';
+export const revalidate = 10;
 import { ThemeInjector } from '@/components/theme-injector';
 import { AppBootstrap } from '@/components/app/app-bootstrap';
 import { UrlSync } from '@/components/app/url-sync';
 import { HydrateStore } from '@/components/app/hydrate-store';
 import { StorefrontIntegrations } from '@/components/storefront/store-integrations';
 import { Suspense } from 'react';
-import { getServerSessionCookie, verifyToken } from '@/lib/jwt';
 import { getBackendUrl } from '@/lib/utils';
 import { ServerSeo } from '@/components/storefront/server-seo';
 import type { Metadata } from 'next';
-import type { User, Store } from '@/lib/types';
+import type { Store } from '@/lib/types';
 
+// initialUser is intentionally NOT fetched here — see src/app/page.tsx for
+// why (reading the session cookie forces per-request dynamic rendering and
+// duplicates the auth call AppBootstrap already makes client-side).
 async function fetchInitialData(slug: string) {
   const backendUrl = getBackendUrl();
 
   let initialStores: Store[] = [];
-  let initialUser: User | null = null;
   let metaAdsConfig: any = null;
 
   try {
@@ -26,24 +27,6 @@ async function fetchInitialData(slug: string) {
     }
   } catch {
     // backend not reachable — client will load stores via React Query
-  }
-
-  try {
-    const token = await getServerSessionCookie();
-    if (token) {
-      const payload = await verifyToken(token);
-      if (payload) {
-        const res = await fetch(`${backendUrl}/api/v1/users/${payload.userId}`, {
-          cache: 'no-store',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          initialUser = await res.json() as User;
-        }
-      }
-    }
-  } catch {
-    // auth check failed gracefully
   }
 
   const activeStore = initialStores.find(s => s.slug === slug);
@@ -59,7 +42,7 @@ async function fetchInitialData(slug: string) {
     }
   }
 
-  return { initialStores, initialUser, metaAdsConfig };
+  return { initialStores, metaAdsConfig };
 }
 
 function getAppBaseUrl() {
@@ -154,7 +137,7 @@ export default async function Page({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { initialStores, initialUser, metaAdsConfig } = await fetchInitialData(slug);
+  const { initialStores, metaAdsConfig } = await fetchInitialData(slug);
   const activeStore = initialStores.find(s => s.slug === slug);
   const baseUrl = getAppBaseUrl();
   let canonicalUrl = activeStore ? `${baseUrl}/${activeStore.slug}` : `${baseUrl}/${slug}`;
@@ -206,7 +189,7 @@ export default async function Page({
       />
       <StorefrontIntegrations config={metaAdsConfig} />
       <ThemeInjector />
-      <HydrateStore initialUser={initialUser} initialStores={initialStores} activeStoreSlug={slug} />
+      <HydrateStore initialUser={null} initialStores={initialStores} activeStoreSlug={slug} />
       <Suspense fallback={null}>
         <UrlSync />
       </Suspense>

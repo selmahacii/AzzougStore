@@ -153,6 +153,7 @@ export default function InventoryDashboard() {
       queryFn: () => apiFetch<InventorySummary>(`/api/v1/stock/summary?store_id=${storeId}`),
       enabled: !!storeId,
       refetchInterval: 60000,
+      refetchIntervalInBackground: false,
    });
 
    const movementsQuery = useQuery({
@@ -160,6 +161,7 @@ export default function InventoryDashboard() {
       queryFn: () => apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?store_id=${storeId}&pageSize=30`),
       enabled: !!storeId,
       refetchInterval: 60000,
+      refetchIntervalInBackground: false,
    });
 
 
@@ -272,6 +274,7 @@ function ErpDashboardBlock() {
       queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/stock/dashboard?store_id=${activeStore?.id}`),
       enabled: !!activeStore?.id,
       refetchInterval: 60000,
+      refetchIntervalInBackground: false,
    });
    const d = data?.data;
 
