@@ -6,7 +6,7 @@ from app.models.finance import Wallet, FinancialTransaction, TransactionType, Wa
 from app.schemas.finance import TransactionPagination, FinancialTransaction as TransSchema, TransactionCreate, WalletListResponse, Wallet as WalletSchema, WalletCreate
 from sqlalchemy import desc
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 
@@ -43,6 +43,9 @@ def get_transactions(
     type: Optional[str] = None,
     transaction_type: Optional[str] = None,
     wallet_id: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100)
 ):
@@ -57,6 +60,23 @@ def get_transactions(
             pass  # unknown type → return all
     if wallet_id:
         query = query.filter(FinancialTransaction.wallet_id == wallet_id)
+    if search:
+        like = f"%{search.strip()}%"
+        query = query.filter(
+            (FinancialTransaction.reference.ilike(like))
+            | (FinancialTransaction.beneficiary.ilike(like))
+            | (FinancialTransaction.description.ilike(like))
+        )
+    if date_from:
+        try:
+            query = query.filter(FinancialTransaction.transaction_date >= datetime.fromisoformat(date_from))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            query = query.filter(FinancialTransaction.transaction_date < datetime.fromisoformat(date_to) + timedelta(days=1))
+        except ValueError:
+            pass
 
     total = query.count()
     transactions = query.order_by(desc(FinancialTransaction.transaction_date)).offset((page - 1) * pageSize).limit(pageSize).all()

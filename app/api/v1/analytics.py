@@ -252,9 +252,12 @@ def get_analytics(
         # Funnel
         funnel = get_funnel_rates(new_orders, assigned_orders, called_orders, confirmed_orders, delivered_orders, returned_orders)
 
-        # Previous Period comparison
-        revenue_change = 0
-        orders_change = 0
+        # Previous Period comparison. None (not 0) when the previous period had
+        # no baseline to compare against — a 0-to-N jump isn't a "% growth",
+        # it's an undefined ratio, and forcing it through `prev_rev or 1`
+        # produced nonsense figures like +56516700%.
+        revenue_change = None
+        orders_change = None
         if prev_start_date and prev_end_date:
             prev_filters = filters + [Order.created_at >= prev_start_date, Order.created_at < prev_end_date]
             prev_agg = db.query(
@@ -268,8 +271,8 @@ def get_analytics(
             prev_rev = (prev_agg.rev or 0) + prev_pos_rev
             prev_orders = int(prev_agg.orders or 0)
 
-            revenue_change = round(((total_rev - prev_rev) / (prev_rev or 1) * 100), 2)
-            orders_change = round(((total_orders - prev_orders) / (prev_orders or 1) * 100), 2)
+            revenue_change = round(((total_rev - prev_rev) / prev_rev * 100), 2) if prev_rev > 0 else None
+            orders_change = round(((total_orders - prev_orders) / prev_orders * 100), 2) if prev_orders > 0 else None
 
         # Cost of goods sold: sum of (product.cost_price * qty) for delivered orders
         from app.models.product import Product as ProductModel
@@ -577,12 +580,13 @@ def get_analytics(
         s_products = db.query(func.count(Product.id)).filter(Product.store_id == store_id, Product.is_active == True).scalar() or 0
         s_employees = db.query(func.count(User.id)).filter(User.employee_store_id == store_id, User.is_active == True).scalar() or 0
 
-        # Revenue comparison
-        s_rev_change = 0.0
+        # Revenue comparison. None when the previous period has no revenue to
+        # compare against — see the identical fix on the main KPI endpoint above.
+        s_rev_change = None
         if prev_start_date:
             prev_f = filters + [Order.created_at >= prev_start_date, Order.created_at < start_date, Order.status == "DELIVERED"]
             prev_rev = db.query(func.sum(Order.total)).filter(and_(*prev_f)).scalar() or 0
-            s_rev_change = round(((s_total_rev - prev_rev) / (prev_rev or 1) * 100), 2)
+            s_rev_change = round(((s_total_rev - prev_rev) / prev_rev * 100), 2) if prev_rev > 0 else None
 
         # s_total_rev is already DELIVERED-only (see above) — a RETURNED
         # order's total was never in it, so there's nothing left to subtract.
