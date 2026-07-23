@@ -17,6 +17,7 @@ import {
    Trash2,
    Eye,
    MoreHorizontal,
+   Copy,
    ImageOff,
    X,
    Loader2,
@@ -836,7 +837,19 @@ export default function ProductsPage() {
                                  </div>
                                  <div className="max-w-[200px]">
                                     <p className="text-sm font-black text-slate-800 leading-tight mb-1">{product.name}</p>
-                                    <p className="text-[10px] font-bold text-slate-400 font-mono tracking-tighter truncate">{product.id}</p>
+                                    <button
+                                       type="button"
+                                       onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(product.id);
+                                          toast.success('ID produit copié — collez-le dans "Règles d\'Assignation".');
+                                       }}
+                                       title={`Copier l'ID : ${product.id}`}
+                                       className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-[#4b7bec] font-mono tracking-tighter group/id"
+                                    >
+                                       <span className="truncate max-w-[150px]">{product.id}</span>
+                                       <Copy className="size-2.5 shrink-0 opacity-0 group-hover/id:opacity-100 transition-opacity" />
+                                    </button>
                                  </div>
                               </div>
                            </td>
