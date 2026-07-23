@@ -141,6 +141,10 @@ class OrderRead(BaseModel):
     promo_code:      Optional[str] = None
     status:          str
     assigned_to:     Optional[str] = None
+    # True when an admin/manager explicitly pinned this order to
+    # `assigned_to` — the Assignment Rule Engine will never override it
+    # (see Order.assignment_locked docstring, app/models/order.py).
+    assignment_locked: Optional[bool] = False
     source:          Optional[str] = None
     notes:           Optional[str] = None
     internal_notes:  Optional[str] = None
