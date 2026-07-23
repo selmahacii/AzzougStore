@@ -105,9 +105,14 @@ class RolePermission(BaseModel):
 class InfrastructureStats(BaseModel):
     totalEffectif: int
     onlineCount: int
-    qualityIndex: float
-    interactionDelay: float   # in minutes
-    securityLevel: str
+    # Real average confirmation rate (%) across confirmatrices with at
+    # least one assigned order in the window — None when nobody has any
+    # (nothing to average), never a fabricated placeholder number.
+    qualityIndex: Optional[float] = None
+    # Real average minutes between an order's creation and its first
+    # recorded status-changing event (first confirmatrice touch), scoped
+    # to the same window. None when there's no event data yet to average.
+    interactionDelay: Optional[float] = None
     nodeId: str
 
 
