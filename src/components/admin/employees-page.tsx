@@ -460,9 +460,13 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
                      </div>
                   </div>
                   <div className="bg-indigo-50/30 rounded-[24px] p-7 min-w-[180px] border border-indigo-100/30">
-                     <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2">Indice de qualité</p>
+                     <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2">Taux de confirmation moyen</p>
                      <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-bold text-indigo-600 tracking-tighter">{stats.qualityIndex}%</span>
+                        {stats.qualityIndex != null ? (
+                           <span className="text-4xl font-bold text-indigo-600 tracking-tighter">{stats.qualityIndex}%</span>
+                        ) : (
+                           <span className="text-sm font-semibold text-slate-300">Aucune commande sur 30j</span>
+                        )}
                      </div>
                   </div>
                </div>
@@ -484,35 +488,34 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
                      </div>
                   </div>
                   
-                  <div className="h-64 w-full rounded-[30px] bg-[#F8F9FC] border border-slate-100 flex items-center justify-center relative overflow-hidden group">
+                  {/* No time-series activity data exists yet to chart honestly
+                      (would need a dedicated events-over-time endpoint) — an
+                      empty state beats a decorative placeholder pretending to
+                      be a live monitor. */}
+                  <div className="h-64 w-full rounded-[30px] bg-[#F8F9FC] border border-slate-100 flex items-center justify-center relative overflow-hidden">
                      <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(#6C5CE7 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-                     <div className="size-64 rounded-full bg-indigo-200/20 blur-[60px] animate-pulse" />
-                     
                      <div className="flex flex-col items-center gap-3 relative z-10">
-                        <div className="size-16 rounded-full bg-white shadow-xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                           <Users className="size-7 text-indigo-600" />
+                        <div className="size-16 rounded-full bg-white shadow-md flex items-center justify-center mb-2">
+                           <Users className="size-7 text-slate-300" />
                         </div>
-                        <span className="text-sm font-bold text-slate-500">Moniteur haute fréquence actif</span>
+                        <span className="text-sm font-bold text-slate-400">Graphique d'activité non disponible pour le moment</span>
                      </div>
                   </div>
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="grid grid-cols-1 gap-8">
                   <div className="bg-white rounded-[32px] border p-8 shadow-sm flex items-center gap-5 hover:border-indigo-100 transition-all group" style={{ borderColor: C.border }}>
                      <div className="size-14 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-500 group-hover:bg-orange-100 transition-colors"><Zap className="size-6" /></div>
                      <div>
-                        <p className="text-xs font-bold text-slate-400 mb-1">Délai d'interaction</p>
-                        <p className="text-2xl font-bold text-slate-900 tracking-tight">{stats.interactionDelay} min <span className="text-[10px] font-medium text-slate-400">moy.</span></p>
+                        <p className="text-xs font-bold text-slate-400 mb-1">Délai d'interaction (30j)</p>
+                        {stats.interactionDelay != null ? (
+                           <p className="text-2xl font-bold text-slate-900 tracking-tight">{stats.interactionDelay} min <span className="text-[10px] font-medium text-slate-400">moy.</span></p>
+                        ) : (
+                           <p className="text-sm font-semibold text-slate-300">Aucune donnée sur 30j</p>
+                        )}
                      </div>
                   </div>
-                  <div className="bg-white rounded-[32px] border p-8 shadow-sm flex items-center gap-5 hover:border-emerald-100 transition-all group" style={{ borderColor: C.border }}>
-                     <div className="size-14 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500 group-hover:bg-emerald-100 transition-colors"><Shield className="size-6" /></div>
-                     <div>
-                        <p className="text-xs font-bold text-slate-400 mb-1">Sécurité des accès</p>
-                        <p className="text-2xl font-bold text-emerald-600 tracking-tight">{stats.securityLevel}</p>
-                     </div>
-                  </div>
-                  <div className="md:col-span-2 bg-amber-50/50 rounded-[32px] border border-amber-200/50 p-6 flex items-center justify-between gap-6">
+                  <div className="bg-amber-50/50 rounded-[32px] border border-amber-200/50 p-6 flex items-center justify-between gap-6">
                      <div className="flex items-center gap-4">
                         <div className="size-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600">
                            <Activity className="size-6" />
@@ -551,10 +554,6 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
                      <div className="p-10 text-center text-slate-300 text-xs font-bold">Aucune activité récente</div>
                   )}
                </div>
-               
-               <button className="w-full py-6 text-xs font-bold text-indigo-600 bg-indigo-50/30 hover:bg-indigo-50 border-t transition-all" style={{ borderColor: C.border }}>
-                  Accéder à l'audit complet
-               </button>
             </div>
          </div>
       </div>
@@ -564,9 +563,36 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
 // ═══════════════════════════════════════════════════════════════
 // Admins Table Sub-View
 // ═══════════════════════════════════════════════════════════════
+const ADMINS_PAGE_SIZE = 15;
+
 function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, totalStaff }: {
    employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onCreate: () => void; totalStaff?: number;
 }) {
+   const [search, setSearch] = useState('');
+   const [page, setPage] = useState(1);
+
+   // Real, derivable stats only — no invented percentages. "Actifs" counts
+   // employees with is_active=true (a real column); "Accès privilégiés"
+   // counts real SUPER_ADMIN/ADMIN accounts. There is no last-activity
+   // tracking anywhere in this schema, so the previous "Actifs 24h: 100%"
+   // and "Sécurité: Maximale" tiles — and the per-row "Dernière active:
+   // Actif" shown identically for every employee, including deactivated
+   // ones — were fabricated, not computed from anything.
+   const activeCount = employees.filter(e => e.is_active).length;
+   const activePct = employees.length > 0 ? Math.round((activeCount / employees.length) * 100) : 0;
+   const privilegedCount = employees.filter(e => e.role === 'SUPER_ADMIN' || e.role === 'ADMIN').length;
+
+   const filtered = search.trim()
+      ? employees.filter(e =>
+           e.name.toLowerCase().includes(search.toLowerCase()) ||
+           e.email.toLowerCase().includes(search.toLowerCase())
+        )
+      : employees;
+
+   const totalPages = Math.max(1, Math.ceil(filtered.length / ADMINS_PAGE_SIZE));
+   const pageSafe = Math.min(page, totalPages);
+   const pageEmployees = filtered.slice((pageSafe - 1) * ADMINS_PAGE_SIZE, pageSafe * ADMINS_PAGE_SIZE);
+
    return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
          {/* Top Stats Bar */}
@@ -577,11 +603,11 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
             </div>
             <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
                <div className="size-12 rounded-2xl flex items-center justify-center bg-emerald-50 text-emerald-500 shadow-inner"><Activity className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Actifs 24h</p><p className="text-xl font-bold text-slate-900">100%</p></div>
+               <div><p className="text-xs font-bold text-slate-400">Comptes actifs</p><p className="text-xl font-bold text-slate-900">{activePct}% <span className="text-xs font-medium text-slate-400">({activeCount}/{employees.length})</span></p></div>
             </div>
             <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
                <div className="size-12 rounded-2xl flex items-center justify-center bg-amber-50 text-amber-500 shadow-inner"><Radio className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Sécurité</p><p className="text-xl font-bold text-slate-900">Maximale</p></div>
+               <div><p className="text-xs font-bold text-slate-400">Accès privilégiés</p><p className="text-xl font-bold text-slate-900">{privilegedCount}</p></div>
             </div>
          </div>
 
@@ -603,12 +629,12 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
          <div className="bg-white rounded-3xl border px-6 py-4 flex items-center justify-between shadow-sm" style={{ borderColor: C.border }}>
             <div className="relative max-w-md flex-1">
                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-300" />
-               <Input placeholder="Rechercher par nom ou email..." className="pl-10 h-11 bg-slate-50/50 border-slate-100 rounded-2xl text-sm font-medium focus-visible:ring-[#4b7bec]" />
-            </div>
-            <div className="flex items-center gap-3 ml-4">
-               <button className="p-2.5 rounded-xl border bg-white hover:bg-slate-50 transition-all text-slate-400" style={{ borderColor: C.border }}>
-                  <RefreshCw className="size-4" />
-               </button>
+               <Input
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                  placeholder="Rechercher par nom ou email..."
+                  className="pl-10 h-11 bg-slate-50/50 border-slate-100 rounded-2xl text-sm font-medium focus-visible:ring-[#4b7bec]"
+               />
             </div>
          </div>
 
@@ -623,12 +649,16 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                            <th className="px-8 py-4 text-xs font-bold text-slate-500">Identité</th>
                            <th className="px-8 py-4 text-xs font-bold text-slate-500">Communications</th>
                            <th className="px-8 py-4 text-xs font-bold text-slate-500">Accréditation</th>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500 text-center">Dernière active</th>
+                           <th className="px-8 py-4 text-xs font-bold text-slate-500 text-center">Statut</th>
                            <th className="px-8 py-4 text-xs font-bold text-slate-500 text-right w-32">Actions</th>
                         </tr>
                      </thead>
                      <tbody className="divide-y" style={{ borderColor: C.border }}>
-                        {employees.map((emp, i) => (
+                        {pageEmployees.length === 0 ? (
+                           <tr><td colSpan={5} className="px-8 py-16 text-center text-sm text-slate-400 font-medium">
+                              {search ? 'Aucun membre ne correspond à votre recherche.' : 'Aucun membre pour le moment.'}
+                           </td></tr>
+                        ) : pageEmployees.map((emp) => (
                            <tr key={emp.id} className="hover:bg-[#FAFBFD]/50 transition-colors group">
                               <td className="px-8 py-5">
                                  <div className="flex items-center gap-4">
@@ -658,7 +688,9 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                                  </Badge>
                               </td>
                               <td className="px-8 py-5 text-center">
-                                 <span className="text-xs font-bold text-slate-400">Actif</span>
+                                 <span className={cn("text-xs font-bold", emp.is_active ? "text-emerald-600" : "text-slate-400")}>
+                                    {emp.is_active ? 'Actif' : 'Inactif'}
+                                 </span>
                               </td>
                               <td className="px-8 py-5 text-right w-32">
                                  <div className="flex items-center justify-end gap-2">
@@ -676,7 +708,7 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
                   </table>
                </div>
             )}
-            <TablePagination total={employees.length} page={1} totalPages={1} onPageChange={() => {}} />
+            <TablePagination total={filtered.length} page={pageSafe} totalPages={totalPages} onPageChange={setPage} />
          </div>
       </div>
    );
@@ -685,15 +717,15 @@ function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, tota
 // ═══════════════════════════════════════════════════════════════
 // Agents Table Sub-View
 // ═══════════════════════════════════════════════════════════════
-function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
-   agent: any; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; storeId: string;
+function AgentRow({ agent, onEdit, onDeactivate, onDelete, perfSummary }: {
+   agent: any; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; perfSummary?: any;
 }) {
-   const { data: perf } = useQuery<any>({
-      queryKey: ['employee-perf', agent.id, storeId],
-      queryFn: () => apiFetch(`/api/v1/users/${agent.id}/performance?store_id=${storeId}`),
-      enabled: !!storeId && !!agent.id,
-   });
-   const stats = perf?.stats ?? {};
+   // Stats come from ONE bulk /users/performance-summary call made once by
+   // AgentsView for the whole visible page, not a per-row query — see that
+   // endpoint's docstring for why (N+1 was firing one full /performance
+   // call, and its recent_orders/audit_logs/daily-chart queries, PER AGENT
+   // ROW just to paint this badge).
+   const stats = perfSummary ?? {};
    const total = stats.total_assigned ?? 0;
    const confirmed = stats.confirmed_count ?? 0;
    const rate = stats.confirmation_rate ?? (total > 0 ? Math.round((confirmed / total) * 100) : null);
@@ -770,11 +802,38 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, storeId }: {
    );
 }
 
+const AGENTS_PAGE_SIZE = 15;
+
 function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCreate, totalStaff }: {
    employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; onCreate: () => void; totalStaff?: number;
 }) {
    const { activeStore } = useAppStore();
-   const agents = employees.filter(e => e.role === 'CONFIRMATEUR');
+   const storeId = activeStore?.id ?? '';
+   const allAgents = employees.filter(e => e.role === 'CONFIRMATEUR');
+   const [search, setSearch] = useState('');
+   const [page, setPage] = useState(1);
+
+   const agents = search.trim()
+      ? allAgents.filter(a =>
+           a.name.toLowerCase().includes(search.toLowerCase()) ||
+           a.email.toLowerCase().includes(search.toLowerCase())
+        )
+      : allAgents;
+
+   const totalPages = Math.max(1, Math.ceil(agents.length / AGENTS_PAGE_SIZE));
+   const pageSafe = Math.min(page, totalPages);
+   const pageAgents = agents.slice((pageSafe - 1) * AGENTS_PAGE_SIZE, pageSafe * AGENTS_PAGE_SIZE);
+
+   // ONE bulk call for whichever agents are actually visible on this page —
+   // see /users/performance-summary docstring for why this replaced N
+   // per-row queries.
+   const idsKey = pageAgents.map(a => a.id).join(',');
+   const perfQuery = useQuery<any>({
+      queryKey: ['employees-perf-summary', idsKey, storeId],
+      queryFn: () => apiFetch(`/api/v1/users/performance-summary?user_ids=${idsKey}&store_id=${storeId}`),
+      enabled: !!storeId && pageAgents.length > 0,
+   });
+   const perfByAgent: Record<string, any> = perfQuery.data?.data ?? {};
 
    return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -799,10 +858,15 @@ function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCr
             <div className="px-8 py-6 border-b flex items-center justify-between bg-slate-50/30" style={{ borderColor: C.border }}>
                <div className="relative max-sm-sm flex-1">
                   <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-300" />
-                  <Input placeholder="Rechercher un agent..." className="pl-10 h-11 bg-white border-slate-100 rounded-2xl text-sm font-medium" />
+                  <Input
+                     value={search}
+                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                     placeholder="Rechercher un agent..."
+                     className="pl-10 h-11 bg-white border-slate-100 rounded-2xl text-sm font-medium"
+                  />
                </div>
             </div>
-            
+
             <div className="overflow-x-auto">
                <table className="w-full text-left min-w-[1000px]">
                   <thead>
@@ -816,13 +880,17 @@ function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCr
                      </tr>
                   </thead>
                   <tbody className="divide-y" style={{ borderColor: C.border }}>
-                     {agents.map((agent) => (
-                        <AgentRow key={agent.id} agent={agent} onEdit={onEdit} onDeactivate={onDeactivate} onDelete={onDelete} storeId={activeStore?.id ?? ''} />
+                     {pageAgents.length === 0 ? (
+                        <tr><td colSpan={6} className="px-8 py-16 text-center text-sm text-slate-400 font-medium">
+                           {isLoading ? 'Chargement…' : search ? 'Aucun agent ne correspond à votre recherche.' : 'Aucun agent pour le moment.'}
+                        </td></tr>
+                     ) : pageAgents.map((agent) => (
+                        <AgentRow key={agent.id} agent={agent} onEdit={onEdit} onDeactivate={onDeactivate} onDelete={onDelete} perfSummary={perfByAgent[agent.id]} />
                      ))}
                   </tbody>
                </table>
             </div>
-            <TablePagination total={agents.length} page={1} totalPages={1} onPageChange={() => {}} />
+            <TablePagination total={agents.length} page={pageSafe} totalPages={totalPages} onPageChange={setPage} />
          </div>
       </div>
    );
@@ -1707,7 +1775,11 @@ export default function EmployeesPage() {
    const auditQuery = useQuery<any>({
       queryKey: ['audit', 'recent', storeId, startDate, endDate],
       queryFn: () => {
-         const params = new URLSearchParams({ store_id: storeId, pageSize: '15' });
+         // Was 15 with a "Accéder à l'audit complet" button underneath that
+         // did nothing (no destination page exists) — removed the dead
+         // button and fetch a bit more directly instead, since the panel
+         // already scrolls.
+         const params = new URLSearchParams({ store_id: storeId, pageSize: '30' });
          if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
          if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
          return apiFetch(`/api/v1/audit/?${params.toString()}`);
@@ -1948,11 +2020,19 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         <p className="text-emerald-100 text-xs font-medium mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance</p>
                      </div>
                   </div>
-                  {/* KPI pills */}
+                  {/* KPI pills — headline count must match what actually drives
+                      the salary figure right next to it (compute_salary,
+                      salary_service.py, bases pay on DELIVERED orders only —
+                      a confirmed order can still be returned/cancelled before
+                      delivery). Showing "Confirmées" here was misleading:
+                      it's a different, larger number than what the salary
+                      is actually computed from, and disagreed with the
+                      confirmatrice's own "Mon Salaire" view, which correctly
+                      headlines Livrées. */}
                   <div className="flex items-center gap-4">
                      <div className="flex flex-col">
-                        <p className="text-xs font-medium text-slate-400">Confirmées</p>
-                        <p className="text-2xl font-bold text-emerald-400">{confirmed}</p>
+                        <p className="text-xs font-medium text-slate-400">Livrées</p>
+                        <p className="text-2xl font-bold text-emerald-400">{delivered}</p>
                      </div>
                      <div className="w-px h-10 bg-slate-700 hidden sm:block"></div>
                      <div className="flex flex-col">

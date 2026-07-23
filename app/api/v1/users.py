@@ -107,17 +107,66 @@ def get_infrastructure_stats(
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """
-    Get real-time infrastructure and team metrics.
+    Real-time team metrics. qualityIndex/interactionDelay used to be
+    hardcoded constants (94.2, 1.4) returned unconditionally regardless of
+    actual activity — every store, at every point in time, saw the exact
+    same fake numbers. Now genuinely computed from Order/OrderEvent data,
+    scoped to the last 30 days to keep this cheap on a free-tier DB (2
+    aggregate queries total, no per-row loops).
     """
     total_effectif = db.query(User).count()
     online_count = db.query(User).filter(User.is_active == True).count()
 
+    window_start = datetime.now() - timedelta(days=30)  # noqa: DTZ005
+
+    # Average confirmation rate across confirmatrices/agents with at least
+    # one order assigned in the window — same CONFIRMED/DELIVERED/SHIPPED
+    # definition as get_user_performance, aggregated per agent then averaged.
+    per_agent_rates = (
+        db.query(
+            Order.assigned_to,
+            func.count().label("total"),
+            func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
+        )
+        .filter(
+            Order.assigned_to.isnot(None),
+            Order.is_deleted == False,
+            Order.created_at >= window_start,
+        )
+        .group_by(Order.assigned_to)
+        .all()
+    )
+    rates = [(r.confirmed / r.total) * 100 for r in per_agent_rates if r.total]
+    quality_index = round(sum(rates) / len(rates), 1) if rates else None
+
+    # Average minutes between an order's creation and its first recorded
+    # event (first confirmatrice touch) — MIN(OrderEvent.created_at) per
+    # order, computed in SQL rather than pulled row-by-row into Python.
+    first_event_subq = (
+        db.query(
+            OrderEvent.order_id,
+            func.min(OrderEvent.created_at).label("first_event_at"),
+        )
+        .group_by(OrderEvent.order_id)
+        .subquery()
+    )
+    delay_row = (
+        db.query(
+            func.avg(
+                func.extract("epoch", first_event_subq.c.first_event_at - Order.created_at)
+            ).label("avg_seconds")
+        )
+        .join(first_event_subq, first_event_subq.c.order_id == Order.id)
+        .filter(Order.is_deleted == False, Order.created_at >= window_start)
+        .one()
+    )
+    interaction_delay = round(delay_row.avg_seconds / 60, 1) if delay_row.avg_seconds is not None else None
+
     return InfrastructureStats(
         totalEffectif=total_effectif,
         onlineCount=online_count,
-        qualityIndex=94.2,
-        interactionDelay=1.4,
-        securityLevel="Optimale",
+        qualityIndex=quality_index,
+        interactionDelay=interaction_delay,
         nodeId="DZ-AL-CORE-1"
     )
 
@@ -247,6 +296,79 @@ def read_user_me(
 ) -> Any:
     """Get current authenticated user."""
     return current_user
+
+
+@router.get("/performance-summary")
+def get_users_performance_summary(
+    user_ids: str = Query(..., description="Comma-separated user IDs"),
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Bulk, list-view-only counterpart to GET /{user_id}/performance.
+    MUST be registered before GET /{user_id} — otherwise Starlette matches
+    "performance-summary" as a user_id path param and this route is never
+    reached at all.
+
+    The "Force de vente" table used to fire ONE full /performance call PER
+    ROW (each doing an order aggregation + recent_orders + audit_logs +
+    daily-chart query) just to paint a summary badge — free-tier DB budget
+    wasted on N+1 round trips for data a single GROUP BY query already
+    answers. This collapses it to 2 queries total (order aggregation +
+    one user lookup) regardless of how many agents are on the page.
+
+    Trade-off, deliberate: the salary figure here is base pay only
+    (delivered_count × payment_amount, or the flat monthly amount) — it
+    excludes recovered-cart/upsell bonuses that the full compute_salary()
+    adds. That's fine for a quick list-row badge; opening the salary
+    dialog for one employee still calls the single-user /performance
+    endpoint, which uses compute_salary() and is fully accurate.
+    """
+    ids = [i.strip() for i in user_ids.split(",") if i.strip()]
+    if not ids:
+        return {"success": True, "data": {}}
+
+    db.info["skip_tenant_isolation"] = True
+
+    store_filter = (Order.store_id == store_id) if store_id else True
+    rows = (
+        db.query(
+            Order.assigned_to,
+            func.count().label("total"),
+            func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
+            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered"),
+        )
+        .filter(
+            Order.assigned_to.in_(ids),
+            store_filter,
+            Order.is_deleted == False,
+        )
+        .group_by(Order.assigned_to)
+        .all()
+    )
+    stats_by_user = {r.assigned_to: r for r in rows}
+
+    users = db.query(User).filter(User.id.in_(ids)).all()
+
+    data = {}
+    for u in users:
+        r = stats_by_user.get(u.id)
+        total = int(r.total or 0) if r else 0
+        confirmed = int(r.confirmed or 0) if r else 0
+        delivered = int(r.delivered or 0) if r else 0
+        rate = round((confirmed / total) * 100) if total else None
+        salary = (
+            u.payment_amount if u.payment_type == "MONTHLY_SALARY"
+            else delivered * (u.payment_amount or 0)
+        )
+        data[u.id] = {
+            "total_assigned": total,
+            "confirmed_count": confirmed,
+            "delivered_count": delivered,
+            "confirmation_rate": rate,
+            "salary": salary,
+        }
+    return {"success": True, "data": data}
 
 
 @router.get("/{user_id}", response_model=UserSchema)
