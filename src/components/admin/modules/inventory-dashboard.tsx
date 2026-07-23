@@ -184,8 +184,8 @@ export default function InventoryDashboard() {
       // Retours fournisseurs + Fournisseurs fusionnés en un seul hub.
       if (["Entrées de retour", 'Retours', 'RETURNS', 'Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS_RETURNS';
       if (['Entrepôts', 'WAREHOUSES'].includes(sv)) return 'WAREHOUSES';
-      if (['Surveillance', 'MONITOR'].includes(sv)) return 'MONITOR';
-      if (['Historique', 'HISTORY'].includes(sv)) return 'HISTORY';
+      // Historique fusionné dans Surveillance (un seul écran de suivi des flux).
+      if (['Surveillance', 'MONITOR', 'Historique', 'HISTORY'].includes(sv)) return 'MONITOR';
       if (['Timeline', 'Chronologie', 'TIMELINE'].includes(sv)) return 'TIMELINE';
       if (['Livreurs', 'Inventaire Livreurs', 'LIVREURS'].includes(sv)) return 'LIVREURS';
       if (['Traçabilité', 'Tracabilite', 'TRACABILITE'].includes(sv)) return 'TRACABILITE';
@@ -256,7 +256,6 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    if (activeTab === 'PARTNERS_RETURNS') return <SuppliersReturnsHub />;
    if (activeTab === 'STOCK') return <StockView />;
    if (activeTab === 'PURCHASES') return <PurchaseManager />;
-   if (activeTab === 'HISTORY') return <HistoryView />;
    if (activeTab === 'TIMELINE') return <TimelineView />;
    if (activeTab === 'LIVREURS') return <LivreursInventoryView />;
    if (activeTab === 'TRACABILITE') return <TracabilityView />;
@@ -545,55 +544,13 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
             </div>
          </div>
 
-         {/* Micro-Details Section */}
-         <div className="bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
-            <h3 className="text-sm font-bold text-[#2D3436] mb-6 flex items-center gap-2">
+         {/* Journal d'Audit — historique complet, filtrable et paginé (fusionné depuis l'ancien onglet "Historique") */}
+         <div>
+            <h3 className="text-sm font-bold text-[#2D3436] mb-4 flex items-center gap-2">
                <ShieldCheck className="size-4 text-[#00B894]" />
                Traçabilité Micro-Détaillée des Flux (Temps Réel)
             </h3>
-            <div className="overflow-x-auto">
-               <table className="w-full text-left">
-                  <thead>
-                     <tr className="border-b border-[#F0F3F6] pb-3">
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Event ID</th>
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Timestamp</th>
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Actionneur</th>
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Vecteur</th>
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Delta</th>
-                        <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Impact KPI</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                     {logs.slice(0, 20).map((log, i) => (
-                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                           <td className="py-4 font-mono text-[10px] text-[#2D3436]">#{log.id.split('-')[0]}</td>
-                           <td className="py-4 text-[10px] font-bold text-[#636E72]">{new Date(log.created_at).toLocaleString()}</td>
-                           <td className="py-4">
-                              <div className="flex flex-col">
-                                 <span className="text-[10px] font-black uppercase text-[#6C5CE7]">{log.actor?.name || 'Système'}</span>
-                                 {log.actor?.role && <span className="text-[9px] font-bold text-slate-400">{log.actor.role}</span>}
-                              </div>
-                           </td>
-                           <td className="py-4 text-[10px] font-bold text-[#2D3436]">{log.type.split('_').join(' ')}</td>
-                           <td className={cn("py-4 text-[10px] font-black", log.quantity >= 0 ? "text-emerald-500" : "text-rose-500")}>
-                              {log.quantity >= 0 ? '+' : ''}{log.quantity}
-                           </td>
-                           <td className="py-4">
-                              <div className="flex items-center gap-1.5">
-                                 <div className="size-1.5 rounded-full bg-emerald-400" />
-                                 <span className="text-[9px] font-bold text-emerald-600 uppercase">Cohérent</span>
-                              </div>
-                           </td>
-                        </tr>
-                     ))}
-                     {logs.length === 0 && (
-                        <tr>
-                           <td colSpan={6} className="py-10 text-center text-[10px] font-bold text-slate-400 uppercase">En attente de flux système...</td>
-                        </tr>
-                     )}
-                  </tbody>
-               </table>
-            </div>
+            <HistoryView />
          </div>
       </div>
    );

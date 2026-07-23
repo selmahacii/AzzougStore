@@ -2010,8 +2010,24 @@ const STATUS_COLORS: Record<string, string> = {
 function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolean; onOpenChange: (o: boolean) => void; employee: any }) {
    const { activeStore } = useAppStore();
    const storeId = activeStore?.id ?? '';
+   const qc = useQueryClient();
    const [activeProfileTab, setActiveProfileTab] = useState<'salary' | 'orders' | 'audit'>('salary');
    const [bonus, setBonus] = useState(0);
+
+   const payMutation = useMutation({
+      mutationFn: () => apiFetch<{ success: boolean; total_paid: number; breakdown: { store_id: string; amount: number }[] }>(
+         `/api/v1/users/${employee.id}/salary/pay`,
+         { method: 'POST', body: JSON.stringify({ store_id: storeId, bonus }) }
+      ),
+      onSuccess: (res) => {
+         qc.invalidateQueries({ queryKey: ['wallets'] });
+         qc.invalidateQueries({ queryKey: ['transactions'] });
+         const splitNote = res.breakdown.length > 1 ? ` (réparti sur ${res.breakdown.length} boutiques)` : '';
+         toast.success(`Paie de ${formatPrice(res.total_paid)} versée pour ${employee?.name}${splitNote} ✓`);
+         onOpenChange(false);
+      },
+      onError: (err: any) => toast.error(err.message || 'Erreur lors de la validation de la paie'),
+   });
 
    const perfQuery = useQuery({
       queryKey: ['employee-performance', employee?.id, storeId],
@@ -2257,9 +2273,10 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
             <div className="p-4 sm:p-6 border-t border-slate-100 flex gap-3 shrink-0">
                <button onClick={() => onOpenChange(false)} className="flex-1 h-12 rounded-2xl border border-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Fermer</button>
                {activeProfileTab === 'salary' && (
-                  <Button className="flex-[2] h-12 rounded-2xl bg-[#2D3436] hover:bg-black text-white text-[10px] font-black uppercase tracking-widest shadow-xl"
-                     onClick={() => { toast.success(`Paie de ${formatPrice(totalSalary)} enregistrée pour ${employee?.name} ✓`); onOpenChange(false); }}>
-                     Valider l'ordre de paiement
+                  <Button className="flex-[2] h-12 rounded-2xl bg-[#2D3436] hover:bg-black text-white text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
+                     disabled={payMutation.isPending || totalSalary <= 0}
+                     onClick={() => payMutation.mutate()}>
+                     {payMutation.isPending ? <Loader2 className="size-4 animate-spin mx-auto" /> : "Valider l'ordre de paiement"}
                   </Button>
                )}
             </div>
