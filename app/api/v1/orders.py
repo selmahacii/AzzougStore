@@ -112,48 +112,215 @@ def _confirmateur_resolved_stores(user: User) -> list:
     return stores
 
 
-def _assignment_rule_claimed_by_other_criterion(user_id: str):
+def _legacy_products_claimed_by_others(user: User, db: Optional[Session]) -> set:
     """
-    SQLAlchemy criterion: True when a PRODUCT or STORE Assignment Rule
-    (app/models/assignment_rule.py) already claims this order's product(s)
-    or store for a DIFFERENT agent. Used to EXCLUDE such orders from a
-    confirmatrice's broad legacy scope (assigned_store_ids/
-    assigned_product_ids) — without this, an order that stayed unassigned
-    (e.g. its store's assignment_logic is MANUAL, or it predates the rule)
-    was visible to ANY confirmatrice whose legacy scope happened to
-    overlap, even though an admin explicitly configured a specific PRODUCT/
-    STORE rule naming someone else as the owner. Mirrors the livreur
-    territory-exclusivity fix (_region_owned_by_any_livreur_criterion) —
-    same class of bug: an explicit rule must always beat a broad fallback
-    scope, whether or not Order.assigned_to happened to get stamped yet.
-    CATEGORY/BRAND rules aren't checked here (lower priority, resolve_
-    assignment_rule already applies them correctly at auto-assign time;
-    this is defense-in-depth for the two levels actually implicated).
+    Every product_id in ANOTHER active CONFIRMATEUR/AGENT/AGENT_MANAGER's own
+    User.assigned_product_ids — the per-employee "produits assignés" list
+    editable straight from the employees admin panel (employees-page.tsx),
+    which is a SEPARATE mechanism from the assignment_rules table (no DB-
+    level conflict-prevention constraint backs it — two employees' lists can
+    freely overlap). This is the actual root cause of the reported bug in
+    its most common form: an admin assigns product X to confirmatrice A
+    through this simple per-employee list (not through the separate "Règles
+    d'Assignation" tab), while confirmatrice B has broader whole-store
+    responsibility (assigned_store_ids/employee_store_id) covering the same
+    store — nothing previously excluded X from B's store-wide match, so B
+    kept seeing/managing orders containing A's product.
+    Excludes `user`'s own products (if she also happens to have X in her own
+    list, that's an intentional overlap, not "claimed by someone else").
+    db=None (best-effort call sites) => empty set => no exclusion applied.
     """
-    from sqlalchemy import exists, select, or_, and_
+    if db is None:
+        return set()
+    own_products = set(getattr(user, "assigned_product_ids", None) or [])
+    rows = (
+        db.query(User.assigned_product_ids)
+        .filter(
+            User.id != user.id,
+            User.is_active == True,
+            User.role.in_(["CONFIRMATEUR", "AGENT", "AGENT_MANAGER"]),
+        )
+        .all()
+    )
+    claimed: set = set()
+    for (pids,) in rows:
+        if isinstance(pids, list):
+            claimed.update(pids)
+    return claimed - own_products
+
+
+def _legacy_products_claimed_by_others_criterion(user: User, db: Optional[Session]):
+    """SQLAlchemy criterion twin of _legacy_products_claimed_by_others — True when this order contains one of those products."""
+    from sqlalchemy import false as _false
+    from app.models.order import OrderItem
+
+    claimed = _legacy_products_claimed_by_others(user, db)
+    if not claimed:
+        return _false()
+    return Order.items.any(OrderItem.product_id.in_(list(claimed)))
+
+
+def _order_claimed_by_other_confirmatrice_criterion(user: User, db: Optional[Session]):
+    """
+    Union of BOTH product-ownership signals in this codebase: the formal
+    assignment_rules PRODUCT/STORE row (_assignment_rule_claimed_by_other_criterion)
+    and the informal per-employee assigned_product_ids list
+    (_legacy_products_claimed_by_others_criterion). True when EITHER
+    resolves this order to a confirmatrice other than `user`.
+    """
+    from sqlalchemy import or_
+    return or_(
+        _assignment_rule_claimed_by_other_criterion(user.id),
+        _legacy_products_claimed_by_others_criterion(user, db),
+    )
+
+
+def _product_rule_owner_subquery():
+    """
+    Correlated scalar subquery: the deterministic PRODUCT-level Assignment
+    Rule owner for Order.id, or NULL if no item has an active PRODUCT rule.
+    Mirrors resolve_assignment_rule's tie-break EXACTLY (app/services/
+    order_service.py — same ORDER BY target_id ASC LIMIT 1): when two items
+    in the same order are claimed by different agents, the product with the
+    lexicographically smallest product_id wins, deterministically. Keeping
+    the single-order Python resolver and this bulk-query SQL version in
+    lockstep is what guarantees list_orders/get_agent_counts and
+    _assert_order_access never disagree about who owns a given order.
+    """
+    from sqlalchemy import select
     from app.models.assignment_rule import AssignmentRule
     from app.models.order import OrderItem
 
-    product_claimed_by_other = exists(select(1).where(
+    return (
+        select(AssignmentRule.agent_id)
+        .where(
+            AssignmentRule.rule_type == "PRODUCT",
+            AssignmentRule.is_exclusion == False,
+            AssignmentRule.is_active == True,
+            AssignmentRule.target_id.in_(
+                select(OrderItem.product_id)
+                .where(OrderItem.order_id == Order.id, OrderItem.product_id.isnot(None))
+                .correlate(Order)
+                .scalar_subquery()
+            ),
+        )
+        .order_by(AssignmentRule.target_id.asc())
+        .limit(1)
+        .correlate(Order)
+        .scalar_subquery()
+    )
+
+
+def _store_rule_owner_subquery():
+    """
+    Correlated scalar subquery: the active STORE-level Assignment Rule agent
+    for Order.store_id, or NULL. At most one active non-exclusion STORE rule
+    can exist per store (DB partial-unique-index constraint — see
+    AssignmentRule docstring), so no tie-break is needed at this level.
+    """
+    from sqlalchemy import select
+    from app.models.assignment_rule import AssignmentRule
+
+    return (
+        select(AssignmentRule.agent_id)
+        .where(
+            AssignmentRule.rule_type == "STORE",
+            AssignmentRule.target_id == Order.store_id,
+            AssignmentRule.is_exclusion == False,
+            AssignmentRule.is_active == True,
+        )
+        .limit(1)
+        .correlate(Order)
+        .scalar_subquery()
+    )
+
+
+def _product_exclusion_for_agent_criterion(agent_id: str):
+    """
+    True when `agent_id` has an active PRODUCT-level exclusion rule on one
+    of this order's items — blocks her STORE-level ownership for THIS
+    order specifically (e.g. she owns the whole store except this one
+    product), same semantics as resolve_assignment_rule's exclusion check.
+    """
+    from sqlalchemy import exists, select
+    from app.models.assignment_rule import AssignmentRule
+    from app.models.order import OrderItem
+
+    return exists(select(1).where(
         OrderItem.order_id == Order.id,
         AssignmentRule.rule_type == "PRODUCT",
         AssignmentRule.target_id == OrderItem.product_id,
-        AssignmentRule.agent_id != user_id,
-        AssignmentRule.is_exclusion == False,
+        AssignmentRule.agent_id == agent_id,
+        AssignmentRule.is_exclusion == True,
         AssignmentRule.is_active == True,
     ))
-    store_claimed_by_other = exists(select(1).where(
-        AssignmentRule.rule_type == "STORE",
-        AssignmentRule.target_id == Order.store_id,
-        AssignmentRule.agent_id != user_id,
-        AssignmentRule.is_exclusion == False,
-        AssignmentRule.is_active == True,
-    ))
-    return or_(product_claimed_by_other, store_claimed_by_other)
 
 
-def _confirmateur_scope_criterion(user: User):
-    """SQLAlchemy criterion version of the scope, for list/count queries."""
+def _assignment_rule_owner_exists_criterion():
+    """True when ANY active PRODUCT or STORE Assignment Rule resolves an owner for this order at all (regardless of who)."""
+    from sqlalchemy import or_
+    return or_(_product_rule_owner_subquery().isnot(None), _store_rule_owner_subquery().isnot(None))
+
+
+def _assignment_rule_resolved_owner_criterion(agent_id: str):
+    """
+    SQLAlchemy criterion: True when the Assignment Rule Engine's
+    deterministic resolution (PRODUCT > STORE priority, same tie-break and
+    exclusion semantics as resolve_assignment_rule in order_service.py)
+    currently names `agent_id` as this order's owner — regardless of what
+    Order.assigned_to happens to be stamped with (rules can be created or
+    changed AFTER the order already exists, or after auto-assign already
+    ran under an older rule set, so assigned_to is only ever a snapshot).
+    CATEGORY/BRAND levels aren't replicated here (lower priority, and
+    already applied correctly at auto-assign time — same acknowledged,
+    pre-existing gap as this function's predecessor
+    _assignment_rule_claimed_by_other_criterion: defense-in-depth for the
+    two levels that actually matter for query-time visibility).
+    """
+    from sqlalchemy import and_, or_
+
+    product_owner = _product_rule_owner_subquery()
+    store_owner = _store_rule_owner_subquery()
+    return or_(
+        product_owner == agent_id,
+        and_(
+            product_owner.is_(None),
+            store_owner == agent_id,
+            ~_product_exclusion_for_agent_criterion(agent_id),
+        ),
+    )
+
+
+def _assignment_rule_claimed_by_other_criterion(user_id: str):
+    """
+    SQLAlchemy criterion: True when the Assignment Rule Engine resolves an
+    owner for this order (see _assignment_rule_resolved_owner_criterion)
+    and it is NOT `user_id`. Used to EXCLUDE such orders from a
+    confirmatrice's broad legacy scope (assigned_store_ids/
+    assigned_product_ids) AND from her "assigned to me" queue — without
+    this, an order whose Order.assigned_to still names her from before a
+    PRODUCT/STORE rule was configured (or from the old pool logic) stayed
+    visible to her forever, even after an admin explicitly handed that
+    product/store to someone else. Mirrors the livreur territory-
+    exclusivity fix (_region_owned_by_any_livreur_criterion) — same class
+    of bug: an explicit rule must always beat a broad fallback or a stale
+    snapshot.
+    """
+    from sqlalchemy import and_, not_
+    return and_(
+        _assignment_rule_owner_exists_criterion(),
+        not_(_assignment_rule_resolved_owner_criterion(user_id)),
+    )
+
+
+def _confirmateur_scope_criterion(user: User, db: Optional[Session] = None):
+    """
+    SQLAlchemy criterion version of the legacy store/product scope, for
+    list/count queries. `db` is optional (older call sites that can't
+    provide a session): when given, also excludes products individually
+    claimed by another confirmatrice through EITHER ownership mechanism —
+    see _order_claimed_by_other_confirmatrice_criterion.
+    """
     from sqlalchemy import or_, and_
     from app.models.order import OrderItem
 
@@ -170,7 +337,34 @@ def _confirmateur_scope_criterion(user: User):
     if not crits:
         return False  # nothing configured → no unassigned visibility (strict isolation)
     broad_match = or_(*crits) if len(crits) > 1 else crits[0]
-    return and_(broad_match, ~_assignment_rule_claimed_by_other_criterion(user.id))
+    return and_(broad_match, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
+
+
+def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional[Session] = None):
+    """
+    Single source of truth combining rule-based ownership with a caller-
+    supplied legacy/fallback criterion (her "queue" vs. the store-wide
+    view — see list_orders/get_agent_counts, which differ only in what
+    counts as fallback). Always:
+      1. The Assignment Rule Engine resolves HER as owner → visible,
+         regardless of Order.assigned_to or her legacy store/product lists.
+      2. No rule resolves an owner at all → fall back to `legacy_criterion`
+         (assigned_to == her, or unassigned + in her legacy scope, etc), but
+         STILL excluding orders containing a product another confirmatrice
+         has individually claimed (formal rule or legacy list) — this is
+         what keeps a stale Order.assigned_to (from before that claim
+         existed, or from the old pool logic) from re-leaking the order to
+         her via the "assigned to me" branch, which the rule-priority check
+         in step 1 alone wouldn't catch when NO rule resolves at all (i.e.
+         the claim is only via the legacy assigned_product_ids list).
+    A rule resolving to a DIFFERENT agent always loses, even under the
+    legacy criterion.
+    """
+    from sqlalchemy import or_, and_, not_
+    resolved_to_her = _assignment_rule_resolved_owner_criterion(user.id)
+    no_rule_resolves = not_(_assignment_rule_owner_exists_criterion())
+    safe_legacy = and_(legacy_criterion, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
+    return or_(resolved_to_her, and_(no_rule_resolves, safe_legacy))
 
 
 def _confirmateur_scope_ok(order: Order, user: User, db: Optional[Session] = None) -> bool:
@@ -188,17 +382,36 @@ def _confirmateur_scope_ok(order: Order, user: User, db: Optional[Session] = Non
         return False
 
     # Same exclusion as the SQL criterion above — an explicit PRODUCT/STORE
-    # rule naming a DIFFERENT agent always wins over her broad legacy scope.
+    # rule (formal or legacy per-employee list) naming a DIFFERENT agent
+    # always wins over her broad legacy scope.
+    claimed_by = _order_rule_resolved_owner(order, user, db)
+    if claimed_by and claimed_by != user.id:
+        return False
     if db is not None:
-        from app.services.order_service import resolve_assignment_rule
-        try:
-            item_pids = [item.product_id for item in (order.items or []) if item.product_id]
-            claimed_by = resolve_assignment_rule(db, order.store_id, item_pids)
-        except Exception:
-            claimed_by = None
-        if claimed_by and claimed_by != user.id:
+        item_pids = {item.product_id for item in (order.items or []) if item.product_id}
+        if item_pids & _legacy_products_claimed_by_others(user, db):
             return False
     return True
+
+
+def _order_rule_resolved_owner(order: Order, user: User, db: Optional[Session] = None) -> Optional[str]:
+    """
+    Python/single-order equivalent of _assignment_rule_resolved_owner_criterion
+    — delegates to resolve_assignment_rule (order_service.py), the ONE
+    implementation of the PRODUCT > STORE > CATEGORY > BRAND priority +
+    deterministic tie-break, so a single-order check never drifts from what
+    a bulk list/count query decides. Returns None (never raises) if db is
+    unavailable or resolution fails — callers treat that as "no rule
+    applies", never as "wrongly excluded/included".
+    """
+    if db is None:
+        return None
+    from app.services.order_service import resolve_assignment_rule
+    try:
+        item_pids = [item.product_id for item in (order.items or []) if item.product_id]
+        return resolve_assignment_rule(db, order.store_id, item_pids)
+    except Exception:
+        return None
 
 
 def _region_owned_by_agent_criterion(agent_id: str):
@@ -273,10 +486,16 @@ def _region_courier_owner(db: Optional[Session], order: Order) -> Optional[str]:
 
 def _assert_order_access(order: Order, current_user: User, db: Optional[Session] = None) -> None:
     """
-    CONFIRMATEUR can access orders assigned to them, or unassigned orders in
-    their responsibility scope (see _confirmateur_scope_criterion) — EXCEPT
-    an order whose delivery region is a livreur's exclusive territory (see
-    _region_courier_owner): that territory is his alone, whether or not
+    CONFIRMATEUR: the Assignment Rule Engine's resolved owner (see
+    _order_rule_resolved_owner / resolve_assignment_rule — PRODUCT > STORE >
+    CATEGORY > BRAND priority, deterministic tie-break) is checked FIRST and
+    always wins if it resolves anyone at all: she gets access only if it's
+    her, denied otherwise — even if Order.assigned_to still names her from
+    before the rule existed/changed. Only when NO rule resolves an owner
+    does access fall back to the legacy behavior: assigned to her, or
+    unassigned and inside her responsibility scope (_confirmateur_scope_ok).
+    EXCEPT an order whose delivery region is a livreur's exclusive territory
+    (see _region_courier_owner): that territory is his alone, whether or not
     Order.livreur_id was ever stamped on this particular order.
     MANAGER can only access orders in their store.
     ADMIN/SUPER_ADMIN: full access.
@@ -286,13 +505,28 @@ def _assert_order_access(order: Order, current_user: User, db: Optional[Session]
     after the order existed, not just ones stamped at creation time.
     """
     if current_user.role == "CONFIRMATEUR":
-        is_assigned = order.assigned_to == current_user.id
-        is_unassigned = order.assigned_to == None
-
-        # A confirmatrice can access an order if:
-        # 1. It is assigned to them
-        # 2. It is unassigned and inside their responsibility scope
-        is_accessible = is_assigned or (is_unassigned and _confirmateur_scope_ok(order, current_user, db))
+        rule_owner = _order_rule_resolved_owner(order, current_user, db)
+        if rule_owner is not None:
+            is_accessible = rule_owner == current_user.id
+        else:
+            is_assigned = order.assigned_to == current_user.id
+            is_unassigned = order.assigned_to == None
+            # A stale Order.assigned_to (stamped before another confirmatrice
+            # individually claimed one of this order's products via the
+            # per-employee assigned_product_ids list) must not grant access
+            # either — same reasoning as the rule_owner check above, for the
+            # weaker/informal ownership signal.
+            legacy_claimed_by_other = bool(
+                {item.product_id for item in (order.items or []) if item.product_id}
+                & _legacy_products_claimed_by_others(current_user, db)
+            )
+            # A confirmatrice can access an order if:
+            # 1. It is assigned to them, and no OTHER confirmatrice has
+            #    individually claimed one of its products
+            # 2. It is unassigned and inside their responsibility scope
+            is_accessible = (is_assigned and not legacy_claimed_by_other) or (
+                is_unassigned and _confirmateur_scope_ok(order, current_user, db)
+            )
 
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")
@@ -643,12 +877,20 @@ def get_agent_counts(
     # store with more than one confirmatrice; a single-confirmatrice store
     # never showed the gap since everything happened to be assigned_to her.
     if current_user.role == "CONFIRMATEUR":
-        scope_crit = _confirmateur_scope_criterion(current_user)
-        base = base_query.filter(or_(
+        scope_crit = _confirmateur_scope_criterion(current_user, db)
+        legacy_queue = or_(
             Order.assigned_to == current_user.id,
             and_(Order.assigned_to == None, scope_crit),
-        ))
-        base_wide = base_query.filter(scope_crit)
+        )
+        # Rule-based ownership (formal PRODUCT/STORE Assignment Rules, or the
+        # informal per-employee assigned_product_ids list) always wins over
+        # the legacy assigned_to/scope fallback — see
+        # _confirmateur_ownership_criterion. Without this, a product handed
+        # to a different confirmatrice still counted in this confirmatrice's
+        # badges as long as Order.assigned_to (a one-time snapshot) still
+        # happened to name her.
+        base = base_query.filter(_confirmateur_ownership_criterion(current_user, legacy_queue, db))
+        base_wide = base_query.filter(_confirmateur_ownership_criterion(current_user, scope_crit, db))
     elif current_user.role == "MANAGER" and current_user.employee_store_id:
         base = base_query.filter(Order.store_id == current_user.employee_store_id)
         base_wide = base
@@ -989,7 +1231,7 @@ def list_orders(
 
             # Union responsibility scope: full stores + specific products of
             # other stores — see _confirmateur_scope_criterion.
-            scope_crit = _confirmateur_scope_criterion(current_user)
+            scope_crit = _confirmateur_scope_criterion(current_user, db)
 
             assigned_to_me = Order.assigned_to == current_user.id
             unassigned_matching = and_(
@@ -1020,10 +1262,17 @@ def list_orders(
                 "RETURNED", "CANCELLED", "ARCHIVED",
             }
             _status_upper = status.upper() if status else ""
+            # Rule-based ownership (PRODUCT/STORE Assignment Rules) always
+            # wins over the legacy assigned_to/scope fallback below — see
+            # _confirmateur_ownership_criterion. Without this, a product
+            # handed to a different confirmatrice via an Assignment Rule
+            # stayed visible to whoever Order.assigned_to (a one-time
+            # snapshot, stamped before the rule existed or by the legacy
+            # pool logic) still happened to name.
             if status and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_")):
-                query = query.filter(or_(assigned_to_me, scope_crit))
+                query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, scope_crit), db))
             else:
-                query = query.filter(or_(assigned_to_me, unassigned_matching))
+                query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, unassigned_matching), db))
 
             # A courier auto-assignment rule (COMMUNE/WILAYA) makes that
             # region a livreur's EXCLUSIVE territory — the confirmatrice
@@ -3043,7 +3292,17 @@ def bulk_update_status(
 ):
     """
     Batch status update. ADMIN+ only.
-    Note: does NOT trigger stock side effects (use individual PATCH for that).
+
+    Routed one-by-one through order_service.update_order — the SAME state
+    machine validation, stock side effects (RETURN_RESTOCK on a return,
+    confirm/release on other transitions), audit event, and idempotency
+    guard as the single-order PATCH. This used to run a raw bulk SQL
+    UPDATE straight on Order.status, completely bypassing stock: bulk-
+    marking orders RETURNED never restocked a single unit, silently
+    diverging Product.stock from reality for every order moved this way —
+    the exact "duplicated/bypassed stock logic" this endpoint must never
+    have. A failure on one order (invalid transition, missing product…)
+    is reported per-order and does not abort the rest of the batch.
     """
     if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
         raise PermissionError(message="Privilèges insuffisants pour les opérations en masse.")
@@ -3055,13 +3314,44 @@ def bulk_update_status(
         from app.core.exceptions import ValidationError
         raise ValidationError(message="order_ids et status sont requis.")
 
-    updated = db.query(Order).filter(
-        Order.id.in_(order_ids), Order.is_deleted == False
-    ).update({"status": new_status}, synchronize_session=False)
+    updated = 0
+    failed: dict = {}
+    for order_id in order_ids:
+        try:
+            # Row-level lock, same as the single-order PATCH — serializes
+            # against a concurrent update on the same order.
+            db.query(Order.id).filter(Order.id == order_id).with_for_update().first()
+            order = (
+                db.query(Order)
+                .options(joinedload(Order.items))
+                .filter(Order.id == order_id, Order.is_deleted == False)
+                .first()
+            )
+            if not order:
+                failed[order_id] = "Commande introuvable."
+                continue
+            _assert_order_access(order, current_user, db)
+            order_service.update_order(
+                db,
+                order=order,
+                update_data={"status": new_status},
+                actor_id=current_user.id,
+                actor_name=getattr(current_user, "name", None),
+                actor_role=current_user.role,
+            )
+            db.commit()
+            updated += 1
+        except Exception as exc:
+            db.rollback()
+            failed[order_id] = str(exc)
 
-    db.commit()
-    logger.info("Bulk status update: %d orders → %s by %s", updated, new_status, current_user.id)
-    return {"success": True, "updated": updated, "message": f"{updated} commandes mises à jour."}
+    logger.info("Bulk status update: %d/%d orders → %s by %s", updated, len(order_ids), new_status, current_user.id)
+    return {
+        "success": not failed,
+        "updated": updated,
+        "failed": failed,
+        "message": f"{updated} commandes mises à jour." + (f" {len(failed)} échec(s)." if failed else ""),
+    }
 
 
 # ─── POST /orders/{id}/merge-duplicates — Merge duplicate orders ─────────────

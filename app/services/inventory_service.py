@@ -185,6 +185,56 @@ def _record_movement(
     return movement
 
 
+def product_available_stock(product: Product) -> int:
+    """
+    Single source of truth for a product's AVAILABLE stock (sellable right
+    now) — physical stock minus reserved. For a product with variants,
+    returns the LOWEST available quantity across its variants (the
+    bottleneck: the product as a whole is only as available as its
+    scarcest variant), mirroring what a customer actually experiences when
+    ordering.
+    Used by every stock dashboard/alert endpoint so "low stock" means the
+    same thing everywhere — previously (2026-07-23 audit) stock.py's
+    /stock/dashboard and /stock/alerts-engine used raw Product.stock
+    (ignoring reservations and variants entirely) while /stock/summary and
+    /stock/alerts used this reservation-aware, variant-aware calculation —
+    the SAME product could show as "low stock" on one tab and "fine" on
+    another.
+    """
+    if product.variants:
+        lowest = None
+        for v in product.variants:
+            if isinstance(v, dict):
+                v_stock = int(v.get("stock") or 0)
+                v_reserved = int(v.get("reserved") or 0)
+                v_available = max(0, v_stock - v_reserved)
+                if lowest is None or v_available < lowest:
+                    lowest = v_available
+        if lowest is not None:
+            return lowest
+    return max(0, (product.stock or 0) - (product.reserved_stock or 0))
+
+
+def product_stock_status(product: Product) -> str:
+    """
+    "OUT" | "LOW" | "OVERSTOCK" | "OK" classification, built on
+    product_available_stock() + the product's own low_stock_threshold —
+    the single source of truth every stock dashboard/alert endpoint should
+    read from instead of re-deriving the threshold comparison itself.
+    "OVERSTOCK" is a heuristic (available > 5x threshold) — there's no real
+    "maximum stock" concept on Product yet.
+    """
+    available = product_available_stock(product)
+    threshold = product.low_stock_threshold if product.low_stock_threshold is not None else 5
+    if available <= 0:
+        return "OUT"
+    if available <= threshold:
+        return "LOW"
+    if available > 5 * threshold:
+        return "OVERSTOCK"
+    return "OK"
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 class InventoryService:
@@ -500,6 +550,80 @@ class InventoryService:
         logger.info("Manual restock: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
         return product
 
+    # ── sell_at_pos ────────────────────────────────────────────
+
+    def sell_at_pos(
+        self,
+        db: Session,
+        *,
+        product_id: str,
+        quantity: int,
+        actor_id: Optional[str] = None,
+        variant_details: Optional[dict] = None,
+        reason: Optional[str] = None,
+    ) -> Product:
+        """
+        Instant point-of-sale decrement. Unlike confirm_stock, a POS sale
+        never went through reserve_stock first (no NEW/CALLED lifecycle at
+        the counter), so this never touches reserved_stock — it's a direct
+        stock decrement, same variant-aware resolution as every other
+        InventoryService method (see _find_matching_variant). Before this
+        method existed, pos.py decremented product.stock directly and never
+        touched the matching entry inside product.variants — for a variant
+        product, the next storefront order recomputed product.stock by
+        re-summing variant sub-stocks (_update_product_stock_from_variants)
+        and silently undid the POS sale.
+        """
+        if quantity <= 0:
+            raise ValueError(f"Sale quantity must be positive, got {quantity}")
+
+        product = _lock_product(db, product_id)
+
+        variant_str = None
+        if variant_details and isinstance(variant_details, dict):
+            variant_str = variant_details.get("variant")
+
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
+            if matching_variant:
+                v_stock = int(matching_variant.get("stock") or 0)
+                v_reserved = int(matching_variant.get("reserved") or 0)
+                available = v_stock - v_reserved
+                if available < quantity:
+                    raise InsufficientStockError(
+                        product_id=f"{product_id} ({variant_str})",
+                        requested=quantity,
+                        available=available,
+                    )
+                matching_variant["stock"] = max(0, v_stock - quantity)
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
+                logger.info(
+                    "POS sale (variant): product=%s variant=%s qty=%d (new stock=%d)",
+                    product_id, variant_str, quantity, matching_variant["stock"],
+                )
+            else:
+                available = product.stock - product.reserved_stock
+                if available < quantity:
+                    raise InsufficientStockError(product_id=product_id, requested=quantity, available=available)
+                product.stock = max(0, product.stock - quantity)
+        else:
+            available = product.stock - product.reserved_stock
+            if available < quantity:
+                raise InsufficientStockError(product_id=product_id, requested=quantity, available=available)
+            product.stock = max(0, product.stock - quantity)
+
+        _record_movement(
+            db,
+            product_id=product_id,
+            movement_type="POS_SALE",
+            quantity=-quantity,
+            actor_id=actor_id,
+            reason=reason or f"Vente au comptoir ({variant_str or 'Général'})",
+        )
+        logger.info("POS sale: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
+        return product
+
     # ── manual_adjustment ──────────────────────────────────────
 
     def manual_adjustment(
@@ -571,6 +695,88 @@ class InventoryService:
         logger.info(
             "Manual adjustment: product=%s delta=%+d (new stock=%d) reason='%s'",
             product_id, quantity, product.stock, reason,
+        )
+        return product
+
+    # ── record_manual_movement ──────────────────────────────────
+
+    def record_manual_movement(
+        self,
+        db: Session,
+        *,
+        product_id: str,
+        quantity_delta: int,
+        movement_type: str,
+        reason: str,
+        actor_id: Optional[str] = None,
+        warehouse_id: Optional[str] = None,
+        order_id: Optional[str] = None,
+        variant_details: Optional[dict] = None,
+    ) -> Product:
+        """
+        General-purpose stock delta + movement record for flows that don't
+        map onto reserve/confirm/release/restock/return_restock's specific
+        semantics — e.g. supplier-return reverse logistics (returns.py),
+        which needs its own movement_type ("OUT" / "RETURN_RESTOCK") and has
+        no order_id to attach. Still goes through the same locking, variant-
+        aware resolution, and available-stock guard as every other method
+        here, instead of a call site hand-rolling its own product.stock
+        mutation (previously: returns.py decremented/incremented the
+        aggregate directly, silently drifting from product.variants for any
+        variant product — same class of bug fixed for POS/purchase-voucher
+        reception, see sell_at_pos/restock).
+        quantity_delta: positive increases stock, negative decreases it.
+        """
+        if quantity_delta == 0:
+            raise ValueError("quantity_delta must be non-zero")
+
+        product = _lock_product(db, product_id)
+
+        variant_str = None
+        if variant_details and isinstance(variant_details, dict):
+            variant_str = variant_details.get("variant")
+
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
+            if matching_variant:
+                v_stock = int(matching_variant.get("stock") or 0)
+                v_reserved = int(matching_variant.get("reserved") or 0)
+                new_v_stock = v_stock + quantity_delta
+                if new_v_stock < 0 or (new_v_stock - v_reserved) < 0:
+                    raise InsufficientStockError(
+                        product_id=f"{product_id} ({variant_str})",
+                        requested=abs(quantity_delta),
+                        available=v_stock - v_reserved,
+                    )
+                matching_variant["stock"] = new_v_stock
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
+            else:
+                new_stock = product.stock + quantity_delta
+                reserved = product.reserved_stock or 0
+                if new_stock < 0 or new_stock < reserved:
+                    raise InsufficientStockError(
+                        product_id=product_id, requested=abs(quantity_delta),
+                        available=max(0, product.stock - reserved),
+                    )
+                product.stock = new_stock
+        else:
+            new_stock = product.stock + quantity_delta
+            reserved = product.reserved_stock or 0
+            if new_stock < 0 or new_stock < reserved:
+                raise InsufficientStockError(
+                    product_id=product_id, requested=abs(quantity_delta),
+                    available=max(0, product.stock - reserved),
+                )
+            product.stock = new_stock
+
+        _record_movement(
+            db, product_id=product_id, movement_type=movement_type, quantity=quantity_delta,
+            order_id=order_id, actor_id=actor_id, reason=reason, warehouse_id=warehouse_id,
+        )
+        logger.info(
+            "Manual movement: product=%s type=%s delta=%+d (new stock=%d)",
+            product_id, movement_type, quantity_delta, product.stock,
         )
         return product
 

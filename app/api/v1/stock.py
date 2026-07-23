@@ -162,15 +162,22 @@ def get_stock_dashboard(
 
     products = db.query(Product).filter(Product.store_id == store_id, Product.is_active == True).all()
 
+    from app.services.inventory_service import product_stock_status
+
     stock_total = sum(p.stock or 0 for p in products)
     valeur_totale = sum((p.stock or 0) * (p.cost_price or 0) for p in products)
     reserved_total = sum(p.reserved_stock or 0 for p in products)
     disponible_total = sum(max(0, (p.stock or 0) - (p.reserved_stock or 0)) for p in products)
-    sans_stock = sum(1 for p in products if (p.stock or 0) <= 0)
-    sous_seuil = sum(1 for p in products if 0 < (p.stock or 0) <= (p.low_stock_threshold or 5))
-    # Surstock : au-delà de 5x le seuil d'alerte — heuristique explicite, pas
-    # une vraie notion "stock maximum" (qui n'existe pas encore sur Product).
-    surstock = sum(1 for p in products if (p.stock or 0) > 5 * (p.low_stock_threshold or 5))
+    # Single source of truth for the low-stock/out-of-stock/overstock
+    # classification (product_stock_status, inventory_service.py) — this
+    # used to compare raw Product.stock directly, ignoring reservations and
+    # variants, while /stock/summary and /stock/alerts already used the
+    # reservation- and variant-aware calculation below. Aligned so every
+    # tab agrees on what "low stock" means for the same product.
+    _statuses = [product_stock_status(p) for p in products]
+    sans_stock = sum(1 for s in _statuses if s == "OUT")
+    sous_seuil = sum(1 for s in _statuses if s == "LOW")
+    surstock = sum(1 for s in _statuses if s == "OVERSTOCK")
 
     # ── Mouvements sur les 3 fenêtres (aujourd'hui/7j/30j) ──
     def _movement_totals(since):
@@ -268,10 +275,10 @@ def get_stock_dashboard(
         for p in products if p.id not in moved_ids
     ][:10]
 
-    # À réapprovisionner : sous le seuil, triés par urgence (stock le plus bas)
+    # À réapprovisionner : sous le seuil (LOW ou OUT), triés par urgence (stock le plus bas)
     top_a_reappro = sorted(
         [{"product_id": p.id, "product_name": p.name, "quantity": p.stock or 0, "seuil": p.low_stock_threshold or 5}
-         for p in products if (p.stock or 0) <= (p.low_stock_threshold or 5)],
+         for p, s in zip(products, _statuses) if s in ("LOW", "OUT")],
         key=lambda x: x["quantity"],
     )[:10]
 
@@ -612,18 +619,22 @@ def get_alerts_engine(
     now = datetime.now(timezone.utc)
     d30 = now.replace(tzinfo=None) - timedelta(days=30)
 
+    from app.services.inventory_service import product_stock_status
+
     products = db.query(Product).filter(Product.store_id == store_id, Product.is_active == True).all()
     alerts = []
 
-    # Stock faible / rupture
+    # Stock faible / rupture — see product_stock_status (inventory_service.py)
+    # for why this must be the shared classification, not a re-derived one.
     for p in products:
-        if (p.stock or 0) <= 0:
+        status = product_stock_status(p)
+        if status == "OUT":
             alerts.append({"type": "STOCK_FAIBLE", "priority": "high", "product_id": p.id, "product_name": p.name,
                             "detail": "Rupture de stock", "action": "Réapprovisionner en urgence"})
-        elif (p.stock or 0) <= (p.low_stock_threshold or 5):
+        elif status == "LOW":
             alerts.append({"type": "STOCK_FAIBLE", "priority": "medium", "product_id": p.id, "product_name": p.name,
                             "detail": f"Stock = {p.stock} (seuil {p.low_stock_threshold or 5})", "action": "Planifier un réapprovisionnement"})
-        elif (p.stock or 0) > 5 * (p.low_stock_threshold or 5):
+        elif status == "OVERSTOCK":
             alerts.append({"type": "SURSTOCK", "priority": "low", "product_id": p.id, "product_name": p.name,
                             "detail": f"Stock = {p.stock}, très au-dessus du seuil habituel", "action": "Vérifier la rotation, envisager une promotion"})
 
@@ -862,23 +873,22 @@ def get_stock_summary(
     )
     logger.info(f"Active products found for summary: {len(products)}")
 
+    from app.services.inventory_service import product_stock_status
+
     total_value = 0
     low_stock = 0
     out_of_stock = 0
     total_available = 0
 
     for p in products:
-        stock_val = p.stock if p.stock is not None else 0
-        reserved_val = p.reserved_stock if p.reserved_stock is not None else 0
-        threshold_val = p.low_stock_threshold if p.low_stock_threshold is not None else 5
-        
-        available = max(0, stock_val - reserved_val)
+        available = max(0, (p.stock if p.stock is not None else 0) - (p.reserved_stock if p.reserved_stock is not None else 0))
         total_available += available
         total_value += available * (p.cost_price or 0)
 
-        if available <= 0:
+        status = product_stock_status(p)
+        if status == "OUT":
             out_of_stock += 1
-        elif available <= threshold_val:
+        elif status == "LOW":
             low_stock += 1
 
     return {
@@ -902,37 +912,19 @@ def get_stock_alerts(
     _: User = Depends(deps.get_current_active_user),
 ):
     """Return products that are at or below their low_stock_threshold, considering variant stocks."""
+    from app.services.inventory_service import product_available_stock, product_stock_status
+
     query = db.query(Product).filter(Product.is_active == True)
     if store_id:
         query = query.filter(Product.store_id == store_id)
 
     products = query.all()
     threshold = lambda p: p.low_stock_threshold if p.low_stock_threshold is not None else 5
-    
+
     alerts = []
     for p in products:
-        is_alert = False
-        lowest_stock = p.stock or 0
-        
-        # Check variants if present
-        if p.variants:
-            for v in p.variants:
-                if isinstance(v, dict):
-                    v_stock = int(v.get("stock") or 0)
-                    v_reserved = int(v.get("reserved") or 0)
-                    v_available = max(0, v_stock - v_reserved)
-                    if v_available <= threshold(p):
-                        is_alert = True
-                    if v_available < lowest_stock:
-                        lowest_stock = v_available
-        else:
-            p_available = max(0, (p.stock or 0) - (p.reserved_stock or 0))
-            if p_available <= threshold(p):
-                is_alert = True
-                lowest_stock = p_available
-                
-        if is_alert:
-            alerts.append((p, lowest_stock))
+        if product_stock_status(p) in ("OUT", "LOW"):
+            alerts.append((p, product_available_stock(p)))
 
     # Sort by lowest stock
     alerts_sorted = sorted(alerts, key=lambda item: item[1])
