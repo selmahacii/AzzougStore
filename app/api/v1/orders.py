@@ -345,26 +345,55 @@ def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional
     Single source of truth combining rule-based ownership with a caller-
     supplied legacy/fallback criterion (her "queue" vs. the store-wide
     view — see list_orders/get_agent_counts, which differ only in what
-    counts as fallback). Always:
-      1. The Assignment Rule Engine resolves HER as owner → visible,
-         regardless of Order.assigned_to or her legacy store/product lists.
-      2. No rule resolves an owner at all → fall back to `legacy_criterion`
-         (assigned_to == her, or unassigned + in her legacy scope, etc), but
-         STILL excluding orders containing a product another confirmatrice
-         has individually claimed (formal rule or legacy list) — this is
-         what keeps a stale Order.assigned_to (from before that claim
-         existed, or from the old pool logic) from re-leaking the order to
-         her via the "assigned to me" branch, which the rule-priority check
-         in step 1 alone wouldn't catch when NO rule resolves at all (i.e.
-         the claim is only via the legacy assigned_product_ids list).
-    A rule resolving to a DIFFERENT agent always loses, even under the
-    legacy criterion.
+    counts as fallback).
+
+    Priority (highest wins):
+      1. A PRODUCT-level Assignment Rule resolves HER as this order's
+         owner → visible, regardless of Order.assigned_to or legacy scope.
+         This is the hard, product-exact override — the original fix for
+         "product assigned to A but B still sees the order".
+      2. A PRODUCT-level rule resolves a DIFFERENT agent → always excluded,
+         even if Order.assigned_to currently names her (mirrors #1 — a
+         product-exact rule always wins over a stale/direct assignment).
+      3. Otherwise (no PRODUCT-level rule matches this order either way):
+         Order.assigned_to == her → always visible. A broader STORE/
+         CATEGORY/BRAND-level rule for a DIFFERENT agent must NOT strip
+         access to an order that is concretely, explicitly assigned to
+         her — those levels are fallback defaults for UNASSIGNED orders,
+         not an override of a direct assignment.
+         BUG FIXED (2026-07-23, reported live): a confirmatrice with a
+         PRODUCT rule got "Accès refusé" on her OWN assigned order
+         because the store also had an unrelated STORE-level rule for a
+         different agent — the old `no_rule_resolves` gate treated ANY
+         rule existing anywhere in the store as disqualifying her direct
+         assignment, not just a rule that actually concerns her order.
+      4. Otherwise, fall back to the full 4-level rule resolution / the
+         caller-supplied legacy_criterion, still excluding orders another
+         confirmatrice individually claims (formal rule or legacy list).
     """
     from sqlalchemy import or_, and_, not_
-    resolved_to_her = _assignment_rule_resolved_owner_criterion(user.id)
-    no_rule_resolves = not_(_assignment_rule_owner_exists_criterion())
+    product_owner = _product_rule_owner_subquery()
+    product_resolved_to_her = (product_owner == user.id)
+    product_resolved_to_other = and_(product_owner.isnot(None), product_owner != user.id)
+
+    assigned_to_her = (Order.assigned_to == user.id)
+    is_unassigned = Order.assigned_to.is_(None)
+    # A broader STORE/CATEGORY/BRAND-level rule is a fallback default for
+    # UNASSIGNED orders — it must never grant HER visibility into an order
+    # that's directly assigned to a DIFFERENT confirmatrice (that would
+    # reintroduce duplicate visibility: both the assignee AND the store-
+    # rule owner seeing the same order), which is why this is gated by
+    # is_unassigned rather than applied unconditionally.
+    resolved_to_her_full = _assignment_rule_resolved_owner_criterion(user.id)
     safe_legacy = and_(legacy_criterion, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
-    return or_(resolved_to_her, and_(no_rule_resolves, safe_legacy))
+
+    return or_(
+        product_resolved_to_her,
+        and_(
+            not_(product_resolved_to_other),
+            or_(assigned_to_her, and_(is_unassigned, resolved_to_her_full), safe_legacy),
+        ),
+    )
 
 
 def _confirmateur_scope_ok(order: Order, user: User, db: Optional[Session] = None) -> bool:
@@ -412,6 +441,39 @@ def _order_rule_resolved_owner(order: Order, user: User, db: Optional[Session] =
         return resolve_assignment_rule(db, order.store_id, item_pids)
     except Exception:
         return None
+
+
+def _order_product_level_owner(order: Order, db: Optional[Session] = None) -> Optional[str]:
+    """
+    PRODUCT-level-ONLY resolution (ignores STORE/CATEGORY/BRAND) — the
+    hard-override signal that must beat even a direct Order.assigned_to.
+    Python/single-order twin of _product_rule_owner_subquery, same
+    deterministic tie-break (smallest target_id). Returns None if no
+    PRODUCT rule matches any of this order's items — that is NOT the same
+    as "unowned": the caller must then fall back to Order.assigned_to /
+    the full 4-level resolution, never treat a lower-priority rule
+    (STORE/CATEGORY/BRAND) for a different agent as grounds to override a
+    direct assignment (see _confirmateur_ownership_criterion for the full
+    rationale and the production bug this fixes).
+    """
+    if db is None:
+        return None
+    from app.models.assignment_rule import AssignmentRule
+    item_pids = [item.product_id for item in (order.items or []) if item.product_id]
+    if not item_pids:
+        return None
+    rule = (
+        db.query(AssignmentRule)
+        .filter(
+            AssignmentRule.rule_type == "PRODUCT",
+            AssignmentRule.target_id.in_(item_pids),
+            AssignmentRule.is_exclusion == False,
+            AssignmentRule.is_active == True,
+        )
+        .order_by(AssignmentRule.target_id.asc())
+        .first()
+    )
+    return rule.agent_id if rule else None
 
 
 def _region_owned_by_agent_criterion(agent_id: str):
@@ -486,14 +548,33 @@ def _region_courier_owner(db: Optional[Session], order: Order) -> Optional[str]:
 
 def _assert_order_access(order: Order, current_user: User, db: Optional[Session] = None) -> None:
     """
-    CONFIRMATEUR: the Assignment Rule Engine's resolved owner (see
-    _order_rule_resolved_owner / resolve_assignment_rule — PRODUCT > STORE >
-    CATEGORY > BRAND priority, deterministic tie-break) is checked FIRST and
-    always wins if it resolves anyone at all: she gets access only if it's
-    her, denied otherwise — even if Order.assigned_to still names her from
-    before the rule existed/changed. Only when NO rule resolves an owner
-    does access fall back to the legacy behavior: assigned to her, or
-    unassigned and inside her responsibility scope (_confirmateur_scope_ok).
+    CONFIRMATEUR — priority (highest wins), mirrors
+    _confirmateur_ownership_criterion (SQL) exactly so a single-order check
+    and a list/count query never disagree:
+      1. A PRODUCT-level Assignment Rule resolves HER as owner → always
+         accessible, regardless of Order.assigned_to.
+      2. A PRODUCT-level rule resolves a DIFFERENT agent → always denied,
+         even if Order.assigned_to currently names her.
+      3. Otherwise (no PRODUCT-level rule matches this order either way):
+         Order.assigned_to == her → always accessible. A broader STORE/
+         CATEGORY/BRAND-level rule for someone else must NOT override a
+         direct, concrete assignment on a specific order.
+         BUG FIXED (2026-07-23, reported live): a confirmatrice with a
+         PRODUCT rule got "Accès refusé" on her OWN assigned order because
+         the store also had an unrelated STORE-level rule for a different
+         agent — the previous version treated ANY rule resolving anyone
+         in the store as disqualifying her direct assignment.
+      4. Order.assigned_to names a DIFFERENT confirmatrice (and no
+         PRODUCT rule overrides it) → always denied, no matter what a
+         broader STORE/CATEGORY/BRAND rule says. This is the mirror of
+         #3 and what prevents the STORE-rule owner from ALSO seeing an
+         order that's concretely assigned to someone else — a STORE rule
+         is a fallback default for UNASSIGNED orders, not a second,
+         overlapping claim on top of an existing direct assignment
+         (avoids reintroducing duplicate visibility).
+      5. Order is unassigned → fall back to the full 4-level rule
+         resolution, or (if no rule resolves at all) her legacy
+         responsibility scope (_confirmateur_scope_ok).
     EXCEPT an order whose delivery region is a livreur's exclusive territory
     (see _region_courier_owner): that territory is his alone, whether or not
     Order.livreur_id was ever stamped on this particular order.
@@ -505,28 +586,24 @@ def _assert_order_access(order: Order, current_user: User, db: Optional[Session]
     after the order existed, not just ones stamped at creation time.
     """
     if current_user.role == "CONFIRMATEUR":
-        rule_owner = _order_rule_resolved_owner(order, current_user, db)
-        if rule_owner is not None:
-            is_accessible = rule_owner == current_user.id
+        product_owner = _order_product_level_owner(order, db)
+        if product_owner is not None:
+            is_accessible = product_owner == current_user.id
+        elif order.assigned_to == current_user.id:
+            is_accessible = True
+        elif order.assigned_to is not None:
+            # Directly assigned to a DIFFERENT confirmatrice, and no
+            # PRODUCT-level rule overrides it — a broader STORE/CATEGORY/
+            # BRAND-level rule must never steal an already-assigned order
+            # away from its assignee (mirrors _confirmateur_ownership_
+            # criterion's SQL version — same fix, same rationale).
+            is_accessible = False
         else:
-            is_assigned = order.assigned_to == current_user.id
-            is_unassigned = order.assigned_to == None
-            # A stale Order.assigned_to (stamped before another confirmatrice
-            # individually claimed one of this order's products via the
-            # per-employee assigned_product_ids list) must not grant access
-            # either — same reasoning as the rule_owner check above, for the
-            # weaker/informal ownership signal.
-            legacy_claimed_by_other = bool(
-                {item.product_id for item in (order.items or []) if item.product_id}
-                & _legacy_products_claimed_by_others(current_user, db)
-            )
-            # A confirmatrice can access an order if:
-            # 1. It is assigned to them, and no OTHER confirmatrice has
-            #    individually claimed one of its products
-            # 2. It is unassigned and inside their responsibility scope
-            is_accessible = (is_assigned and not legacy_claimed_by_other) or (
-                is_unassigned and _confirmateur_scope_ok(order, current_user, db)
-            )
+            rule_owner = _order_rule_resolved_owner(order, current_user, db)
+            if rule_owner is not None:
+                is_accessible = rule_owner == current_user.id
+            else:
+                is_accessible = _confirmateur_scope_ok(order, current_user, db)
 
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")

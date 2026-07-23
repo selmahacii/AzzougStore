@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func as sqlfunc, case, and_
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import desc, func as sqlfunc, case, and_, false as sql_false
 from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
@@ -19,6 +19,7 @@ from app.core.exceptions import (
     ProductNotFoundError,
     ValidationError,
 )
+from app.core.store_access import assert_store_access, user_accessible_store_ids
 from app.db.session import get_db
 from app.models.product import Product
 from app.models.stock import StockMovement
@@ -59,6 +60,7 @@ def list_movements(
     """Paginated stock movement log, optionally filtered — powers the
     inventory 'Historique' / 'Timeline' views (traçabilité complète : qui,
     quand, depuis quelle commande, quel entrepôt)."""
+    db.info["skip_tenant_isolation"] = True
     from app.core.dates import parse_local_date_filter
 
     query = db.query(StockMovement)
@@ -66,7 +68,16 @@ def list_movements(
     if product_id:
         query = query.filter(StockMovement.product_id == product_id)
     if store_id:
+        assert_store_access(current_user, store_id)
         query = query.join(Product).filter(Product.store_id == store_id)
+    else:
+        # Unscoped call — restrict to this user's accessible stores instead
+        # of silently returning every store's movement ledger (a
+        # confirmatrice/livreur has no business seeing another store's
+        # stock history just by omitting store_id).
+        accessible = user_accessible_store_ids(current_user)
+        if accessible is not None:
+            query = query.join(Product).filter(Product.store_id.in_(accessible)) if accessible else query.filter(sql_false())
     if movement_type:
         query = query.filter(StockMovement.type == movement_type)
     if warehouse_id:
@@ -155,6 +166,7 @@ def get_stock_dashboard(
     from app.models.order import Order
 
     db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
     d7 = today_start - timedelta(days=7)
@@ -361,6 +373,7 @@ def get_livreur_inventory(
     from app.models.order import Order
 
     db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
 
     _IN_HAND = ["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "CONFIRMED", "SHIPPED"]
 
@@ -418,6 +431,7 @@ def get_stock_discrepancies(
     from app.models.order import Order
 
     db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
 
     findings = []
 
@@ -507,6 +521,9 @@ def list_lots(
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
+    db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
+
     rows = (
         db.query(
             StockMovement.batch_id,
@@ -616,6 +633,7 @@ def get_alerts_engine(
     from app.models.order import Order
 
     db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
     now = datetime.now(timezone.utc)
     d30 = now.replace(tzinfo=None) - timedelta(days=30)
 
@@ -752,6 +770,9 @@ def get_returns_by_variant(
     matches product_id + variant string locally, instead of one request
     per product row.
     """
+    db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
+
     import re
     rows = (
         db.query(StockMovement.product_id, StockMovement.quantity, StockMovement.reason)
@@ -786,9 +807,11 @@ def get_product_stock_breakdown(
     """
     from app.models.purchase import PurchaseItem, Purchase
 
+    db.info["skip_tenant_isolation"] = True
     p = db.query(Product).filter(Product.id == product_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Produit introuvable")
+    assert_store_access(current_user, p.store_id)
 
     physique = p.stock or 0
     reserve = p.reserved_stock or 0
@@ -854,7 +877,7 @@ def get_product_stock_breakdown(
 def get_stock_summary(
     store_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """
     Aggregate stock KPIs for a store:
@@ -864,8 +887,11 @@ def get_stock_summary(
     - Out-of-stock count (stock <= 0)
     - Total available units (stock - reserved_stock)
     """
+    db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
+
     logger.info(f"Fetching stock summary for store_id: {store_id}")
-    
+
     products = (
         db.query(Product)
         .filter(Product.store_id == store_id, Product.is_active == True)
@@ -909,14 +935,23 @@ def get_stock_summary(
 def get_stock_alerts(
     store_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     """Return products that are at or below their low_stock_threshold, considering variant stocks."""
+    db.info["skip_tenant_isolation"] = True
     from app.services.inventory_service import product_available_stock, product_stock_status
 
     query = db.query(Product).filter(Product.is_active == True)
     if store_id:
+        assert_store_access(current_user, store_id)
         query = query.filter(Product.store_id == store_id)
+    else:
+        # No store specified — scope to whatever this user may see instead
+        # of silently returning every store's alerts. Admins are
+        # unrestricted (accessible=None) by design.
+        accessible = user_accessible_store_ids(current_user)
+        if accessible is not None:
+            query = query.filter(Product.store_id.in_(accessible)) if accessible else query.filter(sql_false())
 
     products = query.all()
     threshold = lambda p: p.low_stock_threshold if p.low_stock_threshold is not None else 5

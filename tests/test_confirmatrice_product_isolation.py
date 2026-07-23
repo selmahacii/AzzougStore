@@ -182,6 +182,15 @@ class Scenario:
         finally:
             db.close()
 
+    def force_status(self, order_id, status):
+        """Force a status directly (bypassing the state machine) to set up a scenario, e.g. a CANCELLED order to reopen."""
+        db = SessionLocal()
+        try:
+            db.query(Order).filter(Order.id == order_id).update({"status": status})
+            db.commit()
+        finally:
+            db.close()
+
     def cleanup(self):
         db = SessionLocal()
         try:
@@ -384,6 +393,90 @@ def test_stale_assigned_to_loses_to_a_rule_created_after_order_creation(scenario
 
     assert _can_access_order(token_a, order_id) == 200
     assert order_id in _order_ids_visible_to(token_a)
+
+
+# ─── 6b. Regression (2026-07-23, reported live): a STORE-level rule for a
+# different agent must NOT override a confirmatrice's DIRECT assignment on
+# a specific order that has no conflicting PRODUCT-level rule ──────────────
+
+def test_unrelated_store_rule_does_not_block_a_directly_assigned_order(scenario):
+    """
+    Confirmatrice A has a PRODUCT rule for Product X (her real
+    responsibility). Store S separately has a STORE-level rule assigning
+    the WHOLE store to a different confirmatrice C — unrelated to A.
+    An order in store S contains a DIFFERENT product (not X, no PRODUCT
+    rule at all) but is DIRECTLY assigned_to A (e.g. she created it, or an
+    admin manually assigned it, or she claimed it via the confirm action).
+
+    A must still be able to see AND update that order — a broad STORE
+    rule for someone else must never override her concrete, direct
+    assignment on a specific order. Before the fix, `_confirmateur_
+    ownership_criterion`/`_assert_order_access` treated ANY rule existing
+    anywhere in the store as disqualifying her assigned_to, producing
+    "Accès refusé à cette commande" (403) even on her own order — exactly
+    the bug reported live via GET /orders/{id}/events → 403.
+    """
+    store_id = scenario.make_store("StoreRuleVsDirect")
+    her_product = scenario.make_product(store_id, "HerProduct")
+    other_product = scenario.make_product(store_id, "OtherProduct")
+
+    agent_a, email_a = scenario.make_confirmatrice("direct-a")
+    agent_c, email_c = scenario.make_confirmatrice("storewide-c")
+
+    scenario.add_rule("PRODUCT", her_product, agent_a)
+    scenario.add_rule("STORE", store_id, agent_c)
+
+    # Order contains OTHER_PRODUCT (no PRODUCT rule at all) but is directly
+    # assigned to A regardless — the STORE rule names C, not A.
+    order_id, _ = scenario.make_order(store_id, [(other_product, "OtherProduct", 1, 1000)])
+    scenario.force_assigned_to(order_id, agent_a)
+
+    token_a = scenario.login(email_a)
+    token_c = scenario.login(email_c)
+
+    # A must be able to access AND see it despite the unrelated STORE rule.
+    assert _can_access_order(token_a, order_id) == 200
+    assert order_id in _order_ids_visible_to(token_a)
+
+    # C (the store-rule owner) must NOT see an order directly assigned to
+    # someone else — the store rule is a fallback default, not a claim
+    # that steals an already-assigned order.
+    assert order_id not in _order_ids_visible_to(token_c)
+    assert _can_access_order(token_c, order_id) == 403
+
+    # And updating the order's status must actually succeed for A —
+    # the literal reported symptom (reopening a CANCELLED order).
+    scenario.force_status(order_id, "CANCELLED")
+    res = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}",
+        json={"status": "CONFIRMED"},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert res.status_code == 200, res.text
+
+
+def test_product_level_rule_still_overrides_direct_assignment_for_a_different_agent(scenario):
+    """
+    Sanity companion to the fix above: a PRODUCT-level rule must still be
+    a hard override, even over a direct assigned_to — this is the
+    ORIGINAL bug this whole mechanism exists to fix, and the new
+    "don't let STORE rules override assigned_to" carve-out must not
+    accidentally weaken it.
+    """
+    store_id = scenario.make_store("ProductStillWins")
+    product_id = scenario.make_product(store_id, "Contested")
+    agent_owner, email_owner = scenario.make_confirmatrice("product-owner")
+    agent_stale, email_stale = scenario.make_confirmatrice("stale-holder")
+
+    order_id, _ = scenario.make_order(store_id, [(product_id, "Contested", 1, 1000)])
+    scenario.force_assigned_to(order_id, agent_stale)
+    scenario.add_rule("PRODUCT", product_id, agent_owner)
+
+    token_owner = scenario.login(email_owner)
+    token_stale = scenario.login(email_stale)
+
+    assert _can_access_order(token_owner, order_id) == 200
+    assert _can_access_order(token_stale, order_id) == 403
 
 
 # ─── 7. Multi-owner order: deterministic single owner, no duplicate visibility ──

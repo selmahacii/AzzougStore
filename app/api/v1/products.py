@@ -8,6 +8,7 @@ from uuid import uuid4
 from datetime import datetime, timedelta
 
 from app.api import deps
+from app.core.store_access import assert_store_access
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.schemas.product import (
@@ -708,6 +709,11 @@ def quick_update_stock(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
+    # The comment above promised this check but it never actually existed —
+    # any MANAGER/LIVREUR could quick-update ANY store's product stock by
+    # product id alone. assert_store_access enforces the real boundary
+    # (employee_store_id/assigned_store_ids), same as everywhere else.
+    assert_store_access(current_user, product.store_id)
 
     if product.variants:
         raise HTTPException(
@@ -798,9 +804,11 @@ def get_product_analytics(
     store_id: str = Query(...),
     period: str = Query("30d"),
     db: Session = Depends(get_db),
-    _auth: Any = Depends(deps.get_current_active_user),
+    current_user: Any = Depends(deps.get_current_active_user),
 ) -> Any:
     """Per-product performance: orders, funnel counts, revenue, cost, profit."""
+    db.info["skip_tenant_isolation"] = True
+    assert_store_access(current_user, store_id)
     product = db.query(Product).filter(Product.id == product_id, Product.store_id == store_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Produit introuvable.")
