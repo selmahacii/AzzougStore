@@ -149,7 +149,7 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Analyse des écarts', view: 'inventory', subView: 'ECARTS' },
                { label: 'Suivi des lots', view: 'inventory', subView: 'LOTS' },
                { label: 'Transferts entrepôts', view: 'inventory', subView: 'TRANSFERS' },
-               { label: 'Retours Commandes', view: 'returns' },
+               { label: 'Retours Commandes', view: 'inventory', subView: 'ORDER_RETURNS' },
                { label: 'Commissions', view: 'commissions' }
             ]
          },

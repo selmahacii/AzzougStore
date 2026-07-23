@@ -35,6 +35,7 @@ import WarehouseManager from './warehouse-manager';
 import StockTracker from './stock-tracker';
 import PurchaseManager from './purchase-manager';
 import SuppliersReturnsHub from './suppliers-returns-hub';
+import ReturnsDashboard from './returns-dashboard';
 import { LivreursInventoryView, TracabilityView, DiscrepanciesView } from './inventory-tracability';
 import { LotsView, AlertsEngineView, WarehouseTransferPanel } from './inventory-erp-extra';
 
@@ -182,7 +183,12 @@ export default function InventoryDashboard() {
       if (['Alerte de Stock', 'Alerte de stock', 'Alertes rupture', 'ALERTS', 'Alertes intelligentes', 'ALERTS_ENGINE'].includes(sv)) return 'STOCK';
       if (["Entrées d'achat", 'Achats', 'PURCHASES'].includes(sv)) return 'PURCHASES';
       // Retours fournisseurs + Fournisseurs fusionnés en un seul hub.
-      if (["Entrées de retour", 'Retours', 'RETURNS', 'Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS_RETURNS';
+      if (["Entrées de retour", 'Retours', 'Fournisseurs', 'PARTNERS'].includes(sv)) return 'PARTNERS_RETURNS';
+      // Retours CLIENTS/commandes (module "Retours Commandes", ex-vue
+      // top-level 'returns' — fusionné ici avec la Gestion de Stock
+      // puisque chaque retour affecte directement le stock qu'on gère à
+      // côté). Distinct des retours FOURNISSEURS ci-dessus (PARTNERS_RETURNS).
+      if (['Retours Commandes', 'ORDER_RETURNS', 'RETURNS'].includes(sv)) return 'ORDER_RETURNS';
       if (['Entrepôts', 'WAREHOUSES'].includes(sv)) return 'WAREHOUSES';
       if (['Surveillance', 'MONITOR'].includes(sv)) return 'MONITOR';
       if (['Historique', 'HISTORY'].includes(sv)) return 'HISTORY';
@@ -254,6 +260,7 @@ function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: s
    if (activeTab === 'WAREHOUSES') return <WarehouseManager />;
    if (activeTab === 'TRACKER') return <StockTracker />;
    if (activeTab === 'PARTNERS_RETURNS') return <SuppliersReturnsHub />;
+   if (activeTab === 'ORDER_RETURNS') return <ReturnsDashboard />;
    if (activeTab === 'STOCK') return <StockView />;
    if (activeTab === 'PURCHASES') return <PurchaseManager />;
    if (activeTab === 'HISTORY') return <HistoryView />;

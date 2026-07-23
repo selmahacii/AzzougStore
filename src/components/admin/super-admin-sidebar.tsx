@@ -108,7 +108,7 @@ const NAV: NavSection[] = [
           { label: 'Achats',         view: 'inventory', subView: 'PURCHASES' },
           { label: 'Fournisseurs',   view: 'inventory', subView: 'PARTNERS' },
           { label: 'Historique',     view: 'inventory', subView: 'HISTORY' },
-          { label: 'Retours Commandes', view: 'returns' },
+          { label: 'Retours Commandes', view: 'inventory', subView: 'ORDER_RETURNS' },
         ],
       },
     ],
