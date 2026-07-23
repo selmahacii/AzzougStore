@@ -805,9 +805,16 @@ const [timeLeft, setTimeLeft] = useState('');
 
    const assignMutation = useMutation({
      mutationFn: async ({ orderId, assignedTo }: { orderId: string; assignedTo: string }) => {
+       // assigned_to alone — no forced status. Reassignment must work on an
+       // order at ANY stage (CONFIRMED, CANCELLED, etc.), and forcing
+       // status:'ASSIGNED' here made every reassignment attempt on an
+       // order past the initial NEW/ASSIGNED stage fail the backend state
+       // machine (ASSIGNED isn't a valid target from most later statuses),
+       // which is exactly what made "réassigner" silently do nothing once
+       // a status had progressed.
        return apiFetch(`/api/v1/orders/${orderId}`, {
          method: 'PATCH',
-         body: JSON.stringify({ assigned_to: assignedTo, status: 'ASSIGNED' }),
+         body: JSON.stringify({ assigned_to: assignedTo }),
        });
      },
      onSuccess: () => { 
@@ -2537,17 +2544,29 @@ const [timeLeft, setTimeLeft] = useState('');
                         </div>
                       )}
 
-                      {/* Assigned agent */}
+                      {/* Assigned agent — always reassignable, at any order status/stage.
+                          Previously this card went read-only the moment an assignee
+                          existed (no button rendered at all once assigned), which is
+                          exactly what made "je n'arrive pas à la modifier" happen —
+                          there was no way to open the reassign dialog once someone
+                          was already attached to the order. */}
                       <div className="space-y-3">
                          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Users className="size-3.5" /> Agent assigné</h3>
                          {selectedOrder.assignee ? (
-                            <div className="bg-indigo-50 rounded-2xl p-5 flex items-center gap-3">
-                               <div className="size-10 rounded-xl bg-[#4b7bec] flex items-center justify-center text-white font-black text-sm">{selectedOrder.assignee.name.charAt(0)}</div>
-                               <div>
+                            <button
+                               onClick={() => { setDetailDialogOpen(false); handleAssignClick(selectedOrder.id); }}
+                               className="w-full bg-indigo-50 hover:bg-indigo-100 rounded-2xl p-5 flex items-center gap-3 transition-all group"
+                               title="Réassigner à un autre agent"
+                            >
+                               <div className="size-10 rounded-xl bg-[#4b7bec] flex items-center justify-center text-white font-black text-sm shrink-0">{selectedOrder.assignee.name.charAt(0)}</div>
+                               <div className="flex-1 text-left">
                                   <p className="text-sm font-black text-slate-800">{selectedOrder.assignee.name}</p>
                                   <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">Agent confirmateur</p>
                                </div>
-                            </div>
+                               <span className="text-[10px] font-black text-[#4b7bec] uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                                  <Settings2 className="size-3.5" /> Réassigner
+                               </span>
+                            </button>
                          ) : (
                             <button onClick={() => { setDetailDialogOpen(false); handleAssignClick(selectedOrder.id); }} className="w-full h-12 rounded-2xl border-2 border-dashed border-slate-200 text-[11px] font-black text-slate-400 hover:border-[#4b7bec] hover:text-[#4b7bec] hover:bg-indigo-50 transition-all uppercase tracking-wider flex items-center justify-center gap-2">
                                <Users className="size-4" /> Assigner un agent
