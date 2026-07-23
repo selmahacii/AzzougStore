@@ -31,6 +31,34 @@ export function AppBootstrap() {
 
   const initialize = useCallback(async (signal?: AbortSignal) => {
     try {
+      // Storefront/admin pages already fetch stores (and the user, when
+      // logged in) server-side and seed them via HydrateStore before this
+      // effect runs. Re-fetching here on every mount duplicated that work —
+      // a second full Function invocation through the /api proxy for data
+      // we already have. Only hit the network when SSR didn't provide it
+      // (backend was unreachable at render time, or a client-side nav).
+      const hydratedStores = useAppStore.getState().allStores;
+      if (hydratedStores.length > 0) {
+        const hydratedUser = useAppStore.getState().user;
+        if (!hydratedUser) {
+          try {
+            const meRes = await fetch('/api/v1/auth/me', {
+              signal,
+              credentials: 'include',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (meRes.ok) {
+              const meData = await meRes.json();
+              if (meData.success && meData.data) setUser(meData.data as User);
+            }
+          } catch (meError) {
+            console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
+          }
+        }
+        setIsReady(true);
+        return;
+      }
+
       console.log('[AppBootstrap] Fetching /api/v1/stores...');
       const storesRes = await fetch('/api/v1/stores', { signal });
       console.log(`[AppBootstrap] /api/v1/stores response status: ${storesRes.status}`);

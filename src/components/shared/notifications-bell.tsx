@@ -56,6 +56,7 @@ export function NotificationsBell({ onOpenOrder }: { onOpenOrder?: (orderId: str
     // alerts useless, and one small notifications read every 5 min is a
     // negligible share of Neon compute next to the dashboards.
     refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const markAllMutation = useMutation({

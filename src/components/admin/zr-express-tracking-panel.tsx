@@ -35,6 +35,7 @@ export function ZRExpressTrackingPanel({ orderId, trackingNumber, partnerId, onS
     queryKey: ['zr-track', orderId, trackingNumber],
     enabled: !!trackingNumber && !!partnerId,
     refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       const res: any = await apiFetch(
         `/api/v1/delivery-partners/${partnerId}/zr/track/${trackingNumber}`

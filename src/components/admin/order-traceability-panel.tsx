@@ -268,6 +268,7 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
     retry: (failureCount, error) =>
       error instanceof ApiClientError && error.statusCode === 404 ? false : failureCount < 3,
     refetchInterval: (query) => (query.state.error ? false : 30000),
+    refetchIntervalInBackground: false,
     enabled: !!orderId,
   });
 

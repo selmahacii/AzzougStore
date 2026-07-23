@@ -627,6 +627,7 @@ export default function AgentOrdersPage() {
     queryKey: ['agent-orders', storeId, user?.id],
     queryFn: () => apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=100`),
     refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
     enabled: !!storeId,
   });
 

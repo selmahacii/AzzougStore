@@ -201,6 +201,7 @@ export function DiscrepanciesView() {
       queryFn: () => apiFetch<{ success: boolean; data: Discrepancy[]; total: number; high_severity: number }>(`/api/v1/stock/discrepancies?store_id=${activeStore?.id}`),
       enabled: !!activeStore?.id,
       refetchInterval: 120000,
+      refetchIntervalInBackground: false,
    });
    const findings = data?.data || [];
 

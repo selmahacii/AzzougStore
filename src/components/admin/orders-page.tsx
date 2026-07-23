@@ -692,6 +692,7 @@ const [timeLeft, setTimeLeft] = useState('');
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
      refetchInterval: 5 * 60 * 1000,
+     refetchIntervalInBackground: false,
    });
 
    // Counts per status tab (unfiltered by search, but DOIT suivre le même
@@ -710,6 +711,7 @@ const [timeLeft, setTimeLeft] = useState('');
      enabled: !!storeId,
      staleTime: 30_000,
      refetchInterval: 5 * 60 * 1000,
+     refetchIntervalInBackground: false,
    });
    const tabCounts: Record<string, number> = (countsQuery.data as any) ?? {};
    // Reçues = commandes jamais touchées par un agent (ni assignées, ni

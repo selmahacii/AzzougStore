@@ -123,6 +123,7 @@ export default function AdminHeader() {
       queryFn: () =>
          fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
       refetchInterval: 120000,
+      refetchIntervalInBackground: false,
    });
 
    const stockAlertsQuery = useQuery<{ data: Product[] }>({
@@ -130,6 +131,7 @@ export default function AdminHeader() {
       queryFn: () =>
          fetch(`/api/v1/stock/alerts?store_id=${storeId}`).then((r) => r.json()),
       refetchInterval: 300000,
+      refetchIntervalInBackground: false,
    });
 
    const title = PAGE_TITLES[adminView] || 'AzzougStore';

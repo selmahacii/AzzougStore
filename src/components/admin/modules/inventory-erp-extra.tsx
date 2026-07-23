@@ -148,6 +148,7 @@ export function AlertsEngineView() {
       queryFn: () => apiFetch<{ success: boolean; data: Alert[]; by_priority: Record<string, number> }>(`/api/v1/stock/alerts-engine?store_id=${activeStore?.id}`),
       enabled: !!activeStore?.id,
       refetchInterval: 120000,
+      refetchIntervalInBackground: false,
    });
    const alerts = (data?.data || []).filter(a => !priorityFilter || a.priority === priorityFilter);
    const priorityColor = { high: C.danger, medium: C.warning, low: C.textDim };
