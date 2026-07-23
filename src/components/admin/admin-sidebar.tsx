@@ -142,7 +142,6 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Achats', view: 'inventory', subView: 'PURCHASES' },
                { label: 'Bons d\'Achat & d\'Entrée', view: 'purchase_vouchers' },
                { label: 'Fournisseurs', view: 'inventory', subView: 'PARTNERS_RETURNS' },
-               { label: 'Historique', view: 'inventory', subView: 'HISTORY' },
                { label: 'Timeline', view: 'inventory', subView: 'TIMELINE' },
                { label: 'Inventaire Livreurs', view: 'inventory', subView: 'LIVREURS' },
                { label: 'Traçabilité', view: 'inventory', subView: 'TRACABILITE' },

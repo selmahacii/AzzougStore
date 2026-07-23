@@ -18,7 +18,7 @@ from app.schemas.user import (
 from app.core.security import get_password_hash
 from app.services.salary_service import compute_salary
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, and_, or_, case
 
 router = APIRouter()
@@ -909,4 +909,113 @@ def get_employee_salary(
         },
         "salary": salary_data,
     }
+
+
+@router.post("/{user_id}/salary/pay", response_model=dict)
+def pay_employee_salary(
+    user_id: str,
+    payload: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Record an actual salary payment as real wallet disbursements.
+
+    An employee who delivered orders across several stores (assigned to
+    products/store scopes spanning stores) gets paid from EACH store's own
+    till, in proportion to what they actually earned there — never a single
+    lump sum yanked from whichever store happened to open the dialog.
+    Payload: { store_id, since?, until?, bonus? } — store_id/since/until
+    mirror the GET /salary query used to preview the amount; bonus (if any)
+    is credited entirely to store_id (the store the admin is acting from).
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants pour valider une paie.")
+
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+
+    primary_store_id = payload.get("store_id")
+    if not primary_store_id:
+        raise HTTPException(status_code=400, detail="store_id est requis.")
+
+    if current_user.role == "MANAGER" and current_user.employee_store_id != primary_store_id:
+        raise HTTPException(status_code=403, detail="Un manager ne peut valider une paie que pour sa propre boutique.")
+
+    bonus = int(payload.get("bonus") or 0)
+    since_raw = payload.get("since")
+    until_raw = payload.get("until")
+    try:
+        since_dt = datetime.fromisoformat(since_raw) if since_raw else None
+        until_dt = (
+            datetime.fromisoformat(until_raw).replace(hour=23, minute=59, second=59, microsecond=999999)
+            if until_raw else None
+        )
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Format de date invalide. Utilisez YYYY-MM-DD.")
+
+    # Every store where this employee actually has DELIVERED orders in the
+    # window — this is the real cross-store footprint, not a guess.
+    store_filters = [
+        Order.assigned_to == user_id,
+        Order.status == "DELIVERED",
+        Order.is_deleted == False,
+    ]
+    if since_dt:
+        store_filters.append(Order.created_at >= since_dt)
+    if until_dt:
+        store_filters.append(Order.created_at <= until_dt)
+    worked_store_ids = {
+        row[0] for row in db.query(Order.store_id).filter(and_(*store_filters)).distinct().all() if row[0]
+    }
+    worked_store_ids.add(primary_store_id)  # always pay the acting store even with 0 delivered orders (e.g. fixed salary)
+
+    from app.models.finance import Wallet, FinancialTransaction, TransactionType, WalletType
+
+    breakdown = []
+    total_paid = 0
+    ref = f"PAY-{uuid.uuid4().hex[:8].upper()}"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    for store_id in sorted(worked_store_ids):
+        salary_data = compute_salary(db, db_user, store_id, since=since_dt, until=until_dt)
+        portion = int(salary_data.get("salary") or 0)
+        if store_id == primary_store_id:
+            portion += bonus
+        if portion <= 0:
+            continue
+
+        wallet = (
+            db.query(Wallet)
+            .filter(Wallet.store_id == store_id, Wallet.is_active == True)
+            .order_by(Wallet.type != WalletType.CASH, Wallet.created_at)
+            .first()
+        )
+        if not wallet:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Aucun portefeuille actif configuré pour la boutique {store_id} — impossible de verser la part due sur cette caisse."
+            )
+
+        tx = FinancialTransaction(
+            id=str(uuid.uuid4()), reference=ref, wallet_id=wallet.id,
+            store_id=store_id, type=TransactionType.DISBURSEMENT, category="SALARY",
+            amount=portion, beneficiary=db_user.name,
+            description=f"Paie {db_user.name} ({since_raw or '...'} → {until_raw or '...'})",
+            transaction_date=now, created_by=current_user.id,
+        )
+        wallet.balance -= portion
+        wallet.total_out += portion
+        db.add_all([tx, wallet])
+
+        breakdown.append({"store_id": store_id, "wallet_id": wallet.id, "amount": portion})
+        total_paid += portion
+
+    if not breakdown:
+        raise HTTPException(status_code=400, detail="Aucun montant à verser (salaire calculé à 0 sur toutes les boutiques concernées).")
+
+    db.commit()
+
+    return {"success": True, "reference": ref, "total_paid": total_paid, "breakdown": breakdown}
 
