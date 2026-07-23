@@ -565,6 +565,23 @@ def resolve_assignment_rule(
     that product; resolution then continues to the next priority level
     (or returns None, falling through to the default pool) instead of
     silently still assigning her.
+
+    Deterministic tie-break (2026-07-23): an order can contain products
+    belonging to DIFFERENT confirmatrices at the same rule_type level (e.g.
+    item A's PRODUCT rule -> Sara, item B's PRODUCT rule -> Lyna, same
+    order). Exactly one of them must win — a whole order is confirmed by
+    one person, never split or duplicated across two dashboards. The
+    candidate rules at each level are ordered by target_id ascending before
+    picking the first unblocked one, so the choice is stable and
+    reproducible (never depends on unspecified DB row order, which could
+    silently flip which agent sees the order between two identical
+    requests). Chosen rule, documented here as the single source of truth:
+    the product with the lexicographically smallest product_id among the
+    order's items decides ownership. This is an arbitrary but STABLE
+    tie-break — callers needing this exact same decision for bulk list/count
+    queries (app/api/v1/orders.py) replicate it in SQL with the identical
+    ORDER BY target_id ASC LIMIT 1, so a single order's access check and a
+    list query never disagree about who owns it.
     """
     from app.models.assignment_rule import AssignmentRule, RULE_TYPE_PRIORITY
     from app.models.product import Product
@@ -602,6 +619,11 @@ def resolve_assignment_rule(
                 AssignmentRule.is_exclusion == False,
                 AssignmentRule.is_active == True,
             )
+            # Deterministic tie-break — see docstring above. Without this,
+            # two rows matching different agents came back in unspecified
+            # DB order, so which agent "won" for a multi-owner order could
+            # differ between two otherwise-identical requests.
+            .order_by(AssignmentRule.target_id.asc())
             .all()
         )
         if not positive_rules:

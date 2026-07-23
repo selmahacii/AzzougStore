@@ -57,8 +57,9 @@ def create_sale(
     # --- ATOMIC STOCK DEDUCTION LOGIC ---
     try:
         from app.models.product import Product
-        from app.models.stock import StockMovement
-        
+        from app.core.exceptions import InsufficientStockError
+        from app.services.inventory_service import inventory_service
+
         # 1. Validation phase (Check availability without locking yet for better performance)
         for item_in in sale_in.items:
             product = db.query(Product).filter(Product.id == item_in.product_id).first()
@@ -66,46 +67,42 @@ def create_sale(
                 raise HTTPException(status_code=404, detail=f"Produit {item_in.product_name} introuvable")
             if product.stock < item_in.quantity:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"Stock insuffisant pour {product.name} (Disponible: {product.stock}, Requis: {item_in.quantity})"
                 )
 
-        # 2. Execution phase (Locking records and updating)
+        # 2. Execution phase (locking + decrementing via InventoryService — the
+        # single source of truth for stock mutations. Routing through it here
+        # instead of decrementing product.stock directly also fixes variant
+        # products: the service updates the matching entry inside
+        # product.variants too, so a later storefront order for that product
+        # can't silently "undo" this sale when it recomputes the aggregate.)
         sale = POSSale(
             receipt_number=receipt_number,
             **sale_in.model_dump(exclude={'items'})
         )
         db.add(sale)
-        db.flush() 
+        db.flush()
 
         for item_in in sale_in.items:
-            # Lock the product row to prevent concurrent updates
-            product = db.query(Product).filter(Product.id == item_in.product_id).with_for_update().first()
-            
-            # Re-check stock in case it changed between validation and lock
-            if product.stock < item_in.quantity:
-                raise HTTPException(status_code=400, detail=f"Conflit de stock sur {product.name}")
+            try:
+                inventory_service.sell_at_pos(
+                    db,
+                    product_id=item_in.product_id,
+                    quantity=item_in.quantity,
+                    actor_id=session.user_id,
+                    variant_details=item_in.variant_details,
+                    reason=f"Vente POS {receipt_number}",
+                )
+            except InsufficientStockError as exc:
+                raise HTTPException(status_code=400, detail=f"Conflit de stock sur {item_in.product_name}: {exc}")
 
-            # Decrement Physical Stock
-            product.stock -= item_in.quantity
-            
             # Create Sale Item Record
             item = POSSaleItem(
                 sale_id=sale.id,
                 **item_in.model_dump()
             )
             db.add(item)
-
-            # Record Stock Movement for Traceability (linked to the resto of the system)
-            movement = StockMovement(**{
-                "id": str(uuid.uuid4()),
-                "product_id": item_in.product_id,
-                "type": "POS_SALE",
-                "quantity": -item_in.quantity,
-                "reason": f"Vente POS {receipt_number}",
-                "actor_id": session.user_id
-            })
-            db.add(movement)
 
         db.commit()
         db.refresh(sale)

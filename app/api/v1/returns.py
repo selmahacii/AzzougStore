@@ -11,7 +11,6 @@ import uuid
 
 from app.api.deps import get_db
 from app.models.returns import Return, ReturnItem, ReturnReason, RefundStatus, ReturnStatus
-from app.models.stock import StockMovement
 from app.models.product import Product
 
 router = APIRouter()
@@ -173,31 +172,23 @@ def create_return(payload: ReturnCreate, db: Session = Depends(get_db)):
         )
         db.add(ret)
         
-        # Handle automated stock reduction
+        # Handle automated stock reduction — routed through InventoryService
+        # (locking + variant-aware resolution + movement recording) instead
+        # of mutating product.stock directly, so a variant product's stock
+        # doesn't silently drift from product.variants (same bug class fixed
+        # for POS sales and purchase-voucher reception).
         if payload.reduce_stock:
+            from app.services.inventory_service import inventory_service
             for item_data in payload.items:
-                # Lock product to prevent concurrent race conditions
-                product = db.query(Product).filter(Product.id == item_data.product_id).with_for_update().first()
-                if product:
-                    from app.core.exceptions import InsufficientStockError
-                    available = (product.stock or 0) - (product.reserved_stock or 0)
-                    if available < item_data.quantity:
-                        raise InsufficientStockError(
-                            product_id=product.id,
-                            requested=item_data.quantity,
-                            available=available
-                        )
-                    product.stock = (product.stock or 0) - item_data.quantity
-                    movement = StockMovement(**{
-                        "id": str(uuid.uuid4()),
-                        "product_id": item_data.product_id,
-                        "quantity": item_data.quantity,
-                        "type": "OUT",
-                        "warehouse_id": payload.warehouse_id,
-                        "reason": f"Retour Fournisseur #{ret.reference}"
-                    })
-                    db.add(movement)
-                    db.add(product)
+                if db.query(Product.id).filter(Product.id == item_data.product_id).first() is not None:
+                    inventory_service.record_manual_movement(
+                        db,
+                        product_id=item_data.product_id,
+                        quantity_delta=-item_data.quantity,
+                        movement_type="OUT",
+                        warehouse_id=payload.warehouse_id,
+                        reason=f"Retour Fournisseur #{ret.reference}",
+                    )
 
         db.commit()
         db.refresh(ret)
@@ -226,21 +217,20 @@ def update_return(return_id: str, payload: ReturnUpdate, db: Session = Depends(g
                 ret.closed_at = datetime.now(timezone.utc).replace(tzinfo=None)  # type: ignore[assignment]
             elif payload.status == "IN_TRANSIT":
                 ret.shipped_at = datetime.now(timezone.utc).replace(tzinfo=None)  # type: ignore[assignment]
-            # Reintegrate stock when return is validated/received
+            # Reintegrate stock when return is validated/received — routed
+            # through InventoryService, same rationale as return creation
+            # above (variant-aware, no direct product.stock mutation).
             if payload.status in ("RECEIVED", "CLOSED") and prev_status not in ("RECEIVED", "CLOSED"):
+                from app.services.inventory_service import inventory_service
                 for item in ret.items:
-                    # Lock product to prevent race conditions
-                    product = db.query(Product).filter(Product.id == item.product_id).with_for_update().first()
-                    if product:
-                        product.stock = (product.stock or 0) + item.quantity
-                        movement = StockMovement(**{
-                            "id": str(uuid.uuid4()),
-                            "product_id": item.product_id,
-                            "quantity": item.quantity,
-                            "type": "RETURN_RESTOCK",
-                            "reason": f"Réintégration stock retour #{ret.id[:8]}"
-                        })
-                        db.add(movement)
+                    if db.query(Product.id).filter(Product.id == item.product_id).first() is not None:
+                        inventory_service.record_manual_movement(
+                            db,
+                            product_id=item.product_id,
+                            quantity_delta=item.quantity,
+                            movement_type="RETURN_RESTOCK",
+                            reason=f"Réintégration stock retour #{ret.id[:8]}",
+                        )
 
         if payload.refund_status is not None:
             ret.refund_status = payload.refund_status

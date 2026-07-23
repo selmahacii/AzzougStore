@@ -9,7 +9,6 @@ import os
 from app.api.deps import get_db
 from app.models.purchase import Purchase, PurchaseItem, ReceptionStatus, PaymentStatus
 from app.models.product import Product
-from app.models.stock import StockMovement
 from app.models.supplier import Supplier
 from app.core.config import settings
 
@@ -259,26 +258,28 @@ def validate_reception_voucher(voucher_id: str, validator_id: str = Query(...), 
         purchase.validated_at = datetime.now()
         purchase.validated_by = validator_id
 
-        # 1. Update product physical stocks in database
-        # 2. Log Restock Movements
+        # Update product physical stocks + log Restock movements through
+        # InventoryService — the single source of truth for stock mutations
+        # (locking + StockMovement recording, reused instead of duplicated
+        # here). Note: PurchaseItem has no variant column today, so a
+        # variant product's reception still only adjusts the aggregate
+        # Product.stock, same limitation as before this fix — tracking
+        # per-variant purchase reception would need a schema change.
+        from app.services.inventory_service import inventory_service
         for item in purchase.items:
-            # Lock the product row to prevent race conditions during restock
-            prod = db.query(Product).filter(Product.id == item.product_id).with_for_update().first()
-            if prod:
-                # Increase physical stock by the received quantity
-                prod.stock = (prod.stock or 0) + item.received_quantity
-
-                # Create Restock Movement
-                movement = StockMovement(
-                    id=str(uuid.uuid4()),
+            # Preserve the pre-existing silent-skip behavior for an orphaned
+            # item (product deleted after the purchase item was created) —
+            # restock() would otherwise raise ProductNotFoundError.
+            product_exists = db.query(Product.id).filter(Product.id == item.product_id).first() is not None
+            if product_exists and item.received_quantity and item.received_quantity > 0:
+                inventory_service.restock(
+                    db,
                     product_id=item.product_id,
-                    type="RESTOCK",
                     quantity=item.received_quantity,
-                    warehouse_id=purchase.warehouse_id,
                     actor_id=validator_id,
-                    reason=f"Restocked from reception voucher {purchase.reference}"
+                    warehouse_id=purchase.warehouse_id,
+                    reason=f"Restocked from reception voucher {purchase.reference}",
                 )
-                db.add(movement)
 
         # 3. Update supplier financials to keep coherent supplier ledger!
         # The total purchase order value is added to what we historically owe the supplier

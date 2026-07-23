@@ -52,13 +52,19 @@ async def client():
 
 
 async def _make_store(client, suffix):
+    # POST /stores/ requires a real authenticated SUPER_ADMIN/ADMIN/MANAGER
+    # user (deps.get_current_active_user) — it never accepted the internal
+    # service-to-service key, unlike some other admin endpoints. Using
+    # INTERNAL_KEY_HEADER here was a pre-existing test bug (401 on every
+    # run in a real environment), unrelated to the return-restock logic
+    # this file actually tests.
     r = await client.post(
         f"{settings.API_V1_STR}/stores/",
         json={"name": f"Return Store {suffix}", "slug": f"return-store-{suffix}",
               "domain": f"return-store-{suffix}.com", "template_id": "modern", "owner_id": "SYSTEM_ADMIN"},
-        headers=INTERNAL_KEY_HEADER,
+        headers={"Authorization": f"Bearer {_get_admin_token()}"},
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     return r.json()["id"]
 
 
@@ -72,7 +78,11 @@ async def _make_product(client, store_id, suffix, stock=20, variants=None, is_pa
     if is_pack:
         payload["is_pack"] = True
         payload["pack_items"] = pack_items or []
-    r = await client.post(f"{settings.API_V1_STR}/products/", json=payload, headers=INTERNAL_KEY_HEADER)
+    # Same auth requirement as _make_store — see its comment.
+    r = await client.post(
+        f"{settings.API_V1_STR}/products/", json=payload,
+        headers={"Authorization": f"Bearer {_get_admin_token()}"},
+    )
     assert r.status_code == 200, r.text
     return r.json()
 
