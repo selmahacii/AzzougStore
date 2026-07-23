@@ -23,26 +23,26 @@ from sqlalchemy import func, and_, or_, case
 
 router = APIRouter()
 
-# ÔöÇÔöÇÔöÇ Roles Configuration ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+# --- Roles Configuration ---------------------------------------------------
 ROLES_CONFIG = [
     {
         "name": "SUPER_ADMIN",
         "label": "Super Administrateur",
-        "desc": "Acc├¿s total sans restrictions ├á toutes les boutiques",
+        "desc": "Accès total sans restrictions à toutes les boutiques",
         "color": "#4b7bec",
-        "perms": ["Tous les modules", "Gestion Boutiques", "Suppression donn├®es", "Acc├¿s API"]
+        "perms": ["Tous les modules", "Gestion Boutiques", "Suppression données", "Accès API"]
     },
     {
         "name": "ADMIN",
         "label": "Administrateur",
-        "desc": "Gestion globale d'une boutique assign├®e",
+        "desc": "Gestion globale d'une boutique assignée",
         "color": "#2d3436",
-        "perms": ["Gestion Utilisateurs", "Param├¿tres Boutique", "Audit Logs", "Finance", "Analytics complets"]
+        "perms": ["Gestion Utilisateurs", "Paramètres Boutique", "Audit Logs", "Finance", "Analytics complets"]
     },
     {
         "name": "MANAGER",
         "label": "Responsable Boutique",
-        "desc": "Gestion des stocks, achats et ├®quipe locale",
+        "desc": "Gestion des stocks, achats et équipe locale",
         "color": "#2d98da",
         "perms": ["Gestion Stocks", "Achats Fournisseurs", "Statut Commandes", "Analyse Logistique", "Assignation agents"]
     },
@@ -51,14 +51,14 @@ ROLES_CONFIG = [
         "label": "Agent de Confirmation",
         "desc": "Validation des commandes clients et Upsell",
         "color": "#20bf6b",
-        "perms": ["Liste Commandes (assign├®es)", "Cr├®er Commande", "Appels clients", "Upsell", "Notes commandes"]
+        "perms": ["Liste Commandes (assignées)", "Créer Commande", "Appels clients", "Upsell", "Notes commandes"]
     },
     {
         "name": "MARKETER",
-        "label": "Affili├® & M├®dia",
+        "label": "Affilié & Média",
         "desc": "Acquisition de trafic et tracking performance",
         "color": "#eb4d4b",
-        "perms": ["Analytics Marketing", "Acc├¿s Pixels", "Rapport ROAS", "Leads g├®n├®r├®s"]
+        "perms": ["Analytics Marketing", "Accès Pixels", "Rapport ROAS", "Leads générés"]
     },
 ]
 
@@ -69,13 +69,13 @@ def create_role(
     _: Any = Depends(deps.get_current_active_user)
 ):
     """
-    Persist a custom role definition. Currently stores the intent and acknowledges ÔÇö
+    Persist a custom role definition. Currently stores the intent and acknowledges -
     role enforcement is handled via the user.role field.
     """
     name = (payload.get("name") or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Le nom du r├┤le est obligatoire")
-    return {"success": True, "message": f"R├┤le ┬½{name}┬╗ enregistr├® avec succ├¿s"}
+        raise HTTPException(status_code=400, detail="Le nom du rôle est obligatoire")
+    return {"success": True, "message": f"Rôle « {name} » enregistré avec succès"}
 
 
 @router.get("/roles-matrix", response_model=List[RolePermission])
@@ -399,14 +399,14 @@ def create_user(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(
             status_code=403,
-            detail="Privil├¿ges insuffisants pour cr├®er un employ├®."
+            detail="Privilèges insuffisants pour créer un employé."
         )
 
     # Admins cannot create SUPER_ADMIN accounts
     if False:
         raise HTTPException(
             status_code=403,
-            detail="Un administrateur ne peut pas cr├®er un Super Administrateur."
+            detail="Un administrateur ne peut pas créer un Super Administrateur."
         )
 
     # A manager runs operations but can never create platform-level accounts
@@ -420,7 +420,7 @@ def create_user(
     if user_exists:
         raise HTTPException(
             status_code=400,
-            detail="Ce courriel est d├®j├á utilis├® par un autre utilisateur."
+            detail="Ce courriel est déjà utilisé par un autre utilisateur."
         )
 
     new_id = str(uuid.uuid4())
@@ -472,7 +472,7 @@ def update_user(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(
             status_code=403,
-            detail="Privil├¿ges insuffisants pour modifier un employ├®."
+            detail="Privilèges insuffisants pour modifier un employé."
         )
 
     db_user = db.query(User).filter(User.id == user_id).first()
@@ -482,9 +482,9 @@ def update_user(
     # MANAGER cannot change roles or assign to other stores
     if current_user.role == "MANAGER":
         if hasattr(user_in, 'role') and user_in.role:
-            raise HTTPException(status_code=403, detail="Un manager ne peut pas modifier les r├┤les.")
+            raise HTTPException(status_code=403, detail="Un manager ne peut pas modifier les rôles.")
         if hasattr(user_in, 'employee_store_id') and user_in.employee_store_id and user_in.employee_store_id != current_user.employee_store_id:
-            raise HTTPException(status_code=403, detail="Un manager ne peut pas r├®assigner un employ├® ├á une autre boutique.")
+            raise HTTPException(status_code=403, detail="Un manager ne peut pas réassigner un employé à une autre boutique.")
 
     # Check email uniqueness if changing
     if user_in.email and user_in.email != db_user.email:
@@ -495,7 +495,7 @@ def update_user(
         if email_exists:
             raise HTTPException(
                 status_code=400,
-                detail="Ce courriel est d├®j├á utilis├® par un autre utilisateur."
+                detail="Ce courriel est déjà utilisé par un autre utilisateur."
             )
 
     update_data = user_in.model_dump(exclude_unset=True)
@@ -503,7 +503,7 @@ def update_user(
     # Handle password update
     if "password" in update_data and update_data["password"]:
         if len(update_data["password"]) < 6:
-            raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caract├¿res.")
+            raise HTTPException(status_code=400, detail="Le mot de passe doit contenir au moins 6 caractères.")
         update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
     elif "password" in update_data:
         del update_data["password"]
@@ -547,7 +547,7 @@ def toggle_user_active(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
         raise HTTPException(
             status_code=403,
-            detail="Seul un administrateur peut activer/d├®sactiver un compte."
+            detail="Seul un administrateur peut activer/désactiver un compte."
         )
 
     db_user = db.query(User).filter(User.id == user_id).first()
@@ -556,14 +556,14 @@ def toggle_user_active(
 
     # Cannot deactivate their own account or another SUPER_ADMIN
     if db_user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="Vous ne pouvez pas d├®sactiver votre propre compte.")
+        raise HTTPException(status_code=400, detail="Vous ne pouvez pas désactiver votre propre compte.")
     if current_user.role == "MANAGER" and (
         db_user.role in ("SUPER_ADMIN", "ADMIN")
         or (getattr(user_in, "role", None) in ("SUPER_ADMIN", "ADMIN"))
     ):
         raise HTTPException(status_code=403, detail="Un manager ne peut pas modifier ou promouvoir un compte administrateur.")
     if db_user.role == "SUPER_ADMIN" and current_user.role not in ("SUPER_ADMIN", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Acc├¿s refus├® ├á ce compte super administrateur.")
+        raise HTTPException(status_code=403, detail="Accès refusé à ce compte super administrateur.")
 
     before_dict = {c.name: getattr(db_user, c.name) for c in db_user.__table__.columns}
 
@@ -586,8 +586,8 @@ def toggle_user_active(
     db.commit()
     db.refresh(db_user)
 
-    action = "activ├®" if db_user.is_active else "d├®sactiv├®"
-    return {"success": True, "is_active": db_user.is_active, "message": f"Compte {action} avec succ├¿s."}
+    action = "activé" if db_user.is_active else "désactivé"
+    return {"success": True, "is_active": db_user.is_active, "message": f"Compte {action} avec succès."}
 
 
 @router.post("/{user_id}/reset-password", response_model=dict)
@@ -602,7 +602,7 @@ def reset_user_password(
     Expected payload: { new_password: "..." }
     """
     if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER"]:
-        raise HTTPException(status_code=403, detail="Privil├¿ges insuffisants.")
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants.")
 
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
@@ -610,11 +610,11 @@ def reset_user_password(
 
     new_password = payload.get("new_password", "")
     if len(new_password) < 6:
-        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 6 caract├¿res.")
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 6 caractères.")
 
     db_user.hashed_password = get_password_hash(new_password)  # type: ignore[assignment]
     db.commit()
-    return {"success": True, "message": "Mot de passe r├®initialis├® avec succ├¿s."}
+    return {"success": True, "message": "Mot de passe réinitialisé avec succès."}
 
 
 @router.delete("/{user_id}", response_model=dict)
@@ -631,7 +631,7 @@ def delete_user(
     if current_user.role not in ["SUPER_ADMIN", "ADMIN"]:
         raise HTTPException(
             status_code=403,
-            detail="Seul un administrateur peut r├®voquer l'acc├¿s d'un employ├®."
+            detail="Seul un administrateur peut révoquer l'accès d'un employé."
         )
 
     if user_id == current_user.id:
@@ -647,16 +647,16 @@ def delete_user(
         if order_count > 0:
             raise HTTPException(
                 status_code=400, 
-                detail="Impossible de supprimer d├®finitivement cet agent car des commandes lui sont attribu├®es. Veuillez plut├┤t le d├®sactiver."
+                detail="Impossible de supprimer définitivement cet agent car des commandes lui sont attribuées. Veuillez plutôt le désactiver."
             )
         db.delete(db_user)
         db.commit()
-        return {"success": True, "message": "Compte employ├® supprim├® d├®finitivement."}
+        return {"success": True, "message": "Compte employé supprimé définitivement."}
 
     # Soft-delete: deactivate
     db_user.is_active = False  # type: ignore[assignment]
     db.commit()
-    return {"success": True, "message": "Acc├¿s employ├® r├®voqu├® avec succ├¿s."}
+    return {"success": True, "message": "Accès employé révoqué avec succès."}
 
 
 @router.get("/{user_id}/performance")
@@ -838,7 +838,7 @@ def get_user_performance(
             {
                 "id":         a.id,
                 "entity":     "Commande",
-                "action":     f"{a.from_status or 'NEW'} ÔåÆ {a.to_status}",
+                "action":     f"{a.from_status or 'NEW'} -> {a.to_status}",
                 "entity_id":  a.order_id,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
             }
@@ -878,7 +878,7 @@ def get_employee_salary(
         and current_user.employee_store_id == store_id
     )
     if not (is_self or is_admin or is_manager):
-        raise HTTPException(status_code=403, detail="Acc├¿s non autoris├®.")
+        raise HTTPException(status_code=403, detail="Accès non autorisé.")
 
     # Parse optional date window
     since_dt: Optional[datetime] = None

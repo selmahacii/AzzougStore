@@ -321,6 +321,7 @@ function NewRoleModal({ open, onClose, storeId, onSuccess }: { open: boolean; on
 }
 
 function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePermission[]; isLoading: boolean; onRefresh: () => void; onNewRole: () => void }) {
+   const [exploredRole, setExploredRole] = useState<RolePermission | null>(null);
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
    if (!Array.isArray(roles)) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
@@ -391,12 +392,11 @@ function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePerm
                                     {perm}
                                  </span>
                               ))}
-                              <span className="px-3 py-1.5 text-[10px] font-bold text-slate-300 bg-white border border-dashed rounded-lg border-slate-100">+8 autres</span>
                            </div>
                         </td>
                         <td className="px-8 py-6 text-right align-top">
                            <div className="flex items-center justify-end gap-2">
-                              <button className="h-9 px-4 rounded-xl flex items-center gap-2 border hover:bg-white text-xs font-bold text-slate-500 transition-all shadow-sm" style={{ borderColor: C.border }}>
+                              <button onClick={() => setExploredRole(role)} className="h-9 px-4 rounded-xl flex items-center gap-2 border hover:bg-white text-xs font-bold text-slate-500 transition-all shadow-sm" style={{ borderColor: C.border }}>
                                  <Eye className="size-3.5" /> Explorer
                               </button>
                            </div>
@@ -406,6 +406,37 @@ function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePerm
                </tbody>
             </table>
          </div>
+
+         <Dialog open={!!exploredRole} onOpenChange={(o) => { if (!o) setExploredRole(null); }}>
+            <DialogContent className="max-w-lg rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
+               {exploredRole && (
+                  <>
+                     <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white">
+                        <div className="flex items-center gap-4">
+                           <div className="size-12 rounded-xl flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: exploredRole.color }}>{exploredRole.count}</div>
+                           <div>
+                              <DialogTitle className="text-lg font-black text-slate-800">{exploredRole.name}</DialogTitle>
+                              <DialogDescription className="text-xs font-medium text-slate-400 mt-0.5">{exploredRole.description}</DialogDescription>
+                           </div>
+                        </div>
+                     </DialogHeader>
+                     <div className="px-8 py-6 space-y-4">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-500">
+                           <span>{exploredRole.count} utilisateur{exploredRole.count > 1 ? 's' : ''} actif{exploredRole.count > 1 ? 's' : ''}</span>
+                           <span>{exploredRole.permissions.length} permission{exploredRole.permissions.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                           {exploredRole.permissions.map((perm) => (
+                              <span key={perm} className="px-3 py-1.5 text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-lg">
+                                 {perm}
+                              </span>
+                           ))}
+                        </div>
+                     </div>
+                  </>
+               )}
+            </DialogContent>
+         </Dialog>
       </div>
    );
 }
