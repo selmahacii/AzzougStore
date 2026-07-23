@@ -375,7 +375,10 @@ const [timeLeft, setTimeLeft] = useState('');
   useEffect(() => {
     if (!storeId) return;
     setLoadingCenters(true);
-    fetch(`/api/yalidine/centers?store_id=${storeId}`)
+    // /api/yalidine/centers was a dead, pre-FastAPI-migration Next.js route
+    // (queried a Prisma `db` client that no longer backs anything — always
+    // 404'd). The real, working, cached backend endpoint is /stations.
+    fetch(`/api/yalidine/stations?store_id=${storeId}`)
       .then(res => res.json())
       .then(body => {
         if (body.data) {

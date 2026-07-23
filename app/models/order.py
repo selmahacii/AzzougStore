@@ -51,6 +51,19 @@ class Order(Base):
     # Status & Assignment
     status = Column(String, default="NEW") # NEW|ASSIGNED|CALLED|CONFIRMED|SHIPPED|DELIVERED|RETURNED
     assigned_to = Column(String, ForeignKey("users.id"), nullable=True)
+    # Explicit admin/manager override (2026-07-23) — when True, assigned_to
+    # is authoritative for THIS order and the Assignment Rule Engine's
+    # PRODUCT/STORE-level resolution must never override it, even if a rule
+    # names a different agent. Without this, an admin manually handing one
+    # specific order to an agent (e.g. she already has a relationship with
+    # that customer, or the usual owner is unavailable) was silently undone
+    # the moment anyone re-checked access, because a PRODUCT rule always
+    # won over a plain assigned_to — correct for a STALE/leftover snapshot,
+    # wrong for a deliberate one-off administrative decision. Only ADMIN/
+    # SUPER_ADMIN/MANAGER actions set this; a confirmatrice's own "claim on
+    # action" (assigned_to sent alongside a status change) never does, so
+    # the rule engine still governs the normal, non-overridden case.
+    assignment_locked = Column(Boolean, default=False, nullable=False, server_default="false")
     # Commission historique figée (2026-07-21) — capturé au moment EXACT où
     # assigned_to est écrit (création OU réassignation), jamais recalculé
     # depuis les réglages ACTUELS de l'employé. Si son taux ou son type de

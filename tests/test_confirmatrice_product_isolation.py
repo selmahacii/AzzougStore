@@ -123,6 +123,22 @@ class Scenario:
         finally:
             db.close()
 
+    def make_admin(self, label):
+        db = SessionLocal()
+        try:
+            email = f"{label}-{self.suffix}@test.com"
+            user = User(
+                id=str(uuid.uuid4()), email=email, name=label,
+                hashed_password=get_password_hash("test-only-password"), role="SUPER_ADMIN",
+                is_active=True,
+            )
+            db.add(user)
+            db.commit()
+            self.user_ids.append(user.id)
+            return user.id, email
+        finally:
+            db.close()
+
     def login(self, email):
         res = client.post(
             f"{settings.API_V1_STR}/auth/login/access-token",
@@ -477,6 +493,109 @@ def test_product_level_rule_still_overrides_direct_assignment_for_a_different_ag
 
     assert _can_access_order(token_owner, order_id) == 200
     assert _can_access_order(token_stale, order_id) == 403
+
+
+# ─── 6c. Regression (2026-07-23, reported live): an explicit admin
+# reassignment must survive a conflicting PRODUCT rule ───────────────────────
+
+def test_admin_reassignment_locks_the_order_to_that_agent_over_a_product_rule(scenario):
+    """
+    Real production scenario: Lyna processed/cancelled an order for
+    "Saccoche à main" before any Assignment Rule existed. An admin later
+    creates a PRODUCT rule handing that product to Ryma (a legitimate,
+    unrelated business decision — Ryma is now generally responsible for
+    that product). Per the earlier fix, Lyna correctly loses default
+    access to NEW orders with that product.
+
+    But if a SUPER_ADMIN then explicitly reassigns THIS SPECIFIC order
+    back to Lyna (e.g. she already has a relationship with this customer),
+    that decision must stick — Order.assignment_locked makes it
+    authoritative, beating even the PRODUCT rule. Before this fix, the very
+    next access check silently re-applied the PRODUCT rule and locked Lyna
+    back out immediately, making the admin's reassignment useless.
+    """
+    store_id = scenario.make_store("AdminLock")
+    product_id = scenario.make_product(store_id, "SaccocheLV")
+    agent_ryma, email_ryma = scenario.make_confirmatrice("ryma")
+    agent_lyna, email_lyna = scenario.make_confirmatrice("lyna")
+    admin_id, admin_email = scenario.make_admin("nadjib")
+
+    order_id, _ = scenario.make_order(store_id, [(product_id, "SaccocheLV", 1, 2600)])
+    scenario.force_assigned_to(order_id, agent_lyna)
+    scenario.add_rule("PRODUCT", product_id, agent_ryma)
+
+    token_lyna = scenario.login(email_lyna)
+    token_ryma = scenario.login(email_ryma)
+    token_admin = scenario.login(admin_email)
+
+    # Before the admin acts: PRODUCT rule governs as usual — Ryma in, Lyna out.
+    assert _can_access_order(token_ryma, order_id) == 200
+    assert _can_access_order(token_lyna, order_id) == 403
+
+    # Admin explicitly reassigns this ONE order to Lyna.
+    res = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}",
+        json={"assigned_to": agent_lyna},
+        headers={"Authorization": f"Bearer {token_admin}"},
+    )
+    assert res.status_code == 200, res.text
+
+    db = SessionLocal()
+    try:
+        order = db.query(Order).filter(Order.id == order_id).first()
+        assert order.assigned_to == agent_lyna
+        assert order.assignment_locked is True
+    finally:
+        db.close()
+
+    # The admin's reassignment now sticks — Lyna regains access, Ryma loses it
+    # despite the PRODUCT rule still naming her generally.
+    assert _can_access_order(token_lyna, order_id) == 200
+    assert order_id in _order_ids_visible_to(token_lyna)
+    assert _can_access_order(token_ryma, order_id) == 403
+    assert order_id not in _order_ids_visible_to(token_ryma)
+
+    # And Lyna can actually act on it (the literal reported symptom).
+    scenario.force_status(order_id, "CANCELLED")
+    res2 = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}",
+        json={"status": "CONFIRMED"},
+        headers={"Authorization": f"Bearer {token_lyna}"},
+    )
+    assert res2.status_code == 200, res2.text
+
+
+def test_confirmatrice_self_claim_does_not_lock_the_order(scenario):
+    """
+    A confirmatrice's own "claim on action" (assigned_to=self sent
+    alongside a status change from the order drawer) must NOT set
+    assignment_locked — only an explicit ADMIN/SUPER_ADMIN/MANAGER
+    reassignment does. Otherwise the rule engine would stop being able to
+    correct a confirmatrice's self-claim on an order that a PRODUCT rule
+    later (or already) assigns to someone else.
+    """
+    store_id = scenario.make_store("SelfClaimNoLock")
+    product_id = scenario.make_product(store_id, "SelfClaimProd")
+    agent_id, email = scenario.make_confirmatrice("self-claimer", employee_store_id=store_id)
+
+    order_id, _ = scenario.make_order(store_id, [(product_id, "SelfClaimProd", 1, 1000)])
+    token = scenario.login(email)
+
+    # She claims the order herself via a normal status-change action.
+    res = client.patch(
+        f"{settings.API_V1_STR}/orders/{order_id}",
+        json={"status": "IN_PROGRESS", "assigned_to": agent_id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+
+    db = SessionLocal()
+    try:
+        order = db.query(Order).filter(Order.id == order_id).first()
+        assert order.assigned_to == agent_id
+        assert order.assignment_locked is False
+    finally:
+        db.close()
 
 
 # ─── 7. Multi-owner order: deterministic single owner, no duplicate visibility ──

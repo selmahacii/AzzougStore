@@ -1588,29 +1588,48 @@ class OrderService:
                 )
 
         # ── Assignment change ──────────────────────────────────────
-        if new_assignee is not None and new_assignee != order.assigned_to:
+        if new_assignee is not None:
             old_assignee = order.assigned_to
+            assignee_changed = new_assignee != old_assignee
             order.assigned_to = new_assignee
-            snapshot_commission(db, order, new_assignee)
-            cur_status = str(order.status)
-            _log_event(
-                db,
-                order_id=order.id,
-                actor_id=actor_id,
-                actor_role=actor_role,
-                from_status=cur_status,
-                to_status=cur_status,
-                note=f"Réassigné de {old_assignee} à {new_assignee}",
-            )
-            notify(
-                db,
-                type="ORDER_ASSIGNED",
-                title=f"Commande assignée — {order.order_number}",
-                message=f"{order.customer_name or 'Client'} · {order.customer_wilaya or ''} · {order.total or 0} DA",
-                user_id=new_assignee,
-                store_id=str(order.store_id),
-                order_id=str(order.id),
-            )
+            # An explicit administrative reassignment is authoritative for
+            # THIS order and must survive future Assignment Rule Engine
+            # re-checks (see Order.assignment_locked / _assert_order_access)
+            # — an admin handing this specific order to an agent overrides
+            # even a PRODUCT rule naming someone else. Set the lock even
+            # when new_assignee already equals the current assigned_to
+            # (the common real case: an admin re-confirms/reasserts "this
+            # order stays with her" without changing the value — she still
+            # needs the lock to actually take effect, or the very next
+            # access check silently re-applies the rule engine and undoes
+            # her decision, which is what a purely change-gated check
+            # missed). A confirmatrice's own "claim on action" (assigned_to
+            # =self sent alongside a status change) does NOT lock: the rule
+            # engine must stay free to resolve the order to whoever it
+            # names next time, unchanged from before.
+            if actor_role in ("ADMIN", "SUPER_ADMIN", "MANAGER"):
+                order.assignment_locked = True
+            if assignee_changed:
+                snapshot_commission(db, order, new_assignee)
+                cur_status = str(order.status)
+                _log_event(
+                    db,
+                    order_id=order.id,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    from_status=cur_status,
+                    to_status=cur_status,
+                    note=f"Réassigné de {old_assignee} à {new_assignee}",
+                )
+                notify(
+                    db,
+                    type="ORDER_ASSIGNED",
+                    title=f"Commande assignée — {order.order_number}",
+                    message=f"{order.customer_name or 'Client'} · {order.customer_wilaya or ''} · {order.total or 0} DA",
+                    user_id=new_assignee,
+                    store_id=str(order.store_id),
+                    order_id=str(order.id),
+                )
 
         # ── Delivery agent (livreur) assignment ────────────────────
         new_livreur = update_data.get("livreur_id")
