@@ -15,9 +15,9 @@ class KpiData(BaseModel):
     posRevenue: int = 0
     netRevenue: int
     totalProfit: int = 0
-    revenueChange: float
+    revenueChange: Optional[float] = None
     ordersToday: int
-    ordersChange: float
+    ordersChange: Optional[float] = None
     conversionRate: float
     returnRate: float
     avgOrderValue: int

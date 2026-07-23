@@ -174,14 +174,16 @@ export default function FinanceDashboard() {
                         <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Trésorerie Consolidée</p>
                         <p className="text-5xl font-black tracking-tighter">{formatPrice(totalBalance)}</p>
                      </div>
-                     <div className="hidden sm:block pb-1">
-                        <Badge className={cn(
-                           "border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest",
-                           (kpi?.revenueChange ?? 0) >= 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
-                        )}>
-                           {(kpi?.revenueChange ?? 0) >= 0 ? '+' : ''}{kpi?.revenueChange ?? 0}% ce mois
-                        </Badge>
-                     </div>
+                     {kpi && kpi.revenueChange !== null && kpi.revenueChange !== undefined && (
+                        <div className="hidden sm:block pb-1">
+                           <Badge className={cn(
+                              "border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest",
+                              kpi.revenueChange >= 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
+                           )}>
+                              {kpi.revenueChange >= 0 ? '+' : ''}{kpi.revenueChange}% ce mois
+                           </Badge>
+                        </div>
+                     )}
                   </div>
                </div>
             </div>
