@@ -2451,7 +2451,7 @@ def get_meta_capi_logs(
     précédente qui le calculait après la pagination et ne pouvait donc pas
     filtrer dessus sans casser le comptage total.
     """
-    from sqlalchemy import case, or_
+    from sqlalchemy import case, or_, func
     from app.models.marketing import MetaCapiLog
 
     # Sous-requête : row_count + success_count par event_id, scopée au
