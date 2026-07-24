@@ -191,6 +191,35 @@ async def start_background_sync():
         return
     from app.services.noest_sync import background_loop
     asyncio.create_task(background_loop())
+    asyncio.create_task(_funnel_flush_loop())
+
+
+async def _funnel_flush_loop() -> None:
+    """
+    Drains the Redis funnel-event counters every 15 min — same interval the
+    Celery beat schedule used, moved onto this leader-locked asyncio loop
+    instead. start_hf.sh detaches Celery worker/beat as background processes
+    (`--detach`) and then `exec`s uvicorn, which replaces PID 1 — nothing
+    supervises or restarts those detached processes if either dies, and
+    nothing surfaces it (the container's only externally-visible health
+    signal is whether the HTTP server responds, which is independent of
+    Celery beat). This loop runs inside the same already-alive, already
+    leader-locked process as every other proven periodic job in this
+    deployment (Noest sync, reminders, Meta Ads sync) instead of depending
+    on a second, unsupervised scheduling mechanism for a feature that only
+    exists to power a diagnostics dashboard.
+    """
+    import asyncio
+    _log = logging.getLogger("app.startup")
+    await asyncio.sleep(30)  # let DB/Redis connections settle after boot
+    while True:
+        try:
+            from app.services.funnel_tracking import flush_funnel_counters
+            result = await asyncio.to_thread(flush_funnel_counters)
+            _log.info("[FunnelFlush] %s", result)
+        except Exception as exc:
+            _log.error("[FunnelFlush] crashed: %s", exc)
+        await asyncio.sleep(900)  # 15 min
 
 @app.on_event("startup")
 async def resume_pending_queues():
