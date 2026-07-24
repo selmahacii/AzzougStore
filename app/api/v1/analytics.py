@@ -486,7 +486,8 @@ def get_analytics(
                 isouter=True
             ).filter(
                 User.employee_store_id == store_id,
-                User.is_active == True
+                User.is_active == True,
+                User.role == "CONFIRMATEUR"
             ).group_by(User.id, User.name).order_by(func.count(Order.id).desc()).limit(15).all()
         else:
             # Global view: only show agents with at least one assigned order
@@ -496,7 +497,8 @@ def get_analytics(
                 func.count(Order.id).label("total"),
                 func.sum(confirmed_case).label("confirmed")
             ).join(Order, Order.assigned_to == User.id).filter(
-                and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date]))
+                and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date])),
+                User.role == "CONFIRMATEUR"
             ).group_by(User.id, User.name).order_by(func.count(Order.id).desc()).limit(15).all()
 
         data = [
@@ -712,8 +714,13 @@ def get_analytics(
             
             total_shipping_orders += total
             
-            # Calculate actual avg delivery time
-            avg_days = 0
+            # Calculate actual avg delivery time. None (not a fabricated
+            # guess) when there isn't a real SHIPPED→DELIVERED pair to
+            # measure — a hardcoded "2.0 fallback" here used to silently
+            # paint every carrier missing event data with the exact same
+            # fake number, which is indistinguishable from a real 2-day
+            # average once rendered on the chart.
+            avg_days = None
             if delivered_count > 0:
                 order_ids = [o[0] for o in delivered_orders_list]
                 # Find SHIPPED and DELIVERED events for these orders
@@ -735,10 +742,10 @@ def get_analytics(
                 
                 if diffs:
                     avg_days = round(sum(diffs) / len(diffs), 1)
-                else:
-                    # Fallback if events are missing (e.g. status was set directly)
-                    avg_days = 2.0 # Default fallback
-            
+                # else: no SHIPPED/DELIVERED event pair recorded for any
+                # delivered order on this carrier (e.g. status was set
+                # directly) — avg_days stays None, not a guessed number.
+
             carrier_stats.append({
                 "name": c.name,
                 "totalOrders": total,
