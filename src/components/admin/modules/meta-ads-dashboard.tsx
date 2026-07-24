@@ -1248,6 +1248,21 @@ export default function MetaAdsDashboard() {
                         {(funnelData?.summary?.delivery_rate || 0) >= 70 ? "Excellente" : "Améliorer"}
                       </Badge>
                     </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
+                      title="Vues de page de destination ÷ Clics sur un lien (définition standard Meta) — mesure la vitesse/fiabilité réelle du site, pas la conversion. Absent si aucun clic Meta sur la période.">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Qualité du site</p>
+                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.qualite_site_pct != null ? `${funnelData.summary.qualite_site_pct}%` : '—'}</p>
+                      </div>
+                      {funnelData?.summary?.qualite_site_pct != null && (
+                        <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
+                          funnelData.summary.qualite_site_pct >= 70 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                        )}>
+                          {funnelData.summary.qualite_site_pct >= 70 ? "Bonne" : "Améliorer"}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
 

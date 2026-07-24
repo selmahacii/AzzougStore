@@ -3,8 +3,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { RefreshCw, Trash2, RotateCcw, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2, Zap, Gauge } from 'lucide-react';
+import { RefreshCw, Trash2, RotateCcw, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2, Zap, Gauge, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAppStore } from '@/store/app-store';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const C = {
    primary: '#6C5CE7', primaryBg: '#F0EDFF',
@@ -49,8 +51,15 @@ function Tile({ label, value, icon: Icon, color }: { label: string; value: strin
    );
 }
 
+interface LpConversionRow {
+  lp_id: string; slug: string; label: string;
+  clicks: number; impressions: number; meta_purchases: number;
+  conversion_rate_pct: number | null;
+}
+
 export default function MetaQueueDashboard() {
   const queryClient = useQueryClient();
+  const activeStore = useAppStore(s => s.activeStore);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['meta_queue_stats'],
@@ -58,6 +67,20 @@ export default function MetaQueueDashboard() {
     refetchOnWindowFocus: false,
   });
   const stats = data?.data;
+
+  // Conversion par landing page — UNIQUEMENT données déclarées par Meta
+  // (clics/achats Meta), jamais l'ERP : exclut donc structurellement
+  // manuelles, paniers récupérés, doublons fusionnés — voir le docstring
+  // du endpoint backend pour le détail.
+  const lpConversionQuery = useQuery({
+    queryKey: ['meta_conversion_by_lp', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: LpConversionRow[] }>(
+      `/api/v1/meta-ads/conversion-by-landing-page?store_id=${activeStore?.id}&date_start=${new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]}&date_end=${new Date().toISOString().split('T')[0]}`
+    ),
+    enabled: !!activeStore?.id,
+    refetchOnWindowFocus: false,
+  });
+  const lpRows = (lpConversionQuery.data?.data ?? []).filter(r => r.conversion_rate_pct != null);
 
   const retryAllMutation = useMutation({
     mutationFn: () => apiFetch('/api/v1/meta-ads/queue/retry-all', { method: 'POST' }),
@@ -148,6 +171,39 @@ export default function MetaQueueDashboard() {
               <Tile label="Tentatives moy." value={stats?.avg_attempts ?? '—'} icon={RotateCcw} color={C.textLight} />
               <Tile label="Âge moyen file" value={formatDuration(stats?.avg_queue_age_seconds ?? null)} icon={Clock} color={(stats?.avg_queue_age_seconds ?? 0) > 900 ? C.warning : C.textDim} />
             </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.border }}>
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="size-4" style={{ color: C.primary }} />
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Conversion par landing page — 30 derniers jours</p>
+            </div>
+            <p className="text-[10px] text-slate-400 mb-4">
+              Achats déclarés par Meta ÷ clics déclarés par Meta — jamais l'ERP, donc exclut structurellement les commandes manuelles, les paniers récupérés par téléphone et les doublons fusionnés.
+            </p>
+            {lpConversionQuery.isLoading ? (
+              <div className="h-52 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+            ) : lpRows.length === 0 ? (
+              <div className="h-32 flex items-center justify-center text-xs font-bold text-slate-300">
+                Aucune landing page avec clics Meta déclarés sur cette période.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(180, lpRows.length * 42)}>
+                <BarChart data={lpRows} layout="vertical" margin={{ left: 8, right: 24 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+                  <XAxis type="number" unit="%" tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="label" width={140} tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    formatter={(v: any, _n: any, p: any) => [`${v}%`, `Conversion (${p.payload.meta_purchases} achats / ${p.payload.clicks} clics)`]}
+                  />
+                  <Bar dataKey="conversion_rate_pct" radius={[0, 6, 6, 0]}>
+                    {lpRows.map((r, i) => (
+                      <Cell key={r.lp_id} fill={(r.conversion_rate_pct ?? 0) >= 3 ? C.success : (r.conversion_rate_pct ?? 0) >= 1 ? C.warning : C.danger} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl border p-4 space-y-2" style={{ borderColor: C.border }}>

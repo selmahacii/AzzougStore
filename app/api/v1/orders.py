@@ -1295,6 +1295,7 @@ def list_orders(
     livreur_id: Optional[str] = None,
     carrier_id: Optional[str] = None,        # DeliveryPartner.id (Order.carrier_id)
     campaign: Optional[str] = None,          # utm_campaign or campaign_id
+    product_id: Optional[str] = None,
 ):
     logger.debug(f"[Orders] Listing: store_id={store_id!r}, status={status!r}, user={getattr(current_user, 'email', 'anon')!r}")
 
@@ -1576,6 +1577,14 @@ def list_orders(
         query = query.filter(Order.customer_wilaya == wilaya)
     if source:
         query = query.filter(Order.source == source)
+    if product_id:
+        # EXISTS, pas un JOIN — une commande avec plusieurs lignes du même
+        # produit ne doit pas apparaître en double dans la liste.
+        query = query.filter(
+            db.query(OrderItem.id)
+            .filter(OrderItem.order_id == Order.id, OrderItem.product_id == product_id)
+            .exists()
+        )
     if search:
         from sqlalchemy import or_
         query = query.filter(
