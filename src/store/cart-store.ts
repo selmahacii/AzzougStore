@@ -55,6 +55,18 @@ export const useCartStore = create<CartState>()(
           });
         }
 
+        // Stable per (product, variant, quantity, price) — NOT per render/call.
+        // landing-page-renderer.tsx's quantity/variant/offer sync re-calls
+        // addItem() (via clearCart()+addItem()) on every +/- click or variant
+        // switch before the shopper ever confirms — a Date.now()-based id
+        // defeated meta-tracking.ts's own dedup, sending a brand-new,
+        // un-deduped AddToCart CAPI event to Meta on every single adjustment
+        // (same class of bug as InitiateCheckout's fee-recalculation
+        // duplicate, confirmed by real 30-day CAPI log counts: Ajout au
+        // Panier exceeding Vues Produit). Keying on the actual resulting
+        // line configuration means repeated syncs to an UNCHANGED
+        // configuration are deduped, while a genuinely different quantity/
+        // variant/price still gets its own id and fires normally.
         void trackMetaEvent('AddToCart', {
           content_ids: [product.id],
           content_name: product.name,
@@ -63,7 +75,7 @@ export const useCartStore = create<CartState>()(
           currency: 'DZD',
           contents: [{ id: product.id, quantity }],
         }, {
-          eventId: `addtocart-${product.id}-${Date.now()}`,
+          eventId: `addtocart-${product.id}-${variant || ''}-${quantity}-${customPrice ?? product.price}`,
           userData: {
             email: typeof window !== 'undefined' ? window.localStorage.getItem('meta-email') || undefined : undefined,
             phone: typeof window !== 'undefined' ? window.localStorage.getItem('meta-phone') || undefined : undefined,
