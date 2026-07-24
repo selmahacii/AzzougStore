@@ -31,17 +31,22 @@ class UpsellOfferRecord(BaseModel):
 @router.get("/rules", response_model=dict)
 def list_rules(store_id: str = Query(...), db: Session = Depends(get_db)):
     rules = db.query(UpsellRule).filter(UpsellRule.store_id == store_id).all()
-    data = []
-    for r in rules:
-        p = db.query(Product).filter(Product.id == r.product_id).first()
-        data.append({
+    product_names = dict(
+        db.query(Product.id, Product.name)
+        .filter(Product.id.in_([r.product_id for r in rules]))
+        .all()
+    ) if rules else {}
+    data = [
+        {
             "id": r.id,
             "product_id": r.product_id,
-            "product_name": p.name if p else "Product inconnu",
+            "product_name": product_names.get(r.product_id, "Product inconnu"),
             "upsell_product_ids": r.upsell_product_ids,
             "trigger_conditions": r.trigger_conditions,
             "is_active": r.is_active
-        })
+        }
+        for r in rules
+    ]
     return {"success": True, "data": data}
 
 @router.post("/rules", response_model=dict)
@@ -180,18 +185,23 @@ def get_upsell_stats(store_id: str = Query(...), db: Session = Depends(get_db)):
 @router.get("/commissions", response_model=dict)
 def list_commissions(store_id: str = Query(...), db: Session = Depends(get_db)):
     commissions = db.query(UpsellCommission).filter(UpsellCommission.store_id == store_id).all()
-    data = []
-    for c in commissions:
-        agent = db.query(User).filter(User.id == c.user_id).first()
-        order = db.query(Order).filter(Order.id == c.order_id).first()
-        data.append({
+    agent_names = dict(
+        db.query(User.id, User.name).filter(User.id.in_([c.user_id for c in commissions])).all()
+    ) if commissions else {}
+    order_numbers = dict(
+        db.query(Order.id, Order.order_number).filter(Order.id.in_([c.order_id for c in commissions])).all()
+    ) if commissions else {}
+    data = [
+        {
             "id": c.id,
-            "agent_name": agent.name if agent else "Agent inconnu",
-            "order_number": order.order_number if order else "N/A",
+            "agent_name": agent_names.get(c.user_id, "Agent inconnu"),
+            "order_number": order_numbers.get(c.order_id, "N/A"),
             "amount": c.amount,
             "is_paid": c.is_paid,
             "created_at": c.created_at.isoformat() if c.created_at else None
-        })
+        }
+        for c in commissions
+    ]
     return {"success": True, "data": data}
 
 @router.post("/commissions/{commission_id}/pay", response_model=dict)
