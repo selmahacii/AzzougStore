@@ -579,6 +579,7 @@ def get_landing_page_analytics(
                 func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
             )
             .filter(
                 MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
@@ -589,7 +590,7 @@ def get_landing_page_analytics(
             .all()
         )
         meta_daily_by_date = {
-            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0)}
+            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0), "clicks": int(r[5] or 0)}
             for r in _rows
         }
     if meta_daily_by_date:
@@ -597,11 +598,24 @@ def get_landing_page_analytics(
         totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
         totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
         totals["meta_impressions"] = sum(v["impressions"] for v in meta_daily_by_date.values())
+        totals["meta_clicks"] = sum(v["clicks"] for v in meta_daily_by_date.values())
     else:
         totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
         totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
         totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
         totals["meta_impressions"] = sum(c.impressions or 0 for c in meta_campaigns)
+        totals["meta_clicks"] = sum(c.clicks or 0 for c in meta_campaigns)
+
+    # Taux de conversion réel = vraies commandes ERP ÷ clics Meta (jamais
+    # achats déclarés par Meta au numérateur — on a le vrai chiffre ERP,
+    # pas besoin d'un proxy). Qualité du site = définition standard Meta
+    # "Landing Page View Rate" = vues de la page de destination (ViewContent
+    # réel, local_view_content ci-dessous, scopé à cette LP) ÷ clics sur le
+    # lien publicitaire — mesure la perte entre "a cliqué l'annonce" et "a
+    # vu la page chargée" (vitesse/fiabilité du site), pas la conversion.
+    totals["taux_conversion_pct"] = (
+        round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0 else None
+    )
 
     # Per-day Meta count merged into the chart data — lets the dialog show
     # "Meta a déclaré X ce jour-là" next to our own daily order bars.
@@ -637,6 +651,16 @@ def get_landing_page_analytics(
         MetaCapiLog.created_at <= d_end,
     ).scalar() or 0
 
+    # Qualité du site = Vues de page de destination ÷ Clics sur un lien
+    # (définition standard Meta du "Landing Page View Rate") — vues réelles
+    # de CETTE LP (local_view_content, funnel_rollups) sur clics Meta
+    # réellement facturés (meta_clicks, ci-dessus). Ne mélange jamais avec le
+    # ViewContent CAPI store-wide (meta_view_content_store_wide) qui n'est
+    # pas scopable par LP et fausserait ce ratio.
+    qualite_site_pct = (
+        round(int(local_view_content) / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0 else None
+    )
+
     return {
         "success": True,
         "data": {
@@ -646,6 +670,7 @@ def get_landing_page_analytics(
             "views": lp.views or 0,
             "local_view_content": int(local_view_content),
             "meta_view_content_store_wide": int(meta_view_content_store_wide),
+            "qualite_site_pct": qualite_site_pct,
         },
     }
 
