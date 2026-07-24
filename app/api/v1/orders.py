@@ -1293,6 +1293,7 @@ def list_orders(
     end_date: Optional[str] = None,
     delivery_method: Optional[str] = None,   # internal | carrier
     livreur_id: Optional[str] = None,
+    carrier_id: Optional[str] = None,        # DeliveryPartner.id (Order.carrier_id)
     campaign: Optional[str] = None,          # utm_campaign or campaign_id
 ):
     logger.debug(f"[Orders] Listing: store_id={store_id!r}, status={status!r}, user={getattr(current_user, 'email', 'anon')!r}")
@@ -1561,6 +1562,8 @@ def list_orders(
         query = query.filter(Order.assigned_to == assigned_to)
     if livreur_id:
         query = query.filter(Order.livreur_id == livreur_id)
+    if carrier_id:
+        query = query.filter(Order.carrier_id == carrier_id)
     if delivery_method:
         if delivery_method.lower() == "internal":
             query = query.filter(Order.livreur_id.isnot(None))
@@ -1579,7 +1582,8 @@ def list_orders(
             or_(
                 Order.customer_name.ilike(f"%{search}%"),
                 Order.customer_phone.ilike(f"%{search}%"),
-                Order.order_number.ilike(f"%{search}%")
+                Order.order_number.ilike(f"%{search}%"),
+                Order.tracking_number.ilike(f"%{search}%"),
             )
         )
     if start_date:
