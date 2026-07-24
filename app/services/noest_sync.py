@@ -332,13 +332,27 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
         if str(order.status) in ("DELIVERED", "RETURNED", "CANCELLED", "MERGED") or new_status == str(order.status):
             continue
         try:
+            # Noest's own stage label (e.g. "Livraison échouée", "Colis
+            # transmis au partenaire pour retour") was already captured a
+            # few lines up into order.carrier_stage_label — use it as the
+            # real cause here instead of a boilerplate "Synchronisation
+            # automatique : RETURNED." note that carries zero information
+            # about WHY. That generic note was the only "cause" ever shown
+            # in the Returns Analysis widget's Top Causes, which is why it
+            # only ever displayed system noise instead of actual reasons.
+            reason_label = order.carrier_stage_label if new_status == "RETURNED" else None
+            note = (
+                f"Retour transporteur (Noest) : {reason_label}."
+                if reason_label
+                else f"Synchronisation automatique Noest : {new_status}."
+            )
             order_service.update_order(
                 db,
                 order=order,
                 update_data={
                     "status": new_status,
                     "notes": None,
-                    "note": f"Synchronisation automatique Noest : {new_status}.",
+                    "note": note,
                 },
                 actor_id=None,  # system actor
             )

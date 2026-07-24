@@ -170,19 +170,36 @@ export default function ReturnsDashboard() {
                 <KpiTile label="Valeur perdue" value={formatPrice(analysis.valeur_perdue)} tone={analysis.valeur_perdue > 0 ? 'danger' : 'ok'} />
                 <KpiTile label="Livrées vs retournées" value={`${analysis.total_delivered} / ${analysis.total_returned}`} color={C.info} />
               </div>
+              {analysis.valeur_perdue === 0 && analysis.total_returned > 0 && (
+                <p className="text-[11px] text-emerald-600 font-semibold -mt-1">
+                  ✓ "Valeur perdue" à 0 DA est normal ici : chaque commande retournée a bien été réintégrée en stock (voir l'onglet "Audit de cohérence"). Ce chiffre ne monte que si un retour n'a jamais remis son stock.
+                </p>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
-                  { title: 'Top livreurs', items: analysis.top_livreurs.map(l => ({ key: l.livreur_id, label: l.name, value: l.returns })) },
-                  { title: 'Top clients', items: analysis.top_clients.map(c => ({ key: c.phone, label: `${c.name} (${c.phone})`, value: c.returns })) },
-                  { title: 'Top causes', items: analysis.top_causes.map((c, i) => ({ key: String(i), label: c.cause, value: c.count })) },
+                  {
+                    title: 'Top livreurs',
+                    items: analysis.top_livreurs.map(l => ({ key: l.livreur_id, label: l.name, value: l.returns })),
+                    empty: "Aucun retour livré par un livreur interne — normal si tous les retours de la période sont passés par un transporteur externe (Noest, etc.), qui n'a pas de livreur_id.",
+                  },
+                  {
+                    title: 'Top clients',
+                    items: analysis.top_clients.map(c => ({ key: c.phone, label: `${c.name} (${c.phone})`, value: c.returns })),
+                    empty: "Aucun retour sur la période.",
+                  },
+                  {
+                    title: 'Top causes',
+                    items: analysis.top_causes.map((c, i) => ({ key: String(i), label: c.cause, value: c.count })),
+                    empty: "Aucune cause identifiable pour l'instant — un retour n'a une cause ici que si le transporteur transmet un motif ou qu'un agent en a noté un lors du changement de statut.",
+                  },
                 ].map(col => (
                   <div key={col.title}>
                     <p className="text-[10px] font-black uppercase tracking-wide text-slate-400 mb-2">{col.title}</p>
-                    {col.items.length === 0 ? <p className="text-xs text-slate-300">—</p> : (
+                    {col.items.length === 0 ? <p className="text-[11px] text-slate-400 leading-relaxed">{col.empty}</p> : (
                       <div className="space-y-1">
                         {col.items.map(it => (
                           <div key={it.key} className="flex justify-between text-xs gap-2">
-                            <span className="truncate text-slate-600">{it.label}</span>
+                            <span className="truncate text-slate-600" title={it.label}>{it.label}</span>
                             <span className="font-black tabular-nums text-slate-800 shrink-0">{it.value}</span>
                           </div>
                         ))}
