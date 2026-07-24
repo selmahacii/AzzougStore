@@ -241,6 +241,27 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
+          {/* Vues détectées par Meta (CAPI ViewContent réussis, échelle
+              boutique — meta_capi_logs ne conserve pas le produit/LP pour
+              les envois réussis, donc ce chiffre n'est PAS isolable par LP,
+              contrairement à celui de gauche) vs vues locales réelles
+              (funnel_rollups.ViewContent, dédupliqué par session, scopé
+              précisément à cette LP — app/services/funnel_tracking.py). */}
+          <div className="grid grid-cols-2 gap-2">
+            <div
+              title="ViewContent réellement compté côté serveur pour cette landing page précise (funnel_rollups, dédupliqué par session)."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#00B89433', backgroundColor: '#00B8940D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#00B894' }}>{data?.local_view_content ?? 0}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#00B894' }}>Vues locales (cette LP)</p>
+            </div>
+            <div
+              title="ViewContent envoyés avec succès à Meta CAPI — à l'échelle de TOUTE la boutique, pas isolable par landing page (meta_capi_logs ne garde pas cette info pour les envois réussis)."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#1877F233', backgroundColor: '#1877F20D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#1877F2' }}>{data?.meta_view_content_store_wide ?? 0}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#1877F2' }}>Vues Meta (toute la boutique)</p>
+            </div>
+          </div>
+
           {/* Micro-détails — regroupés par question claire ("d'où viennent
               mes commandes ?" / "combien de relances téléphoniques ?"),
               chaque groupe visuellement séparé pour que le client s'y
