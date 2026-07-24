@@ -50,6 +50,7 @@ def list_movements(
     actor_id: Optional[str] = None,
     order_id: Optional[str] = None,
     batch_id: Optional[str] = None,
+    search: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
@@ -64,12 +65,14 @@ def list_movements(
     from app.core.dates import parse_local_date_filter
 
     query = db.query(StockMovement)
+    product_joined = False
 
     if product_id:
         query = query.filter(StockMovement.product_id == product_id)
     if store_id:
         assert_store_access(current_user, store_id)
         query = query.join(Product).filter(Product.store_id == store_id)
+        product_joined = True
     else:
         # Unscoped call — restrict to this user's accessible stores instead
         # of silently returning every store's movement ledger (a
@@ -78,6 +81,16 @@ def list_movements(
         accessible = user_accessible_store_ids(current_user)
         if accessible is not None:
             query = query.join(Product).filter(Product.store_id.in_(accessible)) if accessible else query.filter(sql_false())
+            product_joined = True
+    if search:
+        if not product_joined:
+            query = query.join(Product)
+        like = f"%{search.strip()}%"
+        query = query.filter(
+            (Product.name.ilike(like))
+            | (StockMovement.reason.ilike(like))
+            | (StockMovement.batch_id.ilike(like))
+        )
     if movement_type:
         query = query.filter(StockMovement.type == movement_type)
     if warehouse_id:
