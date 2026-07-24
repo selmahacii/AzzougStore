@@ -467,26 +467,26 @@ def get_analytics(
         confirmed_case = case((Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), 1), else_=0)
         
         if store_id:
-            # When viewing a specific store, show all users belonging to that store (LEFT JOIN)
-            # This ensures "Top Agents" isn't empty if orders aren't assigned yet.
+            # Agents actually assigned orders in this store during the
+            # period — an INNER join from Order, not a LEFT join gated on
+            # User.employee_store_id. A confirmatrice can be scoped to this
+            # store via employee_store_id (her home store) OR via the
+            # cross-store product/store assignment rules (assigned_store_ids
+            # / assigned_product_ids, see orders.py's RBAC), so filtering on
+            # employee_store_id alone silently hid agents actually working
+            # this store through the latter path — and previously, worse,
+            # the LEFT JOIN surfaced every OTHER active employee of the
+            # store (livreurs included) stuck at a permanent 0/0.
             results = db.query(
                 User.id,
                 User.name,
                 func.count(Order.id).label("total"),
                 func.sum(confirmed_case).label("confirmed")
-            ).select_from(User).join(
-                Order, 
-                and_(
-                    Order.assigned_to == User.id,
-                    Order.store_id == store_id,
-                    Order.is_deleted == False,
-                    Order.created_at >= start_date,
-                    Order.created_at < end_date
-                ), 
-                isouter=True
-            ).filter(
-                User.employee_store_id == store_id,
-                User.is_active == True,
+            ).join(Order, Order.assigned_to == User.id).filter(
+                Order.store_id == store_id,
+                Order.is_deleted == False,
+                Order.created_at >= start_date,
+                Order.created_at < end_date,
                 User.role == "CONFIRMATEUR"
             ).group_by(User.id, User.name).order_by(func.count(Order.id).desc()).limit(15).all()
         else:
@@ -514,13 +514,20 @@ def get_analytics(
 
     if type == "marketers":
         # Top sources/marketers. Revenue = DELIVERED orders only.
+        # value=order count, secondaryValue=revenue, count=delivered count
+        # (so the frontend can derive a real conversion rate instead of a
+        # permanently-zero placeholder).
         results = db.query(
             Order.source,
             func.count(Order.id).label("count"),
-            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue")
+            func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue"),
+            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered"),
         ).filter(and_(*(filters + [Order.created_at >= start_date]))).group_by(Order.source).order_by(func.count(Order.id).desc()).limit(10).all()
 
-        data = [TopItem(id=str(r[0] or "Direct"), name=str(r[0] or "Direct"), value=float(r[1]), secondaryValue=float(r[2])) for r in results]
+        data = [
+            TopItem(id=str(r[0] or "Direct"), name=str(r[0] or "Direct"), value=float(r[1]), secondaryValue=float(r[2]), count=int(r[3] or 0))
+            for r in results
+        ]
         return {"success": True, "data": data}
 
     if type == "system":
