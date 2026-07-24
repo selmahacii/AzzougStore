@@ -100,6 +100,14 @@ class Settings(BaseSettings):
     UPSTASH_REDIS_REST_URL: str | None = None
     UPSTASH_REDIS_REST_TOKEN: str | None = None
 
+    # Feature flag for the top-funnel (PageView/ViewContent/AddToCart/
+    # InitiateCheckout) rollup counters — see app/services/funnel_tracking.py.
+    # Deploy-level kill switch (requires a restart to flip); the INSTANT,
+    # no-redeploy rollback is the Redis-backed kill switch toggled via
+    # POST /api/v1/meta-ads/funnel/toggle, which this flag can't override
+    # back on if someone left it off — both must be true for tracking to run.
+    FUNNEL_TRACKING_ENABLED: bool = True
+
     @property
     def CELERY_BROKER_URL(self) -> str:
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"

@@ -162,7 +162,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       content_name: data.product_name || data.product?.name || data.headline,
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}` });
+    }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.product?.id, activeStore?.id]);
 
