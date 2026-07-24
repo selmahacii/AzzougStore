@@ -2018,10 +2018,29 @@ def get_meta_funnel(
     cr = round(purchases / clicks * 100, 2) if clicks > 0 else 0.0
     delivery_rate = round(delivered / purchases * 100, 2) if purchases > 0 else 0.0
 
+    # Qualité du site = Vues de page de destination ÷ Clics sur un lien
+    # (définition standard Meta, "Landing Page View Rate") — vues LOCALES
+    # réelles (funnel_rollups.ViewContent, dédupliqué par session, toute la
+    # boutique sur cette période) sur les clics Meta réels. Distinct de
+    # `view_content` ci-dessus (compteur CAPI "déclaré par Meta") : celui-ci
+    # mesure la vitesse/fiabilité réelle du site, pas ce que Meta a reçu.
+    # None (pas 0%) si aucun clic sur la période — dénominateur absent,
+    # jamais un vrai 0% mesuré.
+    from app.models.funnel_rollup import FunnelRollup
+    local_view_content_total = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
+        FunnelRollup.store_id == store_id,
+        FunnelRollup.event_name == "ViewContent",
+        FunnelRollup.day >= d_start.date(),
+        FunnelRollup.day <= d_end.date(),
+    ).scalar() or 0
+    qualite_site = (
+        round(int(local_view_content_total) / clicks * 100, 2) if clicks > 0 else None
+    )
+
     return {
         "success": True,
         "stages": stages,
-        "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate},
+        "summary": {"ctr": ctr, "cr": cr, "delivery_rate": delivery_rate, "qualite_site_pct": qualite_site},
         "bottleneck": detect_funnel_bottleneck(stages),
         "funnel_integrity": {
             "is_monotonic": funnel_is_monotonic,
@@ -3433,6 +3452,86 @@ def connectivity_test(
 # Store-agnostic (SUPER_ADMIN-only): the durable Purchase queue in
 # meta_capi_logs spans every store, and a stuck/backed-up queue on ANY store
 # is an ops concern, not a per-store metric.
+
+@router.get("/conversion-by-landing-page", response_model=dict)
+def get_conversion_by_landing_page(
+    store_id: str = Query(...),
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Taux de conversion par landing page — UNIQUEMENT à partir de données
+    déclarées par Meta (MetaAdsDailyInsight : clicks, meta_purchases). Ne
+    touche JAMAIS la table Order, donc exclut structurellement les
+    commandes manuelles, les paniers récupérés par téléphone, les doublons
+    fusionnés — aucun de ces types n'a de contrepartie dans les chiffres
+    que Meta déclare lui-même avoir reçus. Ce n'est pas un filtre appliqué
+    après coup : c'est la conséquence directe de ne jamais lire l'ERP ici.
+    """
+    from app.core.dates import parse_local_date_filter
+    from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
+    from app.models.landing_page import LandingPage
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    d_start, d_end = now - timedelta(days=30), now
+    if date_start:
+        try:
+            d_start = parse_local_date_filter(date_start)
+        except ValueError:
+            pass
+    if date_end:
+        try:
+            d_end = parse_local_date_filter(date_end)
+        except ValueError:
+            pass
+
+    lps = db.query(LandingPage).filter(
+        LandingPage.store_id == store_id,
+        LandingPage.product_id.isnot(None),
+    ).all()
+
+    rows = []
+    for lp in lps:
+        camp_ids = [
+            c.campaign_id for c in db.query(MetaAdsCampaign).filter(
+                MetaAdsCampaign.store_id == store_id,
+                MetaAdsCampaign.product_id == lp.product_id,
+            ).all()
+        ]
+        if not camp_ids:
+            continue
+        totals = db.query(
+            func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
+            func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+            func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+        ).filter(
+            MetaAdsDailyInsight.campaign_id.in_(camp_ids),
+            MetaAdsDailyInsight.date >= d_start.date(),
+            MetaAdsDailyInsight.date <= d_end.date(),
+        ).first()
+        clicks, impressions, meta_purchases = int(totals[0] or 0), int(totals[1] or 0), int(totals[2] or 0)
+        if clicks == 0 and impressions == 0:
+            continue  # pas de diffusion Meta pour cette LP sur la période — rien à afficher
+        rows.append({
+            "lp_id": lp.id,
+            "slug": lp.slug,
+            "label": lp.headline or lp.slug,
+            "clicks": clicks,
+            "impressions": impressions,
+            "meta_purchases": meta_purchases,
+            "conversion_rate_pct": round(meta_purchases / clicks * 100, 2) if clicks > 0 else None,
+        })
+
+    rows.sort(key=lambda r: (r["conversion_rate_pct"] is None, -(r["conversion_rate_pct"] or 0)))
+    return {
+        "success": True,
+        "data": rows,
+        "time_window": {"since": d_start.isoformat(), "until": d_end.isoformat()},
+    }
+
 
 @router.get("/queue/stats", response_model=dict)
 def get_meta_queue_stats(

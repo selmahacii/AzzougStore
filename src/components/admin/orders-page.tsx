@@ -418,6 +418,7 @@ const [timeLeft, setTimeLeft] = useState('');
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [filterWilaya, setFilterWilaya] = useState('');
   const [filterSource, setFilterSource] = useState('');
+  const [filterProductId, setFilterProductId] = useState('');
 
   // Load initial filter states from localStorage on mount
   useEffect(() => {
@@ -658,10 +659,11 @@ const [timeLeft, setTimeLeft] = useState('');
     if (debouncedSearch) params.set('search', debouncedSearch);
     if (filterWilaya) params.set('wilaya', filterWilaya);
     if (filterSource) params.set('source', filterSource);
+    if (filterProductId) params.set('product_id', filterProductId);
     if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
     if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
     return params.toString();
-  }, [storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, startDate, endDate]);
+  }, [storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, filterProductId, startDate, endDate]);
 
    const [newOrderItems, setNewOrderItems] = useState<{ productId: string; quantity: number }[]>([]);
    const [customerData, setCustomerData] = useState({ name: '', phone: '', wilaya: '', address: '' });
@@ -691,7 +693,7 @@ const [timeLeft, setTimeLeft] = useState('');
    }, [selectedPartnerId, orderWilaya, deliveryType, newOrderItems]);
 
    const ordersQuery = useQuery<PaginatedResponse<Order>>({
-     queryKey: ['orders', storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, startDate, endDate],
+     queryKey: ['orders', storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, filterProductId, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
      refetchInterval: 5 * 60 * 1000,
@@ -724,7 +726,10 @@ const [timeLeft, setTimeLeft] = useState('');
 
    const productsQuery = useQuery<ApiResponse<any[]>>({
     queryKey: ['admin-products-lite', storeId],
-    enabled: isCreatingOrder && !!storeId,
+    // Was gated to isCreatingOrder only — the product filter in "Filtres
+    // avancés" (below) needs this same lite list to populate its dropdown
+    // even when the create-order panel was never opened.
+    enabled: !!storeId,
     queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
    });
 
@@ -1477,13 +1482,13 @@ const [timeLeft, setTimeLeft] = useState('');
             >
                <Filter className="size-4 sm:size-5" />
             </button>
-            {(filterWilaya || filterSource || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
-              <button 
-                onClick={clearAllFilters} 
+            {(filterWilaya || filterSource || filterProductId || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
+              <button
+                onClick={() => { clearAllFilters(); setFilterProductId(''); }}
                 className="flex items-center gap-1.5 px-3 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-rose-100 bg-rose-50 hover:bg-rose-100 transition-all text-rose-600 font-bold text-xs shadow-sm shrink-0"
               >
                 <X className="size-4" />
-                Effacer ({[filterWilaya, filterSource, startDate, endDate, searchQuery].filter(Boolean).length})
+                Effacer ({[filterWilaya, filterSource, filterProductId, startDate, endDate, searchQuery].filter(Boolean).length})
               </button>
             )}
             <button onClick={() => ordersQuery.refetch()} className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100 bg-white hover:bg-slate-50 shadow-sm transition-all text-slate-400">
@@ -3040,8 +3045,17 @@ const [timeLeft, setTimeLeft] = useState('');
                 ))}
               </select>
             </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Produit</label>
+              <select value={filterProductId} onChange={e => setFilterProductId(e.target.value)} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3">
+                <option value="">Tous les produits</option>
+                {(productsQuery.data?.data ?? []).map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" onClick={() => { setFilterWilaya(''); setFilterSource(''); setAdvancedFiltersOpen(false); }} className="flex-1 h-12 rounded-2xl font-bold text-sm">
+              <Button variant="outline" onClick={() => { setFilterWilaya(''); setFilterSource(''); setFilterProductId(''); setAdvancedFiltersOpen(false); }} className="flex-1 h-12 rounded-2xl font-bold text-sm">
                 Réinitialiser
               </Button>
               <Button onClick={() => { setPage(1); setAdvancedFiltersOpen(false); }} className="flex-1 h-12 rounded-2xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-bold text-sm">
