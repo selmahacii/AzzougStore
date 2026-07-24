@@ -134,6 +134,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
       `/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`
     ),
     refetchInterval: 2 * 60 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const data = analyticsQuery.data?.data;
@@ -2326,6 +2327,7 @@ export default function LandingPagesDashboard() {
     // long as the admin kept the tab open. Poll so the cards stay current
     // without her having to refresh the page herself.
     refetchInterval: 2 * 60 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const pages: LandingPage[] = raw?.data ?? raw ?? [];

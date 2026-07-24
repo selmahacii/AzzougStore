@@ -1337,6 +1337,7 @@ export default function DeliveryPartners() {
     enabled: !!activeStore?.id && activeTab === 'stats',
     retry: false,
     refetchInterval: activeTab === 'stats' ? 120_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const deletePartner = useMutation({

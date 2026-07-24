@@ -539,7 +539,8 @@ const [timeLeft, setTimeLeft] = useState('');
       }
       return apiFetch<any>(url);
     },
-    refetchInterval: 2 * 60 * 60 * 1000
+    refetchInterval: 2 * 60 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   const clearAllFilters = () => {
