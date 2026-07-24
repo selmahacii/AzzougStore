@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer
@@ -98,6 +99,18 @@ def _get_current_user_impl(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
+    # Presence tracking — throttled to one write per user per 2 minutes so
+    # this doesn't turn into an UPDATE on every single API call on a
+    # free-tier DB. Best-effort: a failure here must never break auth.
+    if user:
+        try:
+            now = datetime.utcnow()
+            if not user.last_seen_at or (now - user.last_seen_at) > timedelta(minutes=2):
+                user.last_seen_at = now
+                db.commit()
+        except Exception:
+            db.rollback()
+
     # Super admins and admins bypass tenant isolation to view and manage all stores
     if user and user.role in ("SUPER_ADMIN", "ADMIN"):
         from app.core.tenant import tenant_store_id

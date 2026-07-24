@@ -306,25 +306,32 @@ def list_landing_pages(
             _synced_at = _synced_at_by_product.get(_pid)
             metrics_by_product[_pid]["meta_last_synced_at"] = _synced_at.isoformat() if _synced_at else None
 
-    # ── Remaining stock per product, broken down by variant ───────────────────
+    # ── Remaining SELLABLE stock per product, broken down by variant ──────────
+    # Reservation-aware (stock - reserved), same source of truth as
+    # inventory_service.product_available_stock — raw physical stock alone
+    # would show a page as "in stock" even when every unit is already held
+    # by other pending orders.
     stock_by_product: dict = {}
     if lp_product_ids:
         for p in db.query(Product).filter(Product.id.in_(lp_product_ids)).all():
             variants = p.variants if isinstance(p.variants, list) else []
             in_stock = 0
-            total_variant_stock = 0
+            total_variant_available = 0
             for v in variants:
                 if not isinstance(v, dict):
                     continue
                 try:
                     s = int(v.get("stock") or 0)
+                    r = int(v.get("reserved") or 0)
                 except (TypeError, ValueError):
-                    s = 0
-                total_variant_stock += s
-                if s > 0:
+                    s, r = 0, 0
+                available = max(0, s - r)
+                total_variant_available += available
+                if available > 0:
                     in_stock += 1
+            product_available = total_variant_available if variants else max(0, int(p.stock or 0) - int(p.reserved_stock or 0))
             stock_by_product[p.id] = {
-                "stock": total_variant_stock if variants else int(p.stock or 0),
+                "stock": product_available,
                 "variants_total": len(variants),
                 "variants_in_stock": in_stock,
             }

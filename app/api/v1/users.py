@@ -115,7 +115,12 @@ def get_infrastructure_stats(
     aggregate queries total, no per-row loops).
     """
     total_effectif = db.query(User).count()
-    online_count = db.query(User).filter(User.is_active == True).count()
+    # "En ligne" = a real presence signal (last_seen_at updated by every
+    # authenticated request, see deps._get_current_user_impl), not
+    # is_active — is_active only means the account isn't disabled, it says
+    # nothing about whether the person is actually at their poste right now.
+    presence_cutoff = datetime.now() - timedelta(minutes=5)  # noqa: DTZ005
+    online_count = db.query(User).filter(User.last_seen_at >= presence_cutoff).count()
 
     window_start = datetime.now() - timedelta(days=30)  # noqa: DTZ005
 

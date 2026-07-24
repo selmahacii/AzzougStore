@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, JSON
+from sqlalchemy import Column, String, Boolean, ForeignKey, Integer, JSON, DateTime
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
@@ -14,6 +14,11 @@ class User(Base):
     phone = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     daily_target = Column(Integer, default=10)
+    # Updated (throttled, see deps._get_current_user_impl) on each
+    # authenticated request — the actual "présence" signal. is_active only
+    # means the account isn't disabled, it says nothing about whether the
+    # person is at their desk right now.
+    last_seen_at = Column(DateTime, nullable=True)
     
     employee_store_id = Column(String, ForeignKey("stores.id"), nullable=True)
 
