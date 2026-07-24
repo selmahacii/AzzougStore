@@ -1081,6 +1081,12 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
   const [selectedCarrierId, setSelectedCarrierId] = useState<string>('all');
   const [trackingSearch, setTrackingSearch] = useState('');
   const [page, setPage] = useState(1);
+  const { setAdminView, setSelectedOrderId } = useAppStore();
+
+  const openOrder = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setAdminView('orders', 'ALL');
+  };
 
   const ordersQuery = useQuery({
     queryKey: ['carrier-orders', storeId, selectedCarrierId, trackingSearch, page],
@@ -1100,10 +1106,16 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
   const total: number = (ordersQuery.data as any)?.total ?? 0;
   const totalPages: number = (ordersQuery.data as any)?.totalPages ?? 1;
 
-  const allCarriers = [
-    ...KNOWN_CARRIERS.filter(c => c.id !== 'add_new'),
-    ...partners.filter(p => !['yalidine', 'noest'].includes(p.carrier_id)).map(p => ({ id: p.carrier_id, name: p.name, logo: '🚚', color: '#4b7bec' })),
-  ];
+  // Order.carrier_id stores the DeliveryPartner row's own UUID (partner.id),
+  // never the carrier TYPE string ('yalidine'/'noest'/'custom') — KNOWN_CARRIERS
+  // is keyed by that type instead and was being matched directly against
+  // order.carrier_id, which could never succeed. Built from the real
+  // partners here (id: p.id) and only borrows KNOWN_CARRIERS for display
+  // metadata (logo/color) by looking it up via p.carrier_id.
+  const allCarriers = partners.map(p => {
+    const known = KNOWN_CARRIERS.find(k => k.id === p.carrier_id);
+    return { id: p.id, name: p.name || known?.name || p.carrier_id, logo: known?.logo ?? '🚚', color: known?.color ?? '#4b7bec' };
+  });
 
   return (
     <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
@@ -1164,9 +1176,9 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
               const carrier = allCarriers.find(c => c.id === order.carrier_id) ?? { name: order.carrier_id ?? '—', logo: '🚚', color: '#B2BEC3' };
               const statusCfg = TRACKING_STATUS_CONFIG[order.delivery_status?.toUpperCase() ?? ''] ?? TRACKING_STATUS_CONFIG.PENDING;
               return (
-                <tr key={order.id} className="hover:bg-slate-50/60 transition-colors group">
+                <tr key={order.id} onClick={() => openOrder(order.id)} className="hover:bg-slate-50/60 transition-colors group cursor-pointer">
                   <td className="px-5 py-3">
-                    <p className="text-xs font-black text-slate-800 font-mono">{order.order_number ?? order.id?.slice(0, 8)}</p>
+                    <p className="text-xs font-black text-[#4b7bec] font-mono group-hover:underline">{order.order_number ?? order.id?.slice(0, 8)}</p>
                   </td>
                   <td className="px-5 py-3">
                     <p className="text-xs font-bold text-slate-700">{order.customer_name}</p>
@@ -1176,7 +1188,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
                     <span className="text-xs font-bold">{carrier.logo} {carrier.name}</span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className="text-xs font-medium text-slate-600">{order.wilaya ?? '—'}</span>
+                    <span className="text-xs font-medium text-slate-600">{order.customer_wilaya ?? '—'}</span>
                   </td>
                   <td className="px-5 py-3">
                     {order.tracking_number ? (
