@@ -517,7 +517,7 @@ export default function AnalyticsPage() {
                      {[
                         { l: 'CANAUX ACTIFS', v: channels.length, c: C.primary, icon: Share2 },
                         { l: 'TOTAL COMMANDES', v: totalOrders, c: C.success, icon: ShoppingCart },
-                        { l: 'REVENUE TOTAL', v: `${formatPrice(totalRevenue)} DA`, c: C.orange, icon: DollarSign },
+                        { l: 'REVENUE TOTAL', v: formatPrice(totalRevenue), c: C.orange, icon: DollarSign },
                         { l: 'MEILLEUR CANAL', v: bestChannel?.name ?? bestChannel?.source ?? '—', c: C.info, icon: TrendingUp },
                      ].map((k, i) => (
                         <div key={i} className="bg-white rounded-xl border p-4 flex items-center gap-4" style={{ borderColor: C.border }}>
@@ -856,19 +856,31 @@ export default function AnalyticsPage() {
 
          {/* ─── Marketers Analytics ─────────────────────── */}
          {activeTab === 'marketers' && (() => {
-            const marketers: any[] = genericQuery.data?.data || [];
-            const totalOrders = marketers.reduce((s: number, m: any) => s + (m.count ?? m.orders ?? 0), 0);
-            const totalRevenue = marketers.reduce((s: number, m: any) => s + (m.revenue ?? m.value ?? 0), 0);
+            // Backend TopItem for this endpoint: value=order count,
+            // secondaryValue=revenue, count=delivered count (conversion
+            // rate is derived here, not sent pre-computed).
+            const marketers: any[] = (genericQuery.data?.data || []).map((m: any) => {
+               const orders = m.value ?? 0;
+               const delivered = m.count ?? 0;
+               return {
+                  name: m.name,
+                  orders,
+                  revenue: m.secondaryValue ?? 0,
+                  conversionRate: orders > 0 ? (delivered / orders) * 100 : 0,
+               };
+            });
+            const totalOrders = marketers.reduce((s: number, m: any) => s + m.orders, 0);
+            const totalRevenue = marketers.reduce((s: number, m: any) => s + m.revenue, 0);
             const avgConv = marketers.length > 0
-               ? (marketers.reduce((s: number, m: any) => s + (m.conversionRate ?? m.rate ?? 0), 0) / marketers.length).toFixed(1)
+               ? (marketers.reduce((s: number, m: any) => s + m.conversionRate, 0) / marketers.length).toFixed(1)
                : '0';
             const best = marketers.length > 0 ? marketers.reduce((a: any, b: any) =>
-               (a.revenue ?? a.value ?? 0) > (b.revenue ?? b.value ?? 0) ? a : b) : null;
+               a.revenue > b.revenue ? a : b) : null;
             const barData = marketers.map((m: any) => ({
                name: (m.name ?? '?').split(' ')[0],
-               commandes: m.count ?? m.orders ?? 0,
-               revenue: Math.round((m.revenue ?? m.value ?? 0) / 1000),
-               taux: parseFloat((m.conversionRate ?? m.rate ?? 0).toFixed(1)),
+               commandes: m.orders,
+               revenue: Math.round(m.revenue / 1000),
+               taux: parseFloat(m.conversionRate.toFixed(1)),
             }));
             return (
                <div className="space-y-6">
@@ -877,7 +889,7 @@ export default function AnalyticsPage() {
                      {[
                         { l: 'MARKETERS ACTIFS', v: marketers.length, c: C.primary, icon: Megaphone },
                         { l: 'COMMANDES GÉNÉRÉES', v: totalOrders, c: C.success, icon: ShoppingCart },
-                        { l: 'REVENUE TOTAL', v: `${formatPrice(totalRevenue)} DA`, c: C.orange, icon: DollarSign },
+                        { l: 'REVENUE TOTAL', v: formatPrice(totalRevenue), c: C.orange, icon: DollarSign },
                         { l: 'TOP MARKETER', v: best?.name ?? '—', c: C.info, icon: TrendingUp },
                      ].map((k, i) => (
                         <div key={i} className="bg-white rounded-xl border p-4 flex items-center gap-4" style={{ borderColor: C.border }}>
@@ -964,11 +976,11 @@ export default function AnalyticsPage() {
                                  <tr><td colSpan={6}><EmptyState /></td></tr>
                               ) : marketers
                                  .slice()
-                                 .sort((a: any, b: any) => (b.revenue ?? b.value ?? 0) - (a.revenue ?? a.value ?? 0))
+                                 .sort((a: any, b: any) => b.revenue - a.revenue)
                                  .map((m: any, i: number) => {
-                                    const orders = m.count ?? m.orders ?? 0;
-                                    const rev = m.revenue ?? m.value ?? 0;
-                                    const conv = m.conversionRate ?? m.rate ?? 0;
+                                    const orders = m.orders;
+                                    const rev = m.revenue;
+                                    const conv = m.conversionRate;
                                     const share = totalOrders > 0 ? ((orders / totalOrders) * 100).toFixed(1) : '0';
                                     const colors = [C.primary, C.success, C.orange, C.info, C.danger, C.warning];
                                     const color = colors[i % colors.length];
@@ -986,7 +998,7 @@ export default function AnalyticsPage() {
                                              </div>
                                           </td>
                                           <td className="px-5 py-3.5 text-center text-xs font-extrabold text-[#6C5CE7]">{orders}</td>
-                                          <td className="px-5 py-3.5 text-right text-xs font-black text-[#2D3436]">{formatPrice(rev)} DA</td>
+                                          <td className="px-5 py-3.5 text-right text-xs font-black text-[#2D3436]">{formatPrice(rev)}</td>
                                           <td className="px-5 py-3.5 text-center">
                                              <div className="flex flex-col items-center gap-1">
                                                 <span className="text-[10px] font-bold text-[#636E72]">{share}%</span>
