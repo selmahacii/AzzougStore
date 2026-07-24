@@ -41,8 +41,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.auto_reassign_inactive_orders",
         "schedule": 300.0,
     },
-    "flush-funnel-counters-every-15-min": {
-        "task": "app.worker.flush_funnel_counters",
-        "schedule": 900.0,
-    },
+    # Funnel-counter flush deliberately NOT scheduled here — moved to the
+    # leader-locked asyncio loop in app/main.py's _funnel_flush_loop().
+    # Celery beat here is detached (`--detach` in start_hf.sh) then the
+    # parent shell is replaced by `exec uvicorn`, leaving worker/beat
+    # unsupervised: if either dies, nothing restarts it and nothing
+    # surfaces the failure. app.worker.flush_funnel_counters (below)
+    # stays defined and callable manually/via Celery if ever needed —
+    # only the automatic schedule entry was removed, to avoid running the
+    # same flush from two independent, potentially-overlapping schedulers.
 }
