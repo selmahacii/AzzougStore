@@ -30,11 +30,11 @@ from typing import Optional
 
 from app.core import cache
 from app.core.config import settings
+from app.core.dates import ALGERIA_UTC_OFFSET_HOURS
 
 logger = logging.getLogger("app.funnel_tracking")
 
 TRACKED_EVENTS = {"PageView", "ViewContent", "AddToCart", "InitiateCheckout"}
-ALGERIA_UTC_OFFSET_HOURS = 1
 KEY_PREFIX = "funnel"
 KILLSWITCH_KEY = "funnel:killswitch"
 KEY_TTL_SECONDS = 26 * 3600  # survives well past one flush cycle even if a flush is delayed/missed
@@ -171,14 +171,17 @@ def flush_funnel_counters() -> dict:
     read-then-delete race, no double-application even under concurrent
     flush runs). Each drained value becomes one additive Postgres UPSERT.
 
-    Failure mode: if the process crashes between a key's GETDEL and its
-    Postgres commit, that bucket's delta is LOST, never duplicated — the
-    system is built to under-count on failure, never over-count. Bounded
-    to at most one flush interval's worth of one bucket.
+    Failure mode: each key is GETDEL'd and committed to Postgres as its own
+    unit of work (deliberately not batched into one transaction — see the
+    comment below). If the process crashes between one key's GETDEL and its
+    commit, ONLY that bucket's delta is lost, never duplicated, and every
+    other key's commit already landed. Bounded to at most one flush
+    interval's worth of ONE bucket — not the whole batch.
     """
     from app.db.session import SessionLocal
     from app.models.funnel_rollup import FunnelRollup
     from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from sqlalchemy import func as sqlfunc
 
     t0 = time.monotonic()
     _metrics["flush_count"] += 1
@@ -200,15 +203,27 @@ def flush_funnel_counters() -> dict:
         _metrics["flush_last_events_drained"] = 0
         return {"buckets": 0, "events_drained": 0}
 
+    # One commit PER KEY, deliberately — not one commit for the whole batch.
+    # A key's GETDEL is irreversible the instant it succeeds (the value is
+    # gone from Redis), so batching every key into a single transaction
+    # would mean a crash on bucket #500 rolls back buckets #1-499 too, even
+    # though their Redis source of truth was already destroyed — silently
+    # widening "lose at most one bucket" into "lose the whole flush batch".
+    # Per-key commit costs more round-trips (measured ~0.75-1.4ms/upsert
+    # batched vs ~5-6ms/upsert per-commit in this session's benchmarks) but
+    # at the bucket counts this design actually produces (≤~360/flush even
+    # at 100K PageViews/day) that's still well under a second.
     db = SessionLocal()
     buckets_written = 0
     events_drained = 0
+    had_failure = False
     try:
         for key in keys:
             try:
                 raw_value = cache.raw_command("GETDEL", key)
             except Exception as exc:
                 logger.warning("[FunnelTracking] Flush: GETDEL failed for %s: %s", key, exc)
+                had_failure = True
                 continue
             if raw_value is None:
                 continue
@@ -225,32 +240,55 @@ def flush_funnel_counters() -> dict:
                 continue
             _, store_id, lp_id, product_id, campaign_id, adset_id, ad_id, event_name, day_str, hour_str = parts
 
-            stmt = pg_insert(FunnelRollup).values(
-                store_id=store_id,
-                lp_id=None if lp_id == "-" else lp_id,
-                product_id=None if product_id == "-" else product_id,
-                campaign_id=None if campaign_id == "-" else campaign_id,
-                adset_id=None if adset_id == "-" else adset_id,
-                ad_id=None if ad_id == "-" else ad_id,
-                event_name=event_name,
-                day=date.fromisoformat(day_str),
-                hour=int(hour_str),
-                count=delta,
-            )
-            stmt = stmt.on_conflict_do_update(
-                constraint="uq_funnel_rollup_bucket",
-                set_={"count": FunnelRollup.count + delta, "updated_at": datetime.now(timezone.utc)},
-            )
-            db.execute(stmt)
-            buckets_written += 1
-            events_drained += delta
+            try:
+                stmt = pg_insert(FunnelRollup).values(
+                    store_id=store_id,
+                    lp_id=None if lp_id == "-" else lp_id,
+                    product_id=None if product_id == "-" else product_id,
+                    campaign_id=None if campaign_id == "-" else campaign_id,
+                    adset_id=None if adset_id == "-" else adset_id,
+                    ad_id=None if ad_id == "-" else ad_id,
+                    event_name=event_name,
+                    day=date.fromisoformat(day_str),
+                    hour=int(hour_str),
+                    count=delta,
+                )
+                # Target the NULL-safe unique INDEX (migration c850bf4710be),
+                # not a plain column-list constraint — Postgres treats NULL
+                # as distinct from NULL in an ordinary UniqueConstraint, so
+                # any bucket missing lp_id/campaign_id/etc would never
+                # actually conflict on a second flush, silently inserting a
+                # fresh row every cycle instead of accumulating (caught by
+                # a real two-flush-cycle end-to-end test against Upstash +
+                # Postgres). index_elements must match the index's
+                # expressions exactly, including the COALESCE wrapping.
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[
+                        FunnelRollup.store_id,
+                        sqlfunc.coalesce(FunnelRollup.lp_id, ''),
+                        sqlfunc.coalesce(FunnelRollup.product_id, ''),
+                        sqlfunc.coalesce(FunnelRollup.campaign_id, ''),
+                        sqlfunc.coalesce(FunnelRollup.adset_id, ''),
+                        sqlfunc.coalesce(FunnelRollup.ad_id, ''),
+                        FunnelRollup.event_name,
+                        FunnelRollup.day,
+                        FunnelRollup.hour,
+                    ],
+                    set_={"count": FunnelRollup.count + delta, "updated_at": datetime.now(timezone.utc)},
+                )
+                db.execute(stmt)
+                db.commit()
+                buckets_written += 1
+                events_drained += delta
+            except Exception:
+                # This bucket's delta is lost (its Redis key is already
+                # gone) — never duplicated, never applied twice. Every
+                # OTHER key's commit already landed and stays landed.
+                db.rollback()
+                logger.exception("[FunnelTracking] Flush: Postgres write failed for %s, delta lost", key)
+                had_failure = True
 
-        db.commit()
-        _metrics["flush_success_count"] += 1
-    except Exception:
-        db.rollback()
-        logger.exception("[FunnelTracking] Flush failed, rolled back")
-        raise
+        _metrics["flush_success_count"] += 0 if had_failure else 1
     finally:
         db.close()
 
@@ -260,7 +298,10 @@ def flush_funnel_counters() -> dict:
     _metrics["flush_last_buckets"] = buckets_written
     _metrics["flush_last_events_drained"] = events_drained
 
-    return {"buckets": buckets_written, "events_drained": events_drained, "duration_ms": dur_ms}
+    return {
+        "buckets": buckets_written, "events_drained": events_drained,
+        "duration_ms": dur_ms, "had_partial_failure": had_failure,
+    }
 
 
 def get_diagnostics() -> dict:

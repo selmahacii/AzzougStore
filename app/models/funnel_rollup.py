@@ -8,18 +8,21 @@ in Order/OrderEvent and re-deriving them into this table would be duplicated,
 driftable state for no reason.
 """
 import uuid
-from sqlalchemy import Column, String, Integer, Date, DateTime, ForeignKey, UniqueConstraint, Index, func
+from sqlalchemy import Column, String, Integer, Date, DateTime, ForeignKey, Index, func
 from app.db.base_class import Base
 
 
 class FunnelRollup(Base):
     __tablename__ = "funnel_rollups"
+    # NOTE: the real dedup constraint is a NULL-safe unique index created in
+    # migration c850bf4710be — COALESCE(col, '') on the nullable dimensions,
+    # because Postgres treats NULL as distinct from NULL in a plain
+    # UniqueConstraint, which silently broke additive accumulation for any
+    # event missing lp_id/campaign_id/etc (caught by a real end-to-end test,
+    # not by this declarative constraint below, which SQLAlchemy still needs
+    # declared here for ORM/ForeignKey metadata purposes but is NOT what
+    # flush_funnel_counters()'s ON CONFLICT actually targets).
     __table_args__ = (
-        UniqueConstraint(
-            "store_id", "lp_id", "product_id", "campaign_id", "adset_id", "ad_id",
-            "event_name", "day", "hour",
-            name="uq_funnel_rollup_bucket",
-        ),
         Index("idx_funnel_rollup_store_day", "store_id", "day"),
         Index("idx_funnel_rollup_lp_day", "lp_id", "day"),
     )
