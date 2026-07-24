@@ -609,6 +609,34 @@ def get_landing_page_analytics(
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
         d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
 
+    # Vues locales vs vues déclarées par Meta — le funnel_rollups (Redis-batched,
+    # app/services/funnel_tracking.py) porte lp_id pour ViewContent, donc ce
+    # chiffre EST scopé à cette landing page précisément, dédupliqué par
+    # session, période identique au reste de ce endpoint.
+    from app.models.funnel_rollup import FunnelRollup
+    local_view_content = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
+        FunnelRollup.store_id == lp.store_id,
+        FunnelRollup.lp_id == lp_id,
+        FunnelRollup.event_name == "ViewContent",
+        FunnelRollup.day >= d_start.date(),
+        FunnelRollup.day <= d_end.date(),
+    ).scalar() or 0
+
+    # meta_capi_logs ne stocke le payload complet (donc content_ids/produit)
+    # QUE pour les lignes error/pending_retry — les envois réussis n'ont pas
+    # de payload persistant (voir _dispatch_capi_event). Impossible de scoper
+    # ce compteur par landing page précise sans le fabriquer : affiché tel
+    # quel, à l'échelle de la boutique entière, jamais présenté comme
+    # spécifique à cette LP.
+    from app.models.marketing import MetaCapiLog
+    meta_view_content_store_wide = db.query(func.count(MetaCapiLog.id)).filter(
+        MetaCapiLog.store_id == lp.store_id,
+        MetaCapiLog.event_name == "ViewContent",
+        MetaCapiLog.status == "success",
+        MetaCapiLog.created_at >= d_start,
+        MetaCapiLog.created_at <= d_end,
+    ).scalar() or 0
+
     return {
         "success": True,
         "data": {
@@ -616,6 +644,8 @@ def get_landing_page_analytics(
             "totals": totals,
             "created_at": lp.created_at.isoformat() if lp.created_at else None,
             "views": lp.views or 0,
+            "local_view_content": int(local_view_content),
+            "meta_view_content_store_wide": int(meta_view_content_store_wide),
         },
     }
 
