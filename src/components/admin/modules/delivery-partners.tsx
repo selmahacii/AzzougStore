@@ -1575,7 +1575,7 @@ export default function DeliveryPartners() {
                   Activité journalière — {PERIOD_LABELS[statsPeriod]}
                 </h3>
                 <div className="flex items-end gap-1 h-24">
-                  {dailyBreakdown.slice(-14).map((d: any, i: number) => {
+                  {dailyBreakdown.map((d: any, i: number) => {
                     const max = Math.max(...dailyBreakdown.map((x: any) => x.shipped || 1));
                     const pct = max > 0 ? Math.round(((d.shipped ?? 0) / max) * 100) : 0;
                     return (
