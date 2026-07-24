@@ -117,6 +117,13 @@ class Order(Base):
     # disponible" pour une donnée pourtant déjà captée — pas une nouvelle
     # capture, juste la fin du câblage qui manquait.
     landing_url = Column(String, nullable=True)
+    # The storefront's checkoutAttemptId (src/lib/meta-tracking.ts,
+    # sessionStorage-scoped, one id per real checkout attempt — survives fee
+    # recalculation/edits/refresh within the same tab, resets on a new tab or
+    # a closed-then-reopened one). Stored so a later Purchase CAPI event, or
+    # any recovery/analytics feature, can be joined back to the InitiateCheckout
+    # attempt that produced this order.
+    checkout_attempt_id = Column(String, nullable=True)
     # Captured at order creation so a LATER Purchase resend (retry queue,
     # nightly backfill sweep, abandoned-cart recovery) can still include
     # client_ip_address/client_user_agent in the CAPI event — these only

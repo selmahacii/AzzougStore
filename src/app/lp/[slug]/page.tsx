@@ -201,10 +201,14 @@ export default async function LpPage({
     return notFound();
   }
 
-  // Fetch Meta Ads Config for the store
+  // Fetch Meta Ads Config for the store — the unauthenticated /public-config
+  // variant, NOT the admin /config endpoint: this SSR has no user session to
+  // attach, and /config requires one (always 401s here otherwise, silently
+  // leaving window.__metaTrackingConfig empty for every store — confirmed by
+  // real end-to-end testing, not assumed).
   let metaAdsConfig = null;
   try {
-    const res = await fetch(`${backendUrl}/api/v1/meta-ads/config?store_id=${storeId}`, { next: { revalidate: 10 } });
+    const res = await fetch(`${backendUrl}/api/v1/meta-ads/public-config?store_id=${storeId}`, { next: { revalidate: 10 } });
     if (res.ok) {
       const json = await res.json();
       metaAdsConfig = json.data;

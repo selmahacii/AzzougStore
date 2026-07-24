@@ -83,6 +83,85 @@ function writeStorage(ids: string[]) {
   }
 }
 
+const CURRENT_LP_KEY = 'azg_current_lp_id';
+
+/**
+ * "Last landing page viewed this tab" — deliberately sessionStorage, not the
+ * 30-day localStorage attribution.ts uses for campaign first-touch: this is
+ * "which LP was the shopper just on", not "which ad first brought them here".
+ * Lets AddToCart (cart-store.ts) and InitiateCheckout (checkout-form.tsx)
+ * inherit lp_id automatically without threading it through every call site —
+ * neither currently accepts an lp_id parameter, and without this fallback
+ * their events carry lp_id=null forever, which the /funnel/bottlenecks
+ * by_landing_page waterfall (group_col.isnot(None)) silently excludes —
+ * those two stages would never appear under any landing page, no matter how
+ * much real traffic flows through the fix that made funnel events fire.
+ */
+export function setCurrentLpId(lpId?: string): void {
+  if (typeof window === 'undefined' || !lpId) return;
+  try {
+    window.sessionStorage.setItem(CURRENT_LP_KEY, lpId);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function getCurrentLpId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    return window.sessionStorage.getItem(CURRENT_LP_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const CHECKOUT_ATTEMPT_KEY = 'azg_checkout_attempt_id';
+
+/**
+ * One id per real checkout attempt — replaces both the earlier Date.now()
+ * scheme (defeated dedup entirely, real duplicates on every fee recalc) and
+ * the 15-minute time bucket that followed it (an arbitrary proxy that both
+ * false-merged a slow single attempt spanning a bucket boundary AND
+ * false-split concurrent attempts sharing a cart across two tabs).
+ *
+ * Deliberately sessionStorage, NOT localStorage: the cart itself
+ * (cart-store.ts, zustand `persist`) already lives in localStorage and
+ * survives days/tab-closes on its own — an attempt id there would inherit
+ * that same long life and never reset. sessionStorage's native lifetime
+ * (per tab, cleared on close) IS the attempt boundary: same tab, refresh,
+ * back/forward, fee recalculation, address edits → same id (read-if-present
+ * below). New tab, or the same tab reopened after being closed → no
+ * existing key → a fresh id, even with the identical cart (this is what a
+ * pure cart-content signature could never do).
+ *
+ * Cleared only by clearCheckoutAttemptId() — called from checkout-form.tsx's
+ * single order-submission success branch, which already covers both a
+ * freshly created order AND the backend's 15-minute duplicate-basket guard
+ * returning an existing order (orders.py) identically, so one call site is
+ * enough for both "ended the attempt" cases.
+ */
+export function getOrCreateCheckoutAttemptId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const existing = window.sessionStorage.getItem(CHECKOUT_ATTEMPT_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    window.sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, id);
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
+export function clearCheckoutAttemptId(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(CHECKOUT_ATTEMPT_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function isConsentEnabled(): boolean {
   if (typeof window === 'undefined') return true;
   const stored = window.localStorage.getItem('meta-tracking-consent') || window.localStorage.getItem('consent');
@@ -207,41 +286,62 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     value: convertedValue,
   };
 
-  if (typeof window.fbq === 'function' && pixelId) {
+  // Pixel: only ever touched when this store has a Pixel configured — no
+  // pixelId means no fbq() call, matching the fact that the Pixel <script>
+  // itself (store-integrations.tsx) also only loads when pixelId is set.
+  if (pixelId && typeof window.fbq === 'function') {
     try {
       (window.fbq as (...args: unknown[]) => void)('trackSingle', pixelId, eventName, contentPayload, { event_id: eventId });
     } catch {
       (window.fbq as (...args: unknown[]) => void)('track', eventName, contentPayload, { event_id: eventId });
     }
-  } else if (typeof window.fbq === 'function') {
-    try {
-      (window.fbq as (...args: unknown[]) => void)('track', eventName, contentPayload, { event_id: eventId });
-    } catch {
-      // ignore pixel failures
-    }
   }
 
-  // user_data DOIT être un objet plat (MetaEventUserData côté backend :
-  // em/ph/fn/ln/ct/st/zp/fbp/fbc/client_ip_address/client_user_agent en
-  // Optional[str]) — buildMetaUserData() renvoyait un objet {em: [hash],
-  // ct: [hash], co: [hash], ...} au format Graph API (listes pré-hashées,
-  // "co" au lieu de "country"), donc Pydantic ignorait silencieusement ces
-  // champs (mauvais type/mauvaise clé) ET fbp/fbc/client_ip_address/
-  // client_user_agent/external_id étaient envoyés au niveau racine
-  // d'eventPayload au lieu d'être nichés dans user_data comme le schéma
-  // l'exige — perdus avant même d'atteindre build_user_data côté serveur.
-  // Envoyer les valeurs BRUTES ici et laisser le serveur normaliser/hasher
-  // via build_user_data (déjà utilisé par le chemin commande) élimine le
-  // double-traitement et garantit une seule implémentation de hachage.
-  const eventPayload = {
-    pixel_id: pixelId,
+  // Funnel Tracking fields — always sent, independent of Meta. This is the
+  // only part of the payload a store without a Pixel ever needs; it feeds
+  // record_funnel_event() (app/services/funnel_tracking.py) which the
+  // backend already treats as independent of Meta CAPI config.
+  //
+  // The "last LP viewed" sessionStorage fallback is deliberately NEVER used
+  // for PageView: PageView fires on every storefront page (store-integrations.tsx),
+  // not just landing pages, so once a shopper had visited any LP earlier in
+  // the tab session, every later PageView on an unrelated page (home, another
+  // product...) would inherit that stale lp_id and pollute the
+  // by_landing_page.pageviews count with visits that never happened on that
+  // LP. Only ViewContent/AddToCart/InitiateCheckout — genuine funnel steps
+  // that make sense to attribute to "the LP the shopper was just on" — use it.
+  const lpId = options.lpId || (eventName !== 'PageView' ? getCurrentLpId() : undefined);
+  const eventPayload: Record<string, unknown> = {
     store_id: storeId,
     event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
     event_id: eventId,
-    order_id: options.orderId,
     event_source_url: options.eventSourceUrl || window.location.href,
-    user_data: {
+    lp_id: lpId,
+    campaign_id: attribution.campaign_id,
+    adset_id: attribution.adset_id,
+    ad_id: attribution.ad_id,
+  };
+
+  // Pixel/CAPI-only fields — only built and attached when a Pixel is
+  // configured, so a store without Meta Ads never generates or transmits
+  // hashed PII / CAPI-specific payload for events with no CAPI destination.
+  if (pixelId) {
+    // user_data DOIT être un objet plat (MetaEventUserData côté backend :
+    // em/ph/fn/ln/ct/st/zp/fbp/fbc/client_ip_address/client_user_agent en
+    // Optional[str]) — buildMetaUserData() renvoyait un objet {em: [hash],
+    // ct: [hash], co: [hash], ...} au format Graph API (listes pré-hashées,
+    // "co" au lieu de "country"), donc Pydantic ignorait silencieusement ces
+    // champs (mauvais type/mauvaise clé) ET fbp/fbc/client_ip_address/
+    // client_user_agent/external_id étaient envoyés au niveau racine
+    // d'eventPayload au lieu d'être nichés dans user_data comme le schéma
+    // l'exige — perdus avant même d'atteindre build_user_data côté serveur.
+    // Envoyer les valeurs BRUTES ici et laisser le serveur normaliser/hasher
+    // via build_user_data (déjà utilisé par le chemin commande) élimine le
+    // double-traitement et garantit une seule implémentation de hachage.
+    eventPayload.pixel_id = pixelId;
+    eventPayload.order_id = options.orderId;
+    eventPayload.user_data = {
       em: options.userData?.email || undefined,
       ph: options.userData?.phone || undefined,
       fn: options.userData?.first_name || undefined,
@@ -254,24 +354,18 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
       client_user_agent: options.clientUserAgent || window.navigator.userAgent,
       fbp: options.fbp || pickCookie('_fbp'),
       fbc: options.fbc || pickCookie('_fbc'),
-    },
+    };
     // MUST be named custom_data — MetaEventPayload (meta_ads.py) has no
     // "event_data" field, and Pydantic silently drops unrecognized keys by
     // default. This was named event_data, so custom_data was always None
     // server-side: send_meta_event never crashed (nothing to prove it was
     // broken), but Meta never received value/currency/content_ids through
     // this relay for ANY event, on top of the keepalive issue above.
-    custom_data: contentPayload,
-    pixel_event_fired: true,
-    // Additive, optional — feeds the lightweight funnel-bottleneck rollup
-    // only (app/services/funnel_tracking.py); never touches Pixel/CAPI.
-    lp_id: options.lpId,
-    campaign_id: attribution.campaign_id,
-    adset_id: attribution.adset_id,
-    ad_id: attribution.ad_id,
-  };
+    eventPayload.custom_data = contentPayload;
+    eventPayload.pixel_event_fired = true;
+  }
 
-  if (options.shouldSendToServer !== false && pixelId) {
+  if (options.shouldSendToServer !== false) {
     const body = JSON.stringify(eventPayload);
     // sendBeacon is purpose-built for exactly this — "fire this request even
     // if the page is about to unload" — and the browser guarantees delivery
