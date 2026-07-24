@@ -27,3 +27,4 @@ from .internal_delivery import InternalDelivery  # noqa: F401
 from .payroll import PayrollRecord  # noqa: F401
 from .notification import Notification  # noqa: F401
 from .assignment_rule import AssignmentRule  # noqa: F401
+from .funnel_rollup import FunnelRollup  # noqa: F401

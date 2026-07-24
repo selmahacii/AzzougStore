@@ -42,6 +42,10 @@ export interface MetaTrackingOptions {
   fbp?: string;
   fbc?: string;
   shouldSendToServer?: boolean;
+  /** Landing page id — powers the lightweight funnel-bottleneck rollup
+   * (app/services/funnel_tracking.py). Optional: events without it are
+   * still tracked, just without a per-LP breakdown. */
+  lpId?: string;
 }
 
 declare global {
@@ -168,6 +172,11 @@ export async function buildMetaUserData(input?: MetaUserDataInput): Promise<Reco
 export async function trackMetaEvent(eventName: MetaEventName, payload: Record<string, unknown> = {}, options: MetaTrackingOptions = {}) {
   if (typeof window === 'undefined' || !isConsentEnabled()) return;
 
+  // Real Meta-provided dynamic URL params only (campaign_id/adset_id/ad_id) —
+  // never inferred/guessed, see attribution.ts's own "fabricating data" note.
+  const { getAttribution } = await import('./attribution');
+  const attribution = getAttribution();
+
   const pixelId = options.pixelId || window.__metaPixelId || window.__metaTrackingConfig?.pixelId;
   const storeId = options.storeId || window.__metaTrackingConfig?.storeId;
   const eventId = options.eventId || `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -254,6 +263,12 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     // this relay for ANY event, on top of the keepalive issue above.
     custom_data: contentPayload,
     pixel_event_fired: true,
+    // Additive, optional — feeds the lightweight funnel-bottleneck rollup
+    // only (app/services/funnel_tracking.py); never touches Pixel/CAPI.
+    lp_id: options.lpId,
+    campaign_id: attribution.campaign_id,
+    adset_id: attribution.adset_id,
+    ad_id: attribution.ad_id,
   };
 
   if (options.shouldSendToServer !== false && pixelId) {

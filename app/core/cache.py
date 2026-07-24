@@ -115,6 +115,33 @@ def set_json(key: str, value: Any, ttl_seconds: int) -> None:
         _timing.record("redis", _dt)
 
 
+def raw_command(*args: Any) -> Optional[Any]:
+    """
+    Generic Upstash REST command executor (INCR, SCAN, GETDEL, ...) — the
+    same fail-open contract as get_json/set_json: any error is swallowed
+    and returns None, a caller must never let a Redis outage break the
+    request it's piggybacking on. Returns the raw `result` field.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+    t0 = time.monotonic()
+    try:
+        resp = client.post("/", json=list(args))
+        resp.raise_for_status()
+        return resp.json().get("result")
+    except Exception as exc:
+        _metrics["redis_failures"] += 1
+        logger.debug("[Cache] raw_command(%s) failed: %s", args[:1], exc)
+        raise
+    finally:
+        _dt = (time.monotonic() - t0) * 1000
+        _metrics["redis_latency_total_ms"] += _dt
+        _metrics["redis_latency_count"] += 1
+        from app.core import timing as _timing
+        _timing.record("redis", _dt)
+
+
 def delete(*keys: str) -> None:
     client = _get_client()
     if client is None or not keys:

@@ -41,4 +41,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.auto_reassign_inactive_orders",
         "schedule": 300.0,
     },
+    "flush-funnel-counters-every-15-min": {
+        "task": "app.worker.flush_funnel_counters",
+        "schedule": 900.0,
+    },
 }

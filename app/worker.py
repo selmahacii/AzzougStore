@@ -35,6 +35,20 @@ def process_erp_orders(order_batch: list):
     logger.info("🚚 Commandes injectées avec succès dans le système de livraison")
     return {"processed": len(order_batch)}
 
+@celery_app.task(name="app.worker.flush_funnel_counters")
+def flush_funnel_counters():
+    """Drains Redis funnel-event counters into the Postgres rollup table.
+    See app/services/funnel_tracking.py for the full design/safety notes."""
+    from app.services.funnel_tracking import flush_funnel_counters as _flush
+    try:
+        result = _flush()
+        logger.info("[FunnelTracking] Flush result: %s", result)
+        return result
+    except Exception as e:
+        logger.error("Error in flush_funnel_counters task: %s", e)
+        raise
+
+
 @celery_app.task(name="app.worker.auto_reassign_inactive_orders")
 def auto_reassign_inactive_orders():
     """

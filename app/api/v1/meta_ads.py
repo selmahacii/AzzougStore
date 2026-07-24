@@ -1374,6 +1374,12 @@ class MetaEventPayload(BaseModel):
     user_data: Optional[MetaEventUserData] = None
     custom_data: Optional[MetaEventCustomData] = None
     action_source: Optional[str] = "website"
+    # Additive, optional — feeds only the funnel-bottleneck rollup
+    # (app/services/funnel_tracking.py), never the Pixel/CAPI send below.
+    lp_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    adset_id: Optional[str] = None
+    ad_id: Optional[str] = None
 
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.strip().lower().encode()).hexdigest()
@@ -1435,6 +1441,25 @@ def send_meta_event(
     The Graph call runs in a background task — zero latency for the shopper.
     """
     from app.services.meta_capi import build_user_data
+    from app.services.funnel_tracking import record_funnel_event, TRACKED_EVENTS
+
+    # Independent of Meta CAPI config below — the funnel rollup is an
+    # internal diagnostic and should work even for a store that hasn't
+    # configured Meta Ads yet. Fire-and-forget, same as the CAPI dispatch.
+    if payload.event_name in TRACKED_EVENTS:
+        product_id = None
+        if payload.custom_data and payload.custom_data.content_ids:
+            product_id = payload.custom_data.content_ids[0]
+        background_tasks.add_task(
+            record_funnel_event,
+            store_id=payload.store_id,
+            event_name=payload.event_name,
+            lp_id=payload.lp_id,
+            product_id=product_id,
+            campaign_id=payload.campaign_id,
+            adset_id=payload.adset_id,
+            ad_id=payload.ad_id,
+        )
 
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
 
@@ -1484,6 +1509,114 @@ def send_meta_event(
         _dispatch_capi_event, config.pixel_id, config.access_token, event, payload.store_id, payload.order_id
     )
     return {"success": True, "sent": True, "event_id": event_id}
+
+
+@router.get("/funnel/diagnostics", response_model=dict)
+def get_funnel_diagnostics(
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Admin diagnostics for the funnel-counter pipeline: throughput, failures,
+    flush health, queue backlog, counter lag, compression ratio, dashboard
+    query latency, and an estimated monthly Redis command volume. Powers
+    the admin panel — see app/services/funnel_tracking.py for what each
+    figure means and why it's computed the way it is.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants.")
+    from app.services.funnel_tracking import get_diagnostics
+    return {"success": True, "data": get_diagnostics()}
+
+
+@router.post("/funnel/toggle", response_model=dict)
+def toggle_funnel_tracking(
+    payload: dict,
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Instant kill switch — no redeploy needed. { "disabled": true|false }.
+    This is the layer meant for "something's wrong, stop it NOW"; the
+    FUNNEL_TRACKING_ENABLED env var is the slower, deploy-level default.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants.")
+    from app.core import cache
+    from app.services.funnel_tracking import KILLSWITCH_KEY, tracking_status
+
+    disabled = bool(payload.get("disabled"))
+    try:
+        if disabled:
+            cache.raw_command("SET", KILLSWITCH_KEY, "1")
+        else:
+            cache.raw_command("DEL", KILLSWITCH_KEY)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Impossible de joindre Redis: {exc}")
+
+    return {"success": True, "status": tracking_status()}
+
+
+@router.get("/funnel/bottlenecks", response_model=dict)
+def get_funnel_bottlenecks(
+    store_id: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Landing Page / Product / Campaign bottleneck report from the funnel
+    rollup table: for each dimension, where does the PageView -> ViewContent
+    -> AddToCart -> InitiateCheckout waterfall drop off hardest. Purchase/
+    Delivered are joined in from Order (never duplicated into the rollup —
+    Order already is the source of truth for those two stages).
+    """
+    from app.models.funnel_rollup import FunnelRollup
+    from sqlalchemy import func as sqlfunc, case
+
+    db.info["skip_tenant_isolation"] = True
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+    def _waterfall(group_col):
+        rows = (
+            db.query(
+                group_col.label("dim"),
+                sqlfunc.sum(case((FunnelRollup.event_name == "PageView", FunnelRollup.count), else_=0)).label("pv"),
+                sqlfunc.sum(case((FunnelRollup.event_name == "ViewContent", FunnelRollup.count), else_=0)).label("vc"),
+                sqlfunc.sum(case((FunnelRollup.event_name == "AddToCart", FunnelRollup.count), else_=0)).label("atc"),
+                sqlfunc.sum(case((FunnelRollup.event_name == "InitiateCheckout", FunnelRollup.count), else_=0)).label("ic"),
+            )
+            .filter(FunnelRollup.store_id == store_id, FunnelRollup.day >= since, group_col.isnot(None))
+            .group_by(group_col)
+            .all()
+        )
+        out = []
+        for r in rows:
+            stages = [("PageView", r.pv), ("ViewContent", r.vc), ("AddToCart", r.atc), ("InitiateCheckout", r.ic)]
+            bottleneck = None
+            worst_drop = -1.0
+            for i in range(len(stages) - 1):
+                prev_name, prev_v = stages[i]
+                next_name, next_v = stages[i + 1]
+                if prev_v > 0:
+                    drop_pct = round((1 - next_v / prev_v) * 100, 1)
+                    if drop_pct > worst_drop:
+                        worst_drop = drop_pct
+                        bottleneck = f"{prev_name} → {next_name}"
+            out.append({
+                "id": r.dim, "pageviews": int(r.pv), "view_content": int(r.vc),
+                "add_to_cart": int(r.atc), "initiate_checkout": int(r.ic),
+                "bottleneck_stage": bottleneck, "bottleneck_drop_pct": worst_drop if worst_drop >= 0 else None,
+            })
+        out.sort(key=lambda x: x["bottleneck_drop_pct"] or 0, reverse=True)
+        return out
+
+    return {
+        "success": True,
+        "data": {
+            "by_landing_page": _waterfall(FunnelRollup.lp_id),
+            "by_product": _waterfall(FunnelRollup.product_id),
+            "by_campaign": _waterfall(FunnelRollup.campaign_id),
+        },
+    }
 
 
 @router.get("/integration-summary", response_model=dict)
