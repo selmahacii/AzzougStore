@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useMutation } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { ROLE_LABELS, type UserRole } from '@/lib/types';
 
@@ -59,8 +61,6 @@ import {
   Globe,
   Coins,
   ShieldAlert,
-  Webhook,
-  Bot
 } from 'lucide-react';
 
 // ─── Framer Motion Variants ────────────────────────────────
@@ -153,12 +153,26 @@ export function SettingsPlaceholder() {
   // Notification state
   const [notifications, setNotifications] = useState<NotificationPrefs>(loadNotificationPrefs);
 
-  // Integrations state
-  const [openAIKey, setOpenAIKey] = useState('');
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookSecret, setWebhookSecret] = useState('');
-
   // ─── Handlers ────────────────────────────────────────────
+  const setActiveStore = useAppStore((s) => s.setActiveStore);
+
+  // Theme changes are previewed instantly in local state, but only
+  // persisted to Store.theme_config (and therefore survive a refresh or
+  // switching stores) once "Enregistrer les modifications" actually PUTs
+  // it — previously this called setCurrentTheme() alone, which is pure
+  // in-memory zustand state, never written back to the store or the
+  // backend, so every "saved" theme silently reverted on next load.
+  const themeMutation = useMutation({
+    mutationFn: (theme_config: Record<string, any>) =>
+      apiFetch(`/api/v1/stores/${activeStore?.id}`, { method: 'PUT', body: JSON.stringify({ theme_config }) }),
+    onSuccess: (res: any) => {
+      const updatedStore = res?.data ?? res;
+      if (updatedStore && activeStore) setActiveStore({ ...activeStore, ...updatedStore });
+      toast.success('Paramètres du magasin enregistrés');
+    },
+    onError: (err: any) => toast.error(err.message || 'Erreur lors de l\'enregistrement'),
+  });
+
   const handleThemeChange = (color: string, fg: string, accent: string) => {
     const newTheme = {
       ...theme!,
@@ -170,20 +184,42 @@ export function SettingsPlaceholder() {
   };
 
   const handleStoreSave = () => {
-    const updatedTheme = {
-      ...theme!,
+    if (!activeStore?.id) return;
+    themeMutation.mutate({
+      primaryColor: theme?.primaryColor,
+      primaryForeground: theme?.primaryForeground,
+      accentColor: theme?.accentColor,
       fontFamily: selectedFont,
       borderRadius: selectedRadius,
-    };
-    setCurrentTheme(updatedTheme);
-    toast.success('Paramètres du magasin enregistrés');
+    });
   };
 
+  const passwordMutation = useMutation({
+    mutationFn: (data: { current_password: string; new_password: string }) =>
+      apiFetch('/api/v1/users/me/password', { method: 'POST', body: JSON.stringify(data) }),
+    onSuccess: () => {
+      toast.success('Mot de passe mis à jour avec succès');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    },
+    onError: (err: any) => toast.error(err.message || 'Erreur lors du changement de mot de passe'),
+  });
+
   const handlePasswordSubmit = () => {
-    toast.info('Fonctionnalité à venir');
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
+    if (!currentPassword || !newPassword) {
+      toast.error('Renseignez le mot de passe actuel et le nouveau.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Les mots de passe ne correspondent pas.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error('Le nouveau mot de passe doit contenir au moins 6 caractères.');
+      return;
+    }
+    passwordMutation.mutate({ current_password: currentPassword, new_password: newPassword });
   };
 
   const handleNotificationToggle = (key: keyof NotificationPrefs, value: boolean) => {
@@ -240,7 +276,7 @@ export function SettingsPlaceholder() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full sm:w-auto grid grid-cols-5 sm:inline-flex overflow-x-auto">
+        <TabsList className="w-full sm:w-auto grid grid-cols-4 sm:inline-flex overflow-x-auto">
           <TabsTrigger value="profil" className="gap-1.5 text-xs sm:text-sm">
             <User className="size-3.5 sm:size-4" />
             <span className="hidden sm:inline">Profil</span>
@@ -253,10 +289,6 @@ export function SettingsPlaceholder() {
           <TabsTrigger value="preferences" className="gap-1.5 text-xs sm:text-sm">
             <Settings2 className="size-3.5 sm:size-4" />
             <span>Préférences</span>
-          </TabsTrigger>
-          <TabsTrigger value="integrations" className="gap-1.5 text-xs sm:text-sm">
-            <Webhook className="size-3.5 sm:size-4" />
-            <span>Intégrations</span>
           </TabsTrigger>
           <TabsTrigger value="danger" className="gap-1.5 text-xs sm:text-sm">
             <AlertTriangle className="size-3.5 sm:size-4" />
@@ -399,9 +431,9 @@ export function SettingsPlaceholder() {
                         </div>
                       </CardContent>
                       <CardFooter>
-                        <Button onClick={handlePasswordSubmit} className="gap-2">
+                        <Button onClick={handlePasswordSubmit} disabled={passwordMutation.isPending} className="gap-2">
                           <Lock className="size-4" />
-                          Mettre à jour le mot de passe
+                          {passwordMutation.isPending ? 'Mise à jour...' : 'Mettre à jour le mot de passe'}
                         </Button>
                       </CardFooter>
                     </Card>
@@ -598,8 +630,8 @@ export function SettingsPlaceholder() {
                     </div>
                   </CardContent>
                   <CardFooter>
-                    <Button onClick={handleStoreSave} className="gap-2">
-                      Enregistrer les modifications
+                    <Button onClick={handleStoreSave} disabled={themeMutation.isPending} className="gap-2">
+                      {themeMutation.isPending ? 'Enregistrement...' : 'Enregistrer les modifications'}
                     </Button>
                   </CardFooter>
                 </Card>
@@ -730,100 +762,7 @@ export function SettingsPlaceholder() {
             </motion.div>
           )}
 
-          {/* ─── Tab 4: Intégrations ──────────────────────────── */}
-          {activeTab === 'integrations' && (
-            <motion.div
-              key="integrations"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-            >
-              <TabsContent value="integrations" className="mt-6 space-y-6">
-                {/* OpenAI */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Bot className="size-5 text-indigo-600" />
-                      Intelligence Artificielle (OpenAI)
-                    </CardTitle>
-                    <CardDescription>
-                      Configurez votre clé API pour activer l'Autopilot et les analyses avancées.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4 max-w-2xl">
-                      <div className="space-y-2">
-                        <Label htmlFor="openai-key">Clé API OpenAI</Label>
-                        <Input
-                          id="openai-key"
-                          type="password"
-                          placeholder="sk-..."
-                          value={openAIKey}
-                          onChange={(e) => setOpenAIKey(e.target.value)}
-                        />
-                        <p className="text-xs text-slate-500">
-                          Votre clé API est chiffrée et stockée de manière sécurisée.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button onClick={() => toast.success('Clé OpenAI enregistrée')} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
-                      Enregistrer la configuration IA
-                    </Button>
-                  </CardFooter>
-                </Card>
-
-                {/* Webhooks */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Webhook className="size-5 text-blue-600" />
-                      Webhooks & Événements
-                    </CardTitle>
-                    <CardDescription>
-                      Connectez votre boutique à d'autres applications (Zapier, Make, etc.).
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4 max-w-2xl">
-                      <div className="space-y-2">
-                        <Label htmlFor="webhook-url">URL de destination</Label>
-                        <Input
-                          id="webhook-url"
-                          type="url"
-                          placeholder="https://..."
-                          value={webhookUrl}
-                          onChange={(e) => setWebhookUrl(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="webhook-secret">Secret (Optionnel)</Label>
-                        <Input
-                          id="webhook-secret"
-                          type="password"
-                          placeholder="Signature du payload"
-                          value={webhookSecret}
-                          onChange={(e) => setWebhookSecret(e.target.value)}
-                        />
-                        <p className="text-xs text-slate-500">
-                          Utilisé pour signer cryptographiquement les payloads envoyés.
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter>
-                    <Button onClick={() => toast.success('Webhook configuré')} variant="outline" className="gap-2 text-blue-600 border-blue-200 hover:bg-blue-50">
-                      Tester & Enregistrer le Webhook
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </TabsContent>
-            </motion.div>
-          )}
-
-          {/* ─── Tab 5: Danger Zone ───────────────────────────── */}
+          {/* ─── Tab 4: Danger Zone ───────────────────────────── */}
           {activeTab === 'danger' && (
             <motion.div
               key="danger"
