@@ -63,7 +63,6 @@ const PAGE_TITLES: Record<AdminView, string> = {
    cost_calculator: 'Calculateur de Coût',
    meta_ads: 'Meta Ads & ROAS',
    conversion_optimization: 'Conversion Optimization Center',
-   meta_queue: 'Meta Queue',
    returns: 'Retours & Stock',
    tiktok_ads: 'TikTok Ads & ROAS',
    upsell: 'Upsell & Commissions',

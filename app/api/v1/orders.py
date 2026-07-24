@@ -4266,7 +4266,13 @@ def get_returns_analysis(
 
     # Cause = le texte libre saisi sur l'événement de transition vers
     # RETURNED (terminal, donc au plus un par commande) — pas de nouvelle
-    # colonne, on réutilise ce qui est déjà tapé par l'agent/livreur.
+    # colonne, on réutilise ce qui est déjà tapé par l'agent/livreur, OU
+    # (depuis peu, voir noest_sync.py) le libellé d'étape réel transmis par
+    # Noest lui-même (ex: "Livraison échouée"). Exclut les deux anciennes
+    # notes système génériques ("Synchronisation automatique Noest : X." /
+    # "Statut changé : X → Y") qui ne portent aucune information sur le
+    # POURQUOI du retour — les laisser ici ne ferait que remplir "Top
+    # causes" avec du bruit d'audit au lieu de vraies raisons.
     top_causes = (
         db.query(OrderEvent.note, sqlfunc.count(OrderEvent.id).label("cnt"))
         .filter(
@@ -4274,6 +4280,8 @@ def get_returns_analysis(
             OrderEvent.order_id.in_(base.with_entities(Order.id)),
             OrderEvent.note.isnot(None),
             OrderEvent.note != "",
+            ~OrderEvent.note.like("Synchronisation automatique%"),
+            ~OrderEvent.note.like("Statut changé :%"),
         )
         .group_by(OrderEvent.note)
         .order_by(sqlfunc.count(OrderEvent.id).desc())

@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import MetaQueueDashboard from './meta-queue-dashboard';
 
 const C = {
   primary: '#6C5CE7', primaryBg: '#F0EDFF',
@@ -70,6 +71,7 @@ const TABS = [
   { id: 'products', label: 'Produits' },
   { id: 'campaigns', label: 'Campagnes' },
   { id: 'opportunity', label: 'Score d\'opportunité' },
+  { id: 'meta_queue', label: 'File d\'envoi Meta' },
 ] as const;
 
 export default function ConversionOptimizationDashboard() {
@@ -138,7 +140,9 @@ export default function ConversionOptimizationDashboard() {
         ))}
       </div>
 
-      {isLoading ? (
+      {tab === 'meta_queue' ? (
+        <MetaQueueDashboard />
+      ) : isLoading ? (
         <div className="h-64 flex items-center justify-center text-sm text-slate-400">Chargement des données réelles…</div>
       ) : !d ? (
         <div className="h-64 flex items-center justify-center text-sm text-slate-400">Aucune donnée disponible.</div>
