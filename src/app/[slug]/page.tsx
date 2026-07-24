@@ -32,7 +32,10 @@ async function fetchInitialData(slug: string) {
   const activeStore = initialStores.find(s => s.slug === slug);
   if (activeStore) {
     try {
-      const res = await fetch(`${backendUrl}/api/v1/meta-ads/config?store_id=${activeStore.id}`, { next: { revalidate: 10 } });
+      // /public-config, not the admin /config — this SSR has no user session
+      // to attach and /config always 401s here (see lp/[slug]/page.tsx for
+      // the full finding).
+      const res = await fetch(`${backendUrl}/api/v1/meta-ads/public-config?store_id=${activeStore.id}`, { next: { revalidate: 10 } });
       if (res.ok) {
         const json = await res.json();
         metaAdsConfig = json.data;

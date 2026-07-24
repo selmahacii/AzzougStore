@@ -14,7 +14,7 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
-import { trackMetaEvent } from '@/lib/meta-tracking';
+import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import { captureAttribution } from '@/lib/attribution';
 
@@ -157,6 +157,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   useEffect(() => {
     const pid = data?.product?.id || (data as any)?.product_id;
     if (!pid || !activeStore?.id) return;
+    // Remembered for the rest of this tab session so a later AddToCart/
+    // InitiateCheckout (cart-store.ts / checkout-form.tsx, neither of which
+    // knows the current LP) still attributes to this landing page in the
+    // /funnel/bottlenecks by_landing_page breakdown.
+    setCurrentLpId(data.id);
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
       content_name: data.product_name || data.product?.name || data.headline,

@@ -17,7 +17,7 @@ import { useCartStore } from '@/store/cart-store';
 import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
 import { cn } from '@/lib/utils';
-import { trackMetaEvent } from '@/lib/meta-tracking';
+import { trackMetaEvent, getOrCreateCheckoutAttemptId, clearCheckoutAttemptId } from '@/lib/meta-tracking';
 import { attributionPayload } from '@/lib/attribution';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
@@ -358,13 +358,23 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   useEffect(() => {
     if (!items.length) return;
+    // One event_id per real checkout ATTEMPT (see getOrCreateCheckoutAttemptId
+    // in meta-tracking.ts) — not per render, not per cart content, not per
+    // time window. This effect legitimately re-runs several times for the
+    // SAME attempt (delivery fee resolving async as the shopper picks a
+    // wilaya/commune/partner changes finalTotal each time), and reusing the
+    // attempt id means every one of those re-runs is a no-op past the first
+    // (trackMetaEvent's own sessionStorage dedup on event_id) — while a
+    // genuinely new attempt (new tab, or this tab reopened after being
+    // closed) gets a fresh id and fires again even with the identical cart.
+    const attemptId = getOrCreateCheckoutAttemptId();
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
       contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
       value: finalTotal,
       currency: 'DZD',
     }, {
-      eventId: `initiatecheckout-${Date.now()}`,
+      eventId: attemptId ? `initiatecheckout-${attemptId}` : undefined,
       value: finalTotal,
       currency: 'DZD',
       contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
@@ -570,6 +580,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         total: finalTotal,
         discount: discountAmount,
         abandoned_cart_id: abandonedCartId,
+        checkout_attempt_id: getOrCreateCheckoutAttemptId(),
         ...attributionPayload(),
       };
 
@@ -599,6 +610,13 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         // (see orders.py's send_purchase_for_order queue, triggered only
         // after the merge decision is committed) — the frontend only ever
         // sends navigation events (ViewContent/AddToCart/InitiateCheckout).
+        // This branch covers BOTH a freshly created order AND the backend's
+        // 15-minute duplicate-basket guard (orders.py) returning an existing
+        // order untouched — both return the identical { id, order_number, ... }
+        // shape, so the attempt has concluded either way. Clearing here (not
+        // in a separate "was this a duplicate?" branch, which the response
+        // shape has no way to signal) is what makes one call site enough.
+        clearCheckoutAttemptId();
         setOrderNumber(json.order_number ?? json.orderNumber ?? json.id ?? '');
         setOrderDiscount(json.discount ?? 0);
         clearCart();

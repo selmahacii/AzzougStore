@@ -113,6 +113,44 @@ class MetaAdsConfigOut(BaseModel):
     class Config:
         from_attributes = True
 
+@router.get("/public-config", response_model=dict)
+def get_meta_ads_public_config(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Unauthenticated, read-only subset of /config — for the storefront's own
+    SSR (src/app/lp/[slug]/page.tsx and [slug]/page.tsx), which has no user
+    session to attach. The admin /config endpoint below requires
+    get_current_active_user; called bare from a public landing page's server
+    render it always 401s, so window.__metaTrackingConfig (store-integrations.tsx)
+    is permanently {} for EVERY store — Pixel never loads and PageView/
+    AddToCart/InitiateCheckout never carry a store_id (only ViewContent does,
+    since it sources storeId from the Zustand activeStore instead) — found by
+    real end-to-end testing (curl to /config with no auth returned 401
+    AUTH_REQUIRED even for a store with a fully valid pixel_id+access_token).
+    Exposes ONLY what the storefront tracking script needs to function —
+    never access_token/ad_account_id/is_connected, which stay admin-only.
+    """
+    db.info["skip_tenant_isolation"] = True
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    if not config:
+        return {"success": True, "data": {
+            "store_id": store_id,
+            "pixel_id": None,
+            "domain_verification_tag": None,
+            "exchange_rate": 1.0,
+            "currency": "USD",
+        }}
+    return {"success": True, "data": {
+        "store_id": config.store_id,
+        "pixel_id": config.pixel_id or None,
+        "domain_verification_tag": config.domain_verification_tag,
+        "exchange_rate": config.exchange_rate if config.exchange_rate is not None else 1.0,
+        "currency": config.currency or "USD",
+    }}
+
+
 @router.get("/config", response_model=dict)
 def get_meta_ads_config(
     store_id: str = Query(...),

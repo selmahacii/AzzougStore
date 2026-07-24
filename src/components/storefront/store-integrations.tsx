@@ -24,8 +24,11 @@ export function StorefrontIntegrations({ config }: { config: any }) {
     // capture call can't.
     captureAttribution();
     setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
-    if (!pixelId) return;
 
+    // Funnel Tracking must fire regardless of whether this store has a Meta
+    // Pixel configured — trackMetaEvent() itself only builds/sends the
+    // Pixel+CAPI payload when pixelId is present, but the funnel rollup
+    // (store_id/event_name/lp_id/campaign_id/...) always goes out.
     const initialize = async () => {
       try {
         await trackMetaEvent('PageView', {
@@ -33,7 +36,7 @@ export function StorefrontIntegrations({ config }: { config: any }) {
           content_name: 'Storefront PageView',
         }, {
           pixelId,
-          eventId: `pageview-${pixelId}-${Date.now()}`,
+          eventId: `pageview-${pixelId || config?.store_id}-${Date.now()}`,
           shouldSendToServer: true,
         });
       } catch {
@@ -42,7 +45,7 @@ export function StorefrontIntegrations({ config }: { config: any }) {
     };
 
     void initialize();
-  }, [config?.pixel_id]);
+  }, [config?.pixel_id, config?.store_id]);
 
   return (
     <>
@@ -62,9 +65,13 @@ export function StorefrontIntegrations({ config }: { config: any }) {
             s.parentNode.insertBefore(t,s)}(window, document,'script',
             'https://connect.facebook.net/en_US/fbevents.js');
             window.__metaPixelId = '${pixelId}';
+            // Init only — no 'track PageView' here. The single PageView of
+            // record is fired by trackMetaEvent() below (via 'trackSingle',
+            // with a proper event_id for CAPI dedup and the funnel/CAPI
+            // server relay); firing it here too would double-count it in
+            // Meta's own reporting for every store with a Pixel configured.
             if (window.fbq) {
               window.fbq('init', '${pixelId}');
-              window.fbq('track', 'PageView');
             }
           `}
         </Script>
