@@ -303,6 +303,34 @@ def read_user_me(
     return current_user
 
 
+@router.post("/me/password", response_model=dict)
+def change_own_password(
+    payload: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Self-service password change — verifies the current password first.
+    Unlike POST /{user_id}/reset-password (ADMIN/MANAGER resetting someone
+    else's password without knowing it), this is any authenticated user
+    changing their OWN, so it must prove they know the current one.
+    Payload: { current_password, new_password }
+    """
+    from app.core.security import verify_password
+
+    current = payload.get("current_password") or ""
+    new_password = payload.get("new_password") or ""
+
+    if not verify_password(current, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect.")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 6 caractères.")
+
+    current_user.hashed_password = get_password_hash(new_password)  # type: ignore[assignment]
+    db.commit()
+    return {"success": True, "message": "Mot de passe mis à jour avec succès."}
+
+
 @router.get("/performance-summary")
 def get_users_performance_summary(
     user_ids: str = Query(..., description="Comma-separated user IDs"),
