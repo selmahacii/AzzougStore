@@ -263,6 +263,32 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             </div>
           </div>
 
+          {/* Impressions Meta / Taux de conversion réel (commandes ERP ÷
+              clics Meta) / Qualité du site (Landing Page View Rate = vues de
+              cette LP ÷ clics Meta) — trois chiffres réels, aucun estimé:
+              null tant que meta_clicks est à 0 pour la période (pas de "0%"
+              trompeur affiché à la place d'une donnée absente). */}
+          <div className="grid grid-cols-3 gap-2">
+            <div
+              title="Impressions de vos annonces Meta pour ce produit, sur la période sélectionnée."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#1877F233', backgroundColor: '#1877F20D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#1877F2' }}>{(totals.meta_impressions ?? 0).toLocaleString('fr-FR')}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#1877F2' }}>Impressions</p>
+            </div>
+            <div
+              title="Commandes réelles ERP ÷ clics Meta sur cette période. Absent si aucun clic Meta enregistré."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#00B89433', backgroundColor: '#00B8940D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#00B894' }}>{totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—'}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#00B894' }}>Taux de conversion</p>
+            </div>
+            <div
+              title="Vues de page de destination ÷ Clics sur un lien (définition standard Meta) — mesure la perte entre le clic sur l'annonce et le chargement réel de la page, donc la vitesse/fiabilité du site. Absent si aucun clic Meta enregistré."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#F7B73133', backgroundColor: '#F7B7310D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#F7B731' }}>{data?.qualite_site_pct != null ? `${data.qualite_site_pct}%` : '—'}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#F7B731' }}>Qualité du site</p>
+            </div>
+          </div>
+
           {/* Micro-détails — regroupés par question claire ("d'où viennent
               mes commandes ?" / "combien de relances téléphoniques ?"),
               chaque groupe visuellement séparé pour que le client s'y
