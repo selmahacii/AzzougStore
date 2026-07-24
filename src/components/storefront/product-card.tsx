@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import type { Product } from '@/lib/types';
 import { resolveTemplate } from '@/lib/template-resolver';
 import { cn } from '@/lib/utils';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface ProductCardProps {
   product: Product;
@@ -52,8 +53,11 @@ function useCardData(product: Product) {
 
   const discount = product.compare_price ? getDiscountPercent(product.price, product.compare_price) : 0;
   const isOutOfStock = product.stock === 0;
-  const img1 = allImages[0] || 'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?q=80&w=800';
-  const img2 = allImages[1] || null;
+  // Card thumbnails render at a few hundred px wide at most — capping at
+  // 800 avoids shipping a full-resolution upload for a grid slot (same
+  // Lighthouse-driven fix as landing-page-renderer.tsx, extended here).
+  const img1 = optimizeCloudinaryUrl(allImages[0], 800) || 'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?q=80&w=800';
+  const img2 = allImages[1] ? optimizeCloudinaryUrl(allImages[1], 800) : null;
 
   const colors = useMemo(() => {
     if (!product.variants) return [];

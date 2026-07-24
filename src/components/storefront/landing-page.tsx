@@ -13,6 +13,7 @@ import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 // ─── Animated counter ─────────────────────────────────────────
 function Counter({ target, suffix = '' }: { target: number; suffix?: string }) {
@@ -65,7 +66,7 @@ export function LandingPage() {
   const headline  = (tc.heroHeadline as string) || (activeStore?.name ?? 'Découvrez');
   const subtitle  = (tc.heroSubtitle as string) || (activeStore?.description ?? 'Le produit qui change tout.');
   const ctaLabel  = (tc.heroCta as string) || t('buyNow');
-  const bannerUrl = (activeStore?.banner_url as string) || '';
+  const bannerUrl = optimizeCloudinaryUrl((activeStore?.banner_url as string) || '', 1600);
   const isVideo   = tc.bannerIsVideo as boolean | undefined;
   const phone     = (tc.contact as any)?.phone || '';
 
@@ -148,7 +149,7 @@ export function LandingPage() {
           <video src={bannerUrl} className="absolute inset-0 w-full h-full object-cover opacity-[0.18]" muted loop autoPlay playsInline/>
         )}
         {!bannerUrl && hero?.main_image && (
-          <img src={hero.main_image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]"/>
+          <img src={optimizeCloudinaryUrl(hero.main_image, 1600)} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.12]"/>
         )}
 
         {/* Gradient vignette */}
@@ -340,7 +341,7 @@ export function LandingPage() {
                   onClick={() => { setSelectedProductSlug(p.slug); setStorefrontView('product'); }}
                 >
                   {p.main_image
-                    ? <img src={p.main_image} alt={p.name} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"/>
+                    ? <img src={optimizeCloudinaryUrl(p.main_image, 800)} alt={p.name} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"/>
                     : <div className="h-full w-full flex items-center justify-center bg-[#111]"><Package className="size-12 text-white/10"/></div>
                   }
 

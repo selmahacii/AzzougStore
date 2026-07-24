@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { apiFetch } from '@/lib/api-client';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 // ─── Template helpers ─────────────────────────────────────────
 function getHeroTheme(store: Store) {
@@ -129,7 +130,7 @@ function AthleticHero({
   const { t, dir } = useTranslation();
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image || products[0]?.images?.[0];
-  const bannerImg = store.banner_url || heroImg;
+  const bannerImg = optimizeCloudinaryUrl(store.banner_url || heroImg, 1600);
   const isVideo = store.theme_config?.bannerIsVideo;
   const { headline, subtitle, cta, cta2, fontWeight, isFullLayout } = heroText(store, {
     headline: store.name,
@@ -235,7 +236,7 @@ function CleanHero({
   const { t, dir, locale } = useTranslation();
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image ?? (products[0]?.images as string[] | undefined)?.[0];
-  const bannerImg = store.banner_url ?? heroImg;
+  const bannerImg = optimizeCloudinaryUrl(store.banner_url ?? heroImg, 1600);
   const isVideo = store.theme_config?.bannerIsVideo as boolean | undefined;
 
   const tc = store.theme_config ?? ({} as any);
@@ -532,7 +533,7 @@ function LuxeHero({
   const { t, dir } = useTranslation();
   const { primary } = getHeroTheme(store);
   const heroImg = products[0]?.main_image || products[0]?.images?.[0];
-  const bannerImg = store.banner_url || heroImg;
+  const bannerImg = optimizeCloudinaryUrl(store.banner_url || heroImg, 1600);
   const isVideo = store.theme_config?.bannerIsVideo;
   const { headline, subtitle, cta, cta2 } = heroText(store, {
     headline: store.name,

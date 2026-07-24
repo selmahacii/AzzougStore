@@ -461,9 +461,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           {/* Logo Centered */}
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || activeStore?.logo_url) ? (
-              <img 
-                src={data.store?.logo_url || activeStore?.logo_url || ''} 
-                alt={data.store?.name || activeStore?.name || 'Logo'} 
+              <img
+                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 150)}
+                alt={data.store?.name || activeStore?.name || 'Logo'}
                 className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
                 onError={(e) => { 
                   const target = e.target as HTMLImageElement;
@@ -671,7 +671,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       type="button"
                       className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
                     >
-                      <img src={url} className="size-full object-cover" alt={`Gallery ${i}`} />
+                      <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
                     </button>
                   ))}
                 </div>
@@ -793,7 +793,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" />
+                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )
@@ -983,7 +983,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {/* Publicity Banner */}
                 {data.banner_image_url && (
                   <div className="mt-6">
-                    <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
+                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 1600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
                   </div>
                 )}
 

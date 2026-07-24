@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { trackMetaEvent } from '@/lib/meta-tracking';
 import { attributionPayload } from '@/lib/attribution';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import type { CartItem, ApiResponse } from '@/lib/types';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
@@ -1098,9 +1099,9 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <div className="size-11 rounded-lg overflow-hidden border shrink-0 bg-slate-50 flex items-center justify-center"
                       style={{ borderRadius: T.inputRadius, borderColor: T.cardBorder }}>
                       {item.image_url ? (
-                        <img src={item.image_url} alt={item.product.name} className="size-full object-cover" />
+                        <img src={optimizeCloudinaryUrl(item.image_url, 100)} alt={item.product.name} className="size-full object-cover" />
                       ) : item.product.main_image ? (
-                        <img src={item.product.main_image} alt={item.product.name} className="size-full object-cover" />
+                        <img src={optimizeCloudinaryUrl(item.product.main_image, 100)} alt={item.product.name} className="size-full object-cover" />
                       ) : (
                         <span className="text-sm font-black" style={{ color: T.textSecondary }}>
                           {item.product.name?.charAt(0) || 'P'}

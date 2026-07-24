@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 /* ─── shared cart item renderer ─── */
 function CartItem({
@@ -20,7 +21,11 @@ function CartItem({
   const unitPrice = item.product.price + modifier;
   const lineTotal = unitPrice * item.quantity;
   const parsedImages = (() => {
-    try { return typeof item.product.images === 'string' ? JSON.parse(item.product.images) : (item.product.images ?? []); }
+    try {
+      const imgs = typeof item.product.images === 'string' ? JSON.parse(item.product.images) : (item.product.images ?? []);
+      // Cart thumbnails render at ~80-100px — 200 is generous headroom for retina.
+      return Array.isArray(imgs) ? imgs.map((img: string) => optimizeCloudinaryUrl(img, 200)) : [];
+    }
     catch { return []; }
   })();
   const key = `${item.product.id}-${item.selectedVariant || ''}-${item.customNotes || ''}`;

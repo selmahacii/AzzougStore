@@ -9,6 +9,7 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface DzCodRendererProps {
   data: any;
@@ -318,8 +319,12 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         {/* Main Image with Zoom and Inset Badge */}
         {heroImage && (() => {
           const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-          const mainImgSrc = (selectedVarWithImg as any)?.image || heroImage;
-          const insetImgSrc = galleryImages.find(img => img !== mainImgSrc) || galleryImages[0] || null;
+          const rawMainImgSrc = (selectedVarWithImg as any)?.image || heroImage;
+          const rawInsetImgSrc = galleryImages.find(img => img !== rawMainImgSrc) || galleryImages[0] || null;
+          // 1600 preserves detail for the 2x zoom-on-hover interaction below —
+          // capping too aggressively would make the zoomed view visibly soft.
+          const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 1600);
+          const insetImgSrc = optimizeCloudinaryUrl(rawInsetImgSrc, 150);
 
           return (
             <div 
@@ -407,7 +412,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     title={v.value}
                   >
                     {imgStyle ? (
-                      <img src={imgStyle} className="size-full rounded-full object-cover" alt={v.value} />
+                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} />
                     ) : (
                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                     )}
@@ -538,7 +543,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={v.image} alt={v.value} className="size-full object-cover rounded-full" />
+                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -717,7 +722,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
              {/* Publicity Banner */}
              {data.banner_image_url && (
                <div className="mt-6">
-                 <img src={data.banner_image_url} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
+                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 1600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
                </div>
              )}
           </div>

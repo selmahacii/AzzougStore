@@ -18,6 +18,7 @@ import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { trackMetaEvent } from '@/lib/meta-tracking';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 function useProductDetailData() {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -211,7 +212,10 @@ function useProductDetailData() {
         }
       });
     }
-    return imgs.filter(Boolean);
+    // 1200 covers the largest slot this page renders (full-bleed main
+    // viewer) without shipping the original multi-megapixel upload —
+    // same fix as landing-page-renderer.tsx / product-card.tsx.
+    return imgs.filter(Boolean).map(img => optimizeCloudinaryUrl(img, 1200));
   }, [product]);
 
   const discount = useMemo(() => {

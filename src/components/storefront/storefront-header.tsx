@@ -13,6 +13,7 @@ import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'framer-
 import type { Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 function getTheme(store: Store | null) {
   const tpl = (store?.template_id ?? 'clean') as 'clean' | 'athletic' | 'luxe' | 'landing';
@@ -258,7 +259,9 @@ export function StorefrontHeader() {
     toast.success('Déconnexion réussie');
   };
 
-  const logoSrc = activeStore?.logo_url || activeStore?.logo;
+  // Header renders on every page navigation — a capped logo avoids
+  // re-fetching a large source image on every route change.
+  const logoSrc = optimizeCloudinaryUrl(activeStore?.logo_url || activeStore?.logo, 150);
 
   return (
     <>
