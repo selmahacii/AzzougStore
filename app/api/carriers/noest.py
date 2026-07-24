@@ -332,6 +332,24 @@ async def create_parcel(
             order.livreur_id = None
         order.tracking_number = tracking_number
         if order.status not in ("SHIPPED", "DELIVERED"):
+            # Direct status write (this endpoint bypasses order_service's
+            # state machine on purpose — carrier dispatch isn't a normal
+            # admin status edit), but the OrderEvent log entry it would
+            # have produced was missing entirely. Every downstream consumer
+            # of the SHIPPED→DELIVERED gap (analytics' "Délai Moyen de
+            # Livraison", the order's own traceability timeline) reads that
+            # timestamp — without it, Noest-shipped orders had no way to
+            # ever contribute a real delivery-time sample.
+            from app.services.order_service import _log_event
+            _log_event(
+                db,
+                order_id=order.id,
+                actor_id=current_user.id,
+                actor_role=getattr(current_user, "role", None),
+                from_status=order.status,
+                to_status="SHIPPED",
+                note=f"Colis Noest créé — suivi {tracking_number}.",
+            )
             order.status = "SHIPPED"
         db.commit()
 
