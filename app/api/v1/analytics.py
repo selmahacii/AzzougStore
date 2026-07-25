@@ -65,6 +65,7 @@ def get_analytics(
     period: str = "30d",
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
     _auth: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     # Every branch below (kpi, revenue, delivery, wilayas, ...) already scopes
@@ -627,8 +628,6 @@ def get_analytics(
         # ─── Store Performance Dashboard (Orders Page) ───
         from app.models.store import Store
         from app.models.order import OrderItem
-        
-        product_id = request.query_params.get("product_id")
         
         # Base filter for orders
         base_filters = [Order.is_deleted == False, Order.created_at >= start_date, Order.created_at < end_date]
