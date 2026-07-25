@@ -62,7 +62,7 @@ const DEDUP_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 function readStorage(): string[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = window.sessionStorage.getItem(DEDUP_STORAGE_KEY);
+    const raw = window.localStorage.getItem(DEDUP_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Array<{ ts: number; id: string }>;
     const now = Date.now();
@@ -77,7 +77,7 @@ function writeStorage(ids: string[]) {
   try {
     const now = Date.now();
     const payload = ids.map(id => ({ id, ts: now }));
-    window.sessionStorage.setItem(DEDUP_STORAGE_KEY, JSON.stringify(payload));
+    window.localStorage.setItem(DEDUP_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // ignore storage failures
   }
@@ -100,7 +100,8 @@ const CURRENT_LP_KEY = 'azg_current_lp_id';
 export function setCurrentLpId(lpId?: string): void {
   if (typeof window === 'undefined' || !lpId) return;
   try {
-    window.sessionStorage.setItem(CURRENT_LP_KEY, lpId);
+    const payload = { id: lpId, ts: Date.now() };
+    window.localStorage.setItem(CURRENT_LP_KEY, JSON.stringify(payload));
   } catch {
     // ignore storage failures
   }
@@ -109,7 +110,14 @@ export function setCurrentLpId(lpId?: string): void {
 function getCurrentLpId(): string | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
-    return window.sessionStorage.getItem(CURRENT_LP_KEY) || undefined;
+    const raw = window.localStorage.getItem(CURRENT_LP_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    if (Date.now() - parsed.ts < SEVEN_DAYS) {
+      return parsed.id;
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -291,9 +299,9 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
   // itself (store-integrations.tsx) also only loads when pixelId is set.
   if (pixelId && typeof window.fbq === 'function') {
     try {
-      (window.fbq as (...args: unknown[]) => void)('trackSingle', pixelId, eventName, contentPayload, { event_id: eventId });
+      (window.fbq as (...args: unknown[]) => void)('trackSingle', pixelId, eventName, contentPayload, { eventID: eventId });
     } catch {
-      (window.fbq as (...args: unknown[]) => void)('track', eventName, contentPayload, { event_id: eventId });
+      (window.fbq as (...args: unknown[]) => void)('track', eventName, contentPayload, { eventID: eventId });
     }
   }
 

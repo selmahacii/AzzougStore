@@ -44,6 +44,8 @@ async function fetchInitialData(slug: string) {
       // meta ads config check failed gracefully
     }
   }
+  
+  // Force a dummy pixel ID for testing (removed)
 
   return { initialStores, metaAdsConfig };
 }
