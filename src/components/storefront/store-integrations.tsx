@@ -22,7 +22,7 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
     captureAttribution();
     setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
 
-    if (pixelId && typeof window.fbq === 'undefined') {
+    if (pixelId && typeof (window as any).fbq === 'undefined') {
       // Fix race condition: manually initialize fbq stub synchronously
       // before trackMetaEvent is called.
       const f = window as any;
@@ -44,9 +44,9 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
         }
       }
       
-      window.__metaPixelId = pixelId;
-      if (window.fbq) {
-        window.fbq('init', pixelId);
+      (window as any).__metaPixelId = pixelId;
+      if ((window as any).fbq) {
+        (window as any).fbq('init', pixelId);
       }
     }
 
