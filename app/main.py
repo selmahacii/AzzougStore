@@ -125,7 +125,7 @@ def run_db_migrations():
     # container hangs at startup, these pin down whether it's stuck waking
     # Neon's compute (nothing printed after "Connecting") vs stuck later in
     # one of the backfill queries below.
-    print("🔌 Connecting to database for startup migrations...")
+    print("[START] Connecting to database for startup migrations...")
 
     # One information_schema round-trip instead of blindly firing ALTER TABLE
     # statements (DDL) at every container boot — each failed ALTER still costs
@@ -141,20 +141,20 @@ def run_db_migrations():
             }
             if ("landing_pages", "offers") not in existing:
                 conn.execute(text("ALTER TABLE landing_pages ADD COLUMN offers JSONB"))
-                print("✅ landing_pages: added offers column")
+                print("[OK] landing_pages: added offers column")
             if ("landing_pages", "banner_image_url") not in existing:
                 conn.execute(text("ALTER TABLE landing_pages ADD COLUMN banner_image_url VARCHAR"))
-                print("✅ landing_pages: added banner_image_url column")
+                print("[OK] landing_pages: added banner_image_url column")
             if ("products", "delivery_fees") not in existing:
                 conn.execute(text("ALTER TABLE products ADD COLUMN delivery_fees JSONB"))
-                print("✅ products: added delivery_fees column")
+                print("[OK] products: added delivery_fees column")
     except Exception as e:
-        print(f"⚠️ Startup column check failed: {e}")
+        print(f"[WARN] Startup column check failed: {e}")
 
     # store_sequence_number backfill: handled by the single SQL UPDATE in
     # create_initial_superadmin (one statement, set-based) — the old per-order
     # Python loop (1 MAX + 1 COMMIT per row) was removed.
-    print("✅ Startup migrations finished — database connection is live.")
+    print("[OK] Startup migrations finished — database connection is live.")
 
 def _acquire_scheduler_leader_lock() -> bool:
     """
