@@ -623,15 +623,12 @@ def get_landing_page_analytics(
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
         d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
 
-    # Vues locales vs vues déclarées par Meta — le funnel_rollups (Redis-batched,
-    # app/services/funnel_tracking.py) porte lp_id pour ViewContent, donc ce
-    # chiffre EST scopé à cette landing page précisément, dédupliqué par
-    # session, période identique au reste de ce endpoint.
+    from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup
     local_view_content = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
         FunnelRollup.store_id == lp.store_id,
-        FunnelRollup.lp_id == lp_id,
         FunnelRollup.event_name == "ViewContent",
+        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
         FunnelRollup.day >= d_start.date(),
         FunnelRollup.day <= d_end.date(),
     ).scalar() or 0
