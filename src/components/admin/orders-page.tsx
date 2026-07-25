@@ -1475,6 +1475,23 @@ const [timeLeft, setTimeLeft] = useState('');
                   })}
                 </SelectContent>
               </Select>
+              
+              <Select
+                value={filterProductId || "ALL"}
+                onValueChange={(v) => setFilterProductId(v === "ALL" ? "" : v)}
+              >
+                <SelectTrigger className="h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold w-full sm:w-[220px] truncate">
+                  <SelectValue placeholder="Tous les produits" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs font-bold">Tous les produits</SelectItem>
+                  {(productsQuery.data?.data ?? []).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs font-bold truncate max-w-[200px]" title={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           

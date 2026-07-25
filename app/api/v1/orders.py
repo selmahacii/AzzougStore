@@ -2107,6 +2107,20 @@ def create_order(
                     return _prev
 
         is_upsell = order_data.get("is_upsell", False)
+        
+        # Auto-flag as upsell if it contains ONLY upsell products
+        if not is_upsell and items:
+            from app.models.product import Product
+            _prod_ids = [item.get("product_id") for item in items if item.get("product_id")]
+            if _prod_ids:
+                _upsell_count = db.query(Product).filter(
+                    Product.id.in_(_prod_ids), 
+                    Product.is_upsell_only == True
+                ).count()
+                if _upsell_count == len(set(_prod_ids)):
+                    is_upsell = True
+                    order_data["is_upsell"] = True
+
         if not is_upsell and order_data.get("customer_phone"):
             fourteen_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=14)
             duplicate_exists = db.query(Order).filter(
@@ -3175,6 +3189,19 @@ def update_order_info(
         if old_items_desc != ", ".join(new_items_desc) or order.subtotal != total_amount:
             changed_fields.append(f"articles ({old_items_desc} -> {', '.join(new_items_desc)})")
             order.subtotal = total_amount
+
+        # Auto-flag as upsell if the order now contains ONLY upsell products
+        _all_product_ids = {item.product_id for item in order.items if item.product_id}
+        if _all_product_ids and not order.is_upsell:
+            from app.models.product import Product
+            _upsell_count = db.query(Product).filter(
+                Product.id.in_(_all_product_ids), 
+                Product.is_upsell_only == True
+            ).count()
+            if _upsell_count == len(_all_product_ids):
+                order.is_upsell = True
+                changed_fields.append("statut upsell automatique activé")
+
 
         # Commission upsell — 250 DA par produit upsell RÉELLEMENT ajouté à
         # l'instant (product_id absent de _previous_product_ids), et

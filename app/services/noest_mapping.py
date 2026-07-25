@@ -167,7 +167,7 @@ EXPLICIT_MAPPING = {
     (16, "bologhine ibnou ziri"): "Bologhine Ibn Ziri",
     (16, "bologhine"): "Bologhine Ibn Ziri",
     (16, "mohamed belouzdad"): "Belouizdad",
-    (16, "khraissia"): "Khraicia",
+    (16, "khraissia"): "Khracia",
     (16, "sehaoula"): "Saoula",
     (16, "maalma"): "Mahelma",
     (16, "douira"): "Douera",
@@ -248,7 +248,7 @@ async def find_best_commune_match(db: Session, store_id: str, wilaya_id: int, co
         if norm_input in norm_c or norm_c in norm_input:
             return c
 
-    # 3. Fuzzy fallback for spelling variants (Khraissia/Khraicia, Douira/Douera...)
+    # 3. Fuzzy fallback for spelling variants (Khraissia/Khracia, Douira/Douera...)
     normalized_map = {normalize_string(c): c for c in noest_communes}
     close = difflib.get_close_matches(norm_input, list(normalized_map.keys()), n=1, cutoff=0.8)
     if close:
