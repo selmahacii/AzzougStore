@@ -623,6 +623,57 @@ def get_analytics(
         }
         return {"success": True, "data": data}
 
+    if type == "stores-dashboard":
+        # ─── Store Performance Dashboard (Orders Page) ───
+        from app.models.store import Store
+        from app.models.order import OrderItem
+        
+        product_id = request.query_params.get("product_id")
+        
+        # Base filter for orders
+        base_filters = [Order.is_deleted == False, Order.created_at >= start_date, Order.created_at < end_date]
+        
+        if product_id and product_id != "ALL":
+            # Filter orders that contain this product
+            base_filters.append(Order.id.in_(
+                db.query(OrderItem.order_id).filter(OrderItem.product_id == product_id)
+            ))
+            
+        stats = db.query(
+            Order.store_id,
+            func.count(Order.id).label("total_orders"),
+            func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)).label("revenue"),
+            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered_count")
+        ).filter(and_(*base_filters)).group_by(Order.store_id).all()
+        
+        stores = db.query(Store.id, Store.name, Store.color).filter(Store.is_active == True).all()
+        store_map = {s.id: s for s in stores}
+        
+        data = []
+        for stat in stats:
+            store_info = store_map.get(stat.store_id)
+            if not store_info:
+                continue
+                
+            total_orders = stat.total_orders or 0
+            revenue = stat.revenue or 0
+            delivered_count = stat.delivered_count or 0
+            
+            conversion_rate = round((delivered_count / total_orders * 100), 2) if total_orders > 0 else 0
+            average_basket = round((revenue / delivered_count), 2) if delivered_count > 0 else 0
+            
+            data.append({
+                "store_id": stat.store_id,
+                "store_name": store_info.name,
+                "color": getattr(store_info, 'color', '#4b7bec'),
+                "total_orders": total_orders,
+                "revenue": revenue,
+                "average_basket": average_basket,
+                "conversion_rate": conversion_rate
+            })
+            
+        return {"success": True, "data": data}
+
     if type == "stores":
         # ─── Multi-store Revenue Comparison ───
         # Using group_by to avoid N+1 queries

@@ -471,6 +471,7 @@ const [timeLeft, setTimeLeft] = useState('');
     }
     return '30d';
   });
+  const [analyticsProductId, setAnalyticsProductId] = useState<string>('ALL');
 
   useEffect(() => {
     localStorage.setItem('orders_analytics_period', analyticsPeriod);
@@ -531,12 +532,15 @@ const [timeLeft, setTimeLeft] = useState('');
   };
 
   const storesAnalyticsQuery = useQuery({
-    queryKey: ['stores-analytics-dashboard', analyticsPeriod, startDate, endDate],
+    queryKey: ['stores-analytics-dashboard', analyticsPeriod, startDate, endDate, analyticsProductId],
     queryFn: async () => {
       let url = `/api/v1/analytics?type=stores-dashboard&period=${analyticsPeriod}`;
       if (analyticsPeriod === 'custom') {
         if (startDate) url += `&start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}`;
         if (endDate) url += `&end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}`;
+      }
+      if (analyticsProductId && analyticsProductId !== 'ALL') {
+        url += `&product_id=${encodeURIComponent(analyticsProductId)}`;
       }
       return apiFetch<any>(url);
     },
@@ -1158,22 +1162,40 @@ const [timeLeft, setTimeLeft] = useState('');
               <p className="text-xs font-bold text-slate-400">Analyse de conversion et de rentabilité en temps réel</p>
             </div>
             
-            <div className="flex items-center gap-1.5 bg-white border rounded-2xl p-1 shadow-sm w-fit overflow-x-auto no-scrollbar" style={{ borderColor: C.border }}>
-              {PERIODS.map(p => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => applyPeriodPreset(p.value)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap",
-                    analyticsPeriod === p.value 
-                      ? "bg-[#4b7bec] text-white shadow-md shadow-indigo-100" 
-                      : "text-slate-500 hover:bg-slate-50"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-white border rounded-2xl p-1 shadow-sm w-fit overflow-x-auto no-scrollbar" style={{ borderColor: C.border }}>
+                {PERIODS.map(p => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => applyPeriodPreset(p.value)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap",
+                      analyticsPeriod === p.value 
+                        ? "bg-[#4b7bec] text-white shadow-md shadow-indigo-100" 
+                        : "text-slate-500 hover:bg-slate-50"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <Select
+                value={analyticsProductId || "ALL"}
+                onValueChange={(v) => setAnalyticsProductId(v === "ALL" ? "" : v)}
+              >
+                <SelectTrigger className="h-10 bg-white border-slate-200 rounded-2xl text-xs font-bold w-[160px] shadow-sm">
+                  <SelectValue placeholder="Tous les produits" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs font-bold">Tous les produits</SelectItem>
+                  {(productsQuery.data?.data ?? []).map((p: any) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs font-bold truncate max-w-[200px]" title={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
