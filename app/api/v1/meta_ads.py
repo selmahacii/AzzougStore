@@ -1491,14 +1491,22 @@ def send_meta_event(
             product_id = payload.custom_data.content_ids[0]
             
         import logging
+        import json
         logger = logging.getLogger(__name__)
-        logger.warning(
-            f"[TEST_FUNNEL_EVIDENCE] Received Event: {payload.event_name} | "
-            f"Event ID: {payload.event_id} | "
-            f"LP ID: {payload.lp_id} | "
-            f"Product ID: {product_id} | "
-            f"Timestamp: {payload.event_time}"
-        )
+        log_line = json.dumps({
+            "event_name": payload.event_name,
+            "event_id": payload.event_id,
+            "lp_id": payload.lp_id,
+            "product_id": product_id,
+            "timestamp": payload.event_time
+        })
+        logger.warning(f"[TEST_FUNNEL_EVIDENCE] {log_line}")
+        try:
+            with open("/tmp/test_events.log", "a") as f:
+                f.write(log_line + "\n")
+        except Exception:
+            pass
+
         background_tasks.add_task(
             record_funnel_event,
             store_id=payload.store_id,
@@ -1558,6 +1566,28 @@ def send_meta_event(
         _dispatch_capi_event, config.pixel_id, config.access_token, event, payload.store_id, payload.order_id
     )
     return {"success": True, "sent": True, "event_id": event_id}
+
+
+@router.get("/test-funnel-logs", tags=["Testing"])
+def get_test_funnel_logs():
+    """
+    Temporarily fetch the raw events that were logged to disk.
+    Used for empirical validation of the tracking funnel.
+    """
+    try:
+        with open("/tmp/test_events.log", "r") as f:
+            lines = f.readlines()
+        
+        events = []
+        for line in lines:
+            import json
+            try:
+                events.append(json.loads(line.strip()))
+            except:
+                pass
+        return {"success": True, "events": events}
+    except FileNotFoundError:
+        return {"success": True, "events": []}
 
 
 @router.get("/funnel/diagnostics", response_model=dict)
