@@ -627,7 +627,6 @@ def get_analytics(
     if type == "stores-dashboard":
         # ─── Store Performance Dashboard (Orders Page) ───
         from app.models.store import Store
-        from app.models.order import OrderItem
         
         # Base filter for orders
         base_filters = [Order.is_deleted == False, Order.created_at >= start_date, Order.created_at < end_date]
