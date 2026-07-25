@@ -1489,6 +1489,16 @@ def send_meta_event(
         product_id = None
         if payload.custom_data and payload.custom_data.content_ids:
             product_id = payload.custom_data.content_ids[0]
+            
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            f"[TEST_FUNNEL_EVIDENCE] Received Event: {payload.event_name} | "
+            f"Event ID: {payload.event_id} | "
+            f"LP ID: {payload.lp_id} | "
+            f"Product ID: {product_id} | "
+            f"Timestamp: {payload.event_time}"
+        )
         background_tasks.add_task(
             record_funnel_event,
             store_id=payload.store_id,
