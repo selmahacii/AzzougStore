@@ -3584,6 +3584,76 @@ def get_meta_queue_stats(
     return {"success": True, "data": get_queue_stats(db)}
 
 
+@router.get("/queue/evolution", response_model=dict)
+def get_meta_queue_evolution(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: "User" = Depends(deps.get_current_active_user),
+):
+    """
+    Returns the daily evolution of Conversion Rate (Meta Purchases / Clicks)
+    and Website Quality (CAPI PageViews / Clicks).
+    """
+    from app.models.marketing import MetaAdsDailyInsight, MetaCapiLog
+    from sqlalchemy import func, cast, Date
+    from datetime import datetime, timedelta, timezone
+
+    db.info["skip_tenant_isolation"] = True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    start_date = (now - timedelta(days=30)).date()
+
+    # Get daily insights (clicks, purchases)
+    insights = db.query(
+        MetaAdsDailyInsight.date,
+        func.sum(MetaAdsDailyInsight.clicks).label("clicks"),
+        func.sum(MetaAdsDailyInsight.meta_purchases).label("purchases")
+    ).filter(
+        MetaAdsDailyInsight.store_id == store_id,
+        MetaAdsDailyInsight.date >= start_date
+    ).group_by(MetaAdsDailyInsight.date).all()
+
+    # Get page views from CAPI
+    page_views = db.query(
+        cast(MetaCapiLog.created_at, Date).label("date"),
+        func.count(MetaCapiLog.id).label("page_views")
+    ).filter(
+        MetaCapiLog.store_id == store_id,
+        MetaCapiLog.event_name == "PageView",
+        MetaCapiLog.created_at >= start_date
+    ).group_by(cast(MetaCapiLog.created_at, Date)).all()
+
+    # Merge by date
+    merged = {}
+    for i in range(30, -1, -1):
+        d = (now - timedelta(days=i)).date()
+        merged[d] = {"date": d.strftime("%m-%d"), "clicks": 0, "purchases": 0, "page_views": 0}
+
+    for ins in insights:
+        if ins.date in merged:
+            merged[ins.date]["clicks"] = ins.clicks or 0
+            merged[ins.date]["purchases"] = ins.purchases or 0
+
+    for pv in page_views:
+        if pv.date in merged:
+            merged[pv.date]["page_views"] = pv.page_views or 0
+
+    # Calculate rates
+    result = []
+    for d, data in merged.items():
+        clicks = data["clicks"]
+        purchases = data["purchases"]
+        pviews = data["page_views"]
+        
+        conversion_rate = round((purchases / clicks * 100), 2) if clicks > 0 else 0
+        website_quality = round((pviews / clicks), 2) if clicks > 0 else 0
+        
+        data["conversion_rate"] = conversion_rate
+        data["website_quality"] = website_quality
+        result.append(data)
+
+    return {"success": True, "data": result}
+
+
 @router.post("/queue/retry/{log_id}", response_model=dict)
 def retry_meta_queue_item(
     log_id: str,

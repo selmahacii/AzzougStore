@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { RefreshCw, Trash2, RotateCcw, AlertTriangle, CheckCircle2, Clock, XCircle, Loader2, Zap, Gauge, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, LineChart, Line, Legend } from 'recharts';
 
 const C = {
    primary: '#6C5CE7', primaryBg: '#F0EDFF',
@@ -81,6 +81,16 @@ export default function MetaQueueDashboard() {
     refetchOnWindowFocus: false,
   });
   const lpRows = (lpConversionQuery.data?.data ?? []).filter(r => r.conversion_rate_pct != null);
+
+  const evolutionQuery = useQuery({
+    queryKey: ['meta_queue_evolution', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(
+      `/api/v1/meta-ads/queue/evolution?store_id=${activeStore?.id}`
+    ),
+    enabled: !!activeStore?.id,
+    refetchOnWindowFocus: false,
+  });
+  const evolutionRows = evolutionQuery.data?.data ?? [];
 
   const retryAllMutation = useMutation({
     mutationFn: () => apiFetch('/api/v1/meta-ads/queue/retry-all', { method: 'POST' }),
@@ -202,6 +212,38 @@ export default function MetaQueueDashboard() {
                     ))}
                   </Bar>
                 </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.border }}>
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="size-4" style={{ color: C.primary }} />
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Évolution de la qualité & conversion Meta — 30 jours</p>
+            </div>
+            <p className="text-[10px] text-slate-400 mb-4">
+              Qualité du site (Vues de page CAPI ÷ Clics Meta) et Taux de conversion (Achats Meta ÷ Clics Meta).
+            </p>
+            {evolutionQuery.isLoading ? (
+              <div className="h-52 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+            ) : evolutionRows.length === 0 ? (
+              <div className="h-32 flex items-center justify-center text-xs font-bold text-slate-300">
+                Aucune donnée d'évolution disponible.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={evolutionRows} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickMargin={10} minTickGap={20} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(val) => `${val}%`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                  <RechartsTooltip
+                    contentStyle={{ borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', paddingTop: '10px' }} />
+                  <Line yAxisId="left" type="monotone" name="Conversion Meta" dataKey="conversion_rate" stroke={C.primary} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+                  <Line yAxisId="right" type="monotone" name="Qualité Site" dataKey="website_quality" stroke={C.success} strokeWidth={3} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+                </LineChart>
               </ResponsiveContainer>
             )}
           </div>
