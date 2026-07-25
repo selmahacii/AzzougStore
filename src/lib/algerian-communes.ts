@@ -560,7 +560,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 1639, name: "هراوة", nameAscii: "Herraoua" },
     { id: 1617, name: "حسين داي", nameAscii: "Hussein Dey" },
     { id: 1628, name: "حيدرة", nameAscii: "Hydra" },
-    { id: 1656, name: "الخرايسية", nameAscii: "Khraissia" },
+    { id: 1656, name: "الخرايسية", nameAscii: "Khracia" },
     { id: 1618, name: "القبة", nameAscii: "Kouba" },
     { id: 1633, name: "الكاليتوس", nameAscii: "Les Eucalyptus" },
     { id: 1647, name: "المعالمة", nameAscii: "Maalma" },

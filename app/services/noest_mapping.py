@@ -167,7 +167,7 @@ EXPLICIT_MAPPING = {
     (16, "bologhine ibnou ziri"): "Bologhine Ibn Ziri",
     (16, "bologhine"): "Bologhine Ibn Ziri",
     (16, "mohamed belouzdad"): "Belouizdad",
-    (16, "khraissia"): "Khracia",
+    (16, "khracia"): "Khracia",
     (16, "sehaoula"): "Saoula",
     (16, "maalma"): "Mahelma",
     (16, "douira"): "Douera",
