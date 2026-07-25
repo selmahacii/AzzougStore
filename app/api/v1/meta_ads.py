@@ -1962,7 +1962,7 @@ def get_meta_funnel(
     store_id: str = Query(...),
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
-    include_legacy_data: bool = Query(False),
+    include_legacy_data: bool = Query(True),  # Force include_legacy_data by default to not truncate 30d window
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
@@ -1970,6 +1970,7 @@ def get_meta_funnel(
     from app.core.dates import parse_local_date_filter
     from app.services.meta_capi import detect_funnel_bottleneck
     from app.services.meta_analytics_engine import resolve_metrics_time_window
+    from app.models.funnel_rollup import FunnelRollup
 
     db.info["skip_tenant_isolation"] = True
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1998,27 +1999,24 @@ def get_meta_funnel(
     ).filter(MetaAdsCampaign.store_id == store_id).first()
     impressions, clicks = int(camp_totals[0] or 0), int(camp_totals[1] or 0)
 
-    # ViewContent / AddToCart / InitiateCheckout: our own CAPI send counts —
-    # the real count of shoppers who reached each step, browser + server
-    # combined. AddToCart was missing here (audit 2026-07-21) even though
-    # it's already tracked (src/store/cart-store.ts fires it Pixel+CAPI) —
-    # without it the funnel jumped straight from ViewContent to
-    # InitiateCheckout, so the requested monotonicity check (ViewContent ≤
-    # AddToCart ≤ InitiateCheckout ≤ Purchase) couldn't even be verified.
-    from app.models.marketing import MetaCapiLog
-
-    def _capi_success_count(event_name: str) -> int:
-        return db.query(func.count(MetaCapiLog.id)).filter(
-            MetaCapiLog.store_id == store_id, MetaCapiLog.event_name == event_name,
-            MetaCapiLog.status == "success", MetaCapiLog.created_at >= d_start, MetaCapiLog.created_at <= d_end,
+    # ViewContent / AddToCart / InitiateCheckout: LOCAL rollup counts!
+    # Previously used MetaCapiLog success counts, which returned 0 if CAPI 
+    # was unconfigured or failing. Now we use real local activity from FunnelRollup.
+    def _local_rollup_count(event_name: str) -> int:
+        return db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
+            FunnelRollup.store_id == store_id,
+            FunnelRollup.event_name == event_name,
+            FunnelRollup.day >= d_start.date(),
+            FunnelRollup.day <= d_end.date(),
         ).scalar() or 0
 
-    view_content = _capi_success_count("ViewContent")
-    add_to_cart = _capi_success_count("AddToCart")
-    initiate_checkout = _capi_success_count("InitiateCheckout")
+    view_content = _local_rollup_count("ViewContent")
+    add_to_cart = _local_rollup_count("AddToCart")
+    initiate_checkout = _local_rollup_count("InitiateCheckout")
 
     # Purchase / Recovered / Delivered: real orders — same exclusions used
     # everywhere else in the ERP (MERGED duplicates, MANUAL agent orders).
+    # NOTE: If Order.source is NULL, we assume it's STOREFRONT, so func.coalesce handles MANUAL properly.
     base_filters = [
         Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED",
         func.coalesce(Order.source, "") != "MANUAL",
