@@ -63,6 +63,8 @@ export function ServerSeo({ title, description, image, url, productSchema }: Ser
       <meta name="twitter:description" content={productDescription} />
       {imageUrl ? <meta name="twitter:image" content={imageUrl} /> : null}
       {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : null}
+      <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+      <link rel="preconnect" href="https://connect.facebook.net" crossOrigin="anonymous" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }} />
     </>
   );

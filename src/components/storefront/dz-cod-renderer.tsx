@@ -342,6 +342,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                 src={mainImgSrc} 
                 alt={productName || ''} 
                 className="w-full h-auto transition-transform duration-100 ease-out" 
+                fetchPriority="high"
+                decoding="async"
                 style={{
                   transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                   transform: isZoomed ? 'scale(2)' : 'scale(1)'
