@@ -25,7 +25,8 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
     if (pixelId && typeof window.fbq === 'undefined') {
       // Fix race condition: manually initialize fbq stub synchronously
       // before trackMetaEvent is called.
-      !function(f,b,e,v,n,t,s)
+      // @ts-ignore
+      ;(function(f,b,e,v,n,t,s)
       // @ts-ignore
       {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
       // @ts-ignore
@@ -37,7 +38,7 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
       t.src=v;
       s=b.getElementsByTagName(e)[0];
       // @ts-ignore
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      s.parentNode.insertBefore(t,s)})(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
       
       window.__metaPixelId = pixelId;
