@@ -196,10 +196,13 @@ def get_analytics(
             func.count(Order.id).label("total_orders"),
             func.coalesce(func.sum(case((Order.status == "DELIVERED", 1), else_=0)), 0).label("delivered"),
             func.coalesce(func.sum(case((Order.status == "RETURNED", 1), else_=0)), 0).label("returned"),
-            func.coalesce(func.sum(case((Order.status == "NEW", 1), else_=0)), 0).label("new"),
-            func.coalesce(func.sum(case((Order.status == "ASSIGNED", 1), else_=0)), 0).label("assigned"),
-            func.coalesce(func.sum(case((Order.status == "CALLED", 1), else_=0)), 0).label("called"),
-            func.coalesce(func.sum(case((Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), 1), else_=0)), 0).label("confirmed"),
+            func.coalesce(func.sum(case((and_(Order.status == "NEW", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("new"),
+            func.coalesce(func.sum(case((and_(Order.status == "ASSIGNED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("assigned"),
+            func.coalesce(func.sum(case((and_(Order.status == "CALLED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("called"),
+            func.coalesce(func.sum(case((and_(Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("confirmed"),
+            func.coalesce(func.sum(case((and_(Order.status == "DELIVERED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("funnel_delivered"),
+            func.coalesce(func.sum(case((and_(Order.status == "RETURNED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)), 0).label("funnel_returned"),
+            func.coalesce(func.sum(case((func.coalesce(Order.source, "") != "MANUAL", 1), else_=0)), 0).label("funnel_total"),
             func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.delivery_fee), else_=0)), 0).label("shipping_fee_gap"),
             func.coalesce(func.sum(case((and_(Order.is_upsell == True, Order.status == "DELIVERED"), Order.total), else_=0)), 0).label("upsell_revenue"),
             func.coalesce(func.sum(case((and_(Order.is_abandoned_cart == True, Order.status == "DELIVERED"), Order.total), else_=0)), 0).label("abandoned_cart_revenue"),
@@ -217,6 +220,9 @@ def get_analytics(
         assigned_orders = int(agg.assigned or 0)
         called_orders = int(agg.called or 0)
         confirmed_orders = int(agg.confirmed or 0)
+        funnel_delivered = int(agg.funnel_delivered or 0)
+        funnel_returned = int(agg.funnel_returned or 0)
+        funnel_total = int(agg.funnel_total or 0)
         pending_orders = new_orders + assigned_orders + called_orders
         shipping_fee_gap = agg.shipping_fee_gap or 0
         upsell_revenue = agg.upsell_revenue or 0
@@ -251,7 +257,7 @@ def get_analytics(
             total_employees = db.query(func.count(User.id)).filter(User.employee_store_id == store_id, User.is_active == True).scalar() or 0
 
         # Funnel
-        funnel = get_funnel_rates(new_orders, assigned_orders, called_orders, confirmed_orders, delivered_orders, returned_orders)
+        funnel = get_funnel_rates(new_orders, assigned_orders, called_orders, confirmed_orders, funnel_delivered, funnel_returned)
 
         # Previous Period comparison. None (not 0) when the previous period had
         # no baseline to compare against — a 0-to-N jump isn't a "% growth",
@@ -316,7 +322,7 @@ def get_analytics(
             revenueChange=revenue_change,
             ordersToday=today_total_orders,
             ordersChange=orders_change,
-            conversionRate=round((delivered_orders / total_orders_count * 100), 2) if total_orders_count > 0 else 0,
+            conversionRate=round((funnel_delivered / funnel_total * 100), 2) if funnel_total > 0 else 0,
             returnRate=funnel.returnRate,
             avgOrderValue=int(total_rev / total_orders) if total_orders > 0 else 0,
             totalOrders=total_orders,
@@ -603,7 +609,11 @@ def get_analytics(
         s_net_rev = s_total_rev
         s_avg_order = int(s_total_rev / s_total_orders) if s_total_orders > 0 else 0
         s_return_rate = round((s_returned / (s_delivered or 1) * 100), 2)
-        s_conversion = round((s_delivered / (s_total_orders or 1) * 100), 2)
+        
+        non_manual_filter = func.coalesce(Order.source, "") != "MANUAL"
+        s_non_manual_orders = db.query(func.count(Order.id)).filter(and_(*(period_filters + [non_manual_filter]))).scalar() or 0
+        s_non_manual_delivered = db.query(func.count(Order.id)).filter(and_(*(period_filters + [Order.status == "DELIVERED", non_manual_filter]))).scalar() or 0
+        s_conversion = round((s_non_manual_delivered / (s_non_manual_orders or 1) * 100), 2)
 
         data = {
             "store_id": store_id,
@@ -641,7 +651,9 @@ def get_analytics(
             Order.store_id,
             func.count(Order.id).label("total_orders"),
             func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)).label("revenue"),
-            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered_count")
+            func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered_count"),
+            func.sum(case((func.coalesce(Order.source, "") != "MANUAL", 1), else_=0)).label("non_manual_total"),
+            func.sum(case((and_(Order.status == "DELIVERED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)).label("non_manual_delivered")
         ).filter(and_(*base_filters)).group_by(Order.store_id).all()
         
         stores = db.query(Store.id, Store.name, Store.color).filter(Store.is_active == True).all()
@@ -657,7 +669,10 @@ def get_analytics(
             revenue = stat.revenue or 0
             delivered_count = stat.delivered_count or 0
             
-            conversion_rate = round((delivered_count / total_orders * 100), 2) if total_orders > 0 else 0
+            non_manual_total = stat.non_manual_total or 0
+            non_manual_delivered = stat.non_manual_delivered or 0
+            
+            conversion_rate = round((non_manual_delivered / non_manual_total * 100), 2) if non_manual_total > 0 else 0
             average_basket = round((revenue / delivered_count), 2) if delivered_count > 0 else 0
             
             data.append({
@@ -825,7 +840,7 @@ def get_analytics(
             func.count(Order.id).label("count"),
             func.coalesce(func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)), 0).label("revenue"),
             func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered")
-        ).filter(and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date]))).group_by(Order.source).all()
+        ).filter(and_(*(filters + [Order.created_at >= start_date, Order.created_at < end_date, func.coalesce(Order.source, "") != "MANUAL"]))).group_by(Order.source).all()
 
         channels_list = []
         conversion_by_channel = []
