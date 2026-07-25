@@ -14,7 +14,7 @@ import re
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -411,6 +411,7 @@ def get_landing_page(
 @router.get("/{lp_id}/analytics")
 def get_landing_page_analytics(
     lp_id: str,
+    response: Response,
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -423,6 +424,10 @@ def get_landing_page_analytics(
     excluded, every order of the product in the store counts (source-agnostic).
     Defaults to the last 30 days when no range is given.
     """
+    # Cache on Edge (Vercel) for 5 minutes, allow stale while revalidating.
+    # This prevents duplicate Vercel invocations/Supabase queries when repeatedly opening the modal.
+    response.headers["Cache-Control"] = "public, s-maxage=300, stale-while-revalidate=600"
+
     from datetime import timedelta
     from app.models.order import Order, OrderItem
 
@@ -461,6 +466,15 @@ def get_landing_page_analytics(
             func.count(distinct(case(
                 (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
             ))).label("manual"),
+            func.count(distinct(case(
+                (and_(Order.status != "MERGED", func.coalesce(Order.source, "") != "MANUAL", func.coalesce(Order.is_abandoned_cart, False) == False), Order.id)
+            ))).label("normal"),
+            func.count(distinct(case(
+                (and_(Order.is_abandoned_cart == True, Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED"))), Order.id)
+            ))).label("recovered"),
+            func.count(distinct(case(
+                (Order.is_abandoned_cart == True, Order.id)
+            ))).label("abandoned"),
             func.coalesce(func.sum(case(
                 (Order.status != "MERGED", OrderItem.quantity * OrderItem.unit_price), else_=0
             )), 0).label("revenue"),
@@ -492,6 +506,9 @@ def get_landing_page_analytics(
             "delivered": int(r.delivered or 0),
             "cancelled": int(r.cancelled or 0),
             "manual": int(r.manual or 0),
+            "normal": int(r.normal or 0),
+            "recovered": int(r.recovered or 0),
+            "abandoned": int(r.abandoned or 0),
             "revenue": float(r.revenue or 0),
         }
         for r in rows
@@ -626,6 +643,9 @@ def get_landing_page_analytics(
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
         d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
         d["meta_reach"] = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
+        mc = meta_daily_by_date.get(d["date"], {}).get("clicks", 0)
+        d["meta_clicks"] = mc
+        d["conversion_rate"] = round(d["orders"] / mc * 100, 2) if mc > 0 else 0
 
     from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup
@@ -662,6 +682,86 @@ def get_landing_page_analytics(
         round(int(local_view_content) / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0 else None
     )
 
+    # ── Ad Set Performance ──
+    # Calculate conversion rate per ad set on the exact date range using local orders and local funnel views (ViewContent)
+    from app.models.marketing import MetaAdsAdInsight
+    
+    order_adsets = (
+        db.query(
+            Order.adset_id,
+            func.max(Order.adset_name).label("adset_name"),
+            func.count(distinct(Order.id)).label("orders")
+        )
+        .select_from(OrderItem)
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            Order.store_id == lp.store_id,
+            OrderItem.product_id == lp.product_id,
+            Order.is_deleted == False,
+            Order.status != "MERGED",
+            Order.created_at >= d_start,
+            Order.created_at <= d_end,
+            Order.adset_id.isnot(None)
+        )
+        .group_by(Order.adset_id)
+        .all()
+    )
+    
+    funnel_adsets = (
+        db.query(
+            FunnelRollup.adset_id,
+            func.sum(FunnelRollup.count).label("views")
+        )
+        .filter(
+            FunnelRollup.store_id == lp.store_id,
+            FunnelRollup.event_name == "ViewContent",
+            or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
+            FunnelRollup.day >= d_start.date(),
+            FunnelRollup.day <= d_end.date(),
+            FunnelRollup.adset_id.isnot(None)
+        )
+        .group_by(FunnelRollup.adset_id)
+        .all()
+    )
+    
+    adset_views = {r.adset_id: int(r.views) for r in funnel_adsets}
+    
+    # Lookup missing adset names
+    all_adset_ids = {r.adset_id for r in order_adsets} | {r.adset_id for r in funnel_adsets}
+    adset_names = {}
+    if all_adset_ids:
+        _names = db.query(MetaAdsAdInsight.adset_id, func.max(MetaAdsAdInsight.adset_name)).filter(
+            MetaAdsAdInsight.store_id == lp.store_id,
+            MetaAdsAdInsight.adset_id.in_(all_adset_ids)
+        ).group_by(MetaAdsAdInsight.adset_id).all()
+        adset_names = {r[0]: r[1] for r in _names}
+    
+    adsets = []
+    for r in order_adsets:
+        views = adset_views.get(r.adset_id, 0)
+        orders = int(r.orders)
+        adsets.append({
+            "adset_id": r.adset_id,
+            "adset_name": r.adset_name or adset_names.get(r.adset_id) or r.adset_id,
+            "orders": orders,
+            "views": views,
+            "conversion_rate": round(orders / views * 100, 2) if views > 0 else 0
+        })
+    
+    # Add adsets from funnel that had views but 0 orders
+    order_adset_ids = {r.adset_id for r in order_adsets}
+    for r in funnel_adsets:
+        if r.adset_id not in order_adset_ids:
+            adsets.append({
+                "adset_id": r.adset_id,
+                "adset_name": adset_names.get(r.adset_id) or r.adset_id,
+                "orders": 0,
+                "views": int(r.views),
+                "conversion_rate": 0
+            })
+            
+    adsets.sort(key=lambda x: x["conversion_rate"], reverse=True)
+
     return {
         "success": True,
         "data": {
@@ -672,6 +772,7 @@ def get_landing_page_analytics(
             "local_view_content": int(local_view_content),
             "meta_view_content_store_wide": int(meta_view_content_store_wide),
             "qualite_site_pct": qualite_site_pct,
+            "adsets": adsets,
         },
     }
 

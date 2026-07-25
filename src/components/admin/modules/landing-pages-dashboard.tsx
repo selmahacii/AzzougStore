@@ -359,17 +359,25 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                       tick={{ fontSize: 10, fill: '#94A3B8' }} 
                       dy={10}
                     />
-                    <YAxis yAxisId="left" orientation="left" stroke="#6C5CE7" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={40} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#1877F2" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(1)}k` : val} />
+                    <YAxis yAxisId="left" orientation="left" stroke="#1E293B" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={30} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#1877F2" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(0)}k` : val} />
+                    <YAxis yAxisId="right-percent" orientation="right" stroke="#E17055" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={35} tickFormatter={(val) => `${val}%`} />
                     <Tooltip 
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', fontSize: '12px', fontWeight: 'bold' }}
                       labelFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      formatter={(value: any, name: string) => {
+                        if (name === "Taux de Conv.") return [`${value}%`, name];
+                        return [value, name];
+                      }}
                     />
                     <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', paddingTop: '10px' }} />
-                    <Bar yAxisId="left" dataKey="orders" name="Commandes" fill="#6C5CE7" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Bar yAxisId="left" dataKey="normal" name="Cmd. Normale" stackId="a" fill="#2C3E50" maxBarSize={40} />
+                    <Bar yAxisId="left" dataKey="manual" name="Cmd. Manuelle" stackId="a" fill="#7F8C8D" maxBarSize={40} />
+                    <Bar yAxisId="left" dataKey="recovered" name="Panier Récup." stackId="a" fill="#8E44AD" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     <Bar yAxisId="left" dataKey="delivered" name="Livrées" fill="#00B894" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     <Line yAxisId="right" type="monotone" dataKey="meta_impressions" name="Impressions Meta" stroke="#1877F2" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                    <Line yAxisId="right" type="monotone" dataKey="meta_reach" name="Couverture Meta" stroke="#8E44AD" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    <Line yAxisId="right" type="monotone" dataKey="meta_reach" name="Couverture Meta" stroke="#F39C12" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    <Line yAxisId="right-percent" type="monotone" dataKey="conversion_rate" name="Taux de Conv." stroke="#E17055" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#FFF' }} activeDot={{ r: 6 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
