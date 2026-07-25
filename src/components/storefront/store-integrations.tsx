@@ -25,21 +25,24 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
     if (pixelId && typeof window.fbq === 'undefined') {
       // Fix race condition: manually initialize fbq stub synchronously
       // before trackMetaEvent is called.
-      // @ts-ignore
-      ;(function(f,b,e,v,n,t,s)
-      // @ts-ignore
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      // @ts-ignore
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      // @ts-ignore
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      // @ts-ignore
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;
-      s=b.getElementsByTagName(e)[0];
-      // @ts-ignore
-      s.parentNode.insertBefore(t,s)})(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
+      const f = window as any;
+      if (!f.fbq) {
+        const n: any = f.fbq = function() {
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        };
+        if (!f._fbq) f._fbq = n;
+        n.push = n;
+        n.loaded = !0;
+        n.version = '2.0';
+        n.queue = [];
+        const t = document.createElement('script');
+        t.async = !0;
+        t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+        const s = document.getElementsByTagName('script')[0];
+        if (s && s.parentNode) {
+          s.parentNode.insertBefore(t, s);
+        }
+      }
       
       window.__metaPixelId = pixelId;
       if (window.fbq) {
