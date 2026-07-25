@@ -5,7 +5,7 @@ import Script from 'next/script';
 import { setMetaPixelId, trackMetaEvent } from '@/lib/meta-tracking';
 import { captureAttribution } from '@/lib/attribution';
 
-export function StorefrontIntegrations({ config }: { config: any }) {
+export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: string }) {
   const pixelId = config?.pixel_id;
 
   let domainContent = config?.domain_verification_tag;
@@ -36,6 +36,7 @@ export function StorefrontIntegrations({ config }: { config: any }) {
           content_name: 'Storefront PageView',
         }, {
           pixelId,
+          lpId,
           eventId: `pageview-${pixelId || config?.store_id}-${Date.now()}`,
           shouldSendToServer: true,
         });

@@ -75,7 +75,7 @@ export const useCartStore = create<CartState>()(
           currency: 'DZD',
           contents: [{ id: product.id, quantity }],
         }, {
-          eventId: `addtocart-${product.id}-${variant || ''}-${quantity}-${customPrice ?? product.price}`,
+          eventId: `addtocart-${product.id}`,
           userData: {
             email: typeof window !== 'undefined' ? window.localStorage.getItem('meta-email') || undefined : undefined,
             phone: typeof window !== 'undefined' ? window.localStorage.getItem('meta-phone') || undefined : undefined,

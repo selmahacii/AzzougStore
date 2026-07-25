@@ -224,7 +224,7 @@ export default async function LpPage({
         url={`${getAppBaseUrl()}/lp/${slug}`}
       />
       <HydrateStore initialUser={null} initialStores={stores} activeStoreSlug={matchedStore?.slug} />
-      <StorefrontIntegrations config={metaAdsConfig} />
+      <StorefrontIntegrations config={metaAdsConfig} lpId={lp.id} />
       {lp.template === 'dz_cod' ? (
         <DzCodRenderer data={lp} />
       ) : (
