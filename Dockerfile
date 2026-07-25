@@ -25,7 +25,7 @@ COPY . .
 RUN chmod +x start.sh
 
 # Expose the port FastAPI will run on
-EXPOSE 8000
+EXPOSE 7860
 
 # Start command
 CMD ["./start.sh"]
