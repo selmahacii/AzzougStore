@@ -1490,6 +1490,14 @@ const [timeLeft, setTimeLeft] = useState('');
             >
                <Filter className="size-4 sm:size-5" />
             </button>
+            {filterProductId && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-[#4b7bec]/10 border border-[#4b7bec]/20 text-[#4b7bec] font-bold text-xs shadow-sm">
+                <span className="max-w-[120px] truncate" title={productsQuery.data?.data?.find((p: any) => p.id === filterProductId)?.name || 'Produit'}>
+                  {productsQuery.data?.data?.find((p: any) => p.id === filterProductId)?.name || 'Produit'}
+                </span>
+                <button onClick={() => setFilterProductId('')} className="hover:bg-[#4b7bec]/20 p-1 rounded-lg transition-colors"><X className="size-3" /></button>
+              </div>
+            )}
             {(filterWilaya || filterSource || filterProductId || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
               <button
                 onClick={() => { clearAllFilters(); setFilterProductId(''); }}
@@ -1737,9 +1745,16 @@ const [timeLeft, setTimeLeft] = useState('');
                         {order.items && order.items.length > 0 ? (
                           order.items.slice(0, 3).map((item: any, i: number) => (
                             <div key={i} className="flex flex-col">
-                              <span className="text-[11px] font-bold text-slate-800 truncate" title={item.product_name || 'Produit'}>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (item.product_id) setFilterProductId(item.product_id);
+                                }}
+                                className="text-[11px] font-bold text-slate-800 truncate hover:text-[#4b7bec] hover:underline text-left transition-colors cursor-pointer" 
+                                title={item.product_name || 'Produit'}
+                              >
                                 {item.quantity}x {item.product_name || 'Produit'}
-                              </span>
+                              </button>
                               {item.variant_name && (
                                 <span className="text-[9px] font-bold text-slate-500 truncate" title={item.variant_name}>
                                   {item.variant_name}

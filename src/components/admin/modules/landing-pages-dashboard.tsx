@@ -28,6 +28,7 @@ import {
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -263,17 +264,19 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             </div>
           </div>
 
-          {/* Impressions Meta / Taux de conversion réel (commandes ERP ÷
-              clics Meta) / Qualité du site (Landing Page View Rate = vues de
-              cette LP ÷ clics Meta) — trois chiffres réels, aucun estimé:
-              null tant que meta_clicks est à 0 pour la période (pas de "0%"
-              trompeur affiché à la place d'une donnée absente). */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* Impressions Meta / Couverture / Taux de conversion réel / Qualité du site */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div
               title="Impressions de vos annonces Meta pour ce produit, sur la période sélectionnée."
               className="text-center p-3 rounded-2xl border" style={{ borderColor: '#1877F233', backgroundColor: '#1877F20D' }}>
               <p className="text-sm font-black tabular-nums" style={{ color: '#1877F2' }}>{(totals.meta_impressions ?? 0).toLocaleString('fr-FR')}</p>
               <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#1877F2' }}>Impressions</p>
+            </div>
+            <div
+              title="Couverture de vos annonces Meta pour ce produit (nombre de personnes uniques)."
+              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#8E44AD33', backgroundColor: '#8E44AD0D' }}>
+              <p className="text-sm font-black tabular-nums" style={{ color: '#8E44AD' }}>{(totals.meta_reach ?? 0).toLocaleString('fr-FR')}</p>
+              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#8E44AD' }}>Couverture</p>
             </div>
             <div
               title="Commandes réelles ERP ÷ clics Meta sur cette période. Absent si aucun clic Meta enregistré."
@@ -332,47 +335,45 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             )}
           </div>
 
-          {/* Graphe simplifié — chiffres toujours visibles (pas besoin de
-              survoler avec la souris), légende en langage clair. */}
+          {/* Graphe Comparatif Commandes vs Impressions Meta */}
           <div className="bg-slate-50 rounded-2xl p-4">
-            <p className="text-xs font-bold text-slate-500 mb-3">Commandes par jour</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold text-slate-500">Performances vs Trafic Meta</p>
+            </div>
             {analyticsQuery.isLoading ? (
-              <div className="h-40 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+              <div className="h-64 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
             ) : daily.length === 0 ? (
-              <div className="h-40 flex items-center justify-center text-xs font-bold text-slate-300">
-                Aucune commande sur cette période
+              <div className="h-64 flex items-center justify-center text-xs font-bold text-slate-300">
+                Aucune donnée sur cette période
               </div>
             ) : (
-              // Hauteurs en PIXELS, jamais en % : les barres vivaient dans un
-              // conteneur à hauteur "auto" (chaque colonne n'a pas de hauteur
-              // explicite, seul le parent flex a items-end, pas stretch), donc
-              // un enfant en height:% n'avait aucune base de calcul valide et
-              // s'effondrait à 0 — les nombres/dates s'affichaient mais aucune
-              // barre n'était visible. Un conteneur de hauteur FIXE (BAR_MAX_PX)
-              // élimine l'ambiguïté CSS une fois pour toutes.
-              <div className="flex items-end gap-1.5 overflow-x-auto custom-scrollbar pb-1">
-                {daily.map(d => {
-                  const BAR_MAX_PX = 120;
-                  const barPx = Math.max(4, Math.round((d.orders / maxOrders) * BAR_MAX_PX));
-                  const deliveredPx = d.orders > 0 ? Math.round((d.delivered / d.orders) * barPx) : 0;
-                  return (
-                    <div key={d.date} className="flex flex-col items-center gap-1 min-w-[28px] flex-1"
-                      title={`${new Date(d.date).toLocaleDateString('fr-FR')} : ${d.orders} commande(s), ${d.delivered} livrée(s)`}>
-                      <span className="text-[10px] font-black text-slate-600 tabular-nums">{d.orders}</span>
-                      <div className="w-full flex flex-col justify-end rounded-t-md overflow-hidden bg-slate-200" style={{ height: `${BAR_MAX_PX}px` }}>
-                        <div className="w-full bg-[#6C5CE7]" style={{ height: `${barPx - deliveredPx}px` }} />
-                        <div className="w-full bg-emerald-400" style={{ height: `${deliveredPx}px` }} />
-                      </div>
-                      <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap">{new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
-                    </div>
-                  );
-                })}
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={daily} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                    <XAxis 
+                      dataKey="date" 
+                      tickFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fill: '#94A3B8' }} 
+                      dy={10}
+                    />
+                    <YAxis yAxisId="left" orientation="left" stroke="#6C5CE7" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={40} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#1877F2" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(1)}k` : val} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', fontSize: '12px', fontWeight: 'bold' }}
+                      labelFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', paddingTop: '10px' }} />
+                    <Bar yAxisId="left" dataKey="orders" name="Commandes" fill="#6C5CE7" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Bar yAxisId="left" dataKey="delivered" name="Livrées" fill="#00B894" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    <Line yAxisId="right" type="monotone" dataKey="meta_impressions" name="Impressions Meta" stroke="#1877F2" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                    <Line yAxisId="right" type="monotone" dataKey="meta_reach" name="Couverture Meta" stroke="#8E44AD" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
               </div>
             )}
-            <div className="flex items-center gap-4 mt-3">
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="size-2.5 rounded-sm bg-[#6C5CE7] inline-block" /> Total commandes</span>
-              <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="size-2.5 rounded-sm bg-emerald-400 inline-block" /> Livrées</span>
-            </div>
           </div>
 
           {/* Qualité du Tracking — pourquoi Meta et l'ERP ne matchent pas */}

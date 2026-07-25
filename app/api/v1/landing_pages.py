@@ -579,6 +579,7 @@ def get_landing_page_analytics(
                 func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
             )
             .filter(
@@ -590,7 +591,7 @@ def get_landing_page_analytics(
             .all()
         )
         meta_daily_by_date = {
-            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0), "clicks": int(r[5] or 0)}
+            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0), "reach": int(r[5] or 0), "clicks": int(r[6] or 0)}
             for r in _rows
         }
     if meta_daily_by_date:
@@ -598,12 +599,14 @@ def get_landing_page_analytics(
         totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
         totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
         totals["meta_impressions"] = sum(v["impressions"] for v in meta_daily_by_date.values())
+        totals["meta_reach"] = sum(v["reach"] for v in meta_daily_by_date.values())
         totals["meta_clicks"] = sum(v["clicks"] for v in meta_daily_by_date.values())
     else:
         totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
         totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
         totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
         totals["meta_impressions"] = sum(c.impressions or 0 for c in meta_campaigns)
+        totals["meta_reach"] = sum(c.reach or 0 for c in meta_campaigns)
         totals["meta_clicks"] = sum(c.clicks or 0 for c in meta_campaigns)
 
     # Taux de conversion réel = vraies commandes ERP ÷ clics Meta (jamais
@@ -622,6 +625,7 @@ def get_landing_page_analytics(
     for d in daily:
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
         d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
+        d["meta_reach"] = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
 
     from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup
