@@ -1512,7 +1512,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
               <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
                 {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
-                  <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.id, 'NRP'); }}
+                  <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, 'NRP'); }}
                           className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
                     <span>Signaler Ne Répond Pas (NRP)</span>
                     <Phone className="size-4" />
@@ -1525,7 +1525,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       if (isShippedWithoutTracking && onDispatch) {
                         onDispatch(order.id);
                       } else {
-                        onStatusChange(order.id, ns, currentUser?.id); 
+                        onStatusChange(order.id, ns, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); 
                       }
                     }}
                             className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
