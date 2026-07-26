@@ -155,7 +155,7 @@ export default function MetaQueueDashboard() {
 
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">File actuelle</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <Tile label="En attente" value={stats?.queued ?? 0} icon={Clock} color={C.info} />
               <Tile label="En cours" value={stats?.processing ?? 0} icon={Loader2} color={C.primary} />
               <Tile label="Nouvelle tentative" value={stats?.retry ?? 0} icon={RotateCcw} color={(stats?.retry ?? 0) > 0 ? C.warning : C.textDim} />
@@ -165,7 +165,7 @@ export default function MetaQueueDashboard() {
 
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Performance (30 jours)</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <Tile label="Réussis aujourd'hui" value={stats?.success_today ?? 0} icon={CheckCircle2} color={C.success} />
               <Tile label="Réussis (30j)" value={stats?.success_30d ?? 0} icon={CheckCircle2} color={C.success} />
               <Tile label="Taux de réussite" value={stats?.success_rate_30d != null ? `${stats.success_rate_30d}%` : '—'} icon={Gauge} color={(stats?.success_rate_30d ?? 100) >= 95 ? C.success : C.warning} />
@@ -175,7 +175,7 @@ export default function MetaQueueDashboard() {
 
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Vitesse</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <Tile label="Temps moyen" value={stats?.avg_latency_ms ? `${stats.avg_latency_ms}ms` : '—'} icon={Clock} color={C.text} />
               <Tile label="Temps maximal" value={stats?.max_latency_ms ? `${stats.max_latency_ms}ms` : '—'} icon={Clock} color={C.textLight} />
               <Tile label="Tentatives moy." value={stats?.avg_attempts ?? '—'} icon={RotateCcw} color={C.textLight} />

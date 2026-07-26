@@ -26,7 +26,7 @@ const THRESHOLDS = {
 
 function Tile({ label, value, icon: Icon, color, alert }: { label: string; value: string | number; icon: any; color: string; alert?: boolean }) {
    return (
-      <div className={cn("p-3.5 rounded-2xl border bg-white flex items-center gap-3", alert && "ring-2 ring-rose-200")} style={{ borderColor: (alert ? C.danger : color) + '33' }}>
+      <div className={cn("p-3.5 rounded-2xl border bg-white flex items-center gap-3 w-full", alert && "ring-2 ring-rose-200")} style={{ borderColor: (alert ? C.danger : color) + '33' }}>
          <div className="size-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: (alert ? C.danger : color) + '18' }}>
             <Icon className="size-4" style={{ color: alert ? C.danger : color }} />
          </div>
@@ -39,7 +39,6 @@ function Tile({ label, value, icon: Icon, color, alert }: { label: string; value
 }
 
 export default function FunnelTrackingDashboard() {
-   const activeStore = useAppStore(s => s.activeStore);
    const qc = useQueryClient();
 
    const { data, isLoading, isFetching } = useQuery({
@@ -50,14 +49,6 @@ export default function FunnelTrackingDashboard() {
       refetchOnWindowFocus: false,
    });
    const d = data?.data;
-
-   const { data: bottlenecksData, isLoading: loadingBottlenecks } = useQuery({
-      queryKey: ['funnel_bottlenecks', activeStore?.id],
-      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/meta-ads/funnel/bottlenecks?store_id=${activeStore?.id}&days=7`),
-      enabled: !!activeStore?.id,
-      refetchOnWindowFocus: false,
-   });
-   const bottlenecks = bottlenecksData?.data;
 
    const toggleMutation = useMutation({
       mutationFn: (disabled: boolean) => apiFetch('/api/v1/meta-ads/funnel/toggle', { method: 'POST', body: JSON.stringify({ disabled }) }),
@@ -102,7 +93,7 @@ export default function FunnelTrackingDashboard() {
                      <Activity className="size-5" style={{ color: status.active ? C.success : C.danger }} />
                   </div>
                   <div>
-                     <h2 className="text-base font-black text-slate-800">Suivi du Funnel (PageView → InitiateCheckout)</h2>
+                     <h2 className="text-base font-black text-slate-800">Suivi du Funnel (Front-end)</h2>
                      <p className="text-xs text-slate-400 mt-0.5">
                         {status.active ? 'Actif — compteurs Redis en cours de collecte' : 'Inactif — voir les alertes ci-dessous'}
                      </p>
@@ -134,7 +125,7 @@ export default function FunnelTrackingDashboard() {
          </div>
 
          {/* Metrics grid */}
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
             <Tile label="Commandes Redis/min" value={d.commands_per_min ?? '—'} icon={Zap} color={C.primary} />
             <Tile label="Estimation mensuelle" value={d.estimated_monthly_commands?.toLocaleString('fr-FR') ?? '—'} icon={Database} color={C.info} />
             <Tile label="Échecs Redis (cumul)" value={d.failures_total ?? 0} icon={AlertTriangle} color={C.warning} alert={d.failures_total > THRESHOLDS.failuresTotalWarn} />
@@ -149,55 +140,6 @@ export default function FunnelTrackingDashboard() {
             <Tile label="Événements drainés (dernier flush)" value={d.flush?.last_events_drained ?? 0} icon={Activity} color={C.text} />
             <Tile label="Latence requête dashboard" value={d.dashboard_query_ms != null ? `${d.dashboard_query_ms}ms` : '—'} icon={Gauge} color={C.success} />
             <Tile label="Lignes table rollup" value={d.rollup_table_rows ?? 0} icon={Database} color={C.textDim} />
-         </div>
-
-         {/* Bottleneck report */}
-         <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.border }}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Goulots d'étranglement — 7 derniers jours</p>
-            {loadingBottlenecks ? (
-               <div className="p-10 flex justify-center"><RefreshCw className="size-5 animate-spin text-slate-300" /></div>
-            ) : (
-               ['by_landing_page', 'by_product', 'by_campaign'].map(key => {
-                  const rows = bottlenecks?.[key] || [];
-                  const label = key === 'by_landing_page' ? 'Landing Pages' : key === 'by_product' ? 'Produits' : 'Campagnes';
-                  return (
-                     <div key={key} className="mb-5 last:mb-0">
-                        <p className="text-xs font-bold text-slate-600 mb-2">{label}</p>
-                        {rows.length === 0 ? (
-                           <p className="text-xs text-slate-300">Aucune donnée sur cette période.</p>
-                        ) : (
-                           <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                 <thead><tr className="text-left text-slate-400 border-b" style={{ borderColor: C.border }}>
-                                    <th className="pb-2 pr-3">ID</th><th className="pb-2 pr-3 text-right">PageView</th>
-                                    <th className="pb-2 pr-3 text-right">ViewContent</th><th className="pb-2 pr-3 text-right">AddToCart</th>
-                                    <th className="pb-2 pr-3 text-right">InitiateCheckout</th><th className="pb-2">Goulot</th>
-                                 </tr></thead>
-                                 <tbody className="divide-y" style={{ borderColor: C.border }}>
-                                    {rows.slice(0, 10).map((r: any) => (
-                                       <tr key={r.id}>
-                                          <td className="py-2 pr-3 font-mono">{String(r.id).slice(0, 8)}</td>
-                                          <td className="py-2 pr-3 text-right tabular-nums">{r.pageviews}</td>
-                                          <td className="py-2 pr-3 text-right tabular-nums">{r.view_content}</td>
-                                          <td className="py-2 pr-3 text-right tabular-nums">{r.add_to_cart}</td>
-                                          <td className="py-2 pr-3 text-right tabular-nums">{r.initiate_checkout}</td>
-                                          <td className="py-2">
-                                             {r.bottleneck_stage ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: C.dangerBg, color: C.danger }}>
-                                                   {r.bottleneck_stage} (-{r.bottleneck_drop_pct}%)
-                                                </span>
-                                             ) : '—'}
-                                          </td>
-                                       </tr>
-                                    ))}
-                                 </tbody>
-                              </table>
-                           </div>
-                        )}
-                     </div>
-                  );
-               })
-            )}
          </div>
       </div>
    );
