@@ -327,39 +327,42 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           const insetImgSrc = optimizeCloudinaryUrl(rawInsetImgSrc, 150);
 
           return (
-            <div 
-              className="w-full relative overflow-hidden cursor-zoom-in group"
-              onMouseMove={(e) => {
-                const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-                const x = ((e.clientX - left) / width) * 100;
-                const y = ((e.clientY - top) / height) * 100;
-                setZoomPos({ x, y });
-                setIsZoomed(true);
-              }}
-              onMouseLeave={() => setIsZoomed(false)}
-            >
-              <img 
-                src={mainImgSrc} 
-                alt={productName || ''} 
-                className="w-full h-auto transition-transform duration-100 ease-out" 
-                fetchPriority="high"
-                decoding="async"
-                style={{
-                  transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
-                  transform: isZoomed ? 'scale(2)' : 'scale(1)'
+            <>
+              <link rel="preload" as="image" href={mainImgSrc} fetchPriority="high" />
+              <div 
+                className="w-full relative overflow-hidden cursor-zoom-in group"
+                onMouseMove={(e) => {
+                  const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+                  const x = ((e.clientX - left) / width) * 100;
+                  const y = ((e.clientY - top) / height) * 100;
+                  setZoomPos({ x, y });
+                  setIsZoomed(true);
                 }}
-              />
-              
-              {/* Circular Inset Badge on Top-Right */}
-              {insetImgSrc && (
-                <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
-                  <span className="text-sm font-bold text-slate-800">+</span>
-                  <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                    <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
+                onMouseLeave={() => setIsZoomed(false)}
+              >
+                <img 
+                  src={mainImgSrc} 
+                  alt={productName || ''} 
+                  className="w-full h-auto transition-transform duration-100 ease-out" 
+                  fetchPriority="high"
+                  decoding="async"
+                  style={{
+                    transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
+                    transform: isZoomed ? 'scale(2)' : 'scale(1)'
+                  }}
+                />
+                
+                {/* Circular Inset Badge on Top-Right */}
+                {insetImgSrc && (
+                  <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
+                    <span className="text-sm font-bold text-slate-800">+</span>
+                    <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
+                      <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </>
           );
         })()}
 

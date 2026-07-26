@@ -32,7 +32,7 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
         }, {
           pixelId,
           lpId,
-          eventId: `pageview-${pixelId || config?.store_id}-${Date.now()}`,
+          eventId: (window as any).__pageViewEventId || `pageview-${pixelId || config?.store_id}-${Date.now()}`,
           shouldSendToServer: true,
         });
       } catch {
@@ -63,6 +63,12 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
               'https://connect.facebook.net/en_US/fbevents.js');
               fbq('init', '${pixelId}');
               window.__metaPixelId = '${pixelId}';
+              
+              window.__pageViewEventId = 'pageview-${pixelId || config?.store_id}-' + Date.now();
+              fbq('track', 'PageView', {
+                content_type: 'product',
+                content_name: 'Storefront PageView'
+              }, { eventID: window.__pageViewEventId });
             `,
           }}
         />
