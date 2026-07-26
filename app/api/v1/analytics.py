@@ -656,7 +656,7 @@ def get_analytics(
             func.sum(case((and_(Order.status == "DELIVERED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)).label("non_manual_delivered")
         ).filter(and_(*base_filters)).group_by(Order.store_id).all()
         
-        stores = db.query(Store.id, Store.name, Store.color).filter(Store.is_active == True).all()
+        stores = db.query(Store.id, Store.name).filter(Store.is_active == True).all()
         store_map = {s.id: s for s in stores}
         
         data = []
