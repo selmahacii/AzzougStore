@@ -256,7 +256,7 @@ export default function InventoryDashboard() {
 
 function ActiveView({ activeTab, movements, isLoadingMovements }: { activeTab: string; movements: InventoryMovement[]; isLoadingMovements: boolean }) {
 
-   if (activeTab === 'MONITOR') return <MonitorView logs={movements} isLoading={isLoadingMovements} />;
+   if (activeTab === 'MONITOR') return <MonitorView />;
    if (activeTab === 'WAREHOUSES') return <WarehouseManager />;
    if (activeTab === 'TRACKER') return <StockTracker />;
    if (activeTab === 'PARTNERS_RETURNS') return <SuppliersReturnsHub />;
@@ -416,8 +416,12 @@ function ErpDashboardBlock() {
    );
 }
 
-function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading: boolean }) {
+function MonitorView() {
    const activeStore = useAppStore(s => s.activeStore);
+   const f = useFilteredMovements(30);
+   const logs = f.movements;
+   const isLoading = f.isLoading;
+
    const { data: whResponse } = useQuery({
       queryKey: ['warehouses', activeStore?.id],
       queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/warehouses?store_id=${activeStore?.id}`),
@@ -428,6 +432,12 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
 
    return (
       <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-400">
+         <div className="bg-white rounded-xl border p-4 shadow-sm" style={{ borderColor: C.border }}>
+            <h3 className="text-xs font-bold text-[#2D3436] mb-3 uppercase tracking-wider flex items-center gap-2">
+               <Sliders className="size-4 text-[#6C5CE7]" /> Filtres Globaux de Surveillance
+            </h3>
+            <MovementFilterBar f={f} />
+         </div>
          <ErpDashboardBlock />
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -557,7 +567,7 @@ function MonitorView({ logs, isLoading }: { logs: InventoryMovement[]; isLoading
                <ShieldCheck className="size-4 text-[#00B894]" />
                Traçabilité Micro-Détaillée des Flux (Temps Réel)
             </h3>
-            <HistoryView />
+            <HistoryView f={f} />
          </div>
       </div>
    );
@@ -674,8 +684,7 @@ function MovementPager({ f }: { f: ReturnType<typeof useFilteredMovements> }) {
    );
 }
 
-function HistoryView() {
-   const f = useFilteredMovements(30);
+function HistoryView({ f }: { f: ReturnType<typeof useFilteredMovements> }) {
 
    const handleExport = () => {
       if (f.movements.length === 0) return toast.error("Aucune donnée à exporter sur cette page");
@@ -720,7 +729,6 @@ function HistoryView() {
                <Download className="size-3.5 text-[#B2BEC3]" /> Exporter (.CSV)
             </button>
          </div>
-         <MovementFilterBar f={f} />
          <div className="divide-y" style={{ borderColor: C.border }}>
             {f.isLoading ? (
                <div className="p-10 flex flex-col items-center gap-3">
