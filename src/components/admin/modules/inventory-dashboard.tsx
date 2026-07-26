@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Warehouse,
   Truck,
@@ -422,6 +423,14 @@ function MonitorView() {
    const logs = f.movements;
    const isLoading = f.isLoading;
 
+   const { data: dashboardResponse } = useQuery({
+      queryKey: ['stock-dashboard', activeStore?.id],
+      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/stock/dashboard?store_id=${activeStore?.id}`),
+      enabled: !!activeStore?.id,
+      refetchInterval: 60000,
+      refetchIntervalInBackground: false,
+   });
+
    const { data: whResponse } = useQuery({
       queryKey: ['warehouses', activeStore?.id],
       queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/warehouses?store_id=${activeStore?.id}`),
@@ -443,64 +452,25 @@ function MonitorView() {
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
                <h3 className="text-sm font-bold text-[#2D3436] mb-6 flex items-center gap-2">
-                  <MapPin className="size-4 text-[#6C5CE7]" />
-                  Saturation des Hubs Opérationnels
+                  <Activity className="size-4 text-[#6C5CE7]" />
+                  Flux d'inventaire (30 derniers jours)
                </h3>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                     {warehouses.length > 0 ? warehouses.map((c: any, i: number) => {
-                        const load = c.capacity ? Math.round((c.current_load / c.capacity) * 100) : 0;
-                        return (
-                           <div key={i} className="flex items-center justify-between p-4 bg-[#F8F9FC] border rounded-lg hover:border-[#B2BEC3] transition-colors" style={{ borderColor: C.border }}>
-                              <div className="flex items-center gap-4">
-                                 <div className="size-10 rounded-lg bg-white border flex items-center justify-center shrink-0" style={{ borderColor: C.border }}>
-                                     <Warehouse className="size-5 text-[#B2BEC3]" />
-                                 </div>
-                                 <div>
-                                    <p className="text-xs font-black text-[#2D3436] uppercase tracking-wide">{c.name}</p>
-                                    <p className="text-[10px] font-semibold text-[#B2BEC3] font-mono mt-0.5">REF: {c.code}</p>
-                                 </div>
-                              </div>
-                              <div className="text-right">
-                                 <span className={cn("text-[10px] font-black", load > 90 ? "text-rose-500" : "text-emerald-500")}>{load}%</span>
-                                 <div className="h-1 w-12 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                                    <div className="h-full bg-indigo-500" style={{ width: `${load}%` }} />
-                                 </div>
-                              </div>
-                           </div>
-                        );
-                     }) : (
-                        <div className="p-10 text-center text-[#B2BEC3] text-[10px] font-black uppercase">Aucun hub configuré - Initialisation requise</div>
-                     )}
-                  </div>
-                  {/* Real stock movement chart — last 7 days grouped by day */}
-                  {(() => {
-                     const grouped: Record<string, number> = {};
-                     logs.forEach(l => {
-                        const day = new Date(l.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-                        grouped[day] = (grouped[day] || 0) + Math.abs(l.quantity);
-                     });
-                     const days = Object.entries(grouped).slice(-7);
-                     const max = Math.max(...days.map(([, v]) => v), 1);
-                     return days.length > 0 ? (
-                        <div className="h-[250px] p-4 bg-white rounded-2xl border border-slate-100 flex flex-col">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Flux Stock (7j)</p>
-                           <div className="flex-1 flex items-end gap-1.5">
-                              {days.map(([day, val]) => (
-                                 <div key={day} className="flex-1 flex flex-col items-center gap-1">
-                                    <span className="text-[8px] font-bold text-slate-400">{val}</span>
-                                    <div className="w-full rounded-t-md bg-indigo-500/80" style={{ height: `${Math.round((val / max) * 140)}px` }} />
-                                    <span className="text-[8px] text-slate-400">{day}</span>
-                                 </div>
-                              ))}
-                           </div>
-                        </div>
-                     ) : (
-                        <div className="h-[250px] flex items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Flux Logistiques<br/>En attente de données</p>
-                        </div>
-                     );
-                  })()}
+               <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <LineChart data={dashboardResponse?.data?.chart_30j || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F2F6" />
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#B2BEC3' }} tickFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#B2BEC3' }} />
+                        <Tooltip
+                           contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                           labelFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+                        />
+                        <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                        <Line type="monotone" dataKey="entrees" name="Entrées" stroke="#00B894" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+                        <Line type="monotone" dataKey="sorties" name="Sorties" stroke="#E17055" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+                        <Line type="monotone" dataKey="retours" name="Retours" stroke="#FDCB6E" strokeWidth={3} dot={false} activeDot={{ r: 6, strokeWidth: 0 }} />
+                     </LineChart>
+                  </ResponsiveContainer>
                </div>
             </div>
 
