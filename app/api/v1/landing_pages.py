@@ -499,20 +499,30 @@ def get_landing_page_analytics(
         .all()
     )
 
-    daily = [
-        {
-            "date": str(r.day),
-            "orders": int(r.orders or 0),
-            "delivered": int(r.delivered or 0),
-            "cancelled": int(r.cancelled or 0),
-            "manual": int(r.manual or 0),
-            "normal": int(r.normal or 0),
-            "recovered": int(r.recovered or 0),
-            "abandoned": int(r.abandoned or 0),
-            "revenue": float(r.revenue or 0),
-        }
-        for r in rows
-    ]
+    current_date = d_start.date()
+    end_date_val = d_end.date()
+    all_dates = []
+    while current_date <= end_date_val:
+        all_dates.append(str(current_date))
+        current_date += timedelta(days=1)
+
+    orders_by_date = {str(r.day): r for r in rows if r.day is not None}
+
+    daily = []
+    for d_str in all_dates:
+        r = orders_by_date.get(d_str)
+        daily.append({
+            "date": d_str,
+            "orders": int(r.orders or 0) if r else 0,
+            "delivered": int(r.delivered or 0) if r else 0,
+            "cancelled": int(r.cancelled or 0) if r else 0,
+            "manual": int(r.manual or 0) if r else 0,
+            "normal": int(r.normal or 0) if r else 0,
+            "recovered": int(r.recovered or 0) if r else 0,
+            "abandoned": int(r.abandoned or 0) if r else 0,
+            "revenue": float(r.revenue or 0) if r else 0.0,
+        })
+
     totals = {
         "orders": sum(d["orders"] for d in daily),
         "delivered": sum(d["delivered"] for d in daily),
