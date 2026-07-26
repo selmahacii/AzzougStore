@@ -376,7 +376,6 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                     <Bar yAxisId="left" dataKey="recovered" name="Panier Récup." stackId="a" fill="#8E44AD" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     <Bar yAxisId="left" dataKey="delivered" name="Livrées" fill="#00B894" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     <Line yAxisId="right" type="monotone" dataKey="meta_impressions" name="Impressions Meta" stroke="#1877F2" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                    <Line yAxisId="right" type="monotone" dataKey="meta_reach" name="Couverture Meta" stroke="#F39C12" strokeWidth={3} strokeDasharray="5 5" dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
                     <Line yAxisId="right-percent" type="monotone" dataKey="conversion_rate" name="Taux de Conv." stroke="#E17055" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#FFF' }} activeDot={{ r: 6 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
