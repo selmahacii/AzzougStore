@@ -1188,6 +1188,11 @@ def sync_meta_ads(
             # exceeds the API's default page size (25), and we only read the
             # first page; without a high limit, older days silently vanished.
             daily_params = {**params, "time_increment": "1", "limit": "500"}
+            if "fields" in daily_params:
+                # Meta Graph API throws HTTP 400 if 'reach' is requested with 'time_increment'.
+                # This causes the daily sync to fail silently, leaving the dashboard graphs empty.
+                daily_params["fields"] = ",".join(f for f in daily_params["fields"].split(",") if f != "reach")
+                
             if relay_url:
                 daily_response = httpx.post(
                     relay_url,
