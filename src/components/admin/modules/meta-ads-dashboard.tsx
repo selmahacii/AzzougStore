@@ -64,6 +64,15 @@ export default function MetaAdsDashboard() {
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
+  const [linkingCampaign, setLinkingCampaign] = useState<string | null>(null);
+
+  // --- Query Products (for linking) ---
+  const { data: productsData } = useQuery({
+    queryKey: ['admin_products', activeStore?.id],
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&minimal=true`),
+    enabled: !!activeStore?.id,
+  });
+  const products = productsData?.data || [];
 
   // --- Query Config ---
   const { data: configData } = useQuery({
@@ -217,6 +226,21 @@ export default function MetaAdsDashboard() {
   const kpiValidation = kpiValidationData?.data;
 
   // --- Mutations ---
+  const linkProductMutation = useMutation({
+    mutationFn: ({ campaignId, productId }: { campaignId: string, productId: string | null }) => apiFetch(`/api/v1/meta-ads/campaigns/${campaignId}/product`, {
+      method: 'PATCH',
+      body: JSON.stringify({ product_id: productId })
+    }),
+    onSuccess: () => {
+      toast.success('Produit associé avec succès');
+      setLinkingCampaign(null);
+      queryClient.invalidateQueries({ queryKey: ['meta_ads_campaigns'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Erreur lors de l'association");
+    }
+  });
+
   const saveConfigMutation = useMutation({
     mutationFn: (payload: any) => apiFetch('/api/v1/meta-ads/config', {
       method: 'POST',
@@ -369,7 +393,7 @@ export default function MetaAdsDashboard() {
               type="date" 
               value={dateEnd} 
               onChange={(e) => setDateEnd(e.target.value)} 
-              className="bg-transparent text-xs font-bold focus:outline-none" 
+               className="bg-transparent text-xs font-bold focus:outline-none" 
             />
           </div>
 
@@ -840,19 +864,40 @@ export default function MetaAdsDashboard() {
                             </div>
                          </td>
                          <td className="px-6 py-5">
-                            {c.product_name ? (
-                              <div className="flex items-center gap-2">
-                                {c.product_image && (
-                                  <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
-                                )}
-                                <div>
-                                  <p className="text-xs font-black text-slate-700 leading-tight">{c.product_name}</p>
-                                  {c.product_sku && <p className="text-[10px] text-slate-400 font-mono">{c.product_sku}</p>}
+                            {linkingCampaign === c.campaign_id ? (
+                                <div className="flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                                  <select 
+                                    className="text-xs border rounded-lg px-2 py-1.5 bg-white shadow-sm focus:ring-1 focus:ring-[#6C5CE7] outline-none"
+                                    defaultValue={c.product_id || ""}
+                                    onChange={(e) => linkProductMutation.mutate({ campaignId: c.campaign_id, productId: e.target.value || null })}
+                                    disabled={linkProductMutation.isPending}
+                                  >
+                                    <option value="">-- Détacher le produit --</option>
+                                    {products.map((p: any) => (
+                                      <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ''}</option>
+                                    ))}
+                                  </select>
+                                  <button onClick={() => setLinkingCampaign(null)} className="text-[10px] text-slate-400 hover:text-slate-600 self-start">Annuler</button>
                                 </div>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-slate-300 italic">Non identifié</span>
-                            )}
+                             ) : c.product_name ? (
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-2">
+                                    {c.product_image && (
+                                      <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
+                                    )}
+                                    <div>
+                                      <p className="text-xs font-black text-slate-700 leading-tight">{c.product_name}</p>
+                                      {c.product_sku && <p className="text-[10px] text-slate-400 font-mono">{c.product_sku}</p>}
+                                    </div>
+                                  </div>
+                                  <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#6C5CE7] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Modifier</button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  <span className="text-[10px] text-slate-400 italic">Non identifié</span>
+                                  <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#6C5CE7] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Associer</button>
+                                </div>
+                              )}
                          </td>
                          <td className="px-6 py-5">
                             <div className="space-y-0.5">
