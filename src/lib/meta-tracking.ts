@@ -46,6 +46,7 @@ export interface MetaTrackingOptions {
    * (app/services/funnel_tracking.py). Optional: events without it are
    * still tracked, just without a per-LP breakdown. */
   lpId?: string;
+  skipBrowserPixel?: boolean;
 }
 
 declare global {
@@ -297,7 +298,7 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
   // Pixel: only ever touched when this store has a Pixel configured — no
   // pixelId means no fbq() call, matching the fact that the Pixel <script>
   // itself (store-integrations.tsx) also only loads when pixelId is set.
-  if (pixelId && typeof window.fbq === 'function') {
+  if (pixelId && typeof window.fbq === 'function' && !options.skipBrowserPixel) {
     try {
       (window.fbq as (...args: unknown[]) => void)('trackSingle', pixelId, eventName, contentPayload, { eventID: eventId });
     } catch {

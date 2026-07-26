@@ -26,14 +26,23 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
 
     const initialize = async () => {
       try {
+        const win = window as any;
+        const isInitialLoad = !!win.__pageViewEventId;
+        const eventId = win.__pageViewEventId || `pageview-${pixelId || config?.store_id}-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+        
+        if (isInitialLoad) {
+          delete win.__pageViewEventId;
+        }
+
         await trackMetaEvent('PageView', {
           content_type: 'product',
           content_name: 'Storefront PageView',
         }, {
           pixelId,
           lpId,
-          eventId: (window as any).__pageViewEventId || `pageview-${pixelId || config?.store_id}-${Date.now()}`,
+          eventId,
           shouldSendToServer: true,
+          skipBrowserPixel: isInitialLoad,
         });
       } catch {
         // ignore tracking failures
@@ -64,7 +73,7 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
               fbq('init', '${pixelId}');
               window.__metaPixelId = '${pixelId}';
               
-              window.__pageViewEventId = 'pageview-${pixelId || config?.store_id}-' + Date.now();
+              window.__pageViewEventId = 'pageview-${pixelId || config?.store_id}-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
               fbq('track', 'PageView', {
                 content_type: 'product',
                 content_name: 'Storefront PageView'
