@@ -26,7 +26,7 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
             variant_details: {}
          };
 
-         const results = [];
+         const results: any[] = [];
          for (const adj of data.adjustments) {
             const p = {
                product_id: data.product_id,
