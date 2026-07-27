@@ -110,6 +110,7 @@ def compute_salary(
     recovered_rate = getattr(employee, "payment_recovered_cart", 0) or 0
     lost_rate      = getattr(employee, "payment_lost_cart", 0) or 0
     upsell_rate    = getattr(employee, "payment_upsell", 0) or 0
+    marketplace_rate = getattr(employee, "payment_marketplace_upsell_only", 50) or 50
 
     # ÔöÇÔöÇ Count delivered orders, split by classification ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     normal_delivered    = _count_normal_delivered(db, employee.id, store_id, since, until)
@@ -117,6 +118,7 @@ def compute_salary(
     total_delivered     = normal_delivered + recovered_delivered
     returned_count      = _count_returned(db, employee.id, store_id, since, until)
     upsell_delivered    = _count_upsell_delivered(db, employee.id, store_id, since, until)
+    marketplace_delivered = _count_marketplace_delivered(db, employee.id, store_id, since, until)
 
     # Commission historique figée (2026-07-21) : ces bonus/pénalités
     # utilisent le taux FIGÉ sur chaque commande (snapshot_commission dans
@@ -147,11 +149,16 @@ def compute_salary(
         status="DELIVERED", is_abandoned_cart=None, is_upsell=True,
         snapshot_column=Order.commission_upsell_rate, fallback_rate=upsell_rate,
     )
+    marketplace_bonus = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=None, is_marketplace_upsell=True,
+        snapshot_column=Order.commission_marketplace_rate, fallback_rate=marketplace_rate,
+    )
 
     # ÔöÇÔöÇ Branch by payment type ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
-        salary      = max(0, base_salary + abandoned_bonus + upsell_bonus - returned_penalty)
+        salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
 
         return _build_result(
             payment_type="MONTHLY_SALARY",
@@ -163,10 +170,12 @@ def compute_salary(
             normal_delivered=normal_delivered,
             recovered_delivered=recovered_delivered,
             upsell_delivered=upsell_delivered,
+            marketplace_delivered_count=marketplace_delivered,
             returned_count=returned_count,
             base_salary=base_salary,
             abandoned_bonus=abandoned_bonus,
             upsell_bonus=upsell_bonus,
+            marketplace_bonus=marketplace_bonus,
             returned_penalty=returned_penalty,
             salary=salary,
             since=since,
@@ -184,7 +193,7 @@ def compute_salary(
         status="DELIVERED", is_abandoned_cart=False,
         snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
     )
-    salary         = max(0, base_salary + abandoned_bonus + upsell_bonus - returned_penalty)
+    salary         = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
 
     return _build_result(
         payment_type=payment_type or "PER_DELIVERED_ORDER",
@@ -196,10 +205,12 @@ def compute_salary(
         normal_delivered=normal_delivered,
         recovered_delivered=recovered_delivered,
         upsell_delivered=upsell_delivered,
+        marketplace_delivered_count=marketplace_delivered,
         returned_count=returned_count,
         base_salary=base_salary,
         abandoned_bonus=abandoned_bonus,
         upsell_bonus=upsell_bonus,
+        marketplace_bonus=marketplace_bonus,
         returned_penalty=returned_penalty,
         salary=salary,
         since=since,
@@ -258,6 +269,7 @@ def _count_normal_delivered(
         Order.assigned_to       == user_id,
         Order.status            == "DELIVERED",
         Order.is_abandoned_cart == False,
+        Order.is_marketplace_upsell == False,
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until)
 
@@ -285,6 +297,7 @@ def _count_recovered_delivered(
         Order.assigned_to       == user_id,
         Order.status            == "DELIVERED",
         Order.is_abandoned_cart == True,
+        Order.is_marketplace_upsell == False,
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until)
 
@@ -342,6 +355,30 @@ def _count_upsell_delivered(
     return db.query(Order).filter(and_(*filters)).count()
 
 
+def _count_marketplace_delivered(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+) -> int:
+    """
+    Count DELIVERED orders flagged is_marketplace_upsell.
+    These orders earn a specific fixed marketplace bonus instead of the standard base pay.
+    """
+    store_filter = _build_store_filter(db, user_id, store_id)
+
+    filters = [
+        store_filter,
+        Order.assigned_to  == user_id,
+        Order.status       == "DELIVERED",
+        Order.is_marketplace_upsell == True,
+        Order.is_deleted   == False,
+    ] + _build_time_filters(since, until)
+
+    return db.query(Order).filter(and_(*filters)).count()
+
+
 def _sum_frozen_amount(
     db: Session,
     user_id: str,
@@ -354,6 +391,7 @@ def _sum_frozen_amount(
     snapshot_column,
     fallback_rate: int,
     is_upsell: Optional[bool] = None,
+    is_marketplace_upsell: Optional[bool] = None,
 ) -> int:
     """
     Commission historique figée (2026-07-21) — somme le taux FIGÉ sur
@@ -379,6 +417,8 @@ def _sum_frozen_amount(
         filters.append(Order.is_abandoned_cart == is_abandoned_cart)
     if is_upsell is not None:
         filters.append(Order.is_upsell == is_upsell)
+    if is_marketplace_upsell is not None:
+        filters.append(Order.is_marketplace_upsell == is_marketplace_upsell)
 
     total = (
         db.query(_func.sum(_case((snapshot_column.isnot(None), snapshot_column), else_=fallback_rate)))
@@ -399,10 +439,12 @@ def _build_result(
     normal_delivered: int,
     recovered_delivered: int,
     upsell_delivered: int = 0,
+    marketplace_delivered_count: int = 0,
     returned_count: int = 0,
     base_salary: int,
     abandoned_bonus: int,
     upsell_bonus: int = 0,
+    marketplace_bonus: int = 0,
     returned_penalty: int = 0,
     salary: int,
     since: Optional[datetime],
@@ -424,6 +466,8 @@ def _build_result(
         "payment_upsell":            upsell_rate,
         "upsell_delivered_count":    upsell_delivered,
         "upsell_bonus":              upsell_bonus,
+        "marketplace_delivered_count": marketplace_delivered_count,
+        "marketplace_bonus":         marketplace_bonus,
         "base_salary":               base_salary,
         "abandoned_bonus":           abandoned_bonus,
         "salary":                    salary,

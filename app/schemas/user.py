@@ -18,6 +18,7 @@ class UserBase(BaseModel):
     payment_recovered_cart: Optional[int] = 0
     payment_lost_cart: Optional[int] = 0
     payment_upsell: Optional[int] = 0
+    payment_marketplace_upsell_only: Optional[int] = 50
     payday: Optional[int] = None  # day of month (1-28) this employee is due to be paid
     assigned_store_scope: Optional[str] = "ALL"
     assigned_store_ids: Optional[List[str]] = []

@@ -1583,6 +1583,10 @@ function SalaryView({ perf, user }: any) {
   const paymentUpsell = stats.payment_upsell ?? user?.payment_upsell ?? 0;
   const upsellBonus = stats.upsell_bonus ?? 0;
   
+  const marketplaceDeliveredCount = stats.marketplace_delivered_count ?? 0;
+  const marketplaceBonus = stats.marketplace_bonus ?? 0;
+  const paymentMarketplace = 50; // Typically fixed, though we could read it if we send it in stats
+  
   const totalSalary = stats.salary ?? 0;
 
   // Calculate base salary amount for display
@@ -1690,6 +1694,22 @@ function SalaryView({ perf, user }: any) {
                       </div>
                    </div>
                 )}
+
+                {/* Marketplace bonus breakdown */}
+                {marketplaceDeliveredCount > 0 && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
+                         Marketplace Upsell (Bonus)
+                      </p>
+                      <div className="flex items-center justify-between text-xs">
+                         <div className="space-y-0.5">
+                            <p className="font-bold text-slate-700">Commandes marketplace livrées</p>
+                            <p className="text-[10px] text-slate-400">{marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''}</p>
+                         </div>
+                         <span className="font-bold text-pink-600">+{formatPrice(marketplaceBonus)}</span>
+                      </div>
+                   </div>
+                )}
              </div>
           </div>
 
@@ -1713,6 +1733,12 @@ function SalaryView({ perf, user }: any) {
                    <div className="flex items-center justify-between text-xs text-amber-300">
                       <span className="font-medium">Bonus Upsell :</span>
                       <span className="font-bold">+{formatPrice(upsellBonus)}</span>
+                   </div>
+                )}
+                {marketplaceBonus > 0 && (
+                   <div className="flex items-center justify-between text-xs text-pink-300">
+                      <span className="font-medium">Bonus Marketplace :</span>
+                      <span className="font-bold">+{formatPrice(marketplaceBonus)}</span>
                    </div>
                 )}
                 <div className="p-3 bg-slate-800/50 rounded-xl flex items-start gap-2.5 text-[10px] text-slate-400 leading-normal font-medium">

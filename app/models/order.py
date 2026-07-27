@@ -76,6 +76,7 @@ class Order(Base):
     commission_recovered_rate = Column(Integer, nullable=True)
     commission_lost_rate = Column(Integer, nullable=True)
     commission_upsell_rate = Column(Integer, nullable=True)
+    commission_marketplace_rate = Column(Integer, nullable=True)
     commission_snapshot_at = Column(DateTime, nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
     
@@ -146,6 +147,7 @@ class Order(Base):
     # Characteristics & Tracking
     is_pack = Column(Boolean, default=False)
     is_upsell = Column(Boolean, default=False)
+    is_marketplace_upsell = Column(Boolean, default=False)
     is_abandoned_cart = Column(Boolean, default=False)
     abandoned_cart_recovery_fee = Column(Integer, default=0)
     is_duplicate = Column(Boolean, default=False)

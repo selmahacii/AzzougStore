@@ -480,6 +480,7 @@ def create_user(
         payment_recovered_cart=user_in.payment_recovered_cart or 0,
         payment_lost_cart=user_in.payment_lost_cart or 0,
         payment_upsell=user_in.payment_upsell or 0,
+        payment_marketplace_upsell_only=user_in.payment_marketplace_upsell_only if user_in.payment_marketplace_upsell_only is not None else 50,
         assigned_store_scope=user_in.assigned_store_scope or "ALL",
         assigned_store_ids=user_in.assigned_store_ids or [],
         assigned_product_ids=user_in.assigned_product_ids or [],

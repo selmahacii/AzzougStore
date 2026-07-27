@@ -3675,7 +3675,12 @@ def _build_noest_product_line(item) -> str:
     values = _noest_variant_values(item.variant_details)
     if not values:
         return f"{code} x{item.quantity}"
+    
     counts = Counter(values)
+    
+    if len(values) == 1 and item.quantity > 1:
+        return f"{code}:{values[0]} x{item.quantity}"
+        
     return ", ".join(f"{code}:{value} x{count}" for value, count in counts.items())
 
 
