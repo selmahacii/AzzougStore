@@ -995,6 +995,7 @@ def get_stock_alerts(
 
 # ─── POST /stock/ — Manual movement ──────────────────────────────────────────
 
+@router.post("", response_model=dict, status_code=201)
 @router.post("/", response_model=dict, status_code=201)
 def create_movement(
     movement: StockMovementCreate,
@@ -1032,7 +1033,7 @@ def create_movement(
     product = db.query(Product).filter(Product.id == movement.product_id).first()
     if not product:
         raise ProductNotFoundError()
-    if movement.store_id and product.store_id != movement.store_id:
+    if movement.store_id and str(product.store_id) != str(movement.store_id):
         raise PermissionError(message="Le produit n'appartient pas à la boutique spécifiée.")
 
     # Store-scoped employees only manage stock for stores they're actually
