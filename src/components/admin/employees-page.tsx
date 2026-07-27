@@ -1725,7 +1725,6 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                                Bonus versé EN PLUS de sa commission normale pour chaque commande contenant un produit ajouté en upsell, une fois livrée.
                             </p>
                         </div>
-                        </div>
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
