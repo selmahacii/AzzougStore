@@ -16,7 +16,7 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
    const [adjustReason, setAdjustReason] = useState('');
 
    const adjustMutation = useMutation({
-      mutationFn: (data: any) => {
+      mutationFn: async (data: any) => {
          const payload = {
             product_id: data.product_id,
             type: 'MANUAL_ADJUSTMENT',
