@@ -53,6 +53,7 @@ class OrderCreate(BaseModel):
     abandoned_cart_id: Optional[str] = None
     is_pack:    Optional[bool] = False
     is_upsell:  Optional[bool] = False
+    is_marketplace_upsell: Optional[bool] = False
     is_abandoned_cart: Optional[bool] = False
     abandoned_cart_recovery_fee: Optional[int] = 0
     assigned_to: Optional[str] = None

@@ -1733,6 +1733,9 @@ const [timeLeft, setTimeLeft] = useState('');
                           {order.is_upsell && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-green-100 text-green-700 border border-green-200 uppercase">💸 Upsell</span>
                           )}
+                          {(order as any).is_marketplace_upsell && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-100 text-pink-700 border border-pink-200 uppercase">Marketplace</span>
+                          )}
                           {order.is_pack && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">📦 Pack</span>
                           )}
@@ -2299,6 +2302,7 @@ const [timeLeft, setTimeLeft] = useState('');
                          <OrderTypeBadge order={selectedOrder} size="xs" short />
                          {selectedOrder.is_pack && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-[#6C5CE7]/20 text-indigo-200 border border-[#6C5CE7]/30 uppercase tracking-wide">Pack</span>}
                          {selectedOrder.is_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 uppercase tracking-wide">Upsell</span>}
+                         {(selectedOrder as any).is_marketplace_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-500/20 text-pink-200 border border-pink-500/30 uppercase tracking-wide">Marketplace Upsell</span>}
                          {selectedOrder.livreur_id && (
                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-500/20 text-sky-200 border border-sky-500/30 uppercase tracking-wide">
                              🚴 {selectedOrder.livreur?.name || 'Livreur assigné'}

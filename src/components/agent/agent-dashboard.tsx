@@ -1422,6 +1422,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       ) : (
                         order.is_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase">Upsell</span>
                       )}
+                      {(order as any).is_marketplace_upsell && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-pink-50 text-pink-600 border border-pink-100 uppercase">Marketplace</span>}
                       {order.is_pack && <span className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 uppercase">Pack</span>}
                       {order.is_abandoned_cart && (
                         ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(order.status)

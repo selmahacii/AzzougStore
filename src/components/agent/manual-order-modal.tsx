@@ -39,6 +39,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isPack, setIsPack] = useState(false);
   const [isUpsell, setIsUpsell] = useState(false);
+  const [isMarketplaceUpsell, setIsMarketplaceUpsell] = useState(false);
   
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
@@ -104,9 +105,9 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
 
   
   const productsQuery = useQuery<any>({
-    queryKey: ['admin-products-lite', storeId],
+    queryKey: ['admin-products-lite', storeId, isMarketplaceUpsell],
     enabled: isOpen && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true${isMarketplaceUpsell ? '&upsell_only=true' : ''}`),
     // Stock moves in real time (other confirmatrices/orders reserve or
     // confirm concurrently) — without this, a stock number fetched once when
     // the modal opened could sit stale for the whole call, showing available
@@ -314,9 +315,11 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                   carrier_id: selectedPartnerId || undefined,
                   assigned_to: user?.id || undefined, // Assigned directly to this agent
                   items: finalLines.map(lineToItem),
+                  is_abandoned_cart: false,
                   is_pack: isPack,
                   is_upsell: isUpsell,
-                };
+                  is_marketplace_upsell: isMarketplaceUpsell,
+               };
                 createOrderMutation.mutate(payload);
               }}
               className="p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white"
@@ -402,6 +405,11 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 border border-emerald-100 rounded-xl">
                              <Checkbox id="isUpsell" checked={isUpsell} onCheckedChange={(c) => setIsUpsell(!!c)} className="size-4 border-emerald-200 data-[state=checked]:bg-emerald-500 rounded-md" />
                              <label htmlFor="isUpsell" className="text-[11px] font-black uppercase tracking-widest text-emerald-600 cursor-pointer">Vente Additionnelle</label>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 p-2 rounded-lg bg-pink-50 border border-pink-100/50 hover:bg-pink-100/50 transition-colors">
+                             <Checkbox id="isMarketplaceUpsell" checked={isMarketplaceUpsell} onCheckedChange={(c) => setIsMarketplaceUpsell(!!c)} className="size-4 border-pink-200 data-[state=checked]:bg-pink-500 rounded-md" />
+                             <label htmlFor="isMarketplaceUpsell" className="text-[11px] font-black uppercase tracking-widest text-pink-600 cursor-pointer">Commande Marketplace</label>
                           </div>
                        </div>
                     </div>
