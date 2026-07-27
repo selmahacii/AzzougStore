@@ -621,6 +621,7 @@ export default function AgentOrdersPage() {
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isPack, setIsPack] = useState(false);
   const [isUpsell, setIsUpsell] = useState(false);
+  const [isMarketplaceUpsell, setIsMarketplaceUpsell] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
   const ordersQuery = useQuery<any>({
@@ -632,9 +633,9 @@ export default function AgentOrdersPage() {
   });
 
   const productsQuery = useQuery<any>({
-    queryKey: ['admin-products-lite', storeId],
+    queryKey: ['admin-products-lite', storeId, isMarketplaceUpsell],
     enabled: isCreatingOrder && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true${isMarketplaceUpsell ? '&upsell_only=true' : ''}`),
   });
 
   const deliveryPartnersQuery = useQuery<any>({
@@ -685,6 +686,7 @@ export default function AgentOrdersPage() {
       setOrderDiscount(0);
       setIsPack(false);
       setIsUpsell(false);
+      setIsMarketplaceUpsell(false);
       setDuplicateWarning(null);
     },
     onError: (err: any) => toast.error(err.message || 'Échec de création'),
@@ -992,8 +994,10 @@ export default function AgentOrdersPage() {
                     quantity: orderQty,
                     unit_price: orderPrice,
                   }],
+                  is_abandoned_cart: false,
                   is_pack: isPack,
                   is_upsell: isUpsell,
+                  is_marketplace_upsell: isMarketplaceUpsell,
                 };
                 createOrderMutation.mutate(payload);
               }}
@@ -1069,6 +1073,10 @@ export default function AgentOrdersPage() {
                           <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 border border-emerald-100 rounded-xl">
                              <Checkbox id="isUpsell" checked={isUpsell} onCheckedChange={(c) => setIsUpsell(!!c)} className="size-4 border-emerald-200 data-[state=checked]:bg-emerald-500 rounded-md" />
                              <label htmlFor="isUpsell" className="text-[11px] font-black uppercase tracking-widest text-emerald-600 cursor-pointer">Vente Additionnelle</label>
+                          </div>
+                          <div className="flex items-center gap-2 bg-pink-50 px-3 py-1.5 border border-pink-100 rounded-xl hover:bg-pink-100/50 transition-colors">
+                             <Checkbox id="isMarketplaceUpsell" checked={isMarketplaceUpsell} onCheckedChange={(c) => setIsMarketplaceUpsell(!!c)} className="size-4 border-pink-200 data-[state=checked]:bg-pink-500 rounded-md" />
+                             <label htmlFor="isMarketplaceUpsell" className="text-[11px] font-black uppercase tracking-widest text-pink-600 cursor-pointer">Commande Marketplace</label>
                           </div>
                        </div>
                     </div>
