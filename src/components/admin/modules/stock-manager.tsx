@@ -29,8 +29,9 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
   const storeId = useAppStore(s => s.activeStore?.id) || '';
 
   const warehousesQuery = useQuery({
-     queryKey: ['admin-warehouses'],
-     queryFn: () => apiFetch<{ success: boolean; data: any[] }>('/api/v1/stock/warehouses'),
+     queryKey: ['admin-warehouses', storeId],
+     queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/warehouses/?store_id=${storeId}`),
+     enabled: !!storeId,
   });
   const warehouses = warehousesQuery.data?.data || [];
 
@@ -48,8 +49,9 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
   const products = productsQuery.data?.data ?? [];
 
   const returnsQuery = useQuery({
-     queryKey: ['returns-by-variant'],
-     queryFn: () => apiFetch<{ data: Record<string, Record<string, number>> }>('/api/v1/stock/returns-by-variant'),
+     queryKey: ['returns-by-variant', storeId],
+     queryFn: () => apiFetch<{ data: Record<string, Record<string, number>> }>(`/api/v1/stock/returns-by-variant?store_id=${storeId}`),
+     enabled: !!storeId,
      refetchInterval: 120000,
   });
   const returnsByVariant = returnsQuery.data?.data || {};
