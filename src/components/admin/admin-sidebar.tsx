@@ -458,7 +458,7 @@ export default function AdminSidebar() {
                sidebarCollapsed ? "size-10" : "size-12"
             )}>
                <img 
-                  src="/azzougshop_logo.png" 
+                  src="/brand-icon-primary.png" 
                   alt="AzzougShop" 
                   className="w-full h-full object-contain"
                />

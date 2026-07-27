@@ -274,7 +274,7 @@ export function AdminAuthPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-5">
-            <img src="/azzougshop_logo.png" alt="AzzougShop Logo" className="h-36 w-auto drop-shadow-sm select-none" />
+            <img src="/brand-icon-primary.png" alt="AzzougShop Logo" className="h-36 w-auto drop-shadow-sm select-none" />
           </div>
           <p className="text-slate-400 font-medium tracking-tight text-sm">AzzougShop · Votre portail d'accès</p>
         </div>
