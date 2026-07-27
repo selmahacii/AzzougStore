@@ -26,23 +26,32 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
             variant_details: {}
          };
 
-         const results = Promise.all(
-            data.adjustments.map((adj: any) => {
-               payload.quantity = adj.quantity;
-               if (adj.variantStr) {
-                  payload.variant_details = { variant: adj.variantStr };
-               }
-               return apiFetch('/api/v1/stock/', {
+         const results = [];
+         for (const adj of data.adjustments) {
+            const p = {
+               product_id: data.product_id,
+               type: 'MANUAL_ADJUSTMENT',
+               reason: data.reason,
+               store_id: data.store_id,
+               quantity: adj.quantity,
+               variant_details: adj.variantStr ? { variant: adj.variantStr } : {}
+            };
+            try {
+               const res = await apiFetch('/api/v1/stock/', {
                   method: 'POST',
-                  body: JSON.stringify(payload),
+                  body: JSON.stringify(p),
                });
-            })
-         );
-         return results.then(res => {
-            const failed = res.filter(r => (r as any).status === 'rejected').length;
-            if (failed > 0) throw new Error(`${failed} ajustement(s) ont échoué`);
-            return res;
-         });
+               results.push(res);
+            } catch (err: any) {
+               results.push({ status: 'rejected', reason: err });
+            }
+         }
+         
+         const failed = results.filter(r => (r as any).status === 'rejected').length;
+         if (failed > 0) {
+            throw new Error(`${failed} ajustement(s) ont échoué`);
+         }
+         return results;
       },
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
