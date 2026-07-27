@@ -67,7 +67,7 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
          }
 
          adjustMutation.mutate({
-            store_id: storeId,
+            store_id: product.store_id || storeId,
             product_id: product.id,
             reason: adjustReason || 'Ajustement manuel via protocole stock',
             adjustments
@@ -78,7 +78,7 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
             return;
          }
          adjustMutation.mutate({
-            store_id: storeId,
+            store_id: product.store_id || storeId,
             product_id: product.id,
             reason: adjustReason || 'Ajustement manuel via protocole stock',
             adjustments: [{ quantity: adjustAmount }]
