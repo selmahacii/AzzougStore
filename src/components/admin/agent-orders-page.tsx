@@ -610,9 +610,9 @@ export default function AgentOrdersPage() {
 
   // States for manual order creation
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [selectedOrderProduct, setSelectedOrderProduct] = useState<any | null>(null);
-  const [orderPrice, setOrderPrice] = useState(0);
-  const [orderQty, setOrderQty] = useState(1);
+  const [orderItems, setOrderItems] = useState<{product: any | null, quantity: number, unit_price: number}[]>([
+    { product: null, quantity: 1, unit_price: 0 }
+  ]);
   const [orderSource, setOrderSource] = useState('MANUAL');
   const [orderWilaya, setOrderWilaya] = useState('');
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
@@ -649,9 +649,9 @@ export default function AgentOrdersPage() {
     if (!selectedPartnerId || !orderWilaya) return;
     const fetchFee = async () => {
       try {
-        const pId = selectedOrderProduct?.id || '';
+        const productIds = orderItems.map(item => item.product?.id).filter(Boolean).join(',');
         const res = await apiFetch<any>(
-          `/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${orderWilaya}&type=${deliveryType}&productIds=${pId}`
+          `/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${orderWilaya}&type=${deliveryType}&productIds=${productIds}`
         );
         if (res?.success && typeof res?.data?.fee === 'number') {
           setDeliveryFee(res.data.fee);
@@ -662,7 +662,7 @@ export default function AgentOrdersPage() {
       }
     };
     fetchFee();
-  }, [selectedPartnerId, orderWilaya, deliveryType, selectedOrderProduct]);
+  }, [selectedPartnerId, orderWilaya, deliveryType, orderItems]);
 
   const createOrderMutation = useMutation({
     mutationFn: (data: any) => apiFetch('/api/v1/orders/', {
@@ -675,9 +675,7 @@ export default function AgentOrdersPage() {
       toast.success('Commande manuelle créée avec succès');
       setIsCreatingOrder(false);
       // Reset states
-      setSelectedOrderProduct(null);
-      setOrderPrice(0);
-      setOrderQty(1);
+      setOrderItems([{ product: null, quantity: 1, unit_price: 0 }]);
       setOrderSource('MANUAL');
       setOrderWilaya('');
       setSelectedPartnerId('');
@@ -964,13 +962,14 @@ export default function AgentOrdersPage() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                if (!selectedOrderProduct) {
-                  toast.error('Veuillez selectionner un produit');
+                const validItems = orderItems.filter(item => item.product);
+                if (validItems.length === 0) {
+                  toast.error('Veuillez selectionner au moins un produit');
                   return;
                 }
                 const commune = (formData.get('commune') as string) || '';
                 const address = (formData.get('address') as string) || '';
-                const lineTotal = orderPrice * orderQty;
+                const lineTotal = validItems.reduce((acc, item) => acc + (item.unit_price * item.quantity), 0);
                 const total = Math.max(0, lineTotal + deliveryFee - orderDiscount);
                 const payload = {
                   store_id: storeId,
@@ -988,12 +987,12 @@ export default function AgentOrdersPage() {
                   source: orderSource,
                   carrier_id: selectedPartnerId || undefined,
                   assigned_to: user?.id || undefined, // Assigned directly to this agent
-                  items: [{
-                    product_id: selectedOrderProduct.id,
-                    product_name: selectedOrderProduct.name,
-                    quantity: orderQty,
-                    unit_price: orderPrice,
-                  }],
+                  items: validItems.map(item => ({
+                    product_id: item.product.id,
+                    product_name: item.product.name,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                  })),
                   is_abandoned_cart: false,
                   is_pack: isPack,
                   is_upsell: isUpsell,
@@ -1082,55 +1081,82 @@ export default function AgentOrdersPage() {
                     </div>
 
                     <div className="space-y-6">
-                       <div className="space-y-3">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Produit Principal *</label>
-                          <Select onValueChange={(v) => {
-                             const p = productsQuery.data?.data?.find((x: any) => x.id === v);
-                             setSelectedOrderProduct(p);
-                             if (p) setOrderPrice(p.price ?? 0);
-                          }}>
-                             <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-14 rounded-xl focus:bg-white transition-all px-4">
-                                <SelectValue placeholder="Rechercher Produit..." />
-                             </SelectTrigger>
-                             <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
-                                {productsQuery.data?.data?.map((p: any) => (
-                                   <SelectItem key={p.id} value={p.id} className="text-sm font-medium py-2">{p.name} — SKU: {p.sku}</SelectItem>
-                                ))}
-                             </SelectContent>
-                          </Select>
-                       </div>
-
-                       <div className="grid grid-cols-3 gap-4">
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">SKU</label>
-                             <Input disabled value={selectedOrderProduct?.sku || '---'} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] italic text-xs h-12 rounded-xl" />
-                          </div>
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock</label>
-                             <div className={cn("h-12 border flex items-center px-4 font-black rounded-xl font-mono text-[10px] uppercase", (selectedOrderProduct?.stock ?? 0) > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
-                                {selectedOrderProduct?.stock ?? '—'} {selectedOrderProduct ? 'EN STOCK' : ''}
+                        {orderItems.map((item, idx) => (
+                           <div key={idx} className="p-4 border border-slate-200 rounded-xl space-y-4 bg-slate-50 relative">
+                             {orderItems.length > 1 && (
+                               <button 
+                                 type="button" 
+                                 onClick={() => setOrderItems(orderItems.filter((_, i) => i !== idx))} 
+                                 className="absolute top-4 right-4 text-rose-500 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 p-2 rounded-lg transition-colors"
+                               >
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                               </button>
+                             )}
+                             <div className="space-y-3 pr-12">
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Produit {idx + 1} *</label>
+                                <Select value={item.product?.id || ''} onValueChange={(v) => {
+                                   const p = productsQuery.data?.data?.find((x: any) => x.id === v);
+                                   const newItems = [...orderItems];
+                                   newItems[idx].product = p;
+                                   if (p) newItems[idx].unit_price = p.price ?? 0;
+                                   setOrderItems(newItems);
+                                }}>
+                                   <SelectTrigger className="bg-white border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white focus:border-[#6C5CE7]/50 transition-all px-4">
+                                      <SelectValue placeholder="Rechercher Produit..." />
+                                   </SelectTrigger>
+                                   <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[250px]">
+                                      {productsQuery.data?.data?.map((p: any) => (
+                                         <SelectItem key={p.id} value={p.id} className="text-sm font-medium py-2">{p.name} — SKU: {p.sku}</SelectItem>
+                                      ))}
+                                   </SelectContent>
+                                </Select>
                              </div>
-                          </div>
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Quantité</label>
-                             <Input type="number" min={1} value={orderQty} onChange={e => setOrderQty(Math.max(1, parseInt(e.target.value) || 1))} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-12 rounded-xl text-center" />
-                          </div>
-                       </div>
+      
+                             <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-3">
+                                   <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Stock</label>
+                                   <div className={cn("h-10 border flex items-center px-3 font-black rounded-xl font-mono text-[10px] uppercase", (item.product?.stock ?? 0) > 0 ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100")}>
+                                      {item.product?.stock ?? '—'}
+                                   </div>
+                                </div>
+                                <div className="space-y-3">
+                                   <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Quantité</label>
+                                   <Input type="number" min={1} value={item.quantity} onChange={e => {
+                                      const newItems = [...orderItems];
+                                      newItems[idx].quantity = Math.max(1, parseInt(e.target.value) || 1);
+                                      setOrderItems(newItems);
+                                   }} className="bg-white border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-10 rounded-xl text-center" />
+                                </div>
+                                <div className="space-y-3">
+                                   <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Prix Unit. (DA)</label>
+                                   <Input type="number" step="1" value={item.unit_price} onChange={e => {
+                                      const newItems = [...orderItems];
+                                      newItems[idx].unit_price = Math.max(0, parseInt(e.target.value) || 0);
+                                      setOrderItems(newItems);
+                                   }} className="bg-white border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-10 rounded-xl" />
+                                </div>
+                             </div>
+                           </div>
+                        ))}
 
-                       <div className="grid grid-cols-3 gap-4">
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Prix Unitaire (DA) *</label>
-                             <Input type="number" step="1" value={orderPrice} onChange={e => setOrderPrice(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4" />
-                          </div>
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Frais Livraison (DA)</label>
-                             <Input readOnly name="delivery_fee" type="number" step="1" value={deliveryFee} className="bg-[#F8F9FC] border-[#E9ECF0] text-sm font-bold h-12 rounded-xl px-4 text-[#2D3436] opacity-70 cursor-not-allowed" />
-                          </div>
-                          <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Remise (DA)</label>
-                             <Input name="discount" type="number" step="1" value={orderDiscount} onChange={e => setOrderDiscount(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4 text-[#2D3436]" />
-                          </div>
-                       </div>
+                        <button
+                           type="button"
+                           onClick={() => setOrderItems([...orderItems, { product: null, quantity: 1, unit_price: 0 }])}
+                           className="w-full h-12 rounded-xl border-2 border-dashed border-slate-200 text-xs font-bold text-slate-500 hover:border-[#6C5CE7]/50 hover:text-[#6C5CE7] hover:bg-indigo-50/50 transition-colors flex items-center justify-center gap-2"
+                        >
+                           + Ajouter un autre produit
+                        </button>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="space-y-3">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Frais Livraison (DA)</label>
+                              <Input readOnly name="delivery_fee" type="number" step="1" value={deliveryFee} className="bg-[#F8F9FC] border-[#E9ECF0] text-sm font-bold h-12 rounded-xl px-4 text-[#2D3436] opacity-70 cursor-not-allowed" />
+                           </div>
+                           <div className="space-y-3">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Remise (DA)</label>
+                              <Input name="discount" type="number" step="1" value={orderDiscount} onChange={e => setOrderDiscount(Math.round(parseFloat(e.target.value) || 0))} className="bg-[#F8F9FC] border-[#E9ECF0] text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4 text-[#2D3436]" />
+                           </div>
+                        </div>
 
                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                           <div className="space-y-3">
@@ -1184,11 +1210,10 @@ export default function AgentOrdersPage() {
                  <div className="space-y-1 text-slate-800">
                     <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
                     <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
-                       {formatPrice(Math.max(0, (orderPrice * orderQty) + deliveryFee - orderDiscount))}
+                       {formatPrice(Math.max(0, orderItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) + deliveryFee - orderDiscount))}
                     </div>
                     <p className="text-[10px] text-neutral-400 font-bold">
-                      {orderQty > 1 && <>{orderQty} × {formatPrice(orderPrice)} · </>}
-                      + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
+                      {orderItems.length} article(s) · Livraison: {formatPrice(deliveryFee)}
                     </p>
                  </div>
                  <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
