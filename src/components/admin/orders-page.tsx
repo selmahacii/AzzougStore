@@ -1958,7 +1958,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                     </span>
                                   </div>
                                   
-                                  {user?.role === 'ADMIN' && (
+                                  {['ADMIN', 'SUPER_ADMIN'].includes(user?.role || '') && (
                                     <button
                                       onClick={() => handleUnmerge(child.id, child.order_number)}
                                       className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 hover:border-rose-300 rounded-xl px-3 py-1.5 text-xs font-black shadow-sm transition-all focus:outline-none"
@@ -2187,7 +2187,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                 ))}
                               </div>
                             )}
-                            {user?.role === 'ADMIN' && (
+                            {['ADMIN', 'SUPER_ADMIN'].includes(user?.role || '') && (
                               <button
                                 onClick={() => handleUnmerge(child.id, child.order_number)}
                                 className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 hover:border-rose-300 rounded-xl px-2.5 py-1 text-[10px] font-bold shadow-sm transition-all focus:outline-none w-fit"
@@ -2705,7 +2705,7 @@ const [timeLeft, setTimeLeft] = useState('');
                         <SelectValue placeholder="Choisir un agent..." />
                      </SelectTrigger>
                      <SelectContent className="bg-white border-slate-100 rounded-2xl shadow-xl">
-                        {employees.filter(e => ['CONFIRMATEUR','MANAGER','ADMIN'].includes(e.role)).map(e => (
+                        {employees.filter(e => ['CONFIRMATEUR','MANAGER','ADMIN', 'SUPER_ADMIN'].includes(e.role)).map(e => (
                            <SelectItem key={e.id} value={e.id} className="rounded-xl py-3">
                               <div className="flex items-center gap-3">
                                  <div className="size-7 rounded-lg bg-indigo-50 flex items-center justify-center text-xs font-black text-[#4b7bec]">{e.name.charAt(0)}</div>
