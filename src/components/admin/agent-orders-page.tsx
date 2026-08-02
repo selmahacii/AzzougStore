@@ -1242,9 +1242,9 @@ export default function AgentOrdersPage() {
                   customer_phone: fd.get('customer_phone') as string,
                   customer_phone2: fd.get('customer_phone2') as string || undefined,
                   customer_address: fd.get('customer_address') as string || '',
-                  customer_wilaya: editWilaya,
-                  customer_commune: (fd.get('customer_commune') as string) || editCommuneState || undefined,
-                  delivery_type: editDeliveryType,
+                  customer_wilaya: (fd.get('customer_wilaya') as string) || editingOrder.customer_wilaya || undefined,
+                  customer_commune: (fd.get('customer_commune') as string) || editingOrder.customer_commune || undefined,
+                  delivery_type: (fd.get('delivery_type') as string) || editingOrder.delivery_type || undefined,
                   delivery_fee: parseInt(fd.get('delivery_fee') as string) || 0,
                   notes: fd.get('notes') as string || undefined,
                   tracking_number: fd.get('tracking_number') as string || undefined,
@@ -1274,11 +1274,7 @@ export default function AgentOrdersPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mode de Réception</label>
                     <select
                       name="delivery_type"
-                      value={editDeliveryType}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setEditDeliveryType(val);
-                      }}
+                      defaultValue={editingOrder.delivery_type ?? 'home'}
                       className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3"
                     >
                       <option value="home">Livraison à Domicile</option>
@@ -1289,10 +1285,7 @@ export default function AgentOrdersPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Wilaya</label>
                     <select 
                       name="customer_wilaya" 
-                      value={editWilaya} 
-                      onChange={e => {
-                        setEditWilaya(e.target.value);
-                      }} 
+                      defaultValue={editingOrder.customer_wilaya ?? undefined} 
                       className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3"
                     >
                       {WILAYAS.map(w => <option key={w} value={w}>{w}</option>)}
@@ -1300,10 +1293,7 @@ export default function AgentOrdersPage() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Commune</label>
-                    <select name="customer_commune" value={editCommuneState} onChange={e => setEditCommuneState(e.target.value)} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm px-3" disabled={!editWilaya || loadingEditCommunes}>
-                      <option value="">{loadingEditCommunes ? "Chargement..." : "Sélectionnez une commune"}</option>
-                      {editCommunes.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                    </select>
+                    <Input name="customer_commune" defaultValue={editingOrder.customer_commune ?? ''} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Frais livraison (DA)</label>
