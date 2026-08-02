@@ -3363,6 +3363,7 @@ const [timeLeft, setTimeLeft] = useState('');
                   <Textarea name="notes" defaultValue={editOrderData.notes ?? ''} rows={3} className="rounded-xl bg-slate-50 border-slate-100 text-sm resize-none" />
                 </div>
               </div>
+            </div>
 
               <div className="shrink-0 p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shadow-lg">
                 <Button type="button" variant="outline" onClick={() => setEditOrderOpen(false)} className="flex-1 h-12 rounded-2xl font-bold text-sm">Annuler</Button>
