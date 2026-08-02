@@ -311,6 +311,7 @@ const [timeLeft, setTimeLeft] = useState('');
   // Edit order modal
   const [editOrderOpen, setEditOrderOpen] = useState(false);
   const [editOrderData, setEditOrderData] = useState<any>(null);
+  const [editStatus, setEditStatus] = useState<string>('NEW');
   const [editIsPack, setEditIsPack] = useState(false);
   const [editIsUpsell, setEditIsUpsell] = useState(false);
   const [editIsAbandonedCart, setEditIsAbandonedCart] = useState(false);
@@ -861,10 +862,20 @@ const [timeLeft, setTimeLeft] = useState('');
 
   // Edit order mutation
   const editOrderMutation = useMutation({
-    mutationFn: (data: any) => apiFetch(`/api/v1/orders/${data.id}/info`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
+    mutationFn: async (data: any) => {
+      const { new_status, ...infoData } = data;
+      const res = await apiFetch(`/api/v1/orders/${data.id}/info`, {
+        method: 'PATCH',
+        body: JSON.stringify(infoData),
+      });
+      if (new_status && new_status !== editOrderData?.status) {
+        await apiFetch(`/api/v1/orders/${data.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: new_status }),
+        });
+      }
+      return res;
+    },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
@@ -874,7 +885,7 @@ const [timeLeft, setTimeLeft] = useState('');
       setEditOrderOpen(false);
       toast.success('Commande mise à jour');
     },
-    onError: () => toast.error('Erreur lors de la mise à jour'),
+    onError: (err: any) => toast.error(err?.detail || err?.message || 'Erreur lors de la mise à jour'),
   });
 
   // Bulk status mutation
@@ -1885,8 +1896,8 @@ const [timeLeft, setTimeLeft] = useState('');
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="rounded-2xl border-slate-100 shadow-xl p-2 w-48">
                             <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Actions rapides</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => { setEditOrderData(order); setEditCommuneState(order.customer_commune || '');
-      setEditOrderOpen(true); }} disabled={['DELIVERED','RETURNED','CANCELLED'].includes(order.status)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-indigo-50 focus:text-indigo-600">
+                            <DropdownMenuItem onClick={() => { setEditOrderData(order); setEditStatus(order.status); setEditCommuneState(order.customer_commune || '');
+      setEditOrderOpen(true); }} disabled={!['SUPER_ADMIN', 'ADMIN'].includes(user?.role || '') && ['DELIVERED','RETURNED','CANCELLED'].includes(order.status)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-indigo-50 focus:text-indigo-600">
                               <Settings2 className="size-4" /> Modifier la commande
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleAssignClick(order.id)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-[#F0F5FF] focus:text-[#4b7bec]">
@@ -2132,7 +2143,7 @@ const [timeLeft, setTimeLeft] = useState('');
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-2">
-                        <button onClick={() => handleDetailClick(order)} className="size-9 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all">
+                                  <button onClick={() => handleDetailClick(order)} className="size-9 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all">
                           <Eye className="size-4" />
                         </button>
                         <DropdownMenu>
@@ -2143,8 +2154,7 @@ const [timeLeft, setTimeLeft] = useState('');
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="rounded-2xl border-slate-100 shadow-xl p-2 w-48">
                             <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 py-2">Actions rapides</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => { setEditOrderData(order); setEditCommuneState(order.customer_commune || '');
-      setEditOrderOpen(true); }} disabled={['DELIVERED','RETURNED','CANCELLED'].includes(order.status)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-indigo-50 focus:text-indigo-600">
+                            <DropdownMenuItem onClick={() => { setEditOrderData(order); setEditStatus(order.status); setEditCommuneState(order.customer_commune || ''); setEditOrderOpen(true); }} disabled={!['SUPER_ADMIN', 'ADMIN'].includes(user?.role || '') && ['DELIVERED','RETURNED','CANCELLED'].includes(order.status)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-indigo-50 focus:text-indigo-600">
                               <Settings2 className="size-4" /> Modifier la commande
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleAssignClick(order.id)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-[#F0F5FF] focus:text-[#4b7bec]">
@@ -2356,16 +2366,17 @@ const [timeLeft, setTimeLeft] = useState('');
                       🟣 Ouvrir la commande parente
                     </button>
                   )}
-                  {!['DELIVERED','RETURNED','CANCELLED'].includes(selectedOrder.status) && (
+                  {(!['DELIVERED','RETURNED','CANCELLED'].includes(selectedOrder.status) || ['SUPER_ADMIN', 'ADMIN'].includes(user?.role || '')) && (
                     <button
                       onClick={() => { 
                         setEditOrderData(selectedOrder); 
+                        setEditStatus(selectedOrder.status);
                         setEditIsPack(!!selectedOrder.is_pack);
                         setEditIsUpsell(!!selectedOrder.is_upsell);
                         setEditIsAbandonedCart(!!selectedOrder.is_abandoned_cart);
                         setEditRecoveryFee(selectedOrder.abandoned_cart_recovery_fee || 0);
                         setEditCommuneState(selectedOrder.customer_commune || '');
-      setEditOrderOpen(true); 
+                        setEditOrderOpen(true); 
                       }}
                       className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 border border-white/20"
                     >
@@ -3182,6 +3193,7 @@ const [timeLeft, setTimeLeft] = useState('');
 
                 editOrderMutation.mutate({
                   id: editOrderData.id,
+                  new_status: editStatus,
                   customer_name: fd.get('customer_name') as string,
                   customer_phone: fd.get('customer_phone') as string,
                   customer_phone2: fd.get('customer_phone2') as string || undefined,
@@ -3200,6 +3212,26 @@ const [timeLeft, setTimeLeft] = useState('');
               }}
               className="p-10 space-y-6"
             >
+              <div className="space-y-2 pb-2 border-b border-slate-100">
+                <label className="text-[10px] font-black uppercase tracking-widest text-[#6C5CE7]">Statut de la Commande</label>
+                <select
+                  value={editStatus}
+                  onChange={e => setEditStatus(e.target.value)}
+                  className="w-full h-12 rounded-xl bg-indigo-50/50 border border-indigo-200 text-sm font-black text-[#6C5CE7] px-4 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
+                >
+                  <option value="CONFIRMED">✅ Confirmée</option>
+                  <option value="CANCELLED">❌ Annulée</option>
+                  <option value="RESCHEDULED">📅 Reportée / Pas de réponse (NRP)</option>
+                  <option value="IN_PROGRESS">⏳ En cours de traitement</option>
+                  <option value="CALLED">📞 Appelée</option>
+                  <option value="ASSIGNED">🟡 En attente d'attribution</option>
+                  <option value="NEW">🔵 Nouvelle commande</option>
+                  <option value="SHIPPED">🚚 Expédiée</option>
+                  <option value="DELIVERED">📦 Livrée</option>
+                  <option value="RETURNED">↩️ Retour</option>
+                  <option value="ABANDONED">🟧 Panier Abandonné</option>
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom client</label>

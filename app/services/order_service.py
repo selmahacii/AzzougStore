@@ -1432,8 +1432,8 @@ class OrderService:
                     logger.warning("Could not push note update to Noest for order %s: %s", order.id, exc)
 
         if new_status and new_status != old_status:
-            # Enforce state machine
-            if not _is_valid_transition(old_status, new_status):
+            # Enforce state machine (SUPER_ADMIN and ADMIN are allowed to override state machine constraints)
+            if actor_role not in ("SUPER_ADMIN", "ADMIN") and not _is_valid_transition(old_status, new_status):
                 raise InvalidStateTransitionError(
                     message=f"Transition invalide: {old_status} → {new_status}.",
                     context={"from": old_status, "to": new_status},
