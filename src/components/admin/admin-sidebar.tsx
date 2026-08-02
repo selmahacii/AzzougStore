@@ -454,19 +454,32 @@ export default function AdminSidebar() {
          {/* ─── Logo / Brand ───────────────────────────── */}
          <div className="flex items-center gap-3 px-4 h-20 shrink-0 border-b" style={{ borderColor: S.border }}>
             <div className={cn(
-               "flex shrink-0 items-center justify-center transition-all duration-300",
-               sidebarCollapsed ? "size-10" : "size-12"
+               "flex shrink-0 items-center justify-center transition-all duration-300 rounded-xl overflow-hidden bg-slate-50 border border-slate-100",
+               sidebarCollapsed ? "size-10 p-1" : "size-12 p-1.5"
             )}>
                <img 
-                  src="/brand-icon-primary.png" 
+                  src={activeStore?.logo_url || "/brand-icon-primary.png"} 
                   alt="AzzougShop" 
                   className="w-full h-full object-contain"
+                  onError={(e) => {
+                     const target = e.currentTarget;
+                     if (target.src.includes('brand-icon-primary')) {
+                        target.src = '/azzougshop_logo.png';
+                     } else if (target.src.includes('azzougshop_logo')) {
+                        target.style.display = 'none';
+                        if (target.parentElement) {
+                           target.parentElement.innerHTML = '<span className="text-lg font-black text-[#6C5CE7]">A</span>';
+                        }
+                     } else {
+                        target.src = '/brand-icon-primary.png';
+                     }
+                  }}
                />
             </div>
             {!sidebarCollapsed && (
                <div className="flex flex-col min-w-0">
                   <h1 className="text-sm font-extrabold text-[#2D3436] truncate tracking-tight">
-                     AzzougStore
+                     {activeStore?.name || 'AzzougStore'}
                   </h1>
                   <span className="text-[10px] font-semibold text-[#B2BEC3]">E-Commerce ERP</span>
                </div>

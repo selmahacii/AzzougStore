@@ -273,8 +273,20 @@ export function AdminAuthPage() {
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-5">
-            <img src="/brand-icon-primary.png" alt="AzzougShop Logo" className="h-36 w-auto drop-shadow-sm select-none" />
+          <div className="inline-flex items-center justify-center mb-5 p-3 rounded-2xl bg-white shadow-sm border border-slate-100 min-h-[100px] min-w-[100px]">
+            <img 
+              src="/brand-icon-primary.png" 
+              alt="AzzougShop Logo" 
+              className="h-28 w-auto max-w-[200px] object-contain drop-shadow-sm select-none" 
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src.includes('brand-icon-primary')) {
+                  target.src = '/azzougshop_logo.png';
+                } else if (target.src.includes('azzougshop_logo')) {
+                  target.src = '/icon.png';
+                }
+              }}
+            />
           </div>
           <p className="text-slate-400 font-medium tracking-tight text-sm">AzzougShop · Votre portail d'accès</p>
         </div>

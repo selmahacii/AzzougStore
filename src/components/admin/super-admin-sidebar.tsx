@@ -213,7 +213,17 @@ export default function SuperAdminSidebar() {
           'flex items-center shrink-0 border-b border-slate-100 h-14',
           sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4',
         )}>
-          <img src="/azzougshop_logo.png" alt="AzzougShop" className="size-7 object-contain shrink-0" />
+          <img 
+            src="/azzougshop_logo.png" 
+            alt="AzzougShop" 
+            className="size-7 object-contain shrink-0" 
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (target.src.includes('azzougshop_logo')) {
+                target.src = '/brand-icon-primary.png';
+              }
+            }}
+          />
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <p className="text-sm font-bold text-slate-900 leading-none truncate">AzzougSystem</p>
