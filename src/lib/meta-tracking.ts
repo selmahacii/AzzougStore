@@ -149,16 +149,57 @@ const CHECKOUT_ATTEMPT_KEY = 'azg_checkout_attempt_id';
  * returning an existing order (orders.py) identically, so one call site is
  * enough for both "ended the attempt" cases.
  */
-export function getOrCreateCheckoutAttemptId(): string | undefined {
+const SUBMITTED_PHONE_ATTEMPTS_KEY = 'azg_submitted_phone_attempts';
+
+export function getOrCreateCheckoutAttemptId(phone?: string): string | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
+    const cleanPhone = phone ? phone.replace(/\D/g, '') : '';
+    if (cleanPhone) {
+      const raw = window.localStorage.getItem(SUBMITTED_PHONE_ATTEMPTS_KEY);
+      if (raw) {
+        const attempts = JSON.parse(raw) as Record<string, { id: string; ts: number }>;
+        const existing = attempts[cleanPhone];
+        if (existing && (Date.now() - existing.ts < 30 * 60 * 1000)) {
+          return existing.id;
+        }
+      }
+    }
+
     const existing = window.sessionStorage.getItem(CHECKOUT_ATTEMPT_KEY);
     if (existing) return existing;
-    const id = crypto.randomUUID();
+
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     window.sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, id);
+
+    if (cleanPhone) {
+      recordSubmittedPhoneAttempt(cleanPhone, id);
+    }
     return id;
   } catch {
     return undefined;
+  }
+}
+
+export function recordSubmittedPhoneAttempt(phone: string, attemptId: string): void {
+  if (typeof window === 'undefined' || !phone) return;
+  try {
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) return;
+    const raw = window.localStorage.getItem(SUBMITTED_PHONE_ATTEMPTS_KEY);
+    const attempts = raw ? JSON.parse(raw) : {};
+    const now = Date.now();
+    
+    const filtered: Record<string, { id: string; ts: number }> = {};
+    for (const [p, data] of Object.entries(attempts as Record<string, { id: string; ts: number }>)) {
+      if (now - data.ts < 30 * 60 * 1000) {
+        filtered[p] = data;
+      }
+    }
+    filtered[cleanPhone] = { id: attemptId, ts: now };
+    window.localStorage.setItem(SUBMITTED_PHONE_ATTEMPTS_KEY, JSON.stringify(filtered));
+  } catch {
+    // ignore
   }
 }
 
