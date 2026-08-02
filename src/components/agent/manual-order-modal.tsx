@@ -585,6 +585,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                     </div>
                  </div>
               </div>
+            </div>
 
               <div className="shrink-0 sticky bottom-0 bg-white border-t border-slate-200 p-4 sm:p-6 lg:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 z-30 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.1)]">
                  <div className="space-y-1 text-slate-800">
