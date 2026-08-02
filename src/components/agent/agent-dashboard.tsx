@@ -1557,6 +1557,79 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
             <OrderTrackingReport orderId={order.id} />
           </div>
         </div>
+
+        {/* Sticky bottom action bar for saves on laptop / desktop views */}
+        {isEditing && (
+          <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4 shadow-[0_-10px_30px_rgba(0,0,0,0.15)] z-40 flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                setIsCheckingStock(true);
+                try {
+                  const freshResults = await Promise.all(productQueriesResult.map(q => q.refetch()));
+                  const freshById: Record<string, any> = Object.fromEntries(
+                    editProductIds.map((pid: string, idx: number) => [pid, freshResults[idx]?.data])
+                  );
+                  for (const it of editData.items) {
+                    const freshProduct = freshById[it.product_id];
+                    if (!freshProduct) continue;
+                    const variantStr = it.variant_details?.variant;
+                    let available: number | null = null;
+                    if (variantStr && freshProduct.variants?.length) {
+                      const colorVal = it.variant_details?.Couleur || it.variant_details?.Color || '';
+                      const sizeVal = it.variant_details?.Taille || it.variant_details?.Size || '';
+                      const colorVar = freshProduct.variants.find((v: any) => v.value === colorVal);
+                      const subVar = sizeVal ? colorVar?.sub_variants?.find((sv: any) => sv.value === sizeVal) : null;
+                      const effective = subVar || (colorVar && (!colorVar.sub_variants || colorVar.sub_variants.length === 0) ? colorVar : null);
+                      if (effective) {
+                        available = Number(effective.stock || 0) - Number(effective.reserved || 0);
+                      }
+                    } else if (!freshProduct.variants?.length) {
+                      available = Number(freshProduct.stock || 0) - Number(freshProduct.reserved_stock || 0);
+                    }
+                    if (available !== null && available < it.quantity) {
+                      toast.error(
+                        `Stock insuffisant pour ${it.product_name}${variantStr ? ` (${variantStr})` : ''} : ${available} disponible(s), ${it.quantity} demandé(s). Le stock vient d'être mis à jour, ajustez la quantité ou choisissez une autre variante.`
+                      );
+                      return;
+                    }
+                  }
+                } finally {
+                  setIsCheckingStock(false);
+                }
+
+                const addedNewProduct = editData.items.some((it: any) => !originalProductIds.has(it.product_id));
+                updateMutation.mutate(addedNewProduct ? { ...editData, is_upsell: true } as any : editData);
+              }}
+              disabled={updateMutation.isPending || isCheckingStock}
+              className="flex-1 h-12 bg-[#6C5CE7] hover:bg-[#5B4BC4] text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-purple-200 flex items-center justify-center gap-2 disabled:opacity-60 transition-all cursor-pointer"
+            >
+              {isCheckingStock ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Vérification stock...
+                </>
+              ) : updateMutation.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  <Save className="size-4" />
+                  Enregistrer les modifications
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="h-12 px-5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
+            >
+              Annuler
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

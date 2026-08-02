@@ -3157,8 +3157,8 @@ const [timeLeft, setTimeLeft] = useState('');
 
       {/* ── Edit Order Modal ── */}
       <Dialog open={editOrderOpen} onOpenChange={setEditOrderOpen}>
-        <DialogContent className="max-w-2xl w-[95vw] bg-white border-none p-0 rounded-[40px] shadow-2xl overflow-hidden">
-          <div className="bg-[#6C5CE7] px-10 py-8">
+        <DialogContent className="max-w-2xl w-[95vw] bg-white border-none p-0 rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="bg-[#6C5CE7] px-10 py-8 shrink-0">
             <DialogTitle className="text-xl font-black uppercase tracking-tight text-white">Modifier la Commande</DialogTitle>
             <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">{editOrderData ? formatOrderRef(editOrderData, 'admin') : ''}</p>
           </div>
@@ -3210,8 +3210,9 @@ const [timeLeft, setTimeLeft] = useState('');
                   abandoned_cart_recovery_fee: editIsAbandonedCart ? editRecoveryFee : 0,
                 });
               }}
-              className="p-10 space-y-6"
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
             >
+              <div className="flex-1 overflow-y-auto p-8 sm:p-10 space-y-6 custom-scrollbar">
               <div className="space-y-2 pb-2 border-b border-slate-100">
                 <label className="text-[10px] font-black uppercase tracking-widest text-[#6C5CE7]">Statut de la Commande</label>
                 <select
@@ -3362,9 +3363,9 @@ const [timeLeft, setTimeLeft] = useState('');
                   <Textarea name="notes" defaultValue={editOrderData.notes ?? ''} rows={3} className="rounded-xl bg-slate-50 border-slate-100 text-sm resize-none" />
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
+              <div className="shrink-0 p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shadow-lg">
                 <Button type="button" variant="outline" onClick={() => setEditOrderOpen(false)} className="flex-1 h-12 rounded-2xl font-bold text-sm">Annuler</Button>
-                <Button type="submit" disabled={editOrderMutation.isPending} className="flex-1 h-12 rounded-2xl bg-[#6C5CE7] hover:bg-[#5B4BC4] text-white font-bold text-sm shadow-lg shadow-purple-100">
+                <Button type="submit" disabled={editOrderMutation.isPending} className="flex-1 h-12 rounded-2xl bg-[#6C5CE7] hover:bg-[#5B4BC4] text-white font-bold text-sm shadow-lg shadow-purple-100 cursor-pointer">
                   {editOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : 'Enregistrer les modifications'}
                 </Button>
               </div>

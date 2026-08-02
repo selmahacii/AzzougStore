@@ -1226,8 +1226,8 @@ export default function AgentOrdersPage() {
 
       {/* ── Edit Order Modal (Confirmatrice) ── */}
       <Dialog open={editOrderOpen} onOpenChange={setEditOrderOpen}>
-        <DialogContent className="max-w-2xl w-[95vw] bg-white border-none p-0 rounded-[40px] shadow-2xl overflow-hidden text-slate-900">
-          <div className="px-10 py-8 text-white" style={{ backgroundColor: primaryColor }}>
+        <DialogContent className="max-w-2xl w-[95vw] bg-white border-none p-0 rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col text-slate-900">
+          <div className="px-10 py-8 text-white shrink-0" style={{ backgroundColor: primaryColor }}>
             <DialogTitle className="text-xl font-black uppercase tracking-tight text-white">Modifier la Commande</DialogTitle>
             <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">{editingOrder ? formatOrderRef(editingOrder, 'admin') : ''}</p>
           </div>
@@ -1241,103 +1241,116 @@ export default function AgentOrdersPage() {
                   customer_name: fd.get('customer_name') as string,
                   customer_phone: fd.get('customer_phone') as string,
                   customer_phone2: fd.get('customer_phone2') as string || undefined,
-                  customer_address: fd.get('customer_address') as string,
-                  customer_wilaya: fd.get('customer_wilaya') as string,
-                  customer_commune: fd.get('customer_commune') as string || undefined,
+                  customer_address: fd.get('customer_address') as string || '',
+                  customer_wilaya: editWilaya,
+                  customer_commune: (fd.get('customer_commune') as string) || editCommuneState || undefined,
+                  delivery_type: editDeliveryType,
                   delivery_fee: parseInt(fd.get('delivery_fee') as string) || 0,
                   notes: fd.get('notes') as string || undefined,
-                  carrier_id: fd.get('carrier_id') as string || undefined,
-                  delivery_type: fd.get('delivery_type') as string || undefined,
+                  tracking_number: fd.get('tracking_number') as string || undefined,
                   is_pack: editIsPack,
                   is_upsell: editIsUpsell,
                   is_abandoned_cart: editIsAbandonedCart,
                   abandoned_cart_recovery_fee: editIsAbandonedCart ? editRecoveryFee : 0,
                 });
               }}
-              className="p-10 space-y-6 max-h-[80vh] overflow-y-auto custom-scrollbar bg-white"
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
             >
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom client</label>
-                  <Input name="customer_name" defaultValue={editingOrder.customer_name} required className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Téléphone 1</label>
-                  <Input name="customer_phone" defaultValue={editingOrder.customer_phone} required className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Téléphone 2</label>
-                  <Input name="customer_phone2" defaultValue={editingOrder.customer_phone2 ?? ''} placeholder="Optionnel" className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Wilaya</label>
-                  <select name="customer_wilaya" defaultValue={editingOrder.customer_wilaya ?? undefined} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3">
-                    {WILAYAS.map(w => <option key={w} value={w}>{w}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Commune</label>
-                  <Input name="customer_commune" defaultValue={editingOrder.customer_commune ?? ''} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Type de livraison</label>
-                  <select name="delivery_type" defaultValue={editingOrder.delivery_type ?? 'home'} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3">
-                    <option value="home">À domicile</option>
-                    <option value="stopdesk">Bureau (Stopdesk)</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Transporteur</label>
-                  <select name="carrier_id" defaultValue={editingOrder.carrier_id ?? ''} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3">
-                    <option value="">Aucun transporteur</option>
-                    {deliveryPartnersQuery.data?.data?.map((partner: any) => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name} ({partner.carrier_id.toUpperCase()})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Frais livraison (DA)</label>
-                  <Input name="delivery_fee" type="number" defaultValue={editingOrder.delivery_fee ?? 0} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Adresse</label>
-                  <Input name="customer_address" defaultValue={editingOrder.customer_address ?? ''} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm" />
-                </div>
-                
-                <div className="col-span-2 pt-2 border-t border-slate-100">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 block">Propriétés Spéciales</label>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsPack" checked={editIsPack} onCheckedChange={(c) => setEditIsPack(!!c)} className="size-4" />
-                       <label htmlFor="editIsPack" className="text-xs font-bold text-slate-600">Pack Spécial</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsUpsell" checked={editIsUpsell} onCheckedChange={(c) => setEditIsUpsell(!!c)} className="size-4" />
-                       <label htmlFor="editIsUpsell" className="text-xs font-bold text-slate-600">Vente Additionnelle</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsAbandonedCart" checked={editIsAbandonedCart} onCheckedChange={(c) => setEditIsAbandonedCart(!!c)} className="size-4" />
-                       <label htmlFor="editIsAbandonedCart" className="text-xs font-bold text-slate-600">Panier Abandonné</label>
+              <div className="flex-1 overflow-y-auto p-8 sm:p-10 space-y-6 custom-scrollbar">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom client</label>
+                    <Input name="customer_name" defaultValue={editingOrder.customer_name} required className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Téléphone 1</label>
+                    <Input name="customer_phone" defaultValue={editingOrder.customer_phone} required className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Téléphone 2</label>
+                    <Input name="customer_phone2" defaultValue={editingOrder.customer_phone2 ?? ''} placeholder="Optionnel" className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mode de Réception</label>
+                    <select
+                      name="delivery_type"
+                      value={editDeliveryType}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEditDeliveryType(val);
+                      }}
+                      className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3"
+                    >
+                      <option value="home">Livraison à Domicile</option>
+                      <option value="stop_desk">Stop Desk (Bureau)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Wilaya</label>
+                    <select 
+                      name="customer_wilaya" 
+                      value={editWilaya} 
+                      onChange={e => {
+                        setEditWilaya(e.target.value);
+                      }} 
+                      className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3"
+                    >
+                      {WILAYAS.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Commune</label>
+                    <select name="customer_commune" value={editCommuneState} onChange={e => setEditCommuneState(e.target.value)} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm px-3" disabled={!editWilaya || loadingEditCommunes}>
+                      <option value="">{loadingEditCommunes ? "Chargement..." : "Sélectionnez une commune"}</option>
+                      {editCommunes.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Frais livraison (DA)</label>
+                    <Input name="delivery_fee" type="number" defaultValue={editingOrder.delivery_fee ?? 0} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm font-bold" />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Adresse</label>
+                    <Input name="customer_address" defaultValue={editingOrder.customer_address ?? ''} className="h-11 rounded-xl bg-slate-50 border-slate-100 text-sm" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">N° de suivi</label>
+                    <Input name="tracking_number" defaultValue={editingOrder.tracking_number ?? ''} placeholder="Optionnel" className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
+                  </div>
+                  
+                  <div className="col-span-2 pt-2 border-t border-slate-100">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 block">Propriétés Spéciales</label>
+                    <div className="flex flex-wrap gap-4">
+                      <div className="flex items-center gap-2">
+                         <Checkbox id="editIsPack" checked={editIsPack} onCheckedChange={(c) => setEditIsPack(!!c)} className="size-4" />
+                         <label htmlFor="editIsPack" className="text-xs font-bold text-slate-600">Pack Spécial</label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <Checkbox id="editIsUpsell" checked={editIsUpsell} onCheckedChange={(c) => setEditIsUpsell(!!c)} className="size-4" />
+                         <label htmlFor="editIsUpsell" className="text-xs font-bold text-slate-600">Vente Additionnelle</label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <Checkbox id="editIsAbandonedCart" checked={editIsAbandonedCart} onCheckedChange={(c) => setEditIsAbandonedCart(!!c)} className="size-4" />
+                         <label htmlFor="editIsAbandonedCart" className="text-xs font-bold text-slate-600">Panier Abandonné</label>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {editIsAbandonedCart && (
-                  <div className="col-span-2 space-y-2 bg-amber-50 p-4 rounded-xl border border-amber-100">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-amber-700">Commission Agent (DA)</label>
-                    <Input type="number" step="1" value={editRecoveryFee} onChange={e => setEditRecoveryFee(Math.round(parseFloat(e.target.value) || 0))} className="h-11 rounded-xl bg-white border-amber-200 text-sm font-bold text-amber-900" />
+                  {editIsAbandonedCart && (
+                    <div className="col-span-2 space-y-2 bg-amber-50 p-4 rounded-xl border border-amber-100">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-amber-700">Commission Agent (DA)</label>
+                      <Input type="number" step="1" value={editRecoveryFee} onChange={e => setEditRecoveryFee(Math.round(parseFloat(e.target.value) || 0))} className="h-11 rounded-xl bg-white border-amber-200 text-sm font-bold text-amber-900" />
+                    </div>
+                  )}
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Notes</label>
+                    <Textarea name="notes" defaultValue={editingOrder.notes ?? ''} rows={3} className="rounded-xl bg-slate-50 border-slate-100 text-sm resize-none" />
                   </div>
-                )}
-                <div className="col-span-2 space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Notes</label>
-                  <Textarea name="notes" defaultValue={editingOrder.notes ?? ''} rows={3} className="rounded-xl bg-slate-50 border-slate-100 text-sm resize-none" />
                 </div>
               </div>
-              <div className="flex gap-3 pt-2">
+              <div className="shrink-0 p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shadow-lg">
                 <Button type="button" variant="outline" onClick={() => setEditOrderOpen(false)} className="flex-1 h-12 rounded-2xl font-bold text-sm">Annuler</Button>
-                <Button type="submit" disabled={editOrderMutation.isPending} className="flex-1 h-12 rounded-2xl text-white font-bold text-sm shadow-lg border-none" style={{ backgroundColor: primaryColor }}>
+                <Button type="submit" disabled={editOrderMutation.isPending} className="flex-1 h-12 rounded-2xl text-white font-bold text-sm shadow-lg border-none cursor-pointer" style={{ backgroundColor: primaryColor }}>
                   {editOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : 'Enregistrer les modifications'}
                 </Button>
               </div>

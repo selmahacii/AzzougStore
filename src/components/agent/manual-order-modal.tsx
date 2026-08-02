@@ -236,8 +236,8 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent showCloseButton={false} className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[95vh] overflow-y-auto custom-scrollbar shadow-2xl">
-        <div className="sticky top-0 px-4 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white" style={{ backgroundColor: primaryColor }}>
+      <DialogContent showCloseButton={false} className="w-[98vw] max-w-[1200px] bg-white border border-neutral-200 text-slate-900 p-0 rounded-[32px] overflow-hidden max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="sticky top-0 px-4 py-4 sm:px-8 sm:py-6 lg:px-12 lg:py-8 z-20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white shrink-0" style={{ backgroundColor: primaryColor }}>
           <div className="space-y-1 min-w-0">
             <DialogTitle className="text-xl font-black uppercase tracking-widest text-white shadow-sm">Saisie de Commande</DialogTitle>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">Création d'une nouvelle commande manuelle</p>
@@ -310,20 +310,22 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
               delivery_fee: deliveryFee,
               subtotal: lineTotal,
               discount: orderDiscount,
-              total,
+              total_amount: total,
+              items: finalLines.map(lineToItem),
+              status: 'CONFIRMED',
               source: orderSource,
-                  carrier_id: selectedPartnerId || undefined,
-                  assigned_to: user?.id || undefined, // Assigned directly to this agent
-                  items: finalLines.map(lineToItem),
-                  is_abandoned_cart: false,
-                  is_pack: isPack,
-                  is_upsell: isUpsell,
-                  is_marketplace_upsell: isMarketplaceUpsell,
-               };
-                createOrderMutation.mutate(payload);
-              }}
-              className="p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white"
-            >
+              carrier_id: selectedPartnerId || undefined,
+              assigned_to: user?.id || undefined, // Assigned directly to this agent
+              is_abandoned_cart: false,
+              is_pack: isPack,
+              is_upsell: isUpsell,
+              is_marketplace_upsell: isMarketplaceUpsell,
+            };
+            createOrderMutation.mutate(payload);
+          }}
+          className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white"
+        >
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white custom-scrollbar">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 text-slate-800">
                  <div className="space-y-6 sm:space-y-10">
                     <div className="flex items-center gap-4 border-l-2 pl-4" style={{ borderColor: primaryColor }}>
@@ -584,7 +586,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                  </div>
               </div>
 
-              <div className="pt-6 sm:pt-8 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white">
+              <div className="shrink-0 sticky bottom-0 bg-white border-t border-slate-200 p-4 sm:p-6 lg:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 z-30 shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.1)]">
                  <div className="space-y-1 text-slate-800">
                     <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
                     <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
@@ -597,7 +599,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                       + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
                     </p>
                  </div>
-                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-6 sm:px-10 w-full sm:w-auto text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>
+                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-6 sm:px-10 w-full sm:w-auto text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none cursor-pointer" style={{ backgroundColor: primaryColor }}>
                     {createOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : <>Enregistrer la Commande <ArrowRightLeft className="ml-3 size-4 group-hover:translate-x-1 transition-transform" /></>}
                  </Button>
               </div>
