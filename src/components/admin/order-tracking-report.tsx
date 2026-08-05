@@ -36,6 +36,12 @@ export function OrderTrackingReport({ orderId }: OrderTrackingReportProps) {
     queryKey: ['order-tracking', orderId],
     queryFn: () => apiFetch(`/api/v1/orders/${orderId}/tracking`),
     refetchOnWindowFocus: false,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiClientError && [401, 403, 404].includes(error.statusCode)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
   });
   const d = data?.data;
 

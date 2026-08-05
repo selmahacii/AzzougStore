@@ -265,8 +265,12 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
     // without this, a stale drawer left open on a removed order hammered
     // the API every 10s forever (seen live: repeated failed GETs in the
     // console for an order deleted via a one-off cleanup script).
-    retry: (failureCount, error) =>
-      error instanceof ApiClientError && error.statusCode === 404 ? false : failureCount < 3,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiClientError && [401, 403, 404].includes(error.statusCode)) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     refetchInterval: (query) => (query.state.error ? false : 30000),
     refetchIntervalInBackground: false,
     enabled: !!orderId,
