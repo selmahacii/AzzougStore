@@ -454,24 +454,24 @@ export default function AdminSidebar() {
          {/* ─── Logo / Brand ───────────────────────────── */}
          <div className="flex items-center gap-3 px-4 h-20 shrink-0 border-b" style={{ borderColor: S.border }}>
             <div className={cn(
-               "flex shrink-0 items-center justify-center transition-all duration-300 rounded-xl overflow-hidden bg-slate-50 border border-slate-100",
+               "flex shrink-0 items-center justify-center transition-all duration-300 rounded-xl overflow-hidden bg-white border border-slate-200/80 shadow-sm relative",
                sidebarCollapsed ? "size-10 p-1" : "size-12 p-1.5"
             )}>
+               <span className="absolute inset-0 flex items-center justify-center text-lg font-black text-[#6C5CE7] select-none bg-slate-50">
+                  {(activeStore?.name || "AzzougShop").charAt(0).toUpperCase()}
+               </span>
                <img 
-                  src={activeStore?.logo_url || "/brand-icon-primary.png"} 
-                  alt="AzzougShop" 
-                  className="w-full h-full object-contain"
+                  src={activeStore?.logo_url || "/azzougshop_logo.png"} 
+                  alt={activeStore?.name || "AzzougShop"} 
+                  className="w-full h-full object-contain relative z-10 bg-white"
                   onError={(e) => {
                      const target = e.currentTarget;
-                     if (target.src.includes('brand-icon-primary')) {
-                        target.src = '/azzougshop_logo.png';
-                     } else if (target.src.includes('azzougshop_logo')) {
-                        target.style.display = 'none';
-                        if (target.parentElement) {
-                           target.parentElement.innerHTML = '<span className="text-lg font-black text-[#6C5CE7]">A</span>';
-                        }
-                     } else {
+                     if (target.src.includes('azzougshop_logo')) {
                         target.src = '/brand-icon-primary.png';
+                     } else if (target.src.includes('brand-icon-primary')) {
+                        target.src = '/icon.png';
+                     } else {
+                        target.style.display = 'none';
                      }
                   }}
                />

@@ -276,15 +276,26 @@ export function StorefrontHeader() {
 
           {/* ─── Logo ─── */}
           <button onClick={() => handleNav('home')} className="flex items-center gap-3 group shrink-0 focus:outline-none">
-            {logoSrc ? (
-              <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center bg-transparent transition-colors">
-                <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            ) : (
-              <div className="size-10 sm:size-12 rounded-xl flex items-center justify-center text-sm font-black text-white shrink-0 group-hover:brightness-110 transition-all" style={{ backgroundColor: T.primary }}>
+            <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center relative border border-slate-200/60 shadow-sm shrink-0 bg-white">
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-white select-none" style={{ backgroundColor: T.primary }}>
                 {storeName.charAt(0).toUpperCase()}
-              </div>
-            )}
+              </span>
+              <img 
+                src={logoSrc || activeStore?.logo_url || '/azzougshop_logo.png'} 
+                alt={storeName} 
+                className="h-full w-full object-contain p-0 relative z-10 bg-white" 
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src.includes('azzougshop_logo')) {
+                    target.src = '/brand-icon-primary.png';
+                  } else if (target.src.includes('brand-icon-primary')) {
+                    target.src = '/icon.png';
+                  } else {
+                    target.style.display = 'none';
+                  }
+                }} 
+              />
+            </div>
             <div className="flex flex-col items-start gap-0">
               <span
                 className={`text-sm sm:text-base leading-none tracking-tight ${T.tpl === 'luxe' ? 'italic font-serif' : 'font-black uppercase tracking-[0.06em]'}`}

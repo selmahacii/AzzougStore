@@ -273,17 +273,22 @@ export function AdminAuthPage() {
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center mb-5 p-3 rounded-2xl bg-white shadow-sm border border-slate-100 min-h-[100px] min-w-[100px]">
+          <div className="inline-flex items-center justify-center mb-5 p-3 rounded-2xl bg-white shadow-sm border border-slate-100 min-h-[100px] min-w-[100px] relative overflow-hidden">
+            <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-[#6C5CE7] select-none bg-slate-50">
+              A
+            </span>
             <img 
-              src="/brand-icon-primary.png" 
+              src="/azzougshop_logo.png" 
               alt="AzzougShop Logo" 
-              className="h-28 w-auto max-w-[200px] object-contain drop-shadow-sm select-none" 
+              className="h-24 w-auto max-w-[200px] object-contain drop-shadow-sm select-none relative z-10 bg-white" 
               onError={(e) => {
                 const target = e.currentTarget;
-                if (target.src.includes('brand-icon-primary')) {
-                  target.src = '/azzougshop_logo.png';
-                } else if (target.src.includes('azzougshop_logo')) {
+                if (target.src.includes('azzougshop_logo')) {
+                  target.src = '/brand-icon-primary.png';
+                } else if (target.src.includes('brand-icon-primary')) {
                   target.src = '/icon.png';
+                } else {
+                  target.style.display = 'none';
                 }
               }}
             />
