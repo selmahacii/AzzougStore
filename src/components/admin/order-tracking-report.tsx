@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { Loader2, CheckCircle2, XCircle, HelpCircle, MinusCircle } from 'lucide-react';
 
 interface OrderTrackingReportProps {
