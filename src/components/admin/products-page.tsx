@@ -1661,16 +1661,6 @@ export default function ProductsPage() {
                                                   disabled={uploadingVariantIdx !== null}
                                                 />
                                              </label>
-                                             <Input
-                                                value={v.image || ''}
-                                                onChange={e => {
-                                                   const next = [...form.variants];
-                                                   next[i].image = e.target.value;
-                                                   setF({ variants: next });
-                                                }}
-                                                placeholder="Ou coller une URL image"
-                                                className="h-11 rounded-xl border-slate-100 bg-slate-50/30 font-mono text-[9px] flex-1 min-w-0"
-                                             />
                                           </div>
                                        </div>
                                     </div>
