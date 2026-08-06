@@ -129,6 +129,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   }, []);
 
   useEffect(() => {
+    if (offers && offers.length > 0 && selectedOfferIndex >= offers.length) {
+      setSelectedOfferIndex(0);
+      return;
+    }
     const currentOffer = offers[selectedOfferIndex] || offers[0];
     // Un palier d'offre configuré admin (ex: "pack de 30") ne doit jamais
     // fixer une quantité au-delà du stock réel — même bug que le stepper

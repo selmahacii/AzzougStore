@@ -346,6 +346,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
     return total > 0 ? total : undefined;
   })();
+  useEffect(() => {
+    if (hasRealOffers && selectedOfferIndex >= offers.length) {
+      setSelectedOfferIndex(0);
+    }
+  }, [offers, hasRealOffers, selectedOfferIndex]);
+
   const currentOffer = hasRealOffers
     ? (offers[selectedOfferIndex] || offers[0])
     : {

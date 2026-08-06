@@ -733,6 +733,9 @@ function LandingPageModal({
       setIsFreeShipping(false);
       setDeliveryFees({});
     }
+    if (existing?.offers) {
+      setOffers(existing.offers);
+    }
   }, [selectedProduct, existing, freshProductDetails]);
 
   // Auto-calculate total stock when variants stock changes
@@ -1063,6 +1066,8 @@ function LandingPageModal({
         toast.success('Landing page créée !');
       }
       onSaved();
+      queryClient.invalidateQueries({ queryKey: ['landing-pages'] });
+      queryClient.invalidateQueries({ queryKey: ['landing-page'] });
       queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventory', 'summary'] });
       onClose();
