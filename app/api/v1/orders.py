@@ -3044,18 +3044,11 @@ def update_order_info(
         )
 
     if order.status in _LOCKED_STATUSES:
-        if order.status == "SHIPPED" and not order.tracking_number:
+        if current_user.role in ("SUPER_ADMIN", "ADMIN"):
+            pass # SuperAdmin & Admin can edit order info & prices even if status is locked
+        elif order.status == "SHIPPED" and not order.tracking_number:
             pass # Allow edit if dispatch failed
         elif order.status == "DELIVERED" and set(payload.model_dump(exclude_unset=True).keys()) <= {"is_upsell"}:
-            # Retroactive upsell correction (2026-07-22, Selma-requested):
-            # a confirmatrice sometimes forgets to flag an on-call upsell
-            # at the time, and the commission bonus (payment_upsell, see
-            # salary_service.py) is computed from the CURRENT is_upsell
-            # flag on DELIVERED orders — she needs to be able to fix it
-            # after the fact so it counts. Deliberately LOCAL-ONLY: no
-            # stock movement, no carrier/customer change, no re-dispatch —
-            # this is the ONLY field this branch ever touches, everything
-            # else on a DELIVERED order stays fully locked.
             if payload.is_upsell is not None:
                 order.is_upsell = payload.is_upsell
             db.commit()

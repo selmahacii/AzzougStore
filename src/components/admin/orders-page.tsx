@@ -311,6 +311,7 @@ const [timeLeft, setTimeLeft] = useState('');
   // Edit order modal
   const [editOrderOpen, setEditOrderOpen] = useState(false);
   const [editOrderData, setEditOrderData] = useState<any>(null);
+  const [editOrderItems, setEditOrderItems] = useState<any[]>([]);
   const [editStatus, setEditStatus] = useState<string>('NEW');
   const [editIsPack, setEditIsPack] = useState(false);
   const [editIsUpsell, setEditIsUpsell] = useState(false);
@@ -398,6 +399,18 @@ const [timeLeft, setTimeLeft] = useState('');
       setEditRecoveryFee(editOrderData.abandoned_cart_recovery_fee || 0);
       setEditDeliveryType(editOrderData.delivery_type || 'home');
       setEditWilaya(editOrderData.customer_wilaya || '');
+      setEditOrderItems(
+        (editOrderData.items || []).map((it: any) => ({
+          id: it.id,
+          product_id: it.product_id,
+          product_name: it.product_name,
+          sku: it.sku || '',
+          quantity: it.quantity || 1,
+          unit_price: it.unit_price ?? it.price ?? 0,
+          variant_details: it.variant_details || {},
+          image_url: it.image_url || ''
+        }))
+      );
       
       let initialBureau = '';
       if (editOrderData.delivery_type === 'stop_desk' || editOrderData.delivery_type === 'OFFICE') {
@@ -413,6 +426,7 @@ const [timeLeft, setTimeLeft] = useState('');
       setEditBureauCode('');
       setEditDeliveryType('home');
       setEditWilaya('');
+      setEditOrderItems([]);
     }
   }, [editOrderData]);
   // Advanced filters
@@ -878,9 +892,12 @@ const [timeLeft, setTimeLeft] = useState('');
     },
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
       queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
       if (selectedOrder) setSelectedOrder(result.data ?? result);
       setEditOrderOpen(false);
       toast.success('Commande mise à jour');
@@ -3208,6 +3225,16 @@ const [timeLeft, setTimeLeft] = useState('');
                   is_upsell: editIsUpsell,
                   is_abandoned_cart: editIsAbandonedCart,
                   abandoned_cart_recovery_fee: editIsAbandonedCart ? editRecoveryFee : 0,
+                  items: editOrderItems.map(it => ({
+                    id: it.id,
+                    product_id: it.product_id,
+                    product_name: it.product_name,
+                    sku: it.sku,
+                    quantity: Math.max(1, parseInt(it.quantity) || 1),
+                    unit_price: Math.max(0, parseInt(it.unit_price) || 0),
+                    variant_details: it.variant_details,
+                    image_url: it.image_url
+                  }))
                 });
               }}
               className="flex-1 flex flex-col min-h-0 overflow-hidden"
@@ -3333,22 +3360,87 @@ const [timeLeft, setTimeLeft] = useState('');
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">N° de suivi</label>
                   <Input name="tracking_number" defaultValue={editOrderData.tracking_number ?? ''} placeholder="Optionnel" className="h-11 rounded-xl bg-slate-50 border-slate-100 font-mono text-sm" />
                 </div>
+
+                {/* Section Articles & Modification des Prix */}
+                {editOrderItems.length > 0 && (
+                  <div className="col-span-2 space-y-3 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-[#6C5CE7]">Articles & Modification des Prix</label>
+                      <span className="text-xs font-bold text-slate-500">
+                        Sous-total : <span className="font-mono text-slate-900">{formatPrice(editOrderItems.reduce((acc, it) => acc + (it.quantity * it.unit_price), 0))} DA</span>
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/60">
+                      {editOrderItems.map((item, idx) => {
+                        const vStr = typeof item.variant_details === 'string' 
+                          ? item.variant_details 
+                          : item.variant_details?.variant || Object.values(item.variant_details || {}).filter((v: any) => typeof v === 'string').join(' / ');
+                        return (
+                          <div key={item.id || idx} className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-3 shadow-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-black text-slate-800">{item.product_name}</p>
+                                {vStr && <p className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded w-fit mt-1">{vStr}</p>}
+                              </div>
+                              <span className="text-xs font-mono font-bold text-slate-700">
+                                {formatPrice(item.quantity * item.unit_price)} DA
+                              </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Quantité</label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const updated = [...editOrderItems];
+                                    updated[idx].quantity = Math.max(1, parseInt(e.target.value) || 1);
+                                    setEditOrderItems(updated);
+                                  }}
+                                  className="h-9 rounded-lg bg-slate-50 border-slate-200 text-xs font-bold text-center"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prix unitaire (DA)</label>
+                                <Input
+                                  type="number"
+                                  step="1"
+                                  min={0}
+                                  value={item.unit_price}
+                                  onChange={(e) => {
+                                    const updated = [...editOrderItems];
+                                    updated[idx].unit_price = Math.max(0, parseInt(e.target.value) || 0);
+                                    setEditOrderItems(updated);
+                                  }}
+                                  className="h-9 rounded-lg bg-slate-50 border-slate-200 text-xs font-bold font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="col-span-2 pt-2 border-t border-slate-100">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 block">Propriétés Spéciales</label>
                   <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsPack" checked={editIsPack} onCheckedChange={(c) => setEditIsPack(!!c)} className="size-4" />
-                       <label htmlFor="editIsPack" className="text-xs font-bold text-slate-600">Pack Spécial</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsUpsell" checked={editIsUpsell} onCheckedChange={(c) => setEditIsUpsell(!!c)} className="size-4" />
-                       <label htmlFor="editIsUpsell" className="text-xs font-bold text-slate-600">Vente Additionnelle</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <Checkbox id="editIsAbandonedCart" checked={editIsAbandonedCart} onCheckedChange={(c) => setEditIsAbandonedCart(!!c)} className="size-4" />
-                       <label htmlFor="editIsAbandonedCart" className="text-xs font-bold text-slate-600">Panier Abandonné</label>
-                    </div>
+                     <div className="flex items-center gap-2">
+                        <Checkbox id="editIsPack" checked={editIsPack} onCheckedChange={(c) => setEditIsPack(!!c)} className="size-4" />
+                        <label htmlFor="editIsPack" className="text-xs font-bold text-slate-600">Pack Spécial</label>
+                     </div>
+                     <div className="flex items-center gap-2">
+                        <Checkbox id="editIsUpsell" checked={editIsUpsell} onCheckedChange={(c) => setEditIsUpsell(!!c)} className="size-4" />
+                        <label htmlFor="editIsUpsell" className="text-xs font-bold text-slate-600">Vente Additionnelle</label>
+                     </div>
+                     <div className="flex items-center gap-2">
+                        <Checkbox id="editIsAbandonedCart" checked={editIsAbandonedCart} onCheckedChange={(c) => setEditIsAbandonedCart(!!c)} className="size-4" />
+                        <label htmlFor="editIsAbandonedCart" className="text-xs font-bold text-slate-600">Panier Abandonné</label>
+                     </div>
                   </div>
                 </div>
 
