@@ -25,6 +25,9 @@ import functools as _functools
 _analytics_cache: dict = {}
 _ANALYTICS_TTL = 60.0
 
+def clear_analytics_cache():
+    _analytics_cache.clear()
+
 def _cached_analytics(fn):
     @_functools.wraps(fn)
     def wrapper(*args, **kwargs):

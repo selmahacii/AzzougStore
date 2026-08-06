@@ -2971,6 +2971,11 @@ def update_order(
                 db.rollback()
                 logger.warning(f"Failed to queue Meta CAPI event for phone-confirmed cart {updated.id}: {capi_err}")
 
+        try:
+            from app.api.v1.analytics import clear_analytics_cache
+            clear_analytics_cache()
+        except Exception:
+            pass
         return updated
     except Exception as e:
         db.rollback()
@@ -3290,6 +3295,11 @@ def update_order_info(
 
     db.commit()
     db.refresh(order)
+    try:
+        from app.api.v1.analytics import clear_analytics_cache
+        clear_analytics_cache()
+    except Exception as _e:
+        pass
 
     # Return the full updated order so the frontend can sync immediately
     updated_items = []
