@@ -998,7 +998,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                           product_name: productQuery.data?.name || firstItem?.product_name,
                           sku: productQuery.data?.sku || firstItem?.sku || '',
                           quantity: 1,
-                          unit_price: productQuery.data?.price || firstItem?.unit_price || 0,
+                          unit_price: (firstItem?.unit_price && firstItem.unit_price > 0) ? firstItem.unit_price : (productQuery.data?.price || 0),
                           variant_details: {},
                           image_url: productQuery.data?.main_image || firstItem?.image_url || ''
                         };
