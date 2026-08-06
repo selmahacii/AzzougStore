@@ -160,9 +160,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         }
       });
 
+      const targetQty = (offers && offers.length > 0 && offers[selectedOfferIndex]) ? offers[selectedOfferIndex].quantity : quantity;
       setSelectedVariants(prev => {
         const newVars = [...prev];
-        while (newVars.length < quantity) {
+        while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
             const mainVar = grouped[name]?.[0];
@@ -176,10 +177,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           });
           newVars.push(itemSelection);
         }
-        return newVars.slice(0, quantity);
+        return newVars.slice(0, targetQty);
       });
     }
-  }, [data.product, quantity]);
+  }, [data.product, quantity, selectedOfferIndex, offers]);
 
   useEffect(() => {
     const currentActiveStore = useAppStore.getState().activeStore;
@@ -471,14 +472,17 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     if (!grouped[v.name]) grouped[v.name] = [];
                     grouped[v.name].push(v);
                   });
+                  const currentOffer = (offers && offers.length > 0) ? (offers[selectedOfferIndex] || offers[0]) : null;
+                  const rawQty = currentOffer ? currentOffer.quantity : quantity;
+                  const qty = maxOrderableQuantity !== undefined ? Math.min(rawQty, maxOrderableQuantity) : rawQty;
 
                   return (
                     <div className="space-y-5">
-                      {Array.from({ length: quantity }).map((_, itemIndex) => {
+                      {Array.from({ length: qty }).map((_, itemIndex) => {
                         const itemSelection = selectedVariants[itemIndex] || {};
                         return (
                            <div key={itemIndex} className="p-3.5 rounded-2xl bg-[#f8f9fa] border border-slate-200/50 space-y-4 text-start">
-                             {quantity > 1 && (
+                             {qty > 1 && (
                                <span className="text-xs font-black uppercase tracking-wider text-start block border-b pb-2 mb-2 border-slate-200/50 text-slate-800">
                                  {dir === 'rtl' ? `المنتج #${itemIndex + 1}` : `Produit #${itemIndex + 1}`}
                                </span>

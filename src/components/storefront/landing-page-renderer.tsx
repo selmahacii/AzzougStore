@@ -224,9 +224,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         }
       });
 
+      const rawOffers = (data as any).offers;
+      const targetQty = rawOffers && rawOffers.length > 0 && rawOffers[selectedOfferIndex] ? rawOffers[selectedOfferIndex].quantity : quantity;
       setSelectedVariants(prev => {
         const newVars = [...prev];
-        while (newVars.length < quantity) {
+        while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
             const mainVar = grouped[name]?.[0];
@@ -240,10 +242,10 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           });
           newVars.push(itemSelection);
         }
-        return newVars.slice(0, quantity);
+        return newVars.slice(0, targetQty);
       });
     }
-  }, [data.product, quantity]);
+  }, [data.product, data, quantity, selectedOfferIndex]);
 
   const handleSelectVariant = (variant: any) => {
     setSelectedVariants(prev => {
@@ -716,6 +718,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                         }
                       });
 
+                      const qty = currentOffer?.quantity || quantity;
+
                       return (
                         <div className="mb-6 space-y-5 pt-4 border-t border-slate-100 dark:border-white/10">
                           <div className="flex items-center justify-between">
@@ -725,11 +729,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                           </div>
 
                           <div className="space-y-6">
-                            {Array.from({ length: quantity }).map((_, itemIndex) => {
+                            {Array.from({ length: qty }).map((_, itemIndex) => {
                               const itemSelection = selectedVariants[itemIndex] || {};
                               return (
                                 <div key={itemIndex} className="p-4 rounded-2xl bg-slate-50/50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 space-y-4">
-                                  {quantity > 1 && (
+                                  {qty > 1 && (
                                     <span className={cn("text-xs font-black uppercase tracking-wider text-start block border-b pb-2 mb-2 border-slate-200/50 dark:border-white/5", isDark ? "text-white/80" : "text-slate-800")}>
                                       {dir === 'rtl' ? `المنتج #${itemIndex + 1}` : `Produit #${itemIndex + 1}`}
                                     </span>
