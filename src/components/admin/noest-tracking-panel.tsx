@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Truck, RefreshCw, Download, CheckCircle2, Clock, AlertTriangle, XCircle, Package, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-client';
 
 interface NoestEvent {
   id: string;
@@ -75,22 +76,21 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
   });
 
   const shipMutation = useMutation({
-    mutationFn: () =>
-      fetch('/api/noest/ship', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
-      }).then(r => r.json()),
+    mutationFn: () => apiFetch<any>(`/api/v1/orders/${orderId}/dispatch`, { method: 'POST' }),
     onSuccess: (data: any) => {
-      if (data.success) {
-        toast.success(`Expédié ! N° de suivi : ${data.tracking}`);
+      const trk = data.tracking_number || data.tracking;
+      if (data.success || trk) {
+        toast.success(`Expédié ! N° de suivi : ${trk || 'Créé'}`);
         queryClient.invalidateQueries({ queryKey: ['orders'] });
-        onShipped?.(data.tracking);
+        onShipped?.(trk);
         setTimeout(() => syncMutation.mutate(), 1500);
       } else {
-        toast.error(data.message ?? 'Erreur NOEST');
+        toast.error(data.detail || data.message || 'Erreur NOEST');
       }
     },
+    onError: (err: any) => {
+      toast.error(err.detail || err.message || 'Erreur lors de l\'expédition chez le transporteur');
+    }
   });
 
   const events = eventsQuery.data?.events ?? [];

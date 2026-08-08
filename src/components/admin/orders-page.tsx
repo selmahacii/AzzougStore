@@ -1123,22 +1123,8 @@ const [timeLeft, setTimeLeft] = useState('');
         queryClient.invalidateQueries({ queryKey: ['inventory'] });
         queryClient.invalidateQueries({ queryKey: ['stats'] });
         toast.success(`${formatOrderRef(order, 'admin')} expédiée — N° suivi : ${res.tracking_number || res.tracking || 'Créé'}`);
-        return;
-      }
-      const fallbackRes = await fetch('/api/noest/ship', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.id }),
-      });
-      const data = await fallbackRes.json();
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        queryClient.invalidateQueries({ queryKey: ['admin-products'] });
-        queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
-        queryClient.invalidateQueries({ queryKey: ['inventory'] });
-        toast.success(`${formatOrderRef(order, 'admin')} expédiée — N° suivi : ${data.tracking}`);
       } else {
-        toast.error(res.detail || res.message || data.message || 'Erreur lors de l\'expédition');
+        toast.error(res.detail || res.message || 'Erreur lors de l\'expédition');
       }
     } catch (err: any) {
       toast.error(err.detail || err.message || 'Erreur lors de l\'expédition chez le transporteur');
