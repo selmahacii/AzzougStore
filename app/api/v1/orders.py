@@ -3739,33 +3739,22 @@ async def dispatch_order(
     # special-casing by source. Enforced server-side (previously only the
     # frontend gate stopped this; a direct API call could bypass it).
     if order.status != "CONFIRMED":
-        raise HTTPException(400, "La commande doit être Confirmée avant de créer le colis chez le transporteur.")
-
-    # Rebuild the merged basket before shipping: duplicate merges may have
-    # aggregated items, the parcel must carry the exact quantities and COD
-    # amount. Exactly ONE shipment is ever created (MERGED + tracking guards).
-    computed_subtotal = sum(int(i.quantity or 0) * float(i.unit_price or 0) for i in (order.items or []))
-    if computed_subtotal and abs(computed_subtotal - float(order.subtotal or 0)) > 0.01:
-        order.subtotal = computed_subtotal
-        order.total = max(0, computed_subtotal + float(order.delivery_fee or 0) - float(order.discount or 0))
-        logger.info("Dispatch %s: totals realigned to merged basket (subtotal=%s, total=%s)",
-                    order.order_number, order.subtotal, order.total)
-
-    # Format concis pour le transporteur — "cv:noir x2" au lieu du format
-    # verbeux "Coussin de Voyage (P1: Couleur: Noir | P2: Couleur: Noir) x2"
-    # conçu pour la confirmatrice. Ce dernier reste inchangé partout
-    # ailleurs (item.variant_details n'est jamais modifié) — seul ce
-    # bordereau Noest utilise le format court (_build_noest_product_line).
-    details_list = [_build_noest_product_line(item) for item in order.items]
-
-    product_details_str = " | ".join(details_list)
-    if len(product_details_str) > 255:
-        product_details_str = product_details_str[:252] + "..."
-    if not product_details_str:
-        product_details_str = order.order_number
+        if current_user.role in ("SUPER_ADMIN", "ADMIN") and order.status in {"NEW", "ASSIGNED", "CALLED", "RESCHEDULED", "IN_PROGRESS"}:
+            from app.services.order_service import update_order_status
+            update_order_status(db, order_id=order.id, new_status="CONFIRMED", actor_id=current_user.id)
+            db.refresh(order)
+        else:
+            raise HTTPException(400, "La commande doit être Confirmée avant de créer le colis chez le transporteur.")
 
     if not order.carrier_id:
-        raise HTTPException(400, "Aucun transporteur n'est assigné à cette commande.")
+        active_partner = db.query(DeliveryPartner).filter(
+            DeliveryPartner.store_id == order.store_id,
+            DeliveryPartner.is_active == True
+        ).first()
+        if active_partner:
+            order.carrier_id = active_partner.id
+        else:
+            raise HTTPException(400, "Aucun transporteur n'est assigné à cette commande.")
 
     partner = db.query(DeliveryPartner).filter(
         DeliveryPartner.id == order.carrier_id,
@@ -3774,6 +3763,18 @@ async def dispatch_order(
 
     if not partner:
         raise HTTPException(400, "Le transporteur assigné est introuvable ou inactif.")
+
+    computed_subtotal = sum(int(i.quantity or 0) * float(i.unit_price or 0) for i in (order.items or []))
+    if computed_subtotal and abs(computed_subtotal - float(order.subtotal or 0)) > 0.01:
+        order.subtotal = computed_subtotal
+        order.total = max(0, computed_subtotal + float(order.delivery_fee or 0) - float(order.discount or 0))
+
+    details_list = [_build_noest_product_line(item) for item in order.items]
+    product_details_str = " | ".join(details_list)
+    if len(product_details_str) > 255:
+        product_details_str = product_details_str[:252] + "..."
+    if not product_details_str:
+        product_details_str = order.order_number
 
     c_id = partner.carrier_id.lower()
 

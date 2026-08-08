@@ -1110,14 +1110,27 @@ const [timeLeft, setTimeLeft] = useState('');
     }
   };
 
-  const handleShipViaNoest = async (order: Order) => {
+  const handleDispatchOrder = async (order: any) => {
     try {
-      const res = await fetch('/api/noest/ship', {
+      const res = await apiFetch<any>(`/api/v1/orders/${order.id}/dispatch`, {
+        method: 'POST',
+      });
+      if (res.success || res.tracking_number || res.tracking) {
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
+        queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+        queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
+        queryClient.invalidateQueries({ queryKey: ['inventory'] });
+        queryClient.invalidateQueries({ queryKey: ['stats'] });
+        toast.success(`${formatOrderRef(order, 'admin')} expédiée — N° suivi : ${res.tracking_number || res.tracking || 'Créé'}`);
+        return;
+      }
+      const fallbackRes = await fetch('/api/noest/ship', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: order.id }),
       });
-      const data = await res.json();
+      const data = await fallbackRes.json();
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ['orders'] });
         queryClient.invalidateQueries({ queryKey: ['admin-products'] });
@@ -1125,17 +1138,17 @@ const [timeLeft, setTimeLeft] = useState('');
         queryClient.invalidateQueries({ queryKey: ['inventory'] });
         toast.success(`${formatOrderRef(order, 'admin')} expédiée — N° suivi : ${data.tracking}`);
       } else {
-        toast.error(data.message ?? 'Erreur NOEST');
+        toast.error(res.detail || res.message || data.message || 'Erreur lors de l\'expédition');
       }
-    } catch {
-      toast.error('Erreur de connexion au serveur');
+    } catch (err: any) {
+      toast.error(err.detail || err.message || 'Erreur lors de l\'expédition chez le transporteur');
     }
   };
 
-  const handleBulkNoestShip = async () => {
+  const handleBulkShip = async () => {
     setIsProcessingBulk(true);
-    const targetOrders = orders.filter(o => selectedIds.has(o.id) && o.status === 'CONFIRMED');
-    for (const order of targetOrders) { await handleShipViaNoest(order); }
+    const targetOrders = orders.filter(o => selectedIds.has(o.id) && !['DELIVERED', 'CANCELLED', 'RETURNED', 'MERGED'].includes(o.status));
+    for (const order of targetOrders) { await handleDispatchOrder(order); }
     setSelectedIds(new Set());
     setIsProcessingBulk(false);
   };
@@ -1920,8 +1933,8 @@ const [timeLeft, setTimeLeft] = useState('');
                             <DropdownMenuItem onClick={() => handleAssignClick(order.id)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-[#F0F5FF] focus:text-[#4b7bec]">
                               <ArrowRightLeft className="size-4" /> Affecter agent
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleShipViaNoest(order)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-emerald-50 focus:text-emerald-600">
-                              <Truck className="size-4" /> Expédier Noest
+                            <DropdownMenuItem onClick={() => handleDispatchOrder(order)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-emerald-50 focus:text-emerald-600">
+                              <Truck className="size-4" /> Expédier chez transporteur
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange(order.id, 'CANCELLED', order.order_number)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 text-rose-500 focus:bg-rose-50 focus:text-rose-600">
@@ -2177,8 +2190,8 @@ const [timeLeft, setTimeLeft] = useState('');
                             <DropdownMenuItem onClick={() => handleAssignClick(order.id)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-[#F0F5FF] focus:text-[#4b7bec]">
                               <ArrowRightLeft className="size-4" /> Affecter agent
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleShipViaNoest(order)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-emerald-50 focus:text-emerald-600">
-                              <Truck className="size-4" /> Expédier Noest
+                            <DropdownMenuItem onClick={() => handleDispatchOrder(order)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 focus:bg-emerald-50 focus:text-emerald-600">
+                              <Truck className="size-4" /> Expédier chez transporteur
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange(order.id, 'CANCELLED', order.order_number)} className="rounded-xl px-3 py-2 text-xs font-bold gap-3 text-rose-500 focus:bg-rose-50 focus:text-rose-600">
@@ -3104,8 +3117,8 @@ const [timeLeft, setTimeLeft] = useState('');
                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">Sélectionnées</span>
              </div>
              <div className="flex items-center gap-2 flex-1 w-full overflow-x-auto no-scrollbar py-1">
+               <Button variant="ghost" size="sm" onClick={handleBulkShip} disabled={isProcessingBulk} className="h-10 text-[10px] font-bold uppercase tracking-wider text-black hover:bg-neutral-50 shrink-0">{isProcessingBulk ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Truck className="mr-2 size-4" />} Expédier chez transporteur</Button>
                <Button variant="ghost" size="sm" onClick={() => { setPrintOrderIds([...selectedIds]); setPrintLabelOpen(true); }} className="h-10 text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-black shrink-0"><Printer className="mr-2 size-4" /> Imprimer étiquettes</Button>
-               <Button variant="ghost" size="sm" onClick={handleBulkNoestShip} disabled={isProcessingBulk} className="h-10 text-[10px] font-bold uppercase tracking-wider text-black hover:bg-neutral-50 shrink-0">{isProcessingBulk ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Truck className="mr-2 size-4" />} Expédier (Noest)</Button>
                <Button variant="ghost" size="sm" onClick={() => { setBulkTargetStatus('CONFIRMED'); setBulkStatusOpen(true); }} className="h-10 text-[10px] font-bold uppercase tracking-wider text-emerald-600 hover:text-emerald-700 shrink-0"><ShieldCheck className="mr-2 size-4" /> Confirmer en lot</Button>
                <Button variant="ghost" size="sm" onClick={() => { setBulkTargetStatus('CANCELLED'); setBulkStatusOpen(true); }} className="h-10 text-[10px] font-bold uppercase tracking-wider text-rose-500 hover:text-rose-700 shrink-0"><XCircle className="mr-2 size-4" /> Annuler en lot</Button>
                <Button variant="ghost" size="sm" onClick={() => setAssignDialogOpen(true)} className="h-10 text-[10px] font-bold uppercase tracking-wider text-neutral-500 hover:text-black shrink-0"><UserPlus className="mr-2 size-4" /> Attribuer agent</Button>
@@ -3459,6 +3472,20 @@ const [timeLeft, setTimeLeft] = useState('');
 
               <div className="shrink-0 p-6 bg-slate-50 border-t border-slate-100 flex gap-3 shadow-lg">
                 <Button type="button" variant="outline" onClick={() => setEditOrderOpen(false)} className="flex-1 h-12 rounded-2xl font-bold text-sm">Annuler</Button>
+                {editOrderData && !['DELIVERED', 'CANCELLED', 'RETURNED', 'MERGED'].includes(editOrderData.status) && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (editOrderData) {
+                        handleDispatchOrder(editOrderData);
+                        setEditOrderOpen(false);
+                      }
+                    }}
+                    className="flex-1 h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Truck className="size-4" /> Expédier chez transporteur
+                  </Button>
+                )}
                 <Button type="submit" disabled={editOrderMutation.isPending} className="flex-1 h-12 rounded-2xl bg-[#6C5CE7] hover:bg-[#5B4BC4] text-white font-bold text-sm shadow-lg shadow-purple-100 cursor-pointer">
                   {editOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : 'Enregistrer les modifications'}
                 </Button>
