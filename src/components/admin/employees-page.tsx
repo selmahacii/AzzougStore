@@ -100,6 +100,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
    { value: 'ADMIN', label: ROLE_LABELS.ADMIN },
    { value: 'MANAGER', label: ROLE_LABELS.MANAGER },
    { value: 'CONFIRMATEUR', label: ROLE_LABELS.CONFIRMATEUR },
+   { value: 'LIVREUR', label: 'Livreur (Interne)' },
    { value: 'MARKETER', label: ROLE_LABELS.MARKETER },
 ];
 
@@ -1352,6 +1353,8 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
+      permissions: [] as string[],
+      module_visibility: {} as Record<string, boolean>,
    });
    const [errors, setErrors] = useState<Record<string, string>>({});
    const isSubmitting = createMutation.isPending || updateMutation.isPending;
@@ -1379,9 +1382,11 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
+            permissions: editingEmployee.permissions || [],
+            module_visibility: editingEmployee.module_visibility || { orders: true, inventory: true, deliveries: true, transfers: true, returns: true },
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [] });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true } });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1409,6 +1414,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          : { assigned_store_ids: [] };
 
       const productsPayload = { assigned_product_ids: formData.assigned_product_ids };
+      const accessPayload = { permissions: formData.permissions || [], module_visibility: formData.module_visibility || {} };
 
       if (isEditing && editingEmployee) {
          updateMutation.mutate({
@@ -1423,6 +1429,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                ...paymentPayload,
                ...storePayload,
                ...productsPayload,
+               ...accessPayload,
             }
          }, { onSuccess: () => onOpenChange(false) });
       } else {
@@ -1437,6 +1444,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             ...storePayload,
             ...productsPayload,
             ...paymentPayload,
+            ...accessPayload,
          }, {
             onSuccess: () => onOpenChange(false),
             onError: (err: any) => {
@@ -1705,7 +1713,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                              Commission Upsell
+Commission Upsell
                            </h5>
                            <div className="space-y-1.5">
                                <Label className="text-[10px] font-semibold text-[#636E72]">Commande Upsell livrée (DA)</Label>
@@ -1749,6 +1757,89 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                             </p>
                         </div>
                      </div>
+
+                     {/* ── Droits d'Accès & Visibilité des Modules (Livreur & rôles personnalisés) ── */}
+                     {(formData.role === 'LIVREUR' || formData.role === 'CONFIRMATEUR') && (
+                        <div className="mt-5 space-y-4 p-4 rounded-2xl border bg-purple-50/50 border-purple-200">
+                           <h4 className="text-[10px] font-black uppercase tracking-widest text-purple-700 flex items-center gap-2">
+                              <ShieldCheck className="size-4" /> Droits d'Accès & Visibilité des Modules
+                           </h4>
+                           <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                              Gérez précisément les permissions de modification et la visibilité des onglets pour cet utilisateur.
+                           </p>
+
+                           <div className="space-y-2.5 pt-3 border-t border-purple-200/60">
+                              <Label className="text-[10px] font-black text-purple-900 uppercase tracking-wider">Permissions d'action</Label>
+                              <div className="space-y-2 bg-white p-3.5 rounded-xl border border-purple-100 shadow-sm">
+                                 {[
+                                    { id: 'stock.view_all_stores', label: 'Voir l\'inventaire de toutes les boutiques', desc: 'Permet au livreur/agent de consulter les stocks de l\'ensemble des boutiques.' },
+                                    { id: 'stock.adjust', label: 'Modifier les niveaux d\'inventaire', desc: 'Autorise la modification directe du stock des produits et variantes.' },
+                                    { id: 'orders.edit', label: 'Modifier les détails de la commande', desc: 'Autoriser la modification des prix ou des adresses clients.' },
+                                    { id: 'deliveries.view_finance', label: 'Accès au bilan financier des livraisons', desc: 'Afficher les fonds encaisseurs et reliquats de livraison.' },
+                                 ].map(perm => {
+                                    const isChecked = (formData.permissions || []).includes(perm.id);
+                                    return (
+                                       <div key={perm.id} className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-50 last:border-0">
+                                          <div>
+                                             <p className="text-[11px] font-bold text-slate-800">{perm.label}</p>
+                                             <p className="text-[9px] font-medium text-slate-400 mt-0.5">{perm.desc}</p>
+                                          </div>
+                                          <Switch
+                                             checked={isChecked}
+                                             onCheckedChange={(chk) => {
+                                                setFormData(p => ({
+                                                   ...p,
+                                                   permissions: chk
+                                                      ? [...(p.permissions || []), perm.id]
+                                                      : (p.permissions || []).filter(id => id !== perm.id)
+                                                }));
+                                             }}
+                                          />
+                                       </div>
+                                    );
+                                 })}
+                              </div>
+                           </div>
+
+                           <div className="space-y-2.5 pt-3 border-t border-purple-200/60">
+                              <Label className="text-[10px] font-black text-purple-900 uppercase tracking-wider">Visibilité des modules du menu</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                 {[
+                                    { id: 'orders', label: '📦 Commandes Assignées' },
+                                    { id: 'inventory', label: '📊 Inventaire & Stocks' },
+                                    { id: 'deliveries', label: '🚚 Bords de Livraison' },
+                                    { id: 'transfers', label: '🔄 Transferts de Stock' },
+                                    { id: 'returns', label: '🔁 Retours & Échanges' },
+                                    { id: 'analytics', label: '📈 Métriques & KPIs' },
+                                 ].map(mod => {
+                                    const isVisible = (formData.module_visibility?.[mod.id] ?? true);
+                                    return (
+                                       <button
+                                          key={mod.id}
+                                          type="button"
+                                          onClick={() => {
+                                             setFormData(p => ({
+                                                ...p,
+                                                module_visibility: {
+                                                   ...(p.module_visibility || {}),
+                                                   [mod.id]: !isVisible
+                                                }
+                                             }));
+                                          }}
+                                          className={cn(
+                                             "flex items-center justify-between px-3 py-2 rounded-xl text-[10px] font-bold border transition-all shadow-sm",
+                                             isVisible ? "bg-purple-600 text-white border-purple-600" : "bg-white text-slate-400 border-slate-200 hover:border-purple-300"
+                                          )}
+                                       >
+                                          <span className="truncate">{mod.label}</span>
+                                          {isVisible ? <Check className="size-3 shrink-0 ml-1" /> : <X className="size-3 text-slate-300 shrink-0 ml-1" />}
+                                       </button>
+                                    );
+                                 })}
+                              </div>
+                           </div>
+                        </div>
+                     )}
 
                      <div className="flex flex-col gap-2 p-3 mt-4 rounded-lg border bg-[#F8F9FC]" style={{ borderColor: C.border }}>
                         <div className="flex items-center justify-between">

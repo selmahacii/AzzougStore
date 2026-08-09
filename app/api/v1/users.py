@@ -484,6 +484,8 @@ def create_user(
         assigned_store_scope=user_in.assigned_store_scope or "ALL",
         assigned_store_ids=user_in.assigned_store_ids or [],
         assigned_product_ids=user_in.assigned_product_ids or [],
+        permissions=user_in.permissions or [],
+        module_visibility=user_in.module_visibility or {},
         tracking_code=tracking_code,
         marketing_budget=user_in.marketing_budget,
     )

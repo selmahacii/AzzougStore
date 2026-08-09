@@ -27,6 +27,10 @@ class User(Base):
     assigned_store_ids   = Column(JSON,   default=[])   # List of store UUIDs
     assigned_product_ids = Column(JSON,   default=[])   # List of product UUIDs
 
+    # Custom access rights & module visibility (for LIVREUR and custom roles)
+    permissions       = Column(JSON, default=[])
+    module_visibility = Column(JSON, default={})
+
     # Payment configuration
     payment_type   = Column(String,  nullable=True)   # PER_DELIVERED_ORDER | MONTHLY_SALARY
     payment_amount = Column(Integer, nullable=True)   # DA — rate per order OR monthly salary

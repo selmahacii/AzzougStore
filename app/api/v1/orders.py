@@ -2263,13 +2263,19 @@ def get_commissions(
             pass
     orders = q.options(joinedload(Order.assignee), joinedload(Order.livreur)).all()
 
+    _CONFIRMATRICE_LIVREUR_BONUS_DA = 50.0  # 50 DA par commande assignée à un livreur et livrée
+
     confirmatrices: dict = {}
     livreurs: dict = {}
     for o in orders:
         if o.assignee:
-            row = confirmatrices.setdefault(o.assignee.id, {"name": o.assignee.name, "orders": 0, "commission": 0.0})
+            row = confirmatrices.setdefault(o.assignee.id, {"name": o.assignee.name, "orders": 0, "commission": 0.0, "livreur_bonus": 0.0})
             row["orders"] += 1
-            row["commission"] += (o.total or 0) * pct / 100
+            comm = (o.total or 0) * pct / 100
+            if o.livreur_id or o.livreur:
+                comm += _CONFIRMATRICE_LIVREUR_BONUS_DA
+                row["livreur_bonus"] += _CONFIRMATRICE_LIVREUR_BONUS_DA
+            row["commission"] += comm
         if o.livreur:
             row = livreurs.setdefault(o.livreur.id, {"name": o.livreur.name, "orders": 0, "commission": 0.0})
             row["orders"] += 1
@@ -2278,7 +2284,7 @@ def get_commissions(
     return {
         "success": True,
         "data": {
-            "rates": {"commission_confirmatrice_pct": pct, "commission_livreur_fixed": fixed},
+            "rates": {"commission_confirmatrice_pct": pct, "commission_livreur_fixed": fixed, "commission_confirmatrice_livreur_bonus": _CONFIRMATRICE_LIVREUR_BONUS_DA},
             "confirmatrices": sorted(confirmatrices.values(), key=lambda r: -r["commission"]),
             "livreurs": sorted(livreurs.values(), key=lambda r: -r["commission"]),
             "total_commandes_livrees": len(orders),

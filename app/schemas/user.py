@@ -23,6 +23,8 @@ class UserBase(BaseModel):
     assigned_store_scope: Optional[str] = "ALL"
     assigned_store_ids: Optional[List[str]] = []
     assigned_product_ids: Optional[List[str]] = []
+    permissions: Optional[List[str]] = []
+    module_visibility: Optional[dict] = {}
     tracking_code: Optional[str] = None
     marketing_budget: Optional[int] = None
 

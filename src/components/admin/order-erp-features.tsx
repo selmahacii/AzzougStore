@@ -20,7 +20,7 @@ const C = {
 };
 
 // ─── Commissions confirmatrice / livreur ───────────────────────────────────
-interface CommissionRow { name: string; orders: number; commission: number }
+interface CommissionRow { name: string; orders: number; commission: number; livreur_bonus?: number }
 interface CommissionsData {
    rates: { commission_confirmatrice_pct: number; commission_livreur_fixed: number };
    confirmatrices: CommissionRow[]; livreurs: CommissionRow[]; total_commandes_livrees: number;
@@ -73,7 +73,7 @@ export function CommissionsView() {
                <div className="mt-4 flex items-center gap-4 flex-wrap">
                   {!editingRates ? (
                      <>
-                        <span className="text-xs text-slate-500">Taux : <strong className="text-slate-700">{d.rates.commission_confirmatrice_pct}%</strong> confirmatrice · <strong className="text-slate-700">{formatPrice(d.rates.commission_livreur_fixed)}</strong> / livraison livreur</span>
+                        <span className="text-xs text-slate-500">Taux : <strong className="text-slate-700">{d.rates.commission_confirmatrice_pct}%</strong> confirmatrice (<strong className="text-emerald-600">+50 DA</strong> / commande assignée livreur livrée) · <strong className="text-slate-700">{formatPrice(d.rates.commission_livreur_fixed)}</strong> / livraison livreur</span>
                         <button onClick={() => { setPctInput(String(d.rates.commission_confirmatrice_pct)); setFixedInput(String(d.rates.commission_livreur_fixed)); setEditingRates(true); }}
                            className="text-[10px] font-bold text-[#6C5CE7] hover:underline">Modifier les taux</button>
                      </>
@@ -105,7 +105,10 @@ export function CommissionsView() {
                               <div key={i} className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-50">
                                  <div>
                                     <p className="font-bold text-slate-700">{r.name}</p>
-                                    <p className="text-[10px] text-slate-400">{r.orders} commande(s)</p>
+                                    <p className="text-[10px] text-slate-400">
+                                       {r.orders} commande(s)
+                                       {r.livreur_bonus ? <span className="ml-1 text-emerald-600 font-bold">(incl. +{r.livreur_bonus} DA bonus assignation livreur)</span> : null}
+                                    </p>
                                  </div>
                                  <span className="font-black text-emerald-600 tabular-nums">{formatPrice(r.commission)}</span>
                               </div>
