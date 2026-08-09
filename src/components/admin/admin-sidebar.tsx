@@ -241,9 +241,6 @@ export default function AdminSidebar() {
 
    // Filter sections based on role and module_visibility configuration
    const filteredSections = NAV_SECTIONS.map(section => {
-      // ── SuperAdmin / Admin / Manager (unless specific module_visibility overrides exist) ──
-      if (!isConfirmateur && !isLivreur) return section;
-
       // ── LIVREUR ──
       if (isLivreur) {
          if (section.title === 'Général') {
@@ -272,19 +269,18 @@ export default function AdminSidebar() {
                });
             }
 
-            const inventorySubItems: { label: string; view: AdminView; subView?: string }[] = [];
             if (moduleVis.inventory !== false) {
-               inventorySubItems.push({ label: 'Inventaire Livreur', view: 'inventory', subView: 'LIVREURS' });
-               inventorySubItems.push({ label: 'Stock & Entrepôt', view: 'inventory', subView: 'STOCK' });
-            }
-            if (moduleVis.transfers !== false) {
-               inventorySubItems.push({ label: 'Transferts de Stock', view: 'inventory', subView: 'TRANSFERS' });
-            }
-            if (moduleVis.returns !== false) {
-               inventorySubItems.push({ label: 'Retours Commandes', view: 'inventory', subView: 'ORDER_RETURNS' });
-            }
+               const inventorySubItems: { label: string; view: AdminView; subView?: string }[] = [
+                  { label: 'Inventaire Livreur', view: 'inventory', subView: 'LIVREURS' },
+                  { label: 'Stock & Entrepôt', view: 'inventory', subView: 'STOCK' },
+               ];
+               if (moduleVis.transfers !== false) {
+                  inventorySubItems.push({ label: 'Transferts de Stock', view: 'inventory', subView: 'TRANSFERS' });
+               }
+               if (moduleVis.returns !== false) {
+                  inventorySubItems.push({ label: 'Retours Commandes', view: 'inventory', subView: 'ORDER_RETURNS' });
+               }
 
-            if (inventorySubItems.length > 0) {
                livreurItems.push({
                   label: 'Suivi de Stock',
                   icon: Package,
@@ -312,43 +308,64 @@ export default function AdminSidebar() {
          return null;
       }
 
-      // ── CONFIRMATEUR ──
-      if (section.title === 'Général') {
-         return {
-            ...section,
-            items: [
-               { label: 'Ma Performance', icon: BarChart3, view: 'overview' as AdminView },
-            ]
-         };
+      // ── CONFIRMATEUR & AUTRES RÔLES AVEC MODULE_VISIBILITY SÉCURISE ──
+      if (isConfirmateur) {
+         if (section.title === 'Général') {
+            return {
+               ...section,
+               items: [
+                  { label: 'Ma Performance', icon: BarChart3, view: 'overview' as AdminView },
+               ]
+            };
+         }
+         if (section.title === 'Commercial') {
+            const CONFIRMATEUR_INVENTORY_VIEWS = new Set(['STOCK', 'ALERTS', 'MONITOR']);
+            return {
+               ...section,
+               items: section.items
+                  .filter(item => {
+                     if (item.view === 'orders' && moduleVis.orders === false) return false;
+                     if (item.view === 'inventory' && moduleVis.inventory === false) return false;
+                     return item.view === 'orders' || item.view === 'inventory';
+                  })
+                  .map(item => {
+                     if (item.view === 'inventory' && item.items) {
+                        return {
+                           ...item,
+                           items: item.items.filter((sub: any) =>
+                              CONFIRMATEUR_INVENTORY_VIEWS.has(sub.subView ?? '')
+                           ),
+                        };
+                     }
+                     return item;
+                  })
+            };
+         }
+         if (section.title === 'Opérations') {
+            return {
+               ...section,
+               items: section.items.filter(item => item.view === 'customers')
+            };
+         }
+         if (section.title === 'Système') return null;
+         if (section.title === 'Analytiques & Rapports') return null;
+         return null;
       }
-      if (section.title === 'Commercial') {
-         const CONFIRMATEUR_INVENTORY_VIEWS = new Set(['STOCK', 'ALERTS', 'MONITOR']);
-         return {
-            ...section,
-            items: section.items
-               .filter(item => item.view === 'orders' || item.view === 'inventory')
-               .map(item => {
-                  if (item.view === 'inventory' && item.items) {
-                     return {
-                        ...item,
-                        items: item.items.filter((sub: any) =>
-                           CONFIRMATEUR_INVENTORY_VIEWS.has(sub.subView ?? '')
-                        ),
-                     };
-                  }
-                  return item;
-               })
-         };
+
+      // ── SUPER_ADMIN / ADMIN / MANAGER (avec surcouche moduleVis le cas échéant) ──
+      if (Object.keys(moduleVis).length > 0) {
+         const filteredItems = section.items.filter(item => {
+            if (item.view === 'orders' && moduleVis.orders === false) return false;
+            if (item.view === 'inventory' && moduleVis.inventory === false) return false;
+            if (item.view === 'delivery' && moduleVis.deliveries === false) return false;
+            if (item.view === 'analytics' && moduleVis.analytics === false) return false;
+            return true;
+         });
+         if (filteredItems.length === 0) return null;
+         return { ...section, items: filteredItems };
       }
-      if (section.title === 'Opérations') {
-         return {
-            ...section,
-            items: section.items.filter(item => item.view === 'customers')
-         };
-      }
-      if (section.title === 'Système') return null;
-      if (section.title === 'Analytiques & Rapports') return null;
-      return null;
+
+      return section;
    }).filter(Boolean) as NavSection[];
 
    const handleNavClick = (view: AdminView, subView?: string) => { 

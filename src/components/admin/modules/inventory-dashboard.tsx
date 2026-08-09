@@ -147,8 +147,23 @@ function KpiCard({ title, value, icon: Icon, color, bgColor, change, status }: a
 }
 
 export default function InventoryDashboard() {
-   const { activeStore, adminSubView } = useAppStore();
+   const { activeStore, adminSubView, user: currentUser } = useAppStore();
    const storeId = activeStore?.id ?? '';
+
+   // ── Security & Visibility Check ──
+   if (currentUser && currentUser.role !== 'SUPER_ADMIN' && currentUser.role !== 'ADMIN' && currentUser.module_visibility?.inventory === false) {
+      return (
+         <div className="p-12 text-center bg-white rounded-3xl border border-slate-100 shadow-sm max-w-md mx-auto my-12 space-y-4 animate-in fade-in duration-300">
+            <div className="size-16 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mx-auto shadow-inner">
+               <ShieldCheck className="size-8" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800">Accès au module d'inventaire désactivé</h3>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">
+               La visibilité du module d'inventaire a été désactivée pour votre compte par l'administrateur.
+            </p>
+         </div>
+      );
+   }
    
    const summaryQuery = useQuery({
       queryKey: ['inventory', 'summary', storeId],
