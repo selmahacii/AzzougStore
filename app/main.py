@@ -136,7 +136,7 @@ def run_db_migrations():
                 (r[0], r[1]) for r in conn.execute(text(
                     "SELECT table_name, column_name FROM information_schema.columns "
                     "WHERE table_schema = 'public' AND (table_name, column_name) IN "
-                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'))"
+                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'), ('users','permissions'), ('users','module_visibility'))"
                 ))
             }
             if ("landing_pages", "offers") not in existing:
@@ -148,6 +148,12 @@ def run_db_migrations():
             if ("products", "delivery_fees") not in existing:
                 conn.execute(text("ALTER TABLE products ADD COLUMN delivery_fees JSONB"))
                 print("[OK] products: added delivery_fees column")
+            if ("users", "permissions") not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN permissions JSONB DEFAULT '[]'::jsonb"))
+                print("[OK] users: added permissions column")
+            if ("users", "module_visibility") not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN module_visibility JSONB DEFAULT '{}'::jsonb"))
+                print("[OK] users: added module_visibility column")
     except Exception as e:
         print(f"[WARN] Startup column check failed: {e}")
 
