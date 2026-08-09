@@ -236,12 +236,83 @@ export default function AdminSidebar() {
    };
 
    const isConfirmateur = currentUser?.role === 'CONFIRMATEUR';
+   const isLivreur = currentUser?.role === 'LIVREUR';
+   const moduleVis = currentUser?.module_visibility || {};
 
-   // Filter sections based on role
+   // Filter sections based on role and module_visibility configuration
    const filteredSections = NAV_SECTIONS.map(section => {
-      if (!isConfirmateur) return section;
+      // ── SuperAdmin / Admin / Manager (unless specific module_visibility overrides exist) ──
+      if (!isConfirmateur && !isLivreur) return section;
 
-      // For Confirmateur, only keep General (limited), Commercial (Orders only), and maybe Opérations (limited)
+      // ── LIVREUR ──
+      if (isLivreur) {
+         if (section.title === 'Général') {
+            if (moduleVis.analytics === false) return null;
+            return {
+               ...section,
+               items: [
+                  { label: 'Espace Livreur', icon: LayoutDashboard, view: 'overview' as AdminView },
+               ]
+            };
+         }
+         if (section.title === 'Commercial') {
+            const livreurItems: MenuItem[] = [];
+            
+            if (moduleVis.orders !== false) {
+               livreurItems.push({
+                  label: 'Mes Commandes',
+                  icon: ShoppingCart,
+                  view: 'orders',
+                  items: [
+                     { label: 'Affectées (À Livrer)', view: 'orders', subView: 'CONFIRMED' },
+                     { label: 'En Cours de Livraison', view: 'orders', subView: 'FOLLOWUP' },
+                     { label: 'Livrées & Terminées', view: 'orders', subView: 'COMPLETED' },
+                     { label: 'Toutes Mes Commandes', view: 'orders', subView: 'ALL' },
+                  ]
+               });
+            }
+
+            const inventorySubItems: { label: string; view: AdminView; subView?: string }[] = [];
+            if (moduleVis.inventory !== false) {
+               inventorySubItems.push({ label: 'Inventaire Livreur', view: 'inventory', subView: 'LIVREURS' });
+               inventorySubItems.push({ label: 'Stock & Entrepôt', view: 'inventory', subView: 'STOCK' });
+            }
+            if (moduleVis.transfers !== false) {
+               inventorySubItems.push({ label: 'Transferts de Stock', view: 'inventory', subView: 'TRANSFERS' });
+            }
+            if (moduleVis.returns !== false) {
+               inventorySubItems.push({ label: 'Retours Commandes', view: 'inventory', subView: 'ORDER_RETURNS' });
+            }
+
+            if (inventorySubItems.length > 0) {
+               livreurItems.push({
+                  label: 'Suivi de Stock',
+                  icon: Package,
+                  view: 'inventory',
+                  items: inventorySubItems,
+               });
+            }
+
+            if (livreurItems.length === 0) return null;
+            return { ...section, items: livreurItems };
+         }
+
+         if (section.title === 'Opérations') {
+            if (moduleVis.deliveries !== false) {
+               return {
+                  ...section,
+                  items: [
+                     { label: 'Bords de Livraison', icon: Truck, view: 'delivery' as AdminView, subView: 'carriers' },
+                  ]
+               };
+            }
+            return null;
+         }
+
+         return null;
+      }
+
+      // ── CONFIRMATEUR ──
       if (section.title === 'Général') {
          return {
             ...section,

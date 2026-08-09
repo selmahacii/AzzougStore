@@ -46,7 +46,7 @@ function CustomerAuthSection() {
       toast.success(`Bienvenue, ${u.name} !`);
       
       // Automatic role-based redirection
-      if (['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'].includes(u.role)) {
+      if (['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'MARKETER', 'AGENT'].includes(u.role)) {
         setAppView('admin');
       } else {
         setAppView('storefront');
@@ -75,7 +75,7 @@ function CustomerAuthSection() {
       toast.success(`Compte créé avec succès ! Bienvenue, ${u.name} 🎉`);
       
       // Automatic role-based redirection
-      if (['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'].includes(u.role)) {
+      if (['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'MARKETER', 'AGENT'].includes(u.role)) {
         setAppView('admin');
       } else {
         setAppView('storefront');

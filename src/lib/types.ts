@@ -319,6 +319,8 @@ export interface User {
   assigned_store_scope?: 'ALL' | 'SPECIFIC';
   assigned_store_ids?: string[];
   assigned_product_ids?: string[];
+  permissions?: string[];
+  module_visibility?: Record<string, boolean>;
   daily_target: number;
   created_at: string;
   employee_store?: Pick<Store, 'id' | 'name' | 'slug'> | null;

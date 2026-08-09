@@ -118,7 +118,7 @@ function LoginForm({ onBack, onClose }: { onBack: () => void; onClose: () => voi
       setUser(user);
       toast.success(`Bienvenue, ${user.name} !`);
       onClose();
-      if (['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'].includes(user.role)) setAppView('admin');
+      if (['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'MARKETER', 'AGENT'].includes(user.role)) setAppView('admin');
     } catch {
       setError('Erreur réseau. Vérifiez votre connexion.');
     } finally {
