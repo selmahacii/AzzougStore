@@ -56,96 +56,77 @@ type Module = { id: string; label: string; icon: any; subModules: SubModule[] };
 // same Commandes/Logistique workflow, plus his pre-existing full Produits/
 // Inventaire access (kept below), matching a confirmatrice's rights except
 // for what genuinely doesn't apply to his role.
-function getModules(isLivreur: boolean): Module[] { return [
-  {
-    id: 'orders',
-    label: 'Commandes',
-    icon: Package,
-    // Ordre = flux de travail de la confirmatrice : traiter les nouvelles,
-    // relancer les NRP, suivre les "En attente" (statut changé directement,
-    // sans passer par "Signaler NRP"), récupérer les paniers, confirmer.
-    // Livrées/Archives retirées : elles vivent uniquement sous Logistique
-    // pour ne pas dupliquer le module entre Commandes et Logistique.
-    subModules: [
-      { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
-      { id: 'orders-pending', label: 'En attente', filter: 'PENDING_CONFIRMATION', icon: Clock },
-      { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
-      { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
-      { id: 'orders-abandoned', label: 'Paniers Abandonnés', filter: 'ABANDONED_IN_PROGRESS', icon: ShoppingCart },
-      { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
-      { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
-      { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
-      // Commandes saisies directement par un agent/admin (téléphone, en
-      // magasin...) plutôt que soumises par le client lui-même — quel que
-      // soit leur statut actuel (utile pour distinguer une vente manuelle
-      // d'une commande storefront/landing page dans le suivi quotidien).
-      // Un livreur ne saisit jamais de commande manuelle — non pertinent.
-      ...(isLivreur ? [] : [{ id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck }]),
-      // Upsell + Retours : déjà comptés/filtrables côté backend (Order.
-      // is_upsell, status=RETURNED) mais jamais exposés comme onglet dans
-      // Commandes — ajoutés pour le livreur uniquement, sans toucher
-      // l'interface de la confirmatrice.
-      ...(isLivreur ? [
-        { id: 'orders-upsell', label: 'Upsell', filter: 'UPSELL', icon: TrendingUp },
-        { id: 'orders-returned', label: 'Retours', filter: 'RETURNED', icon: XCircle },
-      ] : []),
-    ]
-  },
-  {
-    id: 'logistics',
-    label: 'Logistique',
-    icon: Truck,
-    subModules: [
-      { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
-      { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
-      { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
-      // Noest's own real-time granular carrier stage (CARRIER_STAGE_BUCKETS)
-      // only ever applies to a CARRIER-tracked SHIPPED parcel — a livreur's
-      // internal deliveries never have a tracking number, so these would
-      // always show 0 for him. Dropped for his view only; the
-      // confirmatrice's Logistique keeps every carrier stage unchanged.
-      ...(isLivreur ? [] : [
-        { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
-        { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
-        { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
-        { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
-        { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
-      ]),
-      { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
-      { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
-    ]
-  },
-  {
-    // Vue allégée, lecture seule — la confirmatrice consulte le stock,
-    // elle ne gère ni fournisseurs, ni achats, ni entrepôts.
-    id: 'inventory',
-    label: 'Inventaire',
-    icon: Warehouse,
-    subModules: [
-      { id: 'inventory-stock', label: 'Stock Produits', icon: Package },
-      { id: 'inventory-history', label: 'Mouvements', icon: History },
-      { id: 'inventory-alerts', label: 'Alertes Rupture', icon: AlertCircle },
-    ]
-  },
-  {
-    id: 'performance',
-    label: 'Mon Espace',
-    icon: LayoutGrid,
-    subModules: [
-      { id: 'salary-details', label: 'Mon Salaire', icon: Banknote },
-      { id: 'activity-report', label: 'Rapport d\'activité', icon: BarChart3 },
-    ]
-  },
-  // Un livreur garde son avantage préexistant d'accès complet Produits (la
-  // confirmatrice n'a qu'un Inventaire allégé lecture-stock, jamais la
-  // gestion produit elle-même) — ajouté seulement pour lui.
-  ...(isLivreur ? [{
-    id: 'products',
-    label: 'Produits',
-    icon: Boxes,
-    subModules: [{ id: 'products-catalog', label: 'Catalogue', icon: Boxes }],
-  }] : []),
-]; }
+function getModules(isLivreur: boolean, user?: any): Module[] {
+  const vis = user?.module_visibility || {};
+  const modules: (Module | null)[] = [
+    vis.orders === false ? null : {
+      id: 'orders',
+      label: 'Commandes',
+      icon: Package,
+      subModules: [
+        { id: 'orders-new', label: 'Nouvelles Commandes', filter: 'NEW', icon: Inbox },
+        { id: 'orders-pending', label: 'En attente', filter: 'PENDING_CONFIRMATION', icon: Clock },
+        { id: 'orders-nrp-normal', label: 'NRP Commandes', filter: 'NRP_NORMAL', icon: Phone },
+        { id: 'orders-nrp-abandoned', label: 'NRP Paniers Aband.', filter: 'NRP_ABANDONED', icon: Phone },
+        { id: 'orders-abandoned', label: 'Paniers Abandonnés', filter: 'ABANDONED_IN_PROGRESS', icon: ShoppingCart },
+        { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
+        { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
+        { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
+        ...(isLivreur ? [] : [{ id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck }]),
+        ...(isLivreur ? [
+          { id: 'orders-upsell', label: 'Upsell', filter: 'UPSELL', icon: TrendingUp },
+          { id: 'orders-returned', label: 'Retours', filter: 'RETURNED', icon: XCircle },
+        ] : []),
+      ]
+    },
+    (vis.deliveries === false && vis.orders === false) ? null : {
+      id: 'logistics',
+      label: 'Logistique',
+      icon: Truck,
+      subModules: [
+        { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
+        { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
+        { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
+        ...(isLivreur ? [] : [
+          { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
+          { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
+          { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
+          { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
+          { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
+        ]),
+        { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
+        { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
+      ]
+    },
+    vis.inventory === false ? null : {
+      id: 'inventory',
+      label: 'Inventaire',
+      icon: Warehouse,
+      subModules: [
+        { id: 'inventory-stock', label: 'Stock Produits', icon: Package },
+        { id: 'inventory-history', label: 'Mouvements', icon: History },
+        { id: 'inventory-alerts', label: 'Alertes Rupture', icon: AlertCircle },
+      ]
+    },
+    vis.analytics === false ? null : {
+      id: 'performance',
+      label: 'Mon Espace',
+      icon: LayoutGrid,
+      subModules: [
+        { id: 'salary-details', label: 'Mon Salaire', icon: Banknote },
+        { id: 'activity-report', label: 'Rapport d\'activité', icon: BarChart3 },
+      ]
+    },
+    (isLivreur && vis.products !== false) ? {
+      id: 'products',
+      label: 'Produits',
+      icon: Boxes,
+      subModules: [{ id: 'products-catalog', label: 'Catalogue', icon: Boxes }],
+    } : null,
+  ];
+
+  return modules.filter(Boolean) as Module[];
+}
 
 // ─── Vue inventaire (réutilise le module admin) ─────────────
 // InventoryDashboard/StockManager already have built-in CONFIRMATEUR
@@ -1831,7 +1812,7 @@ function SalaryView({ perf, user }: any) {
 export default function AgentDashboard() {
   const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar, clearUser } = useAppStore();
   const isLivreur = user?.role === 'LIVREUR';
-  const MODULES = useMemo(() => getModules(isLivreur), [isLivreur]);
+  const MODULES = useMemo(() => getModules(isLivreur, user), [isLivreur, user]);
   const queryClient = useQueryClient();
   const workTimer = useWorkTimer();
   const [showAllStores, setShowAllStores] = useState(true);
