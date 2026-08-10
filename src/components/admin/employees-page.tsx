@@ -1383,10 +1383,10 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
             permissions: editingEmployee.permissions || [],
-            module_visibility: editingEmployee.module_visibility || { orders: true, inventory: true, deliveries: true, transfers: true, returns: true },
+            module_visibility: editingEmployee.module_visibility || { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true },
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true } });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true } });
       }
       setErrors({});
    }, [open, editingEmployee]);
