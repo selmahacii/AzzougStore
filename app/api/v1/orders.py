@@ -377,6 +377,8 @@ def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional
          caller-supplied legacy_criterion, still excluding orders another
          confirmatrice individually claims (formal rule or legacy list).
     """
+    from sqlalchemy import or_, and_, not_
+
     locked = Order.assignment_locked == True
     locked_to_her = and_(locked, Order.assigned_to == user.id)
 
