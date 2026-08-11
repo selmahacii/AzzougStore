@@ -46,7 +46,7 @@ export function SimpleStockList({ defaultFilter = 'all' }: { defaultFilter?: 'al
 
   const { data, isLoading } = useQuery<{ data: Product[] }>({
     queryKey: ['simple-stock-products', activeStore?.id],
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${activeStore?.id}&pageSize=500`),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${activeStore?.id}&pageSize=50`),
     enabled: !!activeStore?.id,
   });
 

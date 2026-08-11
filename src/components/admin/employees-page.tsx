@@ -1314,7 +1314,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
 
    const { data: allProductsData } = useQuery({
       queryKey: ['all-products-list'],
-      queryFn: () => apiFetch<any>('/api/v1/products?pageSize=1000', { allStores: true }),
+      queryFn: () => apiFetch<any>('/api/v1/products?minimal=true&pageSize=100', { allStores: true }),
       enabled: open,
    });
    const productsList = (Array.isArray(allProductsData) ? allProductsData : (allProductsData?.data ?? [])) as Product[];
