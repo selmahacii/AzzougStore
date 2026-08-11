@@ -107,7 +107,7 @@ function OrderDetail({ order, onBack }: { order: Order; onBack: () => void }) {
 
 function AccountPanelContent({ user, activeStore, onClose, clearUser, setStorefrontView }: any) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const isStaff = ['ADMIN', 'SUPER_ADMIN', 'CONFIRMATEUR', 'MANAGER'].includes(user.role);
+  const isStaff = ['ADMIN', 'SUPER_ADMIN', 'CONFIRMATEUR', 'MANAGER', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role);
 
   const ordersQuery = useQuery<{ data: Order[] }>({
     queryKey: ['customer-orders', user.id],
@@ -128,7 +128,7 @@ function AccountPanelContent({ user, activeStore, onClose, clearUser, setStorefr
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold">{user.name}</h3>
-              {isStaff && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold uppercase tracking-widest rounded border">Staff</span>}
+              {isStaff && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-bold uppercase tracking-widest rounded border border-purple-200">{user.role}</span>}
             </div>
             <p className="text-[10px] text-slate-400 truncate max-w-[180px]">{user.email}</p>
           </div>
@@ -141,16 +141,18 @@ function AccountPanelContent({ user, activeStore, onClose, clearUser, setStorefr
       <div className="flex-1 overflow-y-auto p-6 space-y-8">
         {/* Staff Access */}
         {isStaff && (
-          <div className="p-4 border border-slate-900 bg-white rounded-lg flex items-center justify-between group cursor-pointer hover:bg-slate-50 transition-colors"
+          <div className="p-4 border border-purple-600 bg-purple-50/50 rounded-xl flex items-center justify-between group cursor-pointer hover:bg-purple-100/50 transition-colors shadow-sm"
                onClick={() => { useAppStore.getState().setAppView('admin'); onClose(); }}>
             <div className="flex items-center gap-3">
-               <ShieldCheck className="size-5" />
+               <ShieldCheck className="size-5 text-purple-600" />
                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Gestion</p>
-                  <p className="text-xs font-bold">Dashboard Admin</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-purple-600">Accès Professionnel</p>
+                  <p className="text-xs font-bold text-slate-900">
+                    {user.role === 'LIVREUR' ? '📱 Accéder à mon Espace Livreur' : 'Dashboard Admin'}
+                  </p>
                </div>
             </div>
-            <ExternalLink className="size-4 text-slate-300" />
+            <ExternalLink className="size-4 text-purple-500" />
           </div>
         )}
 

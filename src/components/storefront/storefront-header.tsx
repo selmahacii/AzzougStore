@@ -382,6 +382,18 @@ export function StorefrontHeader() {
             {/* Language Switcher */}
             <LanguageSwitcher T={T} />
 
+            {/* Direct Staff / Livreur Space Button */}
+            {isAuthenticated && user && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role) && (
+              <button
+                onClick={() => useAppStore.getState().setAppView('admin')}
+                className="px-2.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shrink-0"
+                title="Accéder à mon Espace Professionnel"
+              >
+                <ShieldCheck className="size-3.5" />
+                <span className="hidden sm:inline">{user.role === 'LIVREUR' ? 'Espace Livreur' : 'Espace Pro'}</span>
+              </button>
+            )}
+
             {/* Account (Far Right, Visible on Mobile) */}
             <button 
               onClick={isAuthenticated ? () => setShowAccountPanel(true) : () => setShowLoginDialog(true)}

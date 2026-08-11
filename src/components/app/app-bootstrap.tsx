@@ -27,7 +27,7 @@ export function AppBootstrap() {
   // root cause of "le livreur ne peut pas accéder à son interface", upstream
   // of the admin-app.tsx routing fix (which only matters once staff access
   // is granted in the first place).
-  const isStaff = user && ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR'].includes(user.role);
+  const isStaff = user && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role);
 
   const initialize = useCallback(async (signal?: AbortSignal) => {
     try {

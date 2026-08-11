@@ -239,7 +239,7 @@ export function AdminAuthPage() {
   const user = useAppStore((s) => s.user);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
 
-  const isStaff = user && ['SUPER_ADMIN', 'MANAGER', 'CONFIRMATEUR'].includes(user.role);
+  const isStaff = user && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role);
 
   if (isAuthenticated && !isStaff) {
     return (
