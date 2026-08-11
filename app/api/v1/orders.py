@@ -996,7 +996,6 @@ def get_agent_counts(
         # and the same carrier-tracked exclusion (once a parcel has a real
         # tracking number it's the transporteur's job, not his).
         from sqlalchemy import select as _select_evt
-        from app.models.order import OrderEvent
         _acted_ids = _select_evt(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
         _livreur_scope = or_(
             Order.livreur_id == current_user.id,
@@ -1394,7 +1393,6 @@ def list_orders(
             # a carrier-tracked parcel — once a NOEST/Yalidine/ZR tracking
             # number exists, that's the transporteur's job.
             from sqlalchemy import or_ as _or_liv, select as _select_evt_l
-            from app.models.order import OrderEvent
             _acted_ids_l = _select_evt_l(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
             query = query.filter(
                 _or_liv(
