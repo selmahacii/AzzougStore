@@ -2975,7 +2975,15 @@ def update_order(
             clear_analytics_cache()
         except Exception:
             pass
-        return updated
+
+        full_updated = db.query(Order).options(
+            joinedload(Order.assignee),
+            joinedload(Order.items),
+            joinedload(Order.livreur),
+            joinedload(Order.carrier),
+            joinedload(Order.store),
+        ).filter(Order.id == updated.id).first()
+        return full_updated or updated
     except Exception as e:
         db.rollback()
         logger.error(f"Error updating order status: {e}", exc_info=True)
@@ -3320,6 +3328,13 @@ def update_order_info(
             "id": order.id,
             "order_number": order.order_number,
             "status": order.status,
+            "assigned_to": order.assigned_to,
+            "assignee": {
+                "id": order.assignee.id,
+                "full_name": getattr(order.assignee, "full_name", None) or getattr(order.assignee, "name", None),
+                "email": order.assignee.email,
+                "role": getattr(order.assignee, "role", None),
+            } if order.assignee else None,
             "customer_name": order.customer_name,
             "customer_phone": order.customer_phone,
             "customer_wilaya": order.customer_wilaya,

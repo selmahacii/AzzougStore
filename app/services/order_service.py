@@ -1590,6 +1590,15 @@ class OrderService:
                 )
 
         # ── Assignment change ──────────────────────────────────────
+        if new_assignee is None:
+            # Auto-assign if order is unassigned or if a product/store assignment rule applies
+            item_pids = [item.product_id for item in (order.items or []) if getattr(item, "product_id", None)]
+            rule_agent = resolve_assignment_rule(db, str(order.store_id), item_pids)
+            if rule_agent:
+                new_assignee = rule_agent
+            elif not order.assigned_to and actor_id and actor_role in ("CONFIRMATEUR", "AGENT", "AGENT_MANAGER"):
+                new_assignee = actor_id
+
         if new_assignee is not None:
             old_assignee = order.assigned_to
             assignee_changed = new_assignee != old_assignee
