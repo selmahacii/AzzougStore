@@ -126,6 +126,9 @@ def _build_user_payload(user: User) -> dict:
         "employee_store_id": str(user.employee_store_id) if user.employee_store_id else None,
         "assigned_store_scope": getattr(user, "assigned_store_scope", "ALL"),
         "assigned_store_ids": [str(s) for s in (getattr(user, "assigned_store_ids", None) or [])],
+        "assigned_product_ids": [str(p) for p in (getattr(user, "assigned_product_ids", None) or [])],
+        "permissions": getattr(user, "permissions", None) or [],
+        "module_visibility": getattr(user, "module_visibility", None) or {},
         "daily_target": user.daily_target,
     }
 

@@ -1001,7 +1001,15 @@ def get_agent_counts(
         # assigned territory. Same region+livreur_id match as list_orders,
         # and the same carrier-tracked exclusion (once a parcel has a real
         # tracking number it's the transporteur's job, not his).
-        _livreur_scope = or_(Order.livreur_id == current_user.id, _region_owned_by_agent_criterion(current_user.id))
+        from sqlalchemy import select as _select_evt
+        from app.models.order import OrderEvent
+        _acted_ids = _select_evt(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
+        _livreur_scope = or_(
+            Order.livreur_id == current_user.id,
+            Order.assigned_to == current_user.id,
+            _region_owned_by_agent_criterion(current_user.id),
+            Order.id.in_(_acted_ids)
+        )
         _livreur_no_carrier = or_(Order.tracking_number.is_(None), Order.tracking_number == "")
         base = base_query.filter(_livreur_scope, _livreur_no_carrier)
         base_wide = base
@@ -1391,9 +1399,16 @@ def list_orders(
             # with Order.livreur_id already stamped at creation time. Never
             # a carrier-tracked parcel — once a NOEST/Yalidine/ZR tracking
             # number exists, that's the transporteur's job.
-            from sqlalchemy import or_ as _or_liv
+            from sqlalchemy import or_ as _or_liv, select as _select_evt_l
+            from app.models.order import OrderEvent
+            _acted_ids_l = _select_evt_l(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
             query = query.filter(
-                _or_liv(Order.livreur_id == current_user.id, _region_owned_by_agent_criterion(current_user.id)),
+                _or_liv(
+                    Order.livreur_id == current_user.id,
+                    Order.assigned_to == current_user.id,
+                    _region_owned_by_agent_criterion(current_user.id),
+                    Order.id.in_(_acted_ids_l)
+                ),
                 _or_liv(Order.tracking_number.is_(None), Order.tracking_number == ""),
             )
         else:
