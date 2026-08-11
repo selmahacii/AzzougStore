@@ -1942,6 +1942,7 @@ export default function AgentDashboard() {
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     placeholderData: (prev) => prev,
+    staleTime: 30 * 1000,
     refetchInterval: 60000,
     refetchIntervalInBackground: false,
   });

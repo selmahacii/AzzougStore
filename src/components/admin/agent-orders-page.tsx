@@ -627,6 +627,7 @@ export default function AgentOrdersPage() {
   const ordersQuery = useQuery<any>({
     queryKey: ['agent-orders', storeId, user?.id],
     queryFn: () => apiFetch(`/api/v1/orders?store_id=${storeId}&pageSize=100`),
+    staleTime: 30 * 1000,
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
     enabled: !!storeId,
