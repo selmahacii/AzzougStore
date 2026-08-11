@@ -379,30 +379,27 @@ def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional
     """
     from sqlalchemy import or_, and_, not_
 
-    locked = Order.assignment_locked == True
-    locked_to_her = and_(locked, Order.assigned_to == user.id)
+    assigned_to_her = (Order.assigned_to == user.id)
+    assigned_to_other = and_(Order.assigned_to.isnot(None), Order.assigned_to != user.id)
+    is_unassigned = Order.assigned_to.is_(None)
 
     product_owner = _product_rule_owner_subquery()
     product_resolved_to_her = (product_owner == user.id)
     product_resolved_to_other = and_(product_owner.isnot(None), product_owner != user.id)
 
-    assigned_to_her = (Order.assigned_to == user.id)
-    is_unassigned = Order.assigned_to.is_(None)
-    # A broader STORE/CATEGORY/BRAND-level rule is a fallback default for
-    # UNASSIGNED orders — it must never grant HER visibility into an order
-    # that's directly assigned to a DIFFERENT confirmatrice (that would
-    # reintroduce duplicate visibility: both the assignee AND the store-
-    # rule owner seeing the same order), which is why this is gated by
-    # is_unassigned rather than applied unconditionally.
     resolved_to_her_full = _assignment_rule_resolved_owner_criterion(user.id)
     safe_legacy = and_(legacy_criterion, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
 
     unlocked_visible = or_(
-        product_resolved_to_her,
+        assigned_to_her,
         and_(
-            not_(product_resolved_to_other),
-            or_(assigned_to_her, and_(is_unassigned, resolved_to_her_full), safe_legacy),
-        ),
+            is_unassigned,
+            or_(
+                product_resolved_to_her,
+                and_(not_(product_resolved_to_other), resolved_to_her_full),
+                and_(not_(product_resolved_to_other), safe_legacy),
+            )
+        )
     )
 
     return or_(locked_to_her, and_(not_(locked), unlocked_visible))
@@ -608,24 +605,18 @@ def _assert_order_access(order: Order, current_user: User, db: Optional[Session]
             # check.
             is_accessible = order.assigned_to == current_user.id
         else:
-            product_owner = _order_product_level_owner(order, db)
-            if product_owner is not None:
-                is_accessible = product_owner == current_user.id
-            elif order.assigned_to == current_user.id:
-                is_accessible = True
-            elif order.assigned_to is not None:
-                # Directly assigned to a DIFFERENT confirmatrice, and no
-                # PRODUCT-level rule overrides it — a broader STORE/CATEGORY/
-                # BRAND-level rule must never steal an already-assigned order
-                # away from its assignee (mirrors _confirmateur_ownership_
-                # criterion's SQL version — same fix, same rationale).
-                is_accessible = False
+            if order.assigned_to is not None:
+                is_accessible = (order.assigned_to == current_user.id)
             else:
-                rule_owner = _order_rule_resolved_owner(order, current_user, db)
-                if rule_owner is not None:
-                    is_accessible = rule_owner == current_user.id
+                product_owner = _order_product_level_owner(order, db)
+                if product_owner is not None:
+                    is_accessible = (product_owner == current_user.id)
                 else:
-                    is_accessible = _confirmateur_scope_ok(order, current_user, db)
+                    rule_owner = _order_rule_resolved_owner(order, current_user, db)
+                    if rule_owner is not None:
+                        is_accessible = (rule_owner == current_user.id)
+                    else:
+                        is_accessible = _confirmateur_scope_ok(order, current_user, db)
 
         if not is_accessible:
             raise PermissionError(message="Accès refusé à cette commande.")
