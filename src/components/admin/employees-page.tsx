@@ -35,6 +35,8 @@ import {
    Calendar,
    Trash,
    Target,
+   Clock,
+   TrendingUp,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -2299,40 +2301,142 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                               <p className="text-3xl font-bold text-slate-900">{formatPrice(totalSalary)}</p>
                            </div>
                            <div className="text-right">
-                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux confirmation</p>
-                              <p className="text-2xl font-bold text-emerald-500">{stats.confirmation_rate}%</p>
+                       /* ── AUDIT TAB ── */
+               ) : (
+                  <div className="p-4 sm:p-6 space-y-6">
+                     {/* Présence & Working Hours Summary Cards */}
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Card 1: Last Login & Activity */}
+                        <div className="bg-slate-900 text-white rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                           <div className="flex items-center justify-between mb-3">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400 flex items-center gap-1.5">
+                                 <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+                                 Dernière Connexion
+                              </span>
+                              <Clock className="size-4 text-slate-400" />
+                           </div>
+                           <div>
+                              <p className="text-xs text-slate-400 font-medium">Horodatage de la connexion</p>
+                              <p className="text-lg font-bold text-white mt-0.5">
+                                 {perf?.user?.last_seen_at ? (() => {
+                                    const dt = new Date(perf.user.last_seen_at);
+                                    const diffMins = Math.floor((Date.now() - dt.getTime()) / 60000);
+                                    if (diffMins <= 5) return "À l'instant (En ligne)";
+                                    if (diffMins < 60) return `Il y a ${diffMins} min`;
+                                    if (diffMins < 1440) return `Il y a ${Math.floor(diffMins / 60)}h (${dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})`;
+                                    return dt.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+                                 })() : "— (Non disponible)"}
+                              </p>
+                           </div>
+                           <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300">
+                              <span>État du compte</span>
+                              <span className="font-semibold text-emerald-400">{employee?.is_active ? 'Compte Actif ✓' : 'Compte Inactif'}</span>
+                           </div>
+                        </div>
+
+                        {/* Card 2: Heures de travail */}
+                        <div className="bg-gradient-to-br from-emerald-600 to-teal-800 text-white rounded-3xl p-5 shadow-sm flex flex-col justify-between">
+                           <div className="flex items-center justify-between mb-3">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100 flex items-center gap-1.5">
+                                 <Calendar className="size-3.5" />
+                                 Heures de Travail
+                              </span>
+                              <TrendingUp className="size-4 text-emerald-200" />
+                           </div>
+                           <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                 <p className="text-[10px] font-medium text-emerald-100 uppercase">Aujourd'hui</p>
+                                 <p className="text-2xl font-black text-white">{perf?.working_hours?.today_hours ?? 0}h</p>
+                                 <p className="text-[10px] text-emerald-200 mt-0.5">{perf?.working_hours?.start_time || '—'} → {perf?.working_hours?.end_time || '—'}</p>
+                              </div>
+                              <div>
+                                 <p className="text-[10px] font-medium text-emerald-100 uppercase">Moy. Journalière</p>
+                                 <p className="text-2xl font-black text-white">{perf?.working_hours?.avg_daily_hours ?? 0}h/j</p>
+                                 <p className="text-[10px] text-emerald-200 mt-0.5">{perf?.working_hours?.days_active ?? 0} jours d'activité</p>
+                              </div>
                            </div>
                         </div>
                      </div>
-                  </div>
 
-               /* ── ORDERS TAB ── */
-               ) : activeProfileTab === 'orders' ? (
-                  <div className="p-4 sm:p-6">
-                     {(perf?.recent_orders ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                              <Package className="size-8 text-slate-300" />
+                     {/* Graphe d'Évolution des Exécutions de Tâches */}
+                     <div className="bg-slate-50 border border-slate-200/80 rounded-3xl p-5 sm:p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                           <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Graphe d'Évolution</p>
+                              <h4 className="text-sm font-bold text-slate-900 mt-0.5">Exécutions de tâches & actions au fil du temps</h4>
                            </div>
-                           <h3 className="text-sm font-semibold text-slate-700">Aucune commande</h3>
-                           <p className="text-sm text-slate-500 mt-1">Cet employé n'a pas encore de commandes assignées.</p>
+                           <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
+                              {perf?.task_evolution_chart?.reduce((acc: number, t: any) => acc + (t.tasks || 0), 0) ?? 0} tâches exécutées
+                           </span>
+                        </div>
+
+                        {(() => {
+                           const taskChart = perf?.task_evolution_chart ?? [];
+                           const maxTask = Math.max(...taskChart.map((t: any) => t.tasks || 0), 1);
+                           
+                           return taskChart.length === 0 ? (
+                              <p className="text-xs text-slate-400 italic text-center py-4">Aucune donnée d'exécution de tâche.</p>
+                           ) : (
+                              <div className="flex items-end gap-2 h-28 pt-4">
+                                 {taskChart.map((t: any, idx: number) => {
+                                    const heightPct = Math.max(10, Math.round(((t.tasks || 0) / maxTask) * 100));
+                                    return (
+                                       <div key={idx} className="flex-1 flex flex-col items-center gap-1 group relative">
+                                          <div className="absolute -top-8 bg-slate-900 text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
+                                             {t.tasks} action(s) le {t.date}
+                                          </div>
+                                          <div className="w-full bg-slate-200 rounded-t-xl overflow-hidden relative" style={{ height: '72px' }}>
+                                             <div 
+                                                className="absolute inset-x-0 bottom-0 bg-emerald-500 group-hover:bg-emerald-400 transition-all rounded-t-xl"
+                                                style={{ height: `${heightPct}%` }}
+                                             />
+                                          </div>
+                                          <span className="text-[9px] font-black text-slate-500">{t.date}</span>
+                                          <span className="text-[8px] font-bold text-emerald-600">{t.tasks}</span>
+                                       </div>
+                                    );
+                                 })}
+                              </div>
+                           );
+                        })()}
+                     </div>
+
+                     {/* Audit Log Timeline */}
+                     {(perf?.audit_logs ?? []).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                              <Activity className="size-8 text-slate-300" />
+                           </div>
+                           <h3 className="text-sm font-semibold text-slate-700">Aucun historique d'événement</h3>
+                           <p className="text-sm text-slate-500 mt-1">L'historique des actions détaillées de cet employé est vide.</p>
                         </div>
                      ) : (
                         <div className="space-y-3">
-                           {(perf?.recent_orders ?? []).map((o: any) => (
-                              <div key={o.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-colors gap-4">
-                                 <div className="flex items-start sm:items-center gap-4">
-                                    <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                       <Package className="size-5 text-slate-500" />
-                                    </div>
-                                    <div>
-                                       <p className="text-sm font-semibold text-slate-900">{o.customer_name}</p>
-                                       <p className="text-xs text-slate-500 mt-0.5">#{o.order_number} · {o.wilaya}</p>
+                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Journal des Dernières Actions</p>
+                           {(perf?.audit_logs ?? []).map((a: any) => (
+                              <div key={a.id} className="flex items-start gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                                 <div className="size-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                                    <Activity className="size-5 text-blue-500" />
+                                 </div>
+                                 <div className="flex-1 min-w-0 pt-0.5">
+                                    <p className="text-sm text-slate-700 font-medium">
+                                       {a.action === 'CREATE' ? 'Création' : a.action === 'UPDATE' ? 'Mise à jour' : a.action === 'DELETE' ? 'Suppression' : a.action} d'un enregistrement
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                                       <span>{a.entity}</span>
+                                       <span>•</span>
+                                       <span className="font-mono text-slate-400">{a.entity_id?.slice(0, 8)}</span>
                                     </div>
                                  </div>
-                                 <div className="flex items-center justify-between sm:justify-end gap-6 sm:w-auto w-full border-t sm:border-t-0 pt-3 sm:pt-0">
-                                    <span className="text-sm font-medium text-slate-700">{formatPrice(o.total)}</span>
-                                    <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
+                                 <div className="text-xs text-slate-400 shrink-0 pt-1">
+                                    {a.created_at ? new Date(a.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+               )}   <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
                                        {({
                                           NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
                                           IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',

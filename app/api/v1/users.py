@@ -819,6 +819,65 @@ def get_user_performance(
         key = day_start.strftime("%d/%m")
         daily.append({"date": key, "count": counts_by_day.get(key, 0)})
 
+    # ── 1. Last login / Last activity ─────────────────────────────
+    last_event = (
+        db.query(OrderEvent.created_at)
+        .filter(OrderEvent.actor_id == user_id)
+        .order_by(OrderEvent.created_at.desc())
+        .first()
+    )
+    last_seen_dt = db_user.last_seen_at or (last_event[0] if last_event else None)
+    last_seen_iso = last_seen_dt.isoformat() if last_seen_dt else None
+
+    # ── 2. Task execution evolution chart & Working Hours ──────────
+    task_chart_days = min(period_days, 14)
+    task_range_start = (datetime.now() - timedelta(days=task_chart_days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    event_daily_rows = db.query(
+        func.date(OrderEvent.created_at).label("day"),
+        func.count().label("task_count"),
+        func.min(OrderEvent.created_at).label("first_action"),
+        func.max(OrderEvent.created_at).label("last_action"),
+    ).filter(
+        and_(
+            OrderEvent.actor_id == user_id,
+            OrderEvent.created_at >= task_range_start,
+        )
+    ).group_by(func.date(OrderEvent.created_at)).all()
+
+    tasks_by_day = {}
+    day_work_durations = []
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_start_time = None
+    today_end_time = None
+    today_hours = 0.0
+
+    for row in event_daily_rows:
+        day_key = row.day.strftime("%d/%m") if hasattr(row.day, "strftime") else str(row.day)
+        day_raw = row.day.strftime("%Y-%m-%d") if hasattr(row.day, "strftime") else str(row.day)
+        tasks_by_day[day_key] = row.task_count
+        
+        if row.first_action and row.last_action:
+            duration_hrs = (row.last_action - row.first_action).total_seconds() / 3600.0
+            effective_hrs = max(0.5, round(duration_hrs, 1))
+            day_work_durations.append(effective_hrs)
+            
+            if day_raw == today_str:
+                today_start_time = row.first_action.strftime("%H:%M")
+                today_end_time = row.last_action.strftime("%H:%M")
+                today_hours = effective_hrs
+
+    avg_work_hours = round(sum(day_work_durations) / len(day_work_durations), 1) if day_work_durations else 0.0
+
+    task_evolution_chart = []
+    for i in range(task_chart_days - 1, -1, -1):
+        day = datetime.now() - timedelta(days=i)
+        key = day.strftime("%d/%m")
+        task_evolution_chart.append({
+            "date": key,
+            "tasks": tasks_by_day.get(key, 0),
+        })
+
     return {
         "user": {
             "id":           db_user.id,
@@ -828,7 +887,16 @@ def get_user_performance(
             "phone":        db_user.phone,
             "is_active":    db_user.is_active,
             "daily_target": db_user.daily_target or 10,
+            "last_seen_at": last_seen_iso,
         },
+        "working_hours": {
+            "today_hours": today_hours,
+            "avg_daily_hours": avg_work_hours,
+            "start_time": today_start_time or "—",
+            "end_time": today_end_time or "—",
+            "days_active": len(day_work_durations),
+        },
+        "task_evolution_chart": task_evolution_chart,
         "stats": {
             "total_assigned":    total_assigned,
             "confirmed_count":   confirmed_count,
