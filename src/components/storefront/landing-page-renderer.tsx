@@ -634,32 +634,45 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
                   {/* Galerie de miniatures des variantes — toute variante avec
                       une photo (Couleur, Motif, Modèle…) apparaît ici en
-                      grand format sous la photo de couverture, pas seulement
-                      comme petit cercle de sélection dans le sélecteur plus
-                      bas. Cliquer une miniature sélectionne cette variante ET
-                      change la photo principale. */}
-                  {data.product?.variants && data.product.variants.some((v: any) => v.image) && (
-                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                      {data.product.variants.filter((v: any) => v.image).map((v: any, i: number) => {
-                        const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value && val?.name === v.name);
-                        return (
-                          <button
-                            key={`thumb-${i}`}
-                            type="button"
-                            onClick={() => handleSelectVariant(v)}
-                            className={cn(
-                              "relative shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95",
-                              isSelected ? "shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
-                            )}
-                            style={{ borderColor: isSelected ? primary : undefined }}
-                            title={v.value}
-                          >
-                            <img src={optimizeCloudinaryUrl(v.image, 160)} alt={v.value} className="size-full object-cover" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                      grand format sous la photo de couverture. Cliquer une
+                      miniature sélectionne cette variante ET change la photo principale.
+                      Dédoublonnée par URL d'image pour éviter la répétition sur les sous-variantes. */}
+                  {(() => {
+                    const variantImages: any[] = [];
+                    const seen = new Set<string>();
+                    if (data.product?.variants) {
+                      data.product.variants.forEach((v: any) => {
+                        if (v.image && !seen.has(v.image)) {
+                          seen.add(v.image);
+                          variantImages.push(v);
+                        }
+                      });
+                    }
+                    if (variantImages.length === 0) return null;
+
+                    return (
+                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                        {variantImages.map((v: any, i: number) => {
+                          const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value && val?.name === v.name);
+                          return (
+                            <button
+                              key={`thumb-${i}`}
+                              type="button"
+                              onClick={() => handleSelectVariant(v)}
+                              className={cn(
+                                "relative shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95",
+                                isSelected ? "shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                              )}
+                              style={{ borderColor: isSelected ? primary : undefined }}
+                              title={v.value}
+                            >
+                              <img src={optimizeCloudinaryUrl(v.image, 160)} alt={v.value} className="size-full object-cover" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* Le bloc "Variant Selector" (couleurs en cercles + options
                       en boutons) a été entièrement retiré — doublon exact de :
@@ -674,22 +687,40 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
             {/* Description or Gallery if needed */}
 
-            {/* Gallery Miniatures */}
-            {galleryImages && galleryImages.length > 0 && (
-              <div className="mt-8">
-                <div className="flex gap-2 justify-center overflow-x-auto py-2">
-                  {galleryImages.slice(0, 4).map((url: string, i: number) => (
-                    <button
-                      key={i}
-                      type="button"
-                      className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
-                    >
-                      <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
-                    </button>
-                  ))}
+            {/* Gallery Miniatures - Uniquement si une galerie explicite différente des variantes est configurée */}
+            {(() => {
+              const hasVariantThumbnails = data.product?.variants && data.product.variants.some((v: any) => v.image);
+              const explicitGallery = (data.gallery && data.gallery.length > 0) ? data.gallery : [];
+              
+              // Si pas de galerie explicite ET que des miniatures de variantes sont déjà affichées, éviter la ligne en doublon
+              if (hasVariantThumbnails && explicitGallery.length === 0) return null;
+
+              const displayedVariantImages = new Set(
+                (data.product?.variants || []).map((v: any) => v.image).filter(Boolean)
+              );
+              if (heroImage) displayedVariantImages.add(heroImage);
+
+              const extraGallery = (explicitGallery.length > 0 ? explicitGallery : (data.product?.images || []))
+                .filter((url: string) => url && !displayedVariantImages.has(url));
+
+              if (extraGallery.length === 0) return null;
+
+              return (
+                <div className="mt-8">
+                  <div className="flex gap-2 justify-center overflow-x-auto py-2">
+                    {extraGallery.slice(0, 4).map((url: string, i: number) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
+                      >
+                        <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
           </div>
 
