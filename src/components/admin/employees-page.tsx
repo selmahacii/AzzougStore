@@ -2249,8 +2249,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            </div>
                         </div>
                      )}
-
-                     {/* Stats grid */}
+            {/* Stats grid */}
                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
                            { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
@@ -2267,15 +2266,6 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
 
                      {/* Salary breakdown */}
                      <div className="bg-slate-50 rounded-3xl p-6 space-y-4 border border-slate-100">
-                        {/* La rémunération de base se calcule TOUJOURS sur les
-                            commandes LIVRÉES, jamais "en cours de livraison"
-                            (SHIPPED) — compute_salary (salary_service.py)
-                            retombe sur PER_DELIVERED_ORDER dès que payment_type
-                            n'est pas explicitement configuré, donc cet
-                            affichage doit suivre la même règle plutôt que de
-                            montrer "Commandes confirmées" (qui inclut SHIPPED,
-                            voir confirmed_count dans users.py) comme si la paie
-                            en dépendait. */}
                         <div className="flex justify-between items-center text-xs font-bold text-slate-500">
                            <span>{paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes livrées'}</span>
                            <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${delivered} × ${formatPrice(paymentAmount)}`}</span>
@@ -2301,7 +2291,55 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                               <p className="text-3xl font-bold text-slate-900">{formatPrice(totalSalary)}</p>
                            </div>
                            <div className="text-right">
-                       /* ── AUDIT TAB ── */
+                              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux confirmation</p>
+                              <p className="text-2xl font-bold text-emerald-500">{stats.confirmation_rate}%</p>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+               /* ── ORDERS TAB ── */
+               ) : activeProfileTab === 'orders' ? (
+                  <div className="p-4 sm:p-6">
+                     {(perf?.recent_orders ?? []).length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                              <Package className="size-8 text-slate-300" />
+                           </div>
+                           <h3 className="text-sm font-semibold text-slate-700">Aucune commande</h3>
+                           <p className="text-sm text-slate-500 mt-1">Cet employé n'a pas encore de commandes assignées.</p>
+                        </div>
+                     ) : (
+                        <div className="space-y-3">
+                           {(perf?.recent_orders ?? []).map((o: any) => (
+                              <div key={o.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-colors gap-4">
+                                 <div className="flex items-start sm:items-center gap-4">
+                                    <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                                       <Package className="size-5 text-slate-500" />
+                                    </div>
+                                    <div>
+                                       <p className="text-sm font-semibold text-slate-900">{o.customer_name}</p>
+                                       <p className="text-xs text-slate-500 mt-0.5">#{o.order_number} · {o.wilaya}</p>
+                                    </div>
+                                 </div>
+                                 <div className="flex items-center justify-between sm:justify-end gap-6 sm:w-auto w-full border-t sm:border-t-0 pt-3 sm:pt-0">
+                                    <span className="text-sm font-medium text-slate-700">{formatPrice(o.total)}</span>
+                                    <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
+                                       {({
+                                          NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
+                                          IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
+                                          CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: 'Livrée',
+                                          CANCELLED: 'Annulée', RETURNED: 'Retournée', ABANDONED: 'Abandonné'
+                                       } as Record<string, string>)[o.status] || o.status}
+                                    </span>
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     )}
+                  </div>
+
+               /* ── AUDIT TAB ── */
                ) : (
                   <div className="p-4 sm:p-6 space-y-6">
                      {/* Présence & Working Hours Summary Cards */}
@@ -2435,60 +2473,11 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            ))}
                         </div>
                      )}
-                  </div>
-               )}   <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
-                                       {({
-                                          NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
-                                          IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
-                                          CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: 'Livrée',
-                                          CANCELLED: 'Annulée', RETURNED: 'Retournée', ABANDONED: 'Abandonné'
-                                       } as Record<string, string>)[o.status] || o.status}
-                                    </span>
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </div>
-
-               /* ── AUDIT TAB ── */
-               ) : (
-                  <div className="p-4 sm:p-6">
-                     {(perf?.audit_logs ?? []).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                           <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                              <Activity className="size-8 text-slate-300" />
-                           </div>
-                           <h3 className="text-sm font-semibold text-slate-700">Aucune action</h3>
-                           <p className="text-sm text-slate-500 mt-1">L'historique des actions de cet employé est vide.</p>
-                        </div>
-                     ) : (
-                        <div className="space-y-3">
-                           {(perf?.audit_logs ?? []).map((a: any) => (
-                              <div key={a.id} className="flex items-start gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                                 <div className="size-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
-                                    <Activity className="size-5 text-blue-500" />
-                                 </div>
-                                 <div className="flex-1 min-w-0 pt-0.5">
-                                    <p className="text-sm text-slate-700 font-medium">
-                                       {a.action === 'CREATE' ? 'Création' : a.action === 'UPDATE' ? 'Mise à jour' : a.action === 'DELETE' ? 'Suppression' : a.action} d'un enregistrement
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
-                                       <span>{a.entity}</span>
-                                       <span>•</span>
-                                       <span className="font-mono text-slate-400">{a.entity_id?.slice(0, 8)}</span>
-                                    </div>
-                                 </div>
-                                 <div className="text-xs text-slate-400 shrink-0 pt-1">
-                                    {a.created_at ? new Date(a.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                                 </div>
-                              </div>
-                           ))}
-                        </div>
-                     )}
-                  </div>
-               ))}
+                   </div>
+                )
+               )}
             </div>
+
 
             {/* Footer */}
             <div className="p-4 sm:p-6 border-t border-slate-100 flex gap-3 shrink-0">
