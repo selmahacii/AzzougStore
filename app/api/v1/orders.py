@@ -393,8 +393,15 @@ def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional
     resolved_to_her_full = _assignment_rule_resolved_owner_criterion(user.id)
     safe_legacy = and_(legacy_criterion, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
 
+    # Abandoned carts are store-wide recovery opportunities for all confirmatrices
+    # assigned to that store (safe_legacy), unless locked or explicitly claimed
+    # by a product rule for another agent.
+    is_abandoned_cart_crit = or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED")
+    abandoned_visible = and_(is_abandoned_cart_crit, not_(product_resolved_to_other), safe_legacy)
+
     unlocked_visible = or_(
         assigned_to_her,
+        abandoned_visible,
         and_(
             is_unassigned,
             or_(
@@ -1360,10 +1367,17 @@ def list_orders(
             # CANCELLED/ARCHIVED are the same lifecycle outcome as RETURNED —
             # once terminal, it's no longer "her queue" either.
             _STORE_WIDE_STATUSES = {
-                "ABANDONED", "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED",
+                "ABANDONED", "NRP_ABANDONED", "ABANDONED_IN_PROGRESS", "RECOVERED",
+                "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED",
                 "RETURNED", "CANCELLED", "ARCHIVED",
             }
             _status_upper = status.upper() if status else ""
+            _type_upper = type_filter.upper() if type_filter else ""
+            is_abandoned_query = (
+                (_status_upper in {"ABANDONED", "NRP_ABANDONED", "ABANDONED_IN_PROGRESS", "RECOVERED"}) or
+                (_type_upper == "ABANDONED") or
+                is_abandoned_cart is True
+            )
             # Rule-based ownership (PRODUCT/STORE Assignment Rules) always
             # wins over the legacy assigned_to/scope fallback below — see
             # _confirmateur_ownership_criterion. Without this, a product
@@ -1371,7 +1385,7 @@ def list_orders(
             # stayed visible to whoever Order.assigned_to (a one-time
             # snapshot, stamped before the rule existed or by the legacy
             # pool logic) still happened to name.
-            if status and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_")):
+            if (status and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_"))) or is_abandoned_query:
                 query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, scope_crit), db))
             else:
                 query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, unassigned_matching), db))
@@ -1781,8 +1795,15 @@ def update_abandoned_cart(
             else:
                 store = db.query(Store).filter(Store.id == db_order.store_id).first()
                 order_product_ids = [item.product_id for item in order_in.items if item.product_id]
-                db_order.assigned_to = _auto_assign(db, store, order_product_ids) if store else None
-                snapshot_commission(db, db_order, db_order.assigned_to)
+                from app.services.order_service import resolve_assignment_rule
+                rule_agent = None
+                for pid in order_product_ids:
+                    rule_agent = resolve_assignment_rule(db, db_order.store_id, pid)
+                    if rule_agent:
+                        break
+                db_order.assigned_to = rule_agent
+                if db_order.assigned_to:
+                    snapshot_commission(db, db_order, db_order.assigned_to)
         
         # This endpoint is hit on every ~2s-debounced keystroke while the
         # customer types their contact info on the storefront — the CART
@@ -1853,10 +1874,14 @@ def update_abandoned_cart(
     order_number = f"ABN-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
     
     from app.models.store import Store
-    from app.services.order_service import _auto_assign, snapshot_commission
+    from app.services.order_service import resolve_assignment_rule, snapshot_commission
     store = db.query(Store).filter(Store.id == order_in.store_id).first()
     order_product_ids = [item.product_id for item in order_in.items if item.product_id]
-    assigned_agent = _auto_assign(db, store, order_product_ids) if store else None
+    assigned_agent = None
+    for pid in order_product_ids:
+        assigned_agent = resolve_assignment_rule(db, order_in.store_id, pid)
+        if assigned_agent:
+            break
 
     # Avoid duplicate parameter error
     order_data.pop("is_abandoned_cart", None)
