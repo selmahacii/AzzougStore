@@ -9,7 +9,7 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus, Save,
-  Warehouse, History, Bell, Wallet, UserCheck, Boxes
+  Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -238,6 +238,74 @@ function OrderTimer({ startTime }: { startTime?: string }) {
 }
 
 // ─── Components ─────────────────────────────────────────────
+
+function UnprocessedCartReassign({ order, onStatusChange, isPending }: { order: Order; onStatusChange: (id: string, s?: string, assignTo?: string) => void; isPending?: boolean }) {
+  const agentsQuery = useQuery<any>({
+    queryKey: ['agents-for-reassign', order.store_id],
+    queryFn: () => apiFetch(`/api/v1/users/?store_id=${order.store_id}`, { headers: { 'X-Store-Id': order.store_id } }),
+    staleTime: 60_000,
+    enabled: !!order.store_id,
+  });
+
+  const raw = agentsQuery.data?.data ?? agentsQuery.data ?? [];
+  const agents = (Array.isArray(raw) ? raw : [])
+    .filter((u: any) => u.is_active !== false && ['CONFIRMATEUR', 'AGENT', 'AGENT_MANAGER', 'SUPER_ADMIN', 'ADMIN'].includes(u.role));
+
+  const isUnprocessed = (!order.nrp_count || order.nrp_count === 0) &&
+    !order.called_at &&
+    !order.confirmation_start_time &&
+    ['ABANDONED', 'NEW', 'ASSIGNED'].includes(order.status);
+
+  if (!isUnprocessed) {
+    return (
+      <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 font-semibold">
+        <div className="flex items-center gap-2">
+          <Lock className="size-4 text-slate-400 shrink-0" />
+          <span>Traitement démarré ({order.nrp_count || 0} tentative(s) NRP / statut {order.status})</span>
+        </div>
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Verrouillé</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/40 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 flex items-center gap-1.5">
+          <UserPlus className="size-3.5 text-indigo-600" />
+          Réassignation Manuelle (Panier non traité)
+        </span>
+        <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-100 text-indigo-800">
+          Aucune action appliquée
+        </span>
+      </div>
+      <p className="text-[10px] font-bold text-slate-500">
+        Ce panier n'a encore reçu aucun appel ni traitement. Vous pouvez le réassigner manuellement à un autre agent.
+      </p>
+      {agentsQuery.isLoading ? (
+        <p className="text-[10px] font-bold text-slate-400">Chargement des agents...</p>
+      ) : (
+        <select
+          value={order.assigned_to || ''}
+          onChange={(e) => {
+            if (e.target.value) {
+              onStatusChange(order.id, undefined, e.target.value);
+            }
+          }}
+          disabled={isPending}
+          className="w-full text-xs p-2.5 border border-indigo-200 rounded-lg bg-white font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">— Choisir une confirmatrice à assigner —</option>
+          {agents.map((a: any) => (
+            <option key={a.id} value={a.id}>
+              {a.name} {order.assigned_to === a.id ? '(Assigné(e) actuellement)' : ''}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
 
 function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string) => void; isPending?: boolean }) {
   const queryClient = useQueryClient();
@@ -1486,7 +1554,10 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               autre livreur ni ne crée de colis transporteur (backend le bloque
               déjà, 403) — cette section n'a pas de sens depuis sa propre vue. */}
           {order.status !== 'MERGED' && currentUser?.role !== 'LIVREUR' && (
-            <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} />
+            <>
+              <UnprocessedCartReassign order={order} onStatusChange={onStatusChange} isPending={isPending} />
+              <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} />
+            </>
           )}
 
           {cfg.next.length > 0 && (

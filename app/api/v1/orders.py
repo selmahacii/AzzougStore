@@ -2949,6 +2949,21 @@ def update_order(
         if status_update.assigned_to or status_update.livreur_id:
             raise HTTPException(status_code=403, detail="Un livreur ne peut pas réassigner une commande.")
 
+    # A confirmatrice can manually reassign a cart/order IF AND ONLY IF no actions
+    # (calls, NRP attempts, or status progression) have been applied to it yet.
+    if current_user.role == "CONFIRMATEUR" and status_update.assigned_to:
+        new_target_agent = status_update.assigned_to
+        if new_target_agent != order.assigned_to:
+            has_nrp = (order.nrp_count or 0) > 0
+            has_call = order.called_at is not None or order.confirmation_start_time is not None
+            has_progressed_status = order.status not in ("ABANDONED", "NEW", "ASSIGNED")
+            is_unprocessed = not (has_nrp or has_call or has_progressed_status)
+            if not is_unprocessed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Réassignation impossible : ce panier a déjà fait l'objet de tentatives de traitement."
+                )
+
     try:
         updated = order_service.update_order(
             db,
