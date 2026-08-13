@@ -2150,8 +2150,11 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
 
    const perfQuery = useQuery({
       queryKey: ['employee-performance', employee?.id, storeId],
-      queryFn: () => apiFetch<any>(`/api/v1/users/${employee.id}/performance?store_id=${storeId}&period=30d`),
-      enabled: open && !!employee?.id && !!storeId,
+      queryFn: () => {
+         if (!employee?.id) throw new Error("Employee ID missing");
+         return apiFetch<any>(`/api/v1/users/${employee.id}/performance${storeId ? `?store_id=${storeId}&period=30d` : '?period=30d'}`);
+      },
+      enabled: open && !!employee?.id,
    });
 
    const perf = perfQuery.data;
