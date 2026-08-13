@@ -252,7 +252,7 @@ function UnprocessedCartReassign({ order, onStatusChange, isPending }: { order: 
     .filter((u: any) => u.is_active !== false && ['CONFIRMATEUR', 'AGENT', 'AGENT_MANAGER', 'SUPER_ADMIN', 'ADMIN'].includes(u.role));
 
   const isUnprocessed = (!order.nrp_count || order.nrp_count === 0) &&
-    !order.called_at &&
+    !(order as any).called_at &&
     !order.confirmation_start_time &&
     ['ABANDONED', 'NEW', 'ASSIGNED'].includes(order.status);
 
