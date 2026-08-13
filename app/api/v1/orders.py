@@ -1290,6 +1290,8 @@ def list_orders(
     pageSize: int = Query(20, ge=1, le=2000),
     store_id: Optional[str] = None,
     status: Optional[str] = None,
+    type_filter: Optional[str] = Query(None, alias="type"),
+    is_abandoned_cart: Optional[bool] = None,
     search: Optional[str] = None,
     assigned_to: Optional[str] = None,
     wilaya: Optional[str] = None,
