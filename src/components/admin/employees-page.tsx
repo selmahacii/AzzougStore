@@ -2187,17 +2187,14 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      <div>
                         <DialogTitle className="text-lg sm:text-xl font-bold">{employee?.name}</DialogTitle>
                         <p className="text-emerald-100 text-xs font-medium mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance</p>
+                        {(employee?.created_at || perf?.user?.created_at) && (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-300 mt-2 font-medium bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 w-fit">
+                               <Calendar className="size-3.5 text-emerald-400" />
+                               <span>A commencé le : <strong className="text-white font-bold">{new Date(employee?.created_at || perf?.user?.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</strong></span>
+                            </div>
+                         )}
                      </div>
                   </div>
-                  {/* KPI pills — headline count must match what actually drives
-                      the salary figure right next to it (compute_salary,
-                      salary_service.py, bases pay on DELIVERED orders only —
-                      a confirmed order can still be returned/cancelled before
-                      delivery). Showing "Confirmées" here was misleading:
-                      it's a different, larger number than what the salary
-                      is actually computed from, and disagreed with the
-                      confirmatrice's own "Mon Salaire" view, which correctly
-                      headlines Livrées. */}
                   <div className="flex items-center gap-4">
                      <div className="flex flex-col">
                         <p className="text-xs font-medium text-slate-400">Livrées</p>

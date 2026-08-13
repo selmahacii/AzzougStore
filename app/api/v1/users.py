@@ -773,6 +773,8 @@ def get_user_performance(
         func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
         func.sum(case((Order.status == "CANCELLED", 1), else_=0)).label("cancelled"),
         func.sum(case((Order.is_upsell == True, 1), else_=0)).label("upsell"),
+        func.sum(case((and_(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), Order.is_abandoned_cart == True), 1), else_=0)).label("recovered_confirmed"),
+        func.sum(case((and_(Order.status == "DELIVERED", Order.is_abandoned_cart == True), 1), else_=0)).label("recovered_delivered"),
     ).one()
     total_assigned   = totals_row.total or 0
     confirmed_count  = totals_row.confirmed or 0
@@ -780,6 +782,8 @@ def get_user_performance(
     returned_count   = totals_row.returned or 0
     cancelled_count  = totals_row.cancelled or 0
     upsell_count     = totals_row.upsell or 0
+    recovered_confirmed_count = totals_row.recovered_confirmed or 0
+    recovered_delivered_count = totals_row.recovered_delivered or 0
 
     # Salary via service (uses DELIVERED orders only, respects payment_type),
     # now scoped to the same since/until window as the stats above.
@@ -888,6 +892,7 @@ def get_user_performance(
             "is_active":    db_user.is_active,
             "daily_target": db_user.daily_target or 10,
             "last_seen_at": last_seen_iso,
+            "created_at":   db_user.created_at.isoformat() if getattr(db_user, 'created_at', None) else None,
         },
         "working_hours": {
             "today_hours": today_hours,
@@ -898,12 +903,16 @@ def get_user_performance(
         },
         "task_evolution_chart": task_evolution_chart,
         "stats": {
-            "total_assigned":    total_assigned,
-            "confirmed_count":   confirmed_count,
-            "delivered_count":   delivered_count,
-            "returned_count":    returned_count,
-            "cancelled_count":   cancelled_count,
-            "upsell_count":      upsell_count,
+            "total_assigned":            total_assigned,
+            "confirmed_count":           confirmed_count,
+            "delivered_count":           delivered_count,
+            "returned_count":            returned_count,
+            "cancelled_count":           cancelled_count,
+            "upsell_count":              upsell_count,
+            "recovered_confirmed_count": recovered_confirmed_count,
+            "recovered_delivered_count": recovered_delivered_count,
+            "confirmed_delivered_rate":  round((delivered_count / confirmed_count * 100) if confirmed_count else 0, 1),
+            "recovered_delivered_rate":  round((recovered_delivered_count / delivered_count * 100) if delivered_count else 0, 1),
             "salary":                    salary_data["salary"],
             "payment_type":              salary_data["payment_type"],
             "payment_amount":            salary_data["payment_amount"],
