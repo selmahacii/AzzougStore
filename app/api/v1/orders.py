@@ -200,8 +200,6 @@ def _product_rule_owner_subquery():
             AssignmentRule.target_id.in_(
                 select(OrderItem.product_id)
                 .where(OrderItem.order_id == Order.id, OrderItem.product_id.isnot(None))
-                .correlate(Order)
-                .scalar_subquery()
             ),
         )
         .order_by(AssignmentRule.target_id.asc())
