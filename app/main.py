@@ -136,7 +136,10 @@ def run_db_migrations():
                 (r[0], r[1]) for r in conn.execute(text(
                     "SELECT table_name, column_name FROM information_schema.columns "
                     "WHERE table_schema = 'public' AND (table_name, column_name) IN "
-                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'), ('users','permissions'), ('users','module_visibility'))"
+                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'), "
+                    "('users','permissions'), ('users','module_visibility'), ('users','payment_store_pickup'), "
+                    "('users','payment_recovered_store_pickup'), ('orders','commission_store_pickup_rate'), "
+                    "('orders','commission_recovered_store_pickup_rate'))"
                 ))
             }
             if ("landing_pages", "offers") not in existing:
@@ -154,6 +157,18 @@ def run_db_migrations():
             if ("users", "module_visibility") not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN module_visibility JSONB DEFAULT '{}'::jsonb"))
                 print("[OK] users: added module_visibility column")
+            if ("users", "payment_store_pickup") not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN payment_store_pickup INTEGER DEFAULT 100"))
+                print("[OK] users: added payment_store_pickup column")
+            if ("users", "payment_recovered_store_pickup") not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN payment_recovered_store_pickup INTEGER DEFAULT 150"))
+                print("[OK] users: added payment_recovered_store_pickup column")
+            if ("orders", "commission_store_pickup_rate") not in existing:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN commission_store_pickup_rate INTEGER"))
+                print("[OK] orders: added commission_store_pickup_rate column")
+            if ("orders", "commission_recovered_store_pickup_rate") not in existing:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN commission_recovered_store_pickup_rate INTEGER"))
+                print("[OK] orders: added commission_recovered_store_pickup_rate column")
     except Exception as e:
         print(f"[WARN] Startup column check failed: {e}")
 
