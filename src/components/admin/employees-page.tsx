@@ -1352,6 +1352,8 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       payment_lost_cart: '' as number | '',
       payment_upsell: '' as number | '',
       payment_marketplace_upsell_only: '' as number | '',
+      payment_store_pickup: 100 as number | '',
+      payment_recovered_store_pickup: 150 as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
@@ -1381,6 +1383,8 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             payment_lost_cart: editingEmployee.payment_lost_cart ?? '',
             payment_upsell: editingEmployee.payment_upsell ?? '',
             payment_marketplace_upsell_only: editingEmployee.payment_marketplace_upsell_only ?? '',
+            payment_store_pickup: editingEmployee.payment_store_pickup ?? 100,
+            payment_recovered_store_pickup: editingEmployee.payment_recovered_store_pickup ?? 150,
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
@@ -1388,7 +1392,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             module_visibility: editingEmployee.module_visibility || { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true },
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true } });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', payment_store_pickup: 100, payment_recovered_store_pickup: 150, assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true } });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1409,6 +1413,8 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payment_lost_cart: Number(formData.payment_lost_cart) || 0,
          payment_upsell: Number(formData.payment_upsell) || 0,
          payment_marketplace_upsell_only: Number(formData.payment_marketplace_upsell_only) || 50,
+         payment_store_pickup: Number(formData.payment_store_pickup) || 100,
+         payment_recovered_store_pickup: Number(formData.payment_recovered_store_pickup) || 150,
       };
 
       const storePayload = formData.assigned_store_scope === 'SPECIFIC'
@@ -1738,7 +1744,46 @@ Commission Upsell
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                               Commission Marketplace (Upsell Seul)
+                              Commissions Retrait Point de Vente (Vente Directe)
+                           </h5>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                 <Label className="text-[10px] font-semibold text-[#636E72]">Point de Vente - Normale (DA)</Label>
+                                 <div className="relative">
+                                    <Input
+                                       type="number"
+                                       min={0}
+                                       value={formData.payment_store_pickup}
+                                       onChange={e => setFormData(p => ({ ...p, payment_store_pickup: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                       placeholder="Ex: 100"
+                                       className="h-10 border-emerald-100 rounded-lg bg-white pr-12 font-black text-xs"
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
+                                 </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                 <Label className="text-[10px] font-semibold text-[#636E72]">Point de Vente - Panier Récupéré (DA)</Label>
+                                 <div className="relative">
+                                    <Input
+                                       type="number"
+                                       min={0}
+                                       value={formData.payment_recovered_store_pickup}
+                                       onChange={e => setFormData(p => ({ ...p, payment_recovered_store_pickup: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                       placeholder="Ex: 150"
+                                       className="h-10 border-emerald-100 rounded-lg bg-white pr-12 font-black text-xs"
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">DA</span>
+                                 </div>
+                              </div>
+                           </div>
+                           <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
+                              Commission attribuée lorsque le client récupère sa commande directement en magasin (100 DA normale par défaut, 150 DA si panier récupéré).
+                           </p>
+                        </div>
+
+                        <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
+                           <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
+                              Commission Marketplace (Upsell Seul)
                            </h5>
                            <div className="space-y-1.5">
                                <Label className="text-[10px] font-semibold text-[#636E72]">Commande Marketplace livrée (DA)</Label>

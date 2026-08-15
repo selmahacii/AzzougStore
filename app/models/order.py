@@ -77,6 +77,8 @@ class Order(Base):
     commission_lost_rate = Column(Integer, nullable=True)
     commission_upsell_rate = Column(Integer, nullable=True)
     commission_marketplace_rate = Column(Integer, nullable=True)
+    commission_store_pickup_rate = Column(Integer, nullable=True)
+    commission_recovered_store_pickup_rate = Column(Integer, nullable=True)
     commission_snapshot_at = Column(DateTime, nullable=True)
     customer_id = Column(String, ForeignKey("customers.id"), nullable=True)
     

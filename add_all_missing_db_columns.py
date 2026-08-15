@@ -59,6 +59,12 @@ columns_by_table = {
         ("confirmation_start_time", "TIMESTAMP", "NULL"),
         ("nrp_count", "INTEGER", "0"),
         ("next_callback_time", "TIMESTAMP", "NULL"),
+        ("commission_store_pickup_rate", "INTEGER", "NULL"),
+        ("commission_recovered_store_pickup_rate", "INTEGER", "NULL"),
+    ],
+    "users": [
+        ("payment_store_pickup", "INTEGER", "100"),
+        ("payment_recovered_store_pickup", "INTEGER", "150"),
     ],
     "order_items": [
         ("product_name", "VARCHAR", "''"),

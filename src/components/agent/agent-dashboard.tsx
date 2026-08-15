@@ -922,6 +922,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   >
                     <option value="home">Livraison à Domicile</option>
                     <option value="stop_desk">Stop Desk (Bureau)</option>
+                    <option value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin (Vente Directe)</option>
                   </select>
                 </div>
                 {editData.delivery_type === 'stop_desk' && (
@@ -1404,7 +1405,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <div className="flex items-center gap-3">
                   <Truck className="size-4 text-slate-400" />
                   <span className="text-xs text-slate-500 font-bold">
-                    {order.delivery_type === 'stop_desk' ? 'Stop Desk' : 'À domicile'}
+                    {order.delivery_type === 'STORE_PICKUP' ? 'Retrait Point de Vente (Magasin)' : order.delivery_type === 'stop_desk' ? 'Stop Desk' : 'À domicile'}
                     {order.carrier?.name ? ` · ${order.carrier.name}` : (order.carrier_id ? ` · Transporteur (ID: ${order.carrier_id})` : ' · Pas de transporteur')}
                     {order.delivery_fee !== undefined ? ` · ${formatPrice(order.delivery_fee)} DA` : ''}
                   </span>

@@ -321,6 +321,13 @@ export interface User {
   assigned_product_ids?: string[];
   permissions?: string[];
   module_visibility?: Record<string, boolean>;
+  payment_type?: 'PER_DELIVERED_ORDER' | 'MONTHLY_SALARY' | null;
+  payment_amount?: number | null;
+  payment_recovered_cart?: number;
+  payment_lost_cart?: number;
+  payment_upsell?: number;
+  payment_store_pickup?: number;
+  payment_recovered_store_pickup?: number;
   daily_target: number;
   created_at: string;
   employee_store?: Pick<Store, 'id' | 'name' | 'slug'> | null;

@@ -947,6 +947,8 @@ def snapshot_commission(db: Session, order: Order, agent_id: Optional[str]) -> N
     order.commission_lost_rate = getattr(agent, "payment_lost_cart", 0) or 0
     order.commission_upsell_rate = getattr(agent, "payment_upsell", 0) or 0
     order.commission_marketplace_rate = getattr(agent, "payment_marketplace_upsell_only", 50) or 50
+    order.commission_store_pickup_rate = getattr(agent, "payment_store_pickup", 100) if getattr(agent, "payment_store_pickup", None) is not None else 100
+    order.commission_recovered_store_pickup_rate = getattr(agent, "payment_recovered_store_pickup", 150) if getattr(agent, "payment_recovered_store_pickup", None) is not None else 150
     order.commission_snapshot_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
 

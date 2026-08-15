@@ -41,6 +41,9 @@ class User(Base):
     # rule as every other commission (see salary_service.py).
     payment_upsell         = Column(Integer, default=0)
     payment_marketplace_upsell_only = Column(Integer, default=50)
+    # Commission for Point de Vente / Store Pickup / Manual delivery
+    payment_store_pickup            = Column(Integer, default=100)
+    payment_recovered_store_pickup  = Column(Integer, default=150)
     # Day of month (1-28, capped to stay valid in every month) this employee
     # is due to be paid — admin-configured. Drives the personal SALARY_DUE
     # reminder (app/services/noest_sync.py scan_payday_reminders) sent

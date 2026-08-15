@@ -107,43 +107,37 @@ def compute_salary(
     if payment_type is None and getattr(employee, "role", None) == "LIVREUR":
         payment_type = "MONTHLY_SALARY"
 
-    recovered_rate = getattr(employee, "payment_recovered_cart", 0) or 0
-    lost_rate      = getattr(employee, "payment_lost_cart", 0) or 0
-    upsell_rate    = getattr(employee, "payment_upsell", 0) or 0
-    marketplace_rate = getattr(employee, "payment_marketplace_upsell_only", 50) or 50
+    store_pickup_rate           = getattr(employee, "payment_store_pickup", 100) if getattr(employee, "payment_store_pickup", None) is not None else 100
+    recovered_store_pickup_rate = getattr(employee, "payment_recovered_store_pickup", 150) if getattr(employee, "payment_recovered_store_pickup", None) is not None else 150
 
-    # ÔöÇÔöÇ Count delivered orders, split by classification ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-    normal_delivered    = _count_normal_delivered(db, employee.id, store_id, since, until)
-    recovered_delivered = _count_recovered_delivered(db, employee.id, store_id, since, until)
-    total_delivered     = normal_delivered + recovered_delivered
-    returned_count      = _count_returned(db, employee.id, store_id, since, until)
-    upsell_delivered    = _count_upsell_delivered(db, employee.id, store_id, since, until)
-    marketplace_delivered = _count_marketplace_delivered(db, employee.id, store_id, since, until)
+    # ── Count delivered orders, split by classification ──────────────────────
+    normal_delivered          = _count_normal_delivered(db, employee.id, store_id, since, until)
+    recovered_delivered       = _count_recovered_delivered(db, employee.id, store_id, since, until)
+    total_delivered           = normal_delivered + recovered_delivered
+    returned_count            = _count_returned(db, employee.id, store_id, since, until)
+    upsell_delivered          = _count_upsell_delivered(db, employee.id, store_id, since, until)
+    marketplace_delivered     = _count_marketplace_delivered(db, employee.id, store_id, since, until)
+    store_pickup_delivered    = _count_store_pickup_delivered(db, employee.id, store_id, since, until)
+    recovered_store_pickup_delivered = _count_recovered_store_pickup_delivered(db, employee.id, store_id, since, until)
 
-    # Commission historique figée (2026-07-21) : ces bonus/pénalités
-    # utilisent le taux FIGÉ sur chaque commande (snapshot_commission dans
-    # order_service.py), pas le taux ACTUEL de l'employé — un changement
-    # de payment_recovered_cart/payment_lost_cart aujourd'hui ne modifie
-    # plus les commissions déjà figées sur des commandes passées.
-    # fallback_rate couvre les commandes antérieures à cette
-    # fonctionnalité (snapshot NULL), à l'identique du comportement
-    # précédent.
-    abandoned_bonus = _sum_frozen_amount(
+    # ── Commission historique figée avec support Retrait Point de Vente ─────
+    recovered_home_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=True,
+        status="DELIVERED", is_abandoned_cart=True, is_store_pickup=False,
         snapshot_column=Order.commission_recovered_rate, fallback_rate=recovered_rate,
     )
+    recovered_store_pickup_bonus = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=True, is_store_pickup=True,
+        snapshot_column=Order.commission_recovered_store_pickup_rate, fallback_rate=recovered_store_pickup_rate,
+    )
+    abandoned_bonus = recovered_home_bonus + recovered_store_pickup_bonus
+
     returned_penalty = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="RETURNED", is_abandoned_cart=None,
         snapshot_column=Order.commission_lost_rate, fallback_rate=lost_rate,
     )
-    # Upsell bonus (2026-07-22) : bonus fixe par commande DELIVERED
-    # marquée is_upsell, EN PLUS de ce que cette commande gagne déjà (taux
-    # normal ou bonus de récupération) — un produit ajouté en plus lors de
-    # l'appel est une récompense distincte, indépendante de l'économie
-    # panier-abandonné. Pas filtré sur is_abandoned_cart : un upsell peut
-    # arriver sur les deux types de commande.
     upsell_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=None, is_upsell=True,
@@ -155,7 +149,7 @@ def compute_salary(
         snapshot_column=Order.commission_marketplace_rate, fallback_rate=marketplace_rate,
     )
 
-    # ÔöÇÔöÇ Branch by payment type ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    # ── Branch by payment type ────────────────────────────────────────────────
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
         salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
@@ -166,11 +160,15 @@ def compute_salary(
             recovered_rate=recovered_rate,
             lost_rate=lost_rate,
             upsell_rate=upsell_rate,
+            store_pickup_rate=store_pickup_rate,
+            recovered_store_pickup_rate=recovered_store_pickup_rate,
             total_delivered=total_delivered,
             normal_delivered=normal_delivered,
             recovered_delivered=recovered_delivered,
             upsell_delivered=upsell_delivered,
             marketplace_delivered_count=marketplace_delivered,
+            store_pickup_delivered_count=store_pickup_delivered,
+            recovered_store_pickup_delivered_count=recovered_store_pickup_delivered,
             returned_count=returned_count,
             base_salary=base_salary,
             abandoned_bonus=abandoned_bonus,
@@ -183,17 +181,19 @@ def compute_salary(
         )
 
     # PER_DELIVERED_ORDER (explicit or implicit fallback when payment_type is None)
-    # Commission historique figée : somme le taux FIGÉ par commande
-    # (commission_payment_amount), pas normal_delivered * taux ACTUEL —
-    # sinon un changement de payment_amount aujourd'hui réécrirait
-    # silencieusement toutes les commissions déjà versées de cet employé.
     effective_rate = payment_amount if payment_amount is not None else FALLBACK_RATE_PER_ORDER
-    base_salary    = _sum_frozen_amount(
+    normal_home_salary = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=False,
+        status="DELIVERED", is_abandoned_cart=False, is_store_pickup=False,
         snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
     )
-    salary         = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
+    normal_store_pickup_salary = _sum_frozen_amount(
+        db, employee.id, store_id, since, until,
+        status="DELIVERED", is_abandoned_cart=False, is_store_pickup=True,
+        snapshot_column=Order.commission_store_pickup_rate, fallback_rate=store_pickup_rate,
+    )
+    base_salary = normal_home_salary + normal_store_pickup_salary
+    salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
 
     return _build_result(
         payment_type=payment_type or "PER_DELIVERED_ORDER",
@@ -201,11 +201,15 @@ def compute_salary(
         recovered_rate=recovered_rate,
         lost_rate=lost_rate,
         upsell_rate=upsell_rate,
+        store_pickup_rate=store_pickup_rate,
+        recovered_store_pickup_rate=recovered_store_pickup_rate,
         total_delivered=total_delivered,
         normal_delivered=normal_delivered,
         recovered_delivered=recovered_delivered,
         upsell_delivered=upsell_delivered,
         marketplace_delivered_count=marketplace_delivered,
+        store_pickup_delivered_count=store_pickup_delivered,
+        recovered_store_pickup_delivered_count=recovered_store_pickup_delivered,
         returned_count=returned_count,
         base_salary=base_salary,
         abandoned_bonus=abandoned_bonus,
@@ -379,6 +383,46 @@ def _count_marketplace_delivered(
     return db.query(Order).filter(and_(*filters)).count()
 
 
+STORE_PICKUP_TYPES = ["STORE_PICKUP", "POINT_DE_VENTE", "STORE", "RETRAIT_MAGASIN", "MANUAL"]
+
+
+def _count_store_pickup_delivered(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+) -> int:
+    store_filter = _build_store_filter(db, user_id, store_id)
+    filters = [
+        store_filter,
+        Order.assigned_to == user_id,
+        Order.status == "DELIVERED",
+        Order.delivery_type.in_(STORE_PICKUP_TYPES),
+        Order.is_deleted == False,
+    ] + _build_time_filters(since, until)
+    return db.query(Order).filter(and_(*filters)).count()
+
+
+def _count_recovered_store_pickup_delivered(
+    db: Session,
+    user_id: str,
+    store_id: Optional[str],
+    since: Optional[datetime],
+    until: Optional[datetime],
+) -> int:
+    store_filter = _build_store_filter(db, user_id, store_id)
+    filters = [
+        store_filter,
+        Order.assigned_to == user_id,
+        Order.status == "DELIVERED",
+        Order.is_abandoned_cart == True,
+        Order.delivery_type.in_(STORE_PICKUP_TYPES),
+        Order.is_deleted == False,
+    ] + _build_time_filters(since, until)
+    return db.query(Order).filter(and_(*filters)).count()
+
+
 def _sum_frozen_amount(
     db: Session,
     user_id: str,
@@ -392,19 +436,9 @@ def _sum_frozen_amount(
     fallback_rate: int,
     is_upsell: Optional[bool] = None,
     is_marketplace_upsell: Optional[bool] = None,
+    is_store_pickup: Optional[bool] = None,
 ) -> int:
-    """
-    Commission historique figée (2026-07-21) — somme le taux FIGÉ sur
-    chaque commande (commission_payment_amount / commission_recovered_rate
-    / commission_lost_rate / commission_upsell_rate, selon snapshot_column)
-    au lieu de multiplier un compte de commandes par le taux ACTUEL de
-    l'employé. Une commande dont le snapshot est NULL (créée avant cette
-    fonctionnalité, ou assignée avant que l'employé n'ait de taux
-    configuré) retombe sur fallback_rate — le même taux "actuel" utilisé
-    partout ailleurs, donc aucun changement de comportement pour
-    l'historique pré-existant.
-    """
-    from sqlalchemy import func as _func, case as _case
+    from sqlalchemy import func as _func, case as _case, or_
 
     store_filter = _build_store_filter(db, user_id, store_id)
     filters = [
@@ -419,6 +453,10 @@ def _sum_frozen_amount(
         filters.append(Order.is_upsell == is_upsell)
     if is_marketplace_upsell is not None:
         filters.append(Order.is_marketplace_upsell == is_marketplace_upsell)
+    if is_store_pickup is True:
+        filters.append(Order.delivery_type.in_(STORE_PICKUP_TYPES))
+    elif is_store_pickup is False:
+        filters.append(or_(Order.delivery_type.is_(None), Order.delivery_type.notin_(STORE_PICKUP_TYPES)))
 
     total = (
         db.query(_func.sum(_case((snapshot_column.isnot(None), snapshot_column), else_=fallback_rate)))
@@ -435,11 +473,15 @@ def _build_result(
     recovered_rate: int,
     lost_rate: int = 0,
     upsell_rate: int = 0,
+    store_pickup_rate: int = 100,
+    recovered_store_pickup_rate: int = 150,
     total_delivered: int,
     normal_delivered: int,
     recovered_delivered: int,
     upsell_delivered: int = 0,
     marketplace_delivered_count: int = 0,
+    store_pickup_delivered_count: int = 0,
+    recovered_store_pickup_delivered_count: int = 0,
     returned_count: int = 0,
     base_salary: int,
     abandoned_bonus: int,
@@ -452,25 +494,29 @@ def _build_result(
 ) -> dict:
     """Assemble and return the salary result dictionary."""
     return {
-        "payment_type":              payment_type,
-        "payment_amount":            payment_amount,
-        "payment_recovered_cart":    recovered_rate,
-        "delivered_count":           total_delivered,
-        "normal_delivered_count":    normal_delivered,
-        "recovered_delivered_count": recovered_delivered,
+        "payment_type":                           payment_type,
+        "payment_amount":                         payment_amount,
+        "payment_recovered_cart":                 recovered_rate,
+        "payment_store_pickup":                   store_pickup_rate,
+        "payment_recovered_store_pickup":         recovered_store_pickup_rate,
+        "delivered_count":                        total_delivered,
+        "normal_delivered_count":                 normal_delivered,
+        "recovered_delivered_count":              recovered_delivered,
+        "store_pickup_delivered_count":           store_pickup_delivered_count,
+        "recovered_store_pickup_delivered_count": recovered_store_pickup_delivered_count,
         # Legacy alias kept for backward-compatibility with existing API consumers
-        "recovered_count":           recovered_delivered,
-        "lost_count":                returned_count,
-        "payment_lost_cart":         lost_rate,
-        "returned_penalty":          returned_penalty,
-        "payment_upsell":            upsell_rate,
-        "upsell_delivered_count":    upsell_delivered,
-        "upsell_bonus":              upsell_bonus,
-        "marketplace_delivered_count": marketplace_delivered_count,
-        "marketplace_bonus":         marketplace_bonus,
-        "base_salary":               base_salary,
-        "abandoned_bonus":           abandoned_bonus,
-        "salary":                    salary,
-        "since":                     since.isoformat() if since else None,
-        "until":                     until.isoformat() if until else None,
+        "recovered_count":                        recovered_delivered,
+        "lost_count":                             returned_count,
+        "payment_lost_cart":                      lost_rate,
+        "returned_penalty":                       returned_penalty,
+        "payment_upsell":                         upsell_rate,
+        "upsell_delivered_count":                 upsell_delivered,
+        "upsell_bonus":                           upsell_bonus,
+        "marketplace_delivered_count":            marketplace_delivered_count,
+        "marketplace_bonus":                      marketplace_bonus,
+        "base_salary":                            base_salary,
+        "abandoned_bonus":                        abandoned_bonus,
+        "salary":                                 salary,
+        "since":                                  since.isoformat() if since else None,
+        "until":                                  until.isoformat() if until else None,
     }
