@@ -91,6 +91,10 @@ def _serialize(
             "description": p.description,
             "variants": p.variants or [],
             "delivery_fees": p.delivery_fees,
+            "stock": p.stock or 0,
+            "reserved_stock": p.reserved_stock or 0,
+            "is_available": p.is_available if p.is_available is not None else (max(0, (p.stock or 0) - (p.reserved_stock or 0)) > 0),
+            "is_active": p.is_active,
         } if p else None,
         "store": {
             "id": lp.store.id,
@@ -380,6 +384,40 @@ def get_by_slug(
     data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
+
+    # Live stock & availability rehydration — guarantees product stock, reserved stock,
+    # variant stock and availability flag are 100% real-time synchronized on every request.
+    if data and data.get("product_id"):
+        db.info["skip_tenant_isolation"] = True
+        live_p = db.query(Product).filter(Product.id == data["product_id"]).first()
+        if live_p:
+            variants = live_p.variants if isinstance(live_p.variants, list) else []
+            in_stock = 0
+            total_variant_available = 0
+            for v in variants:
+                if isinstance(v, dict):
+                    try:
+                        s = int(v.get("stock") or 0)
+                        r = int(v.get("reserved") or 0)
+                    except (TypeError, ValueError):
+                        s, r = 0, 0
+                    available = max(0, s - r)
+                    total_variant_available += available
+                    if available > 0:
+                        in_stock += 1
+            product_available = total_variant_available if variants else max(0, int(live_p.stock or 0) - int(live_p.reserved_stock or 0))
+            
+            data["stock_detail"] = {
+                "stock": product_available,
+                "variants_total": len(variants),
+                "variants_in_stock": in_stock,
+            }
+            if data.get("product"):
+                data["product"]["stock"] = live_p.stock or 0
+                data["product"]["reserved_stock"] = live_p.reserved_stock or 0
+                data["product"]["is_available"] = live_p.is_available if live_p.is_available is not None else (product_available > 0)
+                data["product"]["is_active"] = live_p.is_active
+                data["product"]["variants"] = variants
 
     # View counting stays real-time on every request, cache hit or not — a
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.

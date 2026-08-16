@@ -566,16 +566,26 @@ def update_product(
         if conflict:
             raise HTTPException(status_code=400, detail="Ce slug est déjà utilisé dans cette boutique.")
 
-    for field, value in update_data.items():
-        if hasattr(product, field):
-            setattr(product, field, value)
+    # Synchronize availability based on stock
+    avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
+    if avail > 0:
+        product.is_available = True
+    elif avail <= 0 and product.is_available:
+        product.is_available = False
 
     db.add(product)
     db.commit()
     db.refresh(product)
 
     from app.core.cache import invalidate as cache_delete
-    cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
+    cache_delete(f"product_categories:{product.store_id}", "product_categories:all", f"product:{product.id}")
+    try:
+        from app.models.landing_page import LandingPage
+        lps = db.query(LandingPage).filter(LandingPage.product_id == product.id).all()
+        for lp in lps:
+            cache_delete(f"landing_page:{lp.store_id}:{lp.slug}")
+    except Exception:
+        pass
 
     return product
 

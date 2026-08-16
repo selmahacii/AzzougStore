@@ -120,6 +120,7 @@ def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
 def _update_product_stock_from_variants(product: Product) -> None:
     if product.variants:
         total = 0
+        total_reserved = 0
         for v in product.variants:
             if isinstance(v, dict):
                 # Aggregate stock/reserved from sub_variants to parent variant
@@ -133,7 +134,36 @@ def _update_product_stock_from_variants(product: Product) -> None:
                     v["stock"] = sub_total_stock
                     v["reserved"] = sub_total_reserved
                 total += int(v.get("stock") or 0)
+                total_reserved += int(v.get("reserved") or 0)
         product.stock = total
+        avail = max(0, total - total_reserved)
+        if avail > 0:
+            product.is_available = True
+        elif avail <= 0 and product.is_available:
+            product.is_available = False
+
+
+def _sync_product_availability_and_invalidate_cache(db: Session, product: Product) -> None:
+    """
+    Synchronizes product.is_available with current sellable stock and invalidates
+    both Redis & L1 cache for linked LandingPages so public storefront views get
+    immediate, real-time stock updates.
+    """
+    avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
+    if avail > 0:
+        product.is_available = True
+    elif avail <= 0 and product.is_available:
+        product.is_available = False
+
+    try:
+        from app.models.landing_page import LandingPage
+        from app.core.cache import invalidate
+        lps = db.query(LandingPage).filter(LandingPage.product_id == product.id).all()
+        for lp in lps:
+            invalidate(f"landing_page:{lp.store_id}:{lp.slug}")
+        invalidate(f"product:{product.id}")
+    except Exception as exc:
+        logger.warning(f"Failed to invalidate landing page cache for product {product.id}: {exc}")
 
 
 def _lock_product(db: Session, product_id: str) -> Product:
@@ -547,6 +577,7 @@ class InventoryService:
             warehouse_id=warehouse_id,
             reason=reason or f"Réapprovisionnement manuel ({variant_str or 'Général'})",
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("Manual restock: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
         return product
 
@@ -692,6 +723,7 @@ class InventoryService:
             actor_id=actor_id,
             reason=reason,
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Manual adjustment: product=%s delta=%+d (new stock=%d) reason='%s'",
             product_id, quantity, product.stock, reason,
@@ -774,6 +806,7 @@ class InventoryService:
             db, product_id=product_id, movement_type=movement_type, quantity=quantity_delta,
             order_id=order_id, actor_id=actor_id, reason=reason, warehouse_id=warehouse_id,
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Manual movement: product=%s type=%s delta=%+d (new stock=%d)",
             product_id, movement_type, quantity_delta, product.stock,
