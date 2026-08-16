@@ -168,9 +168,11 @@ def _lock_product(db: Session, product_id: str) -> Product:
     Prevents concurrent transactions from over-selling the same product.
     Must be called inside an active transaction.
     """
+    if not product_id:
+        raise ProductNotFoundError(message="ID produit non spécifié")
     product = (
         db.query(Product)
-        .filter(Product.id == product_id)
+        .filter((Product.id == product_id) | (Product.sku == product_id))
         .with_for_update()
         .first()
     )

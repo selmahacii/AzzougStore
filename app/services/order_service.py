@@ -1226,11 +1226,11 @@ class OrderService:
                     actor_id=actor_id,
                     variant_details=item.get("variant_details"),
                 )
-            except (InsufficientStockError, ProductNotFoundError) as stock_err:
+            except InsufficientStockError as stock_err:
                 raise stock_err
             except Exception as stock_err:
-                # Log other generic database/network issues but don't abort storefront flows
-                logger.warning("Stock reservation skipped for product %s due to system error: %s", item.get("product_id"), stock_err)
+                # Log missing product or generic issues but don't abort order creation
+                logger.warning("Stock reservation skipped for product %s: %s", item.get("product_id"), stock_err)
             db.add(OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
