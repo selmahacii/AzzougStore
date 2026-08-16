@@ -307,7 +307,7 @@ function UnprocessedCartReassign({ order, onStatusChange, isPending }: { order: 
   );
 }
 
-function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string) => void; isPending?: boolean }) {
+function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string) => void; isPending?: boolean }) {
   const queryClient = useQueryClient();
   const livreursQuery = useQuery<any>({
     queryKey: ['livreurs', order.store_id],
@@ -329,38 +329,23 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
       if (onOrderUpdate && updated?.id) onOrderUpdate(updated);
     },
-    onError: (err: any) => toast.error(err.message || "Impossible d'assigner le livreur"),
+    onError: (err: any) => toast.error(err.message || "Erreur lors de l'assignation du livreur"),
   });
 
-  const current = livreurs.find((l: any) => l.id === order.livreur_id);
   const hasCarrierParcel = !!order.tracking_number;
 
   return (
-    <div className="space-y-3">
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">
-        🚚 Méthode de livraison
-      </p>
+    <div className="space-y-3 pt-3 border-t border-slate-200/80">
+      <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">🚚 Méthode de livraison</p>
 
-      {/* Option 1 — transporteur (NOEST / Yalidine…) */}
-      <div className={cn(
-        'p-3 rounded-xl border space-y-1.5',
-        hasCarrierParcel ? 'border-cyan-200 bg-cyan-50/50' : 'border-slate-100 bg-slate-50/50'
-      )}>
+      {/* Option 1 — Transporteur (Yalidine, Noest, etc.) */}
+      <div className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 space-y-2">
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
         {hasCarrierParcel ? (
           <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
-        ) : order.status !== 'CONFIRMED' ? (
+        ) : (order.status as string) !== 'CONFIRMED' ? (
           <div className="space-y-1.5">
             <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
-            {/* Same transition a manual order goes through like any other
-                (NEW/ASSIGNED/CALLED/ABANDONED -> CONFIRMED is already valid
-                per _VALID_TRANSITIONS) — just a one-click shortcut right where
-                the confirmatrice is trying to dispatch, instead of making her
-                hunt for the "Confirmer" action elsewhere in the drawer.
-                ABANDONED inclus : une confirmatrice a explicitement le droit
-                de confirmer un panier abandonné récupéré au téléphone (le cas
-                d'usage même du module Paniers Abandonnés) — l'exclure ici
-                l'empêchait de dispatcher la commande qu'elle vient de sauver. */}
             {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status as any) && onStatusChange && (
               <div className="space-y-2">
                 {((order.status as any) !== 'CONFIRMED') && (
@@ -368,17 +353,17 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
                     type="button"
                     disabled={isPending}
                     onClick={() => onStatusChange(order.id, 'CONFIRMED')}
-                    className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                    className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     ✓ Confirmer la commande maintenant
                   </button>
                 )}
-                {order.delivery_type === 'STORE_PICKUP' && order.status !== 'DELIVERED' && (
+                {((order.status as any) !== 'DELIVERED') && (
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => onStatusChange(order.id, 'DELIVERED')}
-                    className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
+                    onClick={() => onStatusChange(order.id, 'DELIVERED', undefined, undefined, 'STORE_PICKUP')}
+                    className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                   >
                     🏪 Confirmer & Récupéré (Point de Vente)
                   </button>
@@ -395,7 +380,19 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
             Créer le colis chez le transporteur
           </button>
         ) : (
-          <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
+            {((order.status as any) !== 'DELIVERED') && onStatusChange && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => onStatusChange(order.id, 'DELIVERED', undefined, undefined, 'STORE_PICKUP')}
+                className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                🏪 Confirmer & Récupéré (Point de Vente)
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -799,29 +796,29 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                  </div>
                )}
             </div>
-            {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
-               <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl space-y-2 shadow-sm animate-in fade-in duration-200">
-                 <div className="flex items-center justify-between">
-                   <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
-                     <Store className="size-4 text-emerald-600" />
-                     <span>Retrait Point de Vente (Magasin)</span>
-                   </div>
-                   <span className="text-[9px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
-                 </div>
-                 <p className="text-[11px] text-emerald-800 font-medium leading-tight">
-                   Le client est au magasin ou a retiré sa commande ? Confirmez et marquez-la comme récupérée.
-                 </p>
-                 <button
-                   type="button"
-                   disabled={isPending}
-                   onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id)}
-                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
-                 >
-                   <CheckCircle2 className="size-4" />
-                   Confirmer & Marquer Récupéré (Point de Vente)
-                 </button>
-               </div>
-             )}
+            {(order.status as string) !== 'DELIVERED' && (
+              <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl space-y-2 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
+                    <Store className="size-4 text-emerald-600" />
+                    <span>Vente Directe / Point de Vente (Magasin)</span>
+                  </div>
+                  <span className="text-[9px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Retrait Magasin</span>
+                </div>
+                <p className="text-[11px] text-emerald-800 font-medium leading-tight">
+                  Le client est au magasin ou a retiré sa commande ? Confirmez et marquez-la comme récupérée direct.
+                </p>
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP')}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
+                >
+                  <CheckCircle2 className="size-4" />
+                  Confirmer & Marquer Récupéré (Point de Vente)
+                </button>
+              </div>
+            )}
             {order.status === 'ABANDONED' && (
               <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl text-[11px] text-violet-700 font-semibold leading-relaxed flex gap-2">
                 <AlertCircle className="size-4 shrink-0 text-violet-500 mt-0.5" />
@@ -1618,8 +1615,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           <div className="space-y-3">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
             <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
-              {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
-                <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); }}
+              {(order.status as string) !== 'DELIVERED' && (
+                <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP'); }}
                         className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-950 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1 cursor-pointer">
                   <span className="flex items-center gap-2">
                     <CheckCircle2 className="size-4 text-emerald-600" />
@@ -2306,11 +2303,12 @@ export default function AgentDashboard() {
   };
 
   const statusMutation = useMutation({
-    mutationFn: async ({ orderId, status, assigned_to, call_result }: { orderId: string; status?: string; assigned_to?: string; call_result?: string }) => {
+    mutationFn: async ({ orderId, status, assigned_to, call_result, delivery_type }: { orderId: string; status?: string; assigned_to?: string; call_result?: string; delivery_type?: string }) => {
       const payload: any = {};
       if (status) payload.status = status;
       if (assigned_to) payload.assigned_to = assigned_to;
       if (call_result) payload.call_result = call_result;
+      if (delivery_type) payload.delivery_type = delivery_type;
       
       // allStores: the order may belong to another of the agent's assigned stores
       // than the currently active one — the endpoint's own access check still applies.
@@ -2395,7 +2393,7 @@ export default function AgentDashboard() {
       {selectedOrder && <OrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onOrderUpdate={(updated) => {
             console.log("[DEBUG FRONTEND] Parent onOrderUpdate called. Old selectedOrder:", selectedOrder, "New updated:", updated);
             setSelectedOrder(updated);
-          }} currentUser={user} initialEdit={drawerInitialEdit} isPending={statusMutation.isPending || dispatchMutation.isPending} onStatusChange={(id, s, assignTo, callResult) => statusMutation.mutate({ orderId: id, status: s, assigned_to: assignTo, call_result: callResult })} onDispatch={(id) => dispatchMutation.mutate(id)} />}
+          }} currentUser={user} initialEdit={drawerInitialEdit} isPending={statusMutation.isPending || dispatchMutation.isPending} onStatusChange={(id, s, assignTo, callResult, delType) => statusMutation.mutate({ orderId: id, status: s, assigned_to: assignTo, call_result: callResult, delivery_type: delType })} onDispatch={(id) => dispatchMutation.mutate(id)} />}
 
       {/* Sidebar Overlay for Mobile */}
       {isMobile && !sidebarCollapsed && (
