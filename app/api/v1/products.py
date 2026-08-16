@@ -566,12 +566,10 @@ def update_product(
         if conflict:
             raise HTTPException(status_code=400, detail="Ce slug est déjà utilisé dans cette boutique.")
 
-    # Synchronize availability based on stock
+    # Synchronize active status based on stock
     avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
-    if avail > 0:
-        product.is_available = True
-    elif avail <= 0 and product.is_available:
-        product.is_available = False
+    if avail > 0 and not getattr(product, "is_active", True):
+        product.is_active = True
 
     db.add(product)
     db.commit()

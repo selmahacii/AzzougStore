@@ -93,7 +93,7 @@ def _serialize(
             "delivery_fees": p.delivery_fees,
             "stock": p.stock or 0,
             "reserved_stock": p.reserved_stock or 0,
-            "is_available": p.is_available if p.is_available is not None else (max(0, (p.stock or 0) - (p.reserved_stock or 0)) > 0),
+            "is_available": (max(0, (p.stock or 0) - (p.reserved_stock or 0)) > 0),
             "is_active": p.is_active,
         } if p else None,
         "store": {
@@ -415,7 +415,7 @@ def get_by_slug(
             if data.get("product"):
                 data["product"]["stock"] = live_p.stock or 0
                 data["product"]["reserved_stock"] = live_p.reserved_stock or 0
-                data["product"]["is_available"] = live_p.is_available if live_p.is_available is not None else (product_available > 0)
+                data["product"]["is_available"] = (product_available > 0)
                 data["product"]["is_active"] = live_p.is_active
                 data["product"]["variants"] = variants
 
