@@ -625,34 +625,36 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                              </Select>
                           </div>
                           <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Mode de Réception</label>
-                             <Select value={deliveryType} onValueChange={setDeliveryType}>
-                                <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
-                                   <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
-                                   <SelectItem value="home">Livraison à Domicile</SelectItem>
-                                   <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
-                                   <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
-                                </SelectContent>
-<div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Entreprise de Livraison *</label>
-                             <Select value={selectedPartnerId} onValueChange={setSelectedPartnerId}>
-                                <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
-                                   <SelectValue placeholder={deliveryPartnersQuery.isLoading ? "Chargement..." : "Choisir Transporteur"} />
-                                </SelectTrigger>
-                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[250px]">
-                                   {deliveryPartnersList.map((partner: any) => (
-                                      <SelectItem key={partner.id} value={partner.id} className="text-sm font-medium py-2">
-                                         {partner.name} {partner.carrier_id ? `(${partner.carrier_id.toUpperCase()})` : ''}
-                                      </SelectItem>
-                                   ))}
-                                   {deliveryPartnersList.length === 0 && (
-                                      <SelectItem value="none" disabled>Aucun livreur configuré pour cette boutique</SelectItem>
-                                   )}
-                                </SelectContent>
-                             </Select>
-                          </div>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Mode de Réception</label>
+                              <Select value={deliveryType} onValueChange={setDeliveryType}>
+                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
+                                    <SelectValue />
+                                 </SelectTrigger>
+                                 <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
+                                    <SelectItem value="home">Livraison à Domicile</SelectItem>
+                                    <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
+                                    <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
+                                 </SelectContent>
+                              </Select>
+                           </div>
+                           <div className="space-y-3">
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Entreprise de Livraison *</label>
+                              <Select value={selectedPartnerId} onValueChange={setSelectedPartnerId}>
+                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
+                                    <SelectValue placeholder={deliveryPartnersQuery.isLoading ? "Chargement..." : "Choisir Transporteur"} />
+                                 </SelectTrigger>
+                                 <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[250px]">
+                                    {deliveryPartnersList.map((partner: any) => (
+                                       <SelectItem key={partner.id} value={partner.id} className="text-sm font-medium py-2">
+                                          {partner.name} {partner.carrier_id ? `(${partner.carrier_id.toUpperCase()})` : ''}
+                                       </SelectItem>
+                                    ))}
+                                    {deliveryPartnersList.length === 0 && (
+                                       <SelectItem value="none" disabled>Aucun livreur configuré pour cette boutique</SelectItem>
+                                    )}
+                                 </SelectContent>
+                              </Select>
+                           </div>
                         </div>
 
                         {deliveryType === 'stop_desk' && (
@@ -689,8 +691,8 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                               />
                             </div>
                           </div>
-                        )}                      </div>
-                    </div>
+                        )}
+                     </div>
                  </div>
               </div>
             </div>

@@ -1138,9 +1138,9 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       <button
                         type="button"
                         disabled={
-                          !upsellProductId ||
+                          Boolean(!upsellProductId ||
                           (upsellColorVariants.length > 0 && !selectedUpsellColor) ||
-                          (selectedUpsellColor && upsellSizeVariants.length > 0 && !selectedUpsellSize)
+                          (selectedUpsellColor && upsellSizeVariants.length > 0 && !selectedUpsellSize))
                         }
                         onClick={() => {
                           if (!selectedUpsellProduct) return;
