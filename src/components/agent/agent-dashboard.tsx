@@ -361,15 +361,29 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
                 de confirmer un panier abandonné récupéré au téléphone (le cas
                 d'usage même du module Paniers Abandonnés) — l'exclure ici
                 l'empêchait de dispatcher la commande qu'elle vient de sauver. */}
-            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED'].includes(order.status) && onStatusChange && (
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => onStatusChange(order.id, 'CONFIRMED')}
-                className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50"
-              >
-                ✓ Confirmer la commande maintenant
-              </button>
+            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status) && onStatusChange && (
+              <div className="space-y-2">
+                {order.status !== 'CONFIRMED' && (
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => onStatusChange(order.id, 'CONFIRMED')}
+                    className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    ✓ Confirmer la commande maintenant
+                  </button>
+                )}
+                {order.delivery_type === 'STORE_PICKUP' && order.status !== 'DELIVERED' && (
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => onStatusChange(order.id, 'DELIVERED')}
+                    className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    🏪 Confirmer & Récupéré (Point de Vente)
+                  </button>
+                )}
+              </div>
             )}
           </div>
         ) : order.carrier_id ? (
@@ -1565,6 +1579,16 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
             <div className="space-y-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
               <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
+                {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
+                  <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); }}
+                          className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-900 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1">
+                    <span className="flex items-center gap-2">
+                      <CheckCircle2 className="size-4 text-emerald-600" />
+                      Confirmer & Récupéré (Point de Vente)
+                    </span>
+                    <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Récupéré</span>
+                  </button>
+                )}
                 {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
                   <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, 'NRP'); }}
                           className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">

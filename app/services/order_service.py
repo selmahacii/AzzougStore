@@ -44,22 +44,17 @@ logger = logging.getLogger("app.order_service")
 
 # Valid (from, to) status transitions
 _VALID_TRANSITIONS: dict[str, list[str]] = {
-    "NEW":         ["ASSIGNED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED"],
-    "ASSIGNED":    ["CALLED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED", "RESCHEDULED"],
-    "CALLED":      ["CONFIRMED", "NEW", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
-    "IN_PROGRESS": ["CONFIRMED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS"],
-    "RESCHEDULED": ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
-    "CONFIRMED":   ["SHIPPED", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
-    # RESCHEDULED: an internal-delivery driver postpones ("Reportée" — client
-    # absent, re-livraison demain) and the order returns to the confirmation
-    # pipeline instead of being forced into a terminal outcome.
+    "NEW":         ["ASSIGNED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED", "DELIVERED"],
+    "ASSIGNED":    ["CALLED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED", "RESCHEDULED", "DELIVERED"],
+    "CALLED":      ["CONFIRMED", "NEW", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
+    "IN_PROGRESS": ["CONFIRMED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS", "DELIVERED"],
+    "RESCHEDULED": ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
+    "CONFIRMED":   ["SHIPPED", "DELIVERED", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
     "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED"],
     "DELIVERED":   ["RETURNED"],
     "RETURNED":    [],
-    # A confirmatrice can reopen a cancelled order (edit it) or confirm it
-    # directly after winning the client back on a later call.
-    "CANCELLED":   ["IN_PROGRESS", "CONFIRMED"],
-    "ABANDONED":   ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
+    "CANCELLED":   ["IN_PROGRESS", "CONFIRMED", "DELIVERED"],
+    "ABANDONED":   ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
 }
 
 # States from which stock was already physically deducted
