@@ -1197,6 +1197,7 @@ class OrderService:
             db.add(promo)
 
         desired_status = order_data.pop("status", None) or initial_status
+        valid_order_cols = {c.name for c in Order.__table__.columns}
 
         order = Order(
             id=str(uuid.uuid4()),
@@ -1205,7 +1206,7 @@ class OrderService:
             status=desired_status,
             assigned_to=explicit_agent,
             livreur_id=resolved_courier_id,
-            **{k: v for k, v in order_data.items() if k not in ("assigned_to", "livreur_id", "status", "id", "order_number", "store_sequence_number")},
+            **{k: v for k, v in order_data.items() if k in valid_order_cols and k not in ("assigned_to", "livreur_id", "status", "id", "order_number", "store_sequence_number")},
         )
         db.add(order)
         db.flush()  # Get ID without committing

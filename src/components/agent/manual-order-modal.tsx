@@ -355,7 +355,6 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
               subtotal: lineTotal || 0,
               discount: orderDiscount || 0,
               total: total,
-              total_amount: total,
               items: finalLines.map(lineToItem),
               status: 'CONFIRMED',
               source: orderSource || 'MANUAL',
