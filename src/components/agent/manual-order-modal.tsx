@@ -128,7 +128,22 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     enabled: isOpen && !!effectiveStoreId,
     queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${effectiveStoreId}`),
   });
-    useEffect(() => {
+
+  const deliveryPartnersList: any[] = Array.isArray(deliveryPartnersQuery.data)
+    ? deliveryPartnersQuery.data
+    : (deliveryPartnersQuery.data?.data || deliveryPartnersQuery.data?.partners || []);
+
+  useEffect(() => {
+    if (!selectedPartnerId && deliveryPartnersList.length > 0) {
+      setSelectedPartnerId(deliveryPartnersList[0].id);
+    }
+  }, [deliveryPartnersList, selectedPartnerId]);
+
+  useEffect(() => {
+    if (deliveryType === 'STORE_PICKUP') {
+      setDeliveryFee(0);
+      return;
+    }
     if (!selectedPartnerId || !orderWilaya) return;
     const fetchFee = async () => {
       try {
@@ -136,11 +151,12 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
           [selectedOrderProduct?.id, ...orderLines.map(l => l.product_id)].filter(Boolean)
         )).join(',');
         const res = await apiFetch<any>(
-          `/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${orderWilaya}&type=${deliveryType}&productIds=${pId}`
+          `/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${encodeURIComponent(orderWilaya)}&type=${deliveryType}&productIds=${pId}`
         );
-        if (res?.success && typeof res?.data?.fee === 'number') {
-          setDeliveryFee(res.data.fee);
-          toast.success(`Tarif de livraison mis à jour : ${res.data.fee} DA`);
+        const fee = typeof res?.fee === 'number' ? res.fee : (typeof res?.data?.fee === 'number' ? res.data.fee : null);
+        if (fee !== null) {
+          setDeliveryFee(fee);
+          toast.success(`Frais de livraison calculés : ${fee} DA`);
         }
       } catch (error) {
         console.error('Error fetching shipping fee:', error);
@@ -609,13 +625,13 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                    <SelectValue placeholder={deliveryPartnersQuery.isLoading ? "Chargement..." : "Choisir Transporteur"} />
                                 </SelectTrigger>
                                 <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[250px]">
-                                   {deliveryPartnersQuery.data?.data?.map((partner: any) => (
+                                   {deliveryPartnersList.map((partner: any) => (
                                       <SelectItem key={partner.id} value={partner.id} className="text-sm font-medium py-2">
-                                         {partner.name} ({partner.carrier_id.toUpperCase()})
+                                         {partner.name} {partner.carrier_id ? `(${partner.carrier_id.toUpperCase()})` : ''}
                                       </SelectItem>
                                    ))}
-                                   {(!deliveryPartnersQuery.data?.data || deliveryPartnersQuery.data.data.length === 0) && (
-                                      <SelectItem value="none" disabled>Aucun livreur configuré</SelectItem>
+                                   {deliveryPartnersList.length === 0 && (
+                                      <SelectItem value="none" disabled>Aucun livreur configuré pour cette boutique</SelectItem>
                                    )}
                                 </SelectContent>
                              </Select>
