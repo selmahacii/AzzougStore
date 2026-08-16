@@ -121,60 +121,28 @@ def run_db_migrations():
     from app.db.session import engine
     from sqlalchemy import text
 
-    # Bracketing prints around the very first DB connection attempt — if the
-    # container hangs at startup, these pin down whether it's stuck waking
-    # Neon's compute (nothing printed after "Connecting") vs stuck later in
-    # one of the backfill queries below.
     print("[START] Connecting to database for startup migrations...")
 
-    # One information_schema round-trip instead of blindly firing ALTER TABLE
-    # statements (DDL) at every container boot — each failed ALTER still costs
-    # a network round-trip and wakes the database compute.
-    try:
-        with engine.begin() as conn:
-            existing = {
-                (r[0], r[1]) for r in conn.execute(text(
-                    "SELECT table_name, column_name FROM information_schema.columns "
-                    "WHERE table_schema = 'public' AND (table_name, column_name) IN "
-                    "(('landing_pages','offers'), ('landing_pages','banner_image_url'), ('products','delivery_fees'), "
-                    "('users','permissions'), ('users','module_visibility'), ('users','payment_store_pickup'), "
-                    "('users','payment_recovered_store_pickup'), ('orders','commission_store_pickup_rate'), "
-                    "('orders','commission_recovered_store_pickup_rate'))"
-                ))
-            }
-            if ("landing_pages", "offers") not in existing:
-                conn.execute(text("ALTER TABLE landing_pages ADD COLUMN offers JSONB"))
-                print("[OK] landing_pages: added offers column")
-            if ("landing_pages", "banner_image_url") not in existing:
-                conn.execute(text("ALTER TABLE landing_pages ADD COLUMN banner_image_url VARCHAR"))
-                print("[OK] landing_pages: added banner_image_url column")
-            if ("products", "delivery_fees") not in existing:
-                conn.execute(text("ALTER TABLE products ADD COLUMN delivery_fees JSONB"))
-                print("[OK] products: added delivery_fees column")
-            if ("users", "permissions") not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN permissions JSONB DEFAULT '[]'::jsonb"))
-                print("[OK] users: added permissions column")
-            if ("users", "module_visibility") not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN module_visibility JSONB DEFAULT '{}'::jsonb"))
-                print("[OK] users: added module_visibility column")
-            if ("users", "payment_store_pickup") not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN payment_store_pickup INTEGER DEFAULT 100"))
-                print("[OK] users: added payment_store_pickup column")
-            if ("users", "payment_recovered_store_pickup") not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN payment_recovered_store_pickup INTEGER DEFAULT 150"))
-                print("[OK] users: added payment_recovered_store_pickup column")
-            if ("orders", "commission_store_pickup_rate") not in existing:
-                conn.execute(text("ALTER TABLE orders ADD COLUMN commission_store_pickup_rate INTEGER"))
-                print("[OK] orders: added commission_store_pickup_rate column")
-            if ("orders", "commission_recovered_store_pickup_rate") not in existing:
-                conn.execute(text("ALTER TABLE orders ADD COLUMN commission_recovered_store_pickup_rate INTEGER"))
-                print("[OK] orders: added commission_recovered_store_pickup_rate column")
-    except Exception as e:
-        print(f"[WARN] Startup column check failed: {e}")
+    statements = [
+        "ALTER TABLE landing_pages ADD COLUMN IF NOT EXISTS offers JSONB",
+        "ALTER TABLE landing_pages ADD COLUMN IF NOT EXISTS banner_image_url VARCHAR",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery_fees JSONB",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '[]'::jsonb",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS module_visibility JSONB DEFAULT '{}'::jsonb",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_store_pickup INTEGER DEFAULT 100",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS payment_recovered_store_pickup INTEGER DEFAULT 150",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_store_pickup_rate INTEGER",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_recovered_store_pickup_rate INTEGER",
+    ]
 
-    # store_sequence_number backfill: handled by the single SQL UPDATE in
-    # create_initial_superadmin (one statement, set-based) — the old per-order
-    # Python loop (1 MAX + 1 COMMIT per row) was removed.
+    for stmt in statements:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(stmt))
+            print(f"[OK] Migration statement executed: {stmt}")
+        except Exception as e:
+            print(f"[WARN] Migration statement failed ({stmt}): {e}")
+
     print("[OK] Startup migrations finished — database connection is live.")
 
 def _acquire_scheduler_leader_lock() -> bool:
