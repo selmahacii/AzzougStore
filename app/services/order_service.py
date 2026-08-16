@@ -1196,14 +1196,16 @@ class OrderService:
             promo.used_count += 1
             db.add(promo)
 
+        desired_status = order_data.pop("status", None) or initial_status
+
         order = Order(
             id=str(uuid.uuid4()),
             order_number=order_number,
             store_sequence_number=store_sequence_number,
-            status=initial_status,
+            status=desired_status,
             assigned_to=explicit_agent,
             livreur_id=resolved_courier_id,
-            **{k: v for k, v in order_data.items() if k not in ("assigned_to", "livreur_id")},
+            **{k: v for k, v in order_data.items() if k not in ("assigned_to", "livreur_id", "status", "id", "order_number", "store_sequence_number")},
         )
         db.add(order)
         db.flush()  # Get ID without committing
