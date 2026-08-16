@@ -1615,46 +1615,44 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
             </>
           )}
 
-          {cfg.next.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
-              <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
-                {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
-                  <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); }}
-                          className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-900 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1">
-                    <span className="flex items-center gap-2">
-                      <CheckCircle2 className="size-4 text-emerald-600" />
-                      Confirmer & Récupéré (Point de Vente)
-                    </span>
-                    <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Récupéré</span>
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
+            <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
+              {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
+                <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); }}
+                        className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-950 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1 cursor-pointer">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="size-4 text-emerald-600" />
+                    Confirmer & Récupéré (Point de Vente)
+                  </span>
+                  <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Récupéré</span>
+                </button>
+              )}
+              {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
+                <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, 'NRP'); }}
+                        className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
+                  <span>Signaler Ne Répond Pas (NRP)</span>
+                  <Phone className="size-4" />
+                </button>
+              )}
+              {cfg.next?.map(ns => {
+                const isShippedWithoutTracking = ns === 'SHIPPED' && !order.tracking_number && order.carrier_id;
+                return (
+                  <button key={ns} onClick={() => { 
+                    if (isShippedWithoutTracking && onDispatch) {
+                      onDispatch(order.id);
+                    } else {
+                      onStatusChange(order.id, ns, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); 
+                    }
+                  }}
+                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
+                    <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
+                    <ChevronRight className="size-4 text-slate-300" />
                   </button>
-                )}
-                {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
-                  <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, 'NRP'); }}
-                          className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
-                    <span>Signaler Ne Répond Pas (NRP)</span>
-                    <Phone className="size-4" />
-                  </button>
-                )}
-                {cfg.next.map(ns => {
-                  const isShippedWithoutTracking = ns === 'SHIPPED' && !order.tracking_number && order.carrier_id;
-                  return (
-                    <button key={ns} onClick={() => { 
-                      if (isShippedWithoutTracking && onDispatch) {
-                        onDispatch(order.id);
-                      } else {
-                        onStatusChange(order.id, ns, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); 
-                      }
-                    }}
-                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
-                      <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
-                      <ChevronRight className="size-4 text-slate-300" />
-                    </button>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
           {/* Traçabilité / Historique des actions */}
           <div className="space-y-3 pt-4 border-t">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
