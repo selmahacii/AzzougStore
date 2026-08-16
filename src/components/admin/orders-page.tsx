@@ -3050,6 +3050,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
                                   <SelectItem value="home">Livraison à Domicile</SelectItem>
                                   <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
+                                  <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
                                </SelectContent>
                             </Select>
                          </div>
@@ -3286,6 +3287,7 @@ const [timeLeft, setTimeLeft] = useState('');
                   >
                     <option value="home">Livraison à Domicile</option>
                     <option value="stop_desk">Stop Desk (Bureau)</option>
+                    <option value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</option>
                   </select>
                 </div>
                 <div className="space-y-2">

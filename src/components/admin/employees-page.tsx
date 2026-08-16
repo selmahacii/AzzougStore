@@ -2212,6 +2212,10 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const cancelled = stats.cancelled_count ?? 0;
    const returned = stats.returned_count ?? 0;
    const total_assigned = stats.total_assigned ?? 0;
+   const storePickupCount = stats.store_pickup_delivered_count ?? 0;
+   const recoveredStorePickupCount = stats.recovered_store_pickup_delivered_count ?? 0;
+   const paymentStorePickup = stats.payment_store_pickup ?? employee?.payment_store_pickup ?? 100;
+   const paymentRecoveredStorePickup = stats.payment_recovered_store_pickup ?? employee?.payment_recovered_store_pickup ?? 150;
 
    const computedSalary = stats.salary ?? (
      paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount
@@ -2295,7 +2299,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         </div>
                      )}
             {/* Stats grid */}
-                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {[
                            { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
                            { label: 'Confirmées', value: confirmed, color: '#20bf6b' },

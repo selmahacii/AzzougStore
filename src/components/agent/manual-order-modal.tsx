@@ -560,6 +560,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                 <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
                                    <SelectItem value="home">Livraison à Domicile</SelectItem>
                                    <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
+                                   <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
                                 </SelectContent>
                              </Select>
                           </div>

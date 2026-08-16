@@ -1713,6 +1713,11 @@ function SalaryView({ perf, user }: any) {
   const marketplaceDeliveredCount = stats.marketplace_delivered_count ?? 0;
   const marketplaceBonus = stats.marketplace_bonus ?? 0;
   const paymentMarketplace = 50; // Typically fixed, though we could read it if we send it in stats
+
+  const storePickupCount = stats.store_pickup_delivered_count ?? 0;
+  const recoveredStorePickupCount = stats.recovered_store_pickup_delivered_count ?? 0;
+  const paymentStorePickup = stats.payment_store_pickup ?? user?.payment_store_pickup ?? 100;
+  const paymentRecoveredStorePickup = stats.payment_recovered_store_pickup ?? user?.payment_recovered_store_pickup ?? 150;
   
   const totalSalary = stats.salary ?? 0;
 
@@ -1732,14 +1737,12 @@ function SalaryView({ perf, user }: any) {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-       {/* High Level Stats Grid — chaque badge demandé (paniers abandonnés
-           récupérés, livrées, annulées, retours, upsell) est maintenant
-           visible ; les données existaient déjà côté backend
-           (get_user_performance) mais n'étaient pas toutes rendues ici. */}
-       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+       {/* High Level Stats Grid */}
+       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
             { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50' },
             { label: 'Livraisons', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50' },
+            { label: 'Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50' },
             { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50' },
             { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50' },
             { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50' },
@@ -1771,6 +1774,33 @@ function SalaryView({ perf, user }: any) {
                    <span className="text-sm font-bold text-slate-800">{formatPrice(baseSalaryVal)}</span>
                 </div>
 
+                {/* Retrait Point de Vente breakdown */}
+                {(storePickupCount > 0 || recoveredStorePickupCount > 0) && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">
+                         🏪 Retrait Point de Vente / Magasin
+                      </p>
+                      {storePickupCount > 0 && (
+                         <div className="flex items-center justify-between text-xs">
+                            <div className="space-y-0.5">
+                               <p className="font-bold text-slate-700">Retrait Magasin Normal</p>
+                               <p className="text-[10px] text-slate-400">{storePickupCount} retrait{storePickupCount > 1 ? 's' : ''} × {formatPrice(paymentStorePickup)}</p>
+                            </div>
+                            <span className="font-bold text-indigo-600">+{formatPrice(storePickupCount * paymentStorePickup)}</span>
+                         </div>
+                      )}
+                      {recoveredStorePickupCount > 0 && (
+                         <div className="flex items-center justify-between text-xs">
+                            <div className="space-y-0.5">
+                               <p className="font-bold text-slate-700">Retrait Magasin Panier Récupéré</p>
+                               <p className="text-[10px] text-slate-400">{recoveredStorePickupCount} retrait{recoveredStorePickupCount > 1 ? 's' : ''} × {formatPrice(paymentRecoveredStorePickup)}</p>
+                            </div>
+                            <span className="font-bold text-indigo-600">+{formatPrice(recoveredStorePickupCount * paymentRecoveredStorePickup)}</span>
+                         </div>
+                      )}
+                   </div>
+                )}
+
                 {/* Abandoned Cart Recovery breakdown */}
                 {paymentRecovered > 0 && (
                    <div className="border-t pt-4 space-y-3">
@@ -1787,8 +1817,7 @@ function SalaryView({ perf, user }: any) {
                    </div>
                 )}
 
-                {/* Returns penalty breakdown — computed backend-side
-                    (returned_penalty) but never rendered anywhere before. */}
+                {/* Returns penalty breakdown */}
                 {lostCount > 0 && (
                    <div className="border-t pt-4 space-y-3">
                       <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">
@@ -1804,9 +1833,7 @@ function SalaryView({ perf, user }: any) {
                    </div>
                 )}
 
-                {/* Upsell bonus breakdown — flat bonus per DELIVERED order
-                    flagged is_upsell, on top of the normal/recovery
-                    commission that same order already earns. */}
+                {/* Upsell bonus breakdown */}
                 {upsellDeliveredCount > 0 && (
                    <div className="border-t pt-4 space-y-3">
                       <p className="text-[10px] font-black uppercase text-amber-600 tracking-wider">
