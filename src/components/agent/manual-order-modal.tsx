@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft, X } from 'lucide-react';
+import { Loader2, Package, Search, CheckCircle, MapPin, AlertCircle, ShoppingCart, ArrowRightLeft, X, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -18,6 +18,7 @@ import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
+import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 
 export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boolean, setIsOpen: (v: boolean) => void, onSuccess?: () => void }) {
   const { activeStore, user, allStores } = useAppStore();
@@ -42,6 +43,8 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryType, setDeliveryType] = useState('home');
+  const [selectedBureauCode, setSelectedBureauCode] = useState('');
+  const [customBureauName, setCustomBureauName] = useState('');
 
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [isPack, setIsPack] = useState(false);
@@ -82,8 +85,14 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
       setOrderPrice(0);
       setOrderDiscount(0);
       setDuplicateWarning(null);
+      setSelectedBureauCode('');
+      setCustomBureauName('');
     }
   }, [isOpen, activeStore, user, allStores]);
+
+  const matchedWilayaId = orderWilaya ? WILAYAS.indexOf(orderWilaya as any) + 1 : null;
+  const availableBureaux = matchedWilayaId ? NOEST_BUREAUX.filter(b => b.wilayaId === matchedWilayaId) : [];
+  const matchedBureauObj = availableBureaux.find(b => b.code === selectedBureauCode);
 
   const colorVariants = selectedOrderProduct?.variants || [];
   const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColor);
@@ -323,13 +332,23 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
             const lineTotal = finalLines.reduce((acc, l) => acc + l.quantity * l.unit_price, 0);
             const total = Math.max(0, lineTotal + deliveryFee - orderDiscount);
 
+            const bureauInfoText = matchedBureauObj
+              ? `Bureau ${matchedBureauObj.code} - ${matchedBureauObj.name} (${matchedBureauObj.address})`
+              : (customBureauName ? `Bureau ${customBureauName}` : '');
+
+            const addressParts = deliveryType === 'stop_desk'
+              ? [bureauInfoText, commune, address].filter(Boolean)
+              : [commune, address].filter(Boolean);
+
+            const customerAddress = addressParts.join(', ') || orderWilaya || 'Algérie';
+
             const payload = {
               store_id: effectiveStoreId,
               customer_name: rawName || 'Client',
               customer_phone: rawPhone,
               customer_wilaya: orderWilaya || 'Alger',
               customer_commune: commune || undefined,
-              customer_address: [commune, address].filter(Boolean).join(', ') || orderWilaya || 'Algérie',
+              customer_address: customerAddress,
               notes: (formData.get('notes') as string)?.trim() || undefined,
               delivery_type: (deliveryType || 'HOME').toUpperCase(),
               delivery_fee: deliveryFee || 0,
@@ -616,9 +635,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                    <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
                                    <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
                                 </SelectContent>
-                             </Select>
-                          </div>
-                          <div className="space-y-3">
+<div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Entreprise de Livraison *</label>
                              <Select value={selectedPartnerId} onValueChange={setSelectedPartnerId}>
                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
@@ -636,7 +653,43 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                 </SelectContent>
                              </Select>
                           </div>
-                       </div>
+                        </div>
+
+                        {deliveryType === 'stop_desk' && (
+                          <div className="space-y-4 p-4 bg-amber-50/70 border border-amber-200 rounded-2xl animate-in fade-in duration-200 mt-4">
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                                <Building2 className="size-4 text-amber-600" />
+                                Bureau / Stop Desk de Destination *
+                              </label>
+                              <Select value={selectedBureauCode} onValueChange={setSelectedBureauCode}>
+                                <SelectTrigger className="bg-white border-amber-200 text-slate-800 text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4">
+                                  <SelectValue placeholder={!orderWilaya ? "Choisissez d'abord une Wilaya..." : (availableBureaux.length === 0 ? "Aucun bureau pré-enregistré pour cette wilaya" : "Sélectionner un bureau disponible dans cette wilaya...")} />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white border-amber-200 text-slate-800 rounded-xl max-h-[250px]">
+                                  {availableBureaux.map((b) => (
+                                    <SelectItem key={b.code} value={b.code} className="text-xs font-bold py-2">
+                                      {b.code} — {b.name} ({b.address})
+                                    </SelectItem>
+                                  ))}
+                                  {availableBureaux.length === 0 && (
+                                    <SelectItem value="none" disabled>Précisez le bureau manuellement ci-dessous</SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[9px] font-bold text-amber-800 uppercase">Ou Saisissez le Nom/Code du Bureau Manuellement</label>
+                              <Input
+                                value={customBureauName}
+                                onChange={(e) => setCustomBureauName(e.target.value)}
+                                placeholder="Ex: Bureau Yalidine 05A, StopDesk Barika..."
+                                className="bg-white border-amber-200 text-slate-800 text-xs font-semibold h-11 rounded-xl px-4"
+                              />
+                            </div>
+                          </div>
+                        )}                      </div>
                     </div>
                  </div>
               </div>
