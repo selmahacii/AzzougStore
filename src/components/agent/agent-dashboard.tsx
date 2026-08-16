@@ -434,7 +434,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
   );
 }
 
-function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
+function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
   const cfg = STATUS_CFG[order.status] ?? { next: [] };
   const queryClient = useQueryClient();
   const storeId = order.store_id;
