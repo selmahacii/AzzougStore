@@ -332,6 +332,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
     onError: (err: any) => toast.error(err.message || "Erreur lors de l'assignation du livreur"),
   });
 
+  const current = livreurs.find((l: any) => l.id === order.livreur_id);
   const hasCarrierParcel = !!order.tracking_number;
 
   return (
