@@ -571,19 +571,28 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // so the order gets flagged is_upsell only when that really happened.
   const originalProductIds = useState(() => new Set((order.items || []).map((i: any) => i.product_id)))[0];
   const [upsellProductId, setUpsellProductId] = useState('');
+  const [selectedUpsellColor, setSelectedUpsellColor] = useState('');
+  const [selectedUpsellSize, setSelectedUpsellSize] = useState('');
   const [isCheckingStock, setIsCheckingStock] = useState(false);
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
-    // upsell_only=true : cette liste alimente UNIQUEMENT le sélecteur
-    // upsell ci-dessous — c'est le seul endroit où les produits upsell
-    // indépendants (créés par l'admin, jamais affichés sur le site) doivent
-    // apparaître, et RIEN d'autre du catalogue ne doit s'y mélanger.
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&include_upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
   });
   const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
     (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
   );
+
+  const selectedUpsellProduct = upsellCandidates.find((c: any) => c.id === upsellProductId);
+  const upsellColorVariants = selectedUpsellProduct?.variants || [];
+  const selectedUpsellColorVar = upsellColorVariants.find((v: any) => v.value === selectedUpsellColor);
+  const upsellSizeVariants = selectedUpsellColorVar?.sub_variants || [];
+
+  const matchedUpsellSubVar = selectedUpsellSize ? upsellSizeVariants.find((sv: any) => sv.value === selectedUpsellSize) : null;
+  const effectiveUpsellVariant = matchedUpsellSubVar || (selectedUpsellColorVar && upsellSizeVariants.length === 0 ? selectedUpsellColorVar : null);
+  const upsellVariantAvailable = effectiveUpsellVariant
+    ? Number(effectiveUpsellVariant.stock || 0) - Number(effectiveUpsellVariant.reserved || 0)
+    : (!upsellColorVariants.length ? Number(selectedUpsellProduct?.stock || 0) - Number(selectedUpsellProduct?.reserved_stock || 0) : null);
 
   // Only reset editData when the ORDER ID changes (i.e. drawer opened for a different order)
   // NOT when the order object is updated after a successful save (would erase local edits)
@@ -1110,40 +1119,118 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   </div>
 
                   {/* Upsell: add a different existing product to this order */}
-                  <div className="flex items-center gap-2 p-2 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                    <select
-                      value={upsellProductId}
-                      onChange={(e) => setUpsellProductId(e.target.value)}
-                      className="flex-1 text-xs p-1.5 h-8 border rounded bg-white font-bold text-slate-700"
-                    >
-                      <option value="">🎁 Ajouter un produit existant (Upsell)...</option>
-                      {upsellCandidates.map((p: any) => (
-                        <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price)}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={!upsellProductId}
-                      onClick={() => {
-                        const p = upsellCandidates.find((c: any) => c.id === upsellProductId);
-                        if (!p) return;
-                        const newItem = {
-                          id: 'new-' + Date.now(),
-                          product_id: p.id,
-                          product_name: p.name,
-                          sku: p.sku || '',
-                          quantity: 1,
-                          unit_price: p.price,
-                          variant_details: {},
-                          image_url: p.main_image || ''
-                        };
-                        setEditData({ ...editData, items: [...editData.items, newItem] });
-                        setUpsellProductId('');
-                      }}
-                      className="h-8 px-3 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0"
-                    >
-                      Ajouter
-                    </button>
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-2.5 shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={upsellProductId}
+                        onChange={(e) => {
+                          setUpsellProductId(e.target.value);
+                          setSelectedUpsellColor('');
+                          setSelectedUpsellSize('');
+                        }}
+                        className="flex-1 text-xs p-1.5 h-9 border rounded-lg bg-white font-bold text-slate-700 shadow-sm"
+                      >
+                        <option value="">🎁 Ajouter un produit existant (Upsell)...</option>
+                        {upsellCandidates.map((p: any) => (
+                          <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price)}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={
+                          !upsellProductId ||
+                          (upsellColorVariants.length > 0 && !selectedUpsellColor) ||
+                          (selectedUpsellColor && upsellSizeVariants.length > 0 && !selectedUpsellSize)
+                        }
+                        onClick={() => {
+                          if (!selectedUpsellProduct) return;
+                          const variantDetails: Record<string, string> = {};
+                          if (selectedUpsellColor) {
+                            variantDetails['Couleur'] = selectedUpsellColor;
+                            variantDetails['Color'] = selectedUpsellColor;
+                          }
+                          if (selectedUpsellSize) {
+                            variantDetails['Taille'] = selectedUpsellSize;
+                            variantDetails['Size'] = selectedUpsellSize;
+                          }
+                          if (selectedUpsellColor || selectedUpsellSize) {
+                            variantDetails['variant'] = [selectedUpsellColor, selectedUpsellSize].filter(Boolean).join(' / ');
+                          }
+
+                          const priceMod = selectedUpsellSize
+                            ? (upsellSizeVariants.find((sv: any) => sv.value === selectedUpsellSize)?.priceModifier ?? 0)
+                            : (selectedUpsellColorVar?.priceModifier ?? 0);
+
+                          const itemSku = selectedUpsellSize
+                            ? (upsellSizeVariants.find((sv: any) => sv.value === selectedUpsellSize)?.sku || selectedUpsellColorVar?.sku || selectedUpsellProduct.sku)
+                            : (selectedUpsellColorVar?.sku || selectedUpsellProduct.sku);
+
+                          const newItem = {
+                            id: 'new-' + Date.now(),
+                            product_id: selectedUpsellProduct.id,
+                            product_name: selectedUpsellProduct.name,
+                            sku: itemSku || '',
+                            quantity: 1,
+                            unit_price: (selectedUpsellProduct.price ?? 0) + priceMod,
+                            variant_details: variantDetails,
+                            image_url: selectedUpsellColorVar?.image || selectedUpsellProduct.main_image || ''
+                          };
+
+                          setEditData({ ...editData, items: [...editData.items, newItem] });
+                          setUpsellProductId('');
+                          setSelectedUpsellColor('');
+                          setSelectedUpsellSize('');
+                        }}
+                        className="h-9 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-40 shrink-0 shadow-sm cursor-pointer"
+                      >
+                        + Ajouter Upsell
+                      </button>
+                    </div>
+
+                    {/* Variant selectors for selected upsell product */}
+                    {selectedUpsellProduct && upsellColorVariants.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-200/60">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider">Couleur / Modèle *</span>
+                          <select
+                            value={selectedUpsellColor}
+                            onChange={(e) => {
+                              setSelectedUpsellColor(e.target.value);
+                              setSelectedUpsellSize('');
+                            }}
+                            className="w-full text-xs p-1.5 h-8 border rounded-lg bg-white font-bold text-slate-800"
+                          >
+                            <option value="">-- Choisir Couleur --</option>
+                            {upsellColorVariants.map((v: any, i: number) => (
+                              <option key={i} value={v.value}>{v.value}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider">Taille / Option</span>
+                          <select
+                            value={selectedUpsellSize}
+                            disabled={!selectedUpsellColor || upsellSizeVariants.length === 0}
+                            onChange={(e) => setSelectedUpsellSize(e.target.value)}
+                            className="w-full text-xs p-1.5 h-8 border rounded-lg bg-white font-bold text-slate-800 disabled:opacity-50"
+                          >
+                            <option value="">{upsellSizeVariants.length > 0 ? "-- Choisir Taille --" : "-- Aucune sub-variante --"}</option>
+                            {upsellSizeVariants.map((sv: any, i: number) => (
+                              <option key={i} value={sv.value}>{sv.value}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {upsellVariantAvailable !== null && (
+                          <div className="col-span-2 flex items-center justify-between text-[10px] font-bold px-1 pt-1">
+                            <span className={upsellVariantAvailable > 0 ? "text-emerald-700" : "text-rose-600 font-black"}>
+                              {upsellVariantAvailable > 0 ? `✓ Stock disponible : ${upsellVariantAvailable}` : `⚠️ Variante épuisée (0 en stock)`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2.5">
