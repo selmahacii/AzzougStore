@@ -556,6 +556,8 @@ def update_product(
     if _is_confirmateur and not product.is_upsell_only:
         raise HTTPException(status_code=403, detail="La confirmatrice ne peut modifier que les produits upsell indépendants.")
 
+    from sqlalchemy.orm.attributes import flag_modified
+
     update_data = product_in.model_dump(exclude_unset=True)
 
     # Validate slug uniqueness if changed
@@ -567,6 +569,15 @@ def update_product(
         ).first()
         if conflict:
             raise HTTPException(status_code=400, detail="Ce slug est déjà utilisé dans cette boutique.")
+
+    # Apply all updated attributes onto product model instance
+    valid_cols = {c.name for c in Product.__table__.columns}
+    json_fields = {"variants", "images", "tags", "pack_items", "pack_charges", "pack_options", "allowed_carriers", "prod_custom_charges", "delivery_fees"}
+    for field, val in update_data.items():
+        if field in valid_cols and field not in ("id", "created_at", "updated_at"):
+            setattr(product, field, val)
+            if field in json_fields:
+                flag_modified(product, field)
 
     # Synchronize active status based on stock
     avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
