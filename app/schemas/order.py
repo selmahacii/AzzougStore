@@ -11,6 +11,7 @@ class OrderItemBase(BaseModel):
     unit_price: float      # accept float from storefront, stored as int in DB
     image_url: Optional[str] = None
     variant_details: Optional[dict] = None
+    sku: Optional[str] = None
 
     @field_validator('variant_details', mode='before')
     @classmethod
@@ -46,7 +47,9 @@ class OrderCreate(BaseModel):
     subtotal:   float
     discount:   float = 0
     total:      float
+    total_amount: Optional[float] = None
     promo_code: Optional[str] = None
+    status:     Optional[str] = None
     source:     Optional[str] = None
     notes:      Optional[str] = None
     items:      List[OrderItemBase]

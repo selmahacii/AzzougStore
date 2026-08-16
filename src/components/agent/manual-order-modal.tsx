@@ -300,26 +300,30 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
               return;
             }
 
-            const commune = (formData.get('commune') as string) || '';
-            const address = (formData.get('address') as string) || '';
+            const rawName = (formData.get('customer_name') as string)?.trim();
+            const rawPhone = (formData.get('customer_phone') as string)?.trim();
+            const commune = (formData.get('commune') as string)?.trim() || '';
+            const address = (formData.get('address') as string)?.trim() || '';
             const lineTotal = finalLines.reduce((acc, l) => acc + l.quantity * l.unit_price, 0);
             const total = Math.max(0, lineTotal + deliveryFee - orderDiscount);
+
             const payload = {
               store_id: effectiveStoreId,
-              customer_name: formData.get('customer_name') as string,
-              customer_phone: formData.get('customer_phone') as string,
-              customer_wilaya: orderWilaya,
+              customer_name: rawName || 'Client',
+              customer_phone: rawPhone,
+              customer_wilaya: orderWilaya || 'Alger',
               customer_commune: commune || undefined,
-              customer_address: [commune, address].filter(Boolean).join(', '),
-              notes: formData.get('notes') as string || undefined,
-              delivery_type: deliveryType,
-              delivery_fee: deliveryFee,
-              subtotal: lineTotal,
-              discount: orderDiscount,
+              customer_address: [commune, address].filter(Boolean).join(', ') || orderWilaya || 'Algérie',
+              notes: (formData.get('notes') as string)?.trim() || undefined,
+              delivery_type: (deliveryType || 'HOME').toUpperCase(),
+              delivery_fee: deliveryFee || 0,
+              subtotal: lineTotal || 0,
+              discount: orderDiscount || 0,
+              total: total,
               total_amount: total,
               items: finalLines.map(lineToItem),
               status: 'CONFIRMED',
-              source: orderSource,
+              source: orderSource || 'MANUAL',
               carrier_id: selectedPartnerId || undefined,
               assigned_to: user?.id || undefined, // Assigned directly to this agent
               is_abandoned_cart: false,
