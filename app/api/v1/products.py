@@ -35,21 +35,23 @@ def _confirmateur_product_scope_criterion(user):
     with a configured scope (assigned_store_ids/employee_store_id and/or
     assigned_product_ids) must only ever see products from her assigned
     store(s), PLUS her individually-assigned products from other stores —
-    never the whole catalogue. Unconfigured (no store, no product) means
-    no restriction was ever set up for her — falls through to full
-    visibility rather than showing nothing, matching prior behavior for
-    accounts that predate this scoping.
+    never the whole catalogue. Unconfigured (no store, no product) or scope="ALL"
+    means no restriction — falls through to full visibility.
     """
+    scope = getattr(user, "assigned_store_scope", "ALL")
+    if scope == "ALL":
+        return None
+
     from sqlalchemy import or_
 
     raw_stores = getattr(user, "assigned_store_ids", None)
-    stores = list(raw_stores) if isinstance(raw_stores, list) else []
+    stores = [str(s) for s in raw_stores] if isinstance(raw_stores, list) else []
     employee_store_id = getattr(user, "employee_store_id", None)
-    if employee_store_id and employee_store_id not in stores:
-        stores.append(employee_store_id)
+    if employee_store_id and str(employee_store_id) not in stores:
+        stores.append(str(employee_store_id))
 
     raw_products = getattr(user, "assigned_product_ids", None)
-    products = raw_products if isinstance(raw_products, list) else []
+    products = [str(p) for p in raw_products] if isinstance(raw_products, list) else []
 
     if not stores and not products:
         return None  # nothing configured — no restriction (existing behavior)

@@ -20,13 +20,20 @@ import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 
 export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boolean, setIsOpen: (v: boolean) => void, onSuccess?: () => void }) {
-  const { activeStore, user } = useAppStore();
-  const storeId = activeStore?.id ?? '';
+  const { activeStore, user, allStores } = useAppStore();
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const qc = useQueryClient();
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
 
+  // Determine effective store ID — fallbacks: selectedStoreId -> activeStore -> user employee store -> user assigned store -> first store in allStores
+  const effectiveStoreId = selectedStoreId
+    || activeStore?.id
+    || user?.employee_store_id
+    || (Array.isArray(user?.assigned_store_ids) && user.assigned_store_ids[0])
+    || (allStores?.[0]?.id)
+    || '';
+
   // States for manual order creation
-  
   const [selectedOrderProduct, setSelectedOrderProduct] = useState<any | null>(null);
   const [orderPrice, setOrderPrice] = useState(0);
   const [orderQty, setOrderQty] = useState(1);
@@ -61,6 +68,12 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
   // Fresh state each time the modal opens
   useEffect(() => {
     if (isOpen) {
+      const defaultStoreId = activeStore?.id 
+        || user?.employee_store_id 
+        || (Array.isArray(user?.assigned_store_ids) && user.assigned_store_ids[0])
+        || (allStores?.[0]?.id)
+        || '';
+      setSelectedStoreId(defaultStoreId);
       setOrderLines([]);
       setSelectedOrderProduct(null);
       setSelectedColor('');
@@ -70,7 +83,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
       setOrderDiscount(0);
       setDuplicateWarning(null);
     }
-  }, [isOpen]);
+  }, [isOpen, activeStore, user, allStores]);
 
   const colorVariants = selectedOrderProduct?.variants || [];
   const selectedColorVar = colorVariants.find((v: any) => v.value === selectedColor);
@@ -80,11 +93,6 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
     ? sizeVariants.find((sv: any) => sv.value === selectedSize)?.sku
     : (selectedColorVar?.sku || selectedOrderProduct?.sku);
 
-  // Live per-variant availability, mirroring the backend's own reserve
-  // check (variant stock minus variant reserved) — showing the product's
-  // aggregate stock instead let a confirmatrice see e.g. "36 en stock" and
-  // pick a color/size combo that's actually at 0, only finding out after
-  // the save was rejected with "Stock insuffisant".
   const hasVariants = colorVariants.length > 0;
   const selectedSubVariant = selectedSize ? sizeVariants.find((sv: any) => sv.value === selectedSize) : null;
   const effectiveVariant = selectedSubVariant || (selectedColorVar && sizeVariants.length === 0 ? selectedColorVar : null);
@@ -101,26 +109,24 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
       setOrderPrice(basePrice + mod);
     }
   }, [selectedColor, selectedSize, selectedOrderProduct]);
-  
 
-  
   const productsQuery = useQuery<any>({
-    queryKey: ['admin-products-lite', storeId, isMarketplaceUpsell],
-    enabled: isOpen && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true${isMarketplaceUpsell ? '&upsell_only=true' : ''}`),
-    // Stock moves in real time (other confirmatrices/orders reserve or
-    // confirm concurrently) — without this, a stock number fetched once when
-    // the modal opened could sit stale for the whole call, showing available
-    // when it no longer is by the time she hits save.
+    queryKey: ['admin-products-lite', effectiveStoreId, isMarketplaceUpsell],
+    enabled: isOpen && !!effectiveStoreId,
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${effectiveStoreId}&minimal=true${isMarketplaceUpsell ? '&upsell_only=true' : ''}`),
     staleTime: 10_000,
     refetchInterval: isOpen ? 20_000 : false,
     refetchIntervalInBackground: false,
   });
 
+  const productsList: any[] = Array.isArray(productsQuery.data)
+    ? productsQuery.data
+    : (productsQuery.data?.data || productsQuery.data?.products || []);
+
   const deliveryPartnersQuery = useQuery<any>({
-    queryKey: ['delivery-partners-lite', storeId],
-    enabled: isOpen && !!storeId,
-    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
+    queryKey: ['delivery-partners-lite', effectiveStoreId],
+    enabled: isOpen && !!effectiveStoreId,
+    queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${effectiveStoreId}`),
   });
     useEffect(() => {
     if (!selectedPartnerId || !orderWilaya) return;
@@ -299,7 +305,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
             const lineTotal = finalLines.reduce((acc, l) => acc + l.quantity * l.unit_price, 0);
             const total = Math.max(0, lineTotal + deliveryFee - orderDiscount);
             const payload = {
-              store_id: storeId,
+              store_id: effectiveStoreId,
               customer_name: formData.get('customer_name') as string,
               customer_phone: formData.get('customer_phone') as string,
               customer_wilaya: orderWilaya,
@@ -328,9 +334,26 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
           <div className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 space-y-8 lg:space-y-12 bg-white custom-scrollbar">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 text-slate-800">
                  <div className="space-y-6 sm:space-y-10">
-                    <div className="flex items-center gap-4 border-l-2 pl-4" style={{ borderColor: primaryColor }}>
+                    <div className="flex items-center justify-between border-l-2 pl-4" style={{ borderColor: primaryColor }}>
                        <span className="text-sm font-bold uppercase tracking-widest text-[#2D3436]">01. Coordonnées du Client</span>
                     </div>
+
+                    {allStores && allStores.length > 1 && (
+                      <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Boutique Concernée *</label>
+                        <Select value={effectiveStoreId} onValueChange={(v) => { setSelectedStoreId(v); setSelectedOrderProduct(null); }}>
+                          <SelectTrigger className="bg-white border-slate-200 text-slate-900 text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4">
+                            <SelectValue placeholder="Sélectionner la boutique..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white border-slate-200 text-slate-900 rounded-xl">
+                            {allStores.map((s: any) => (
+                              <SelectItem key={s.id} value={s.id} className="text-sm font-bold py-2">{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
                     <div className="space-y-6">
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-3">
@@ -347,36 +370,45 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                   const phone = e.target.value.trim();
                                   if (!phone || phone.length < 9) { setDuplicateWarning(null); return; }
                                   try {
-                                    const res = await apiFetch(`/api/v1/orders/check-duplicate?phone=${encodeURIComponent(phone)}&store_id=${storeId}`) as any;
+                                    const res = await apiFetch(`/api/v1/orders/check-duplicate?phone=${encodeURIComponent(phone)}&store_id=${effectiveStoreId}`) as any;
                                     if (res.is_duplicate) setDuplicateWarning(`Attention : Ce client a déjà commandé récemment (${res.order_number}) !`);
                                     else setDuplicateWarning(null);
                                   } catch(e) {}
                                 }}
                                 className={cn("bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4 placeholder:text-neutral-400", "")} 
                              />
-                             {duplicateWarning && <p className="text-[10px] font-bold text-rose-600 mt-1">{duplicateWarning}</p>}
                           </div>
                        </div>
+                       {duplicateWarning && (
+                         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 flex items-center gap-2">
+                           <AlertCircle className="size-4 shrink-0 text-amber-600" />
+                           <span>{duplicateWarning}</span>
+                         </div>
+                       )}
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="space-y-3">
                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Wilaya *</label>
-                             <Select value={orderWilaya} onValueChange={setOrderWilaya} required>
+                             <Select value={orderWilaya} onValueChange={(w) => setOrderWilaya(w)}>
                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
-                                   <SelectValue placeholder="Sélectionnez une wilaya" />
+                                   <SelectValue placeholder="Sélectionner Wilaya..." />
                                 </SelectTrigger>
-                                <SelectContent className="bg-white border-neutral-100 text-black max-h-[300px]">
-                                   {WILAYAS.map((w, idx) => <SelectItem key={w} value={w} className="text-sm font-medium py-2">{idx + 1}. {w}</SelectItem>)}
+                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[300px]">
+                                   {WILAYAS.map((w, idx) => (
+                                      <SelectItem key={w} value={w} className="text-sm font-medium py-2">
+                                         {idx + 1}. {w}
+                                      </SelectItem>
+                                   ))}
                                 </SelectContent>
                              </Select>
                           </div>
                           <div className="space-y-3">
-                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Commune *</label>
-                             <Select name="commune" required disabled={!orderWilaya}>
+                             <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Commune</label>
+                             <Select name="commune">
                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
-                                   <SelectValue placeholder={orderWilaya ? "Sélectionnez une commune" : "Sélectionnez une wilaya d'abord"} />
+                                   <SelectValue placeholder="Sélectionner Commune..." />
                                 </SelectTrigger>
-                                <SelectContent className="bg-white border-neutral-100 text-black max-h-[300px]">
-                                   {orderWilaya && ALGERIAN_COMMUNES[orderWilaya]?.map((c) => (
+                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[300px]">
+                                   {(orderWilaya ? ALGERIAN_COMMUNES[orderWilaya] || [] : []).map((c) => (
                                       <SelectItem key={c.id} value={c.nameAscii} className="text-sm font-medium py-2">
                                          {c.nameAscii}
                                       </SelectItem>
@@ -419,17 +451,19 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                     <div className="space-y-6">
                        <div className="space-y-3">
                           <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Produit Principal *</label>
-                          <Select onValueChange={(v) => {
-                             const p = productsQuery.data?.data?.find((x: any) => x.id === v);
+                          <Select value={selectedOrderProduct?.id || ''} onValueChange={(v) => {
+                             const p = productsList.find((x: any) => x.id === v);
                              setSelectedOrderProduct(p);
                              if (p) setOrderPrice(p.price ?? 0);
                           }}>
                              <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-14 rounded-xl focus:bg-white transition-all px-4">
-                                <SelectValue placeholder="Rechercher Produit..." />
+                                <SelectValue placeholder={productsQuery.isLoading ? "Chargement des produits..." : (productsList.length === 0 ? "Aucun produit disponible" : "Rechercher Produit...")} />
                              </SelectTrigger>
-                             <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
-                                {productsQuery.data?.data?.map((p: any) => (
-                                   <SelectItem key={p.id} value={p.id} className="text-sm font-medium py-2">{p.name} — SKU: {p.sku}</SelectItem>
+                             <SelectContent className="bg-white border-neutral-100 text-black rounded-xl max-h-[300px]">
+                                {productsList.map((p: any) => (
+                                   <SelectItem key={p.id} value={p.id} className="text-sm font-medium py-2">
+                                     {p.name} {p.sku ? `— SKU: ${p.sku}` : ''} ({(p.stock || 0) - (p.reserved_stock || 0)} en stock)
+                                   </SelectItem>
                                 ))}
                              </SelectContent>
                           </Select>
