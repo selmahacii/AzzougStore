@@ -361,9 +361,9 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
                 de confirmer un panier abandonné récupéré au téléphone (le cas
                 d'usage même du module Paniers Abandonnés) — l'exclure ici
                 l'empêchait de dispatcher la commande qu'elle vient de sauver. */}
-            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status) && onStatusChange && (
+            {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status as any) && onStatusChange && (
               <div className="space-y-2">
-                {order.status !== 'CONFIRMED' && (
+                {((order.status as any) !== 'CONFIRMED') && (
                   <button
                     type="button"
                     disabled={isPending}
