@@ -9,7 +9,7 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus, Save,
-  Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock
+  Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock, Store, CheckCircle2
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -799,6 +799,29 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                  </div>
                )}
             </div>
+            {(order.delivery_type === 'STORE_PICKUP' || editData.delivery_type === 'STORE_PICKUP') && order.status !== 'DELIVERED' && (
+               <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl space-y-2 shadow-sm animate-in fade-in duration-200">
+                 <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
+                     <Store className="size-4 text-emerald-600" />
+                     <span>Retrait Point de Vente (Magasin)</span>
+                   </div>
+                   <span className="text-[9px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
+                 </div>
+                 <p className="text-[11px] text-emerald-800 font-medium leading-tight">
+                   Le client est au magasin ou a retiré sa commande ? Confirmez et marquez-la comme récupérée.
+                 </p>
+                 <button
+                   type="button"
+                   disabled={isPending}
+                   onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id)}
+                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
+                 >
+                   <CheckCircle2 className="size-4" />
+                   Confirmer & Marquer Récupéré (Point de Vente)
+                 </button>
+               </div>
+             )}
             {order.status === 'ABANDONED' && (
               <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl text-[11px] text-violet-700 font-semibold leading-relaxed flex gap-2">
                 <AlertCircle className="size-4 shrink-0 text-violet-500 mt-0.5" />
@@ -938,6 +961,23 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     <option value="stop_desk">Stop Desk (Bureau)</option>
                     <option value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin (Vente Directe)</option>
                   </select>
+                  {editData.delivery_type === 'STORE_PICKUP' && order.status !== 'DELIVERED' && (
+                    <div className="mt-2 p-3 bg-emerald-50 border border-emerald-300 rounded-xl space-y-1.5">
+                      <p className="text-[10px] font-black text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                        <Store className="size-3.5 text-emerald-600" />
+                        Vente Directe en Magasin
+                      </p>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id)}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <CheckCircle2 className="size-4" />
+                        Confirmer & Récupéré (Point de Vente)
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {editData.delivery_type === 'stop_desk' && (
                   <div className="space-y-2">
