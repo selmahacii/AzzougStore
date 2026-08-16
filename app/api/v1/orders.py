@@ -1892,6 +1892,7 @@ def update_abandoned_cart(
     max_seq = db.query(func.max(Order.store_sequence_number)).filter(Order.store_id == order_in.store_id).scalar()
     store_sequence_number = (max_seq or 0) + 1
 
+    valid_order_cols = {c.name for c in Order.__table__.columns}
     db_order = Order(
         id=str(uuid.uuid4()),
         order_number=order_number,
@@ -1899,7 +1900,7 @@ def update_abandoned_cart(
         status="ABANDONED",
         assigned_to=assigned_agent,
         is_abandoned_cart=True,
-        **order_data
+        **{k: v for k, v in order_data.items() if k in valid_order_cols and k not in ("id", "order_number", "store_sequence_number", "status", "assigned_to", "is_abandoned_cart")}
     )
     db.add(db_order)
     db.flush()
