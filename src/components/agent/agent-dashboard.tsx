@@ -307,7 +307,7 @@ function UnprocessedCartReassign({ order, onStatusChange, isPending }: { order: 
   );
 }
 
-function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string) => void; isPending?: boolean }) {
+function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPending, currentUser }: { order: Order; onOrderUpdate?: (updated: Order) => void; onDispatch?: (id: string) => void; onStatusChange?: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string) => void; isPending?: boolean; currentUser?: any }) {
   const queryClient = useQueryClient();
   const livreursQuery = useQuery<any>({
     queryKey: ['livreurs', order.store_id],
@@ -343,63 +343,35 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
       <div className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 space-y-2">
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
         {hasCarrierParcel ? (
-          <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé — suivi : {order.tracking_number}</p>
+          <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé chez le transporteur — suivi : {order.tracking_number}</p>
         ) : (order.status as string) !== 'CONFIRMED' ? (
           <div className="space-y-1.5">
-            <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée.</p>
+            <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée pour expédition.</p>
             {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status as any) && onStatusChange && (
-              <div className="space-y-2">
-                {((order.status as any) !== 'CONFIRMED') && (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => onStatusChange(order.id, 'CONFIRMED')}
-                    className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    ✓ Confirmer la commande maintenant
-                  </button>
-                )}
-                {((order.status as any) !== 'DELIVERED') && (
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => onStatusChange(order.id, 'DELIVERED', undefined, undefined, 'STORE_PICKUP')}
-                    className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                  >
-                    🏪 Confirmer & Récupéré (Point de Vente)
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => onStatusChange(order.id, 'CONFIRMED')}
+                className="w-full py-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-700 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                ✓ Confirmer la commande maintenant
+              </button>
             )}
           </div>
         ) : order.carrier_id ? (
           <button
             type="button"
             onClick={() => onDispatch && onDispatch(order.id)}
-            className="w-full py-2 rounded-lg bg-cyan-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-cyan-700 transition-colors"
+            className="w-full py-2 rounded-lg bg-cyan-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-cyan-700 transition-colors cursor-pointer"
           >
             Créer le colis chez le transporteur
           </button>
         ) : (
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
-            {((order.status as any) !== 'DELIVERED') && onStatusChange && (
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => onStatusChange(order.id, 'DELIVERED', undefined, undefined, 'STORE_PICKUP')}
-                className="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                🏪 Confirmer & Récupéré (Point de Vente)
-              </button>
-            )}
-          </div>
+          <p className="text-[10px] font-bold text-slate-400">Aucun transporteur configuré sur cette commande.</p>
         )}
       </div>
 
-      {/* Option 2 — livreur interne — always rendered (was silently absent
-          when livreurs.length === 0 / still loading, which read as "the
-          whole feature is missing" rather than "no livreur configured yet"). */}
+      {/* Option 2 — Livreur interne */}
       <div className={cn(
         'p-3 rounded-xl border space-y-1.5',
         order.livreur_id ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50/50'
@@ -430,6 +402,31 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
           </>
         )}
       </div>
+
+      {/* Option 3 — Vente Directe / Point de Vente (Retrait Magasin) */}
+      {(order.status as string) !== 'DELIVERED' && onStatusChange && (
+        <div className="p-3 rounded-xl border-2 border-emerald-500 bg-emerald-50/90 space-y-2 shadow-sm">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
+              <Store className="size-3.5 text-emerald-600" />
+              Option 3 — Point de Vente (Retrait Magasin)
+            </p>
+            <span className="text-[8px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
+          </div>
+          <p className="text-[10px] text-emerald-800 font-semibold leading-tight">
+            Client au magasin ou retrait direct. Confirme la commande et attribue la commission Point de Vente.
+          </p>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP')}
+            className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-wider hover:bg-emerald-700 active:scale-[0.99] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md cursor-pointer mt-1"
+          >
+            <CheckCircle2 className="size-4" />
+            Confirmer Point de Vente
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -816,7 +813,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
                 >
                   <CheckCircle2 className="size-4" />
-                  Confirmer & Marquer Récupéré (Point de Vente)
+                  Confirmer Point de Vente
                 </button>
               </div>
             )}
@@ -1609,7 +1606,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           {order.status !== 'MERGED' && currentUser?.role !== 'LIVREUR' && (
             <>
               <UnprocessedCartReassign order={order} onStatusChange={onStatusChange} isPending={isPending} />
-              <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} />
+              <LivreurAssign order={order} onOrderUpdate={onOrderUpdate} onDispatch={onDispatch} onStatusChange={onStatusChange} isPending={isPending} currentUser={currentUser} />
             </>
           )}
 
@@ -1620,10 +1617,10 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP'); }}
                         className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-950 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1 cursor-pointer">
                   <span className="flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-emerald-600" />
-                    Confirmer & Récupéré (Point de Vente)
+                    <Store className="size-4 text-emerald-600" />
+                    Confirmer Point de Vente
                   </span>
-                  <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Récupéré</span>
+                  <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
                 </button>
               )}
               {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
