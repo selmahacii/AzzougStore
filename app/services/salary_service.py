@@ -107,6 +107,10 @@ def compute_salary(
     if payment_type is None and getattr(employee, "role", None) == "LIVREUR":
         payment_type = "MONTHLY_SALARY"
 
+    recovered_rate   = getattr(employee, "payment_recovered_cart", 0) or 0
+    lost_rate        = getattr(employee, "payment_lost_cart", 0) or 0
+    upsell_rate      = getattr(employee, "payment_upsell", 0) or 0
+    marketplace_rate = getattr(employee, "payment_marketplace_upsell_only", 50) or 50
     store_pickup_rate           = getattr(employee, "payment_store_pickup", 100) if getattr(employee, "payment_store_pickup", None) is not None else 100
     recovered_store_pickup_rate = getattr(employee, "payment_recovered_store_pickup", 150) if getattr(employee, "payment_recovered_store_pickup", None) is not None else 150
 
