@@ -1876,18 +1876,16 @@ function SalaryView({ perf, user }: any) {
   
   const totalSalary = stats.salary ?? 0;
 
-  // Calculate base salary amount for display
+  // Calculate base salary amount for display (using stats.base_salary or normalDeliveredCount)
+  const baseSalaryVal = stats.base_salary !== undefined 
+    ? stats.base_salary 
+    : (paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCount * paymentAmount);
+
   let baseSalaryExplain = '';
-  let baseSalaryVal = 0;
   if (paymentType === 'MONTHLY_SALARY') {
-    baseSalaryVal = paymentAmount;
     baseSalaryExplain = `Salaire mensuel fixe`;
-  } else if (paymentType === 'PER_DELIVERED_ORDER') {
-    baseSalaryVal = deliveredCount * paymentAmount;
-    baseSalaryExplain = `${deliveredCount} livraisons × ${formatPrice(paymentAmount)}`;
   } else {
-    baseSalaryVal = deliveredCount * paymentAmount;
-    baseSalaryExplain = `${deliveredCount} livraisons × ${formatPrice(paymentAmount)}`;
+    baseSalaryExplain = `${normalDeliveredCount} livraisons normales × ${formatPrice(paymentAmount)}`;
   }
 
   return (
