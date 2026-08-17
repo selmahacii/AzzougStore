@@ -553,9 +553,11 @@ const [timeLeft, setTimeLeft] = useState('');
     queryKey: ['stores-analytics-dashboard', analyticsPeriod, startDate, endDate, analyticsProductId],
     queryFn: async () => {
       let url = `/api/v1/analytics?type=stores-dashboard&period=${analyticsPeriod}`;
-      if (analyticsPeriod === 'custom') {
-        if (startDate) url += `&start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}`;
-        if (endDate) url += `&end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}`;
+      if (startDate) {
+        url += `&start_date=${encodeURIComponent(startDate.includes('T') ? startDate : `${startDate}T00:00:00.000Z`)}`;
+      }
+      if (endDate) {
+        url += `&end_date=${encodeURIComponent(endDate.includes('T') ? endDate : `${endDate}T23:59:59.999Z`)}`;
       }
       if (analyticsProductId && analyticsProductId !== 'ALL') {
         url += `&product_id=${encodeURIComponent(analyticsProductId)}`;
@@ -1314,22 +1316,26 @@ const [timeLeft, setTimeLeft] = useState('');
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-slate-50 flex items-center justify-between gap-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500">
-                    <span className="flex items-center gap-1 text-slate-400">
-                      <span className="size-1.5 rounded-full bg-slate-300" />
-                      Attente: <strong className="text-slate-700">{store.pending_orders}</strong>
+                  <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500">
+                    <span className="flex items-center gap-1 text-amber-600">
+                      <span className="size-1.5 rounded-full bg-amber-400" />
+                      Attente: <strong className="text-slate-800">{store.pending_orders ?? 0}</strong>
                     </span>
                     <span className="flex items-center gap-1 text-[#4b7bec]">
                       <span className="size-1.5 rounded-full bg-[#4b7bec]" />
-                      Conf: <strong className="text-slate-700">{store.confirmed_orders}</strong>
+                      Conf: <strong className="text-slate-800">{store.confirmed_orders ?? 0}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-green-500">
-                      <span className="size-1.5 rounded-full bg-green-500" />
-                      Livr: <strong className="text-slate-700">{store.delivered_orders}</strong>
+                    <span className="flex items-center gap-1 text-indigo-600">
+                      <span className="size-1.5 rounded-full bg-indigo-500" />
+                      Expé: <strong className="text-slate-800">{store.shipped_orders ?? 0}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-rose-500">
+                    <span className="flex items-center gap-1 text-emerald-600">
+                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                      Livr: <strong className="text-slate-800">{store.delivered_orders ?? 0}</strong>
+                    </span>
+                    <span className="flex items-center gap-1 text-rose-600">
                       <span className="size-1.5 rounded-full bg-rose-500" />
-                      Ann: <strong className="text-slate-700">{store.cancelled_orders}</strong>
+                      Ann: <strong className="text-slate-800">{store.cancelled_orders ?? 0}</strong>
                     </span>
                   </div>
                 </div>
@@ -1550,9 +1556,9 @@ const [timeLeft, setTimeLeft] = useState('');
           <div className="flex items-center gap-2 sm:gap-3 justify-end flex-wrap sm:flex-nowrap w-full md:w-auto mt-4 md:mt-0">
             <div className="flex items-center gap-2 bg-white border border-slate-100 rounded-xl px-3 py-1.5 shadow-sm">
                <Calendar className="size-4 text-slate-400" />
-               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
+               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
                <span className="text-slate-300">-</span>
-               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
+               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
             </div>
             <button onClick={() => setAdvancedFiltersOpen(true)}
                className={cn("p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border transition-all text-slate-400 bg-white shadow-sm", advancedFiltersOpen ? "border-[#4b7bec] text-[#4b7bec] bg-indigo-50/50" : "border-slate-100 hover:bg-slate-50")}

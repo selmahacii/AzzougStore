@@ -642,7 +642,11 @@ def get_analytics(
         from app.models.store import Store
         
         # Base filter for orders
-        base_filters = [Order.is_deleted == False, Order.created_at >= start_date, Order.created_at < end_date]
+        base_filters = [
+            Order.is_deleted == False,
+            Order.created_at >= start_date_obj,
+            Order.created_at <= end_date_obj
+        ]
         
         if product_id and product_id != "ALL":
             # Filter orders that contain this product
@@ -653,39 +657,54 @@ def get_analytics(
         stats = db.query(
             Order.store_id,
             func.count(Order.id).label("total_orders"),
-            func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)).label("revenue"),
+            func.sum(case((Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), Order.total), else_=0)).label("revenue"),
+            func.sum(case((Order.status == "DELIVERED", Order.total), else_=0)).label("delivered_revenue"),
+            func.sum(case((Order.status.in_(["NEW", "ASSIGNED", "CALLED", "PENDING"]), 1), else_=0)).label("pending_count"),
+            func.sum(case((Order.status.in_(["CONFIRMED", "IN_PROGRESS"]), 1), else_=0)).label("confirmed_count"),
+            func.sum(case((Order.status == "SHIPPED", 1), else_=0)).label("shipped_count"),
             func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered_count"),
+            func.sum(case((Order.status.in_(["CANCELLED", "RETURNED", "REFUSED"]), 1), else_=0)).label("cancelled_count"),
             func.sum(case((func.coalesce(Order.source, "") != "MANUAL", 1), else_=0)).label("non_manual_total"),
-            func.sum(case((and_(Order.status == "DELIVERED", func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)).label("non_manual_delivered")
+            func.sum(case((and_(Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)).label("non_manual_valid")
         ).filter(and_(*base_filters)).group_by(Order.store_id).all()
         
-        stores = db.query(Store.id, Store.name).filter(Store.is_active == True).all()
-        store_map = {s.id: s for s in stores}
+        stores = db.query(Store).filter(Store.is_active == True).all()
+        stats_map = {stat.store_id: stat for stat in stats if stat.store_id}
         
         data = []
-        for stat in stats:
-            store_info = store_map.get(stat.store_id)
-            if not store_info:
-                continue
-                
-            total_orders = stat.total_orders or 0
-            revenue = stat.revenue or 0
-            delivered_count = stat.delivered_count or 0
+        for store_info in stores:
+            stat = stats_map.get(store_info.id)
             
-            non_manual_total = stat.non_manual_total or 0
-            non_manual_delivered = stat.non_manual_delivered or 0
+            total_orders = (stat.total_orders if stat else 0) or 0
+            revenue = (stat.revenue if stat else 0) or 0
+            delivered_revenue = (stat.delivered_revenue if stat else 0) or 0
+            pending_count = (stat.pending_count if stat else 0) or 0
+            confirmed_count = (stat.confirmed_count if stat else 0) or 0
+            shipped_count = (stat.shipped_count if stat else 0) or 0
+            delivered_count = (stat.delivered_count if stat else 0) or 0
+            cancelled_count = (stat.cancelled_count if stat else 0) or 0
             
-            conversion_rate = round((non_manual_delivered / non_manual_total * 100), 2) if non_manual_total > 0 else 0
-            average_basket = round((revenue / delivered_count), 2) if delivered_count > 0 else 0
+            valid_orders_count = confirmed_count + shipped_count + delivered_count
+            non_manual_total = (stat.non_manual_total if stat else 0) or 0
+            non_manual_valid = (stat.non_manual_valid if stat else 0) or 0
+            
+            conversion_rate = round((non_manual_valid / non_manual_total * 100), 2) if non_manual_total > 0 else 0
+            average_basket = round((revenue / valid_orders_count), 2) if valid_orders_count > 0 else 0
             
             data.append({
-                "store_id": stat.store_id,
+                "store_id": store_info.id,
                 "store_name": store_info.name,
                 "color": getattr(store_info, 'color', '#4b7bec'),
                 "total_orders": total_orders,
                 "revenue": revenue,
+                "delivered_revenue": delivered_revenue,
                 "average_basket": average_basket,
-                "conversion_rate": conversion_rate
+                "conversion_rate": conversion_rate,
+                "pending_orders": pending_count,
+                "confirmed_orders": confirmed_count,
+                "shipped_orders": shipped_count,
+                "delivered_orders": delivered_count,
+                "cancelled_orders": cancelled_count
             })
             
         return {"success": True, "data": data}
