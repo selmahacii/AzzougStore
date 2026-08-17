@@ -328,6 +328,64 @@ def create_initial_superadmin():
                 WHERE order_number = :num AND (tracking_number IS NULL OR tracking_number = '')
             """), {"num": num, "trk": trk})
 
+        # Auto-reconcile returned orders provided by user
+        db.execute(text("""
+            UPDATE orders
+            SET status = 'RETURNED',
+                carrier_stage = 'returned',
+                carrier_stage_label = 'Retourné',
+                updated_at = NOW()
+            WHERE order_number IN (
+                'ABN-20260813-156636', 'ABN-20260812-B437EA', 'ABN-20260811-F4F81E',
+                'ABN-20260811-A02579', '53783839', 'ORD-20260731-3730CF',
+                'ORD-20260731-006547', 'ABN-20260731-0FA2FF', 'ABN-20260730-5B1CBF',
+                'ABN-20260730-097BFB', 'ABN-20260730-52AB4E', 'ABN-20260727-ECBC8F',
+                'ABN-20260728-BD652F', 'ABN-20260726-C7CC08', 'ORD-20260726-14EF50',
+                'ABN-20260726-B44B89', 'ABN-20260724-BDAC8B', 'ABN-20260724-C7FF6F'
+            ) OR tracking_number IN (
+                'OZW-35B-19557760', 'OZW-35B-19525890', 'OZW-35B-19507952',
+                'OZW-35B-19500073', 'OZW-35B-19268921', 'OZW-35B-19240600',
+                'OZW-35B-19184043', 'OZW-35B-19183980', 'OZW-35B-19183823',
+                'OZW-35B-19175727', 'OZW-35B-19163456', 'OZW-35B-19163402',
+                'OZW-35B-19099723', 'OZW-35B-19098822', 'OZW-35B-19072669',
+                'OZW-35B-19037977', 'OZW-35B-19034805', 'OZW-35B-18995104',
+                'OZW-35B-18983366'
+            ) OR customer_phone IN (
+                '0675024669', '0551666590', '0661689685', '0665741665',
+                '0540020302', '0792616602', '0656700105', '0781460187',
+                '0699600077', '0557584614', '0698480423', '0660200328',
+                '0671915719', '0660304346', '0660030318', '0561242806',
+                '0675401140', '0557331083', '0671985917'
+            )
+        """))
+
+        returned_tracking_pairs = [
+            ("ABN-20260813-156636", "OZW-35B-19557760"),
+            ("ABN-20260812-B437EA", "OZW-35B-19525890"),
+            ("ABN-20260811-F4F81E", "OZW-35B-19507952"),
+            ("ABN-20260811-A02579", "OZW-35B-19500073"),
+            ("53783839", "OZW-35B-19240600"),
+            ("ORD-20260731-3730CF", "OZW-35B-19184043"),
+            ("ORD-20260731-006547", "OZW-35B-19183980"),
+            ("ABN-20260731-0FA2FF", "OZW-35B-19183823"),
+            ("ABN-20260730-5B1CBF", "OZW-35B-19175727"),
+            ("ABN-20260730-097BFB", "OZW-35B-19163456"),
+            ("ABN-20260730-52AB4E", "OZW-35B-19163402"),
+            ("ABN-20260727-ECBC8F", "OZW-35B-19099723"),
+            ("ABN-20260728-BD652F", "OZW-35B-19098822"),
+            ("ABN-20260726-C7CC08", "OZW-35B-19072669"),
+            ("ORD-20260726-14EF50", "OZW-35B-19037977"),
+            ("ABN-20260726-B44B89", "OZW-35B-19034805"),
+            ("ABN-20260724-BDAC8B", "OZW-35B-18995104"),
+            ("ABN-20260724-C7FF6F", "OZW-35B-18983366"),
+        ]
+        for num, trk in returned_tracking_pairs:
+            db.execute(text("""
+                UPDATE orders
+                SET tracking_number = :trk
+                WHERE (order_number = :num OR tracking_number = :trk) AND (tracking_number IS NULL OR tracking_number = '' OR tracking_number != :trk)
+            """), {"num": num, "trk": trk})
+
         db.commit()
 
         # 1. Create super admin if it doesn't exist
