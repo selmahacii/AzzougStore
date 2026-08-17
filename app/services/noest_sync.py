@@ -171,6 +171,24 @@ def _extract_terminal_status(parcel: dict) -> str | None:
     return None
 
 
+def _extract_event_timestamp(parcel: dict) -> datetime | None:
+    """Extract event timestamp (delivered_at / activity date) from Noest payload."""
+    info = parcel.get("OrderInfo") or {}
+    activity = parcel.get("activity") or []
+    candidate = (
+        info.get("delivered_at") or info.get("updated_at")
+        or (activity[-1].get("created_at") if activity else None)
+        or (activity[-1].get("date") if activity else None)
+    )
+    if candidate:
+        try:
+            clean_str = str(candidate).replace("T", " ").split(".")[0]
+            return datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
+    return None
+
+
 async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
     """Batch-sync every order of one store's Noest partner that still has a
     real tracking number and hasn't reached a terminal state yet.
@@ -356,6 +374,10 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
                 },
                 actor_id=None,  # system actor
             )
+            event_dt = _extract_event_timestamp(parcel)
+            if event_dt:
+                order.updated_at = event_dt
+                db.add(order)
             updated += 1
         except Exception as exc:
             logger.warning("Noest sync: transition %s → %s refused for %s: %s",
