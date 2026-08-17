@@ -319,7 +319,7 @@ export default function AdminSidebar() {
             };
          }
          if (section.title === 'Commercial') {
-            const CONFIRMATEUR_INVENTORY_VIEWS = new Set(['STOCK', 'ALERTS', 'MONITOR']);
+            const CONFIRMATEUR_INVENTORY_VIEWS = new Set(['STOCK', 'ALERTS', 'MONITOR', 'HISTORY', 'MOVEMENT', 'PRODUCTS']);
             return {
                ...section,
                items: section.items
