@@ -500,7 +500,6 @@ function PerformancesTab({ d }: { d: any }) {
                             <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">ROAS</p>
                         </div>
                     </div>
-
                     {c.fault_attribution && (
                         <div className="mt-auto inline-flex justify-center w-full">
                             <span className="text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-full text-center" style={{ backgroundColor: C.dangerBg, color: C.danger }}>
