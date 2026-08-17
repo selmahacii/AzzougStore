@@ -137,6 +137,7 @@ def run_db_migrations():
         "UPDATE orders SET status = 'NEW' WHERE status IS NULL OR status = ''",
         "UPDATE orders c SET is_deleted = TRUE, parent_order_id = NULL FROM orders p WHERE c.parent_order_id = p.id AND (c.is_deleted IS FALSE OR c.is_deleted IS NULL) AND ABS(EXTRACT(EPOCH FROM (c.created_at - p.created_at))) <= 86400",
         "UPDATE orders SET is_deleted = TRUE, parent_order_id = NULL WHERE parent_order_id IS NOT NULL AND (is_deleted IS FALSE OR is_deleted IS NULL)",
+        "UPDATE orders o2 SET is_deleted = TRUE FROM orders o1 WHERE o2.customer_phone = o1.customer_phone AND o2.id != o1.id AND o2.created_at > o1.created_at AND o2.created_at <= o1.created_at + INTERVAL '5 minutes' AND o2.order_number LIKE 'ABN-%' AND (o2.is_deleted IS FALSE OR o2.is_deleted IS NULL)",
     ]
 
     for stmt in statements:
