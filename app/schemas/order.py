@@ -144,7 +144,13 @@ class OrderRead(BaseModel):
     total:           int
     carrier_id:      Optional[str] = None
     promo_code:      Optional[str] = None
-    status:          str
+    status:          Optional[str] = "NEW"
+
+    @field_validator('status', mode='before')
+    @classmethod
+    def sanitize_status(cls, v: Any) -> str:
+        return v if v is not None else "NEW"
+
     assigned_to:     Optional[str] = None
     # True when an admin/manager explicitly pinned this order to
     # `assigned_to` — the Assignment Rule Engine will never override it

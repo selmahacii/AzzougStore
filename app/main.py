@@ -134,6 +134,7 @@ def run_db_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_store_pickup_rate INTEGER",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_recovered_store_pickup_rate INTEGER",
         "UPDATE products SET is_active = TRUE WHERE (stock - COALESCE(reserved_stock, 0)) > 0 AND (is_active IS FALSE OR is_active IS NULL)",
+        "UPDATE orders SET status = 'NEW' WHERE status IS NULL OR status = ''",
     ]
 
     for stmt in statements:
