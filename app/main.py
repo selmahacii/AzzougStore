@@ -282,6 +282,52 @@ def create_initial_superadmin():
             FROM numbered_orders
             WHERE orders.id = numbered_orders.id
         """))
+
+        # Auto-reconcile delivered orders provided by user
+        db.execute(text("""
+            UPDATE orders
+            SET status = 'DELIVERED',
+                carrier_stage = 'delivered',
+                carrier_stage_label = 'Livré',
+                updated_at = NOW()
+            WHERE order_number IN (
+                'ABN-20260815-48D664', 'ABN-20260815-77FDEF', 'ABN-20260814-A35338',
+                'ABN-20260814-643E4A', 'ABN-20260814-44A16D', 'ABN-20260814-E8EE49',
+                'ABN-20260813-8ACB5E', 'ABN-20260813-409D11', 'ABN-20260813-ACA9FB',
+                'ABN-20260812-F9E227', 'ABN-20260812-8CB4C3', 'ABN-20260809-115962'
+            ) OR tracking_number IN (
+                'OZW-35B-19629322', 'OZW-35B-19605904', 'OZW-35B-19590003',
+                'OZW-35B-19589487', 'OZW-35B-19588550', 'OZW-35B-19578515',
+                'OZW-35B-19578288', 'OZW-35B-19578267', 'OZW-35B-19558757',
+                'OZW-35B-19553950', 'OZW-35B-19525453', 'OZW-35B-19448126'
+            ) OR customer_phone IN (
+                '0671034439', '0668430343', '0665600716', '0560675917',
+                '0655580995', '0772821912', '0773525375', '0792396552',
+                '0664952215', '0542218693', '0668296537', '0667099715'
+            )
+        """))
+
+        tracking_pairs = [
+            ("ABN-20260815-48D664", "OZW-35B-19629322"),
+            ("ABN-20260815-77FDEF", "OZW-35B-19605904"),
+            ("ABN-20260814-A35338", "OZW-35B-19590003"),
+            ("ABN-20260814-643E4A", "OZW-35B-19589487"),
+            ("ABN-20260814-44A16D", "OZW-35B-19588550"),
+            ("ABN-20260814-E8EE49", "OZW-35B-19578515"),
+            ("ABN-20260813-8ACB5E", "OZW-35B-19578288"),
+            ("ABN-20260813-409D11", "OZW-35B-19578267"),
+            ("ABN-20260813-ACA9FB", "OZW-35B-19558757"),
+            ("ABN-20260812-F9E227", "OZW-35B-19553950"),
+            ("ABN-20260812-8CB4C3", "OZW-35B-19525453"),
+            ("ABN-20260809-115962", "OZW-35B-19448126"),
+        ]
+        for num, trk in tracking_pairs:
+            db.execute(text("""
+                UPDATE orders
+                SET tracking_number = :trk
+                WHERE order_number = :num AND (tracking_number IS NULL OR tracking_number = '')
+            """), {"num": num, "trk": trk})
+
         db.commit()
 
         # 1. Create super admin if it doesn't exist
