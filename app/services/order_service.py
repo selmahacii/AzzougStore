@@ -336,13 +336,14 @@ def merge_child_into_parent(
             except Exception as exc:
                 logger.warning("Merge: stock release failed for child %s: %s", child.id, exc)
 
-    _absorb_child_items(db, parent, child, actor_id)
+    # Do NOT absorb child items into parent basket — duplicate submissions represent the same single order attempt.
+    # The parent order keeps its original basket and totals (counted once).
+    # The child order is simply marked MERGED and linked to the parent.
 
     _log_event(
         db, order_id=child.id, actor_id=actor_id,
         from_status=child.status_before_merge, to_status="MERGED",
-        note=f"Fusionnée dans la commande {parent.order_number} ({reason}). "
-             f"Son panier a été agrégé au panier de la commande parente.",
+        note=f"Rattachée en tant que doublon à la commande {parent.order_number} ({reason}).",
     )
 
 

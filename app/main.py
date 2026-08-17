@@ -147,6 +147,36 @@ def run_db_migrations():
 
     print("[OK] Startup migrations finished — database connection is live.")
 
+    try:
+        from app.models.order import Order, OrderItem
+        from app.db.session import SessionLocal
+        db_mig = SessionLocal()
+        try:
+            parents = db_mig.query(Order).filter(Order.id.in_(db_mig.query(Order.parent_order_id).filter(Order.parent_order_id.isnot(None)))).all()
+            for p in parents:
+                if p.items:
+                    seen = set()
+                    to_remove = []
+                    for item in p.items:
+                        key = (item.product_id, str(item.variant_details))
+                        if key in seen:
+                            to_remove.append(item)
+                        else:
+                            seen.add(key)
+                            item.quantity = 1
+                    for item in to_remove:
+                        db_mig.delete(item)
+                    db_mig.flush()
+                    subtotal = sum(int(i.quantity or 1) * float(i.unit_price or 0) for i in p.items if i not in to_remove)
+                    p.subtotal = int(subtotal)
+                    p.total = max(0, int(subtotal) + int(p.delivery_fee or 0) - int(p.discount or 0))
+            db_mig.commit()
+            print("[OK] Cleaned up merged parent order baskets to single-order state.")
+        finally:
+            db_mig.close()
+    except Exception as exc:
+        print(f"[WARN] Clean up merged parent orders skipped: {exc}")
+
 def _acquire_scheduler_leader_lock() -> bool:
     """
     True iff this process wins an exclusive, non-blocking lock — used to run
