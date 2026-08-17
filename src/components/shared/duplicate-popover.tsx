@@ -108,13 +108,13 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
         setParentOrder(full.parent_order || null);
       }
 
-      // 2. Fetch all orders with same phone number
+      // 2. Fetch all orders with same phone number (excluding MERGED and rapid duplicates)
       if (order.customer_phone) {
         const phone = order.customer_phone.trim();
         const res: any = await apiFetch(`/api/v1/orders?search=${encodeURIComponent(phone)}&pageSize=50`);
         const items = res?.data || res?.items || res || [];
         if (Array.isArray(items)) {
-          setPhoneOrders(items.filter((o: any) => o.id !== order.id));
+          setPhoneOrders(items.filter((o: any) => o.id !== order.id && o.status !== 'MERGED'));
         }
       }
     } catch (err) {

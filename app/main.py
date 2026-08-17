@@ -135,6 +135,9 @@ def run_db_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_recovered_store_pickup_rate INTEGER",
         "UPDATE products SET is_active = TRUE WHERE (stock - COALESCE(reserved_stock, 0)) > 0 AND (is_active IS FALSE OR is_active IS NULL)",
         "UPDATE orders SET status = 'NEW' WHERE status IS NULL OR status = ''",
+        "DELETE FROM order_items WHERE order_id IN (SELECT c.id FROM orders c JOIN orders p ON c.parent_order_id = p.id WHERE c.status = 'MERGED' AND c.parent_order_id IS NOT NULL AND ABS(EXTRACT(EPOCH FROM (c.created_at - p.created_at))) <= 3600)",
+        "DELETE FROM order_events WHERE order_id IN (SELECT c.id FROM orders c JOIN orders p ON c.parent_order_id = p.id WHERE c.status = 'MERGED' AND c.parent_order_id IS NOT NULL AND ABS(EXTRACT(EPOCH FROM (c.created_at - p.created_at))) <= 3600)",
+        "DELETE FROM orders c USING orders p WHERE c.parent_order_id = p.id AND c.status = 'MERGED' AND c.parent_order_id IS NOT NULL AND ABS(EXTRACT(EPOCH FROM (c.created_at - p.created_at))) <= 3600",
     ]
 
     for stmt in statements:
