@@ -456,6 +456,56 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                           </div>
                        </div>
                        <div className="space-y-3">
+                           <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Mode de Réception *</label>
+                           <Select value={deliveryType} onValueChange={setDeliveryType}>
+                              <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
+                                 <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white border-neutral-100 text-black rounded-xl z-[100]">
+                                 <SelectItem value="home">🏠 Livraison à Domicile</SelectItem>
+                                 <SelectItem value="stop_desk">🏢 Stop Desk (Retrait en Bureau)</SelectItem>
+                                 <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
+                              </SelectContent>
+                           </Select>
+                        </div>
+
+                        {deliveryType === 'stop_desk' && (
+                          <div className="space-y-4 p-4 sm:p-5 bg-amber-50/90 border-2 border-amber-300 rounded-2xl animate-in fade-in duration-200 shadow-sm">
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                                <Building2 className="size-4 text-amber-600 shrink-0" />
+                                Choix du Bureau / Stop Desk de Destination *
+                              </label>
+                              <Select value={selectedBureauCode} onValueChange={setSelectedBureauCode}>
+                                <SelectTrigger className="bg-white border-amber-300 text-slate-800 text-xs sm:text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-3 sm:px-4">
+                                  <SelectValue placeholder={!orderWilaya ? "Sélectionnez d'abord une Wilaya..." : (availableBureaux.length === 0 ? "Aucun bureau pré-enregistré pour cette wilaya" : "Sélectionner un bureau disponible dans cette wilaya...")} />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white border-amber-300 text-slate-800 rounded-xl max-h-[280px] z-[100]">
+                                  {availableBureaux.map((b) => (
+                                    <SelectItem key={b.code} value={b.code} className="text-xs font-bold py-2.5">
+                                      {b.code} — {b.name} ({b.address})
+                                    </SelectItem>
+                                  ))}
+                                  {availableBureaux.length === 0 && (
+                                    <SelectItem value="none" disabled>Précisez le bureau manuellement ci-dessous</SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold text-amber-900 uppercase">Ou Saisissez le Nom/Code du Bureau Manuellement</label>
+                              <Input
+                                value={customBureauName}
+                                onChange={(e) => setCustomBureauName(e.target.value)}
+                                placeholder="Ex: Bureau Yalidine 05A, StopDesk Barika..."
+                                className="bg-white border-amber-300 text-slate-800 text-xs font-bold h-12 rounded-xl px-4 placeholder:text-neutral-400"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                       <div className="space-y-3">
                           <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Adresse</label>
                           <Input name="address" placeholder="RUE, QUARTIER, BÂTIMENT..." className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4 placeholder:text-neutral-400" />
                        </div>
@@ -623,19 +673,7 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                                 </SelectContent>
                              </Select>
                           </div>
-                          <div className="space-y-3">
-                              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Mode de Réception</label>
-                              <Select value={deliveryType} onValueChange={setDeliveryType}>
-                                 <SelectTrigger className="bg-[#F8F9FC] border-[#E9ECF0] text-[#2D3436] text-sm font-medium h-12 rounded-xl focus:bg-white transition-all px-4">
-                                    <SelectValue />
-                                 </SelectTrigger>
-                                 <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
-                                    <SelectItem value="home">Livraison à Domicile</SelectItem>
-                                    <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
-                                    <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
-                                 </SelectContent>
-                              </Select>
-                           </div>
+                          
                            <div className="space-y-3">
                               <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Entreprise de Livraison *</label>
                               <Select value={selectedPartnerId} onValueChange={setSelectedPartnerId}>
@@ -655,42 +693,6 @@ export function ManualOrderModal({ isOpen, setIsOpen, onSuccess }: { isOpen: boo
                               </Select>
                            </div>
                         </div>
-
-                        {deliveryType === 'stop_desk' && (
-                          <div className="space-y-4 p-4 bg-amber-50/70 border border-amber-200 rounded-2xl animate-in fade-in duration-200 mt-4">
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                                <Building2 className="size-4 text-amber-600" />
-                                Bureau / Stop Desk de Destination *
-                              </label>
-                              <Select value={selectedBureauCode} onValueChange={setSelectedBureauCode}>
-                                <SelectTrigger className="bg-white border-amber-200 text-slate-800 text-sm font-bold h-12 rounded-xl focus:bg-white transition-all px-4">
-                                  <SelectValue placeholder={!orderWilaya ? "Choisissez d'abord une Wilaya..." : (availableBureaux.length === 0 ? "Aucun bureau pré-enregistré pour cette wilaya" : "Sélectionner un bureau disponible dans cette wilaya...")} />
-                                </SelectTrigger>
-                                <SelectContent className="bg-white border-amber-200 text-slate-800 rounded-xl max-h-[250px]">
-                                  {availableBureaux.map((b) => (
-                                    <SelectItem key={b.code} value={b.code} className="text-xs font-bold py-2">
-                                      {b.code} — {b.name} ({b.address})
-                                    </SelectItem>
-                                  ))}
-                                  {availableBureaux.length === 0 && (
-                                    <SelectItem value="none" disabled>Précisez le bureau manuellement ci-dessous</SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <label className="text-[9px] font-bold text-amber-800 uppercase">Ou Saisissez le Nom/Code du Bureau Manuellement</label>
-                              <Input
-                                value={customBureauName}
-                                onChange={(e) => setCustomBureauName(e.target.value)}
-                                placeholder="Ex: Bureau Yalidine 05A, StopDesk Barika..."
-                                className="bg-white border-amber-200 text-slate-800 text-xs font-semibold h-11 rounded-xl px-4"
-                              />
-                            </div>
-                          </div>
-                        )}
                      </div>
                  </div>
               </div>
