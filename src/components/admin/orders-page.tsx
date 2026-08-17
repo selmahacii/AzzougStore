@@ -45,6 +45,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -277,6 +278,7 @@ const [timeLeft, setTimeLeft] = useState('');
   const [isAbandonedCart, setIsAbandonedCart] = useState(false);
   const [recoveryFee, setRecoveryFee] = useState(0);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [selectedDuplicateOrder, setSelectedDuplicateOrder] = useState<any>(null);
   // Store-wide duplicate count for the "🟣 Doublons" quick-filter badge —
   // was computed only from the currently-loaded page's `orders` array, so
   // it silently vanished (count===0 hides every non-ALL badge, see below)
@@ -1704,18 +1706,19 @@ const [timeLeft, setTimeLeft] = useState('');
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-slate-800 truncate">{order.customer_name}</span>
                           {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
-                            <Badge className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5">🟣 Doublon</Badge>
+                            <Badge 
+                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
+                              className="bg-purple-100 hover:bg-purple-200 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5 cursor-pointer transition-colors"
+                              title="Cliquer pour voir l'historique des doublons"
+                            >
+                              🟣 Doublon
+                            </Badge>
                           )}
-                          {/* Distinct from "🟣 Doublon" above (which flags THIS
-                              order as itself being a resubmit): this shows how
-                              many OTHER submissions were absorbed INTO this
-                              order — the concrete "why Meta Ads counts more
-                              than the ERP" answer, visible per-order instead
-                              of only as a store-wide total. */}
                           {!!order.duplicate_count && order.duplicate_count > 0 && (
                             <Badge
-                              className="bg-purple-100 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5"
-                              title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande${order.last_duplicate_at ? ` — dernière le ${formatDupTime(order.last_duplicate_at)}` : ''}`}
+                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
+                              className="bg-purple-100 hover:bg-purple-200 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5 cursor-pointer transition-colors"
+                              title={`Cliquer pour voir l'historique des doublons — ${order.duplicate_count} resoumission(s) fusionnée(s)`}
                             >
                               🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
                             </Badge>
@@ -1788,12 +1791,12 @@ const [timeLeft, setTimeLeft] = useState('');
                         </div>
                         {!!order.duplicate_count && order.duplicate_count > 0 && (
                           <button
-                            onClick={() => toggleExpandMerged(order.id)}
-                            className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none"
-                            title="Voir le détail des commandes fusionnées"
+                            onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); toggleExpandMerged(order.id); }}
+                            className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none cursor-pointer"
+                            title="Voir l'historique et le détail des commandes fusionnées"
                           >
                             <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir détails
+                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
                           </button>
                         )}
                         {order.notes && (
@@ -2066,7 +2069,13 @@ const [timeLeft, setTimeLeft] = useState('');
                         <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
                         {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
                           <>
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 text-amber-700 uppercase tracking-wide border border-amber-200">Doublon</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
+                              className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 hover:bg-amber-200 text-amber-700 uppercase tracking-wide border border-amber-200 transition-colors cursor-pointer"
+                              title="Voir l'historique des doublons"
+                            >
+                              🟣 Doublon
+                            </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); handleMergeDuplicates(order); }}
                               className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 hover:bg-purple-200 text-purple-700 uppercase tracking-wide border border-purple-200 transition-colors"
@@ -2092,12 +2101,12 @@ const [timeLeft, setTimeLeft] = useState('');
                       )}
                       {!!order.duplicate_count && order.duplicate_count > 0 && (
                         <button
-                          onClick={() => toggleExpandMerged(order.id)}
-                          className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none"
-                          title="Voir le détail des commandes fusionnées"
+                          onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); toggleExpandMerged(order.id); }}
+                          className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none cursor-pointer"
+                          title="Voir l'historique et le détail des commandes fusionnées"
                         >
                           <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir détails
+                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
                         </button>
                       )}
                     </div>
@@ -3602,6 +3611,14 @@ const [timeLeft, setTimeLeft] = useState('');
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal d'historique des doublons */}
+      <DuplicateHistoryModal
+        isOpen={!!selectedDuplicateOrder}
+        onClose={() => setSelectedDuplicateOrder(null)}
+        order={selectedDuplicateOrder}
+        onUnmergeSuccess={() => ordersQuery.refetch()}
+      />
 
     </div>
   );

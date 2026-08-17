@@ -29,6 +29,7 @@ import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-type-badge';
 import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 import ProductsPage from '@/components/admin/products-page';
+import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
@@ -462,6 +463,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   // confirm/dispatch instead. Confirmed in production: order #595).
   const [parentOrder, setParentOrder] = useState<any | null>(null);
   const [loadingParentOrder, setLoadingParentOrder] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   useEffect(() => {
     const needsDuplicates = !!order.duplicate_count && order.duplicate_count > 0;
     const needsParent = order.status === 'MERGED';
@@ -1511,9 +1513,21 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     <User className="size-4 text-slate-400" />
                     <span className="text-xs font-bold">{order.customer_name}</span>
                     {(order.is_duplicate || isDuplicatePhone?.(order.customer_phone)) && (
-                      <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700">
-                        Doublon
-                      </span>
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setShowDuplicateModal(true); }}
+                          className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors cursor-pointer flex items-center gap-1"
+                          title="Cliquer pour voir l'historique des doublons"
+                        >
+                          🟣 Doublon
+                        </button>
+                        <DuplicateHistoryModal
+                          isOpen={showDuplicateModal}
+                          onClose={() => setShowDuplicateModal(false)}
+                          order={order}
+                        />
+                      </>
                     )}
                   </div>
                   {order.status !== 'MERGED' && (
@@ -2136,6 +2150,7 @@ export default function AgentDashboard() {
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [drawerInitialEdit, setDrawerInitialEdit] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [selectedDuplicateOrder, setSelectedDuplicateOrder] = useState<any>(null);
 
   const currentFilter = useMemo(() => {
     const sub = MODULES.flatMap(m => m.subModules).find(s => s.id === activeSubModule);
@@ -2926,39 +2941,41 @@ export default function AgentDashboard() {
                                <OrderTypeBadge order={order} />
                                <StatusBadge status={order.status} />
                                <NrpBadge count={order.nrp_count || 0} />
-               <PendingBadge order={order} />
+                               <PendingBadge order={order} />
                                {related.length > 0 ? (
-                                 <RelatedOrdersBadge
-                                   count={related.length}
-                                   expanded={isExpanded}
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     setExpandedGroups(prev => {
-                                       const next = new Set(prev);
-                                       if (next.has(order.id)) next.delete(order.id);
-                                       else next.add(order.id);
-                                       return next;
-                                     });
-                                   }}
-                                 />
-                               ) : order.is_duplicate && (
-                                 <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0">
-                                   🟣 Doublon
-                                 </span>
-                               )}
-                               {/* How many resubmits were merged INTO this
-                                   order — visible to the confirmatrice too,
-                                   not just the admin, so she can see why a
-                                   Meta Ads count doesn't match what's in her
-                                   queue even for a single duplicate. */}
-                               {!!order.duplicate_count && order.duplicate_count > 0 && (
-                                 <span
-                                   className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 text-purple-700 shrink-0"
-                                   title={`${order.duplicate_count} resoumission${order.duplicate_count > 1 ? 's' : ''} du même client fusionnée${order.duplicate_count > 1 ? 's' : ''} dans cette commande${order.last_duplicate_at ? ` — dernière le ${new Date(order.last_duplicate_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ${new Date(order.last_duplicate_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
-                                 >
-                                   🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
-                                 </span>
-                               )}
+                                  <RelatedOrdersBadge
+                                    count={related.length}
+                                    expanded={isExpanded}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedGroups(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(order.id)) next.delete(order.id);
+                                        else next.add(order.id);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                ) : order.is_duplicate ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
+                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shrink-0 cursor-pointer transition-colors"
+                                    title="Cliquer pour voir l'historique des doublons"
+                                  >
+                                    🟣 Doublon
+                                   </button>
+                                ) : null}
+                                {!!order.duplicate_count && order.duplicate_count > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
+                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shrink-0 cursor-pointer transition-colors"
+                                    title={`Cliquer pour voir l'historique des doublons — ${order.duplicate_count} resoumission(s) fusionnée(s)`}
+                                  >
+                                    🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
+                                  </button>
+                                )}
                                {order.store?.name && (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
                                     🏪 {order.store.name}
@@ -3141,6 +3158,12 @@ export default function AgentDashboard() {
         </div>
       )}
       <ManualOrderModal isOpen={isCreatingOrder} setIsOpen={setIsCreatingOrder} />
+      <DuplicateHistoryModal
+        isOpen={!!selectedDuplicateOrder}
+        onClose={() => setSelectedDuplicateOrder(null)}
+        order={selectedDuplicateOrder}
+        onUnmergeSuccess={() => ordersQuery.refetch()}
+      />
     </div>
   );
 }
