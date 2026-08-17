@@ -141,13 +141,19 @@ def run_db_migrations():
         "WITH renumbered AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default') ORDER BY created_at ASC) AS seq FROM orders WHERE is_deleted IS FALSE OR is_deleted IS NULL) UPDATE orders SET store_sequence_number = renumbered.seq FROM renumbered WHERE orders.id = renumbered.id",
     ]
 
-    for stmt in statements:
-        try:
+    # Execute batch delivered orders SQL migration file
+    try:
+        sql_file_path = os.path.join(os.path.dirname(__file__), "db", "migrations", "update_delivered_orders.sql")
+        if os.path.exists(sql_file_path):
+            with open(sql_file_path, "r", encoding="utf-8") as sf:
+                sql_content = sf.read()
+            sql_commands = [c.strip() for c in sql_content.split(";") if c.strip() and not c.strip().startswith("--")]
             with engine.begin() as conn:
-                conn.execute(text(stmt))
-            print(f"[OK] Migration statement executed: {stmt}")
-        except Exception as e:
-            print(f"[WARN] Migration statement failed ({stmt}): {e}")
+                for cmd in sql_commands:
+                    conn.execute(text(cmd))
+            print(f"[OK] Executed delivered orders batch migration script ({len(sql_commands)} statements).")
+    except Exception as e:
+        print(f"[WARN] Failed to execute delivered orders migration script: {e}")
 
     print("[OK] Startup migrations finished — database connection is live.")
 
