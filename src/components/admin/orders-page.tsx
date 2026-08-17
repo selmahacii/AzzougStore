@@ -46,6 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
+import { DuplicatePopover } from '@/components/shared/duplicate-popover';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1705,23 +1706,12 @@ const [timeLeft, setTimeLeft] = useState('');
                         <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-slate-800 truncate">{order.customer_name}</span>
-                          {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
-                            <Badge 
-                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
-                              className="bg-purple-100 hover:bg-purple-200 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5 cursor-pointer transition-colors"
-                              title="Cliquer pour voir l'historique des doublons"
-                            >
-                              🟣 Doublon
-                            </Badge>
-                          )}
-                          {!!order.duplicate_count && order.duplicate_count > 0 && (
-                            <Badge
-                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
-                              className="bg-purple-100 hover:bg-purple-200 text-purple-700 border-none rounded-md text-[8px] font-black shadow-none uppercase px-1.5 py-0.5 cursor-pointer transition-colors"
-                              title={`Cliquer pour voir l'historique des doublons — ${order.duplicate_count} resoumission(s) fusionnée(s)`}
-                            >
-                              🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
-                            </Badge>
+                          {(order.is_duplicate || isDuplicatePhone(order.customer_phone) || (order.duplicate_count ?? 0) > 0) && (
+                            <DuplicatePopover
+                              order={order}
+                              onOpenFullModal={() => setSelectedDuplicateOrder(order)}
+                              onUnmergeSuccess={() => ordersQuery.refetch()}
+                            />
                           )}
                         </div>
                         <span className="text-[10px] font-bold text-[#4b7bec] mt-0.5">{order.customer_phone}</span>
@@ -2067,15 +2057,13 @@ const [timeLeft, setTimeLeft] = useState('');
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
-                        {(order.is_duplicate || isDuplicatePhone(order.customer_phone)) && (
+                        {(order.is_duplicate || isDuplicatePhone(order.customer_phone) || (order.duplicate_count ?? 0) > 0) && (
                           <>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
-                              className="px-1.5 py-0.5 rounded text-[8px] font-black bg-amber-100 hover:bg-amber-200 text-amber-700 uppercase tracking-wide border border-amber-200 transition-colors cursor-pointer"
-                              title="Voir l'historique des doublons"
-                            >
-                              🟣 Doublon
-                            </button>
+                            <DuplicatePopover
+                              order={order}
+                              onOpenFullModal={() => setSelectedDuplicateOrder(order)}
+                              onUnmergeSuccess={() => ordersQuery.refetch()}
+                            />
                             <button
                               onClick={(e) => { e.stopPropagation(); handleMergeDuplicates(order); }}
                               className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 hover:bg-purple-200 text-purple-700 uppercase tracking-wide border border-purple-200 transition-colors"

@@ -30,6 +30,7 @@ import { OrderTypeBadge, RelatedOrdersBadge } from '@/components/shared/order-ty
 import InventoryDashboard from '@/components/admin/modules/inventory-dashboard';
 import ProductsPage from '@/components/admin/products-page';
 import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
+import { DuplicatePopover } from '@/components/shared/duplicate-popover';
 
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
@@ -1512,16 +1513,12 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   <div className="flex items-center gap-3">
                     <User className="size-4 text-slate-400" />
                     <span className="text-xs font-bold">{order.customer_name}</span>
-                    {(order.is_duplicate || isDuplicatePhone?.(order.customer_phone)) && (
+                    {(order.is_duplicate || isDuplicatePhone?.(order.customer_phone) || (order.duplicate_count ?? 0) > 0) && (
                       <>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setShowDuplicateModal(true); }}
-                          className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors cursor-pointer flex items-center gap-1"
-                          title="Cliquer pour voir l'historique des doublons"
-                        >
-                          🟣 Doublon
-                        </button>
+                        <DuplicatePopover
+                          order={order}
+                          onOpenFullModal={() => setShowDuplicateModal(true)}
+                        />
                         <DuplicateHistoryModal
                           isOpen={showDuplicateModal}
                           onClose={() => setShowDuplicateModal(false)}
@@ -2956,26 +2953,13 @@ export default function AgentDashboard() {
                                       });
                                     }}
                                   />
-                                ) : order.is_duplicate ? (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
-                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shrink-0 cursor-pointer transition-colors"
-                                    title="Cliquer pour voir l'historique des doublons"
-                                  >
-                                    🟣 Doublon
-                                   </button>
+                                ) : (order.is_duplicate || (order.duplicate_count ?? 0) > 0) ? (
+                                  <DuplicatePopover
+                                    order={order}
+                                    onOpenFullModal={() => setSelectedDuplicateOrder(order)}
+                                    onUnmergeSuccess={() => ordersQuery.refetch()}
+                                  />
                                 ) : null}
-                                {!!order.duplicate_count && order.duplicate_count > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); }}
-                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 shrink-0 cursor-pointer transition-colors"
-                                    title={`Cliquer pour voir l'historique des doublons — ${order.duplicate_count} resoumission(s) fusionnée(s)`}
-                                  >
-                                    🟣 +{order.duplicate_count} doublon{order.duplicate_count > 1 ? 's' : ''} fusionné{order.duplicate_count > 1 ? 's' : ''}
-                                  </button>
-                                )}
                                {order.store?.name && (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
                                     🏪 {order.store.name}
