@@ -1713,6 +1713,7 @@ def update_abandoned_cart(
     """
     Save or update an abandoned cart draft from the storefront.
     """
+    from datetime import datetime, timezone, timedelta
     order_data = order_in.model_dump(exclude={"items", "abandoned_cart_id"})
     # Set correct source
     order_data["source"] = order_in.source or "abandoned_cart"
@@ -1874,7 +1875,6 @@ def update_abandoned_cart(
         return {"success": True, "id": db_order.id, "message": "Panier abandonné mis à jour"}
     
     # Create new abandoned cart with auto-assignment
-    from datetime import datetime, timezone
     import uuid
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     order_number = f"ABN-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
