@@ -2078,50 +2078,27 @@ def create_order(
 
         from datetime import datetime, timezone, timedelta
 
-        # ── Idempotent submit: rapid multi-clicks on "Commander" ─────────────
-        # A customer hammering the order button (storefront or landing page)
-        # used to create one order per click; auto-merge then FUSED them by
-        # summing quantities — so 3 clicks for 1 item became quantity 3 on the
-        # surviving parent, and the confirmatrice saw an inflated basket plus
-        # a pile of "doublons". An IDENTICAL basket (same products, same
-        # variants, same quantities) resubmitted by the same phone within a
-        # short window is the same intent, not a new purchase → return the
-        # already-created order untouched. A basket that differs in ANY way
-        # (variant changed, quantity changed, product added) falls through to
-        # normal creation, where auto-merge handles it as a genuine addition.
-        def _items_signature(raw_items: list) -> tuple:
-            sig = []
-            for it in raw_items:
-                vd = it.get("variant_details") if isinstance(it, dict) else None
-                variant = (vd.get("variant") if isinstance(vd, dict) else str(vd or "")) or ""
-                sig.append((str(it.get("product_id") or ""), str(variant).strip().lower(), int(it.get("quantity") or 0)))
-            return tuple(sorted(sig))
-
-        if order_data.get("customer_phone") and order_data.get("store_id"):
-            _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
-            _incoming_sig = _items_signature(items)
-            _recent = (
-                db.query(Order)
-                .options(joinedload(Order.items))
-                .filter(
-                    Order.store_id == order_data["store_id"],
-                    Order.customer_phone == order_data["customer_phone"],
+        # ── 5-minute strict deduplication: multi-clicks / re-submits on landing page ─────
+        # Multiple clicks or submissions within 5 minutes for the same phone number
+        # are treated as a single order attempt: return the existing order directly,
+        # creating ZERO duplicate entries in the database.
+        if order_data.get("customer_phone"):
+            phone_clean = str(order_data["customer_phone"]).strip()
+            if phone_clean:
+                _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=5)
+                _recent_query = db.query(Order).filter(
+                    Order.customer_phone == phone_clean,
                     Order.created_at >= _idem_window,
                     Order.is_deleted == False,
-                    Order.status.notin_(["CANCELLED", "MERGED", "RETURNED"]),
+                    Order.status.notin_(["CANCELLED", "RETURNED"]),
                 )
-                .order_by(Order.created_at.desc())
-                .all()
-            )
-            for _prev in _recent:
-                _prev_sig = _items_signature([
-                    {"product_id": pi.product_id, "variant_details": pi.variant_details, "quantity": pi.quantity}
-                    for pi in (_prev.items or [])
-                ])
-                if _prev_sig == _incoming_sig:
+                if order_data.get("store_id"):
+                    _recent_query = _recent_query.filter(Order.store_id == order_data["store_id"])
+                _prev = _recent_query.order_by(Order.created_at.desc()).first()
+                if _prev:
                     logger.info(
-                        "Idempotent submit: identical basket from %s within 15min → returning existing order %s instead of creating a duplicate",
-                        order_data["customer_phone"], _prev.order_number,
+                        "Deduplicated submit: phone %s submitted within 5min window → returning existing order %s without creating a duplicate entry",
+                        phone_clean, _prev.order_number,
                     )
                     return _prev
 
