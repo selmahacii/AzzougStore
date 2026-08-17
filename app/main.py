@@ -170,8 +170,22 @@ def run_db_migrations():
                     subtotal = sum(int(i.quantity or 1) * float(i.unit_price or 0) for i in p.items if i not in to_remove)
                     p.subtotal = int(subtotal)
                     p.total = max(0, int(subtotal) + int(p.delivery_fee or 0) - int(p.discount or 0))
+            # Delete any MERGED child orders created within 10 minutes of their parent order
+            child_orders = db_mig.query(Order).filter(
+                Order.parent_order_id.isnot(None),
+                Order.status == "MERGED",
+            ).all()
+            purged = 0
+            for child in child_orders:
+                parent = db_mig.query(Order).filter(Order.id == child.parent_order_id).first()
+                if parent and child.created_at and parent.created_at:
+                    diff_sec = abs((child.created_at - parent.created_at).total_seconds())
+                    if diff_sec <= 600:
+                        db_mig.query(OrderItem).filter(OrderItem.order_id == child.id).delete(synchronize_session=False)
+                        db_mig.delete(child)
+                        purged += 1
             db_mig.commit()
-            print("[OK] Cleaned up merged parent order baskets to single-order state.")
+            print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
         finally:
             db_mig.close()
     except Exception as exc:

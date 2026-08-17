@@ -1757,17 +1757,23 @@ def update_abandoned_cart(
     if not db_order:
         phone = (order_data.get("customer_phone") or "").strip()
         if phone and phone.lower() != "inconnu":
+            _window_15m = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
             db_order = (
                 db.query(Order)
                 .filter(
                     Order.store_id == order_in.store_id,
                     Order.customer_phone == phone,
-                    Order.status == "ABANDONED",
+                    Order.created_at >= _window_15m,
                     Order.is_deleted == False,
+                    Order.status.notin_(["CANCELLED", "RETURNED"]),
                 )
                 .order_by(Order.created_at.desc())
                 .first()
             )
+            if db_order and db_order.parent_order_id:
+                parent_order = db.query(Order).filter(Order.id == db_order.parent_order_id).first()
+                if parent_order:
+                    db_order = parent_order
 
     if db_order:
         # Update existing
