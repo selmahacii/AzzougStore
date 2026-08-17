@@ -669,24 +669,49 @@ def get_analytics(
         ).filter(and_(*base_filters)).group_by(Order.store_id).all()
         
         stores = db.query(Store).filter(Store.is_active == True).all()
-        stats_map = {stat.store_id: stat for stat in stats if stat.store_id}
+        default_store_id = stores[0].id if stores else None
+        
+        # Group stats by store_id, assigning None store_id orders to default store
+        stats_map: dict = {}
+        for stat in stats:
+            sid = stat.store_id or default_store_id
+            if not sid:
+                continue
+            if sid not in stats_map:
+                stats_map[sid] = {
+                    "total_orders": 0, "revenue": 0, "delivered_revenue": 0,
+                    "pending_count": 0, "confirmed_count": 0, "shipped_count": 0,
+                    "delivered_count": 0, "cancelled_count": 0,
+                    "non_manual_total": 0, "non_manual_valid": 0
+                }
+            m = stats_map[sid]
+            m["total_orders"] += (stat.total_orders or 0)
+            m["revenue"] += (stat.revenue or 0)
+            m["delivered_revenue"] += (stat.delivered_revenue or 0)
+            m["pending_count"] += (stat.pending_count or 0)
+            m["confirmed_count"] += (stat.confirmed_count or 0)
+            m["shipped_count"] += (stat.shipped_count or 0)
+            m["delivered_count"] += (stat.delivered_count or 0)
+            m["cancelled_count"] += (stat.cancelled_count or 0)
+            m["non_manual_total"] += (stat.non_manual_total or 0)
+            m["non_manual_valid"] += (stat.non_manual_valid or 0)
         
         data = []
         for store_info in stores:
-            stat = stats_map.get(store_info.id)
+            stat = stats_map.get(store_info.id, {})
             
-            total_orders = (stat.total_orders if stat else 0) or 0
-            revenue = (stat.revenue if stat else 0) or 0
-            delivered_revenue = (stat.delivered_revenue if stat else 0) or 0
-            pending_count = (stat.pending_count if stat else 0) or 0
-            confirmed_count = (stat.confirmed_count if stat else 0) or 0
-            shipped_count = (stat.shipped_count if stat else 0) or 0
-            delivered_count = (stat.delivered_count if stat else 0) or 0
-            cancelled_count = (stat.cancelled_count if stat else 0) or 0
+            total_orders = stat.get("total_orders", 0)
+            revenue = stat.get("revenue", 0)
+            delivered_revenue = stat.get("delivered_revenue", 0)
+            pending_count = stat.get("pending_count", 0)
+            confirmed_count = stat.get("confirmed_count", 0)
+            shipped_count = stat.get("shipped_count", 0)
+            delivered_count = stat.get("delivered_count", 0)
+            cancelled_count = stat.get("cancelled_count", 0)
             
             valid_orders_count = confirmed_count + shipped_count + delivered_count
-            non_manual_total = (stat.non_manual_total if stat else 0) or 0
-            non_manual_valid = (stat.non_manual_valid if stat else 0) or 0
+            non_manual_total = stat.get("non_manual_total", 0)
+            non_manual_valid = stat.get("non_manual_valid", 0)
             
             conversion_rate = round((non_manual_valid / non_manual_total * 100), 2) if non_manual_total > 0 else 0
             average_basket = round((revenue / valid_orders_count), 2) if valid_orders_count > 0 else 0

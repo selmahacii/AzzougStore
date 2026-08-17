@@ -1246,10 +1246,22 @@ const [timeLeft, setTimeLeft] = useState('');
                 </div>
               ))
             ) : storesAnalyticsQuery.data?.data?.map((store: any) => {
-              const totalOrders = store.total_orders;
-              const revenue = store.revenue;
-              const averageBasket = store.average_basket;
-              const conversionRate = store.conversion_rate;
+              const activeOrders = (activeStore?.id === store.store_id && ordersQuery.data?.data) ? ordersQuery.data.data : [];
+              const validActiveOrders = activeOrders.filter((o: any) => !['ABANDONED', 'CANCELLED', 'RETURNED', 'REFUSED', 'MERGED'].includes(o.status));
+              const activeRevenue = validActiveOrders.reduce((sum: number, o: any) => sum + (o.total || 0), 0);
+
+              const totalOrders = (activeStore?.id === store.store_id && ordersQuery.data?.total) ? ordersQuery.data.total : (store.total_orders || 0);
+              const revenue = (activeOrders.length > 0 && (store.revenue === 0 || !store.revenue)) ? activeRevenue : (store.revenue || 0);
+              const validCount = (activeOrders.length > 0 && (store.revenue === 0 || !store.revenue)) ? validActiveOrders.length : ((store.delivered_orders || 0) + (store.shipped_orders || 0) + (store.confirmed_orders || 0));
+              const averageBasket = validCount > 0 ? Math.round(revenue / validCount) : (store.average_basket || 0);
+              const nonAbandonedTotal = activeOrders.filter((o: any) => o.status !== 'ABANDONED').length;
+              const conversionRate = (activeOrders.length > 0 && (store.conversion_rate === 0 || !store.conversion_rate)) ? (nonAbandonedTotal > 0 ? Math.round((validActiveOrders.length / nonAbandonedTotal) * 100) : 0) : (store.conversion_rate || 0);
+
+              const pendingCount = (activeOrders.length > 0 && (!store.pending_orders || store.pending_orders === 0)) ? activeOrders.filter((o: any) => ['NEW', 'ASSIGNED', 'CALLED', 'PENDING'].includes(o.status)).length : (store.pending_orders ?? 0);
+              const confirmedCount = (activeOrders.length > 0 && (!store.confirmed_orders || store.confirmed_orders === 0)) ? activeOrders.filter((o: any) => ['CONFIRMED', 'IN_PROGRESS'].includes(o.status)).length : (store.confirmed_orders ?? 0);
+              const shippedCount = (activeOrders.length > 0 && (!store.shipped_orders || store.shipped_orders === 0)) ? activeOrders.filter((o: any) => o.status === 'SHIPPED').length : (store.shipped_orders ?? 0);
+              const deliveredCount = (activeOrders.length > 0 && (!store.delivered_orders || store.delivered_orders === 0)) ? activeOrders.filter((o: any) => o.status === 'DELIVERED').length : (store.delivered_orders ?? 0);
+              const cancelledCount = (activeOrders.length > 0 && (!store.cancelled_orders || store.cancelled_orders === 0)) ? activeOrders.filter((o: any) => ['CANCELLED', 'RETURNED', 'REFUSED'].includes(o.status)).length : (store.cancelled_orders ?? 0);
 
               return (
                 <div 
@@ -1320,23 +1332,23 @@ const [timeLeft, setTimeLeft] = useState('');
                   <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500">
                     <span className="flex items-center gap-1 text-amber-600">
                       <span className="size-1.5 rounded-full bg-amber-400" />
-                      Attente: <strong className="text-slate-800">{store.pending_orders ?? 0}</strong>
+                      Attente: <strong className="text-slate-800">{pendingCount}</strong>
                     </span>
                     <span className="flex items-center gap-1 text-[#4b7bec]">
                       <span className="size-1.5 rounded-full bg-[#4b7bec]" />
-                      Conf: <strong className="text-slate-800">{store.confirmed_orders ?? 0}</strong>
+                      Conf: <strong className="text-slate-800">{confirmedCount}</strong>
                     </span>
                     <span className="flex items-center gap-1 text-indigo-600">
                       <span className="size-1.5 rounded-full bg-indigo-500" />
-                      Expé: <strong className="text-slate-800">{store.shipped_orders ?? 0}</strong>
+                      Expé: <strong className="text-slate-800">{shippedCount}</strong>
                     </span>
                     <span className="flex items-center gap-1 text-emerald-600">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
-                      Livr: <strong className="text-slate-800">{store.delivered_orders ?? 0}</strong>
+                      Livr: <strong className="text-slate-800">{deliveredCount}</strong>
                     </span>
                     <span className="flex items-center gap-1 text-rose-600">
                       <span className="size-1.5 rounded-full bg-rose-500" />
-                      Ann: <strong className="text-slate-800">{store.cancelled_orders ?? 0}</strong>
+                      Ann: <strong className="text-slate-800">{cancelledCount}</strong>
                     </span>
                   </div>
                 </div>
