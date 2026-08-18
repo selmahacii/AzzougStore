@@ -1008,7 +1008,7 @@ def get_agent_counts(
         # and the same carrier-tracked exclusion (once a parcel has a real
         # tracking number it's the transporteur's job, not his).
         from sqlalchemy import select as _select_evt
-        _acted_ids = _select_evt(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
+        _acted_ids = _select_evt(OrderEvent.order_id).where(OrderEvent.actor_id == current_user.id)
         _livreur_scope = or_(
             Order.livreur_id == current_user.id,
             Order.assigned_to == current_user.id,
@@ -1022,11 +1022,11 @@ def get_agent_counts(
         base = base_query
         base_wide = base_query
 
-    if store_id:
+    if store_id and isinstance(store_id, str):
         base = base.filter(Order.store_id == store_id)
         base_wide = base_wide.filter(Order.store_id == store_id)
     for bound, op_gte in ((start_date, True), (end_date, False)):
-        if bound:
+        if bound and isinstance(bound, str):
             try:
                 dt = datetime.fromisoformat(bound.replace("Z", "+00:00")).replace(tzinfo=None)
                 base = base.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
@@ -1378,8 +1378,8 @@ def list_orders(
                 "INTERNAL_DELIVERY", "SHIPPED", "DELIVERED",
                 "RETURNED", "CANCELLED", "ARCHIVED",
             }
-            _status_upper = status.upper() if status else ""
-            _type_upper = type_filter.upper() if type_filter else ""
+            _status_upper = status.upper() if (status and isinstance(status, str)) else ""
+            _type_upper = type_filter.upper() if (type_filter and isinstance(type_filter, str)) else ""
             is_abandoned_query = (
                 (_status_upper in {"ABANDONED", "NRP_ABANDONED", "ABANDONED_IN_PROGRESS", "RECOVERED"}) or
                 (_type_upper == "ABANDONED") or
@@ -1392,7 +1392,7 @@ def list_orders(
             # stayed visible to whoever Order.assigned_to (a one-time
             # snapshot, stamped before the rule existed or by the legacy
             # pool logic) still happened to name.
-            if (status and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_"))) or is_abandoned_query:
+            if (status and isinstance(status, str) and (_status_upper in _STORE_WIDE_STATUSES or _status_upper.startswith("CARRIER_"))) or is_abandoned_query:
                 query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, scope_crit), db))
             else:
                 query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, unassigned_matching), db))
@@ -1410,7 +1410,7 @@ def list_orders(
             # a carrier-tracked parcel — once a NOEST/Yalidine/ZR tracking
             # number exists, that's the transporteur's job.
             from sqlalchemy import or_ as _or_liv, select as _select_evt_l
-            _acted_ids_l = _select_evt_l(OrderEvent.order_id).where(OrderEvent.user_id == current_user.id)
+            _acted_ids_l = _select_evt_l(OrderEvent.order_id).where(OrderEvent.actor_id == current_user.id)
             query = query.filter(
                 _or_liv(
                     Order.livreur_id == current_user.id,
@@ -1593,7 +1593,7 @@ def list_orders(
         else:
             query = query.filter(Order.is_abandoned_cart == False, Order.status != "ABANDONED")
 
-    if type_filter and type_filter.upper() != "ALL":
+    if type_filter and isinstance(type_filter, str) and type_filter.upper() != "ALL":
         _tf = type_filter.upper()
         from sqlalchemy import or_
         if _tf == "ABANDONED":
