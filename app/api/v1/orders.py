@@ -1765,13 +1765,13 @@ def update_abandoned_cart(
     if not db_order:
         phone = (order_data.get("customer_phone") or "").strip()
         if phone and phone.lower() != "inconnu":
-            _window_15m = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
+            _window_7d = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
             db_order = (
                 db.query(Order)
                 .filter(
                     Order.store_id == order_in.store_id,
                     Order.customer_phone == phone,
-                    Order.created_at >= _window_15m,
+                    Order.created_at >= _window_7d,
                     Order.is_deleted == False,
                     Order.status.notin_(["CANCELLED", "RETURNED"]),
                 )
@@ -2097,8 +2097,8 @@ def create_order(
         # creating ZERO duplicate entries in the database.
         if order_data.get("customer_phone"):
             phone_clean = str(order_data["customer_phone"]).strip()
-            if phone_clean:
-                _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=5)
+            if phone_clean and phone_clean.lower() != "inconnu":
+                _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
                 _recent_query = db.query(Order).filter(
                     Order.customer_phone == phone_clean,
                     Order.created_at >= _idem_window,
@@ -2110,7 +2110,7 @@ def create_order(
                 _prev = _recent_query.order_by(Order.created_at.desc()).first()
                 if _prev:
                     logger.info(
-                        "Deduplicated submit: phone %s submitted within 5min window → returning existing order %s without creating a duplicate entry",
+                        "Deduplicated submit: phone %s submitted within 7-day window → returning existing order %s without creating a duplicate entry",
                         phone_clean, _prev.order_number,
                     )
                     return _prev
