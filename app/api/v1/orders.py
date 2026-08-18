@@ -1787,6 +1787,21 @@ def update_abandoned_cart(
         # Update existing
         for key, value in order_data.items():
             setattr(db_order, key, value)
+
+        # Merge any other duplicate drafts for the same phone & store
+        phone = (order_data.get("customer_phone") or "").strip()
+        if phone and phone.lower() != "inconnu":
+            other_duplicates = db.query(Order).filter(
+                Order.store_id == order_in.store_id,
+                Order.customer_phone == phone,
+                Order.id != db_order.id,
+                Order.is_deleted == False,
+                Order.status != "MERGED"
+            ).all()
+            for dup in other_duplicates:
+                dup.status = "MERGED"
+                dup.parent_order_id = db_order.id
+                dup.is_deleted = True
             
         # Try to auto-assign if currently unassigned
         if not db_order.assigned_to and not db_order.livreur_id:
@@ -2107,10 +2122,34 @@ def create_order(
                 )
                 if order_data.get("store_id"):
                     _recent_query = _recent_query.filter(Order.store_id == order_data["store_id"])
-                _prev = _recent_query.order_by(Order.created_at.desc()).first()
+                _prev = _recent_query.order_by(Order.created_at.asc()).first()
                 if _prev:
+                    # Update existing draft/abandoned cart into real order instead of creating duplicate
+                    if _prev.is_abandoned_cart or _prev.status in ("ABANDONED", "NEW"):
+                        _prev.status = order_data.get("status", "NEW")
+                        _prev.is_abandoned_cart = False
+                        valid_order_cols = {c.name for c in Order.__table__.columns}
+                        for k, v in order_data.items():
+                            if k in valid_order_cols and k not in ("id", "order_number", "store_sequence_number") and hasattr(_prev, k):
+                                setattr(_prev, k, v)
+                    
+                    # Merge any other duplicate drafts for this customer
+                    other_dups = db.query(Order).filter(
+                        Order.customer_phone == phone_clean,
+                        Order.id != _prev.id,
+                        Order.is_deleted == False,
+                        Order.status != "MERGED"
+                    )
+                    if order_data.get("store_id"):
+                        other_dups = other_dups.filter(Order.store_id == order_data["store_id"])
+                    for dup in other_dups.all():
+                        dup.status = "MERGED"
+                        dup.parent_order_id = _prev.id
+                        dup.is_deleted = True
+                    
+                    db.commit()
                     logger.info(
-                        "Deduplicated submit: phone %s submitted within 7-day window → returning existing order %s without creating a duplicate entry",
+                        "Deduplicated submit: phone %s submitted within 7-day window → updated existing order %s",
                         phone_clean, _prev.order_number,
                     )
                     return _prev
