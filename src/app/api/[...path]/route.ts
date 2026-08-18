@@ -99,7 +99,7 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     // producing the same fast, structured 503 JSON as any other proxy
     // failure — which api-client.ts already retries.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     let response: Response;
     try {
       response = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
