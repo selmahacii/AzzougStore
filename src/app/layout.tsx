@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
+import { GoogleFontsLoader } from "@/components/google-fonts-loader";
 
 // System fonts only — no Google Fonts network request
 const geistSans = { variable: "--font-geist-sans" };
@@ -24,9 +25,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} ${outfit.variable} antialiased bg-background text-foreground`}
       >
+        <GoogleFontsLoader />
         <Providers>
           {children}
         </Providers>
