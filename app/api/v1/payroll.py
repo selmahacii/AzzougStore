@@ -68,8 +68,8 @@ def _compute_store_contributions(db: Session, emp: User, salary_result: dict, si
                 Order.assigned_to == emp.id,
                 Order.status == "DELIVERED",
                 Order.is_deleted == False,
-                Order.created_at >= since,
-                Order.created_at <= until,
+                func.coalesce(Order.updated_at, Order.created_at) >= since,
+                func.coalesce(Order.updated_at, Order.created_at) <= until,
             )
             .group_by(Order.store_id)
             .all()
@@ -80,7 +80,11 @@ def _compute_store_contributions(db: Session, emp: User, salary_result: dict, si
         active_ids = [
             r[0] for r in (
                 db.query(Order.store_id)
-                .filter(Order.is_deleted == False, Order.created_at >= since, Order.created_at <= until)
+                .filter(
+                    Order.is_deleted == False,
+                    func.coalesce(Order.updated_at, Order.created_at) >= since,
+                    func.coalesce(Order.updated_at, Order.created_at) <= until
+                )
                 .group_by(Order.store_id)
                 .all()
             )
