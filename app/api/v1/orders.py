@@ -1518,10 +1518,12 @@ def list_orders(
                 Order.is_abandoned_cart == False,
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
             )
-        elif status.upper() == "ABANDONED_IN_PROGRESS":
-            # Un panier abandonné RESTE abandonné tant qu'il n'est pas CONFIRMED
+        elif status.upper() in ("ABANDONED", "ABANDONED_IN_PROGRESS"):
+            # Un panier abandonné regroupe toutes les commandes avec is_abandoned_cart=True
+            # ou status="ABANDONED", tant qu'elles ne sont pas finalisées (CONFIRMED/SHIPPED/DELIVERED/CANCELLED/RETURNED)
+            from sqlalchemy import or_
             query = query.filter(
-                Order.is_abandoned_cart == True,
+                or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
                 Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"]),
             )
         elif status.upper() == "RECOVERED":
@@ -1585,8 +1587,35 @@ def list_orders(
         # the default listing — the surviving parent represents them.
         # EXCEPTION: an explicit search must find child orders too (searching
         # a child order number opens its parent from the UI).
-        if not search:
-            query = query.filter(Order.status != "MERGED")
+    if is_abandoned_cart is not None:
+        from sqlalchemy import or_
+        if is_abandoned_cart is True:
+            query = query.filter(or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"))
+        else:
+            query = query.filter(Order.is_abandoned_cart == False, Order.status != "ABANDONED")
+
+    if type_filter and type_filter.upper() != "ALL":
+        _tf = type_filter.upper()
+        from sqlalchemy import or_
+        if _tf == "ABANDONED":
+            query = query.filter(
+                or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
+                Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED"]),
+            )
+        elif _tf == "RECOVERED":
+            query = query.filter(
+                Order.is_abandoned_cart == True,
+                Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]),
+            )
+        elif _tf == "NORMAL":
+            query = query.filter(
+                Order.is_abandoned_cart == False,
+                sqlfunc.coalesce(Order.source, "") != "MANUAL",
+                Order.is_upsell == False,
+            )
+        elif _tf == "MANUAL":
+            query = query.filter(sqlfunc.coalesce(Order.source, "") == "MANUAL")
+
     if assigned_to:
         query = query.filter(Order.assigned_to == assigned_to)
     if livreur_id:
