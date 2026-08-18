@@ -1583,6 +1583,9 @@ def list_orders(
         # the default listing — the surviving parent represents them.
         # EXCEPTION: an explicit search must find child orders too (searching
         # a child order number opens its parent from the UI).
+        if not search:
+            query = query.filter(Order.status != "MERGED")
+
     if is_abandoned_cart is not None:
         from sqlalchemy import or_
         if is_abandoned_cart is True:
