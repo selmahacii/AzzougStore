@@ -1650,22 +1650,21 @@ class OrderService:
         if new_livreur is not None and new_livreur != order.livreur_id:
             old_livreur = order.livreur_id
             order.livreur_id = new_livreur or None
-            cur_status = str(order.status)
+            old_status = str(order.status)
+            cur_status = old_status
 
-            # Switching a shipped carrier parcel to an internal driver:
-            # the NOEST tracking is no longer the source of truth for this
-            # order — drop it (no orphan tracking number) and step the
-            # status back to CONFIRMED so it re-enters a clean pipeline.
-            # NOEST has no verified public cancel endpoint wired here yet;
-            # the note flags it so ops can cancel it manually carrier-side.
             switch_note = None
-            if new_livreur and order.tracking_number:
-                switch_note = (
-                    f"Switch transporteur → livreur interne : tracking {order.tracking_number} "
-                    f"détaché (à annuler manuellement chez NOEST si déjà pris en charge)."
-                )
-                order.tracking_number = None
-                if cur_status == "SHIPPED":
+            if new_livreur:
+                if order.tracking_number:
+                    switch_note = (
+                        f"Switch transporteur → livreur interne : tracking {order.tracking_number} "
+                        f"détaché (à annuler manuellement chez NOEST si déjà pris en charge)."
+                    )
+                    order.tracking_number = None
+                
+                # When assigned to a livreur, set status to CONFIRMED (normal confirmed badge)
+                # unless the order is already in a terminal state (DELIVERED, RETURNED, CANCELLED)
+                if cur_status not in ("DELIVERED", "RETURNED", "CANCELLED"):
                     order.status = "CONFIRMED"
                     cur_status = "CONFIRMED"
 
@@ -1674,7 +1673,7 @@ class OrderService:
                 order_id=order.id,
                 actor_id=actor_id,
                 actor_role=actor_role,
-                from_status=cur_status,
+                from_status=old_status,
                 to_status=cur_status,
                 note=switch_note or (f"Livreur assigné ({new_livreur})" if new_livreur
                       else f"Livreur retiré ({old_livreur})"),
