@@ -187,18 +187,18 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
       <PopoverContent
         align="start"
         side="bottom"
-        className="w-[380px] sm:w-[440px] p-0 bg-white border border-purple-200 rounded-2xl shadow-2xl z-[999] overflow-hidden"
+        className="w-[380px] sm:w-[440px] p-0 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[999] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Dropdown Header */}
-        <div className="bg-gradient-to-r from-purple-900 to-indigo-900 text-white p-3.5 flex items-center justify-between">
+        <div className="bg-slate-900 text-white p-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Layers className="size-4 text-purple-300" />
+            <Layers className="size-4 text-slate-300" />
             <div>
               <h4 className="text-xs font-black tracking-wide text-white uppercase">
                 Détails des Doublons #{order.order_number}
               </h4>
-              <p className="text-[10px] text-purple-200 font-semibold">
+              <p className="text-[10px] text-slate-300 font-semibold">
                 {order.customer_name || 'Client'} · 📞 {order.customer_phone}
               </p>
             </div>
@@ -210,7 +210,7 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
                 setIsOpen(false);
                 onOpenFullModal();
               }}
-              className="text-[10px] bg-white/20 hover:bg-white/30 text-white font-bold px-2 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0"
+              className="text-[10px] bg-white/10 hover:bg-white/20 text-white font-bold px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 shrink-0 border border-white/10"
               title="Ouvrir la modal complète"
             >
               <Maximize2 className="size-3" />
@@ -223,16 +223,16 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
         <div className="p-3.5 max-h-[380px] overflow-y-auto space-y-3">
           {loading ? (
             <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-2">
-              <Loader2 className="size-6 animate-spin text-purple-600" />
+              <Loader2 className="size-6 animate-spin text-slate-600" />
               <p className="text-[11px] font-semibold">Chargement des doublons...</p>
             </div>
           ) : (
             <>
               {/* Parent Order Notice */}
               {parentOrder && (
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 space-y-1">
-                  <span className="text-[10px] font-black uppercase text-purple-800 flex items-center gap-1">
-                    <AlertTriangle className="size-3 text-purple-600" />
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+                  <span className="text-[10px] font-black uppercase text-amber-800 flex items-center gap-1">
+                    <AlertTriangle className="size-3 text-amber-600" />
                     Commande fusionnée dans : #{parentOrder.order_number}
                   </span>
                   <p className="text-xs text-slate-700 font-bold">
@@ -250,12 +250,12 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
                   {childOrders.map((child, idx) => (
                     <div
                       key={child.id || idx}
-                      className="bg-purple-50/50 border border-purple-100 rounded-xl p-3 space-y-2 text-xs"
+                      className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 font-bold text-slate-900">
                           <span>#{child.order_number}</span>
-                          <span className="text-[9px] font-black bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                          <span className="text-[9px] font-black bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded">
                             Doublon
                           </span>
                         </div>
@@ -276,13 +276,13 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
 
                       {/* Child items */}
                       {child.items && child.items.length > 0 && (
-                        <div className="bg-white/80 p-2 rounded-lg border border-purple-100/60 space-y-1">
+                        <div className="bg-white p-2 rounded-lg border border-slate-200 space-y-1">
                           {child.items.map((item: any, i: number) => (
                             <div key={i} className="text-[11px] font-semibold text-slate-800 flex justify-between">
                               <span>
                                 {item.product_name || item.name || 'Produit'}
                                 {(item.variant_title || item.variant_details) && (
-                                  <span className="text-purple-700 font-bold ml-1">
+                                  <span className="text-slate-600 font-bold ml-1">
                                     ({typeof item.variant_details === 'object' ? Object.values(item.variant_details).join('/') : (item.variant_title || item.variant_details)})
                                   </span>
                                 )}
