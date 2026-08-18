@@ -210,33 +210,19 @@ export default function SuperAdminSidebar() {
 
         {/* ── Brand ─────────────────────────────────────── */}
         <div className={cn(
-          'flex items-center shrink-0 border-b border-slate-100 h-14',
-          sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-4',
+          'flex items-center shrink-0 border-b border-slate-100 h-14 overflow-hidden',
+          sidebarCollapsed ? 'justify-center px-0' : 'px-5',
         )}>
-          <div className="size-8 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center shrink-0 relative overflow-hidden shadow-sm">
-            <span className="absolute inset-0 flex items-center justify-center font-black text-[#6C5CE7] text-xs select-none bg-slate-50">
-              A
-            </span>
-            <img 
-              src="/azzougshop_logo.png" 
-              alt="AzzougShop" 
-              className="w-full h-full object-contain relative z-10 bg-white" 
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src.includes('azzougshop_logo')) {
-                  target.src = '/brand-icon-primary.png';
-                } else if (target.src.includes('brand-icon-primary')) {
-                  target.src = '/icon.png';
-                } else {
-                  target.style.display = 'none';
-                }
-              }}
-            />
-          </div>
-          {!sidebarCollapsed && (
+          {!sidebarCollapsed ? (
             <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-900 leading-none truncate">AzzougSystem</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Super Admin</p>
+              <p className="text-xl font-black tracking-tight bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent truncate">
+                AzzougShop
+              </p>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider -mt-0.5">Super Admin</p>
+            </div>
+          ) : (
+            <div className="size-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-xs select-none">
+              A
             </div>
           )}
         </div>

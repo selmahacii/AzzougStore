@@ -540,36 +540,17 @@ export default function AdminSidebar() {
       )} style={{ borderColor: S.border }}>
 
          {/* ─── Logo / Brand ───────────────────────────── */}
-         <div className="flex items-center gap-3 px-4 h-20 shrink-0 border-b" style={{ borderColor: S.border }}>
-            <div className={cn(
-               "flex shrink-0 items-center justify-center transition-all duration-300 rounded-xl overflow-hidden bg-white border border-slate-200/80 shadow-sm relative",
-               sidebarCollapsed ? "size-10 p-1" : "size-12 p-1.5"
-            )}>
-               <span className="absolute inset-0 flex items-center justify-center text-lg font-black text-[#6C5CE7] select-none bg-slate-50">
-                  {(activeStore?.name || "AzzougShop").charAt(0).toUpperCase()}
-               </span>
-               <img 
-                  src={activeStore?.logo_url || "/azzougshop_logo.png"} 
-                  alt={activeStore?.name || "AzzougShop"} 
-                  className="w-full h-full object-contain relative z-10 bg-white"
-                  onError={(e) => {
-                     const target = e.currentTarget;
-                     if (target.src.includes('azzougshop_logo')) {
-                        target.src = '/brand-icon-primary.png';
-                     } else if (target.src.includes('brand-icon-primary')) {
-                        target.src = '/icon.png';
-                     } else {
-                        target.style.display = 'none';
-                     }
-                  }}
-               />
-            </div>
-            {!sidebarCollapsed && (
+         <div className="flex items-center px-5 h-16 shrink-0 border-b overflow-hidden" style={{ borderColor: S.border }}>
+            {!sidebarCollapsed ? (
                <div className="flex flex-col min-w-0">
-                  <h1 className="text-sm font-extrabold text-[#2D3436] truncate tracking-tight">
-                     {activeStore?.name || 'AzzougStore'}
+                  <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent truncate drop-shadow-xs">
+                     {activeStore?.name || 'AzzougShop'}
                   </h1>
-                  <span className="text-[10px] font-semibold text-[#B2BEC3]">E-Commerce ERP</span>
+                  <span className="text-[10px] font-semibold text-[#B2BEC3] tracking-widest uppercase -mt-0.5">E-Commerce ERP</span>
+               </div>
+            ) : (
+               <div className="mx-auto flex items-center justify-center size-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white font-black text-base shadow-sm">
+                  {(activeStore?.name || 'AzzougShop').charAt(0).toUpperCase()}
                </div>
             )}
          </div>
