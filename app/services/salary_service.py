@@ -250,13 +250,12 @@ def _build_store_filter(db: Session, user_id: str, store_id: Optional[str]):
 
 
 def _build_time_filters(since: Optional[datetime], until: Optional[datetime]) -> list:
-    """Build the date-range filter clauses (uses updated_at so orders delivered/returned in period are counted)."""
-    from sqlalchemy import func
+    """Build the date-range filter clauses (strictly Order.created_at per business rule)."""
     filters = []
     if since:
-        filters.append(func.coalesce(Order.updated_at, Order.created_at) >= since)
+        filters.append(Order.created_at >= since)
     if until:
-        filters.append(func.coalesce(Order.updated_at, Order.created_at) <= until)
+        filters.append(Order.created_at <= until)
     return filters
 
 
