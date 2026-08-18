@@ -1459,7 +1459,6 @@ def _dispatch_capi_event(
                 retry_count=0,
                 next_retry_at=datetime.now(timezone.utc) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[0]),
             )
-        else:
             _log_send(
                 db, store_id=store_id, order_id=order_id,
                 event_name=event["event_name"], event_id=event["event_id"],
@@ -1468,6 +1467,66 @@ def _dispatch_capi_event(
             )
     finally:
         db.close()
+
+
+def _auto_capture_abandoned_cart(
+    db: Session,
+    store_id: Optional[str],
+    lp_id: Optional[str],
+    phone: str,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    city: Optional[str] = None,
+):
+    if not store_id or not phone or len(phone) < 8:
+        return
+    clean_phone = re.sub(r'[^\d]', '', phone)
+    if clean_phone.startswith('213'):
+        clean_phone = '0' + clean_phone[3:]
+    if len(clean_phone) != 10:
+        return
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    since_24h = now - timedelta(hours=24)
+    existing = db.query(Order).filter(
+        Order.store_id == store_id,
+        Order.customer_phone == clean_phone,
+        Order.created_at >= since_24h,
+        Order.is_deleted == False,
+    ).first()
+
+    if existing:
+        if (existing.status == "ABANDONED" or existing.is_abandoned_cart) and first_name and not existing.customer_name:
+            existing.customer_name = f"{first_name} {last_name or ''}".strip()
+            db.commit()
+        return
+
+    import uuid
+    from app.models.landing_page import LandingPage
+    lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first() if lp_id else None
+    product_id = lp.product_id if lp else None
+
+    order_number = f"ABN-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
+    max_seq = db.query(sqlfunc.max(Order.store_sequence_number)).filter(Order.store_id == store_id).scalar()
+    seq = (max_seq or 0) + 1
+
+    cust_name = f"{first_name or ''} {last_name or ''}".strip() or "Client (InitiateCheckout)"
+    new_cart = Order(
+        id=str(uuid.uuid4()),
+        store_id=store_id,
+        order_number=order_number,
+        store_sequence_number=seq,
+        customer_phone=clean_phone,
+        customer_name=cust_name,
+        customer_wilaya=city,
+        status="ABANDONED",
+        is_abandoned_cart=True,
+        source="abandoned_cart",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(new_cart)
+    db.commit()
 
 
 @router.post("/events", response_model=dict)
@@ -1523,7 +1582,14 @@ def send_meta_event(
             ad_id=payload.ad_id,
         )
 
-    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
+    # If InitiateCheckout / AddToCart event contains contact phone, auto-capture abandoned cart draft
+    if payload.event_name in ("InitiateCheckout", "AddToCart") and payload.user_data and payload.user_data.ph:
+        try:
+            ph_val = str(payload.user_data.ph).strip()
+            if ph_val and len(ph_val) <= 25 and not re.match(r'^[a-fA-F0-9]{64}$', ph_val):
+                _auto_capture_abandoned_cart(db, payload.store_id, payload.lp_id, ph_val, payload.user_data.fn, payload.user_data.ln, payload.user_data.ct)
+        except Exception as _ex:
+            logger.warning("Auto capture abandoned cart exception: %s", _ex)
 
     if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
         # No Meta config — accept silently (storefront shouldn't break)

@@ -1099,7 +1099,7 @@ def get_agent_counts(
                  Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp_abandoned"),
             _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == False,
                  Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"])).label("nrp_normal"),
-            _sum(_not_internal, Order.is_abandoned_cart == True,
+            _sum(_not_internal, or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
                  Order.status.notin_(["CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED"])).label("abandoned_in_progress"),
             _sum(_not_upsell, Order.is_abandoned_cart == True, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])).label("recovered"),
             # Rappels dus maintenant : NRP en cours (commande ou panier abandonné)
