@@ -114,7 +114,7 @@ export const DuplicatePopover: React.FC<DuplicatePopoverProps> = ({
         const res: any = await apiFetch(`/api/v1/orders?search=${encodeURIComponent(phone)}&pageSize=50`);
         const items = res?.data || res?.items || res || [];
         if (Array.isArray(items)) {
-          setPhoneOrders(items.filter((o: any) => o.id !== order.id && o.status !== 'MERGED'));
+          setPhoneOrders(items.filter((o: any) => o.id !== order.id));
         }
       }
     } catch (err) {

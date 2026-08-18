@@ -2371,7 +2371,6 @@ def get_order(
     # Attach merged duplicates for the duplication-history panel
     children = db.query(Order).filter(
         Order.parent_order_id == order.id,
-        Order.is_deleted == False,
     ).order_by(Order.created_at.asc()).all()
 
     from app.schemas.order import OrderReadFull as _OrderReadFull, OrderRead as _OrderRead
@@ -2383,7 +2382,7 @@ def get_order(
     # parent_order's docstring in schemas/order.py for why this matters).
     if order.parent_order_id:
         parent = db.query(Order).filter(
-            Order.id == order.parent_order_id, Order.is_deleted == False,
+            Order.id == order.parent_order_id,
         ).first()
         if parent:
             result.parent_order = _OrderRead.model_validate(parent)
