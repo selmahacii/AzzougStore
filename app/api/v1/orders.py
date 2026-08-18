@@ -1397,12 +1397,8 @@ def list_orders(
             else:
                 query = query.filter(_confirmateur_ownership_criterion(current_user, or_(assigned_to_me, unassigned_matching), db))
 
-            # A courier auto-assignment rule (COMMUNE/WILAYA) makes that
-            # region a livreur's EXCLUSIVE territory — the confirmatrice
-            # never sees those orders, regardless of status or whether
-            # Order.livreur_id was already stamped (an order created before
-            # the rule existed must not stay wrongly visible to her either).
-            query = query.filter(~_region_owned_by_any_livreur_criterion())
+            # Les confirmatrices voient toutes les commandes de leur périmètre pour l'ensemble des 58 Wilayas.
+            pass
         elif current_user.role == "MANAGER" and current_user.employee_store_id:
             query = query.filter(Order.store_id == current_user.employee_store_id)
         elif current_user.role == "LIVREUR":
