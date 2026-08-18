@@ -42,18 +42,67 @@ _FUNNEL_LABELS = {
 
 
 def _funnel_counts(db: Session, store_id: str, since: datetime, until: datetime) -> Dict[str, int]:
+    from app.models.funnel_rollup import FunnelRollup
     from app.models.marketing import MetaCapiLog
-    rows = (
-        db.query(MetaCapiLog.event_name, func.count(func.distinct(MetaCapiLog.event_id)))
-        .filter(
-            MetaCapiLog.store_id == store_id,
-            MetaCapiLog.event_name.in_(_FUNNEL_STAGES),
-            MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
+    from app.models.order import Order
+
+    counts: Dict[str, int] = {}
+
+    # 1. Primary source for top funnel stages: local FunnelRollup table
+    try:
+        rollup_rows = (
+            db.query(FunnelRollup.event_name, func.coalesce(func.sum(FunnelRollup.count), 0))
+            .filter(
+                FunnelRollup.store_id == store_id,
+                FunnelRollup.event_name.in_(["PageView", "ViewContent", "AddToCart", "InitiateCheckout"]),
+                FunnelRollup.day >= since.date(),
+                FunnelRollup.day <= until.date(),
+            )
+            .group_by(FunnelRollup.event_name)
+            .all()
         )
-        .group_by(MetaCapiLog.event_name)
-        .all()
-    )
-    counts = {name: count for name, count in rows}
+        counts = {name: int(count or 0) for name, count in rollup_rows}
+    except Exception:
+        db.rollback()
+
+    # 2. Fallback / merge with MetaCapiLog
+    try:
+        capi_rows = (
+            db.query(MetaCapiLog.event_name, func.count(func.distinct(MetaCapiLog.event_id)))
+            .filter(
+                MetaCapiLog.store_id == store_id,
+                MetaCapiLog.event_name.in_(["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "Purchase"]),
+                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
+            )
+            .group_by(MetaCapiLog.event_name)
+            .all()
+        )
+        for name, count in capi_rows:
+            if counts.get(name, 0) < count:
+                counts[name] = int(count or 0)
+    except Exception:
+        db.rollback()
+
+    # 3. Real purchases from Order table (storefront, non-cancelled, non-merged)
+    try:
+        purchases = (
+            db.query(func.count(Order.id))
+            .filter(
+                Order.store_id == store_id,
+                Order.is_deleted == False,
+                Order.status != "MERGED",
+                Order.status != "CANCELLED",
+                func.coalesce(Order.source, "") != "MANUAL",
+                Order.created_at >= since,
+                Order.created_at <= until,
+            )
+            .scalar() or 0
+        )
+        if purchases > counts.get("Purchase", 0):
+            counts["Purchase"] = int(purchases)
+    except Exception:
+        db.rollback()
+
     return {stage: counts.get(stage, 0) for stage in _FUNNEL_STAGES}
 
 
@@ -147,7 +196,7 @@ def compute_conversion_funnel(db: Session, store_id: str, since: datetime, until
         else:
             prev_stage_volume = counts[_FUNNEL_STAGES[i - 1]]
             stage_rate = round(volume / prev_stage_volume * 100, 1) if prev_stage_volume else None
-            loss_pct = round(100 - stage_rate, 1) if stage_rate is not None else None
+            loss_pct = max(0.0, round(100 - stage_rate, 1)) if stage_rate is not None else None
         vs_previous_period = round((volume - prev_volume) / prev_volume * 100, 1) if prev_volume else None
         stages.append({
             "stage": stage, "label": _FUNNEL_LABELS[stage],
@@ -159,29 +208,12 @@ def compute_conversion_funnel(db: Session, store_id: str, since: datetime, until
             worst_stage = stage
 
     bottleneck_message = None
-    if worst_stage:
+    if worst_stage and worst_loss_pct > 0:
         bottleneck_message = (
             f"La majorité des pertes proviennent de l'étape {_FUNNEL_LABELS[worst_stage]} "
             f"({worst_loss_pct}% de perte à cette étape)."
         )
 
-    # Cohérence logique du tunnel — MAIS deux transitions ne sont PAS
-    # comparables 1:1 dans cette architecture précise (vérifié sur le code,
-    # pas supposé) :
-    #  - PageView -> ViewContent : StorefrontIntegrations déclenche PageView
-    #    UNE SEULE FOIS par useEffect (dépendance `[config?.pixel_id]`, qui
-    #    ne change jamais pendant une session) sur un storefront SPA
-    #    (navigation par état interne, zéro balise <a href> sur les cartes
-    #    produit) — un visiteur qui consulte 3 produits dans la MÊME
-    #    session génère 1 PageView mais 3 ViewContent, légitimement.
-    #  - ViewContent -> AddToCart : product-card.tsx a un bouton "ajout
-    #    rapide au panier" sur les grilles produit/catégorie qui appelle
-    #    onAddToCart directement (`e.stopPropagation()`), SANS jamais
-    #    naviguer vers la page produit qui déclenche ViewContent — un ajout
-    #    au panier n'implique donc pas toujours un ViewContent préalable.
-    # En revanche InitiateCheckout et Purchase restent des événements par
-    # TENTATIVE DE COMMANDE (pas par session/grille), réellement comparables
-    # 1:1 — ce contrôle reste strict pour cette transition.
     _NON_1TO1_TRANSITIONS = {
         "ViewContent": "Visites compte les SESSIONS (une fois par visite, application monopage), {stage_label} compte les PRODUITS consultés (plusieurs par session)",
         "AddToCart": "un bouton \"ajout rapide au panier\" existe sur les grilles produit et ne passe jamais par la page produit (donc pas toujours un Vue Produit préalable)",
@@ -341,10 +373,29 @@ def compute_product_conversion_analysis(db: Session, store_id: str, since: datet
     )
     sales_by_product = {pid: {"quantity": qty or 0, "revenue": int(rev or 0)} for pid, qty, rev in item_rows}
 
-    # ViewContent/AddToCart/InitiateCheckout counts per product, via
-    # custom_data.content_ids (JSON array) — Postgres JSON containment; a
-    # per-row Python scan is used for SQLite-test-compat, bounded to a
-    # generous cap since this only runs over the CAPI event window.
+    from app.models.funnel_rollup import FunnelRollup
+
+    funnel_by_product: Dict[str, Dict[str, int]] = {pid: {"views": 0, "add_to_cart": 0, "checkout": 0} for pid in product_ids}
+    _event_key = {"ViewContent": "views", "AddToCart": "add_to_cart", "InitiateCheckout": "checkout"}
+
+    # 1. Primary source: FunnelRollup per product
+    rollup_product_rows = (
+        db.query(FunnelRollup.product_id, FunnelRollup.event_name, func.coalesce(func.sum(FunnelRollup.count), 0))
+        .filter(
+            FunnelRollup.store_id == store_id,
+            FunnelRollup.product_id.in_(product_ids),
+            FunnelRollup.event_name.in_(["ViewContent", "AddToCart", "InitiateCheckout"]),
+            FunnelRollup.day >= since.date(),
+            FunnelRollup.day <= until.date(),
+        )
+        .group_by(FunnelRollup.product_id, FunnelRollup.event_name)
+        .all()
+    )
+    for pid, event_name, count in rollup_product_rows:
+        if pid in funnel_by_product and event_name in _event_key:
+            funnel_by_product[pid][_event_key[event_name]] = int(count or 0)
+
+    # 2. Fallback: MetaCapiLog payload scan if FunnelRollup count is lower
     event_rows = (
         db.query(MetaCapiLog.event_name, MetaCapiLog.payload)
         .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name.in_(["ViewContent", "AddToCart", "InitiateCheckout"]),
@@ -352,13 +403,17 @@ def compute_product_conversion_analysis(db: Session, store_id: str, since: datet
         .limit(20000)
         .all()
     )
-    funnel_by_product: Dict[str, Dict[str, int]] = {pid: {"views": 0, "add_to_cart": 0, "checkout": 0} for pid in product_ids}
-    _event_key = {"ViewContent": "views", "AddToCart": "add_to_cart", "InitiateCheckout": "checkout"}
+    capi_by_product: Dict[str, Dict[str, int]] = {pid: {"views": 0, "add_to_cart": 0, "checkout": 0} for pid in product_ids}
     for event_name, payload in event_rows:
         content_ids = ((payload or {}).get("custom_data") or {}).get("content_ids") or []
         for cid in content_ids:
-            if cid in funnel_by_product:
-                funnel_by_product[cid][_event_key[event_name]] += 1
+            if cid in capi_by_product:
+                capi_by_product[cid][_event_key[event_name]] += 1
+
+    for pid in product_ids:
+        for k in ("views", "add_to_cart", "checkout"):
+            if funnel_by_product[pid][k] < capi_by_product[pid][k]:
+                funnel_by_product[pid][k] = capi_by_product[pid][k]
 
     results = []
     for p in products:

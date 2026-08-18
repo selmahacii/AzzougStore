@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.base_class import Base
 from app.models.marketing import MetaCapiLog
+from app.models.funnel_rollup import FunnelRollup
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.audit import AuditLog
@@ -30,7 +31,7 @@ from app.services import conversion_optimization_engine as engine
 def db_session():
     eng = create_engine("sqlite://")
     Base.metadata.create_all(eng, tables=[
-        MetaCapiLog.__table__, Order.__table__, OrderItem.__table__, Product.__table__, AuditLog.__table__,
+        MetaCapiLog.__table__, FunnelRollup.__table__, Order.__table__, OrderItem.__table__, Product.__table__, AuditLog.__table__,
     ])
     Session = sessionmaker(bind=eng)
     session = Session()
