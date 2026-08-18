@@ -473,28 +473,14 @@ def get_landing_page_analytics(
     lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
     if not lp:
         raise HTTPException(404, "Landing page introuvable")
-    if not lp.product_id:
-        return {"success": True, "data": {"daily": [], "totals": {}, "created_at": lp.created_at.isoformat() if lp.created_at else None}}
+    from sqlalchemy import or_
+    product_or_slug_filter = (
+        or_(
+            OrderItem.product_id == lp.product_id,
+            Order.landing_url.ilike(f"%{lp.slug}%")
+        ) if lp.product_id else Order.landing_url.ilike(f"%{lp.slug}%")
+    )
 
-    from app.core.dates import parse_local_date_filter, ALGERIA_UTC_OFFSET_HOURS
-    now = datetime.utcnow()
-    d_start = now - timedelta(days=30)
-    d_end = now
-    if start_date:
-        try:
-            d_start = parse_local_date_filter(start_date)
-        except ValueError:
-            pass
-    if end_date:
-        try:
-            d_end = parse_local_date_filter(end_date)
-        except ValueError:
-            pass
-
-    # Group by Algeria-local calendar day, not raw UTC — otherwise an order
-    # placed at 00:03 Algeria time (23:03 UTC the previous day) landed in
-    # the wrong day's bucket in the chart below.
-    day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
     rows = (
         db.query(
             day.label("day"),
@@ -514,20 +500,14 @@ def get_landing_page_analytics(
                 (Order.is_abandoned_cart == True, Order.id)
             ))).label("abandoned"),
             func.coalesce(func.sum(case(
-                (Order.status != "MERGED", OrderItem.quantity * OrderItem.unit_price), else_=0
+                (Order.status != "MERGED", func.coalesce(OrderItem.quantity, 1) * func.coalesce(OrderItem.unit_price, Order.total, 0)), else_=0
             )), 0).label("revenue"),
         )
-        # select_from() explicite : quand toutes les colonnes sélectionnées
-        # sont des expressions func.count()/case() plutôt que des entités
-        # mappées, SQLAlchemy ne peut pas toujours déduire le FROM implicite
-        # depuis les colonnes seules — d'où l'InvalidRequestError
-        # "Don't know how to join to Order" observée en production sur la
-        # requête detail_row juste en dessous (structure identique).
-        .select_from(OrderItem)
-        .join(Order, Order.id == OrderItem.order_id)
+        .select_from(Order)
+        .outerjoin(OrderItem, OrderItem.order_id == Order.id)
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            product_or_slug_filter,
             Order.is_deleted == False,
             Order.created_at >= d_start,
             Order.created_at <= d_end,
@@ -569,11 +549,6 @@ def get_landing_page_analytics(
         "revenue": sum(d["revenue"] for d in daily),
     }
 
-    # ── Micro-détail panier normal / abandonné / récupéré / doublons / NRP —
-    # même calcul que les badges de la liste des landing pages (une seule
-    # requête groupée), pour que le client voie clairement d'où viennent ses
-    # commandes sans avoir à deviner. Scopé au même produit + période que le
-    # reste de cet endpoint.
     _not_manual = func.coalesce(Order.source, "") != "MANUAL"
     _is_abandoned = Order.is_abandoned_cart == True
     _DELIVERED_STATES = ("CONFIRMED", "SHIPPED", "DELIVERED")
@@ -595,16 +570,11 @@ def get_landing_page_analytics(
                 (and_(Order.nrp_count > 0, _is_abandoned, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
             ))).label("nrp_abandoned"),
         )
-        # select_from() explicite — c'est ICI que l'erreur 500 réelle se
-        # produisait : cette requête n'a aucune entité mappée en tête de
-        # SELECT (seulement des func.count(distinct(case(...)))), donc
-        # SQLAlchemy ne pouvait pas déduire tout seul quelle table est le
-        # FROM avant le join vers Order.
-        .select_from(OrderItem)
-        .join(Order, Order.id == OrderItem.order_id)
+        .select_from(Order)
+        .outerjoin(OrderItem, OrderItem.order_id == Order.id)
         .filter(
             Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
+            product_or_slug_filter,
             Order.is_deleted == False,
             Order.created_at >= d_start,
             Order.created_at <= d_end,
