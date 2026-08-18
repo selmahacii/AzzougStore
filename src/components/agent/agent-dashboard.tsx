@@ -2497,16 +2497,19 @@ export default function AgentDashboard() {
         "fixed inset-y-0 left-0 z-50 bg-white flex flex-col shrink-0 border-r shadow-2xl lg:shadow-none transition-all duration-300",
         sidebarCollapsed ? "-translate-x-full lg:translate-x-0 lg:w-[70px]" : "translate-x-0 w-[280px] sm:w-[260px]"
       )}>
-        <div className="h-16 px-4 border-b flex items-center justify-between bg-white shrink-0 relative overflow-hidden">
+        <div className="h-16 px-5 border-b flex items-center justify-between bg-white shrink-0 relative overflow-hidden">
           {!sidebarCollapsed ? (
             <div className="flex flex-col min-w-0">
-              <h1 className="text-xl font-black tracking-tight bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent truncate">
-                AzzougShop
-              </h1>
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider -mt-0.5">Espace Agent</span>
+              <div className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                <h1 className="text-[17px] font-extrabold tracking-tight text-slate-900 truncate">
+                  AzzougShop
+                </h1>
+              </div>
+              <span className="text-[10px] font-medium text-slate-400 tracking-wider uppercase pl-3.5">Espace Agent</span>
             </div>
           ) : (
-            <div className="mx-auto flex items-center justify-center size-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white font-black text-base shadow-sm">
+            <div className="mx-auto flex items-center justify-center size-8 rounded-lg bg-slate-900 text-white font-bold text-sm shadow-xs">
               A
             </div>
           )}

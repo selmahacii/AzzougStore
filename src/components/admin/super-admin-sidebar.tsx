@@ -214,14 +214,17 @@ export default function SuperAdminSidebar() {
           sidebarCollapsed ? 'justify-center px-0' : 'px-5',
         )}>
           {!sidebarCollapsed ? (
-            <div className="min-w-0">
-              <p className="text-xl font-black tracking-tight bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent truncate">
-                AzzougShop
-              </p>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider -mt-0.5">Super Admin</p>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-violet-600 shrink-0" />
+                <p className="text-[17px] font-extrabold tracking-tight text-slate-900 truncate">
+                  AzzougShop
+                </p>
+              </div>
+              <p className="text-[10px] font-medium text-slate-400 tracking-wider uppercase pl-3.5">Super Admin</p>
             </div>
           ) : (
-            <div className="size-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-xs select-none">
+            <div className="size-8 rounded-lg bg-slate-900 flex items-center justify-center text-white font-bold text-sm shadow-xs select-none">
               A
             </div>
           )}
