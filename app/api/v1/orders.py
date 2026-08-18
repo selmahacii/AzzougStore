@@ -2313,12 +2313,44 @@ def get_commissions(
 
     _CONFIRMATRICE_LIVREUR_BONUS_DA = 50.0  # 50 DA par commande assignée à un livreur et livrée
 
+    order_ids = [o.id for o in orders]
+    noest_delivered_order_ids = set()
+    if order_ids:
+        from app.models.order import OrderEvent
+        noest_events = db.query(OrderEvent.order_id).filter(
+            OrderEvent.order_id.in_(order_ids),
+            OrderEvent.to_status == "DELIVERED",
+            OrderEvent.note.ilike("%noest%")
+        ).all()
+        noest_delivered_order_ids = {r[0] for r in noest_events}
+
+    total_noest = 0
+    total_manual = 0
+
     confirmatrices: dict = {}
     livreurs: dict = {}
     for o in orders:
+        is_noest = (o.id in noest_delivered_order_ids) or (bool(o.tracking_number) and (o.shipping_provider == "noest" or "noest" in str(o.tracking_number).lower()))
+        if is_noest:
+            total_noest += 1
+        else:
+            total_manual += 1
+
         if o.assignee:
-            row = confirmatrices.setdefault(o.assignee.id, {"name": o.assignee.name, "orders": 0, "commission": 0.0, "livreur_bonus": 0.0})
+            row = confirmatrices.setdefault(o.assignee.id, {
+                "name": o.assignee.name,
+                "orders": 0,
+                "orders_noest": 0,
+                "orders_manual": 0,
+                "commission": 0.0,
+                "livreur_bonus": 0.0
+            })
             row["orders"] += 1
+            if is_noest:
+                row["orders_noest"] += 1
+            else:
+                row["orders_manual"] += 1
+
             comm = (o.total or 0) * pct / 100
             if o.livreur_id or o.livreur:
                 comm += _CONFIRMATRICE_LIVREUR_BONUS_DA
@@ -2336,6 +2368,8 @@ def get_commissions(
             "confirmatrices": sorted(confirmatrices.values(), key=lambda r: -r["commission"]),
             "livreurs": sorted(livreurs.values(), key=lambda r: -r["commission"]),
             "total_commandes_livrees": len(orders),
+            "commandes_livrees_noest": total_noest,
+            "commandes_livrees_manuel": total_manual,
         },
     }
 

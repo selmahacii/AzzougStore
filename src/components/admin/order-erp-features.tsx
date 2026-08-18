@@ -20,10 +20,13 @@ const C = {
 };
 
 // ─── Commissions confirmatrice / livreur ───────────────────────────────────
-interface CommissionRow { name: string; orders: number; commission: number; livreur_bonus?: number }
+interface CommissionRow { name: string; orders: number; orders_noest?: number; orders_manual?: number; commission: number; livreur_bonus?: number }
 interface CommissionsData {
    rates: { commission_confirmatrice_pct: number; commission_livreur_fixed: number };
-   confirmatrices: CommissionRow[]; livreurs: CommissionRow[]; total_commandes_livrees: number;
+   confirmatrices: CommissionRow[]; livreurs: CommissionRow[];
+   total_commandes_livrees: number;
+   commandes_livrees_noest?: number;
+   commandes_livrees_manuel?: number;
 }
 
 export function CommissionsView() {
@@ -60,7 +63,7 @@ export function CommissionsView() {
          <div className="bg-white rounded-2xl border p-5" style={{ borderColor: C.border }}>
             <div className="flex items-center justify-between flex-wrap gap-3">
                <div>
-                  <h2 className="text-base font-black text-slate-800 flex items-center gap-2"><Trophy className="size-4 text-[#6C5CE7]" /> Commissions</h2>
+                  <h2 className="text-base font-black text-slate-800 flex items-center gap-2"><Trophy className="size-4 text-[#6C5CE7]" /> Commissions & Salaires</h2>
                   <p className="text-xs text-slate-400 mt-0.5">Calculées sur les commandes livrées de la période sélectionnée</p>
                </div>
                <div className="flex items-center gap-2">
@@ -70,24 +73,42 @@ export function CommissionsView() {
                </div>
             </div>
             {d && (
-               <div className="mt-4 flex items-center gap-4 flex-wrap">
-                  {!editingRates ? (
-                     <>
-                        <span className="text-xs text-slate-500">Taux : <strong className="text-slate-700">{d.rates.commission_confirmatrice_pct}%</strong> confirmatrice (<strong className="text-emerald-600">+50 DA</strong> / commande assignée livreur livrée) · <strong className="text-slate-700">{formatPrice(d.rates.commission_livreur_fixed)}</strong> / livraison livreur</span>
-                        <button onClick={() => { setPctInput(String(d.rates.commission_confirmatrice_pct)); setFixedInput(String(d.rates.commission_livreur_fixed)); setEditingRates(true); }}
-                           className="text-[10px] font-bold text-[#6C5CE7] hover:underline">Modifier les taux</button>
-                     </>
-                  ) : (
-                     <div className="flex items-center gap-2">
-                        <input type="number" step="0.1" value={pctInput} onChange={e => setPctInput(e.target.value)} placeholder="% confirmatrice"
-                           className="h-8 w-32 px-2 rounded-lg border text-xs" style={{ borderColor: C.border }} />
-                        <input type="number" value={fixedInput} onChange={e => setFixedInput(e.target.value)} placeholder="DA / livraison"
-                           className="h-8 w-32 px-2 rounded-lg border text-xs" style={{ borderColor: C.border }} />
-                        <button onClick={() => saveRates.mutate()} disabled={saveRates.isPending} className="h-8 px-3 rounded-lg bg-[#6C5CE7] text-white text-[10px] font-bold">Sauver</button>
-                        <button onClick={() => setEditingRates(false)} className="h-8 px-3 rounded-lg border text-[10px] font-bold" style={{ borderColor: C.border }}>Annuler</button>
+               <>
+                  <div className="mt-4 flex items-center gap-4 flex-wrap">
+                     {!editingRates ? (
+                        <>
+                           <span className="text-xs text-slate-500">Taux : <strong className="text-slate-700">{d.rates.commission_confirmatrice_pct}%</strong> confirmatrice (<strong className="text-emerald-600">+50 DA</strong> / commande assignée livreur livrée) · <strong className="text-slate-700">{formatPrice(d.rates.commission_livreur_fixed)}</strong> / livraison livreur</span>
+                           <button onClick={() => { setPctInput(String(d.rates.commission_confirmatrice_pct)); setFixedInput(String(d.rates.commission_livreur_fixed)); setEditingRates(true); }}
+                              className="text-[10px] font-bold text-[#6C5CE7] hover:underline">Modifier les taux</button>
+                        </>
+                     ) : (
+                        <div className="flex items-center gap-2">
+                           <input type="number" step="0.1" value={pctInput} onChange={e => setPctInput(e.target.value)} placeholder="% confirmatrice"
+                              className="h-8 w-32 px-2 rounded-lg border text-xs" style={{ borderColor: C.border }} />
+                           <input type="number" value={fixedInput} onChange={e => setFixedInput(e.target.value)} placeholder="DA / livraison"
+                              className="h-8 w-32 px-2 rounded-lg border text-xs" style={{ borderColor: C.border }} />
+                           <button onClick={() => saveRates.mutate()} disabled={saveRates.isPending} className="h-8 px-3 rounded-lg bg-[#6C5CE7] text-white text-[10px] font-bold">Sauver</button>
+                           <button onClick={() => setEditingRates(false)} className="h-8 px-3 rounded-lg border text-[10px] font-bold" style={{ borderColor: C.border }}>Annuler</button>
+                        </div>
+                     )}
+                  </div>
+
+                  {/* Badges de ventilation Noest vs Manuelle */}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-3 border-t" style={{ borderColor: C.border }}>
+                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                        <p className="text-sm font-black text-slate-800">{d.total_commandes_livrees}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">Total Livrées</p>
                      </div>
-                  )}
-               </div>
+                     <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200/80 text-center">
+                        <p className="text-sm font-black text-indigo-700">{d.commandes_livrees_noest ?? 0}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 mt-0.5">🚚 Livrées via Sync Noest</p>
+                     </div>
+                     <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200/80 text-center">
+                        <p className="text-sm font-black text-emerald-700">{d.commandes_livrees_manuel ?? 0}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 mt-0.5">✍️ Livrées via Update Manuelle</p>
+                     </div>
+                  </div>
+               </>
             )}
          </div>
 
@@ -105,9 +126,14 @@ export function CommissionsView() {
                               <div key={i} className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-50">
                                  <div>
                                     <p className="font-bold text-slate-700">{r.name}</p>
-                                    <p className="text-[10px] text-slate-400">
-                                       {r.orders} commande(s)
-                                       {r.livreur_bonus ? <span className="ml-1 text-emerald-600 font-bold">(incl. +{r.livreur_bonus} DA bonus assignation livreur)</span> : null}
+                                    <p className="text-[10px] text-slate-500">
+                                       <strong>{r.orders}</strong> livrée(s)
+                                       {r.orders_noest != null && r.orders_manual != null && (
+                                          <span className="ml-1 text-slate-400 font-semibold">
+                                             (🚚 {r.orders_noest} Noest · ✍️ {r.orders_manual} manuelle{r.orders_manual > 1 ? 's' : ''})
+                                          </span>
+                                       )}
+                                       {r.livreur_bonus ? <span className="ml-1 text-emerald-600 font-bold">(+ {r.livreur_bonus} DA bonus livreur)</span> : null}
                                     </p>
                                  </div>
                                  <span className="font-black text-emerald-600 tabular-nums">{formatPrice(r.commission)}</span>
