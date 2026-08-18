@@ -473,6 +473,23 @@ def get_landing_page_analytics(
     lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
     if not lp:
         raise HTTPException(404, "Landing page introuvable")
+    from app.core.dates import parse_local_date_filter, ALGERIA_UTC_OFFSET_HOURS
+    now = datetime.utcnow()
+    d_start = now - timedelta(days=30)
+    d_end = now
+    if start_date:
+        try:
+            d_start = parse_local_date_filter(start_date)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            d_end = parse_local_date_filter(end_date)
+        except ValueError:
+            pass
+
+    day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
+
     from sqlalchemy import or_
     product_or_slug_filter = (
         or_(
