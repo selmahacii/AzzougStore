@@ -191,7 +191,7 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar */}
-        <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-5 text-white relative shrink-0">
+        <div className="bg-slate-900 p-5 text-white relative shrink-0">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all"
@@ -201,12 +201,12 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2 mb-2">
-            <span className="bg-purple-500/30 text-purple-200 border border-purple-400/40 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1.5 backdrop-blur-md">
-              <Layers className="size-3 text-purple-300" />
+            <span className="bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+              <Layers className="size-3 text-slate-300" />
               Historique des Doublons
             </span>
             {order.duplicate_count ? (
-              <span className="bg-amber-500/30 text-amber-200 border border-amber-400/40 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+              <span className="bg-slate-800 text-amber-300 border border-slate-700 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
                 +{order.duplicate_count} fusionné(s)
               </span>
             ) : null}
@@ -217,15 +217,15 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
               Commande #{order.order_number}
             </h2>
             <div className="flex items-center gap-2 text-slate-300 text-xs font-semibold">
-              <User className="size-3.5 text-purple-300" />
+              <User className="size-3.5 text-slate-400" />
               <span>{order.customer_name || 'Client sans nom'}</span>
             </div>
           </div>
 
           {/* Phone bar */}
-          <div className="mt-3 flex flex-wrap items-center gap-3 bg-white/10 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/10 w-fit text-xs text-white">
+          <div className="mt-3 flex flex-wrap items-center gap-3 bg-white/10 px-3.5 py-2 rounded-xl border border-white/10 w-fit text-xs text-white">
             <div className="flex items-center gap-1.5 font-mono font-bold">
-              <Phone className="size-3.5 text-purple-300" />
+              <Phone className="size-3.5 text-slate-300" />
               <span>{order.customer_phone}</span>
             </div>
             <button
@@ -244,7 +244,7 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
             </a>
             {order.customer_wilaya && (
               <span className="text-[11px] text-slate-300 flex items-center gap-1 font-medium pl-2 border-l border-white/20">
-                <MapPin className="size-3 text-purple-300" />
+                <MapPin className="size-3 text-slate-400" />
                 {order.customer_wilaya} {order.customer_commune ? `(${order.customer_commune})` : ''}
               </span>
             )}
@@ -252,16 +252,16 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-slate-100 bg-slate-50/80 px-4 pt-2 shrink-0 gap-2">
+        <div className="flex items-center border-b border-slate-200 bg-slate-50 px-4 pt-2 shrink-0 gap-2">
           <button
             onClick={() => setActiveTab('merged')}
             className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all flex items-center gap-2 border-b-2 ${
               activeTab === 'merged'
-                ? 'border-purple-600 text-purple-700 bg-white shadow-sm'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+                ? 'border-slate-900 text-slate-900 bg-white shadow-sm font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
             }`}
           >
-            <Layers className="size-3.5 text-purple-600" />
+            <Layers className="size-3.5 text-slate-700" />
             Doublons Fusionnés ({childOrders.length})
           </button>
 
@@ -269,11 +269,11 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
             onClick={() => setActiveTab('history')}
             className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all flex items-center gap-2 border-b-2 ${
               activeTab === 'history'
-                ? 'border-purple-600 text-purple-700 bg-white shadow-sm'
-                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+                ? 'border-slate-900 text-slate-900 bg-white shadow-sm font-extrabold'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100'
             }`}
           >
-            <History className="size-3.5 text-indigo-600" />
+            <History className="size-3.5 text-slate-700" />
             Historique Client ({customerOrders.length + 1} commandes)
           </button>
         </div>
@@ -282,20 +282,20 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
-              <Loader2 className="size-8 animate-spin text-purple-600" />
+              <Loader2 className="size-8 animate-spin text-slate-600" />
               <p className="text-xs font-semibold">Chargement des doublons...</p>
             </div>
           ) : activeTab === 'merged' ? (
             <div className="space-y-4">
               {/* Parent Order section if THIS order is a child */}
               {parentOrder && (
-                <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-4 space-y-2">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase text-purple-800 flex items-center gap-1.5">
-                      <AlertTriangle className="size-4 text-purple-600" />
+                    <span className="text-xs font-black uppercase text-amber-800 flex items-center gap-1.5">
+                      <AlertTriangle className="size-4 text-amber-600" />
                       Cette commande a été fusionnée dans la commande principale :
                     </span>
-                    <span className="px-2 py-0.5 text-[10px] font-black bg-purple-200 text-purple-900 rounded-full">
+                    <span className="px-2 py-0.5 text-[10px] font-black bg-amber-200 text-amber-900 rounded-full">
                       Commande Principale
                     </span>
                   </div>
@@ -318,22 +318,22 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
               {childOrders.length > 0 ? (
                 <div className="space-y-3">
                   <p className="text-xs font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-                    <Layers className="size-4 text-purple-600" />
+                    <Layers className="size-4 text-slate-700" />
                     Commandes Doublons Récupérées / Absorbées ({childOrders.length})
                   </p>
 
                   {childOrders.map((child, idx) => (
                     <div
                       key={child.id || idx}
-                      className="bg-white border border-purple-100 hover:border-purple-300 rounded-xl p-4 shadow-sm transition-all space-y-3"
+                      className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm transition-all space-y-3"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-3">
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-purple-900">
+                            <span className="text-sm font-black text-slate-900">
                               #{child.order_number}
                             </span>
-                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-purple-100 text-purple-700">
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                               Doublon Fusionné
                             </span>
                           </div>
@@ -395,12 +395,12 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
                             {child.items.map((item: any, i: number) => (
                               <div
                                 key={i}
-                                className="text-xs bg-purple-50/40 p-2 rounded-lg border border-purple-100/60 flex items-center justify-between"
+                                className="text-xs bg-slate-50 p-2 rounded-lg border border-slate-200 flex items-center justify-between"
                               >
                                 <div className="font-semibold text-slate-800">
                                   {item.product_name || item.name || 'Produit'}
                                   {(item.variant_title || item.variant_details) && (
-                                    <span className="text-[11px] text-purple-700 ml-1 font-bold">
+                                    <span className="text-[11px] text-slate-600 ml-1 font-bold">
                                       ({typeof item.variant_details === 'object' ? Object.values(item.variant_details).join(' / ') : (item.variant_title || item.variant_details)})
                                     </span>
                                   )}
@@ -420,7 +420,7 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
                 </div>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center space-y-3">
-                  <Info className="size-8 text-purple-400 mx-auto" />
+                  <Info className="size-8 text-slate-400 mx-auto" />
                   <p className="text-sm font-bold text-slate-700">
                     Aucun doublon automatique fusionné directement sous ce numéro de commande.
                   </p>
@@ -435,7 +435,7 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
             <div className="space-y-3">
               <p className="text-xs font-extrabold text-slate-600 uppercase tracking-wider flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <History className="size-4 text-indigo-600" />
+                  <History className="size-4 text-slate-700" />
                   Toutes les commandes associées au {order.customer_phone}
                 </span>
                 <span className="text-[11px] font-bold text-slate-400">
@@ -444,12 +444,12 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
               </p>
 
               {/* Current order card highlight */}
-              <div className="bg-purple-50 border-2 border-purple-400/80 rounded-xl p-4 space-y-2 relative shadow-sm">
-                <span className="absolute top-3 right-3 text-[9px] font-black uppercase px-2 py-0.5 rounded bg-purple-600 text-white">
+              <div className="bg-slate-50 border-2 border-slate-800 rounded-xl p-4 space-y-2 relative shadow-sm">
+                <span className="absolute top-3 right-3 text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-900 text-white">
                   Commande Actuelle
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-purple-950">#{order.order_number}</span>
+                  <span className="text-sm font-black text-slate-900">#{order.order_number}</span>
                   <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${STATUS_LABELS[order.status || 'PENDING']?.bg || 'bg-slate-100'} ${STATUS_LABELS[order.status || 'PENDING']?.text || 'text-slate-700'}`}>
                     {STATUS_LABELS[order.status || 'PENDING']?.label || order.status}
                   </span>
