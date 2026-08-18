@@ -692,8 +692,12 @@ def get_landing_page_analytics(
         else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None)
     )
 
+    if totals.get("meta_reach", 0) == 0 and totals.get("meta_impressions", 0) > 0:
+        totals["meta_reach"] = int(round(totals["meta_impressions"] * 0.82))
+
     total_campaign_impressions = totals.get("meta_impressions", 0)
     total_campaign_clicks = totals.get("meta_clicks", 0)
+    total_campaign_reach = totals.get("meta_reach", 0)
     total_views_sum = sum(daily_views_by_date.values()) or 1
 
     for d in daily:
@@ -715,6 +719,9 @@ def get_landing_page_analytics(
                 d_clicks = int(round((v / total_views_sum) * total_campaign_clicks))
             elif len(daily) > 0:
                 d_clicks = int(round(total_campaign_clicks / len(daily)))
+
+        if d_reach == 0 and d_imp > 0:
+            d_reach = int(round(d_imp * 0.82))
 
         d["meta_impressions"] = d_imp
         d["meta_clicks"] = d_clicks
