@@ -1506,8 +1506,11 @@ def _auto_capture_abandoned_cart(
     lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first() if lp_id else None
     product_id = lp.product_id if lp else None
 
-    order_number = f"ABN-{now.strftime('%Y%m%d')}-{str(uuid.uuid4())[:6].upper()}"
-    max_seq = db.query(sqlfunc.max(Order.store_sequence_number)).filter(Order.store_id == store_id).scalar()
+    max_seq = db.query(sqlfunc.max(Order.store_sequence_number)).filter(
+        Order.store_id == store_id,
+        Order.is_deleted == False,
+        Order.status != "MERGED",
+    ).scalar()
     seq = (max_seq or 0) + 1
 
     cust_name = f"{first_name or ''} {last_name or ''}".strip() or "Client (InitiateCheckout)"

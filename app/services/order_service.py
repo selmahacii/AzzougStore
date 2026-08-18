@@ -1123,7 +1123,9 @@ class OrderService:
         from sqlalchemy import func
         db.query(Store.id).filter(Store.id == store_id).with_for_update().first()
         max_seq = db.query(func.max(Order.store_sequence_number)).filter(
-            Order.store_id == store_id
+            Order.store_id == store_id,
+            Order.is_deleted == False,
+            Order.status != "MERGED",
         ).scalar()
         store_sequence_number = (max_seq or 0) + 1
 

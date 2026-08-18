@@ -143,15 +143,15 @@ def run_db_migrations():
         "DELETE FROM order_items WHERE order_id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
         "DELETE FROM orders WHERE id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
         "WITH ranked_orders AS (SELECT id, FIRST_VALUE(id) OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY (CASE WHEN COALESCE(is_abandoned_cart, FALSE) IS FALSE AND status NOT IN ('ABANDONED', 'MERGED') THEN 0 ELSE 1 END) ASC, created_at ASC) as parent_id FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu' AND (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders o SET status = 'MERGED', parent_order_id = r.parent_id, is_deleted = TRUE FROM ranked_orders r WHERE o.id = r.id AND o.id != r.parent_id",
-        "WITH renumbered AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default') ORDER BY created_at ASC) AS seq FROM orders WHERE is_deleted IS FALSE OR is_deleted IS NULL) UPDATE orders SET store_sequence_number = renumbered.seq FROM renumbered WHERE orders.id = renumbered.id",
+        "WITH renumbered AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY created_at ASC) AS seq FROM orders WHERE (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders SET store_sequence_number = renumbered.seq FROM renumbered WHERE orders.id = renumbered.id",
     ]
 
-    with engine.begin() as conn:
-        for stmt in statements:
-            try:
+    for stmt in statements:
+        try:
+            with engine.begin() as conn:
                 conn.execute(text(stmt))
-            except Exception as e:
-                print(f"[WARN] Startup migration statement failed ({stmt}): {e}")
+        except Exception as e:
+            print(f"[WARN] Startup migration statement failed ({stmt[:60]}...): {e}")
 
     # Execute batch delivered orders SQL migration file
     try:
@@ -337,17 +337,17 @@ def create_initial_superadmin():
     
     db: Session = SessionLocal()
     try:
-        # 0. Backfill missing store_sequence_number
+        # 0. Cleanly renumber all active non-merged orders per store
         db.execute(text("""
-            WITH numbered_orders AS (
-                SELECT id, ROW_NUMBER() OVER(PARTITION BY store_id ORDER BY created_at ASC) as seq
+            WITH renumbered AS (
+                SELECT id, ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY created_at ASC) AS seq
                 FROM orders
-                WHERE store_sequence_number IS NULL
+                WHERE (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED'
             )
             UPDATE orders
-            SET store_sequence_number = numbered_orders.seq + COALESCE((SELECT MAX(store_sequence_number) FROM orders o2 WHERE o2.store_id = orders.store_id), 0)
-            FROM numbered_orders
-            WHERE orders.id = numbered_orders.id
+            SET store_sequence_number = renumbered.seq
+            FROM renumbered
+            WHERE orders.id = renumbered.id
         """))
 
         # Auto-reconcile delivered orders provided by user

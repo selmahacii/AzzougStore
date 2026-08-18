@@ -1943,9 +1943,13 @@ def update_abandoned_cart(
     order_data.pop("is_abandoned_cart", None)
     order_data.pop("assigned_to", None)
 
-    # Calculate store_sequence_number
+    # Calculate store_sequence_number from non-deleted, non-merged active orders
     from sqlalchemy import func
-    max_seq = db.query(func.max(Order.store_sequence_number)).filter(Order.store_id == order_in.store_id).scalar()
+    max_seq = db.query(func.max(Order.store_sequence_number)).filter(
+        Order.store_id == order_in.store_id,
+        Order.is_deleted == False,
+        Order.status != "MERGED",
+    ).scalar()
     store_sequence_number = (max_seq or 0) + 1
 
     valid_order_cols = {c.name for c in Order.__table__.columns}
