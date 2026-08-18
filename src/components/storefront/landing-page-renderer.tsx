@@ -619,8 +619,10 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     onMouseLeave={() => setIsZoomed(false)}
                   >
                     <img
-                      src={optimizeCloudinaryUrl(mainImgSrc, 800)}
+                      src={optimizeCloudinaryUrl(mainImgSrc, 600)}
                       alt={productName || ''}
+                      width={600}
+                      height={600}
                       loading="eager"
                       fetchPriority="high"
                       decoding="async"
@@ -1028,8 +1030,16 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
                 {/* Publicity Banner */}
                 {data.banner_image_url && (
-                  <div className="mt-6">
-                    <img src={optimizeCloudinaryUrl(data.banner_image_url, 1600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
+                  <div className="mt-6 min-h-[120px]">
+                    <img
+                      src={optimizeCloudinaryUrl(data.banner_image_url, 800)}
+                      alt="Bannière publicitaire"
+                      width={800}
+                      height={300}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-auto rounded-2xl shadow-md"
+                    />
                   </div>
                 )}
 

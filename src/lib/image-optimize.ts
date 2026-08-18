@@ -16,12 +16,22 @@ export function optimizeCloudinaryUrl(url: string | null | undefined, width?: nu
   const idx = url.indexOf(marker);
   if (idx === -1) return url; // not a Cloudinary URL — leave untouched
 
+  // If URL already has transformations like f_auto,q_auto,w_1600, update target width
+  if (url.includes('/image/upload/f_auto') || url.includes('/image/upload/q_auto')) {
+    if (width) {
+      return url.replace(/\/image\/upload\/([^/]+)\//, (match, trans) => {
+        if (/w_\d+/.test(trans)) {
+          return `/image/upload/${trans.replace(/w_\d+/, `w_${width}`)}/`;
+        }
+        return `/image/upload/${trans},w_${width}/`;
+      });
+    }
+    return url;
+  }
+
   const transformations = ['f_auto', 'q_auto', ...(width ? [`w_${width}`] : [])].join(',');
   const before = url.slice(0, idx + marker.length);
   const after = url.slice(idx + marker.length);
-
-  // Avoid double-injecting if this URL was already transformed upstream.
-  if (after.startsWith('f_auto') || after.startsWith('q_auto')) return url;
 
   return `${before}${transformations}/${after}`;
 }
