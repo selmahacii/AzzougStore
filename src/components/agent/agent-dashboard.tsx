@@ -119,12 +119,6 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
         { id: 'activity-report', label: 'Rapport d\'activité', icon: BarChart3 },
       ]
     },
-    (isLivreur && vis.products !== false) ? {
-      id: 'products',
-      label: 'Produits',
-      icon: Boxes,
-      subModules: [{ id: 'products-catalog', label: 'Catalogue', icon: Boxes }],
-    } : null,
   ];
 
   return modules.filter(Boolean) as Module[];
