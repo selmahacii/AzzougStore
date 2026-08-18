@@ -1591,6 +1591,7 @@ def send_meta_event(
         except Exception as _ex:
             logger.warning("Auto capture abandoned cart exception: %s", _ex)
 
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
     if not config or not config.pixel_id or not config.access_token or len(config.access_token) < 15:
         # No Meta config — accept silently (storefront shouldn't break)
         return {"success": True, "sent": False, "reason": "no_config"}
