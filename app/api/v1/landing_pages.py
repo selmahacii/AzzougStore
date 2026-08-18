@@ -675,15 +675,34 @@ def get_landing_page_analytics(
         else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None)
     )
 
+    total_campaign_impressions = totals.get("meta_impressions", 0)
+    total_campaign_clicks = totals.get("meta_clicks", 0)
+    total_views_sum = sum(daily_views_by_date.values()) or 1
+
     for d in daily:
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
-        d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
-        d["meta_reach"] = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
-        mc = meta_daily_by_date.get(d["date"], {}).get("clicks", 0)
-        d["meta_clicks"] = mc
+        d_imp = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
+        d_clicks = meta_daily_by_date.get(d["date"], {}).get("clicks", 0)
+        d_reach = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
         v = daily_views_by_date.get(d["date"], 0)
         d["views"] = v
-        base = mc if mc > 0 else v
+
+        if d_imp == 0 and total_campaign_impressions > 0:
+            if v > 0:
+                d_imp = int(round((v / total_views_sum) * total_campaign_impressions))
+            elif len(daily) > 0:
+                d_imp = int(round(total_campaign_impressions / len(daily)))
+
+        if d_clicks == 0 and total_campaign_clicks > 0:
+            if v > 0:
+                d_clicks = int(round((v / total_views_sum) * total_campaign_clicks))
+            elif len(daily) > 0:
+                d_clicks = int(round(total_campaign_clicks / len(daily)))
+
+        d["meta_impressions"] = d_imp
+        d["meta_clicks"] = d_clicks
+        d["meta_reach"] = d_reach
+        base = d_clicks if d_clicks > 0 else v
         d["conversion_rate"] = round(d["orders"] / base * 100, 2) if base > 0 else 0
 
     from sqlalchemy import or_
