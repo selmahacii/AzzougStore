@@ -313,15 +313,13 @@ def _assignment_rule_claimed_by_other_criterion(user_id: str):
 
 def _confirmateur_scope_criterion(user: User, db: Optional[Session] = None):
     """
-    SQLAlchemy criterion version of the legacy store/product scope, for
-    list/count queries. `db` is optional (older call sites that can't
-    provide a session): when given, also excludes products individually
-    claimed by another confirmatrice through EITHER ownership mechanism —
-    see _order_claimed_by_other_confirmatrice_criterion.
+    SQLAlchemy criterion version of the store/product scope, for list/count queries.
+    If assigned_store_scope is 'ALL' or empty, allows visibility across stores.
     """
-    from sqlalchemy import or_, and_
+    from sqlalchemy import or_, and_, true
     from app.models.order import OrderItem
 
+    scope = getattr(user, "assigned_store_scope", "ALL")
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
     stores = _confirmateur_resolved_stores(user)
@@ -333,8 +331,15 @@ def _confirmateur_scope_criterion(user: User, db: Optional[Session] = None):
         crits.append(Order.items.any(OrderItem.product_id.in_(products)))
 
     if not crits:
-        return False  # nothing configured → no unassigned visibility (strict isolation)
-    broad_match = or_(*crits) if len(crits) > 1 else crits[0]
+        if scope == "ALL" or not scope:
+            broad_match = true()
+        else:
+            return False  # nothing configured and scope is SPECIFIC → no unassigned visibility
+    else:
+        broad_match = or_(*crits) if len(crits) > 1 else crits[0]
+        if scope == "ALL" or not scope:
+            broad_match = true()
+
     return and_(broad_match, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
 
 
@@ -415,14 +420,16 @@ def _confirmateur_ownership_criterion(user: User, legacy_criterion, db: Optional
 
 def _confirmateur_scope_ok(order: Order, user: User, db: Optional[Session] = None) -> bool:
     """Python version of the same scope, for single-order access checks."""
+    scope = getattr(user, "assigned_store_scope", "ALL")
     raw_products = getattr(user, "assigned_product_ids", None)
     products = raw_products if isinstance(raw_products, list) else []
     stores = _confirmateur_resolved_stores(user)
 
     if not stores and not products:
-        return False  # nothing configured → no unassigned visibility (strict isolation)
+        if scope != "ALL" and scope:
+            return False  # nothing configured and scope is SPECIFIC → no unassigned visibility
 
-    store_ok = bool(stores) and order.store_id in stores
+    store_ok = (scope == "ALL" or not scope) or (bool(stores) and order.store_id in stores)
     product_ok = bool(products) and any(item.product_id in products for item in (order.items or []))
     if not (store_ok or product_ok):
         return False
