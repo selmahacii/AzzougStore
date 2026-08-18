@@ -2140,6 +2140,7 @@ export default function AgentDashboard() {
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [dateByMode, setDateByMode] = useState<'created_at' | 'delivered_at'>('created_at');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isAutoRotate, setIsAutoRotate] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
@@ -2214,13 +2215,7 @@ export default function AgentDashboard() {
   }, [ordersQuery.data, page]);
 
   const perfQuery = useQuery({
-    // startDate/endDate were never in this key — picking a date range in
-    // "Mon Salaire" had zero effect: the salary/activity numbers stayed
-    // all-time regardless. The backend (GET /users/{id}/performance)
-    // already accepts start_date/end_date and scopes both the order-count
-    // stats AND the salary computation to them — it just never received
-    // them from here.
-    queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores, startDate, endDate],
+    queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores, startDate, endDate, dateByMode],
     queryFn: () => {
       const params = new URLSearchParams();
       if (!showAllStores && activeStore?.id) params.set('store_id', activeStore.id);
@@ -2230,10 +2225,9 @@ export default function AgentDashboard() {
         d.setHours(23, 59, 59, 999);
         params.set('end_date', d.toISOString());
       }
+      params.set('date_by', dateByMode);
       const qs = params.toString();
       const url = `/api/v1/users/${user?.id}/performance${qs ? `?${qs}` : ''}`;
-      // Same rationale as ordersQuery: never let the active-store tenant
-      // header intersect the results — explicit params + RBAC do the scoping.
       return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id)
@@ -2803,6 +2797,34 @@ export default function AgentDashboard() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h2 className="text-xl font-bold tracking-tight">Mon Salaire</h2>
                 <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border shadow-sm w-full md:w-auto justify-between md:justify-start">
+                  <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setDateByMode('created_at')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer",
+                        dateByMode === 'created_at' 
+                          ? "bg-white text-slate-900 shadow-xs font-black" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      <Calendar className="size-3.5" />
+                      Création
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDateByMode('delivered_at')}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer",
+                        dateByMode === 'delivered_at' 
+                          ? "bg-white text-indigo-600 shadow-xs font-black" 
+                          : "text-slate-500 hover:text-slate-700"
+                      )}
+                    >
+                      <Truck className="size-3.5" />
+                      Livraison
+                    </button>
+                  </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-black uppercase text-slate-400">Du</span>
                     <input

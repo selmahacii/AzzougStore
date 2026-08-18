@@ -702,24 +702,10 @@ def get_user_performance(
     period_days: int = 30,
     start_date: Optional[str] = Query(None, description="ISO date, inclusive lower bound on Order.created_at"),
     end_date: Optional[str] = Query(None, description="ISO date, inclusive upper bound on Order.created_at"),
+    date_by: str = Query("created_at", description="created_at | delivered_at"),
     db: Session = Depends(deps.get_db),
 ):
-    """Return performance metrics and salary for an employee.
-
-    start_date/end_date scope BOTH the order-count stats (confirmed/
-    delivered/returned/cancelled) AND the salary computation to the same
-    window — previously the date pickers in the admin UI had no effect at
-    all here: this endpoint only ever took store_id/period_days (the latter
-    only used for the daily chart), so the salary shown for a "confirmatrice"
-    was always all-time regardless of any date range selected.
-    """
-    # This endpoint scopes Order access itself below via `store_filter`
-    # (the employee's own assigned_store_scope/assigned_store_ids, or the
-    # store_id query param) — the header-driven tenant auto-filter is
-    # redundant, and on a X-Store-Id/expected-store mismatch it silently
-    # zeroes out confirmed_count/recent_orders/audit_logs, indistinguishable
-    # from "this employee has no activity". Same class of bug fixed earlier
-    # this session across every order-by-id endpoint in orders.py.
+    """Return performance metrics and salary for an employee."""
     db.info["skip_tenant_isolation"] = True
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
@@ -755,17 +741,12 @@ def get_user_performance(
             Order.is_deleted  == False,
         )
     )
+    date_col = func.coalesce(Order.updated_at, Order.created_at) if date_by in ("delivered_at", "updated_at") else Order.created_at
     if since:
-        base_q = base_q.filter(Order.created_at >= since)
+        base_q = base_q.filter(date_col >= since)
     if until:
-        base_q = base_q.filter(Order.created_at <= until)
+        base_q = base_q.filter(date_col <= until)
 
-    # Was 5 sequential .count() round trips against the same base_q, plus a
-    # 7-day loop issuing one more .count() per day (~13 queries total) — on
-    # the Supabase pooler each round trip ran 100-300ms, so this endpoint
-    # alone took 2-5s (matches the 2-5s latencies seen in prod), long enough
-    # to trip the HF gateway's request timeout (503) under load. Collapsed
-    # into a single conditional-aggregation query.
     totals_row = base_q.with_entities(
         func.count().label("total"),
         func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
@@ -785,9 +766,7 @@ def get_user_performance(
     recovered_confirmed_count = totals_row.recovered_confirmed or 0
     recovered_delivered_count = totals_row.recovered_delivered or 0
 
-    # Salary via service (uses DELIVERED orders only, respects payment_type),
-    # now scoped to the same since/until window as the stats above.
-    salary_data = compute_salary(db, db_user, store_id, since=since, until=until)
+    salary_data = compute_salary(db, db_user, store_id, since=since, until=until, date_by=date_by)
 
     recent_orders = base_q.order_by(Order.id.desc()).limit(20).all()
 

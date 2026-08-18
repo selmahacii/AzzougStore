@@ -57,9 +57,9 @@ from app.models.user import User
 FALLBACK_RATE_PER_ORDER = 400  # DA
 
 
-# ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+# ─────────────────────────────────────────────────────────────────────────────
 # Public API
-# ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+# ─────────────────────────────────────────────────────────────────────────────
 
 def compute_salary(
     db: Session,
@@ -67,9 +67,11 @@ def compute_salary(
     store_id: Optional[str] = None,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
+    date_by: str = "created_at",
 ) -> dict:
     """
     Compute the salary for *employee* in *store_id* for the given date window.
+    date_by can be 'created_at' or 'delivered_at'/'updated_at'.
 
     Parameters
     ----------
@@ -78,6 +80,7 @@ def compute_salary(
     store_id    : restrict to orders belonging to this store (None = all stores)
     since       : lower bound on Order.created_at (inclusive); None = no lower bound
     until       : upper bound on Order.created_at (inclusive); None = no upper bound
+    date_by     : field to use for filtering (created_at or delivered_at/updated_at)
 
     Returns
     -------
@@ -115,25 +118,27 @@ def compute_salary(
     recovered_store_pickup_rate = getattr(employee, "payment_recovered_store_pickup", 150) if getattr(employee, "payment_recovered_store_pickup", None) is not None else 150
 
     # ── Count delivered orders, split by classification ──────────────────────
-    normal_delivered          = _count_normal_delivered(db, employee.id, store_id, since, until)
-    recovered_delivered       = _count_recovered_delivered(db, employee.id, store_id, since, until)
+    normal_delivered          = _count_normal_delivered(db, employee.id, store_id, since, until, date_by=date_by)
+    recovered_delivered       = _count_recovered_delivered(db, employee.id, store_id, since, until, date_by=date_by)
     total_delivered           = normal_delivered + recovered_delivered
-    returned_count            = _count_returned(db, employee.id, store_id, since, until)
-    upsell_delivered          = _count_upsell_delivered(db, employee.id, store_id, since, until)
-    marketplace_delivered     = _count_marketplace_delivered(db, employee.id, store_id, since, until)
-    store_pickup_delivered    = _count_store_pickup_delivered(db, employee.id, store_id, since, until)
-    recovered_store_pickup_delivered = _count_recovered_store_pickup_delivered(db, employee.id, store_id, since, until)
+    returned_count            = _count_returned(db, employee.id, store_id, since, until, date_by=date_by)
+    upsell_delivered          = _count_upsell_delivered(db, employee.id, store_id, since, until, date_by=date_by)
+    marketplace_delivered     = _count_marketplace_delivered(db, employee.id, store_id, since, until, date_by=date_by)
+    store_pickup_delivered    = _count_store_pickup_delivered(db, employee.id, store_id, since, until, date_by=date_by)
+    recovered_store_pickup_delivered = _count_recovered_store_pickup_delivered(db, employee.id, store_id, since, until, date_by=date_by)
 
     # ── Commission historique figée avec support Retrait Point de Vente ─────
     recovered_home_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=True, is_store_pickup=False,
         snapshot_column=Order.commission_recovered_rate, fallback_rate=recovered_rate,
+        date_by=date_by,
     )
     recovered_store_pickup_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=True, is_store_pickup=True,
         snapshot_column=Order.commission_recovered_store_pickup_rate, fallback_rate=recovered_store_pickup_rate,
+        date_by=date_by,
     )
     abandoned_bonus = recovered_home_bonus + recovered_store_pickup_bonus
 
@@ -141,16 +146,19 @@ def compute_salary(
         db, employee.id, store_id, since, until,
         status="RETURNED", is_abandoned_cart=None,
         snapshot_column=Order.commission_lost_rate, fallback_rate=lost_rate,
+        date_by=date_by,
     )
     upsell_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=None, is_upsell=True,
         snapshot_column=Order.commission_upsell_rate, fallback_rate=upsell_rate,
+        date_by=date_by,
     )
     marketplace_bonus = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=None, is_marketplace_upsell=True,
         snapshot_column=Order.commission_marketplace_rate, fallback_rate=marketplace_rate,
+        date_by=date_by,
     )
 
     # ── Branch by payment type ────────────────────────────────────────────────
@@ -190,11 +198,13 @@ def compute_salary(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=False, is_store_pickup=False,
         snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
+        date_by=date_by,
     )
     normal_store_pickup_salary = _sum_frozen_amount(
         db, employee.id, store_id, since, until,
         status="DELIVERED", is_abandoned_cart=False, is_store_pickup=True,
         snapshot_column=Order.commission_store_pickup_rate, fallback_rate=store_pickup_rate,
+        date_by=date_by,
     )
     base_salary = normal_home_salary + normal_store_pickup_salary
     salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
@@ -226,9 +236,9 @@ def compute_salary(
     )
 
 
-# ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+# ─────────────────────────────────────────────────────────────────────────────
 # Private helpers
-# ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _build_store_filter(db: Session, user_id: str, store_id: Optional[str]):
     """
@@ -249,13 +259,15 @@ def _build_store_filter(db: Session, user_id: str, store_id: Optional[str]):
     return True  # No store restriction
 
 
-def _build_time_filters(since: Optional[datetime], until: Optional[datetime]) -> list:
-    """Build the date-range filter clauses (strictly Order.created_at per business rule)."""
+def _build_time_filters(since: Optional[datetime], until: Optional[datetime], date_by: str = "created_at") -> list:
+    """Build the date-range filter clauses. Accepts 'created_at' or 'delivered_at'/'updated_at'."""
+    from sqlalchemy import func
     filters = []
+    date_col = func.coalesce(Order.updated_at, Order.created_at) if date_by in ("delivered_at", "updated_at") else Order.created_at
     if since:
-        filters.append(Order.created_at >= since)
+        filters.append(date_col >= since)
     if until:
-        filters.append(Order.created_at <= until)
+        filters.append(date_col <= until)
     return filters
 
 
@@ -265,6 +277,7 @@ def _count_normal_delivered(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
     """
     Count DELIVERED orders that are NOT abandoned carts, assigned to user_id.
@@ -279,7 +292,7 @@ def _count_normal_delivered(
         Order.is_abandoned_cart == False,
         Order.is_marketplace_upsell == False,
         Order.is_deleted        == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
 
     return db.query(Order).filter(and_(*filters)).count()
 
@@ -290,14 +303,8 @@ def _count_recovered_delivered(
     store_id: Optional[str] = None,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
+    date_by: str = "created_at",
 ) -> int:
-    """
-    Count DELIVERED orders that are abandoned carts (successfully recovered and delivered).
-    These earn the recovery-specific commission rate (payment_recovered_cart).
-
-    Only DELIVERED is counted ÔÇö CONFIRMED, SHIPPED are not sufficient.
-    The delivery confirmation must come from the shipping carrier.
-    """
     store_filter = _build_store_filter(db, user_id, store_id)
 
     filters = [
@@ -307,7 +314,7 @@ def _count_recovered_delivered(
         Order.is_abandoned_cart == True,
         Order.is_marketplace_upsell == False,
         Order.is_deleted        == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
 
     return db.query(Order).filter(and_(*filters)).count()
 
@@ -318,13 +325,8 @@ def _count_returned(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
-    """
-    Count RETURNED orders assigned to user_id ÔÇö the carrier brought the order
-    back undelivered after the employee had already confirmed it. Informational
-    on its own; drives returned_penalty when the employee has a non-zero
-    payment_lost_cart rate configured.
-    """
     store_filter = _build_store_filter(db, user_id, store_id)
 
     filters = [
@@ -332,7 +334,7 @@ def _count_returned(
         Order.assigned_to == user_id,
         Order.status      == "RETURNED",
         Order.is_deleted  == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
 
     return db.query(Order).filter(and_(*filters)).count()
 
@@ -343,13 +345,8 @@ def _count_upsell_delivered(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
-    """
-    Count DELIVERED orders flagged is_upsell, assigned to user_id — earns
-    the upsell-specific bonus rate (payment_upsell), on top of whatever
-    else the order already earns. Not mutually exclusive with normal/
-    recovered — an upsell can happen on either kind of order.
-    """
     store_filter = _build_store_filter(db, user_id, store_id)
 
     filters = [
@@ -358,7 +355,7 @@ def _count_upsell_delivered(
         Order.status       == "DELIVERED",
         Order.is_upsell     == True,
         Order.is_deleted   == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
 
     return db.query(Order).filter(and_(*filters)).count()
 
@@ -369,11 +366,8 @@ def _count_marketplace_delivered(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
-    """
-    Count DELIVERED orders flagged is_marketplace_upsell.
-    These orders earn a specific fixed marketplace bonus instead of the standard base pay.
-    """
     store_filter = _build_store_filter(db, user_id, store_id)
 
     filters = [
@@ -382,7 +376,7 @@ def _count_marketplace_delivered(
         Order.status       == "DELIVERED",
         Order.is_marketplace_upsell == True,
         Order.is_deleted   == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
 
     return db.query(Order).filter(and_(*filters)).count()
 
@@ -396,6 +390,7 @@ def _count_store_pickup_delivered(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
     store_filter = _build_store_filter(db, user_id, store_id)
     filters = [
@@ -404,7 +399,7 @@ def _count_store_pickup_delivered(
         Order.status == "DELIVERED",
         Order.delivery_type.in_(STORE_PICKUP_TYPES),
         Order.is_deleted == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
     return db.query(Order).filter(and_(*filters)).count()
 
 
@@ -414,6 +409,7 @@ def _count_recovered_store_pickup_delivered(
     store_id: Optional[str],
     since: Optional[datetime],
     until: Optional[datetime],
+    date_by: str = "created_at",
 ) -> int:
     store_filter = _build_store_filter(db, user_id, store_id)
     filters = [
@@ -423,7 +419,7 @@ def _count_recovered_store_pickup_delivered(
         Order.is_abandoned_cart == True,
         Order.delivery_type.in_(STORE_PICKUP_TYPES),
         Order.is_deleted == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
     return db.query(Order).filter(and_(*filters)).count()
 
 
@@ -441,6 +437,7 @@ def _sum_frozen_amount(
     is_upsell: Optional[bool] = None,
     is_marketplace_upsell: Optional[bool] = None,
     is_store_pickup: Optional[bool] = None,
+    date_by: str = "created_at",
 ) -> int:
     from sqlalchemy import func as _func, case as _case, or_
 
@@ -450,7 +447,7 @@ def _sum_frozen_amount(
         Order.assigned_to == user_id,
         Order.status == status,
         Order.is_deleted == False,
-    ] + _build_time_filters(since, until)
+    ] + _build_time_filters(since, until, date_by=date_by)
     if is_abandoned_cart is not None:
         filters.append(Order.is_abandoned_cart == is_abandoned_cart)
     if is_upsell is not None:
