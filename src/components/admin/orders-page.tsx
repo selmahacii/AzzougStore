@@ -452,8 +452,7 @@ const [timeLeft, setTimeLeft] = useState('');
       if (savedSearch) setSearchQuery(savedSearch);
       if (savedWilaya) setFilterWilaya(savedWilaya);
       if (savedSource) setFilterSource(savedSource);
-      if (savedStart) setStartDate(savedStart);
-      if (savedEnd) setEndDate(savedEnd);
+      // Date filters are session-specific and should not trap the user on empty dates
       // Only restore the saved mode when no explicit sub-view was requested
       // (sidebar deep-links set adminSubView and must win over localStorage)
       if (savedMode && !adminSubView) {
