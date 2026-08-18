@@ -634,6 +634,10 @@ def get_landing_page_analytics(
         MetaAdsCampaign.store_id == lp.store_id,
         MetaAdsCampaign.product_id == lp.product_id,
     ).all()
+    if not meta_campaigns:
+        meta_campaigns = db.query(MetaAdsCampaign).filter(
+            MetaAdsCampaign.store_id == lp.store_id,
+        ).all()
     _camp_ids = [c.campaign_id for c in meta_campaigns]
     meta_daily_by_date: dict = {}
     if _camp_ids:
@@ -674,26 +678,43 @@ def get_landing_page_analytics(
         totals["meta_reach"] = sum(c.reach or 0 for c in meta_campaigns)
         totals["meta_clicks"] = sum(c.clicks or 0 for c in meta_campaigns)
 
-    # Taux de conversion réel = vraies commandes ERP ÷ clics Meta (jamais
-    # achats déclarés par Meta au numérateur — on a le vrai chiffre ERP,
-    # pas besoin d'un proxy). Qualité du site = définition standard Meta
-    # "Landing Page View Rate" = vues de la page de destination (ViewContent
-    # réel, local_view_content ci-dessous, scopé à cette LP) ÷ clics sur le
-    # lien publicitaire — mesure la perte entre "a cliqué l'annonce" et "a
-    # vu la page chargée" (vitesse/fiabilité du site), pas la conversion.
+    from sqlalchemy import or_
+    from app.models.funnel_rollup import FunnelRollup
+    local_view_content = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
+        FunnelRollup.store_id == lp.store_id,
+        FunnelRollup.event_name == "ViewContent",
+        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
+        FunnelRollup.day >= d_start.date(),
+        FunnelRollup.day <= d_end.date(),
+    ).scalar() or 0
+
+    daily_views_rows = db.query(
+        FunnelRollup.day,
+        func.coalesce(func.sum(FunnelRollup.count), 0)
+    ).filter(
+        FunnelRollup.store_id == lp.store_id,
+        FunnelRollup.event_name == "ViewContent",
+        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
+        FunnelRollup.day >= d_start.date(),
+        FunnelRollup.day <= d_end.date(),
+    ).group_by(FunnelRollup.day).all()
+    daily_views_by_date = {str(r[0]): int(r[1] or 0) for r in daily_views_rows}
+
     totals["taux_conversion_pct"] = (
-        round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0 else None
+        round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0
+        else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None)
     )
 
-    # Per-day Meta count merged into the chart data — lets the dialog show
-    # "Meta a déclaré X ce jour-là" next to our own daily order bars.
     for d in daily:
         d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
         d["meta_impressions"] = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
         d["meta_reach"] = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
         mc = meta_daily_by_date.get(d["date"], {}).get("clicks", 0)
         d["meta_clicks"] = mc
-        d["conversion_rate"] = round(d["orders"] / mc * 100, 2) if mc > 0 else 0
+        v = daily_views_by_date.get(d["date"], 0)
+        d["views"] = v
+        base = mc if mc > 0 else v
+        d["conversion_rate"] = round(d["orders"] / base * 100, 2) if base > 0 else 0
 
     from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup
