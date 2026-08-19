@@ -81,13 +81,37 @@ async def get_noest_stats(
         Order.tracking_number.isnot(None),
         Order.tracking_number != "",
         Order.is_deleted == False,
-    ).all()
+    ).order_by(Order.created_at.desc()).all()
 
     total_tracked = len(orders)
     shipped = sum(1 for o in orders if str(o.status) == "SHIPPED")
     out_for_delivery = sum(1 for o in orders if str(o.status) == "SHIPPED" and (o.carrier_stage in ("fdr_activated", "en livraison") or "livraison" in str(o.carrier_stage_label or "").lower()))
     delivered = sum(1 for o in orders if str(o.status) == "DELIVERED")
     returned = sum(1 for o in orders if str(o.status) == "RETURNED")
+
+    orders_data = [
+        {
+            "id": o.id,
+            "order_number": o.order_number,
+            "store_sequence_number": o.store_sequence_number,
+            "customer_name": o.customer_name,
+            "customer_phone": o.customer_phone,
+            "customer_wilaya": o.customer_wilaya,
+            "tracking_number": o.tracking_number,
+            "status": str(o.status),
+            "carrier_stage": o.carrier_stage,
+            "carrier_stage_label": o.carrier_stage_label or (
+                "En Livraison" if (o.carrier_stage in ("fdr_activated", "en livraison") or "livraison" in str(o.carrier_stage_label or "").lower())
+                else "Livré" if str(o.status) == "DELIVERED"
+                else "Retourné" if str(o.status) == "RETURNED"
+                else "En Transit"
+            ),
+            "total": o.total,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+            "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+        }
+        for o in orders
+    ]
 
     return {
         "success": True,
@@ -98,6 +122,7 @@ async def get_noest_stats(
         "returned": returned,
         "sync_status": "ONLINE",
         "last_sync": datetime.now(timezone.utc).isoformat(),
+        "orders": orders_data,
     }
 
 
