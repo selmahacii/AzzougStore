@@ -22,7 +22,7 @@ from app.core.exceptions import (
 )
 from app.models.customer import Customer
 from app.models.events import OrderEvent
-from app.models.finance import FinancialTransaction, TransactionType, Wallet
+from app.models.finance import FinancialTransaction, TransactionType, Wallet, WalletType
 from app.models.order import Order, OrderItem
 from app.models.store import Store
 from app.models.user import User
@@ -1901,6 +1901,8 @@ class OrderService:
                 wallet = Wallet(
                     id=str(uuid.uuid4()),
                     store_id=order.store_id,
+                    name="Caisse Principale (COD)",
+                    type=WalletType.CASH,
                     balance=0,
                     total_in=0,
                     total_out=0,
@@ -1939,9 +1941,8 @@ class OrderService:
                 wallet.total_out += order.abandoned_cart_recovery_fee  # type: ignore[operator]
                 db.add(fee_tx)
                 logger.info("Recovery fee deducted: %s DA for order %s", order.abandoned_cart_recovery_fee, order.order_number)
-                
-        except Exception as exc:
-            logger.warning("Could not record delivery payment for order %s: %s", order.id, exc)
-
+        except Exception as err:
+            db.rollback()
+            logger.warning("Could not record delivery payment for order %s: %s", getattr(order, 'id', 'unknown'), err)
 
 order_service = OrderService()
