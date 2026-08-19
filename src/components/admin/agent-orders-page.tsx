@@ -242,19 +242,23 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
             </a>
           </div>
 
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
-            <MapPin className="size-3" /> {order.customer_wilaya}
-            <span className="text-slate-200">·</span>
-            <span className="font-black text-slate-800">{formatPrice(order.total)}</span>
-            {order.delivery_fee > 0 && (
-              <><span className="text-slate-200">·</span>
-              <span className="text-slate-500 font-medium">(dont livraison: {formatPrice(order.delivery_fee)})</span></>
-            )}
-            {order.items.length > 0 && (
-              <><span className="text-slate-200">·</span>
-              <span>{order.items.length} art.</span></>
-            )}
-          </div>
+          {(() => {
+            const subtotal = order.subtotal || Math.max(0, (order.total || 0) - (order.delivery_fee || 0));
+            const fee = order.delivery_fee || 0;
+            const grandTotal = Math.max(order.total || 0, subtotal - (order.discount || 0) + fee);
+
+            return (
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                <MapPin className="size-3 text-slate-400" /> <span className="font-bold text-slate-700">{order.customer_wilaya}</span>
+                <span className="text-slate-300">·</span>
+                <span>Produits: <strong className="font-bold text-slate-800">{formatPrice(subtotal)}</strong></span>
+                <span className="text-slate-300">·</span>
+                <span>Livraison: <strong className="font-bold text-slate-800">{fee > 0 ? formatPrice(fee) : 'Gratuite'}</strong></span>
+                <span className="text-slate-300">·</span>
+                <span className="font-black text-emerald-600 font-mono">Total: {formatPrice(grandTotal)}</span>
+              </div>
+            );
+          })()}
 
           <div className="mt-2.5 pt-2 border-t border-dashed border-slate-100 flex items-start gap-2 text-xs bg-slate-50/50 p-2 rounded-xl">
             <MessageSquare className="size-3.5 text-slate-400 mt-0.5 shrink-0" />

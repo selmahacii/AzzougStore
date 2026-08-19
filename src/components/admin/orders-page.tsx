@@ -1851,17 +1851,30 @@ const [timeLeft, setTimeLeft] = useState('');
                       </div>
                     </td>
                     <td className="px-3 xl:px-4 py-6">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(order.total)}</span>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest tabular-nums">
-                          (dont livraison: {order.delivery_fee > 0 ? formatPrice(order.delivery_fee) : 'Gratuite'})
-                        </span>
-                        {order.promo_code && order.discount > 0 && (
-                          <span className="text-[9px] font-black text-[#6C5CE7] bg-[#F0EDFF] px-1.5 py-0.5 rounded-full w-fit tabular-nums mt-1 border border-[#6C5CE7]/20">
-                            {order.promo_code} (-{formatPrice(order.discount)})
-                          </span>
-                        )}
-                      </div>
+                      {(() => {
+                        const subtotal = order.subtotal || Math.max(0, (order.total || 0) - (order.delivery_fee || 0));
+                        const fee = order.delivery_fee || 0;
+                        const grandTotal = Math.max(order.total || 0, subtotal - (order.discount || 0) + fee);
+
+                        return (
+                          <div className="flex flex-col gap-0.5 text-xs">
+                            <span className="font-medium text-slate-500 tabular-nums">
+                              Produits: <strong className="font-bold text-slate-800">{formatPrice(subtotal)}</strong>
+                            </span>
+                            <span className="font-medium text-slate-500 tabular-nums">
+                              Livraison: <strong className="font-bold text-slate-800">{fee > 0 ? formatPrice(fee) : 'Gratuite'}</strong>
+                            </span>
+                            <span className="text-sm font-black text-emerald-600 font-mono tabular-nums pt-1 border-t border-dashed border-slate-200 mt-0.5">
+                              Total: {formatPrice(grandTotal)}
+                            </span>
+                            {order.promo_code && order.discount > 0 && (
+                              <span className="text-[9px] font-black text-[#6C5CE7] bg-[#F0EDFF] px-1.5 py-0.5 rounded-full w-fit tabular-nums mt-1 border border-[#6C5CE7]/20">
+                                {order.promo_code} (-{formatPrice(order.discount)})
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 xl:px-4 py-6">
                       <div className="flex flex-col gap-1.5 items-start">
