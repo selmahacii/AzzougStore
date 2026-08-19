@@ -1697,7 +1697,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                <div className="p-3 bg-slate-50 space-y-1.5 text-xs">
                  <div className="flex justify-between text-slate-500">
                    <span>Sous-total produits</span>
-                   <span className="tabular-nums">{formatPrice(order.items?.reduce((acc, it) => acc + it.quantity * it.unit_price, 0) ?? (order.subtotal || 0))}</span>
+                   <span className="tabular-nums font-bold">{formatPrice(order.items?.length ? order.items.reduce((acc, it) => acc + (it.quantity * it.unit_price), 0) : (order.subtotal || Math.max(0, (order.total || 0) - (order.delivery_fee || 0))))}</span>
                  </div>
                  {(order.discount || 0) > 0 && (
                    <div className="flex justify-between text-emerald-600">
