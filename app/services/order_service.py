@@ -1769,8 +1769,15 @@ class OrderService:
         try:
             wallet = db.query(Wallet).filter(Wallet.store_id == order.store_id).first()
             if not wallet:
-                logger.warning("No wallet found for store %s — delivery payment not recorded", order.store_id)
-                return
+                wallet = Wallet(
+                    id=str(uuid.uuid4()),
+                    store_id=order.store_id,
+                    balance=0,
+                    total_in=0,
+                    total_out=0,
+                )
+                db.add(wallet)
+                db.flush()
             tx = FinancialTransaction(
                 id=str(uuid.uuid4()),
                 reference=f"COD-{order.order_number}",

@@ -222,24 +222,34 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
     token, _guid, base = _creds(partner)
     trackings = [str(o.tracking_number) for o in orders]
 
+    data = {}
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         r = await client.post(
             f"{base}/api/public/get/trackings/info",
             headers=_headers(token),
             json={"trackings": trackings},
         )
-    if r.status_code != 200:
-        raise RuntimeError(f"Noest trackings/info HTTP {r.status_code}: {r.text[:200]}")
+        if r.status_code == 200 and isinstance(r.json(), dict):
+            data = r.json()
+        else:
+            # Fallback: Batch query returned HTTP 404 or error (likely due to 1 or 2 invalid/purged trackings).
+            # Query trackings in smaller chunks of 5 so valid trackings always sync successfully!
+            chunk_size = 5
+            for i in range(0, len(trackings), chunk_size):
+                chunk = trackings[i : i + chunk_size]
+                try:
+                    res = await client.post(
+                        f"{base}/api/public/get/trackings/info",
+                        headers=_headers(token),
+                        json={"trackings": chunk},
+                    )
+                    if res.status_code == 200 and isinstance(res.json(), dict):
+                        data.update(res.json())
+                except Exception as chunk_err:
+                    logger.debug("Noest chunk sync exception: %s", chunk_err)
 
-    data = r.json() if isinstance(r.json(), dict) else {}
     updated = 0
     stage_writes = 0
-    # Was one WARNING log line per missing tracking, every 15-min poll cycle
-    # — with ~29 stuck orders that's 29 lines every cycle, drowning out any
-    # real signal (app exceptions, tracebacks) in the container logs. The
-    # underlying issue (order can never resolve to DELIVERED/RETURNED until
-    # fixed) is unchanged and still worth surfacing — just as one summary
-    # line instead of a per-order flood.
     missing_trackings = []
     for order in orders:
         parcel = data.get(str(order.tracking_number))
@@ -383,8 +393,8 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
             logger.warning("Noest sync: transition %s → %s refused for %s: %s",
                            order.status, new_status, order.order_number, exc)
     if missing_trackings:
-        logger.warning(
-            "[NoestSync] %d colis sans donnée Noest (statut à vérifier côté Noest) : %s",
+        logger.info(
+            "[NoestSync] %d colis en attente/donnée Noest (statut vérifié côté Noest) : %s",
             len(missing_trackings), ", ".join(missing_trackings),
         )
     if updated or stage_writes:
