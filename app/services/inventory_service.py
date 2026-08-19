@@ -285,10 +285,13 @@ class InventoryService:
         order_id: str,
         actor_id: Optional[str] = None,
         variant_details: Optional[dict] = None,
+        allow_out_of_stock: bool = True,
     ) -> None:
         """
         Reserve `quantity` units for a new/unconfirmed order.
         If a variant is specified, verifies and reserves the variant stock.
+        When `allow_out_of_stock=True` (default), logs a warning and proceeds with
+        reservation even if digital stock counter is 0, ensuring COD orders are never lost.
         """
         if quantity <= 0:
             raise ValueError(f"Reserve quantity must be positive, got {quantity}")
@@ -307,11 +310,16 @@ class InventoryService:
                 available = v_stock - v_reserved
                 
                 if available < quantity:
-                    raise InsufficientStockError(
-                        product_id=f"{product_id} ({variant_str})",
-                        requested=quantity,
-                        available=available,
+                    logger.warning(
+                        "Insufficient stock for variant %s on product %s (requested=%d, available=%d) for order %s",
+                        variant_str, product_id, quantity, available, order_id
                     )
+                    if not allow_out_of_stock:
+                        raise InsufficientStockError(
+                            product_id=f"{product_id} ({variant_str})",
+                            requested=quantity,
+                            available=available,
+                        )
                 
                 matching_variant["reserved"] = v_reserved + quantity
                 flag_modified(product, "variants")
@@ -324,19 +332,29 @@ class InventoryService:
                 logger.warning("Variant %s not found on product %s, falling back to product-level check", variant_str, product_id)
                 available = product.stock - product.reserved_stock
                 if available < quantity:
+                    logger.warning(
+                        "Insufficient stock for product %s (requested=%d, available=%d) for order %s",
+                        product_id, quantity, available, order_id
+                    )
+                    if not allow_out_of_stock:
+                        raise InsufficientStockError(
+                            product_id=product_id,
+                            requested=quantity,
+                            available=available,
+                        )
+        else:
+            available = product.stock - product.reserved_stock
+            if available < quantity:
+                logger.warning(
+                    "Insufficient stock for product %s (requested=%d, available=%d) for order %s",
+                    product_id, quantity, available, order_id
+                )
+                if not allow_out_of_stock:
                     raise InsufficientStockError(
                         product_id=product_id,
                         requested=quantity,
                         available=available,
                     )
-        else:
-            available = product.stock - product.reserved_stock
-            if available < quantity:
-                raise InsufficientStockError(
-                    product_id=product_id,
-                    requested=quantity,
-                    available=available,
-                )
 
         product.reserved_stock += quantity
 

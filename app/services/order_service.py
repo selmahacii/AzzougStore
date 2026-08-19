@@ -1218,7 +1218,7 @@ class OrderService:
         # Expand combined variants if any (e.g. "P1: Couleur: Noir | P2: Couleur: Bordeaux")
         items_data = expand_combined_variant_items(items_data)
 
-        # Reserve stock for each line item
+        # Reserve stock for each line item (allow out of stock for COD customer orders so checkout never crashes)
         for item in items_data:
             try:
                 inventory_service.reserve_stock(
@@ -1228,12 +1228,11 @@ class OrderService:
                     order_id=order.id,
                     actor_id=actor_id,
                     variant_details=item.get("variant_details"),
+                    allow_out_of_stock=True,
                 )
-            except InsufficientStockError as stock_err:
-                raise stock_err
             except Exception as stock_err:
-                # Log missing product or generic issues but don't abort order creation
-                logger.warning("Stock reservation skipped for product %s: %s", item.get("product_id"), stock_err)
+                # Log missing product or generic issues but NEVER abort order creation
+                logger.warning("Stock reservation warning for product %s (order %s): %s", item.get("product_id"), order.id, stock_err)
             db.add(OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
