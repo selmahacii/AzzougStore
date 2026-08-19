@@ -509,6 +509,13 @@ def get_landing_page_analytics(
             func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%livraison%"),
         )
     )
+    _has_external_tracking = or_(
+        Order.carrier_id.isnot(None),
+        and_(Order.tracking_number.isnot(None), Order.tracking_number != "")
+    )
+    _is_out_for_delivery_noest = and_(_is_out_for_delivery, _has_external_tracking)
+    _is_out_for_delivery_internal = and_(_is_out_for_delivery, ~_has_external_tracking)
+
     _is_suspended = or_(
         Order.carrier_stage == "colis_suspendu",
         func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%suspendu%"),
@@ -553,6 +560,8 @@ def get_landing_page_analytics(
             func.count(distinct(case((_is_in_transit, Order.id)))).label("shipped"),
             func.count(distinct(case((_is_expedition_hub, Order.id)))).label("expedition_hub"),
             func.count(distinct(case((_is_in_hub, Order.id)))).label("in_hub"),
+            func.count(distinct(case((_is_out_for_delivery_internal, Order.id)))).label("out_for_delivery_internal"),
+            func.count(distinct(case((_is_out_for_delivery_noest, Order.id)))).label("out_for_delivery_noest"),
             func.count(distinct(case((_is_out_for_delivery, Order.id)))).label("out_for_delivery"),
             func.count(distinct(case((_is_suspended, Order.id)))).label("suspended"),
             func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
@@ -608,6 +617,8 @@ def get_landing_page_analytics(
             "shipped": int(r.shipped or 0) if r else 0,
             "expedition_hub": int(r.expedition_hub or 0) if r else 0,
             "in_hub": int(r.in_hub or 0) if r else 0,
+            "out_for_delivery_internal": int(r.out_for_delivery_internal or 0) if r else 0,
+            "out_for_delivery_noest": int(r.out_for_delivery_noest or 0) if r else 0,
             "out_for_delivery": int(r.out_for_delivery or 0) if r else 0,
             "suspended": int(r.suspended or 0) if r else 0,
             "cancelled": int(r.cancelled or 0) if r else 0,
@@ -627,6 +638,8 @@ def get_landing_page_analytics(
         "shipped": sum(d["shipped"] for d in daily),
         "expedition_hub": sum(d["expedition_hub"] for d in daily),
         "in_hub": sum(d["in_hub"] for d in daily),
+        "out_for_delivery_internal": sum(d["out_for_delivery_internal"] for d in daily),
+        "out_for_delivery_noest": sum(d["out_for_delivery_noest"] for d in daily),
         "out_for_delivery": sum(d["out_for_delivery"] for d in daily),
         "suspended": sum(d["suspended"] for d in daily),
         "cancelled": sum(d["cancelled"] for d in daily),

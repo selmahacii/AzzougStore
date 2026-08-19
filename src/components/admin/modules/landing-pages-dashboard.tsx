@@ -222,14 +222,15 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
           {/* Section 1 : Suivi Logistique ERP */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes</p>
-            <div className="grid grid-cols-2 sm:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               {[
                 { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
                 { label: 'Commandes Retournées', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#E17055' },
                 { label: 'En Expédition', value: totals.shipped ?? 0, sub: 'en transit', color: '#0984E3' },
                 { label: 'Expédition Hub', value: totals.expedition_hub ?? 0, sub: 'transfert hub', color: '#3B82F6' },
                 { label: 'En Hub', value: totals.in_hub ?? 0, sub: 'reçu au centre', color: '#8B5CF6' },
-                { label: 'En Livraison', value: totals.out_for_delivery ?? 0, sub: 'avec livreur', color: '#6C5CE7' },
+                { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
+                { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
                 { label: 'Colis Suspendu', value: totals.suspended ?? 0, sub: 'bloqué / problème', color: '#F7B731' },
               ].map(s => (
                 <div key={s.label} className="text-center p-3 rounded-2xl border"
