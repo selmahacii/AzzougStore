@@ -1495,21 +1495,24 @@ export default function MetaAdsDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E9ECF0]">
-                    {diagnosticsEvents.map((event: any, index: number) => (
+                    {diagnosticsEvents.map((event: any, index: number) => {
+                      const quality = event.match_quality || 0;
+                      const isHealthy = quality >= 80 && (!event.failures || event.failures < 50);
+                      return (
                       <tr key={`${event.event_name}-${index}`} className="hover:bg-[#FAFBFD] transition-colors text-sm">
                         <td className="px-4 py-3 font-semibold text-slate-700">{event.event_name}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-700">{event.match_quality || 0}%</td>
+                        <td className="px-4 py-3 font-semibold text-slate-700">{quality}%</td>
                         <td className="px-4 py-3">
                           <Badge className={cn(
                             'border-none rounded-md px-2 py-0.5 text-[10px] font-black',
-                            event.failures ? 'bg-[#FFEDE9] text-[#E17055]' : 'bg-[#E6FFF8] text-[#00B894]'
+                            isHealthy ? 'bg-[#E6FFF8] text-[#00B894]' : 'bg-[#FFEDE9] text-[#E17055]'
                           )}>
-                            {event.failures ? 'À vérifier' : 'OK'}
+                            {isHealthy ? 'Opérationnel' : (event.failures ? 'À vérifier' : 'OK')}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-slate-500">{event.last_successful_send || event.last_failure || '—'}</td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
