@@ -245,31 +245,16 @@ export function SearchableCommuneSelect({
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={dir === 'rtl' ? 'بحث أو كتابة اسم البلدية...' : 'Rechercher ou saisir la commune...'}
+              placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
               className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
               style={{ color: T.inputText }}
               autoFocus
             />
           </div>
 
-          {/* Custom typed commune option */}
-          {search.trim() && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange(search.trim());
-                setOpen(false);
-              }}
-              className="w-full text-left px-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50/60 hover:bg-blue-100 border-b flex items-center justify-between transition-all"
-            >
-              <span>✍️ {dir === 'rtl' ? `استخدام "${search.trim()}"` : `Utiliser "${search.trim()}"`}</span>
-              <span className="text-[10px] font-semibold opacity-75">Valider</span>
-            </button>
-          )}
-
           {/* List */}
           <div className="overflow-y-auto flex-1 max-h-56 py-1 scrollbar-thin">
-            {filtered.length === 0 && !search.trim() ? (
+            {filtered.length === 0 ? (
               <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
                 {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
               </div>
