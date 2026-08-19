@@ -514,8 +514,29 @@ def get_landing_page_analytics(
         func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%suspendu%"),
         func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%bloqu%"),
     )
+    _is_expedition_hub = and_(
+        Order.status == "SHIPPED",
+        or_(
+            Order.carrier_stage.in_(("expedition_hub", "en_expedition_hub", "transfert_hub", "expedition")),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%exp%hub%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%expedition%hub%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%transfert%"),
+        )
+    )
+    _is_in_hub = and_(
+        Order.status == "SHIPPED",
+        not_(_is_expedition_hub),
+        or_(
+            Order.carrier_stage.in_(("en_hub", "recu_hub", "hub", "bureau", "centre_tri")),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%hub%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%en hub%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%au hub%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%bureau%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%centre%"),
+        )
+    )
     _is_returned = Order.status == "RETURNED"
-    _is_in_transit = and_(Order.status == "SHIPPED", not_(_is_out_for_delivery), not_(_is_suspended))
+    _is_in_transit = and_(Order.status == "SHIPPED", not_(_is_out_for_delivery), not_(_is_suspended), not_(_is_expedition_hub), not_(_is_in_hub))
 
     rows = (
         db.query(
@@ -530,6 +551,8 @@ def get_landing_page_analytics(
                 (_is_returned, func.coalesce(OrderItem.quantity, 1)), else_=0
             )), 0).label("returned_items"),
             func.count(distinct(case((_is_in_transit, Order.id)))).label("shipped"),
+            func.count(distinct(case((_is_expedition_hub, Order.id)))).label("expedition_hub"),
+            func.count(distinct(case((_is_in_hub, Order.id)))).label("in_hub"),
             func.count(distinct(case((_is_out_for_delivery, Order.id)))).label("out_for_delivery"),
             func.count(distinct(case((_is_suspended, Order.id)))).label("suspended"),
             func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
@@ -583,6 +606,8 @@ def get_landing_page_analytics(
             "returned": int(r.returned or 0) if r else 0,
             "returned_items": int(r.returned_items or 0) if r else 0,
             "shipped": int(r.shipped or 0) if r else 0,
+            "expedition_hub": int(r.expedition_hub or 0) if r else 0,
+            "in_hub": int(r.in_hub or 0) if r else 0,
             "out_for_delivery": int(r.out_for_delivery or 0) if r else 0,
             "suspended": int(r.suspended or 0) if r else 0,
             "cancelled": int(r.cancelled or 0) if r else 0,
@@ -600,6 +625,8 @@ def get_landing_page_analytics(
         "returned": sum(d["returned"] for d in daily),
         "returned_items": sum(d["returned_items"] for d in daily),
         "shipped": sum(d["shipped"] for d in daily),
+        "expedition_hub": sum(d["expedition_hub"] for d in daily),
+        "in_hub": sum(d["in_hub"] for d in daily),
         "out_for_delivery": sum(d["out_for_delivery"] for d in daily),
         "suspended": sum(d["suspended"] for d in daily),
         "cancelled": sum(d["cancelled"] for d in daily),
