@@ -1682,7 +1682,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                  </div>
                  <div className="flex justify-between font-bold border-t border-slate-200 pt-1.5 text-sm">
                    <span>Total à encaisser</span>
-                   <span className="tabular-nums">{formatPrice(order.total)} DA</span>
+                    <span className="tabular-nums font-mono text-emerald-600 font-black">{formatPrice(Math.max(order.total || 0, (order.items?.reduce((acc, it) => acc + it.quantity * it.unit_price, 0) ?? (order.subtotal || 0)) - (order.discount || 0) + (order.delivery_fee || 0)))}</span>
                  </div>
                </div>
              </div>

@@ -388,7 +388,7 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
                 </div>
                 <div className="flex justify-between text-sm font-black pt-1.5 border-t border-dashed">
                   <span>Total à encaisser</span>
-                  <span className="text-emerald-600">{formatPrice(order.total)}</span>
+                  <span className="text-emerald-600 font-mono font-black">{formatPrice(Math.max(order.total || 0, (order.subtotal || Math.max(0, (order.total || 0) - (order.delivery_fee || 0))) - (order.discount || 0) + (order.delivery_fee || 0)))}</span>
                 </div>
               </div>
 
