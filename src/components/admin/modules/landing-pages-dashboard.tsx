@@ -243,22 +243,47 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
           {/* Section 2 : Financement & Performances Meta Ads */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📢 Performances & Financement Meta Ads</p>
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
-              {[
-                { label: 'Impressions Meta', value: (totals.meta_impressions ?? 0).toLocaleString('fr-FR'), color: '#1877F2', title: "Nombre total d'impressions des annonces Meta" },
-                { label: 'Montant Dépensé', value: `${Math.round(totals.meta_spend ?? 0).toLocaleString('fr-FR')} DA`, color: '#E17055', title: "Dépenses publicitaires totales sur cette période" },
-                { label: 'Budget Quotidien', value: `${Math.round(totals.meta_budget_daily ?? 0).toLocaleString('fr-FR')} DA/j`, color: '#0984E3', title: "Dépense quotidienne moyenne sur la période" },
-                { label: 'Achats Meta', value: totals.meta_purchases ?? 0, color: '#00B894', title: "Nombre d'achats déclarés directement par Meta" },
-                { label: 'Coût / Résultat', value: totals.meta_cpa_purchases > 0 ? `${Math.round(totals.meta_cpa_purchases).toLocaleString('fr-FR')} DA` : '—', color: '#8E44AD', title: "Coût moyen par achat publicitaire Meta (Dépense ÷ Achats Meta)" },
-                { label: 'Taux de Conversion', value: totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—', color: '#F7B731', title: "Achats / Commandes ÷ Clics Meta (%)" },
-              ].map(s => (
-                <div key={s.label} title={s.title} className="text-center p-3 rounded-2xl border"
-                  style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                  <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                  <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+            {(() => {
+              const curr = (totals.meta_currency || 'DZD').toUpperCase();
+              const fmtCurr = (val: number, rawVal?: number) => {
+                const effectiveRaw = (rawVal != null && rawVal > 0) ? rawVal : val;
+                if (curr === 'DZD' || curr === 'DA') {
+                  return `${Math.round(val).toLocaleString('fr-FR')} DA`;
+                }
+                const symbol = curr === 'USD' ? '$' : curr === 'EUR' ? '€' : curr === 'GBP' ? '£' : curr;
+                const formattedRaw = symbol === '$' ? `$${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : symbol === '€' ? `${effectiveRaw.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                  : `${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${curr}`;
+                
+                if (val > 0 && Math.abs(val - effectiveRaw) > 0.01) {
+                  return `${formattedRaw} (${Math.round(val).toLocaleString('fr-FR')} DA)`;
+                }
+                return formattedRaw;
+              };
+
+              const spendStr = fmtCurr(totals.meta_spend ?? 0, totals.meta_raw_spend);
+              const budgetStr = totals.meta_budget_daily > 0 ? `${fmtCurr(totals.meta_budget_daily ?? 0, totals.meta_raw_budget_daily)}/j` : '0 DA/j';
+              const cpaStr = totals.meta_cpa_purchases > 0 ? fmtCurr(totals.meta_cpa_purchases, totals.meta_raw_cpa_purchases) : '—';
+
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                  {[
+                    { label: 'Impressions Meta', value: (totals.meta_impressions ?? 0).toLocaleString('fr-FR'), color: '#1877F2', title: "Nombre total d'impressions des annonces Meta" },
+                    { label: 'Montant Dépensé', value: spendStr, color: '#E17055', title: `Dépenses publicitaires totales (${curr}) sur cette période` },
+                    { label: 'Budget Quotidien', value: budgetStr, color: '#0984E3', title: "Dépense quotidienne moyenne sur la période" },
+                    { label: 'Achats Meta', value: totals.meta_purchases ?? 0, color: '#00B894', title: "Nombre d'achats déclarés directement par Meta" },
+                    { label: 'Coût / Résultat', value: cpaStr, color: '#8E44AD', title: "Coût moyen par achat publicitaire Meta (Dépense ÷ Achats Meta)" },
+                    { label: 'Taux de Conversion', value: totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—', color: '#F7B731', title: "Achats / Commandes ÷ Clics Meta (%)" },
+                  ].map(s => (
+                    <div key={s.label} title={s.title} className="text-center p-3 rounded-2xl border"
+                      style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
 
           {/* Micro-détails — regroupés par question claire ("d'où viennent

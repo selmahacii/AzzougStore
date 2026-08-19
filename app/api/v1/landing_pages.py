@@ -676,6 +676,13 @@ def get_landing_page_analytics(
             MetaAdsCampaign.store_id == lp.store_id,
         ).all()
 
+    from app.models.marketing import MetaAdsConfig
+    meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
+    meta_currency = (
+        meta_cfg.currency if (meta_cfg and meta_cfg.currency)
+        else (meta_campaigns[0].currency if (meta_campaigns and meta_campaigns[0].currency) else "DZD")
+    ).upper()
+
     _camp_ids = [c.campaign_id for c in meta_campaigns]
     meta_daily_by_date: dict = {}
     if _camp_ids:
@@ -688,6 +695,7 @@ def get_landing_page_analytics(
                 func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
                 func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
             )
             .filter(
                 MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
@@ -698,13 +706,22 @@ def get_landing_page_analytics(
             .all()
         )
         meta_daily_by_date = {
-            str(r[0]): {"purchases": int(r[1] or 0), "value": float(r[2] or 0.0), "spend": float(r[3] or 0.0), "impressions": int(r[4] or 0), "reach": int(r[5] or 0), "clicks": int(r[6] or 0)}
+            str(r[0]): {
+                "purchases": int(r[1] or 0),
+                "value": float(r[2] or 0.0),
+                "spend": float(r[3] or 0.0),
+                "impressions": int(r[4] or 0),
+                "reach": int(r[5] or 0),
+                "clicks": int(r[6] or 0),
+                "raw_spend": float(r[7] or 0.0),
+            }
             for r in _rows
         }
     if meta_daily_by_date:
         totals["meta_purchases"] = sum(v["purchases"] for v in meta_daily_by_date.values())
         totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
         totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
+        totals["meta_raw_spend"] = sum(v["raw_spend"] for v in meta_daily_by_date.values())
         totals["meta_impressions"] = sum(v["impressions"] for v in meta_daily_by_date.values())
         totals["meta_reach"] = sum(v["reach"] for v in meta_daily_by_date.values())
         totals["meta_clicks"] = sum(v["clicks"] for v in meta_daily_by_date.values())
@@ -712,14 +729,19 @@ def get_landing_page_analytics(
         totals["meta_purchases"] = sum(c.meta_purchases or 0 for c in meta_campaigns)
         totals["meta_purchase_value"] = sum(c.meta_purchase_value or 0.0 for c in meta_campaigns)
         totals["meta_spend"] = sum(c.spend or 0.0 for c in meta_campaigns)
+        totals["meta_raw_spend"] = sum(c.raw_spend if c.raw_spend is not None else (c.spend or 0.0) for c in meta_campaigns)
         totals["meta_impressions"] = sum(c.impressions or 0 for c in meta_campaigns)
         totals["meta_reach"] = sum(c.reach or 0 for c in meta_campaigns)
         totals["meta_clicks"] = sum(c.clicks or 0 for c in meta_campaigns)
 
+    totals["meta_currency"] = meta_currency
     days_count = max(1, (d_end.date() - d_start.date()).days + 1)
     totals["meta_budget_daily"] = round(totals["meta_spend"] / days_count, 2)
+    totals["meta_raw_budget_daily"] = round(totals["meta_raw_spend"] / days_count, 2)
     totals["meta_cpa_purchases"] = round(totals["meta_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
+    totals["meta_raw_cpa_purchases"] = round(totals["meta_raw_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
     totals["meta_cpa_orders"] = round(totals["meta_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
+    totals["meta_raw_cpa_orders"] = round(totals["meta_raw_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
 
     from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup
