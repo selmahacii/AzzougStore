@@ -292,7 +292,11 @@ function FunnelBottlenecksTab({ d, bottlenecksTables, loadingBottlenecks }: { d:
                 <span className="text-xs font-bold text-slate-600">{i + 1}. {s.label}</span>
                 <div className="flex items-center gap-3 text-xs flex-wrap">
                   <span className="font-black tabular-nums text-slate-800">{s.volume.toLocaleString('fr-FR')}</span>
-                  {s.rate_from_previous_stage != null && <span className="text-slate-400">Déperdition: {100 - s.rate_from_previous_stage}%</span>}
+                  {s.rate_from_previous_stage != null && (
+                    <span className="text-slate-400">
+                      Déperdition: {Math.round((100 - s.rate_from_previous_stage) * 10) / 10}%
+                    </span>
+                  )}
                   {s.vs_previous_period_pct != null && (
                     <span className={cn("font-black", s.vs_previous_period_pct >= 0 ? "text-emerald-500" : "text-rose-500")}>
                       {s.vs_previous_period_pct >= 0 ? '+' : ''}{s.vs_previous_period_pct}%
