@@ -1086,6 +1086,28 @@ def expand_combined_variant_items(items_data: List[dict]) -> List[dict]:
     return expanded_items
 
 
+def is_admin_free_shipping_product(db: Session, items_data: list) -> bool:
+    """Check if ALL products in the order have free shipping explicitly configured by the Admin."""
+    if not items_data:
+        return False
+    from app.models.product import Product
+    for item in items_data:
+        product_id = item.get("product_id") if isinstance(item, dict) else getattr(item, "product_id", None)
+        if not product_id:
+            return False
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            return False
+        is_free = (
+            str(product.shipping_model or "").lower() == "free"
+            or "free_shipping" in [str(t).lower() for t in (product.tags or [])]
+            or "livraison_gratuite" in [str(t).lower() for t in (product.tags or [])]
+        )
+        if not is_free:
+            return False
+    return True
+
+
 # ─── Service ──────────────────────────────────────────────────────────────────
 
 STANDARD_WILAYA_FEES: dict[str, int] = {
@@ -1306,11 +1328,17 @@ class OrderService:
             **{k: v for k, v in order_data.items() if k in valid_order_cols and k not in ("assigned_to", "livreur_id", "status", "id", "order_number", "store_sequence_number")},
         )
         
-        # Ensure delivery fee is NEVER 0/null when a wilaya is specified (always calculate real wilaya delivery fee)
-        if not order.delivery_fee or order.delivery_fee <= 0:
-            order.delivery_fee = resolve_wilaya_delivery_fee(db, order.store_id, order.customer_wilaya, str(order.delivery_type or "HOME"))
-            if order.subtotal and order.subtotal > 0:
-                order.total = max(0, (order.subtotal or 0) - (order.discount or 0) + (order.delivery_fee or 0))
+        # Delivery fee rule: ALWAYS apply the admin's configured Noest fee grid price for the wilaya
+        # UNLESS the Admin explicitly enabled Free Shipping on the Product!
+        admin_free_shipping = is_admin_free_shipping_product(db, items_data)
+        if admin_free_shipping:
+            order.delivery_fee = 0
+        else:
+            calc_fee = resolve_wilaya_delivery_fee(db, order.store_id, order.customer_wilaya, str(order.delivery_type or "HOME"))
+            order.delivery_fee = calc_fee
+
+        if order.subtotal and order.subtotal > 0:
+            order.total = max(0, (order.subtotal or 0) - (order.discount or 0) + (order.delivery_fee or 0))
 
         db.add(order)
         db.flush()  # Get ID without committing
