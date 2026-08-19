@@ -145,7 +145,7 @@ def run_db_migrations():
         "WITH ranked_orders AS (SELECT id, FIRST_VALUE(id) OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY (CASE WHEN COALESCE(is_abandoned_cart, FALSE) IS FALSE AND status NOT IN ('ABANDONED', 'MERGED') THEN 0 ELSE 1 END) ASC, created_at ASC) as parent_id FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu' AND (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders o SET status = 'MERGED', parent_order_id = r.parent_id, is_deleted = TRUE FROM ranked_orders r WHERE o.id = r.id AND o.id != r.parent_id",
         "WITH renumbered AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY created_at ASC) AS seq FROM orders WHERE (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders SET store_sequence_number = renumbered.seq FROM renumbered WHERE orders.id = renumbered.id",
         "UPDATE orders SET status = CASE WHEN status = 'ABANDONED' THEN 'NEW' ELSE status END, is_abandoned_cart = FALSE WHERE created_at >= '2026-08-18 00:00:00' AND (is_abandoned_cart = TRUE OR status = 'ABANDONED')",
-        "UPDATE orders SET is_deleted = TRUE, status = 'DELETED' WHERE order_number = 'ABN-20260819-051F94' OR order_number LIKE '%051F94%' OR (customer_phone = '0780125700' AND order_number LIKE 'ABN%')",
+        "UPDATE orders SET is_deleted = TRUE, status = 'DELETED' WHERE order_number IN ('ABN-20260819-051F94', 'ABN-20260819-5AEEAE', 'ABN-20260819-F6C4F1') OR order_number LIKE '%5AEEAE%' OR order_number LIKE '%F6C4F1%' OR order_number LIKE '%051F94%' OR (customer_phone = '0780125700' AND order_number LIKE 'ABN%')",
     ]
 
     for stmt in statements:
