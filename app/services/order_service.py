@@ -1088,7 +1088,101 @@ def expand_combined_variant_items(items_data: List[dict]) -> List[dict]:
 
 # ─── Service ──────────────────────────────────────────────────────────────────
 
+STANDARD_WILAYA_FEES: dict[str, int] = {
+    "1": 1200, "adrar": 1200,
+    "2": 800, "chlef": 800,
+    "3": 950, "laghouat": 950,
+    "4": 800, "oum el bouaghi": 800,
+    "5": 800, "batna": 800,
+    "6": 800, "béjaïa": 800, "bejaia": 800,
+    "7": 800, "biskra": 800,
+    "8": 1200, "béchar": 1200, "bechar": 1200,
+    "9": 500, "blida": 500,
+    "10": 800, "bouira": 800,
+    "11": 1400, "tamanrasset": 1400,
+    "12": 800, "tébessa": 800, "tebessa": 800,
+    "13": 800, "tlemcen": 800,
+    "14": 800, "tiaret": 800,
+    "15": 800, "tizi ouzou": 800,
+    "16": 400, "alger": 400,
+    "17": 800, "djelfa": 800,
+    "18": 800, "jijel": 800,
+    "19": 600, "sétif": 600, "setif": 600,
+    "20": 800, "saïda": 800, "saida": 800,
+    "21": 800, "skikda": 800,
+    "22": 800, "sidi bel abbès": 800, "sidi bel abbes": 800,
+    "23": 600, "annaba": 600,
+    "24": 800, "guelma": 800,
+    "25": 600, "constantine": 600,
+    "26": 800, "médéa": 800, "medea": 800,
+    "27": 800, "mostaganem": 800,
+    "28": 800, "m'sila": 800, "msila": 800,
+    "29": 800, "mascara": 800,
+    "30": 950, "ouargla": 950,
+    "31": 600, "oran": 600,
+    "32": 950, "el bayadh": 950,
+    "33": 1400, "illizi": 1400,
+    "34": 800, "bordj bou arréridj": 800, "bordj bou arreridj": 800,
+    "35": 500, "boumerdès": 500, "boumerdes": 500,
+    "36": 800, "el tarf": 800,
+    "37": 1400, "tindouf": 1400,
+    "38": 800, "tissemsilt": 800,
+    "39": 800, "el oued": 800,
+    "40": 800, "khenchela": 800,
+    "41": 800, "souk ahras": 800,
+    "42": 500, "tipaza": 500,
+    "43": 800, "mila": 800,
+    "44": 800, "aïn defla": 800, "ain defla": 800,
+    "45": 950, "naâma": 950, "naama": 950,
+    "46": 800, "aïn témouchent": 800, "ain temouchent": 800,
+    "47": 950, "ghardaïa": 950, "ghardaia": 950,
+    "48": 800, "relizane": 800,
+    "49": 1200, "timimoun": 1200,
+    "50": 1400, "bordj badji mokhtar": 1400,
+    "51": 950, "ouled djellal": 950,
+    "52": 1200, "béni abbès": 1200, "beni abbes": 1200,
+    "53": 1400, "in salah": 1400,
+    "54": 1400, "in guezzam": 1400,
+    "55": 950, "touggourt": 950,
+    "56": 1400, "djanet": 1400,
+    "57": 950, "el m'ghair": 950, "el mghair": 950,
+    "58": 950, "el meniaa": 950,
+}
+
+def resolve_wilaya_delivery_fee(db: Session, store_id: str, wilaya: Optional[str], delivery_type: str = "HOME") -> int:
+    if not wilaya or not str(wilaya).strip():
+        return 400
+    clean_w = str(wilaya).strip().lower()
+    
+    try:
+        from app.models.delivery_partner import DeliveryPartner, DeliveryFeeGrid
+        partner = db.query(DeliveryPartner).filter(
+            DeliveryPartner.store_id == store_id,
+            DeliveryPartner.is_active == True
+        ).first()
+
+        if partner:
+            grid = db.query(DeliveryFeeGrid).filter(DeliveryFeeGrid.partner_id == partner.id).all()
+            for g in grid:
+                if str(g.wilaya_id) == clean_w or str(g.wilaya_name or "").strip().lower() == clean_w:
+                    fee = g.office_fee if delivery_type in ("stop_desk", "OFFICE") else g.home_fee
+                    if fee and fee > 0:
+                        return int(fee)
+            
+            flat = partner.fee_relay if delivery_type in ("stop_desk", "OFFICE") else partner.fee_home
+            if flat and flat > 0:
+                return int(flat)
+    except Exception:
+        pass
+
+    fee = STANDARD_WILAYA_FEES.get(clean_w, 600)
+    if delivery_type in ("stop_desk", "OFFICE"):
+        fee = max(200, fee - 200)
+    return fee
+
+
 class OrderService:
+
 
     def create_order(
         self,
@@ -1211,6 +1305,13 @@ class OrderService:
             livreur_id=resolved_courier_id,
             **{k: v for k, v in order_data.items() if k in valid_order_cols and k not in ("assigned_to", "livreur_id", "status", "id", "order_number", "store_sequence_number")},
         )
+        
+        # Ensure delivery fee is NEVER 0/null when a wilaya is specified (always calculate real wilaya delivery fee)
+        if not order.delivery_fee or order.delivery_fee <= 0:
+            order.delivery_fee = resolve_wilaya_delivery_fee(db, order.store_id, order.customer_wilaya, str(order.delivery_type or "HOME"))
+            if order.subtotal and order.subtotal > 0:
+                order.total = max(0, (order.subtotal or 0) - (order.discount or 0) + (order.delivery_fee or 0))
+
         db.add(order)
         db.flush()  # Get ID without committing
         snapshot_commission(db, order, explicit_agent)

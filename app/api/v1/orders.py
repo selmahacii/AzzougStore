@@ -1952,6 +1952,14 @@ def update_abandoned_cart(
     ).scalar()
     store_sequence_number = (max_seq or 0) + 1
 
+    # Ensure delivery fee is NEVER 0/null when creating abandoned cart
+    if not order_data.get("delivery_fee") or float(order_data.get("delivery_fee") or 0) <= 0:
+        from app.services.order_service import resolve_wilaya_delivery_fee
+        calc_fee = resolve_wilaya_delivery_fee(db, order_in.store_id, order_data.get("customer_wilaya"), order_data.get("delivery_type", "HOME"))
+        order_data["delivery_fee"] = calc_fee
+        if order_data.get("subtotal") and float(order_data.get("subtotal") or 0) > 0:
+            order_data["total"] = max(0, float(order_data["subtotal"]) - float(order_data.get("discount") or 0) + float(calc_fee))
+
     valid_order_cols = {c.name for c in Order.__table__.columns}
     db_order = Order(
         id=str(uuid.uuid4()),
