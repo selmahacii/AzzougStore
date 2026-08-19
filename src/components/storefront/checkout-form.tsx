@@ -161,7 +161,12 @@ export function SearchableCommuneSelect({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const communes = useMemo(() => {
-    return ALGERIAN_COMMUNES[wilaya] || [];
+    if (!wilaya) return [];
+    const cleanW = wilaya.replace(/^\d+\s*[-_–]\s*/, '').trim();
+    const foundKey = Object.keys(ALGERIAN_COMMUNES).find(
+      k => k.toLowerCase() === cleanW.toLowerCase() || k.toLowerCase() === wilaya.toLowerCase()
+    );
+    return foundKey ? ALGERIAN_COMMUNES[foundKey] : [];
   }, [wilaya]);
 
   const filtered = useMemo(() => {
@@ -183,19 +188,14 @@ export function SearchableCommuneSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // When wilaya changes, if current value is not in new communes list, reset it
-  useEffect(() => {
-    if (value && !communes.some(c => c.nameAscii === value || `${c.name} · ${c.nameAscii}` === value)) {
-      if (communes.length > 0) {
-        onChange('');
-      }
-    }
-  }, [wilaya, communes]);
-
   const displayValue = useMemo(() => {
     if (!value) return '';
-    const match = communes.find(c => c.nameAscii === value || `${c.name} · ${c.nameAscii}` === value);
-    if (!match) return value.split(' · ').pop() || value;
+    const match = communes.find(c => 
+      c.nameAscii.toLowerCase() === value.toLowerCase() || 
+      `${c.name} · ${c.nameAscii}`.toLowerCase() === value.toLowerCase() || 
+      c.name.toLowerCase() === value.toLowerCase()
+    );
+    if (!match) return value;
     return dir === 'rtl' ? `${match.name} (${match.nameAscii})` : match.nameAscii;
   }, [value, communes, dir]);
 
@@ -245,23 +245,38 @@ export function SearchableCommuneSelect({
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
+              placeholder={dir === 'rtl' ? 'بحث أو كتابة اسم البلدية...' : 'Rechercher ou saisir la commune...'}
               className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
               style={{ color: T.inputText }}
               autoFocus
             />
           </div>
 
+          {/* Custom typed commune option */}
+          {search.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange(search.trim());
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2.5 text-xs font-bold text-blue-600 bg-blue-50/60 hover:bg-blue-100 border-b flex items-center justify-between transition-all"
+            >
+              <span>✍️ {dir === 'rtl' ? `استخدام "${search.trim()}"` : `Utiliser "${search.trim()}"`}</span>
+              <span className="text-[10px] font-semibold opacity-75">Valider</span>
+            </button>
+          )}
+
           {/* List */}
           <div className="overflow-y-auto flex-1 max-h-56 py-1 scrollbar-thin">
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && !search.trim() ? (
               <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
                 {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
               </div>
             ) : (
               filtered.map(c => {
                 const label = dir === 'rtl' ? `${c.name} (${c.nameAscii})` : c.nameAscii;
-                const isSelected = value === c.nameAscii || value === `${c.name} · ${c.nameAscii}`;
+                const isSelected = value.toLowerCase() === c.nameAscii.toLowerCase() || value === `${c.name} · ${c.nameAscii}`;
                 return (
                   <button
                     key={c.id}
