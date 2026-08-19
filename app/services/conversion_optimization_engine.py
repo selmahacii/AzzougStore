@@ -48,7 +48,7 @@ def _funnel_counts(db: Session, store_id: str, since: datetime, until: datetime)
 
     counts: Dict[str, int] = {}
 
-    # 1. Primary source for top funnel stages: local FunnelRollup table
+    # 1. Primary source for top funnel stages: local FunnelRollup table (indexed by store_id and day)
     try:
         rollup_rows = (
             db.query(FunnelRollup.event_name, func.coalesce(func.sum(FunnelRollup.count), 0))
@@ -65,23 +65,25 @@ def _funnel_counts(db: Session, store_id: str, since: datetime, until: datetime)
     except Exception:
         db.rollback()
 
-    # 2. Fallback / merge with MetaCapiLog
-    try:
-        capi_rows = (
-            db.query(MetaCapiLog.event_name, func.count(func.distinct(MetaCapiLog.event_id)))
-            .filter(
-                MetaCapiLog.store_id == store_id,
-                MetaCapiLog.event_name.in_(["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "Purchase"]),
-                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
+    # 2. Fallback / merge with MetaCapiLog ONLY if FunnelRollup is missing data for top-funnel stages
+    needed_fallback = any(counts.get(stage, 0) == 0 for stage in ["PageView", "ViewContent", "AddToCart", "InitiateCheckout"])
+    if needed_fallback:
+        try:
+            capi_rows = (
+                db.query(MetaCapiLog.event_name, func.count(MetaCapiLog.id))
+                .filter(
+                    MetaCapiLog.store_id == store_id,
+                    MetaCapiLog.event_name.in_(["PageView", "ViewContent", "AddToCart", "InitiateCheckout", "Purchase"]),
+                    MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until,
+                )
+                .group_by(MetaCapiLog.event_name)
+                .all()
             )
-            .group_by(MetaCapiLog.event_name)
-            .all()
-        )
-        for name, count in capi_rows:
-            if counts.get(name, 0) < count:
-                counts[name] = int(count or 0)
-    except Exception:
-        db.rollback()
+            for name, count in capi_rows:
+                if counts.get(name, 0) < count:
+                    counts[name] = int(count or 0)
+        except Exception:
+            db.rollback()
 
     # 3. Real purchases from Order table (storefront, non-cancelled, non-merged)
     try:
@@ -621,19 +623,57 @@ def compute_benchmark(db: Session, store_id: str, since: datetime, until: dateti
 # ─────────────────────────────────────────────────────────────────────────
 
 def compute_evolution_history(db: Session, store_id: str, since: datetime, until: datetime, granularity: str = "daily") -> List[Dict[str, Any]]:
+    from app.models.funnel_rollup import FunnelRollup
     from app.models.marketing import MetaCapiLog
+    from app.models.order import Order
 
-    rows = (
-        db.query(func.date(MetaCapiLog.created_at), MetaCapiLog.event_name, func.count(func.distinct(MetaCapiLog.event_id)))
-        .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name.in_(["PageView", "Purchase"]),
-                MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
-        .group_by(func.date(MetaCapiLog.created_at), MetaCapiLog.event_name)
-        .all()
-    )
     by_day: Dict[str, Dict[str, int]] = {}
-    for d, event_name, count in rows:
-        d_str = d.isoformat() if hasattr(d, "isoformat") else str(d)
-        by_day.setdefault(d_str, {"PageView": 0, "Purchase": 0})[event_name] = count
+
+    # 1. PageViews from indexed FunnelRollup table (day column index)
+    try:
+        pv_rows = (
+            db.query(FunnelRollup.day, func.coalesce(func.sum(FunnelRollup.count), 0))
+            .filter(FunnelRollup.store_id == store_id, FunnelRollup.event_name == "PageView",
+                    FunnelRollup.day >= since.date(), FunnelRollup.day <= until.date())
+            .group_by(FunnelRollup.day)
+            .all()
+        )
+        for day, count in pv_rows:
+            d_str = day.isoformat() if hasattr(day, "isoformat") else str(day)
+            by_day.setdefault(d_str, {"PageView": 0, "Purchase": 0})["PageView"] = int(count or 0)
+    except Exception:
+        db.rollback()
+
+    # 2. Purchases from indexed Order table
+    try:
+        pur_rows = (
+            db.query(func.date(Order.created_at), func.count(Order.id))
+            .filter(Order.store_id == store_id, Order.is_deleted == False, Order.status != "CANCELLED", Order.status != "MERGED",
+                    func.coalesce(Order.source, "") != "MANUAL", Order.created_at >= since, Order.created_at <= until)
+            .group_by(func.date(Order.created_at))
+            .all()
+        )
+        for day, count in pur_rows:
+            d_str = day.isoformat() if hasattr(day, "isoformat") else str(day)
+            by_day.setdefault(d_str, {"PageView": 0, "Purchase": 0})["Purchase"] = int(count or 0)
+    except Exception:
+        db.rollback()
+
+    # Fallback to MetaCapiLog if by_day is empty
+    if not by_day:
+        try:
+            rows = (
+                db.query(func.date(MetaCapiLog.created_at), MetaCapiLog.event_name, func.count(MetaCapiLog.id))
+                .filter(MetaCapiLog.store_id == store_id, MetaCapiLog.event_name.in_(["PageView", "Purchase"]),
+                        MetaCapiLog.created_at >= since, MetaCapiLog.created_at <= until)
+                .group_by(func.date(MetaCapiLog.created_at), MetaCapiLog.event_name)
+                .all()
+            )
+            for d, event_name, count in rows:
+                d_str = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                by_day.setdefault(d_str, {"PageView": 0, "Purchase": 0})[event_name] = count
+        except Exception:
+            db.rollback()
 
     if granularity == "daily":
         buckets = {d: v for d, v in by_day.items()}
