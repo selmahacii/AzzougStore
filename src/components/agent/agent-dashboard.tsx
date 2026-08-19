@@ -2190,8 +2190,8 @@ export default function AgentDashboard() {
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     placeholderData: (prev) => prev,
-    staleTime: 30 * 1000,
-    refetchInterval: 60000,
+    staleTime: 60 * 1000,
+    refetchInterval: 180000,
     refetchIntervalInBackground: false,
   });
 
@@ -2224,7 +2224,8 @@ export default function AgentDashboard() {
       const url = `/api/v1/users/${user?.id}/performance${qs ? `?${qs}` : ''}`;
       return apiFetch<any>(url, { allStores: true });
     },
-    enabled: !!user?.id && (showAllStores || !!activeStore?.id)
+    enabled: !!user?.id && (showAllStores || !!activeStore?.id),
+    staleTime: 3 * 60 * 1000,
   });
 
   const agentCountsQuery = useQuery({
@@ -2247,7 +2248,8 @@ export default function AgentDashboard() {
       return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    refetchInterval: 60000,
+    staleTime: 60 * 1000,
+    refetchInterval: 180000,
     refetchIntervalInBackground: false,
   });
 

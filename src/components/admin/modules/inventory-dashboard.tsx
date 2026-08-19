@@ -169,7 +169,8 @@ export default function InventoryDashboard() {
       queryKey: ['inventory', 'summary', storeId],
       queryFn: () => apiFetch<InventorySummary>(`/api/v1/stock/summary?store_id=${storeId}`),
       enabled: !!storeId,
-      refetchInterval: 60000,
+      staleTime: 3 * 60 * 1000,
+      refetchInterval: 300000,
       refetchIntervalInBackground: false,
    });
 
@@ -177,7 +178,8 @@ export default function InventoryDashboard() {
       queryKey: ['inventory', 'movements', storeId],
       queryFn: () => apiFetch<InventoryMovementsResponse>(`/api/v1/stock/?store_id=${storeId}&pageSize=30`),
       enabled: !!storeId,
-      refetchInterval: 60000,
+      staleTime: 3 * 60 * 1000,
+      refetchInterval: 300000,
       refetchIntervalInBackground: false,
    });
 
