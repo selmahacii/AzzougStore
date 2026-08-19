@@ -248,7 +248,7 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
             <span className="font-black text-slate-800">{formatPrice(order.total)}</span>
             {order.delivery_fee > 0 && (
               <><span className="text-slate-200">·</span>
-              <span className="text-slate-500 font-medium">Livraison: {formatPrice(order.delivery_fee)}</span></>
+              <span className="text-slate-500 font-medium">(dont livraison: {formatPrice(order.delivery_fee)})</span></>
             )}
             {order.items.length > 0 && (
               <><span className="text-slate-200">·</span>
@@ -1215,7 +1215,7 @@ export default function AgentOrdersPage() {
                        {formatPrice(Math.max(0, orderItems.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0) + deliveryFee - orderDiscount))}
                     </div>
                     <p className="text-[10px] text-neutral-400 font-bold">
-                      {orderItems.length} article(s) · Livraison: {formatPrice(deliveryFee)}
+                      {orderItems.length} article(s) · (dont livraison: {formatPrice(deliveryFee)})
                     </p>
                  </div>
                  <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 text-[12px] font-bold uppercase tracking-widest text-white shadow-xl group rounded-xl border-none" style={{ backgroundColor: primaryColor }}>

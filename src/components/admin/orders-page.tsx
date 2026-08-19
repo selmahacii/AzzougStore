@@ -1854,7 +1854,7 @@ const [timeLeft, setTimeLeft] = useState('');
                       <div className="flex flex-col gap-0.5">
                         <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(order.total)}</span>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest tabular-nums">
-                          Livraison: {order.delivery_fee > 0 ? formatPrice(order.delivery_fee) : 'Gratuite'}
+                          (dont livraison: {order.delivery_fee > 0 ? formatPrice(order.delivery_fee) : 'Gratuite'})
                         </span>
                         {order.promo_code && order.discount > 0 && (
                           <span className="text-[9px] font-black text-[#6C5CE7] bg-[#F0EDFF] px-1.5 py-0.5 rounded-full w-fit tabular-nums mt-1 border border-[#6C5CE7]/20">
