@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from sqlalchemy import func, case, and_, distinct, text
+from sqlalchemy import func, case, and_, not_, distinct, text
 
 from app.api import deps
 from app.db.session import get_db
