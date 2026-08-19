@@ -1566,6 +1566,29 @@ const [timeLeft, setTimeLeft] = useState('');
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3 justify-end flex-wrap sm:flex-nowrap w-full md:w-auto mt-4 md:mt-0">
+            {/* Quick date presets dropdown/buttons */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-xl p-1 shadow-xs hidden xl:flex">
+              {[
+                { id: '30d', label: '30j' },
+                { id: '7d', label: '7j' },
+                { id: 'today', label: "Aujourd'hui" },
+                { id: 'this_month', label: 'Ce mois' },
+                { id: 'last_month', label: 'Mois dernier' },
+              ].map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPeriodPreset(p.id)}
+                  className={cn(
+                    "px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap",
+                    analyticsPeriod === p.id ? "bg-[#4b7bec] text-white shadow-xs" : "text-slate-500 hover:bg-slate-200/60"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
             <div className="flex items-center gap-2 bg-white border border-slate-100 rounded-xl px-3 py-1.5 shadow-sm">
                <Calendar className="size-4 text-slate-400" />
                <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />

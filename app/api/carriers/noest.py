@@ -70,18 +70,42 @@ def _headers(token: str) -> dict:
 @router.get("/stats")
 async def get_noest_stats(
     store_id: str = Query(...),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
     """Return real-time Noest tracking stats & active count for a store."""
     from datetime import datetime, timezone
-    from app.models.order import Order
+    from app.models.order import Order, OrderItem
+    from app.core.dates import parse_local_date_filter
+    from sqlalchemy.orm import joinedload
 
-    orders = db.query(Order).filter(
+    q = db.query(Order).filter(
         Order.store_id == store_id,
         Order.tracking_number.isnot(None),
         Order.tracking_number != "",
         Order.is_deleted == False,
-    ).order_by(Order.created_at.desc()).all()
+    )
+
+    if start_date:
+        try:
+            q = q.filter(Order.created_at >= parse_local_date_filter(start_date))
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            q = q.filter(Order.created_at <= parse_local_date_filter(end_date))
+        except ValueError:
+            pass
+    if product_id:
+        q = q.filter(
+            db.query(OrderItem.id)
+            .filter(OrderItem.order_id == Order.id, OrderItem.product_id == product_id)
+            .exists()
+        )
+
+    orders = q.options(joinedload(Order.items)).order_by(Order.created_at.desc()).all()
 
     total_tracked = len(orders)
     shipped = sum(1 for o in orders if str(o.status) == "SHIPPED")
@@ -109,6 +133,16 @@ async def get_noest_stats(
             "total": o.total,
             "created_at": o.created_at.isoformat() if o.created_at else None,
             "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+            "items": [
+                {
+                    "id": item.id,
+                    "product_id": item.product_id,
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                }
+                for item in (o.items or [])
+            ],
         }
         for o in orders
     ]

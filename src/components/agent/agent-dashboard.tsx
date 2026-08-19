@@ -490,7 +490,8 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
         if (body.data) {
           setYalidineCenters(body.data);
         }
-            .catch(err => console.error('Error fetching Yalidine centers:', err))
+      })
+      .catch(err => console.error('Error fetching Yalidine centers:', err))
       .finally(() => setLoadingCenters(false));
   }, [storeId]);
   

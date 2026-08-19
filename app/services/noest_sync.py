@@ -46,7 +46,7 @@ from app.services.order_service import order_service
 
 logger = logging.getLogger("app.noest_sync")
 
-SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "15"))
+SYNC_INTERVAL_MINUTES = float(os.getenv("NOEST_SYNC_INTERVAL_MINUTES", "5"))
 # This is also the main scheduler tick (see background_loop) — every tick
 # hits the DB via scan_due_reminders() regardless of any of the cadences
 # below, which is what actually matters for Neon's free-tier autosuspend:
@@ -390,6 +390,7 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
                 db.add(order)
             updated += 1
         except Exception as exc:
+            db.rollback()
             logger.warning("Noest sync: transition %s → %s refused for %s: %s",
                            order.status, new_status, order.order_number, exc)
     if missing_trackings:

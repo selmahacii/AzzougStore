@@ -173,6 +173,9 @@ def list_landing_pages(
                     (and_(Order.status != "MERGED", _not_manual), Order.id)
                 ))).label("purchases"),
                 func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
+                func.coalesce(func.sum(case(
+                    (Order.status == "DELIVERED", func.coalesce(OrderItem.quantity, 1)), else_=0
+                )), 0).label("delivered_items"),
                 func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
                 func.count(distinct(case(
                     (and_(_is_abandoned, Order.status.in_(_DELIVERED_STATES)), Order.id)
@@ -220,6 +223,7 @@ def list_landing_pages(
                 "orders": int(r.orders or 0),
                 "purchases": int(r.purchases or 0),
                 "delivered": int(r.delivered or 0),
+                "delivered_items": int(r.delivered_items or 0),
                 "confirmed_delivered": int(r.confirmed_delivered or 0),
                 "recovered": int(r.recovered or 0),
                 "abandoned": int(r.abandoned or 0),
@@ -498,11 +502,36 @@ def get_landing_page_analytics(
         ) if lp.product_id else Order.landing_url.ilike(f"%{lp.slug}%")
     )
 
+    _is_out_for_delivery = and_(
+        Order.status == "SHIPPED",
+        or_(
+            Order.carrier_stage.in_(("fdr_activated", "en livraison", "out_for_delivery")),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%livraison%"),
+        )
+    )
+    _is_suspended = or_(
+        Order.carrier_stage == "colis_suspendu",
+        func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%suspendu%"),
+        func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%bloqu%"),
+    )
+    _is_returned = Order.status == "RETURNED"
+    _is_in_transit = and_(Order.status == "SHIPPED", not_(_is_out_for_delivery), not_(_is_suspended))
+
     rows = (
         db.query(
             day.label("day"),
             func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
             func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
+            func.coalesce(func.sum(case(
+                (Order.status == "DELIVERED", func.coalesce(OrderItem.quantity, 1)), else_=0
+            )), 0).label("delivered_items"),
+            func.count(distinct(case((_is_returned, Order.id)))).label("returned"),
+            func.coalesce(func.sum(case(
+                (_is_returned, func.coalesce(OrderItem.quantity, 1)), else_=0
+            )), 0).label("returned_items"),
+            func.count(distinct(case((_is_in_transit, Order.id)))).label("shipped"),
+            func.count(distinct(case((_is_out_for_delivery, Order.id)))).label("out_for_delivery"),
+            func.count(distinct(case((_is_suspended, Order.id)))).label("suspended"),
             func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
             func.count(distinct(case(
                 (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
@@ -550,6 +579,12 @@ def get_landing_page_analytics(
             "date": d_str,
             "orders": int(r.orders or 0) if r else 0,
             "delivered": int(r.delivered or 0) if r else 0,
+            "delivered_items": int(r.delivered_items or 0) if r else 0,
+            "returned": int(r.returned or 0) if r else 0,
+            "returned_items": int(r.returned_items or 0) if r else 0,
+            "shipped": int(r.shipped or 0) if r else 0,
+            "out_for_delivery": int(r.out_for_delivery or 0) if r else 0,
+            "suspended": int(r.suspended or 0) if r else 0,
             "cancelled": int(r.cancelled or 0) if r else 0,
             "manual": int(r.manual or 0) if r else 0,
             "normal": int(r.normal or 0) if r else 0,
@@ -561,6 +596,12 @@ def get_landing_page_analytics(
     totals = {
         "orders": sum(d["orders"] for d in daily),
         "delivered": sum(d["delivered"] for d in daily),
+        "delivered_items": sum(d["delivered_items"] for d in daily),
+        "returned": sum(d["returned"] for d in daily),
+        "returned_items": sum(d["returned_items"] for d in daily),
+        "shipped": sum(d["shipped"] for d in daily),
+        "out_for_delivery": sum(d["out_for_delivery"] for d in daily),
+        "suspended": sum(d["suspended"] for d in daily),
         "cancelled": sum(d["cancelled"] for d in daily),
         "manual": sum(d["manual"] for d in daily),
         "revenue": sum(d["revenue"] for d in daily),
@@ -580,6 +621,9 @@ def get_landing_page_analytics(
             ))).label("recovered"),
             func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
             func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
+            func.coalesce(func.sum(case(
+                (Order.status.in_(_DELIVERED_STATES), func.coalesce(OrderItem.quantity, 1)), else_=0
+            )), 0).label("delivered_items_total"),
             func.count(distinct(case(
                 (and_(Order.nrp_count > 0, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
             ))).label("nrp"),
@@ -603,28 +647,35 @@ def get_landing_page_analytics(
     totals["recovered"] = int(detail_row.recovered or 0)
     totals["duplicates"] = int(detail_row.duplicates or 0)
     totals["confirmed_delivered"] = int(detail_row.confirmed_delivered or 0)
+    totals["delivered_items_total"] = int(detail_row.delivered_items_total or 0)
     totals["nrp"] = int(detail_row.nrp or 0)
     totals["nrp_abandoned"] = int(detail_row.nrp_abandoned or 0)
     totals["nrp_normal"] = max(0, totals["nrp"] - totals["nrp_abandoned"])
     # Abandonné jamais récupéré = toujours ouvert/en cours, pas de statut final
     totals["abandoned_not_recovered"] = max(0, totals["abandoned"] - totals["recovered"])
 
-    # "Achats déclarés par Meta" for this exact product — client's main ask
-    # was to see, right on the landing page card, what Meta itself reports
-    # having received, next to the real order count above. Sourced from the
-    # per-day insights table and sliced by the SAME d_start..d_end as the
-    # order metrics above, so both sides finally cover the same period —
-    # this was the reported "décalage". Falls back to the campaign snapshot
-    # totals until the daily table has data (first sync after this ships).
+    # "Achats déclarés par Meta" for this exact product/landing page
     from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
-    meta_campaigns = db.query(MetaAdsCampaign).filter(
-        MetaAdsCampaign.store_id == lp.store_id,
-        MetaAdsCampaign.product_id == lp.product_id,
-    ).all()
-    if not meta_campaigns:
+    from sqlalchemy import or_
+
+    filters = []
+    if lp.product_id:
+        filters.append(MetaAdsCampaign.product_id == lp.product_id)
+    if lp.slug:
+        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.slug}%"))
+    if lp.headline:
+        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.headline[:15]}%"))
+
+    if filters:
+        meta_campaigns = db.query(MetaAdsCampaign).filter(
+            MetaAdsCampaign.store_id == lp.store_id,
+            or_(*filters),
+        ).all()
+    else:
         meta_campaigns = db.query(MetaAdsCampaign).filter(
             MetaAdsCampaign.store_id == lp.store_id,
         ).all()
+
     _camp_ids = [c.campaign_id for c in meta_campaigns]
     meta_daily_by_date: dict = {}
     if _camp_ids:
@@ -664,6 +715,11 @@ def get_landing_page_analytics(
         totals["meta_impressions"] = sum(c.impressions or 0 for c in meta_campaigns)
         totals["meta_reach"] = sum(c.reach or 0 for c in meta_campaigns)
         totals["meta_clicks"] = sum(c.clicks or 0 for c in meta_campaigns)
+
+    days_count = max(1, (d_end.date() - d_start.date()).days + 1)
+    totals["meta_budget_daily"] = round(totals["meta_spend"] / days_count, 2)
+    totals["meta_cpa_purchases"] = round(totals["meta_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
+    totals["meta_cpa_orders"] = round(totals["meta_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
 
     from sqlalchemy import or_
     from app.models.funnel_rollup import FunnelRollup

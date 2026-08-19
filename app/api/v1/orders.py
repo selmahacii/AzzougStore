@@ -1649,6 +1649,9 @@ def list_orders(
                 Order.customer_phone.ilike(f"%{search}%"),
                 Order.order_number.ilike(f"%{search}%"),
                 Order.tracking_number.ilike(f"%{search}%"),
+                db.query(OrderItem.id)
+                .filter(OrderItem.order_id == Order.id, OrderItem.product_name.ilike(f"%{search}%"))
+                .exists(),
             )
         )
     if start_date:

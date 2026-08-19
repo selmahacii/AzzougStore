@@ -219,76 +219,45 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
-          {/* Period totals — "Manuelles" volontairement absent ici : déjà
-              affiché juste en dessous dans "D'où viennent ces commandes ?"
-              avec son explication complète, pas besoin du même chiffre deux
-              fois dans deux blocs différents de la même fenêtre. */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {[
-              { label: 'Commandes', value: totals.orders ?? 0, color: '#6C5CE7' },
-              { label: 'Livrées', value: totals.delivered ?? 0, color: '#00B894' },
-              { label: 'Annulées', value: totals.cancelled ?? 0, color: '#E17055' },
-              { label: 'CA', value: `${Math.round(totals.revenue ?? 0).toLocaleString('fr-FR')} DA`, color: '#0984E3' },
-              // Ce que Meta déclare avoir reçu pour ce produit, affiché juste
-              // à côté de nos vraies commandes — c'était le besoin principal
-              // du client : voir directement "voilà ce qu'on a reçu" sans
-              // devoir aller chercher dans le module Meta Ads séparément.
-              { label: 'Achats déclarés par Meta', value: totals.meta_purchases ?? 0, color: '#F7B731' },
-            ].map(s => (
-              <div key={s.label} className="text-center p-3 rounded-2xl border"
-                style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Vues détectées par Meta (CAPI ViewContent réussis, échelle
-              boutique — meta_capi_logs ne conserve pas le produit/LP pour
-              les envois réussis, donc ce chiffre n'est PAS isolable par LP,
-              contrairement à celui de gauche) vs vues locales réelles
-              (funnel_rollups.ViewContent, dédupliqué par session, scopé
-              précisément à cette LP — app/services/funnel_tracking.py). */}
-          <div className="grid grid-cols-2 gap-2">
-            <div
-              title="ViewContent réellement compté côté serveur pour cette landing page précise (funnel_rollups, dédupliqué par session)."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#00B89433', backgroundColor: '#00B8940D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#00B894' }}>{data?.local_view_content ?? 0}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#00B894' }}>Vues locales (cette LP)</p>
-            </div>
-            <div
-              title="ViewContent envoyés avec succès à Meta CAPI — à l'échelle de TOUTE la boutique, pas isolable par landing page (meta_capi_logs ne garde pas cette info pour les envois réussis)."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#1877F233', backgroundColor: '#1877F20D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#1877F2' }}>{data?.meta_view_content_store_wide ?? 0}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#1877F2' }}>Vues Meta (toute la boutique)</p>
+          {/* Section 1 : Suivi Logistique ERP */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes</p>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
+                { label: 'Commandes Retournées', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#E17055' },
+                { label: 'En Expédition', value: totals.shipped ?? 0, sub: 'en transit', color: '#0984E3' },
+                { label: 'En Livraison', value: totals.out_for_delivery ?? 0, sub: 'avec livreur', color: '#6C5CE7' },
+                { label: 'Colis Suspendu', value: totals.suspended ?? 0, sub: 'bloqué / problème', color: '#F7B731' },
+              ].map(s => (
+                <div key={s.label} className="text-center p-3 rounded-2xl border"
+                  style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                  <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                  <p className="text-[9px] font-semibold text-slate-400 mt-0.5">{s.sub}</p>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Impressions Meta / Couverture / Taux de conversion réel / Qualité du site */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div
-              title="Impressions de vos annonces Meta pour ce produit, sur la période sélectionnée."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#1877F233', backgroundColor: '#1877F20D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#1877F2' }}>{(totals.meta_impressions ?? 0).toLocaleString('fr-FR')}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#1877F2' }}>Impressions</p>
-            </div>
-            <div
-              title="Couverture de vos annonces Meta pour ce produit (nombre de personnes uniques)."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#8E44AD33', backgroundColor: '#8E44AD0D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#8E44AD' }}>{(totals.meta_reach ?? 0).toLocaleString('fr-FR')}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#8E44AD' }}>Couverture</p>
-            </div>
-            <div
-              title="Commandes réelles ERP ÷ clics Meta sur cette période. Absent si aucun clic Meta enregistré."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#00B89433', backgroundColor: '#00B8940D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#00B894' }}>{totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—'}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#00B894' }}>Taux de conversion</p>
-            </div>
-            <div
-              title="Vues de page de destination ÷ Clics sur un lien (définition standard Meta) — mesure la perte entre le clic sur l'annonce et le chargement réel de la page, donc la vitesse/fiabilité du site. Absent si aucun clic Meta enregistré."
-              className="text-center p-3 rounded-2xl border" style={{ borderColor: '#F7B73133', backgroundColor: '#F7B7310D' }}>
-              <p className="text-sm font-black tabular-nums" style={{ color: '#F7B731' }}>{data?.qualite_site_pct != null ? `${data.qualite_site_pct}%` : '—'}</p>
-              <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#F7B731' }}>Qualité du site</p>
+          {/* Section 2 : Financement & Performances Meta Ads */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📢 Performances & Financement Meta Ads</p>
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+              {[
+                { label: 'Impressions Meta', value: (totals.meta_impressions ?? 0).toLocaleString('fr-FR'), color: '#1877F2', title: "Nombre total d'impressions des annonces Meta" },
+                { label: 'Montant Dépensé', value: `${Math.round(totals.meta_spend ?? 0).toLocaleString('fr-FR')} DA`, color: '#E17055', title: "Dépenses publicitaires totales sur cette période" },
+                { label: 'Budget Quotidien', value: `${Math.round(totals.meta_budget_daily ?? 0).toLocaleString('fr-FR')} DA/j`, color: '#0984E3', title: "Dépense quotidienne moyenne sur la période" },
+                { label: 'Achats Meta', value: totals.meta_purchases ?? 0, color: '#00B894', title: "Nombre d'achats déclarés directement par Meta" },
+                { label: 'Coût / Résultat', value: totals.meta_cpa_purchases > 0 ? `${Math.round(totals.meta_cpa_purchases).toLocaleString('fr-FR')} DA` : '—', color: '#8E44AD', title: "Coût moyen par achat publicitaire Meta (Dépense ÷ Achats Meta)" },
+                { label: 'Taux de Conversion', value: totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—', color: '#F7B731', title: "Achats / Commandes ÷ Clics Meta (%)" },
+              ].map(s => (
+                <div key={s.label} title={s.title} className="text-center p-3 rounded-2xl border"
+                  style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
+                  <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                  <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
+                </div>
+              ))}
             </div>
           </div>
 

@@ -2178,6 +2178,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const [activeProfileTab, setActiveProfileTab] = useState<'salary' | 'orders' | 'audit'>('salary');
    const [bonus, setBonus] = useState(0);
 
+   // Date filters state
+   const [period, setPeriod] = useState<'this_month' | 'last_month' | 'today' | '7d' | '30d' | 'custom'>('this_month');
+   const [startDate, setStartDate] = useState<string>('');
+   const [endDate, setEndDate] = useState<string>('');
+   const [dateBy, setDateBy] = useState<'created_at' | 'delivered_at'>('created_at');
+
    const payMutation = useMutation({
       mutationFn: () => apiFetch<{ success: boolean; total_paid: number; breakdown: { store_id: string; amount: number }[] }>(
          `/api/v1/users/${employee.id}/salary/pay`,
@@ -2194,10 +2200,34 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    });
 
    const perfQuery = useQuery({
-      queryKey: ['employee-performance', employee?.id, storeId],
+      queryKey: ['employee-performance', employee?.id, storeId, period, startDate, endDate, dateBy],
       queryFn: () => {
          if (!employee?.id) throw new Error("Employee ID missing");
-         return apiFetch<any>(`/api/v1/users/${employee.id}/performance${storeId ? `?store_id=${storeId}&period=30d` : '?period=30d'}`);
+         let url = `/api/v1/users/${employee.id}/performance?date_by=${dateBy}`;
+         if (storeId) url += `&store_id=${storeId}`;
+
+         if (period === 'custom' && startDate && endDate) {
+            url += `&start_date=${startDate}&end_date=${endDate}`;
+         } else if (period === 'today') {
+            const today = new Date().toISOString().slice(0, 10);
+            url += `&start_date=${today}&end_date=${today}`;
+         } else if (period === 'this_month') {
+            const now = new Date();
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+            const today = now.toISOString().slice(0, 10);
+            url += `&start_date=${firstDay}&end_date=${today}`;
+         } else if (period === 'last_month') {
+            const now = new Date();
+            const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+            url += `&start_date=${firstDay}&end_date=${lastDay}`;
+         } else if (period === '7d') {
+            url += `&period_days=7`;
+         } else {
+            url += `&period_days=30`;
+         }
+
+         return apiFetch<any>(url);
       },
       enabled: open && !!employee?.id,
    });
@@ -2257,8 +2287,67 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                   </div>
                </div>
 
+               {/* Date Filter Toolbar */}
+               <div className="mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                        <Calendar className="size-3.5 text-emerald-400" /> Période :
+                     </span>
+                     {[
+                        { id: 'this_month', label: 'Ce mois-ci' },
+                        { id: 'last_month', label: 'Mois dernier' },
+                        { id: '30d', label: '30 jours' },
+                        { id: '7d', label: '7 jours' },
+                        { id: 'today', label: "Aujourd'hui" },
+                        { id: 'custom', label: '📅 Période' },
+                     ].map(p => (
+                        <button
+                           key={p.id}
+                           type="button"
+                           onClick={() => setPeriod(p.id as any)}
+                           className={cn(
+                              "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all",
+                              period === p.id ? "bg-emerald-500 text-white shadow-sm" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                           )}
+                        >
+                           {p.label}
+                        </button>
+                     ))}
+                  </div>
+
+                  {period === 'custom' && (
+                     <div className="flex items-center gap-1.5">
+                        <input
+                           type="date"
+                           value={startDate}
+                           onChange={e => setStartDate(e.target.value)}
+                           className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2 py-1 rounded-lg font-bold"
+                        />
+                        <span className="text-slate-400 text-[10px]">à</span>
+                        <input
+                           type="date"
+                           value={endDate}
+                           onChange={e => setEndDate(e.target.value)}
+                           className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2 py-1 rounded-lg font-bold"
+                        />
+                     </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5">
+                     <span className="text-[10px] font-black uppercase text-slate-400">Filtrer par :</span>
+                     <select
+                        value={dateBy}
+                        onChange={e => setDateBy(e.target.value as any)}
+                        className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2 py-1 rounded-lg font-bold cursor-pointer"
+                     >
+                        <option value="created_at">Date de création</option>
+                        <option value="delivered_at">Date de livraison</option>
+                     </select>
+                  </div>
+               </div>
+
                {/* Tabs */}
-               <div className="flex gap-2 mt-8 border-b border-slate-700">
+               <div className="flex gap-2 mt-6 border-b border-slate-700">
                   {([['salary', 'Bulletin de Paie', Banknote], ['orders', 'Commandes', Package], ['audit', 'Traçabilité', Activity]] as const).map(([id, label, Icon]) => (
                      <button key={id} onClick={() => setActiveProfileTab(id)}
                         className={cn(
@@ -2314,34 +2403,78 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      </div>
 
                      {/* Salary breakdown */}
-                     <div className="bg-slate-50 rounded-3xl p-6 space-y-4 border border-slate-100">
-                        <div className="flex justify-between items-center text-xs font-bold text-slate-500">
-                           <span>{paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe mensuel' : 'Commandes livrées'}</span>
-                           <span className="font-mono">{paymentType === 'MONTHLY_SALARY' ? '—' : `${delivered} × ${formatPrice(paymentAmount)}`}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-xs font-bold text-[#20bf6b]">
-                           <span>Total commissions</span>
-                           <span>= {formatPrice(computedSalary)}</span>
+                     <div className="bg-slate-50 rounded-3xl p-6 space-y-3.5 border border-slate-100">
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Détail des commissions & paie</p>
+
+                        {paymentType === 'MONTHLY_SALARY' ? (
+                           <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                              <span>Salaire fixe mensuel</span>
+                              <span className="font-mono font-bold">{formatPrice(paymentAmount)}</span>
+                           </div>
+                        ) : (
+                           <>
+                              {/* Commandes normales livrées */}
+                              <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                                 <span>Commandes normales livrées</span>
+                                 <span className="font-mono font-bold">
+                                    {stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))} × {formatPrice(paymentAmount)} = {formatPrice(stats.base_salary ?? (Math.max(0, delivered - (stats.recovered_delivered_count || 0)) * paymentAmount))}
+                                 </span>
+                              </div>
+
+                              {/* Paniers abandonnés récupérés & livrés */}
+                              {(stats.recovered_delivered_count || 0) > 0 && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-amber-800 bg-amber-50 p-3 rounded-2xl border border-amber-200/60">
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                       <span className="size-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                       Paniers abandonnés récupérés & livrés
+                                    </span>
+                                    <span className="font-mono font-black text-amber-900">
+                                       + {stats.recovered_delivered_count} × {formatPrice(stats.payment_recovered_cart || 500)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 500)))}
+                                    </span>
+                                 </div>
+                              )}
+
+                              {/* Bonus Upsell */}
+                              {(stats.upsell_bonus || 0) > 0 && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-purple-700 bg-purple-50 p-3 rounded-2xl border border-purple-200/60">
+                                    <span>Bonus Upsell / Produits ajoutés</span>
+                                    <span className="font-mono font-black text-purple-900">+ {formatPrice(stats.upsell_bonus)}</span>
+                                 </div>
+                              )}
+
+                              {/* Pénalité retours */}
+                              {(stats.returned_penalty || 0) > 0 && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-rose-600 bg-rose-50 p-3 rounded-2xl border border-rose-200/60">
+                                    <span>Pénalité retours</span>
+                                    <span className="font-mono font-black text-rose-900">- {formatPrice(stats.returned_penalty)}</span>
+                                 </div>
+                              )}
+                           </>
+                        )}
+
+                        <div className="flex justify-between items-center text-xs font-black text-[#20bf6b] pt-3 border-t border-slate-200">
+                           <span>Total commissions calculées</span>
+                           <span className="font-mono font-black text-base text-[#20bf6b]">= {formatPrice(computedSalary)}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                           <label className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Prime (DA)</label>
+                           <label className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Prime exceptionnelle (DA)</label>
                            <Input type="number" value={bonus} onChange={e => setBonus(Number(e.target.value))}
                               className="h-10 border-slate-200 bg-white font-black text-[#4b7bec] rounded-xl px-4 flex-1" placeholder="0" />
                         </div>
                         {bonus > 0 && (
                            <div className="flex justify-between items-center text-xs font-bold text-[#4b7bec]">
                               <span>Prime exceptionnelle</span>
-                              <span>+ {formatPrice(bonus)}</span>
+                              <span className="font-mono font-black">+ {formatPrice(bonus)}</span>
                            </div>
                         )}
                         <div className="pt-4 border-t border-slate-200 flex items-end justify-between">
                            <div>
                               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Net à payer</p>
-                              <p className="text-3xl font-bold text-slate-900">{formatPrice(totalSalary)}</p>
+                              <p className="text-3xl font-black text-slate-900 font-mono">{formatPrice(totalSalary)}</p>
                            </div>
                            <div className="text-right">
                               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taux confirmation</p>
-                              <p className="text-2xl font-bold text-emerald-500">{stats.confirmation_rate}%</p>
+                              <p className="text-2xl font-black text-emerald-500 font-mono">{stats.confirmation_rate}%</p>
                            </div>
                         </div>
                      </div>

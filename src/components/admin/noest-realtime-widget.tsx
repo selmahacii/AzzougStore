@@ -12,6 +12,14 @@ import { useAppStore } from '@/store/app-store';
 import { NoestTrackingPanel } from '@/components/admin/noest-tracking-panel';
 import { apiFetch } from '@/lib/api-client';
 
+interface OrderItemInfo {
+  id: string;
+  product_id: string | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+}
+
 interface TrackedOrder {
   id: string;
   order_number: string;
@@ -26,6 +34,7 @@ interface TrackedOrder {
   total: number;
   created_at: string | null;
   updated_at: string | null;
+  items?: OrderItemInfo[];
 }
 
 interface NoestStats {
@@ -49,9 +58,51 @@ export function NoestRealtimeWidget() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<TrackedOrder | null>(null);
 
+  // Date and Product Filters state
+  const [datePeriod, setDatePeriod] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | '30D' | '7D' | 'TODAY' | 'CUSTOM'>('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [filterProductId, setFilterProductId] = useState('');
+
+  // Fetch products list for dropdown
+  const productsQuery = useQuery<any>({
+    queryKey: ['admin-products-lite-tracking', storeId],
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${storeId}&minimal=true`),
+    enabled: !!storeId,
+  });
+  const productsList = productsQuery.data?.data ?? [];
+
   const statsQuery = useQuery<NoestStats>({
-    queryKey: ['noest-realtime-stats', storeId],
-    queryFn: () => fetch(`/api/noest/stats?store_id=${storeId}`).then(r => r.json()),
+    queryKey: ['noest-realtime-stats', storeId, datePeriod, startDate, endDate, filterProductId],
+    queryFn: () => {
+      let url = `/api/noest/stats?store_id=${storeId}`;
+      if (filterProductId) url += `&product_id=${filterProductId}`;
+      if (datePeriod === 'CUSTOM' && startDate && endDate) {
+        url += `&start_date=${startDate}&end_date=${endDate}`;
+      } else if (datePeriod === 'TODAY') {
+        const today = new Date().toISOString().slice(0, 10);
+        url += `&start_date=${today}&end_date=${today}`;
+      } else if (datePeriod === 'THIS_MONTH') {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+        const today = now.toISOString().slice(0, 10);
+        url += `&start_date=${firstDay}&end_date=${today}`;
+      } else if (datePeriod === 'LAST_MONTH') {
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+        const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+        url += `&start_date=${firstDay}&end_date=${lastDay}`;
+      } else if (datePeriod === '7D') {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        url += `&start_date=${d.toISOString().slice(0, 10)}`;
+      } else if (datePeriod === '30D') {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        url += `&start_date=${d.toISOString().slice(0, 10)}`;
+      }
+      return fetch(url).then(r => r.json());
+    },
     enabled: !!storeId,
     refetchInterval: 60_000,
   });
@@ -82,19 +133,25 @@ export function NoestRealtimeWidget() {
   const stats = statsQuery.data;
   const orders = stats?.orders ?? [];
 
-  // Filter orders based on selected status & search
+  // Filter orders based on status, product, date & search
   const filteredOrders = orders.filter(o => {
     // Filter by status
     if (statusFilter === 'OUT_FOR_DELIVERY') {
-      const isOut = o.status === 'SHIPPED' && (o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
+      const isOut = o.status === 'SHIPPED' && (!!o.carrier_stage && o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
       if (!isOut) return false;
     } else if (statusFilter === 'SHIPPED') {
-      const isOut = o.status === 'SHIPPED' && (o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
+      const isOut = o.status === 'SHIPPED' && (!!o.carrier_stage && o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
       if (o.status !== 'SHIPPED' || isOut) return false;
     } else if (statusFilter === 'DELIVERED') {
       if (o.status !== 'DELIVERED') return false;
     } else if (statusFilter === 'RETURNED') {
       if (o.status !== 'RETURNED') return false;
+    }
+
+    // Filter by product ID
+    if (filterProductId && o.items && o.items.length > 0) {
+      const matchesProduct = o.items.some(i => i.product_id === filterProductId);
+      if (!matchesProduct) return false;
     }
 
     // Filter by search query
@@ -106,7 +163,8 @@ export function NoestRealtimeWidget() {
       const matchPhone = (o.customer_phone || '').includes(q);
       const matchTrk = (o.tracking_number || '').toLowerCase().includes(q);
       const matchWilaya = (o.customer_wilaya || '').toLowerCase().includes(q);
-      return matchNum || matchSeq || matchName || matchPhone || matchTrk || matchWilaya;
+      const matchItem = o.items?.some(i => (i.product_name || '').toLowerCase().includes(q));
+      return matchNum || matchSeq || matchName || matchPhone || matchTrk || matchWilaya || matchItem;
     }
 
     return true;
@@ -122,14 +180,14 @@ export function NoestRealtimeWidget() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-800 tracking-tight">Widget Suivi NOEST en Temps Réel</h3>
+              <h3 className="text-sm font-black text-slate-800 tracking-tight">Suivi Suivi Suivi NOEST & Transporteurs en Temps Réel</h3>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
                 <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Synchro Live Active
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium">
-              Suivi interactif, filtration par statut et historique exact des actions
+              Suivi interactif, filtration par date, statut et produits
             </p>
           </div>
         </div>
@@ -144,9 +202,8 @@ export function NoestRealtimeWidget() {
         </button>
       </div>
 
-      {/* Grid des Cartes Métriques Filtrables (Cliquer sur une carte filtre la liste) */}
+      {/* Grid des Cartes Métriques Filtrables */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {/* Total Tracké */}
         <button
           onClick={() => setStatusFilter('ALL')}
           className={cn(
@@ -162,7 +219,6 @@ export function NoestRealtimeWidget() {
           <p className="text-[10px] text-slate-400 mt-0.5 font-medium">N° de suivi actif</p>
         </button>
 
-        {/* En Livraison */}
         <button
           onClick={() => setStatusFilter('OUT_FOR_DELIVERY')}
           className={cn(
@@ -178,7 +234,6 @@ export function NoestRealtimeWidget() {
           <p className="text-[10px] text-blue-400 mt-0.5 font-bold">Colis avec le livreur</p>
         </button>
 
-        {/* Expédiés / En Transit */}
         <button
           onClick={() => setStatusFilter('SHIPPED')}
           className={cn(
@@ -194,7 +249,6 @@ export function NoestRealtimeWidget() {
           <p className="text-[10px] text-slate-400 mt-0.5 font-medium">En route / HUB</p>
         </button>
 
-        {/* Livrées */}
         <button
           onClick={() => setStatusFilter('DELIVERED')}
           className={cn(
@@ -210,7 +264,6 @@ export function NoestRealtimeWidget() {
           <p className="text-[10px] text-emerald-500/80 mt-0.5 font-bold">Encaissements validés</p>
         </button>
 
-        {/* Retours */}
         <button
           onClick={() => setStatusFilter('RETURNED')}
           className={cn(
@@ -227,7 +280,84 @@ export function NoestRealtimeWidget() {
         </button>
       </div>
 
-      {/* Barre de Recherche et Liste des Commandes Trackées */}
+      {/* Barre de Filtration Avancée (Produit & Période / Dates) */}
+      <div className="bg-slate-900 rounded-xl p-3 text-white space-y-3 shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Preset boutons date */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+              <Calendar className="size-3.5 text-blue-400" /> Période :
+            </span>
+            {[
+              { id: 'ALL', label: 'Toutes dates' },
+              { id: 'THIS_MONTH', label: 'Ce mois-ci' },
+              { id: 'LAST_MONTH', label: 'Mois dernier' },
+              { id: '30D', label: '30 jours' },
+              { id: '7D', label: '7 jours' },
+              { id: 'TODAY', label: "Aujourd'hui" },
+              { id: 'CUSTOM', label: '📅 Période' },
+            ].map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setDatePeriod(p.id as any)}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                  datePeriod === p.id ? "bg-blue-600 text-white shadow-sm" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Filtre Produit */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Produit :</span>
+            <select
+              value={filterProductId}
+              onChange={e => setFilterProductId(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-white text-[11px] px-3 py-1 rounded-lg font-bold cursor-pointer max-w-[200px]"
+            >
+              <option value="">Tous les produits</option>
+              {productsList.map((p: any) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {filterProductId && (
+              <button
+                onClick={() => setFilterProductId('')}
+                className="text-[10px] font-bold text-rose-400 hover:underline"
+              >
+                (Réinit)
+              </button>
+            )}
+          </div>
+        </div>
+
+        {datePeriod === 'CUSTOM' && (
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-800 text-xs">
+            <span className="text-[10px] text-slate-400 font-bold uppercase">Dates du suivi :</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2.5 py-1 rounded-lg font-bold"
+            />
+            <span className="text-slate-400 text-[10px]">au</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2.5 py-1 rounded-lg font-bold"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Recherche et Liste des Commandes Trackées */}
       <div className="bg-white rounded-xl border border-slate-100 p-4 space-y-3 shadow-2xs">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
@@ -235,12 +365,19 @@ export function NoestRealtimeWidget() {
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-700">
               Liste des Commandes ({filteredOrders.length})
             </h4>
-            {statusFilter !== 'ALL' && (
+            {(statusFilter !== 'ALL' || datePeriod !== 'ALL' || filterProductId || searchQuery) && (
               <button
-                onClick={() => setStatusFilter('ALL')}
+                onClick={() => {
+                  setStatusFilter('ALL');
+                  setDatePeriod('ALL');
+                  setFilterProductId('');
+                  setSearchQuery('');
+                  setStartDate('');
+                  setEndDate('');
+                }}
                 className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
               >
-                (Réinitialiser le filtre)
+                (Réinitialiser tous les filtres)
               </button>
             )}
           </div>
@@ -251,7 +388,7 @@ export function NoestRealtimeWidget() {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Rechercher N°, Nom, Tel, Tracking..."
+              placeholder="Rechercher N°, Produit, Nom, Tel..."
               className="w-full h-8 pl-8 pr-3 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -263,9 +400,9 @@ export function NoestRealtimeWidget() {
             Aucune commande Noest trouvée pour ce filtre.
           </div>
         ) : (
-          <div className="max-h-72 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+          <div className="max-h-80 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {filteredOrders.map(order => {
-              const isOut = order.status === 'SHIPPED' && (order.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (order.carrier_stage_label || '').toLowerCase().includes('livraison'));
+              const isOut = order.status === 'SHIPPED' && (!!order.carrier_stage && order.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (order.carrier_stage_label || '').toLowerCase().includes('livraison'));
               const isDelivered = order.status === 'DELIVERED';
               const isReturned = order.status === 'RETURNED';
 
@@ -285,7 +422,7 @@ export function NoestRealtimeWidget() {
                       {isDelivered ? '✓' : isReturned ? '✕' : isOut ? '⚡' : '📦'}
                     </div>
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-0.5">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-slate-800">
                           {order.store_sequence_number ? `Commande N°${order.store_sequence_number}` : order.order_number}
@@ -294,7 +431,7 @@ export function NoestRealtimeWidget() {
                           {order.tracking_number}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-0.5 truncate">
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500 truncate">
                         <span className="flex items-center gap-1 font-bold text-slate-700 truncate">
                           <User className="size-3 text-slate-400" /> {order.customer_name}
                         </span>
@@ -305,6 +442,17 @@ export function NoestRealtimeWidget() {
                           <MapPin className="size-3 text-slate-400" /> {order.customer_wilaya}
                         </span>
                       </div>
+
+                      {/* Items list preview */}
+                      {order.items && order.items.length > 0 && (
+                        <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                          {order.items.map((item, idx) => (
+                            <span key={item.id || idx} className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                              📦 {item.quantity}x {item.product_name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -345,11 +493,34 @@ export function NoestRealtimeWidget() {
 
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="size-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all"
+                className="size-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-all cursor-pointer"
               >
                 <X className="size-4" />
               </button>
             </div>
+
+            {/* Articles commandés */}
+            {selectedOrder.items && selectedOrder.items.length > 0 && (
+              <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-100 space-y-2">
+                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  <Package className="size-3.5 text-indigo-600" /> Articles commandés ({selectedOrder.items.length})
+                </h4>
+                <div className="space-y-1.5">
+                  {selectedOrder.items.map((item, idx) => (
+                    <div key={item.id || idx} className="flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-100">
+                      <span className="font-bold text-slate-800">
+                        {item.quantity}× {item.product_name}
+                      </span>
+                      {item.unit_price > 0 && (
+                        <span className="font-mono font-bold text-indigo-600">
+                          {(item.unit_price * item.quantity).toLocaleString('fr-FR')} DA
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Suivi NOEST Carrier Events Timeline */}
             <div className="space-y-3">
