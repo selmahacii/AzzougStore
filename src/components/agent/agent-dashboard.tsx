@@ -938,8 +938,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                         className="w-full text-xs p-2 border rounded bg-white font-bold"
                         required
                       />
-                    ) : editData.delivery_type === 'stop_desk' ? (
-                       <input type="text" readOnly value={editData.customer_commune} className="w-full text-xs p-2 border rounded bg-slate-50 text-slate-500 cursor-not-allowed" placeholder="Sélectionnez un bureau..." />
                     ) : (
                        <select 
                          value={editData.customer_commune} 
@@ -980,8 +978,6 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                       setEditData(prev => ({ 
                         ...prev, 
                         delivery_type: val,
-                        // Clear bureau if switching to home
-                        ...(val === 'home' ? { customer_commune: '', customer_address: '' } : {})
                       }));
                       if (val === 'home') setSelectedBureauCode('');
                     }} 
