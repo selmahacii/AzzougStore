@@ -3322,10 +3322,21 @@ const [timeLeft, setTimeLeft] = useState('');
                 {editDeliveryType !== 'stop_desk' && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Commune</label>
-                    <select name="customer_commune" value={editCommuneState} onChange={e => setEditCommuneState(e.target.value)} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm px-3" disabled={!editWilaya || loadingEditCommunes}>
-     <option value="">{loadingEditCommunes ? "Chargement..." : "Sélectionnez une commune"}</option>
-     {editCommunes.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-   </select>
+                    <select name="customer_commune" value={editCommuneState} onChange={e => setEditCommuneState(e.target.value)} className="w-full h-11 rounded-xl bg-slate-50 border border-slate-100 text-sm font-bold px-3" disabled={!editWilaya}>
+                      <option value="">{loadingEditCommunes ? "Chargement..." : "Sélectionnez une commune"}</option>
+                      {editCommuneState && !(() => {
+                        const cleanW = (editWilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
+                        const list = editCommunes.length > 0 ? editCommunes.map(c => c.name) : (ALGERIAN_COMMUNES[cleanW] || []).map(c => c.nameAscii);
+                        return list.some(name => name.toLowerCase() === editCommuneState.toLowerCase());
+                      })() && (
+                        <option value={editCommuneState}>{editCommuneState} (Actuelle)</option>
+                      )}
+                      {(() => {
+                        const cleanW = (editWilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
+                        const list = editCommunes.length > 0 ? editCommunes.map(c => c.name) : (ALGERIAN_COMMUNES[cleanW] || []).map(c => c.nameAscii);
+                        return list.map(name => <option key={name} value={name}>{name}</option>);
+                      })()}
+                    </select>
                   </div>
                 )}
                 <div className="space-y-2">

@@ -490,11 +490,11 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
         if (body.data) {
           setYalidineCenters(body.data);
         }
-      })
-      .catch(err => console.error('Error fetching Yalidine centers:', err))
+            .catch(err => console.error('Error fetching Yalidine centers:', err))
       .finally(() => setLoadingCenters(false));
   }, [storeId]);
   
+  const [customCommuneInput, setCustomCommuneInput] = useState(false);
   const [editData, setEditData] = useState({
     customer_name: order.customer_name || '',
     customer_phone: order.customer_phone || '',
@@ -919,21 +919,50 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500">Commune *</label>
-                    {editData.delivery_type === 'stop_desk' ? (
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-500">Commune *</label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomCommuneInput(!customCommuneInput)}
+                        className="text-[10px] font-bold text-blue-600 hover:underline"
+                      >
+                        {customCommuneInput ? "📋 Choisir dans la liste" : "✍️ Saisie libre"}
+                      </button>
+                    </div>
+                    {customCommuneInput ? (
+                      <input
+                        type="text"
+                        value={editData.customer_commune}
+                        onChange={e => setEditData({...editData, customer_commune: e.target.value})}
+                        placeholder="Saisissez la commune..."
+                        className="w-full text-xs p-2 border rounded bg-white font-bold"
+                        required
+                      />
+                    ) : editData.delivery_type === 'stop_desk' ? (
                        <input type="text" readOnly value={editData.customer_commune} className="w-full text-xs p-2 border rounded bg-slate-50 text-slate-500 cursor-not-allowed" placeholder="Sélectionnez un bureau..." />
                     ) : (
                        <select 
                          value={editData.customer_commune} 
                          onChange={e => setEditData({...editData, customer_commune: e.target.value})} 
-                         className="w-full text-xs p-2 border rounded bg-white"
+                         className="w-full text-xs p-2 border rounded bg-white font-bold"
                          disabled={!editData.customer_wilaya}
                          required
                        >
                          <option value="">Sélectionnez une commune</option>
-                         {editData.customer_wilaya && ALGERIAN_COMMUNES[editData.customer_wilaya]?.map(c => (
-                            <option key={c.id} value={c.nameAscii}>{c.nameAscii}</option>
-                         ))}
+                         {editData.customer_commune && !(() => {
+                           const cleanW = (editData.customer_wilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
+                           const communes = ALGERIAN_COMMUNES[cleanW] || ALGERIAN_COMMUNES[editData.customer_wilaya] || [];
+                           return communes.some(c => c.nameAscii.toLowerCase() === editData.customer_commune.toLowerCase() || c.name.toLowerCase() === editData.customer_commune.toLowerCase());
+                         })() && (
+                            <option value={editData.customer_commune}>{editData.customer_commune} (Actuelle)</option>
+                         )}
+                         {(() => {
+                           const cleanW = (editData.customer_wilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
+                           const communes = ALGERIAN_COMMUNES[cleanW] || ALGERIAN_COMMUNES[editData.customer_wilaya] || [];
+                           return communes.map(c => (
+                             <option key={c.id} value={c.nameAscii}>{c.nameAscii}</option>
+                           ));
+                         })()}
                        </select>
                     )}
                   </div>
