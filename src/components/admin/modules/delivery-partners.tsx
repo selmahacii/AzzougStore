@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
+import { NoestRealtimeWidget } from '@/components/admin/noest-realtime-widget';
 
 // ─── ALGERIAN WILAYAS ─────────────────────────────────────────
 const ALGERIAN_WILAYAS = [
@@ -188,6 +189,7 @@ function TrackingLookup({ storeId }: { storeId: string }) {
 
   return (
     <div className="space-y-6">
+      <NoestRealtimeWidget />
       <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm">
         <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2 mb-5">
           <Radio className="size-4 text-[#4b7bec]" />

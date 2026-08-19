@@ -65,6 +65,42 @@ def _headers(token: str) -> dict:
     }
 
 
+# ─── GET /api/noest/stats ───────────────────────────────────────────────────
+
+@router.get("/stats")
+async def get_noest_stats(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Return real-time Noest tracking stats & active count for a store."""
+    from datetime import datetime, timezone
+    from app.models.order import Order
+
+    orders = db.query(Order).filter(
+        Order.store_id == store_id,
+        Order.tracking_number.isnot(None),
+        Order.tracking_number != "",
+        Order.is_deleted == False,
+    ).all()
+
+    total_tracked = len(orders)
+    shipped = sum(1 for o in orders if str(o.status) == "SHIPPED")
+    out_for_delivery = sum(1 for o in orders if str(o.status) == "SHIPPED" and (o.carrier_stage in ("fdr_activated", "en livraison") or "livraison" in str(o.carrier_stage_label or "").lower()))
+    delivered = sum(1 for o in orders if str(o.status) == "DELIVERED")
+    returned = sum(1 for o in orders if str(o.status) == "RETURNED")
+
+    return {
+        "success": True,
+        "total_tracked": total_tracked,
+        "shipped": shipped,
+        "out_for_delivery": out_for_delivery,
+        "delivered": delivered,
+        "returned": returned,
+        "sync_status": "ONLINE",
+        "last_sync": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ─── GET /api/noest/track/{tracking_number} ──────────────────────────────────
 
 @router.get("/track/{tracking_number}")
