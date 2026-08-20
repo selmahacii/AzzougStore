@@ -514,7 +514,11 @@ def get_landing_page_analytics(
         and_(Order.tracking_number.isnot(None), Order.tracking_number != "")
     )
     _is_out_for_delivery_noest = and_(_is_out_for_delivery, _has_external_tracking)
-    _is_out_for_delivery_internal = and_(_is_out_for_delivery, ~_has_external_tracking)
+    _is_out_for_delivery_internal = or_(
+        and_(_is_out_for_delivery, ~_has_external_tracking),
+        Order.livreur_id.isnot(None),
+        Order.status == "ASSIGNED"
+    )
 
     _is_suspended = or_(
         Order.carrier_stage == "colis_suspendu",
