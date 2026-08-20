@@ -260,9 +260,9 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
           {/* Section 2 : Financement & Performances Meta Ads */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">📢 Performances & Financement Meta Ads</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">📢 Performances & Financement Meta Ads (Dernier Mois)</p>
               <span className="text-[9px] font-extrabold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                📊 Résultats Globaux de la Campagne Meta Ads
+                📊 Résultats du Dernier Mois — Meta Ads
               </span>
             </div>
             {(() => {
@@ -319,9 +319,9 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             {/* Micro-détails des Conversions Meta (Web Pixel vs Messagerie vs Totaux) */}
             <div className="mt-3 p-3 rounded-2xl border border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-950/20 text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
               <div className="flex items-center justify-between font-bold text-emerald-700 dark:text-emerald-400">
-                <span>🎯 Ventilation des Conversions Meta Ads</span>
+                <span>🎯 Ventilation des Conversions Meta Ads (Dernier Mois)</span>
                 <span className="text-[9px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full font-extrabold">
-                  Détail par Source Meta
+                  Détail du Dernier Mois
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
