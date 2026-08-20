@@ -131,19 +131,111 @@ export function NoestRealtimeWidget() {
   const stats = statsQuery.data;
   const orders = stats?.orders ?? [];
 
+  // Helper to determine precise micro-stage configuration for any order
+  const getStageConfig = (o: TrackedOrder) => {
+    const st = o.status;
+    const cs = (o.carrier_stage || '').toLowerCase();
+    const csl = (o.carrier_stage_label || '').toLowerCase();
+
+    if (st === 'DELIVERED') {
+      return {
+        key: 'DELIVERED',
+        label: '✓ Livré (COD Validé)',
+        bg: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+        iconBg: 'bg-emerald-100 text-emerald-700',
+        icon: '✓',
+      };
+    }
+    if (st === 'RETURNED') {
+      if (csl.includes('recu') || cs.includes('recu') || cs.includes('validated')) {
+        return {
+          key: 'RETURNED_RECEIVED',
+          label: '✕ Retour Reçu en Agence',
+          bg: 'bg-rose-100 text-rose-800 border border-rose-200',
+          iconBg: 'bg-rose-100 text-rose-700',
+          icon: '✕',
+        };
+      }
+      return {
+        key: 'RETURNED_IN_TRANSIT',
+        label: '↩️ Retour en Transit',
+        bg: 'bg-orange-100 text-orange-800 border border-orange-200',
+        iconBg: 'bg-orange-100 text-orange-700',
+        icon: '↩️',
+      };
+    }
+    if (cs.includes('suspendu') || cs.includes('bloque') || csl.includes('échec') || csl.includes('echec')) {
+      return {
+        key: 'SUSPENDED',
+        label: '⚠️ Colis Suspendu / Problème',
+        bg: 'bg-amber-100 text-amber-900 border border-amber-300',
+        iconBg: 'bg-amber-100 text-amber-800',
+        icon: '⚠️',
+      };
+    }
+    if (['fdr_activated', 'en livraison'].includes(cs) || csl.includes('livraison')) {
+      return {
+        key: 'OUT_NOEST',
+        label: '⚡ En Livraison (NOEST)',
+        bg: 'bg-purple-100 text-purple-800 border border-purple-200',
+        iconBg: 'bg-purple-100 text-purple-700',
+        icon: '⚡',
+      };
+    }
+    if (cs.includes('interne')) {
+      return {
+        key: 'OUT_INTERNAL',
+        label: '🚚 En Livraison (Interne)',
+        bg: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+        iconBg: 'bg-emerald-100 text-emerald-700',
+        icon: '🚚',
+      };
+    }
+    if (cs.includes('expedition') || cs.includes('transfert')) {
+      return {
+        key: 'EXPEDITED_HUB',
+        label: '🔄 Transfert Inter-Hub',
+        bg: 'bg-blue-100 text-blue-800 border border-blue-200',
+        iconBg: 'bg-blue-100 text-blue-700',
+        icon: '🔄',
+      };
+    }
+    if (cs.includes('hub') || csl.includes('hub') || csl.includes('centre')) {
+      return {
+        key: 'IN_HUB',
+        label: '🏢 En Hub (Reçu au Centre)',
+        bg: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+        iconBg: 'bg-indigo-100 text-indigo-700',
+        icon: '🏢',
+      };
+    }
+
+    return {
+      key: 'IN_TRANSIT',
+      label: o.carrier_stage_label || '📦 En Transit / En Route',
+      bg: 'bg-amber-50 text-amber-800 border border-amber-200',
+      iconBg: 'bg-amber-100 text-amber-700',
+      icon: '📦',
+    };
+  };
+
   // Filter orders based on status, product, date & search
   const filteredOrders = orders.filter(o => {
-    // Filter by status
-    if (statusFilter === 'OUT_FOR_DELIVERY') {
-      const isOut = o.status === 'SHIPPED' && (!!o.carrier_stage && o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
-      if (!isOut) return false;
-    } else if (statusFilter === 'SHIPPED') {
-      const isOut = o.status === 'SHIPPED' && (!!o.carrier_stage && o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'));
-      if (o.status !== 'SHIPPED' || isOut) return false;
-    } else if (statusFilter === 'DELIVERED') {
-      if (o.status !== 'DELIVERED') return false;
-    } else if (statusFilter === 'RETURNED') {
-      if (o.status !== 'RETURNED') return false;
+    const stageCfg = getStageConfig(o);
+
+    // Filter by status (Coarse or Micro)
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'OUT_FOR_DELIVERY') {
+        if (!['OUT_NOEST', 'OUT_INTERNAL'].includes(stageCfg.key)) return false;
+      } else if (statusFilter === 'SHIPPED') {
+        if (o.status !== 'SHIPPED') return false;
+      } else if (statusFilter === 'DELIVERED') {
+        if (o.status !== 'DELIVERED') return false;
+      } else if (statusFilter === 'RETURNED') {
+        if (o.status !== 'RETURNED') return false;
+      } else {
+        if (stageCfg.key !== statusFilter) return false;
+      }
     }
 
     // Filter by product ID
@@ -301,14 +393,14 @@ export function NoestRealtimeWidget() {
 
             const items = [
               { label: 'Commandes Livrées', value: deliveredCount, sub: `${deliveredCount} articles`, color: '#00B894', filterKey: 'DELIVERED' },
-              { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_FOR_DELIVERY' },
-              { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_FOR_DELIVERY' },
-              { label: 'Expédition Hub', value: expHubCount, sub: 'transfert hub', color: '#3B82F6', filterKey: 'SHIPPED' },
-              { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'SHIPPED' },
-              { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'SHIPPED' },
-              { label: 'Colis Suspendus', value: suspendedCount, sub: 'bloqués / problème', color: '#F7B731', filterKey: 'SHIPPED' },
-              { label: 'Retours Reçus', value: returnedReceivedCount, sub: 'reçus en agence', color: '#D63031', filterKey: 'RETURNED' },
-              { label: 'Retours En Cours', value: returnedInTransitCount, sub: 'demandés / transit', color: '#E17055', filterKey: 'RETURNED' },
+              { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_NOEST' },
+              { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_INTERNAL' },
+              { label: 'Expédition Hub', value: expHubCount, sub: 'transfert hub', color: '#3B82F6', filterKey: 'EXPEDITED_HUB' },
+              { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'IN_HUB' },
+              { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'IN_TRANSIT' },
+              { label: 'Colis Suspendus', value: suspendedCount, sub: 'bloqués / problème', color: '#F7B731', filterKey: 'SUSPENDED' },
+              { label: 'Retours Reçus', value: returnedReceivedCount, sub: 'reçus en agence', color: '#D63031', filterKey: 'RETURNED_RECEIVED' },
+              { label: 'Retours En Cours', value: returnedInTransitCount, sub: 'demandés / transit', color: '#E17055', filterKey: 'RETURNED_IN_TRANSIT' },
               { label: 'Total Retours', value: returnedCount, sub: `${returnedCount} articles`, color: '#B2BEC3', filterKey: 'RETURNED' },
             ];
 
@@ -453,43 +545,36 @@ export function NoestRealtimeWidget() {
         ) : (
           <div className="max-h-80 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
             {filteredOrders.map(order => {
-              const isOut = order.status === 'SHIPPED' && (!!order.carrier_stage && order.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (order.carrier_stage_label || '').toLowerCase().includes('livraison'));
-              const isDelivered = order.status === 'DELIVERED';
-              const isReturned = order.status === 'RETURNED';
+              const stageCfg = getStageConfig(order);
 
               return (
                 <div
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="group flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-blue-50/30 transition-all cursor-pointer"
+                  className="group flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 hover:border-blue-300 hover:bg-blue-50/20 transition-all cursor-pointer shadow-2xs"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={cn(
-                      'size-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold',
-                      isDelivered ? 'bg-emerald-100 text-emerald-700' :
-                      isReturned ? 'bg-rose-100 text-rose-700' :
-                      isOut ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                    )}>
-                      {isDelivered ? '✓' : isReturned ? '✕' : isOut ? '⚡' : '📦'}
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className={cn('size-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold shadow-2xs', stageCfg.iconBg)}>
+                      {stageCfg.icon}
                     </div>
 
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex items-center gap-2">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-black text-slate-800">
                           {order.store_sequence_number ? `Commande N°${order.store_sequence_number}` : order.order_number}
                         </span>
-                        <span className="text-[10px] font-mono text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-bold">
+                        <span className="text-[10px] font-mono text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md font-bold">
                           {order.tracking_number}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-500 truncate">
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500 truncate flex-wrap">
                         <span className="flex items-center gap-1 font-bold text-slate-700 truncate">
                           <User className="size-3 text-slate-400" /> {order.customer_name}
                         </span>
                         <span className="flex items-center gap-1 font-mono">
                           <Phone className="size-3 text-slate-400" /> {order.customer_phone}
                         </span>
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 font-semibold text-slate-600">
                           <MapPin className="size-3 text-slate-400" /> {order.customer_wilaya}
                         </span>
                       </div>
@@ -508,13 +593,8 @@ export function NoestRealtimeWidget() {
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className={cn(
-                      'px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider',
-                      isDelivered ? 'bg-emerald-100 text-emerald-700' :
-                      isReturned ? 'bg-rose-100 text-rose-700' :
-                      isOut ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                    )}>
-                      {order.carrier_stage_label || order.status}
+                    <span className={cn('px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-2xs', stageCfg.bg)}>
+                      {stageCfg.label}
                     </span>
                     <ChevronRight className="size-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
                   </div>
