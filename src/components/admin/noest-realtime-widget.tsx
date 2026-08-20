@@ -200,10 +200,10 @@ export function NoestRealtimeWidget() {
         icon: '🔄',
       };
     }
-    if (cs.includes('hub') || csl.includes('hub') || csl.includes('centre')) {
+    if (cs.includes('hub') || csl.includes('hub') || csl.includes('centre') || csl.includes('vers') || csl.includes('station')) {
       return {
         key: 'IN_HUB',
-        label: '🏢 En Hub (Reçu au Centre)',
+        label: '🏢 En Hub / Vers Hub',
         bg: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
         iconBg: 'bg-indigo-100 text-indigo-700',
         icon: '🏢',
@@ -384,7 +384,7 @@ export function NoestRealtimeWidget() {
             const outNoestCount = orders.filter(o => o.status === 'SHIPPED' && (['fdr_activated', 'en livraison'].includes(o.carrier_stage || '') || (o.carrier_stage_label || '').toLowerCase().includes('livraison'))).length;
             const outInternalCount = orders.filter(o => o.status === 'SHIPPED' && (o.carrier_stage || '').includes('interne')).length;
             const expHubCount = orders.filter(o => (o.carrier_stage || '').includes('expedition') || (o.carrier_stage || '').includes('transfert')).length;
-            const inHubCount = orders.filter(o => (o.carrier_stage || '').includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('centre')).length;
+            const inHubCount = orders.filter(o => (o.carrier_stage || '').includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('centre') || (o.carrier_stage_label || '').toLowerCase().includes('vers') || (o.carrier_stage_label || '').toLowerCase().includes('station')).length;
             const shippedCount = orders.filter(o => o.status === 'SHIPPED').length;
             const suspendedCount = orders.filter(o => (o.carrier_stage || '').includes('suspendu') || (o.carrier_stage || '').includes('bloque') || (o.carrier_stage_label || '').toLowerCase().includes('échec')).length;
             const returnedReceivedCount = orders.filter(o => o.status === 'RETURNED' && (o.carrier_stage_label || '').toLowerCase().includes('recu')).length;
@@ -396,7 +396,7 @@ export function NoestRealtimeWidget() {
               { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_NOEST' },
               { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_INTERNAL' },
               { label: 'Expédition Hub', value: expHubCount, sub: 'transfert hub', color: '#3B82F6', filterKey: 'EXPEDITED_HUB' },
-              { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'IN_HUB' },
+              { label: 'En Hub / Vers Hub', value: inHubCount, sub: 'reçu / vers centre', color: '#8B5CF6', filterKey: 'IN_HUB' },
               { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'IN_TRANSIT' },
               { label: 'Colis Suspendus', value: suspendedCount, sub: 'bloqués / problème', color: '#F7B731', filterKey: 'SUSPENDED' },
               { label: 'Retours Reçus', value: returnedReceivedCount, sub: 'reçus en agence', color: '#D63031', filterKey: 'RETURNED_RECEIVED' },
