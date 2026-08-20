@@ -962,6 +962,11 @@ def sync_meta_ads(
             from app.core.config import settings as _settings
             relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
             logger.info(f"[Meta Ads Sync] Tentative de récupération des campagnes (insights) pour le store: {store_id}")
+            # Sanitize access token to strip any accidental trailing text or whitespace
+            raw_token = (config.access_token or "").strip()
+            # If token contains accidental write-in text after space, isolate the token string
+            clean_token = raw_token.split()[0] if raw_token else ""
+            logger.info(f"[Meta Token Diag] Raw token: '{config.access_token}' -> Clean token: '{clean_token[:15]}...{clean_token[-10:] if len(clean_token) > 25 else ''}'")
             if relay_url:
                 # HuggingFace can't reach graph.facebook.com directly (TLS block),
                 # so pull Ads Insights through the same Vercel relay used for CAPI
@@ -973,7 +978,7 @@ def sync_meta_ads(
                         "kind": "insights",
                         "ad_account_id": ad_account_id,
                         "graph_version": META_GRAPH_VERSION,
-                        "access_token": config.access_token,
+                        "access_token": clean_token,
                         "params": params,
                     },
                     headers={"x-internal-key": _settings.INTERNAL_API_KEY},
@@ -986,7 +991,7 @@ def sync_meta_ads(
                 )
             else:
                 url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"
-                response = httpx.get(url, params={**params, "access_token": config.access_token}, timeout=30.0)
+                response = httpx.get(url, params={**params, "access_token": clean_token}, timeout=30.0)
             res_data = response.json()
             if "error" in res_data:
                 logger.warning(f"[Meta Ads Sync] L'API Meta a retourné une erreur d'insights: {res_data['error']}")
