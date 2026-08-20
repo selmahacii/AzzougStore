@@ -130,17 +130,9 @@ function toLocalYYYYMMDD(d: Date): string {
 // Opened by clicking a card's thumbnail/title: creation date, period totals
 // and a daily orders/revenue chart, filterable by date range.
 function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
-  const [dStart, setDStart] = useState(() => {
-    const d = new Date(); d.setDate(1); // 1st of current month (e.g. 2026-08-01)
-    return toLocalYYYYMMDD(d);
-  });
-  const [dEnd, setDEnd] = useState(() => toLocalYYYYMMDD(new Date()));
-
   const analyticsQuery = useQuery<any>({
-    queryKey: ['lp-analytics', lp.id, dStart, dEnd],
-    queryFn: () => apiFetch(
-      `/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`
-    ),
+    queryKey: ['lp-analytics', lp.id],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/analytics`),
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
@@ -150,17 +142,9 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
   const totals = data?.totals ?? {};
   const maxOrders = Math.max(1, ...daily.map(d => d.orders));
 
-  // "Qualité du Tracking" — same range selector as the chart above, no
-  // extra polling: manual refresh only (React Query default staleTime),
-  // this dialog isn't opened often enough to justify a refetch interval.
-  const rangeDays = Math.max(1, Math.min(90, Math.round((new Date(dEnd).getTime() - new Date(dStart).getTime()) / 86400000) || 30));
   const trackingQuery = useQuery<any>({
-    // date_from/date_to (les VRAIES dates choisies, pas seulement leur écart
-    // en jours) priment sur range_days côté backend — sinon un intervalle
-    // personnalisé ne se terminant pas aujourd'hui était silencieusement
-    // recalé sur "aujourd'hui - rangeDays", ignorant la date de fin choisie.
-    queryKey: ['lp-tracking-quality', lp.id, dStart, dEnd],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?range_days=${rangeDays}&date_from=${dStart}T00:00:00.000Z&date_to=${dEnd}T23:59:59.999Z`),
+    queryKey: ['lp-tracking-quality', lp.id],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality`),
     refetchOnWindowFocus: false,
   });
   const tq = trackingQuery.data?.data;
@@ -205,37 +189,11 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Date filter */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Calendar className="size-4 text-slate-400" />
-            <input type="date" value={dStart} onChange={e => setDStart(e.target.value)}
-              className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none" />
-            <span className="text-slate-300">→</span>
-            <input type="date" value={dEnd} onChange={e => setDEnd(e.target.value)}
-              className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none" />
-            <button type="button"
-              onClick={() => {
-                const s = new Date(); s.setDate(1);
-                setDStart(toLocalYYYYMMDD(s));
-                setDEnd(toLocalYYYYMMDD(new Date()));
-              }}
-              className="h-9 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-black uppercase transition-colors">
-              Ce mois
-            </button>
-            {([['7j', 7], ['30j', 30], ['90j', 90]] as const).map(([label, days]) => (
-              <button key={label} type="button"
-                onClick={() => {
-                  const s = new Date(); s.setDate(s.getDate() - days);
-                  setDStart(toLocalYYYYMMDD(s));
-                  setDEnd(toLocalYYYYMMDD(new Date()));
-                }}
-                className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] font-black uppercase text-slate-500 transition-colors">
-                {label}
-              </button>
-            ))}
+          {/* Action bar with live refresh button */}
+          <div className="flex items-center justify-end">
             <button type="button"
               onClick={() => analyticsQuery.refetch()}
-              className="h-9 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors ml-auto">
+              className="h-9 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors">
               <RefreshCw className={cn("size-3", analyticsQuery.isFetching && "animate-spin")} /> Actualiser Meta Live
             </button>
           </div>
