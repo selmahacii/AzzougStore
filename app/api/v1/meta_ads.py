@@ -1380,7 +1380,7 @@ def sync_meta_ads(
         logger.warning(f"[Meta Ads Sync] Fin avec simulation pour le store: {store_id}")
     else:
         logger.info(f"[Meta Ads Sync] Fin avec succès pour le store: {store_id} ({len(created_campaigns)} traitées)")
-    return {"success": True, "message": msg}
+    return {"success": True, "message": msg, "campaigns": campaigns_data}
 
 
 class MetaEventUserData(BaseModel):

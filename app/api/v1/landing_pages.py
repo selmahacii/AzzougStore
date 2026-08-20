@@ -759,34 +759,20 @@ def get_landing_page_analytics(
     from app.models.marketing import MetaAdsConfig
     meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
 
+    live_camps_data = None
     # Trigger live auto-sync for requested date window if config is active
     if meta_cfg and meta_cfg.is_connected and meta_cfg.access_token and meta_cfg.ad_account_id:
         try:
             from app.api.v1.meta_ads import sync_meta_ads
-            # Perform defensive background/synchronous sync for the explicit date window
-            sync_meta_ads(
+            sync_res = sync_meta_ads(
                 store_id=lp.store_id,
                 date_start=str(d_start.date()),
                 date_end=str(d_end.date()),
                 db=db,
                 current_user=current_user
             )
-            if filters:
-                meta_campaigns = db.query(MetaAdsCampaign).filter(
-                    MetaAdsCampaign.store_id == lp.store_id,
-                    or_(*filters),
-                ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
-            else:
-                meta_campaigns = db.query(MetaAdsCampaign).filter(
-                    MetaAdsCampaign.store_id == lp.store_id,
-                ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
-
-            if meta_campaigns and len(meta_campaigns) > 1:
-                exact_match = [c for c in meta_campaigns if (lp.slug and lp.slug.lower() in c.campaign_name.lower()) or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())]
-                if exact_match:
-                    meta_campaigns = exact_match[:1]
-                else:
-                    meta_campaigns = meta_campaigns[:1]
+            if sync_res and isinstance(sync_res, dict) and sync_res.get("campaigns"):
+                live_camps_data = sync_res.get("campaigns")
         except Exception as sync_err:
             logger.debug("[Landing Page Analytics] Live Meta sync skipped: %s", sync_err)
 
@@ -795,42 +781,26 @@ def get_landing_page_analytics(
         else (meta_campaigns[0].currency if (meta_campaigns and meta_campaigns[0].currency) else "USD")
     ).upper()
 
-    _camp_ids = [c.campaign_id for c in meta_campaigns]
-    meta_daily_by_date: dict = {}
-    if _camp_ids:
-        _rows = (
-            db.query(
-                MetaAdsDailyInsight.date,
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
-            )
-            .filter(
-                MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
-                MetaAdsDailyInsight.date >= d_start.date(),
-                MetaAdsDailyInsight.date <= d_end.date(),
-            )
-            .group_by(MetaAdsDailyInsight.date)
-            .all()
-        )
-        meta_daily_by_date = {
-            str(r[0]): {
-                "purchases": int(r[1] or 0),
-                "value": float(r[2] or 0.0),
-                "spend": float(r[3] or 0.0),
-                "impressions": int(r[4] or 0),
-                "reach": int(r[5] or 0),
-                "clicks": int(r[6] or 0),
-                "raw_spend": float(r[7] or 0.0),
-            }
-            for r in _rows
-        }
     days_count = max(1, (d_end.date() - d_start.date()).days + 1)
-    if meta_daily_by_date:
+
+    # 1. Primary Priority: Live Meta Graph API response for exact date_start..date_end
+    if live_camps_data:
+        exact_live = [
+            c for c in live_camps_data 
+            if (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower()) 
+            or (lp.product and lp.product.name and lp.product.name.lower() in str(c.get("campaign_name", "")).lower())
+        ]
+        target_camps = exact_live if exact_live else live_camps_data[:1]
+        
+        totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
+        totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
+        totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
+        rate = get_conversion_rate(meta_currency, config.currency, config.exchange_rate) if 'config' in locals() else 220.0
+        totals["meta_spend"] = round(totals["meta_raw_spend"] * rate, 2)
+        totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
+        totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
+        totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
+    elif meta_daily_by_date:
         totals["meta_purchases"] = sum(v["purchases"] for v in meta_daily_by_date.values())
         totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
         totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
