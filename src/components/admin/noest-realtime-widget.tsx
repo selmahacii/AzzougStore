@@ -107,9 +107,9 @@ export function NoestRealtimeWidget() {
     refetchInterval: 30_000,
   });
 
-  const orderEventsQuery = useQuery<{ success: boolean; events: any[] }>({
+  const orderEventsQuery = useQuery<any[]>({
     queryKey: ['order-events-history', selectedOrder?.id],
-    queryFn: () => apiFetch(`/api/v1/orders/${selectedOrder?.id}/events`),
+    queryFn: () => apiFetch<any[]>(`/api/v1/orders/${selectedOrder?.id}/events`),
     enabled: !!selectedOrder?.id,
   });
 
@@ -672,30 +672,53 @@ export function NoestRealtimeWidget() {
                 <History className="size-4 text-emerald-600" /> Journal d'Activités & Actions de la Commande
               </h4>
 
-              {orderEventsQuery.isLoading ? (
-                <div className="py-4 text-center text-xs text-slate-400">Chargement de l'historique...</div>
-              ) : !orderEventsQuery.data?.events || orderEventsQuery.data.events.length === 0 ? (
-                <div className="py-4 text-center text-xs text-slate-400 italic">Aucune action système enregistrée.</div>
-              ) : (
-                <div className="space-y-2">
-                  {orderEventsQuery.data.events.map((ev: any) => (
-                    <div key={ev.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-start justify-between gap-3 text-xs">
-                      <div>
-                        <p className="font-bold text-slate-800">{ev.note || ev.to_status || 'Action système'}</p>
-                        <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
-                          {ev.actor_name && <span>Par : <strong>{ev.actor_name}</strong></span>}
-                          {ev.from_status && ev.to_status && (
-                            <span>Statut : {ev.from_status} ➔ {ev.to_status}</span>
-                          )}
-                        </div>
+              {(() => {
+                const eventsList: any[] = Array.isArray(orderEventsQuery.data)
+                  ? orderEventsQuery.data
+                  : (orderEventsQuery.data as any)?.events ?? [];
+
+                if (orderEventsQuery.isLoading) {
+                  return <div className="py-4 text-center text-xs text-slate-400">Chargement de l'historique...</div>;
+                }
+
+                if (eventsList.length === 0) {
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-800">Commande synchronisée & enregistrée</span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {selectedOrder.created_at ? new Date(selectedOrder.created_at).toLocaleString('fr-FR') : ''}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400 shrink-0">
-                        {ev.created_at ? new Date(ev.created_at).toLocaleString('fr-FR') : ''}
-                      </span>
+                      <p className="text-[11px] text-slate-500">
+                        Commande prise en charge par le système Noest avec le numéro de suivi{' '}
+                        <span className="font-mono font-bold text-blue-600">{selectedOrder.tracking_number}</span> ({selectedOrder.carrier_stage_label || 'En transit'}).
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                }
+
+                return (
+                  <div className="space-y-2">
+                    {eventsList.map((ev: any) => (
+                      <div key={ev.id || ev.created_at} className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-start justify-between gap-3 text-xs">
+                        <div>
+                          <p className="font-bold text-slate-800">{ev.note || ev.to_status || 'Action système'}</p>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                            {ev.actor_name && <span>Par : <strong>{ev.actor_name}</strong></span>}
+                            {ev.from_status && ev.to_status && (
+                              <span>Statut : {ev.from_status} ➔ {ev.to_status}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                          {ev.created_at ? new Date(ev.created_at).toLocaleString('fr-FR') : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex justify-end pt-2">

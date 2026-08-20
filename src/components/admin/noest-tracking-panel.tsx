@@ -49,9 +49,9 @@ function EventIcon({ eventKey }: { eventKey: string }) {
 export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props) {
   const queryClient = useQueryClient();
 
-  const eventsQuery = useQuery<{ success: boolean; events: NoestEvent[] }>({
-    queryKey: ['noest-events', orderId],
-    queryFn: () => fetch(`/api/noest/sync?orderId=${orderId}`).then(r => r.json()),
+  const eventsQuery = useQuery<any>({
+    queryKey: ['noest-events', trackingNumber],
+    queryFn: () => apiFetch<any>(`/api/v1/noest/track/${trackingNumber}`),
     enabled: !!trackingNumber,
     refetchInterval: trackingNumber ? 60_000 : false,
     refetchIntervalInBackground: false,
@@ -59,19 +59,14 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
 
   const syncMutation = useMutation({
     mutationFn: () =>
-      fetch('/api/noest/sync', {
+      apiFetch<{ success: boolean; message?: string }>(`/api/v1/noest/sync`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
-      }).then(r => r.json()),
+      }),
     onSuccess: (data: any) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ['noest-events', orderId] });
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-        toast.success('Suivi synchronisé');
-      } else {
-        toast.error(data.message ?? 'Erreur de synchronisation');
-      }
+      queryClient.invalidateQueries({ queryKey: ['noest-events', trackingNumber] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['noest-realtime-stats'] });
+      toast.success(data?.message || 'Suivi synchronisé');
     },
   });
 
@@ -93,7 +88,16 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
     }
   });
 
-  const events = eventsQuery.data?.events ?? [];
+  const trackingData = eventsQuery.data;
+  const rawActivity: any[] = trackingData?.activity ?? trackingData?.events ?? [];
+  const events = rawActivity.map((ev: any, idx: number) => ({
+    id: ev.id || String(idx),
+    eventKey: ev.event_key || ev.eventKey || ev.event || 'update',
+    eventLabel: ev.event || ev.eventLabel || ev.status || 'Mise à jour transporteur',
+    causer: ev.causer || null,
+    eventDate: ev.date || ev.eventDate || ev.created_at || null,
+    createdAt: ev.date || ev.created_at || '',
+  }));
 
   return (
     <div className="space-y-4">
