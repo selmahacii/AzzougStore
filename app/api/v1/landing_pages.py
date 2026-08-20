@@ -730,9 +730,14 @@ def get_landing_page_analytics(
     from sqlalchemy import or_
 
     filters = []
+    lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
+    if lp_meta_campaign_id:
+        filters.append(MetaAdsCampaign.campaign_id == str(lp_meta_campaign_id))
     if lp.product_id:
         filters.append(MetaAdsCampaign.product_id == lp.product_id)
     if lp.slug:
+        clean_slug = lp.slug.replace("-", " ").strip()
+        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{clean_slug}%"))
         filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.slug}%"))
     if lp.product and lp.product.name:
         filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.product.name}%"))
@@ -749,8 +754,12 @@ def get_landing_page_analytics(
 
     # Keep primary matching campaign when multiple campaigns match to prevent double-counting old/draft campaigns
     if meta_campaigns and len(meta_campaigns) > 1:
-        # Prefer exact campaign name match if available, else highest-spend active campaign
-        exact_match = [c for c in meta_campaigns if (lp.slug and lp.slug.lower() in c.campaign_name.lower()) or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())]
+        exact_match = [
+            c for c in meta_campaigns 
+            if (lp_meta_campaign_id and str(c.campaign_id) == str(lp_meta_campaign_id))
+            or (lp.slug and (lp.slug.lower() in c.campaign_name.lower() or lp.slug.replace("-", " ").lower() in c.campaign_name.lower()))
+            or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())
+        ]
         if exact_match:
             meta_campaigns = exact_match[:1]
         else:
@@ -783,70 +792,55 @@ def get_landing_page_analytics(
 
     days_count = max(1, (d_end.date() - d_start.date()).days + 1)
 
-    _camp_ids = [c.campaign_id for c in meta_campaigns] if meta_campaigns else []
-    meta_daily_by_date: dict = {}
-    if _camp_ids:
-        _rows = (
-            db.query(
-                MetaAdsDailyInsight.date,
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
-            )
-            .filter(
-                MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
-                MetaAdsDailyInsight.date >= d_start.date(),
-                MetaAdsDailyInsight.date <= d_end.date(),
-            )
-            .group_by(MetaAdsDailyInsight.date)
-            .all()
-        )
-        meta_daily_by_date = {
-            str(r[0]): {
-                "purchases": int(r[1] or 0),
-                "value": float(r[2] or 0.0),
-                "spend": float(r[3] or 0.0),
-                "impressions": int(r[4] or 0),
-                "reach": int(r[5] or 0),
-                "clicks": int(r[6] or 0),
-                "raw_spend": float(r[7] or 0.0),
+    # Construct unified campaign pool (Prefer live API response if available, fallback to DB synced campaigns)
+    camps_pool = []
+    if live_camps_data:
+        camps_pool = live_camps_data
+    elif meta_campaigns:
+        camps_pool = [
+            {
+                "campaign_id": str(c.campaign_id),
+                "campaign_name": c.campaign_name,
+                "spend": c.raw_spend,
+                "impressions": c.impressions,
+                "reach": c.reach,
+                "clicks": c.clicks,
+                "meta_purchases": c.meta_purchases,
+                "meta_purchase_value": c.meta_purchase_value,
             }
-            for r in _rows
-        }
+            for c in meta_campaigns
+        ]
 
     campaign_match = False
     campaign_match_method = None
     target_camps = []
-    lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
 
     logger.info(
         f"[LP_ANALYTICS_DIAG] LP ID '{lp_id}' (slug: '{lp.slug}', store_id: '{lp.store_id}', "
         f"meta_campaign_id: '{lp_meta_campaign_id}', date_range: {d_start.date()}..{d_end.date()})"
     )
     logger.info(
-        f"[LP_ANALYTICS_DIAG] live_camps_data count: {len(live_camps_data) if live_camps_data else 0}. "
-        f"Campaigns in live_camps_data: {[{'id': str(c.get('campaign_id')), 'name': c.get('campaign_name')} for c in (live_camps_data or [])]}"
+        f"[LP_ANALYTICS_DIAG] camps_pool count: {len(camps_pool)}. "
+        f"Campaigns in pool: {[{'id': str(c.get('campaign_id')), 'name': c.get('campaign_name')} for c in camps_pool]}"
     )
 
-    if live_camps_data:
+    if camps_pool:
         # Priority 1: Explicit meta_campaign_id on Landing Page
         if lp_meta_campaign_id:
-            matched = [c for c in live_camps_data if str(c.get("campaign_id")) == str(lp_meta_campaign_id)]
+            matched = [c for c in camps_pool if str(c.get("campaign_id")) == str(lp_meta_campaign_id)]
             if matched:
                 target_camps = matched
                 campaign_match = True
                 campaign_match_method = "meta_campaign_id"
                 logger.info(f"[LP_ANALYTICS_DIAG] Priority 1 MATCH via meta_campaign_id '{lp_meta_campaign_id}' -> {matched[0].get('campaign_name')}")
 
-        # Priority 2: Controlled matching by name (slug or product.name)
+        # Priority 2: Controlled matching by name (slug or product.name, with hyphen-to-space tolerance)
         if not campaign_match:
+            clean_slug = (lp.slug or "").replace("-", " ").strip().lower()
             matched_by_name = [
-                c for c in live_camps_data 
-                if (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower()) 
+                c for c in camps_pool 
+                if (clean_slug and clean_slug in str(c.get("campaign_name", "")).lower()) 
+                or (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower())
                 or (lp.product and lp.product.name and lp.product.name.lower() in str(c.get("campaign_name", "")).lower())
             ]
             if len(matched_by_name) == 1:
@@ -855,7 +849,6 @@ def get_landing_page_analytics(
                 campaign_match_method = "campaign_name_unique"
                 logger.info(f"[LP_ANALYTICS_DIAG] Priority 2 MATCH via campaign_name_unique -> {matched_by_name[0].get('campaign_name')}")
             elif len(matched_by_name) > 1:
-                # Ambiguity: Multiple campaigns match by name -> DO NOT aggregate, require explicit ID
                 campaign_match = False
                 campaign_match_method = "ambiguous_name_match"
                 target_camps = []
@@ -864,23 +857,54 @@ def get_landing_page_analytics(
     # Apply metrics if deterministic match was established
     if campaign_match and target_camps:
         primary = target_camps[0]
+        matched_camp_id = str(primary.get("campaign_id"))
         totals["campaign_match"] = True
         totals["campaign_match_method"] = campaign_match_method
-        totals["campaign_id"] = str(primary.get("campaign_id"))
+        totals["campaign_id"] = matched_camp_id
         totals["campaign_name"] = str(primary.get("campaign_name"))
         totals["campaign_match_candidates"] = len(target_camps)
 
-        totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
-        totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
-        totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
+        # Check if date-sliced insights exist in DB for this matched campaign ID and date range
+        daily_rows = (
+            db.query(
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
+            )
+            .filter(
+                MetaAdsDailyInsight.campaign_id == matched_camp_id,
+                MetaAdsDailyInsight.date >= d_start.date(),
+                MetaAdsDailyInsight.date <= d_end.date(),
+            )
+            .first()
+        )
+
+        if daily_rows and (daily_rows[2] > 0 or daily_rows[3] > 0 or daily_rows[0] > 0):
+            # Use exact date-filtered slice from DB daily insights
+            totals["meta_purchases"] = int(daily_rows[0] or 0)
+            totals["meta_purchase_value"] = float(daily_rows[1] or 0.0)
+            totals["meta_raw_spend"] = round(float(daily_rows[2] or 0.0), 2)
+            totals["meta_impressions"] = int(daily_rows[3] or 0)
+            totals["meta_reach"] = int(daily_rows[4] or 0)
+            totals["meta_clicks"] = int(daily_rows[5] or 0)
+            logger.info(f"[LP_ANALYTICS_DIAG] Using MetaAdsDailyInsight slice for {matched_camp_id} ({d_start.date()}..{d_end.date()}): purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}")
+        else:
+            # Fallback to campaign-level totals
+            totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
+            totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
+            totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
+            totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
+            totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
+            totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
+
         rate = get_conversion_rate(meta_currency, config.currency, config.exchange_rate) if 'config' in locals() else 220.0
         totals["meta_spend"] = round(totals["meta_raw_spend"] * rate, 2)
-        totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
-        totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
-        totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
         logger.info(f"[LP_ANALYTICS_DIAG] MATCH SUCCESS: purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}, impr={totals['meta_impressions']}")
     else:
-        # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics (NEVER fallback to live_camps_data[:1])
+        # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics
         totals["campaign_match"] = False
         totals["campaign_match_method"] = campaign_match_method
         totals["campaign_id"] = None
