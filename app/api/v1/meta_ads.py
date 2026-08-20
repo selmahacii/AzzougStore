@@ -997,6 +997,12 @@ def sync_meta_ads(
                 campaigns_data = []
                 for rc in raw_camps:
                     meta_purchases, meta_purchase_value = _extract_meta_purchases(rc)
+                    logger.info(
+                        f"[META_INSIGHTS_DIAG] account_id={ad_account_id} campaign_id={rc.get('campaign_id')} "
+                        f"campaign_name='{rc.get('campaign_name')}' date_start={rc.get('date_start')} date_stop={rc.get('date_stop')} "
+                        f"spend={rc.get('spend')} impressions={rc.get('impressions')} reach={rc.get('reach')} clicks={rc.get('clicks')} "
+                        f"actions={rc.get('actions')} action_values={rc.get('action_values')} meta_purchases={meta_purchases}"
+                    )
                     campaigns_data.append({
                         "campaign_id": rc.get("campaign_id"),
                         "campaign_name": rc.get("campaign_name", "Sans nom"),
@@ -1007,6 +1013,8 @@ def sync_meta_ads(
                         "reach": int(rc.get("reach", 0)),
                         "meta_purchases": meta_purchases,
                         "meta_purchase_value": meta_purchase_value,
+                        "actions_raw": rc.get("actions"),
+                        "action_values_raw": rc.get("action_values"),
                     })
                 logger.info(f"[Meta Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées de Meta.")
         except Exception as e:

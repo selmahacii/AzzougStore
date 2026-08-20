@@ -298,7 +298,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                   {[
                     { label: 'Impressions Meta', value: (totals.meta_impressions ?? 0).toLocaleString('fr-FR'), color: '#1877F2', title: "Nombre total d'impressions des annonces Meta" },
                     { label: 'Montant Dépensé', value: spendStr, color: '#E17055', title: `Dépenses publicitaires totales (${curr}) sur cette période` },
-                    { label: 'Budget Quotidien', value: budgetStr, color: '#0984E3', title: "Dépense quotidienne moyenne sur la période" },
+                    { label: 'Dépense moy. / jour', value: budgetStr, color: '#0984E3', title: "Dépense quotidienne moyenne réelle sur la période sélectionnée" },
                     { label: 'Achats Meta', value: totals.meta_purchases ?? 0, color: '#00B894', title: "Nombre d'achats déclarés directement par Meta" },
                     { label: 'Coût / Résultat', value: cpaStr, color: '#8E44AD', title: "Coût moyen par achat publicitaire Meta (Dépense ÷ Achats Meta)" },
                     { label: 'Taux de Conversion', value: totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—', color: '#F7B731', title: "Achats / Commandes ÷ Clics Meta (%)" },

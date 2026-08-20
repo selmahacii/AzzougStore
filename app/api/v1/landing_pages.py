@@ -818,15 +818,46 @@ def get_landing_page_analytics(
             for r in _rows
         }
 
-    # 1. Primary Priority: Live Meta Graph API response for exact date_start..date_end
+    campaign_match = False
+    campaign_match_method = None
+    target_camps = []
+    lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
+
     if live_camps_data:
-        exact_live = [
-            c for c in live_camps_data 
-            if (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower()) 
-            or (lp.product and lp.product.name and lp.product.name.lower() in str(c.get("campaign_name", "")).lower())
-        ]
-        target_camps = exact_live if exact_live else live_camps_data[:1]
-        
+        # Priority 1: Explicit meta_campaign_id on Landing Page
+        if lp_meta_campaign_id:
+            matched = [c for c in live_camps_data if str(c.get("campaign_id")) == str(lp_meta_campaign_id)]
+            if matched:
+                target_camps = matched
+                campaign_match = True
+                campaign_match_method = "meta_campaign_id"
+
+        # Priority 2: Controlled matching by name (slug or product.name)
+        if not campaign_match:
+            matched_by_name = [
+                c for c in live_camps_data 
+                if (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower()) 
+                or (lp.product and lp.product.name and lp.product.name.lower() in str(c.get("campaign_name", "")).lower())
+            ]
+            if len(matched_by_name) == 1:
+                target_camps = matched_by_name
+                campaign_match = True
+                campaign_match_method = "campaign_name_unique"
+            elif len(matched_by_name) > 1:
+                # Ambiguity: Multiple campaigns match by name -> DO NOT aggregate, require explicit ID
+                campaign_match = False
+                campaign_match_method = "ambiguous_name_match"
+                target_camps = []
+
+    # Apply metrics if deterministic match was established
+    if campaign_match and target_camps:
+        primary = target_camps[0]
+        totals["campaign_match"] = True
+        totals["campaign_match_method"] = campaign_match_method
+        totals["campaign_id"] = str(primary.get("campaign_id"))
+        totals["campaign_name"] = str(primary.get("campaign_name"))
+        totals["campaign_match_candidates"] = len(target_camps)
+
         totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
         totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
         totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
@@ -835,28 +866,28 @@ def get_landing_page_analytics(
         totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
         totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
         totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
-    elif meta_daily_by_date:
-        totals["meta_purchases"] = sum(v["purchases"] for v in meta_daily_by_date.values())
-        totals["meta_purchase_value"] = sum(v["value"] for v in meta_daily_by_date.values())
-        totals["meta_spend"] = sum(v["spend"] for v in meta_daily_by_date.values())
-        totals["meta_raw_spend"] = sum(v["raw_spend"] for v in meta_daily_by_date.values())
-        totals["meta_impressions"] = sum(v["impressions"] for v in meta_daily_by_date.values())
-        totals["meta_reach"] = sum(v["reach"] for v in meta_daily_by_date.values())
-        totals["meta_clicks"] = sum(v["clicks"] for v in meta_daily_by_date.values())
     else:
-        # Scale 30-day lifetime snapshot proportionally if daily insights are not populated yet
-        scale = min(1.0, days_count / 30.0)
-        totals["meta_purchases"] = int(round(sum(c.meta_purchases or 0 for c in meta_campaigns) * scale))
-        totals["meta_purchase_value"] = round(sum(c.meta_purchase_value or 0.0 for c in meta_campaigns) * scale, 2)
-        totals["meta_spend"] = round(sum(c.spend or 0.0 for c in meta_campaigns) * scale, 2)
-        totals["meta_raw_spend"] = round(sum(c.raw_spend if c.raw_spend is not None else (c.spend or 0.0) for c in meta_campaigns) * scale, 2)
-        totals["meta_impressions"] = int(round(sum(c.impressions or 0 for c in meta_campaigns) * scale))
-        totals["meta_reach"] = int(round(sum(c.reach or 0 for c in meta_campaigns) * scale))
-        totals["meta_clicks"] = int(round(sum(c.clicks or 0 for c in meta_campaigns) * scale))
+        # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics (NEVER fallback to live_camps_data[:1])
+        totals["campaign_match"] = False
+        totals["campaign_match_method"] = campaign_match_method
+        totals["campaign_id"] = None
+        totals["campaign_name"] = None
+        totals["campaign_match_candidates"] = 0
+
+        totals["meta_purchases"] = 0
+        totals["meta_purchase_value"] = 0.0
+        totals["meta_spend"] = 0.0
+        totals["meta_raw_spend"] = 0.0
+        totals["meta_impressions"] = 0
+        totals["meta_reach"] = 0
+        totals["meta_clicks"] = 0
 
     totals["meta_currency"] = meta_currency
-    totals["meta_budget_daily"] = round(totals["meta_spend"] / days_count, 2)
-    totals["meta_raw_budget_daily"] = round(totals["meta_raw_spend"] / days_count, 2)
+    totals["average_daily_spend"] = round(totals["meta_spend"] / days_count, 2)
+    totals["meta_raw_average_daily_spend"] = round(totals["meta_raw_spend"] / days_count, 2)
+    totals["meta_budget_daily"] = totals["average_daily_spend"]
+    totals["meta_raw_budget_daily"] = totals["meta_raw_average_daily_spend"]
+
     totals["meta_cpa_purchases"] = round(totals["meta_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
     totals["meta_raw_cpa_purchases"] = round(totals["meta_raw_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
     totals["meta_cpa_orders"] = round(totals["meta_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0

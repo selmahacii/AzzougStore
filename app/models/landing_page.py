@@ -14,6 +14,7 @@ class LandingPage(Base):
     slug        = Column(String, nullable=False, index=True)  # URL: /lp/{slug}
     mode        = Column(String, default="product")            # 'product' | 'standalone'
     is_active   = Column(Boolean, default=True)
+    meta_campaign_id = Column(String, nullable=True, index=True)  # Explicit Meta Campaign ID link
     views       = Column(Integer, default=0)
     orders      = Column(Integer, default=0)
 
