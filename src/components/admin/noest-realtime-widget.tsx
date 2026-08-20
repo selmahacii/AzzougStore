@@ -276,6 +276,57 @@ export function NoestRealtimeWidget() {
           <p className="text-xl font-black text-rose-600 tabular-nums">{stats?.returned ?? 0}</p>
           <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Colis retournés</p>
         </button>
+      {/* Micro-détails des Statuts Logistiques */}
+      <div className="space-y-2 pt-2 border-t border-slate-100">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">📦 État Logistique des Commandes (Micro-détails)</p>
+          <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+            Filtration Interactive
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-10 gap-2">
+          {(() => {
+            const deliveredCount = orders.filter(o => o.status === 'DELIVERED').length;
+            const outNoestCount = orders.filter(o => o.status === 'SHIPPED' && (o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'))).length;
+            const outInternalCount = orders.filter(o => o.status === 'SHIPPED' && (o.carrier_stage || '').includes('interne')).length;
+            const expHubCount = orders.filter(o => (o.carrier_stage || '').includes('expedition') || (o.carrier_stage || '').includes('transfert')).length;
+            const inHubCount = orders.filter(o => (o.carrier_stage || '').includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('centre')).length;
+            const shippedCount = orders.filter(o => o.status === 'SHIPPED').length;
+            const suspendedCount = orders.filter(o => (o.carrier_stage || '').includes('suspendu') || (o.carrier_stage || '').includes('bloque') || (o.carrier_stage_label || '').toLowerCase().includes('échec')).length;
+            const returnedReceivedCount = orders.filter(o => o.status === 'RETURNED' && (o.carrier_stage_label || '').toLowerCase().includes('recu')).length;
+            const returnedInTransitCount = orders.filter(o => o.status === 'RETURNED' && !(o.carrier_stage_label || '').toLowerCase().includes('recu')).length;
+            const returnedCount = orders.filter(o => o.status === 'RETURNED').length;
+
+            const items = [
+              { label: 'Commandes Livrées', value: deliveredCount, sub: `${deliveredCount} articles`, color: '#00B894', filterKey: 'DELIVERED' },
+              { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_FOR_DELIVERY' },
+              { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_FOR_DELIVERY' },
+              { label: 'Expédition Hub', value: expHubCount, sub: 'transfert hub', color: '#3B82F6', filterKey: 'SHIPPED' },
+              { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'SHIPPED' },
+              { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'SHIPPED' },
+              { label: 'Colis Suspendus', value: suspendedCount, sub: 'bloqués / problème', color: '#F7B731', filterKey: 'SHIPPED' },
+              { label: 'Retours Reçus', value: returnedReceivedCount, sub: 'reçus en agence', color: '#D63031', filterKey: 'RETURNED' },
+              { label: 'Retours En Cours', value: returnedInTransitCount, sub: 'demandés / transit', color: '#E17055', filterKey: 'RETURNED' },
+              { label: 'Total Retours', value: returnedCount, sub: `${returnedCount} articles`, color: '#B2BEC3', filterKey: 'RETURNED' },
+            ];
+
+            return items.map(s => (
+              <button
+                key={s.label}
+                onClick={() => setStatusFilter(s.filterKey as any)}
+                className={cn(
+                  "text-center p-2.5 rounded-2xl border transition-all hover:scale-[1.03] cursor-pointer",
+                  statusFilter === s.filterKey ? "ring-2 ring-blue-500 shadow-sm" : ""
+                )}
+                style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}
+              >
+                <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 truncate" style={{ color: s.color }}>{s.label}</p>
+                <p className="text-[9px] font-semibold text-slate-400 mt-0.5 truncate">{s.sub}</p>
+              </button>
+            ));
+          })()}
+        </div>
       </div>
 
       {/* Barre de Filtration Avancée (Produit & Période / Dates) */}
