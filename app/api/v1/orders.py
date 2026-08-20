@@ -14,7 +14,7 @@ from typing import Any, List, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body, UploadFile, File
-from sqlalchemy import func as sqlfunc, and_
+from sqlalchemy import func, func as sqlfunc, and_
 from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
