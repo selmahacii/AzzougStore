@@ -882,7 +882,17 @@ def get_landing_page_analytics(
             .first()
         )
 
-        if daily_rows and (daily_rows[2] > 0 or daily_rows[3] > 0 or daily_rows[0] > 0):
+        # Prioritize live API response if fetched for this exact date window (d_start..d_end),
+        # fallback to DB daily insights slice, then campaign-level DB totals.
+        if live_camps_data and len(live_camps_data) > 0:
+            totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
+            totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
+            totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
+            totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
+            totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
+            totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
+            logger.info(f"[LP_ANALYTICS_DIAG] Using live_camps_data slice for {matched_camp_id} ({d_start.date()}..{d_end.date()}): purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}")
+        elif daily_rows and (daily_rows[2] > 0 or daily_rows[3] > 0 or daily_rows[0] > 0):
             # Use exact date-filtered slice from DB daily insights
             totals["meta_purchases"] = int(daily_rows[0] or 0)
             totals["meta_purchase_value"] = float(daily_rows[1] or 0.0)
