@@ -962,6 +962,42 @@ def get_landing_page_analytics(
     if totals.get("meta_reach", 0) == 0 and totals.get("meta_impressions", 0) > 0:
         totals["meta_reach"] = int(round(totals["meta_impressions"] * 0.82))
 
+    meta_daily_by_date: dict = {}
+    if campaign_match and target_camps:
+        matched_camp_ids = [str(c.get("campaign_id")) for c in target_camps if c.get("campaign_id")]
+        if matched_camp_ids:
+            _rows = (
+                db.query(
+                    MetaAdsDailyInsight.date,
+                    func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
+                    func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
+                )
+                .filter(
+                    MetaAdsDailyInsight.campaign_id.in_(matched_camp_ids),
+                    MetaAdsDailyInsight.date >= d_start.date(),
+                    MetaAdsDailyInsight.date <= d_end.date(),
+                )
+                .group_by(MetaAdsDailyInsight.date)
+                .all()
+            )
+            meta_daily_by_date = {
+                str(r[0]): {
+                    "purchases": int(r[1] or 0),
+                    "value": float(r[2] or 0.0),
+                    "spend": float(r[3] or 0.0),
+                    "impressions": int(r[4] or 0),
+                    "reach": int(r[5] or 0),
+                    "clicks": int(r[6] or 0),
+                    "raw_spend": float(r[7] or 0.0),
+                }
+                for r in _rows
+            }
+
     total_campaign_impressions = totals.get("meta_impressions", 0)
     total_campaign_clicks = totals.get("meta_clicks", 0)
     total_campaign_reach = totals.get("meta_reach", 0)
