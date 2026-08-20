@@ -276,6 +276,8 @@ export function NoestRealtimeWidget() {
           <p className="text-xl font-black text-rose-600 tabular-nums">{stats?.returned ?? 0}</p>
           <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Colis retournés</p>
         </button>
+      </div>
+
       {/* Micro-détails des Statuts Logistiques */}
       <div className="space-y-2 pt-2 border-t border-slate-100">
         <div className="flex items-center justify-between">
@@ -287,7 +289,7 @@ export function NoestRealtimeWidget() {
         <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-10 gap-2">
           {(() => {
             const deliveredCount = orders.filter(o => o.status === 'DELIVERED').length;
-            const outNoestCount = orders.filter(o => o.status === 'SHIPPED' && (o.carrier_stage in { fdr_activated: 1, 'en livraison': 1 } || (o.carrier_stage_label || '').toLowerCase().includes('livraison'))).length;
+            const outNoestCount = orders.filter(o => o.status === 'SHIPPED' && (['fdr_activated', 'en livraison'].includes(o.carrier_stage || '') || (o.carrier_stage_label || '').toLowerCase().includes('livraison'))).length;
             const outInternalCount = orders.filter(o => o.status === 'SHIPPED' && (o.carrier_stage || '').includes('interne')).length;
             const expHubCount = orders.filter(o => (o.carrier_stage || '').includes('expedition') || (o.carrier_stage || '').includes('transfert')).length;
             const inHubCount = orders.filter(o => (o.carrier_stage || '').includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('hub') || (o.carrier_stage_label || '').toLowerCase().includes('centre')).length;
