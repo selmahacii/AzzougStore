@@ -5,7 +5,7 @@ import { Truck, RefreshCw, Download, CheckCircle2, Clock, AlertTriangle, XCircle
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
-import { useAppStore } from '@/lib/store/useAppStore';
+import { useAppStore } from '@/store/app-store';
 
 interface NoestEvent {
   id: string;
