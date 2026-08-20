@@ -23,6 +23,41 @@ from app.models.finance import Wallet, FinancialTransaction, TransactionType
 
 router = APIRouter()
 
+
+@router.get("/inspect-token")
+def inspect_meta_token(
+    store_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Diagnostic endpoint to inspect stored Meta token and configuration for a store.
+    Accessible directly via link: /api/v1/meta-ads/inspect-token
+    """
+    if store_id:
+        cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    else:
+        cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.is_connected == True).first() or db.query(MetaAdsConfig).first()
+        
+    if not cfg:
+        return {"success": False, "message": "No MetaAdsConfig found in DB."}
+        
+    raw_token = cfg.access_token or ""
+    clean_token = raw_token.strip().split()[0] if raw_token.strip() else ""
+    
+    return {
+        "success": True,
+        "store_id": cfg.store_id,
+        "ad_account_id": cfg.ad_account_id,
+        "pixel_id": cfg.pixel_id,
+        "is_connected": cfg.is_connected,
+        "raw_access_token": raw_token,
+        "clean_access_token": clean_token,
+        "token_has_space_or_extra_text": bool(" " in raw_token.strip()),
+        "extra_text_detected": raw_token.strip().split()[1:] if " " in raw_token.strip() else [],
+        "currency": cfg.currency,
+        "updated_at": str(cfg.updated_at)
+    }
+
 # Single source of truth for the Graph API version used across every Meta
 # call in this file (Ads Insights sync + health/token/pixel checks). Was
 # previously split: Ads Insights called v18.0 (released ~Aug 2023 — outside
