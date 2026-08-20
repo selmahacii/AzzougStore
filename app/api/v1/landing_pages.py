@@ -783,6 +783,41 @@ def get_landing_page_analytics(
 
     days_count = max(1, (d_end.date() - d_start.date()).days + 1)
 
+    _camp_ids = [c.campaign_id for c in meta_campaigns] if meta_campaigns else []
+    meta_daily_by_date: dict = {}
+    if _camp_ids:
+        _rows = (
+            db.query(
+                MetaAdsDailyInsight.date,
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
+                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
+            )
+            .filter(
+                MetaAdsDailyInsight.campaign_id.in_(_camp_ids),
+                MetaAdsDailyInsight.date >= d_start.date(),
+                MetaAdsDailyInsight.date <= d_end.date(),
+            )
+            .group_by(MetaAdsDailyInsight.date)
+            .all()
+        )
+        meta_daily_by_date = {
+            str(r[0]): {
+                "purchases": int(r[1] or 0),
+                "value": float(r[2] or 0.0),
+                "spend": float(r[3] or 0.0),
+                "impressions": int(r[4] or 0),
+                "reach": int(r[5] or 0),
+                "clicks": int(r[6] or 0),
+                "raw_spend": float(r[7] or 0.0),
+            }
+            for r in _rows
+        }
+
     # 1. Primary Priority: Live Meta Graph API response for exact date_start..date_end
     if live_camps_data:
         exact_live = [
