@@ -191,17 +191,17 @@ export function NoestRealtimeWidget() {
         icon: '🚚',
       };
     }
-    // VERS HUB (En route / expédié vers le hub ou la station)
-    if (csl.includes('vers') || cs.includes('vers') || cs.includes('sent_to_redispatch') || cs.includes('expedition') || cs.includes('transfert')) {
+    // VERS HUB (Expédition / En route vers le hub ou la station)
+    if (cs.includes('vers') || cs.includes('expedition') || cs.includes('transfert') || cs.includes('sent_to_redispatch') || csl.includes('vers') || csl.includes('expédition') || csl.includes('expedition')) {
       return {
         key: 'VERS_HUB',
-        label: '🔄 Vers Hub / Station',
+        label: '🚚 Vers Hub / Station',
         bg: 'bg-blue-100 text-blue-800 border border-blue-200',
         iconBg: 'bg-blue-100 text-blue-700',
-        icon: '🔄',
+        icon: '🚚',
       };
     }
-    // EN HUB (Reçu et scanné au centre / hub)
+    // EN HUB (Reçu et présent au centre logistique / hub)
     if (cs.includes('hub') || csl.includes('hub') || csl.includes('centre') || csl.includes('station') || csl.includes('recu') || cs.includes('recu')) {
       return {
         key: 'IN_HUB',
