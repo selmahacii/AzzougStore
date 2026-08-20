@@ -191,11 +191,16 @@ export function NoestRealtimeWidget() {
         icon: '🚚',
       };
     }
-    // VERS HUB (Expédition / En route vers le hub ou la station)
-    if (cs.includes('vers') || cs.includes('expedition') || cs.includes('transfert') || cs.includes('sent_to_redispatch') || csl.includes('vers') || csl.includes('expédition') || csl.includes('expedition')) {
+    // VERS HUB (Expédition / Colis Ramassé / En route vers le hub ou la station)
+    if (
+      cs.includes('vers') || cs.includes('expedition') || cs.includes('transfert') || cs.includes('sent_to_redispatch') ||
+      cs.includes('ramasse') || cs.includes('ramassage') || cs.includes('picked') || cs.includes('collect') ||
+      csl.includes('vers') || csl.includes('expédition') || csl.includes('expedition') ||
+      csl.includes('ramassé') || csl.includes('ramasse') || csl.includes('ramassage') || csl.includes('collect')
+    ) {
       return {
         key: 'VERS_HUB',
-        label: '🚚 Vers Hub / Station',
+        label: '🚚 Vers Hub / Ramassé',
         bg: 'bg-blue-100 text-blue-800 border border-blue-200',
         iconBg: 'bg-blue-100 text-blue-700',
         icon: '🚚',
@@ -397,7 +402,7 @@ export function NoestRealtimeWidget() {
               { label: 'Commandes Livrées', value: deliveredCount, sub: `${deliveredCount} articles`, color: '#00B894', filterKey: 'DELIVERED' },
               { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_NOEST' },
               { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_INTERNAL' },
-              { label: 'Vers Hub / Station', value: versHubCount, sub: 'en route vers hub', color: '#3B82F6', filterKey: 'VERS_HUB' },
+              { label: 'Vers Hub / Ramassé', value: versHubCount, sub: 'ramassé / vers centre', color: '#3B82F6', filterKey: 'VERS_HUB' },
               { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'IN_HUB' },
               { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'IN_TRANSIT' },
               { label: 'Colis Suspendus', value: suspendedCount, sub: 'bloqués / problème', color: '#F7B731', filterKey: 'SUSPENDED' },
