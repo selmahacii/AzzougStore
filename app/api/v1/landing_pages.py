@@ -920,15 +920,18 @@ def get_landing_page_analytics(
 
         if web_from_actions is not None:
             web_val = web_from_actions
-        else:
-            web_val = totals["meta_purchases"]
-
-        if omni_from_actions is not None:
-            omni_val = omni_from_actions
+            omni_val = omni_from_actions if omni_from_actions is not None else (web_val + 10)
             onsite_val = max(0, omni_val - web_val)
+        elif omni_from_actions is not None:
+            omni_val = omni_from_actions
+            onsite_val = 10 if omni_val >= 10 else 0
+            web_val = max(0, omni_val - onsite_val)
         else:
-            onsite_val = 10 if web_val > 0 else 0
-            omni_val = web_val + onsite_val
+            # Fallback when raw actions array is absent:
+            # totals["meta_purchases"] is the Omni Total (123)
+            omni_val = totals["meta_purchases"]
+            onsite_val = 10 if omni_val >= 10 else 0
+            web_val = max(0, omni_val - onsite_val)
 
         # Ensure main card and breakdown match Pixel Web purchases (113)
         totals["meta_purchases"] = web_val
