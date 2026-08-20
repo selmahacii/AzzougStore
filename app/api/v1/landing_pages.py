@@ -823,6 +823,15 @@ def get_landing_page_analytics(
     target_camps = []
     lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
 
+    logger.info(
+        f"[LP_ANALYTICS_DIAG] LP ID '{lp_id}' (slug: '{lp.slug}', store_id: '{lp.store_id}', "
+        f"meta_campaign_id: '{lp_meta_campaign_id}', date_range: {d_start.date()}..{d_end.date()})"
+    )
+    logger.info(
+        f"[LP_ANALYTICS_DIAG] live_camps_data count: {len(live_camps_data) if live_camps_data else 0}. "
+        f"Campaigns in live_camps_data: {[{'id': str(c.get('campaign_id')), 'name': c.get('campaign_name')} for c in (live_camps_data or [])]}"
+    )
+
     if live_camps_data:
         # Priority 1: Explicit meta_campaign_id on Landing Page
         if lp_meta_campaign_id:
@@ -831,6 +840,7 @@ def get_landing_page_analytics(
                 target_camps = matched
                 campaign_match = True
                 campaign_match_method = "meta_campaign_id"
+                logger.info(f"[LP_ANALYTICS_DIAG] Priority 1 MATCH via meta_campaign_id '{lp_meta_campaign_id}' -> {matched[0].get('campaign_name')}")
 
         # Priority 2: Controlled matching by name (slug or product.name)
         if not campaign_match:
@@ -843,11 +853,13 @@ def get_landing_page_analytics(
                 target_camps = matched_by_name
                 campaign_match = True
                 campaign_match_method = "campaign_name_unique"
+                logger.info(f"[LP_ANALYTICS_DIAG] Priority 2 MATCH via campaign_name_unique -> {matched_by_name[0].get('campaign_name')}")
             elif len(matched_by_name) > 1:
                 # Ambiguity: Multiple campaigns match by name -> DO NOT aggregate, require explicit ID
                 campaign_match = False
                 campaign_match_method = "ambiguous_name_match"
                 target_camps = []
+                logger.warning(f"[LP_ANALYTICS_DIAG] Ambiguous name match! Multiple campaigns matched: {[c.get('campaign_name') for c in matched_by_name]}")
 
     # Apply metrics if deterministic match was established
     if campaign_match and target_camps:
@@ -866,6 +878,7 @@ def get_landing_page_analytics(
         totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
         totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
         totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
+        logger.info(f"[LP_ANALYTICS_DIAG] MATCH SUCCESS: purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}, impr={totals['meta_impressions']}")
     else:
         # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics (NEVER fallback to live_camps_data[:1])
         totals["campaign_match"] = False
@@ -881,6 +894,7 @@ def get_landing_page_analytics(
         totals["meta_impressions"] = 0
         totals["meta_reach"] = 0
         totals["meta_clicks"] = 0
+        logger.warning(f"[LP_ANALYTICS_DIAG] NO CAMPAIGN MATCHED for LP '{lp_id}' (lp_meta_campaign_id='{lp_meta_campaign_id}', slug='{lp.slug}')")
 
     totals["meta_currency"] = meta_currency
     totals["average_daily_spend"] = round(totals["meta_spend"] / days_count, 2)
