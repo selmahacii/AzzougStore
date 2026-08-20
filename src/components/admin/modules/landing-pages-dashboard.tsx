@@ -124,7 +124,7 @@ const PRESET_COLORS = ['#1e293b', '#475569', '#3b82f6', '#0ea5e9', '#10b981', '#
 // and a daily orders/revenue chart, filterable by date range.
 function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
   const [dStart, setDStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
+    const d = new Date(); d.setDate(1); // 1st of current month (e.g. 2026-08-01)
     return d.toISOString().split('T')[0];
   });
   const [dEnd, setDEnd] = useState(() => new Date().toISOString().split('T')[0]);
@@ -134,8 +134,8 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
     queryFn: () => apiFetch(
       `/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`
     ),
-    refetchInterval: 2 * 60 * 60 * 1000,
-    refetchIntervalInBackground: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const data = analyticsQuery.data?.data;
@@ -206,6 +206,15 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             <span className="text-slate-300">→</span>
             <input type="date" value={dEnd} onChange={e => setDEnd(e.target.value)}
               className="h-9 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 outline-none" />
+            <button type="button"
+              onClick={() => {
+                const s = new Date(); s.setDate(1);
+                setDStart(s.toISOString().split('T')[0]);
+                setDEnd(new Date().toISOString().split('T')[0]);
+              }}
+              className="h-9 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-black uppercase transition-colors">
+              Ce mois
+            </button>
             {([['7j', 7], ['30j', 30], ['90j', 90]] as const).map(([label, days]) => (
               <button key={label} type="button"
                 onClick={() => {
@@ -217,6 +226,11 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 {label}
               </button>
             ))}
+            <button type="button"
+              onClick={() => analyticsQuery.refetch()}
+              className="h-9 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors ml-auto">
+              <RefreshCw className={cn("size-3", analyticsQuery.isFetching && "animate-spin")} /> Actualiser Meta Live
+            </button>
           </div>
 
           {/* Section 1 : Suivi Logistique ERP (Micro-détails complets) */}
