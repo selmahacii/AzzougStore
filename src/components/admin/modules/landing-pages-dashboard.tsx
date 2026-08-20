@@ -130,9 +130,15 @@ function toLocalYYYYMMDD(d: Date): string {
 // Opened by clicking a card's thumbnail/title: creation date, period totals
 // and a daily orders/revenue chart, filterable by date range.
 function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
+  const [dStart, setDStart] = useState(() => {
+    const d = new Date(); d.setDate(1); // 1st of current month
+    return toLocalYYYYMMDD(d);
+  });
+  const [dEnd, setDEnd] = useState(() => toLocalYYYYMMDD(new Date()));
+
   const analyticsQuery = useQuery<any>({
-    queryKey: ['lp-analytics', lp.id],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/analytics`),
+    queryKey: ['lp-analytics', lp.id, dStart, dEnd],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
@@ -143,8 +149,8 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
   const maxOrders = Math.max(1, ...daily.map(d => d.orders));
 
   const trackingQuery = useQuery<any>({
-    queryKey: ['lp-tracking-quality', lp.id],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality`),
+    queryKey: ['lp-tracking-quality', lp.id, dStart, dEnd],
+    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?date_from=${dStart}T00:00:00.000Z&date_to=${dEnd}T23:59:59.999Z`),
     refetchOnWindowFocus: false,
   });
   const tq = trackingQuery.data?.data;
@@ -189,11 +195,38 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Action bar with live refresh button */}
-          <div className="flex items-center justify-end">
+          {/* Barre de Filtrage par Date (Appliquée au Graphe & à la Logistique ERP) */}
+          <div className="flex items-center gap-2 flex-wrap bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+            <Calendar className="size-4 text-slate-400" />
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Période ERP Logistique :</span>
+            <input type="date" value={dStart} onChange={e => setDStart(e.target.value)}
+              className="h-8 px-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none" />
+            <span className="text-slate-300">→</span>
+            <input type="date" value={dEnd} onChange={e => setDEnd(e.target.value)}
+              className="h-8 px-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none" />
+            <button type="button"
+              onClick={() => {
+                const s = new Date(); s.setDate(1);
+                setDStart(toLocalYYYYMMDD(s));
+                setDEnd(toLocalYYYYMMDD(new Date()));
+              }}
+              className="h-8 px-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-black uppercase transition-colors">
+              Ce mois
+            </button>
+            {([['7j', 7], ['30j', 30], ['90j', 90]] as const).map(([label, days]) => (
+              <button key={label} type="button"
+                onClick={() => {
+                  const s = new Date(); s.setDate(s.getDate() - days);
+                  setDStart(toLocalYYYYMMDD(s));
+                  setDEnd(toLocalYYYYMMDD(new Date()));
+                }}
+                className="h-8 px-2.5 rounded-xl bg-slate-200/60 hover:bg-slate-200 text-[10px] font-black uppercase text-slate-600 transition-colors">
+                {label}
+              </button>
+            ))}
             <button type="button"
               onClick={() => analyticsQuery.refetch()}
-              className="h-9 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors">
+              className="h-8 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors ml-auto">
               <RefreshCw className={cn("size-3", analyticsQuery.isFetching && "animate-spin")} /> Actualiser Meta Live
             </button>
           </div>
@@ -226,7 +259,12 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
 
           {/* Section 2 : Financement & Performances Meta Ads */}
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📢 Performances & Financement Meta Ads</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">📢 Performances & Financement Meta Ads</p>
+              <span className="text-[9px] font-extrabold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                📊 Résultats Globaux de la Campagne Meta Ads
+              </span>
+            </div>
             {(() => {
               const curr = (totals.meta_currency || 'DZD').toUpperCase();
               const fmtCurr = (val: number, rawVal?: number) => {
