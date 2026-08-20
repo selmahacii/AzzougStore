@@ -165,9 +165,20 @@ async def get_noest_stats(
 @router.get("/track/{tracking_number}")
 async def track_parcel(
     tracking_number: str,
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
+    if not store_id:
+        order = db.query(Order).filter(Order.tracking_number == tracking_number, Order.is_deleted == False).first()
+        if order:
+            store_id = str(order.store_id)
+    if not store_id:
+        partner = db.query(DeliveryPartner).filter(DeliveryPartner.carrier_id == "noest", DeliveryPartner.is_active == True).first()
+        if partner:
+            store_id = str(partner.store_id)
+    if not store_id:
+        raise HTTPException(400, "store_id est requis")
+
     partner = _get_partner(db, store_id)
     token, _guid, base = _creds(partner)
 
@@ -618,12 +629,19 @@ async def webhook(request: Request, db: Session = Depends(get_db)) -> Any:
 
 @router.post("/sync")
 async def trigger_noest_sync(
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: Any = Depends(deps.get_current_active_user),
 ) -> Any:
     """Manually trigger live NOEST carrier sync for a store."""
     from app.services.noest_sync import _sync_partner
+    if not store_id:
+        partner = db.query(DeliveryPartner).filter(DeliveryPartner.carrier_id == "noest", DeliveryPartner.is_active == True).first()
+        if partner:
+            store_id = str(partner.store_id)
+    if not store_id:
+        raise HTTPException(400, "store_id est requis")
+
     partner = _get_partner(db, store_id)
     synced_count = await _sync_partner(db, partner)
     return {

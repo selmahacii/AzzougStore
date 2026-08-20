@@ -5,6 +5,7 @@ import { Truck, RefreshCw, Download, CheckCircle2, Clock, AlertTriangle, XCircle
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
+import { useAppStore } from '@/lib/store/useAppStore';
 
 interface NoestEvent {
   id: string;
@@ -48,10 +49,12 @@ function EventIcon({ eventKey }: { eventKey: string }) {
 
 export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props) {
   const queryClient = useQueryClient();
+  const { activeStore } = useAppStore();
+  const storeId = activeStore?.id;
 
   const eventsQuery = useQuery<any>({
-    queryKey: ['noest-events', trackingNumber],
-    queryFn: () => apiFetch<any>(`/api/v1/noest/track/${trackingNumber}`),
+    queryKey: ['noest-events', trackingNumber, storeId],
+    queryFn: () => apiFetch<any>(`/api/v1/noest/track/${trackingNumber}${storeId ? `?store_id=${storeId}` : ''}`),
     enabled: !!trackingNumber,
     refetchInterval: trackingNumber ? 60_000 : false,
     refetchIntervalInBackground: false,
@@ -59,7 +62,7 @@ export function NoestTrackingPanel({ orderId, trackingNumber, onShipped }: Props
 
   const syncMutation = useMutation({
     mutationFn: () =>
-      apiFetch<{ success: boolean; message?: string }>(`/api/v1/noest/sync`, {
+      apiFetch<{ success: boolean; message?: string }>(`/api/v1/noest/sync${storeId ? `?store_id=${storeId}` : ''}`, {
         method: 'POST',
       }),
     onSuccess: (data: any) => {
