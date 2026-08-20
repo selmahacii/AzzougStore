@@ -119,15 +119,22 @@ const TEMPLATES = [
 
 const PRESET_COLORS = ['#1e293b', '#475569', '#3b82f6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6'];
 
+function toLocalYYYYMMDD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ─── LP Analytics detail dialog ──────────────────────────────────────────────
 // Opened by clicking a card's thumbnail/title: creation date, period totals
 // and a daily orders/revenue chart, filterable by date range.
 function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
   const [dStart, setDStart] = useState(() => {
     const d = new Date(); d.setDate(1); // 1st of current month (e.g. 2026-08-01)
-    return d.toISOString().split('T')[0];
+    return toLocalYYYYMMDD(d);
   });
-  const [dEnd, setDEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dEnd, setDEnd] = useState(() => toLocalYYYYMMDD(new Date()));
 
   const analyticsQuery = useQuery<any>({
     queryKey: ['lp-analytics', lp.id, dStart, dEnd],
@@ -209,8 +216,8 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             <button type="button"
               onClick={() => {
                 const s = new Date(); s.setDate(1);
-                setDStart(s.toISOString().split('T')[0]);
-                setDEnd(new Date().toISOString().split('T')[0]);
+                setDStart(toLocalYYYYMMDD(s));
+                setDEnd(toLocalYYYYMMDD(new Date()));
               }}
               className="h-9 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-black uppercase transition-colors">
               Ce mois
@@ -219,8 +226,8 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
               <button key={label} type="button"
                 onClick={() => {
                   const s = new Date(); s.setDate(s.getDate() - days);
-                  setDStart(s.toISOString().split('T')[0]);
-                  setDEnd(new Date().toISOString().split('T')[0]);
+                  setDStart(toLocalYYYYMMDD(s));
+                  setDEnd(toLocalYYYYMMDD(new Date()));
                 }}
                 className="h-9 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-[10px] font-black uppercase text-slate-500 transition-colors">
                 {label}
