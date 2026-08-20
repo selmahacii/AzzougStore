@@ -27,6 +27,7 @@ interface TrackedOrder {
   customer_name: string;
   customer_phone: string;
   customer_wilaya: string;
+  customer_commune?: string | null;
   tracking_number: string;
   status: string;
   carrier_stage: string | null;

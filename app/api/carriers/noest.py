@@ -121,6 +121,7 @@ async def get_noest_stats(
             "customer_name": o.customer_name,
             "customer_phone": o.customer_phone,
             "customer_wilaya": o.customer_wilaya,
+            "customer_commune": o.customer_commune,
             "tracking_number": o.tracking_number,
             "status": str(o.status),
             "carrier_stage": o.carrier_stage,
