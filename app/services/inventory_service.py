@@ -699,37 +699,34 @@ class InventoryService:
             matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
-                v_reserved = int(matching_variant.get("reserved") or 0)
                 new_v_stock = v_stock + quantity
-                if new_v_stock < 0 or (new_v_stock - v_reserved) < 0:
+                if quantity < 0 and new_v_stock < 0:
                     raise InsufficientStockError(
                         product_id=f"{product_id} ({variant_str})",
                         requested=abs(quantity),
-                        available=v_stock - v_reserved,
+                        available=max(0, v_stock),
                     )
-                matching_variant["stock"] = new_v_stock
+                matching_variant["stock"] = max(0, new_v_stock)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
             else:
                 new_stock = product.stock + quantity
-                reserved = product.reserved_stock or 0
-                if new_stock < 0 or new_stock < reserved:
+                if quantity < 0 and new_stock < 0:
                     raise InsufficientStockError(
                         product_id=product_id,
                         requested=abs(quantity),
-                        available=max(0, product.stock - reserved),
+                        available=max(0, product.stock),
                     )
-                product.stock = new_stock
+                product.stock = max(0, new_stock)
         else:
             new_stock = product.stock + quantity
-            reserved = product.reserved_stock or 0
-            if new_stock < 0 or new_stock < reserved:
+            if quantity < 0 and new_stock < 0:
                 raise InsufficientStockError(
                     product_id=product_id,
                     requested=abs(quantity),
-                    available=max(0, product.stock - reserved),
+                    available=max(0, product.stock),
                 )
-            product.stock = new_stock
+            product.stock = max(0, new_stock)
 
         _record_movement(
             db,
