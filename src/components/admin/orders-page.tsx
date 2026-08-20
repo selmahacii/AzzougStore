@@ -1839,8 +1839,8 @@ const [timeLeft, setTimeLeft] = useState('');
                         </div>
                     </td>
                     <td className="px-3 xl:px-4 py-6 hidden lg:table-cell">
-                      <Badge className="bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold shadow-none px-2.5 py-1 truncate max-w-[120px]">
-                        {order.customer_wilaya}
+                      <Badge className="bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold shadow-none px-2.5 py-1 truncate max-w-[150px]">
+                        {order.customer_wilaya}{order.customer_commune ? ` (${order.customer_commune})` : ''}
                       </Badge>
                     </td>
                     <td className="px-3 xl:px-4 py-6 hidden xl:table-cell">
@@ -2511,6 +2511,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                { label: 'Nom', value: selectedOrder.customer_name },
                                { label: 'Téléphone', value: selectedOrder.customer_phone, mono: true },
                                { label: 'Wilaya', value: selectedOrder.customer_wilaya },
+                               { label: 'Commune', value: selectedOrder.customer_commune || '—' },
                                { label: 'Email', value: selectedOrder.customer_email || '—' },
                             ].map(f => (
                                <div key={f.label}>

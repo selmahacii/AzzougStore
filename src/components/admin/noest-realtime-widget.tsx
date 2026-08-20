@@ -582,7 +582,7 @@ export function NoestRealtimeWidget() {
                           <Phone className="size-3 text-slate-400" /> {order.customer_phone}
                         </span>
                         <span className="flex items-center gap-1 font-semibold text-slate-600">
-                          <MapPin className="size-3 text-slate-400" /> {order.customer_wilaya}
+                          <MapPin className="size-3 text-slate-400" /> {order.customer_wilaya}{order.customer_commune ? ` (${order.customer_commune})` : ''}
                         </span>
                       </div>
 

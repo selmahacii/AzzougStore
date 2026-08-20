@@ -509,8 +509,12 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
         if inherited:
             parent.assigned_to = inherited
             snapshot_commission(db, parent, inherited)
-            if str(parent.status) == "NEW":
-                parent.status = "ASSIGNED"
+    # If any order in the group is a real customer checkout (not abandoned), the parent is a normal order!
+    if any(not getattr(c, "is_abandoned_cart", False) for c in group):
+        parent.is_abandoned_cart = False
+        if str(parent.status) == "ABANDONED":
+            parent.status = "NEW"
+
     parent.is_duplicate = False
 
     _log_event(

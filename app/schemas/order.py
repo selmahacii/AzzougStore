@@ -1,5 +1,5 @@
 from typing import List, Optional, Any
-from pydantic import BaseModel, field_validator, field_serializer
+from pydantic import BaseModel, field_validator, field_serializer, model_validator
 from datetime import datetime
 import json
 
@@ -41,6 +41,23 @@ class OrderCreate(BaseModel):
     customer_address: str
     customer_wilaya: str
     customer_commune: Optional[str] = None
+    commune: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def map_field_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "commune" in data and not data.get("customer_commune"):
+                data["customer_commune"] = data["commune"]
+            if "wilaya" in data and not data.get("customer_wilaya"):
+                data["customer_wilaya"] = data["wilaya"]
+            if "address" in data and not data.get("customer_address"):
+                data["customer_address"] = data["address"]
+            if "name" in data and not data.get("customer_name"):
+                data["customer_name"] = data["name"]
+            if "phone" in data and not data.get("customer_phone"):
+                data["customer_phone"] = data["phone"]
+        return data
     delivery_type: str = "HOME"
     delivery_fee: float = 0
     carrier_id: Optional[str] = None   # FK to delivery_partners.id
