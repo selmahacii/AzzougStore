@@ -46,11 +46,15 @@ export async function POST(req: Request) {
         headers: noestHeaders,
         body: JSON.stringify({ trackings: [order.trackingNumber] }),
       });
-      const trackData = await trackRes.json();
+      const trackData = await trackRes.json().catch(() => null);
 
       const shipment = trackData?.data?.[0];
       if (!shipment) {
-        return NextResponse.json({ success: false, message: 'Aucune donnée NOEST' }, { status: 502 });
+        return NextResponse.json({
+          success: false,
+          message: 'Aucune donnée de suivi disponible pour le moment chez NOEST',
+          pending: true,
+        }, { status: 200 });
       }
 
       const rawEvents: Array<{ event_key: string; event_label: string; causer?: string; date?: string }> =
