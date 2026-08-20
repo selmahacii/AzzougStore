@@ -877,8 +877,9 @@ def get_landing_page_analytics(
     daily_views_by_date = {str(r[0]): int(r[1] or 0) for r in daily_views_rows}
 
     totals["taux_conversion_pct"] = (
-        round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0
-        else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None)
+        round(totals["meta_purchases"] / totals["meta_clicks"] * 100, 2) if (totals.get("meta_purchases", 0) > 0 and totals.get("meta_clicks", 0) > 0)
+        else (round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals.get("meta_clicks", 0) > 0
+        else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None))
     )
 
     if totals.get("meta_reach", 0) == 0 and totals.get("meta_impressions", 0) > 0:

@@ -251,24 +251,33 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             {(() => {
               const curr = (totals.meta_currency || 'DZD').toUpperCase();
               const fmtCurr = (val: number, rawVal?: number) => {
-                const effectiveRaw = (rawVal != null && rawVal > 0) ? rawVal : val;
                 if (curr === 'DZD' || curr === 'DA') {
                   return `${Math.round(val).toLocaleString('fr-FR')} DA`;
                 }
+                const effectiveRaw = (rawVal != null && rawVal > 0) ? rawVal : (val > 0 && val < 5000 ? val : 0);
                 const symbol = curr === 'USD' ? '$' : curr === 'EUR' ? '€' : curr === 'GBP' ? '£' : curr;
-                const formattedRaw = symbol === '$' ? `$${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                const formattedRaw = symbol === '$' 
+                  ? `$${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   : symbol === '€' ? `${effectiveRaw.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
                   : `${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${curr}`;
                 
-                if (val > 0 && Math.abs(val - effectiveRaw) > 0.01) {
+                if (val > 0 && Math.abs(val - effectiveRaw) > 0.01 && val > effectiveRaw) {
                   return `${formattedRaw} (${Math.round(val).toLocaleString('fr-FR')} DA)`;
                 }
                 return formattedRaw;
               };
 
               const spendStr = fmtCurr(totals.meta_spend ?? 0, totals.meta_raw_spend);
-              const budgetStr = totals.meta_budget_daily > 0 ? `${fmtCurr(totals.meta_budget_daily ?? 0, totals.meta_raw_budget_daily)}/j` : '0 DA/j';
-              const cpaStr = totals.meta_cpa_purchases > 0 ? fmtCurr(totals.meta_cpa_purchases, totals.meta_raw_cpa_purchases) : '—';
+              const budgetStr = (totals.meta_raw_budget_daily ?? 0) > 0 
+                ? `$${totals.meta_raw_budget_daily.toFixed(2)}/j`
+                : totals.meta_budget_daily > 0 
+                  ? `${fmtCurr(totals.meta_budget_daily ?? 0, totals.meta_raw_budget_daily)}/j` 
+                  : '0 $/j';
+              const cpaStr = (totals.meta_raw_cpa_purchases ?? 0) > 0 
+                ? `$${totals.meta_raw_cpa_purchases.toFixed(2)}`
+                : (totals.meta_cpa_purchases ?? 0) > 0 
+                  ? `${Math.round(totals.meta_cpa_purchases).toLocaleString('fr-FR')} DA` 
+                  : '—';
 
               return (
                 <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
