@@ -492,6 +492,11 @@ def get_landing_page_analytics(
         except ValueError:
             pass
 
+    # Extract exact YYYY-MM-DD calendar dates for Meta Ads insights queries
+    # (prevents 1-hour UTC offset shift from regressing the start date from 01/08 to 31/07)
+    query_date_start = start_date[:10] if (start_date and len(start_date) >= 10) else d_start.strftime("%Y-%m-%d")
+    query_date_end = end_date[:10] if (end_date and len(end_date) >= 10) else d_end.strftime("%Y-%m-%d")
+
     day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
 
     from sqlalchemy import or_
@@ -775,8 +780,8 @@ def get_landing_page_analytics(
             from app.api.v1.meta_ads import sync_meta_ads
             sync_res = sync_meta_ads(
                 store_id=lp.store_id,
-                date_start=str(d_start.date()),
-                date_end=str(d_end.date()),
+                date_start=query_date_start,
+                date_end=query_date_end,
                 db=db,
                 current_user=current_user
             )
@@ -817,7 +822,7 @@ def get_landing_page_analytics(
 
     logger.info(
         f"[LP_ANALYTICS_DIAG] LP ID '{lp_id}' (slug: '{lp.slug}', store_id: '{lp.store_id}', "
-        f"meta_campaign_id: '{lp_meta_campaign_id}', date_range: {d_start.date()}..{d_end.date()})"
+        f"meta_campaign_id: '{lp_meta_campaign_id}', date_range: {query_date_start}..{query_date_end})"
     )
     logger.info(
         f"[LP_ANALYTICS_DIAG] camps_pool count: {len(camps_pool)}. "
@@ -876,8 +881,8 @@ def get_landing_page_analytics(
             )
             .filter(
                 MetaAdsDailyInsight.campaign_id == matched_camp_id,
-                MetaAdsDailyInsight.date >= d_start.date(),
-                MetaAdsDailyInsight.date <= d_end.date(),
+                MetaAdsDailyInsight.date >= datetime.strptime(query_date_start, "%Y-%m-%d").date(),
+                MetaAdsDailyInsight.date <= datetime.strptime(query_date_end, "%Y-%m-%d").date(),
             )
             .first()
         )
