@@ -312,6 +312,48 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 </div>
               );
             })()}
+
+            {/* Micro-détails des Conversions Meta (Web Pixel vs Messagerie vs Totaux) */}
+            <div className="mt-3 p-3 rounded-2xl border border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-950/20 text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+              <div className="flex items-center justify-between font-bold text-emerald-700 dark:text-emerald-400">
+                <span>🎯 Ventilation des Conversions Meta Ads</span>
+                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full font-extrabold">
+                  Détail par Source Meta
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <div className="font-extrabold text-slate-900 dark:text-slate-100 flex items-center justify-between">
+                    <span>🛒 Achats Site Web (Pixel)</span>
+                    <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded">Par défaut</span>
+                  </div>
+                  <div className="text-emerald-600 dark:text-emerald-400 text-base font-black mt-1">
+                    {totals.meta_web_purchases ?? totals.meta_purchases ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                    Achats réels effectués sur votre Landing Page / Site Web captés par le Pixel.
+                  </div>
+                </div>
+                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <div className="font-extrabold text-slate-900 dark:text-slate-100">💬 Achats In-App & Messagerie</div>
+                  <div className="text-sky-600 dark:text-sky-400 text-base font-black mt-1">
+                    {totals.meta_onsite_purchases ?? 0}
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                    Conversions générées via Instant Forms, Messenger, WhatsApp ou IG Shopping.
+                  </div>
+                </div>
+                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <div className="font-extrabold text-slate-900 dark:text-slate-100">🌐 Achats Totaux Omnicanal</div>
+                  <div className="text-purple-600 dark:text-purple-400 text-base font-black mt-1">
+                    {totals.meta_omni_purchases ?? ((totals.meta_purchases ?? 0) + (totals.meta_onsite_purchases ?? 0))}
+                  </div>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                    Somme globale Meta ({(totals.meta_web_purchases ?? totals.meta_purchases ?? 0)} Web + {(totals.meta_onsite_purchases ?? 0)} Messagerie = {totals.meta_omni_purchases ?? ((totals.meta_purchases ?? 0) + (totals.meta_onsite_purchases ?? 0))}).
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Micro-détails — regroupés par question claire ("d'où viennent

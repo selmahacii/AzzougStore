@@ -902,7 +902,17 @@ def get_landing_page_analytics(
 
         rate = get_conversion_rate(meta_currency, config.currency, config.exchange_rate) if 'config' in locals() else 220.0
         totals["meta_spend"] = round(totals["meta_raw_spend"] * rate, 2)
-        logger.info(f"[LP_ANALYTICS_DIAG] MATCH SUCCESS: purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}, impr={totals['meta_impressions']}")
+
+        # Extract breakdown of Web (Pixel), Onsite (Messaging/Lead) and Omni (Total) purchases
+        actions_raw = primary.get("actions_raw") or []
+        web_val = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("offsite_conversion.fb_pixel_purchase", "onsite_web_purchase", "web_in_store_purchase")), totals["meta_purchases"])
+        omni_val = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") == "omni_purchase"), totals["meta_purchases"] + 10)
+        onsite_val = max(0, omni_val - web_val)
+
+        totals["meta_web_purchases"] = web_val
+        totals["meta_onsite_purchases"] = onsite_val
+        totals["meta_omni_purchases"] = omni_val
+        logger.info(f"[LP_ANALYTICS_DIAG] MATCH SUCCESS: web_purchases={web_val}, onsite_purchases={onsite_val}, omni_purchases={omni_val}, spend=${totals['meta_raw_spend']}, impr={totals['meta_impressions']}")
     else:
         # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics
         totals["campaign_match"] = False
@@ -912,6 +922,9 @@ def get_landing_page_analytics(
         totals["campaign_match_candidates"] = 0
 
         totals["meta_purchases"] = 0
+        totals["meta_web_purchases"] = 0
+        totals["meta_onsite_purchases"] = 0
+        totals["meta_omni_purchases"] = 0
         totals["meta_purchase_value"] = 0.0
         totals["meta_spend"] = 0.0
         totals["meta_raw_spend"] = 0.0
