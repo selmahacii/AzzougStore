@@ -790,11 +790,12 @@ def list_campaigns(
 # absent — so we must pick, not sum, to match what the user sees in Meta's
 # own UI.
 _META_PURCHASE_ACTION_PRIORITY = [
+    "offsite_conversion.fb_pixel_purchase",
+    "onsite_web_purchase",
+    "web_in_store_purchase",
     "omni_purchase",
     "purchase",
-    "offsite_conversion.fb_pixel_purchase",
     "onsite_web_app_purchase",
-    "onsite_web_purchase",
     "app_custom_event.fb_mobile_purchase",
 ]
 
