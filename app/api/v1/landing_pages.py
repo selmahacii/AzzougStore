@@ -543,6 +543,30 @@ def get_landing_page_analytics(
         )
     )
     _is_returned = Order.status == "RETURNED"
+    _is_returned_received = and_(
+        Order.status == "RETURNED",
+        or_(
+            Order.carrier_stage == "colis_retour_receptionne",
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%reception%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%station%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%agence%"),
+            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%entrepot%"),
+        )
+    )
+    _is_returned_in_transit = and_(
+        Order.status == "RETURNED",
+        not_(
+            or_(
+                Order.carrier_stage == "colis_retour_receptionne",
+                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%"),
+                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%reception%"),
+                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%station%"),
+                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%agence%"),
+                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%entrepot%"),
+            )
+        )
+    )
     _is_in_transit = and_(Order.status == "SHIPPED", not_(_is_out_for_delivery), not_(_is_suspended), not_(_is_expedition_hub), not_(_is_in_hub))
 
     rows = (
@@ -554,6 +578,8 @@ def get_landing_page_analytics(
                 (Order.status == "DELIVERED", func.coalesce(OrderItem.quantity, 1)), else_=0
             )), 0).label("delivered_items"),
             func.count(distinct(case((_is_returned, Order.id)))).label("returned"),
+            func.count(distinct(case((_is_returned_received, Order.id)))).label("returned_received"),
+            func.count(distinct(case((_is_returned_in_transit, Order.id)))).label("returned_in_transit"),
             func.coalesce(func.sum(case(
                 (_is_returned, func.coalesce(OrderItem.quantity, 1)), else_=0
             )), 0).label("returned_items"),
@@ -613,6 +639,8 @@ def get_landing_page_analytics(
             "delivered": int(r.delivered or 0) if r else 0,
             "delivered_items": int(r.delivered_items or 0) if r else 0,
             "returned": int(r.returned or 0) if r else 0,
+            "returned_received": int(r.returned_received or 0) if r else 0,
+            "returned_in_transit": int(r.returned_in_transit or 0) if r else 0,
             "returned_items": int(r.returned_items or 0) if r else 0,
             "shipped": int(r.shipped or 0) if r else 0,
             "expedition_hub": int(r.expedition_hub or 0) if r else 0,
@@ -634,6 +662,8 @@ def get_landing_page_analytics(
         "delivered": sum(d["delivered"] for d in daily),
         "delivered_items": sum(d["delivered_items"] for d in daily),
         "returned": sum(d["returned"] for d in daily),
+        "returned_received": sum(d["returned_received"] for d in daily),
+        "returned_in_transit": sum(d["returned_in_transit"] for d in daily),
         "returned_items": sum(d["returned_items"] for d in daily),
         "shipped": sum(d["shipped"] for d in daily),
         "expedition_hub": sum(d["expedition_hub"] for d in daily),
@@ -687,14 +717,11 @@ def get_landing_page_analytics(
     totals["recovered"] = int(detail_row.recovered or 0)
     totals["duplicates"] = int(detail_row.duplicates or 0)
     totals["confirmed_delivered"] = int(detail_row.confirmed_delivered or 0)
-    totals["delivered_items_total"] = int(detail_row.delivered_items_total or 0)
     totals["nrp"] = int(detail_row.nrp or 0)
     totals["nrp_abandoned"] = int(detail_row.nrp_abandoned or 0)
     totals["nrp_normal"] = max(0, totals["nrp"] - totals["nrp_abandoned"])
-    # Abandonné jamais récupéré = toujours ouvert/en cours, pas de statut final
     totals["abandoned_not_recovered"] = max(0, totals["abandoned"] - totals["recovered"])
 
-    # "Achats déclarés par Meta" for this exact product/landing page
     from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
     from sqlalchemy import or_
 
@@ -703,8 +730,8 @@ def get_landing_page_analytics(
         filters.append(MetaAdsCampaign.product_id == lp.product_id)
     if lp.slug:
         filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.slug}%"))
-    if lp.headline:
-        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.headline[:15]}%"))
+    if lp.product and lp.product.name:
+        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.product.name}%"))
 
     if filters:
         meta_campaigns = db.query(MetaAdsCampaign).filter(
@@ -718,9 +745,35 @@ def get_landing_page_analytics(
 
     from app.models.marketing import MetaAdsConfig
     meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
+
+    # Trigger live auto-sync for requested date window if config is active
+    if meta_cfg and meta_cfg.is_connected and meta_cfg.access_token and meta_cfg.ad_account_id:
+        try:
+            from app.api.v1.meta_ads import sync_meta_ads
+            # Perform defensive background/synchronous sync for the explicit date window
+            sync_meta_ads(
+                store_id=lp.store_id,
+                date_start=str(d_start.date()),
+                date_end=str(d_end.date()),
+                db=db,
+                current_user=current_user
+            )
+            # Re-fetch campaigns after sync
+            if filters:
+                meta_campaigns = db.query(MetaAdsCampaign).filter(
+                    MetaAdsCampaign.store_id == lp.store_id,
+                    or_(*filters),
+                ).all()
+            else:
+                meta_campaigns = db.query(MetaAdsCampaign).filter(
+                    MetaAdsCampaign.store_id == lp.store_id,
+                ).all()
+        except Exception as sync_err:
+            logger.debug("[Landing Page Analytics] Live Meta sync skipped: %s", sync_err)
+
     meta_currency = (
         meta_cfg.currency if (meta_cfg and meta_cfg.currency)
-        else (meta_campaigns[0].currency if (meta_campaigns and meta_campaigns[0].currency) else "DZD")
+        else (meta_campaigns[0].currency if (meta_campaigns and meta_campaigns[0].currency) else "USD")
     ).upper()
 
     _camp_ids = [c.campaign_id for c in meta_campaigns]
@@ -779,7 +832,6 @@ def get_landing_page_analytics(
     totals["meta_budget_daily"] = round(totals["meta_spend"] / days_count, 2)
     totals["meta_raw_budget_daily"] = round(totals["meta_raw_spend"] / days_count, 2)
     totals["meta_cpa_purchases"] = round(totals["meta_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
-    totals["meta_raw_cpa_purchases"] = round(totals["meta_raw_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
     totals["meta_cpa_orders"] = round(totals["meta_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
     totals["meta_raw_cpa_orders"] = round(totals["meta_raw_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
 

@@ -2154,16 +2154,32 @@ def create_order(
 
         from datetime import datetime, timezone, timedelta
 
-        # ── 5-minute strict deduplication: multi-clicks / re-submits on landing page ─────
-        # Multiple clicks or submissions within 5 minutes for the same phone number
-        # are treated as a single order attempt: return the existing order directly,
-        # creating ZERO duplicate entries in the database.
+        # ── 3-minute silent absorption window: multi-clicks / immediate re-submits (e.g. 9:05 -> 9:06) ─────
+        # Multiple clicks or submissions within 3 minutes for the same phone number
+        # are treated as the SAME single order attempt: updates the existing order in-place,
+        # ensuring is_duplicate = False (NO "Doublon" badge displayed).
+        # Submissions after 3 minutes (e.g. 9:05 -> 9:10) create a separate entry that IS
+        # flagged/merged as a duplicate for confirmatrice review.
         if order_data.get("customer_phone"):
-            phone_clean = str(order_data["customer_phone"]).strip()
-            if phone_clean and phone_clean.lower() != "inconnu":
-                _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+            raw_phone = str(order_data["customer_phone"]).strip()
+            import re
+            phone_digits = re.sub(r"\D", "", raw_phone)
+            if phone_digits.startswith("213") and len(phone_digits) >= 11:
+                phone_digits = phone_digits[3:]
+            elif phone_digits.startswith("0") and len(phone_digits) >= 10:
+                phone_digits = phone_digits[1:]
+
+            if phone_digits and len(phone_digits) >= 8:
+                try:
+                    # Integer lock key based on last 8 digits of phone to serialize parallel requests
+                    lock_key = int(phone_digits[-8:]) if phone_digits[-8:].isdigit() else (abs(hash(phone_digits)) % (2**31 - 1))
+                    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+                except Exception as lock_err:
+                    logger.debug("Advisory lock skipped/unavailable: %s", lock_err)
+
+                _idem_window = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=3)
                 _recent_query = db.query(Order).filter(
-                    Order.customer_phone == phone_clean,
+                    func.right(func.regexp_replace(Order.customer_phone, r'\D', '', 'g'), 8) == phone_digits[-8:],
                     Order.created_at >= _idem_window,
                     Order.is_deleted == False,
                     Order.status.notin_(["CANCELLED", "RETURNED"]),
@@ -2172,10 +2188,11 @@ def create_order(
                     _recent_query = _recent_query.filter(Order.store_id == order_data["store_id"])
                 _prev = _recent_query.order_by(Order.created_at.asc()).first()
                 if _prev:
-                    # Update existing draft/abandoned cart into real order instead of creating duplicate
+                    # Update existing draft/abandoned cart into real order silently (is_duplicate = False)
                     if _prev.is_abandoned_cart or _prev.status in ("ABANDONED", "NEW"):
                         _prev.status = order_data.get("status", "NEW")
                         _prev.is_abandoned_cart = False
+                        _prev.is_duplicate = False  # DO NOT flag as duplicate for fast 0-3min re-submits!
                         valid_order_cols = {c.name for c in Order.__table__.columns}
                         for k, v in order_data.items():
                             if k in valid_order_cols and k not in ("id", "order_number", "store_sequence_number") and hasattr(_prev, k):
@@ -2183,7 +2200,7 @@ def create_order(
                     
                     # Merge any other duplicate drafts for this customer
                     other_dups = db.query(Order).filter(
-                        Order.customer_phone == phone_clean,
+                        func.right(func.regexp_replace(Order.customer_phone, r'\D', '', 'g'), 8) == phone_digits[-8:],
                         Order.id != _prev.id,
                         Order.is_deleted == False,
                         Order.status != "MERGED"
@@ -2197,8 +2214,8 @@ def create_order(
                     
                     db.commit()
                     logger.info(
-                        "Deduplicated submit: phone %s submitted within 7-day window → updated existing order %s",
-                        phone_clean, _prev.order_number,
+                        "Deduplicated submit: phone %s submitted within 3-min window → updated existing order %s (is_duplicate=False)",
+                        phone_digits, _prev.order_number,
                     )
                     return _prev
 

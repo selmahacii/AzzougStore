@@ -219,21 +219,23 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             ))}
           </div>
 
-          {/* Section 1 : Suivi Logistique ERP */}
+          {/* Section 1 : Suivi Logistique ERP (Micro-détails complets) */}
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes (Micro-détails)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2">
               {[
                 { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
-                { label: 'Commandes Retournées', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#E17055' },
-                { label: 'En Expédition', value: totals.shipped ?? 0, sub: 'en transit', color: '#0984E3' },
+                { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
+                { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
                 { label: 'Expédition Hub', value: totals.expedition_hub ?? 0, sub: 'transfert hub', color: '#3B82F6' },
                 { label: 'En Hub', value: totals.in_hub ?? 0, sub: 'reçu au centre', color: '#8B5CF6' },
-                { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
-                { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
-                { label: 'Colis Suspendu', value: totals.suspended ?? 0, sub: 'bloqué / problème', color: '#F7B731' },
+                { label: 'En Transit', value: totals.shipped ?? 0, sub: 'en route', color: '#0984E3' },
+                { label: 'Colis Suspendus', value: totals.suspended ?? 0, sub: 'bloqués / problème', color: '#F7B731' },
+                { label: 'Retours Reçus', value: totals.returned_received ?? totals.returned ?? 0, sub: 'reçus en agence', color: '#D63031' },
+                { label: 'Retours En Cours', value: totals.returned_in_transit ?? 0, sub: 'demandés / transit', color: '#E17055' },
+                { label: 'Total Retours', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#B2BEC3' },
               ].map(s => (
-                <div key={s.label} className="text-center p-3 rounded-2xl border"
+                <div key={s.label} className="text-center p-2.5 rounded-2xl border transition-all hover:scale-[1.02]"
                   style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
                   <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
                   <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>

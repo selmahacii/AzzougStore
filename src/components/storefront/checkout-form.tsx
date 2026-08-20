@@ -1184,7 +1184,10 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                 <ArrowLeft className="size-4" /> {t('back')}
               </button>
               <button onClick={handleSubmit} disabled={submitting}
-                className="flex-1 h-13 flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60"
+                className={cn(
+                  "flex-1 h-13 flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60",
+                  submitting && "pointer-events-none cursor-not-allowed"
+                )}
                 style={{ backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }}>
                 {submitting
                   ? <><Loader2 className="size-4 animate-spin" /> {t('sendingOrder')}</>
