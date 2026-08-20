@@ -75,7 +75,7 @@ export function NoestRealtimeWidget() {
   const statsQuery = useQuery<NoestStats>({
     queryKey: ['noest-realtime-stats', storeId, datePeriod, startDate, endDate, filterProductId],
     queryFn: () => {
-      let url = `/api/noest/stats?store_id=${storeId}`;
+      let url = `/api/v1/noest/stats?store_id=${storeId}`;
       if (filterProductId) url += `&product_id=${filterProductId}`;
       if (datePeriod === 'CUSTOM' && startDate && endDate) {
         url += `&start_date=${startDate}&end_date=${endDate}`;
@@ -101,10 +101,10 @@ export function NoestRealtimeWidget() {
         d.setDate(d.getDate() - 30);
         url += `&start_date=${d.toISOString().slice(0, 10)}`;
       }
-      return fetch(url).then(r => r.json());
+      return apiFetch<NoestStats>(url);
     },
     enabled: !!storeId,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 
   const orderEventsQuery = useQuery<{ success: boolean; events: any[] }>({
@@ -115,18 +115,16 @@ export function NoestRealtimeWidget() {
 
   const syncMutation = useMutation({
     mutationFn: () =>
-      fetch('/api/noest/sync', {
+      apiFetch<{ success: boolean; message?: string; syncedCount?: number }>(`/api/v1/noest/sync?store_id=${storeId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: storeId }),
-      }).then(r => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['noest-realtime-stats', storeId] });
+      }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['noest-realtime-stats'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-      toast.success('Synchronisation Noest effectuée avec succès !');
+      toast.success(res?.message || 'Synchronisation Noest effectuée avec succès !');
     },
-    onError: () => {
-      toast.error('Erreur lors de la synchronisation Noest');
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erreur lors de la synchronisation Noest');
     },
   });
 

@@ -612,3 +612,22 @@ async def webhook(request: Request, db: Session = Depends(get_db)) -> Any:
                 logger.warning("Webhook Noest: transition refusée pour %s (%s): %s", tracking, new_status, exc)
 
     return {"received": True}
+
+
+# ─── POST /api/noest/sync ─────────────────────────────────────────────────────
+
+@router.post("/sync")
+async def trigger_noest_sync(
+    store_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """Manually trigger live NOEST carrier sync for a store."""
+    from app.services.noest_sync import _sync_partner
+    partner = _get_partner(db, store_id)
+    synced_count = await _sync_partner(db, partner)
+    return {
+        "success": True,
+        "message": f"Synchronisation Noest effectuée avec succès ({synced_count} commandes mises à jour) !",
+        "syncedCount": synced_count,
+    }
