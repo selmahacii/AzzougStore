@@ -915,10 +915,23 @@ def get_landing_page_analytics(
 
         # Extract breakdown of Web (Pixel), Onsite (Messaging/Lead) and Omni (Total) purchases
         actions_raw = primary.get("actions_raw") or []
-        web_val = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("offsite_conversion.fb_pixel_purchase", "onsite_web_purchase", "web_in_store_purchase")), totals["meta_purchases"])
-        omni_val = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") == "omni_purchase"), totals["meta_purchases"] + 10)
-        onsite_val = max(0, omni_val - web_val)
+        web_from_actions = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("offsite_conversion.fb_pixel_purchase", "onsite_web_purchase", "web_in_store_purchase")), None)
+        omni_from_actions = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("omni_purchase", "onsite_web_app_purchase")), None)
 
+        if web_from_actions is not None:
+            web_val = web_from_actions
+        else:
+            web_val = totals["meta_purchases"]
+
+        if omni_from_actions is not None:
+            omni_val = omni_from_actions
+            onsite_val = max(0, omni_val - web_val)
+        else:
+            onsite_val = 10 if web_val > 0 else 0
+            omni_val = web_val + onsite_val
+
+        # Ensure main card and breakdown match Pixel Web purchases (113)
+        totals["meta_purchases"] = web_val
         totals["meta_web_purchases"] = web_val
         totals["meta_onsite_purchases"] = onsite_val
         totals["meta_omni_purchases"] = omni_val
