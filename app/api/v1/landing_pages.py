@@ -741,11 +741,20 @@ def get_landing_page_analytics(
         meta_campaigns = db.query(MetaAdsCampaign).filter(
             MetaAdsCampaign.store_id == lp.store_id,
             or_(*filters),
-        ).all()
+        ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
     else:
         meta_campaigns = db.query(MetaAdsCampaign).filter(
             MetaAdsCampaign.store_id == lp.store_id,
-        ).all()
+        ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
+
+    # Keep primary matching campaign when multiple campaigns match to prevent double-counting old/draft campaigns
+    if meta_campaigns and len(meta_campaigns) > 1:
+        # Prefer exact campaign name match if available, else highest-spend active campaign
+        exact_match = [c for c in meta_campaigns if (lp.slug and lp.slug.lower() in c.campaign_name.lower()) or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())]
+        if exact_match:
+            meta_campaigns = exact_match[:1]
+        else:
+            meta_campaigns = meta_campaigns[:1]
 
     from app.models.marketing import MetaAdsConfig
     meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
@@ -762,16 +771,22 @@ def get_landing_page_analytics(
                 db=db,
                 current_user=current_user
             )
-            # Re-fetch campaigns after sync
             if filters:
                 meta_campaigns = db.query(MetaAdsCampaign).filter(
                     MetaAdsCampaign.store_id == lp.store_id,
                     or_(*filters),
-                ).all()
+                ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
             else:
                 meta_campaigns = db.query(MetaAdsCampaign).filter(
                     MetaAdsCampaign.store_id == lp.store_id,
-                ).all()
+                ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
+
+            if meta_campaigns and len(meta_campaigns) > 1:
+                exact_match = [c for c in meta_campaigns if (lp.slug and lp.slug.lower() in c.campaign_name.lower()) or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())]
+                if exact_match:
+                    meta_campaigns = exact_match[:1]
+                else:
+                    meta_campaigns = meta_campaigns[:1]
         except Exception as sync_err:
             logger.debug("[Landing Page Analytics] Live Meta sync skipped: %s", sync_err)
 
