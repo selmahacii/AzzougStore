@@ -492,10 +492,25 @@ def get_landing_page_analytics(
         except ValueError:
             pass
 
-    # Extract exact YYYY-MM-DD calendar dates for Meta Ads insights queries
-    # (prevents 1-hour UTC offset shift from regressing the start date from 01/08 to 31/07)
-    query_date_start = start_date[:10] if (start_date and len(start_date) >= 10) else d_start.strftime("%Y-%m-%d")
-    query_date_end = end_date[:10] if (end_date and len(end_date) >= 10) else d_end.strftime("%Y-%m-%d")
+    # Safely extract exact YYYY-MM-DD calendar dates for Meta Ads insights queries
+    d_start_date = d_start.date()
+    if start_date:
+        try:
+            clean_s = start_date.split("T")[0] if "T" in start_date else start_date[:10]
+            d_start_date = datetime.strptime(clean_s, "%Y-%m-%d").date()
+        except Exception:
+            d_start_date = d_start.date()
+
+    d_end_date = d_end.date()
+    if end_date:
+        try:
+            clean_e = end_date.split("T")[0] if "T" in end_date else end_date[:10]
+            d_end_date = datetime.strptime(clean_e, "%Y-%m-%d").date()
+        except Exception:
+            d_end_date = d_end.date()
+
+    query_date_start = d_start_date.strftime("%Y-%m-%d")
+    query_date_end = d_end_date.strftime("%Y-%m-%d")
 
     day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
 
@@ -881,8 +896,8 @@ def get_landing_page_analytics(
             )
             .filter(
                 MetaAdsDailyInsight.campaign_id == matched_camp_id,
-                MetaAdsDailyInsight.date >= datetime.strptime(query_date_start, "%Y-%m-%d").date(),
-                MetaAdsDailyInsight.date <= datetime.strptime(query_date_end, "%Y-%m-%d").date(),
+                MetaAdsDailyInsight.date >= d_start_date,
+                MetaAdsDailyInsight.date <= d_end_date,
             )
             .first()
         )
