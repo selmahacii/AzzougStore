@@ -432,11 +432,11 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 <button
                   type="button"
                   onClick={async () => {
-                    const res = await fetch(`/api/v1/landing-pages/${lp.id}/tracking-quality/export?format=csv&range_days=${rangeDays}`, { credentials: 'include' });
+                    const res = await fetch(`/api/v1/landing-pages/${lp.id}/tracking-quality/export?format=csv`, { credentials: 'include' });
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
-                    a.href = url; a.download = `diagnostic-${lp.slug}-${rangeDays}j.csv`;
+                    a.href = url; a.download = `diagnostic-${lp.slug}.csv`;
                     document.body.appendChild(a); a.click(); a.remove();
                     URL.revokeObjectURL(url);
                   }}
