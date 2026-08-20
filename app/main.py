@@ -784,9 +784,11 @@ include_v1(locations.router,      "locations",      ["🌍 Locations"])
 include_v1(notifications.router,  "notifications",  ["🔔 Notifications"])
 include_v1(internal.router,       "internal",       ["🛠️ Internal / Observability"])
 
-# ─── Carrier Proxies (outside /api/v1 — own prefix) ─────────────────────────
+# ─── Carrier Proxies (both /api/ and /api/v1/ prefixes for compatibility) ──
 app.include_router(yalidine_carrier.router, prefix="/api/yalidine", tags=["🚀 Yalidine"])
 app.include_router(noest_carrier.router,    prefix="/api/noest",    tags=["🟦 Noest"])
+include_v1(yalidine_carrier.router, "yalidine", ["🚀 Yalidine"])
+include_v1(noest_carrier.router,    "noest",    ["🟦 Noest"])
 
 
 # ─── Slash-Tolerant Route Aliases ────────────────────────────
