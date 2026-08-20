@@ -1357,11 +1357,8 @@ export default function DeliveryPartners() {
       )}
 
       {activeTab === 'tracking' && (
-        <div className="space-y-6">
-          <div className="max-w-3xl mx-auto">
-            <TrackingLookup storeId={activeStore?.id ?? ''} />
-          </div>
-          <CarrierOrdersList storeId={activeStore?.id ?? ''} partners={partners} />
+        <div className="w-full">
+          <TrackingLookup storeId={activeStore?.id ?? ''} />
         </div>
       )}
 

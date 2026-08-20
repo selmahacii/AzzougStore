@@ -171,7 +171,7 @@ export function NoestRealtimeWidget() {
   });
 
   return (
-    <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/50 via-slate-50/80 to-white p-5 shadow-sm space-y-5">
+    <div className="w-full rounded-[32px] border border-slate-100 bg-white p-6 sm:p-8 shadow-sm space-y-6">
       {/* Header Widget */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
