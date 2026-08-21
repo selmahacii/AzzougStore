@@ -319,6 +319,9 @@ function _clearSession(silent: boolean): void {
       description: 'Veuillez vous reconnecter.' 
     });
   }
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/lp/')) {
+    window.location.href = '/login';
+  }
 }
 
 // ─── Convenience wrappers ─────────────────────────────────────────────────────
