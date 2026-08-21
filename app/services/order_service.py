@@ -514,6 +514,8 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
         parent.is_abandoned_cart = False
         if str(parent.status) == "ABANDONED":
             parent.status = "NEW"
+        if parent.order_number and parent.order_number.startswith("ABN-"):
+            parent.order_number = parent.order_number.replace("ABN-", "ORD-")
 
     parent.is_duplicate = False
 
