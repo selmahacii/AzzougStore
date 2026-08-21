@@ -2137,10 +2137,9 @@ def create_order(
                 # touches this order's status).
                 if str(existing.status) != "MERGED":
                     try:
-                        from app.models.marketing import MetaAdsConfig
-                        meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == existing.store_id).first()
-                        if meta_config and meta_config.pixel_id and meta_config.access_token:
-                            from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+                        from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                        meta_cfg = _get_meta_config_cached(db, existing.store_id)
+                        if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                             # Durable queue: write status='queued' and COMMIT it
                             # before scheduling the background task. If the
                             # process dies right after this commit (HF
@@ -2312,10 +2311,9 @@ def create_order(
         # user_data, retries, logging, and an event_id shared with the browser
         # Pixel (purchase-{order.id}) so Meta deduplicates the two signals.
         try:
-            from app.models.marketing import MetaAdsConfig
-            meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == order.store_id).first()
-            if meta_config and meta_config.pixel_id and meta_config.access_token:
-                from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
+            from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+            meta_cfg = _get_meta_config_cached(db, order.store_id)
+            if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                 # Durable queue: the 'queued' row is written and COMMITTED
                 # here, before add_task is even scheduled — not inside the
                 # background task itself. If the HF container is killed

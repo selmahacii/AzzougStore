@@ -110,9 +110,24 @@ def _get_meta_config_cached(db: Session, store_id: str) -> Optional[Dict[str, An
         return cached[0]
 
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
-    if not config:
-        _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
-        return None
+    if not config or not config.pixel_id or not config.access_token:
+        from app.models.store import Store
+        store = db.query(Store).filter(Store.id == store_id).first()
+        m_cfg = (store.marketing_config or {}) if store else {}
+        pix = m_cfg.get("meta_pixel_id") or m_cfg.get("pixel_id")
+        tok = m_cfg.get("meta_access_token") or m_cfg.get("access_token") or m_cfg.get("fb_access_token")
+        if pix and tok:
+            snapshot = {
+                "pixel_id": str(pix),
+                "access_token": str(tok),
+                "currency": m_cfg.get("account_currency") or m_cfg.get("currency") or "DZD",
+                "exchange_rate": float(m_cfg.get("exchange_rate") or 1.0),
+            }
+            _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
+            return snapshot
+        if not config:
+            _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
+            return None
 
     snapshot = {
         "pixel_id": config.pixel_id,
