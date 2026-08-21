@@ -58,6 +58,98 @@ def inspect_meta_token(
         "updated_at": str(cfg.updated_at)
     }
 
+
+@router.get("/audit-purchases")
+def audit_meta_purchases(
+    target_date: Optional[str] = Query(None, description="Format YYYY-MM-DD, e.g. 2026-08-20"),
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Diagnostic endpoint to detect all orders matching Meta's reported Purchases for a given date.
+    Accessible via: GET /api/v1/meta/audit-purchases?target_date=2026-08-20
+    """
+    from app.models.marketing import MetaCapiLog
+    from sqlalchemy import or_
+
+    if not target_date:
+        target_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    try:
+        start_dt = datetime.strptime(f"{target_date} 00:00:00", "%Y-%m-%d %H:%M:%S")
+        end_dt = datetime.strptime(f"{target_date} 23:59:59", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        raise HTTPException(400, "Format de date invalide (utiliser YYYY-MM-DD)")
+
+    query = db.query(Order).filter(
+        Order.is_deleted == False,
+        Order.created_at >= start_dt,
+        Order.created_at <= end_dt
+    )
+    if store_id:
+        query = query.filter(Order.store_id == store_id)
+        
+    orders = query.order_by(Order.created_at.asc()).all()
+
+    capi_purchases = []
+    pixel_purchases = []
+    abandoned_drafts = []
+
+    for o in orders:
+        logs = db.query(MetaCapiLog).filter(
+            MetaCapiLog.order_id == o.id, 
+            MetaCapiLog.event_name == "Purchase"
+        ).all()
+        has_capi_purchase = len(logs) > 0
+        has_meta_ad = bool(
+            o.fbclid or o.fbc or o.fbp or 
+            (o.utm_source and "facebook" in o.utm_source.lower()) or 
+            (o.utm_campaign and "mkheda" in o.utm_campaign.lower())
+        )
+        
+        info = {
+            "n_commande": o.store_sequence_number,
+            "order_number": o.order_number,
+            "client": o.customer_name,
+            "telephone": o.customer_phone,
+            "wilaya": o.customer_wilaya,
+            "commune": o.customer_commune,
+            "statut_erp": str(o.status),
+            "fbclid": o.fbclid,
+            "created_at": o.created_at.isoformat() if o.created_at else None
+        }
+
+        if has_capi_purchase:
+            info["meta_detection"] = "CAPI_PURCHASE"
+            capi_purchases.append(info)
+        elif has_meta_ad and (o.customer_name not in (None, "Inconnu", "Client (InitiateCheckout)") or o.status in ("SHIPPED", "CONFIRMED", "DELIVERED", "RESCHEDULED", "IN_PROGRESS")):
+            info["meta_detection"] = "PIXEL_ATTRIBUTED"
+            pixel_purchases.append(info)
+        else:
+            info["meta_detection"] = "ABANDONED_DRAFT"
+            abandoned_drafts.append(info)
+
+    all_meta_purchases = capi_purchases + pixel_purchases
+
+    logger.info(
+        "[Meta Audit] Date %s | Total Meta Purchases: %d (CAPI: %d, Pixel/UTM: %d) | Total Abandoned Drafts: %d",
+        target_date, len(all_meta_purchases), len(capi_purchases), len(pixel_purchases), len(abandoned_drafts)
+    )
+
+    return {
+        "success": True,
+        "date": target_date,
+        "summary": {
+            "total_orders_day": len(orders),
+            "meta_purchases_count": len(all_meta_purchases),
+            "capi_purchases_count": len(capi_purchases),
+            "pixel_attributed_count": len(pixel_purchases),
+            "abandoned_drafts_count": len(abandoned_drafts)
+        },
+        "meta_purchases": all_meta_purchases,
+        "abandoned_drafts": abandoned_drafts
+    }
+
 # Single source of truth for the Graph API version used across every Meta
 # call in this file (Ads Insights sync + health/token/pixel checks). Was
 # previously split: Ads Insights called v18.0 (released ~Aug 2023 — outside
