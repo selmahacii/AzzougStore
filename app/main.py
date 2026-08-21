@@ -207,9 +207,18 @@ def run_db_migrations():
                 if parent and child.created_at and parent.created_at:
                     diff_sec = abs((child.created_at - parent.created_at).total_seconds())
                     if diff_sec <= 600:
-                        db_mig.query(OrderItem).filter(OrderItem.order_id == child.id).delete(synchronize_session=False)
-                        db_mig.delete(child)
-                        purged += 1
+                        from app.models.stock import StockMovement
+                        from app.models.marketing import MetaCapiLog
+                        from app.models.order import OrderEvent
+                        try:
+                            db_mig.query(StockMovement).filter(StockMovement.order_id == child.id).delete(synchronize_session=False)
+                            db_mig.query(OrderEvent).filter(OrderEvent.order_id == child.id).delete(synchronize_session=False)
+                            db_mig.query(MetaCapiLog).filter(MetaCapiLog.order_id == child.id).delete(synchronize_session=False)
+                            db_mig.query(OrderItem).filter(OrderItem.order_id == child.id).delete(synchronize_session=False)
+                            db_mig.delete(child)
+                            purged += 1
+                        except Exception as child_del_err:
+                            logger.debug("Failed to purge child duplicate %s: %s", child.id, child_del_err)
             db_mig.commit()
             print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
         finally:
