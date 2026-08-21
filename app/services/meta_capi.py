@@ -67,6 +67,7 @@ import httpcore
 import httpx
 from httpcore._backends.sync import SyncStream as _BaseSyncStream
 from sqlalchemy.orm import Session
+from app.core.config import settings as _settings
 
 logger = logging.getLogger("app.meta_capi")
 
