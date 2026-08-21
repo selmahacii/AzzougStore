@@ -2016,6 +2016,9 @@ def update_abandoned_cart(
         db.rollback()
         logger.warning("Auto-merge failed for abandoned cart %s: %s", db_order.id, merge_err)
 
+    from app.core.logging import log_order_event
+    log_order_event("DRAFT_PANIER_ABANDONNE", db_order, "Pré-saisie de téléphone ou panier abandonné capturé sur la landing page")
+
     return {"success": True, "id": db_order.id, "message": "Panier abandonné sauvegardé"}
 
 
@@ -2152,11 +2155,8 @@ def create_order(
                             # _handle_claimed_row's fallback in meta_capi.py.
                             existing.client_ip = client_ip
                             enqueue_purchase_for_order(db, existing)
-                            db.commit()
-                            logger.info(
-                                "🚀 [META CAPI DETECTION] Purchase Event Queued: order_id=%s, num=%s, client='%s' (%s)",
-                                existing.id, existing.order_number, existing.customer_name, existing.customer_phone
-                            )
+                            from app.core.logging import log_order_event
+                            log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
                             background_tasks.add_task(
                                 send_purchase_for_order,
                                 order_id=str(existing.id),

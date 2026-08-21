@@ -1046,6 +1046,9 @@ def send_events(
                         "[MetaCAPI] partial delivery: %s/%s events received (fbtrace=%s)",
                         received, len(events), data.get("fbtrace_id"),
                     )
+                if order:
+                    from app.core.logging import log_order_event
+                    log_order_event("ENVOI_META_CAPI_SUCCESS", order, f"Événement CAPI transmis avec succès à Meta (fbtrace: {data.get('fbtrace_id')})")
                 return {
                     "success": True, "events_received": received, "error": None,
                     "fbtrace_id": data.get("fbtrace_id"), "retryable": False,
