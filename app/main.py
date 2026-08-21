@@ -196,6 +196,9 @@ def run_db_migrations():
                     subtotal = sum(int(i.quantity or 1) * float(i.unit_price or 0) for i in p.items if i not in to_remove)
                     p.subtotal = int(subtotal)
                     p.total = max(0, int(subtotal) + int(p.delivery_fee or 0) - int(p.discount or 0))
+            # Auto-repair any abandoned cart draft that had status set to NEW by mistake
+            db_mig.execute(text("UPDATE orders SET status = 'ABANDONED' WHERE is_abandoned_cart = True AND (status = 'NEW' OR status IS NULL OR status = '')"))
+            
             # Delete any MERGED child orders created within 10 minutes of their parent order
             child_orders = db_mig.query(Order).filter(
                 Order.parent_order_id.isnot(None),

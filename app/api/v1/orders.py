@@ -1753,9 +1753,10 @@ def update_abandoned_cart(
     """
     from datetime import datetime, timezone, timedelta
     order_data = order_in.model_dump(exclude={"items", "abandoned_cart_id"})
-    # Set correct source
+    # Set correct source, status and flag for abandoned cart drafts
     order_data["source"] = order_in.source or "abandoned_cart"
     order_data["is_abandoned_cart"] = True
+    order_data["status"] = "ABANDONED"
 
     from app.services.inventory_service import InventoryService
     inv_svc = InventoryService()
