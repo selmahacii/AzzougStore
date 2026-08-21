@@ -207,15 +207,15 @@ def run_db_migrations():
                 if parent and child.created_at and parent.created_at:
                     diff_sec = abs((child.created_at - parent.created_at).total_seconds())
                     if diff_sec <= 600:
-                        from app.models.stock import StockMovement
-                        from app.models.marketing import MetaCapiLog
-                        from app.models.events import OrderEvent
                         try:
-                            db_mig.query(StockMovement).filter(StockMovement.order_id == child.id).delete(synchronize_session=False)
-                            db_mig.query(OrderEvent).filter(OrderEvent.order_id == child.id).delete(synchronize_session=False)
-                            db_mig.query(MetaCapiLog).filter(MetaCapiLog.order_id == child.id).delete(synchronize_session=False)
-                            db_mig.query(OrderItem).filter(OrderItem.order_id == child.id).delete(synchronize_session=False)
-                            db_mig.delete(child)
+                            child_id = str(child.id)
+                            # Unlink any orders referencing this child as parent
+                            db_mig.execute(text("UPDATE orders SET parent_order_id = NULL WHERE parent_order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM stock_movements WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM order_events WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM meta_capi_logs WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM order_items WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM orders WHERE id = :cid"), {"cid": child_id})
                             purged += 1
                         except Exception as child_del_err:
                             logger.debug("Failed to purge child duplicate %s: %s", child.id, child_del_err)
