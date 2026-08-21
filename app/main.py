@@ -209,7 +209,7 @@ def run_db_migrations():
                     if diff_sec <= 600:
                         from app.models.stock import StockMovement
                         from app.models.marketing import MetaCapiLog
-                        from app.models.order import OrderEvent
+                        from app.models.events import OrderEvent
                         try:
                             db_mig.query(StockMovement).filter(StockMovement.order_id == child.id).delete(synchronize_session=False)
                             db_mig.query(OrderEvent).filter(OrderEvent.order_id == child.id).delete(synchronize_session=False)
