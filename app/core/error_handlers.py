@@ -157,7 +157,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
             request_id, request.method, request.url.path,
             exc.status_code, exc.detail,
         )
-    else:
+    elif exc.status_code not in (404, 405):
         logger.warning(
             "HTTPException[%s] %s %s → %d: %s",
             request_id, request.method, request.url.path,
