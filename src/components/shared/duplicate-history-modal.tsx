@@ -386,35 +386,49 @@ export const DuplicateHistoryModal: React.FC<DuplicateHistoryModalProps> = ({
                       )}
 
                       {/* Items in this duplicate */}
-                      {child.items && child.items.length > 0 ? (
-                        <div className="space-y-1.5">
-                          <p className="text-[10px] font-extrabold uppercase text-slate-400">
-                            Produits de cette soumission :
-                          </p>
-                          <div className="grid gap-1.5">
-                            {child.items.map((item: any, i: number) => (
-                              <div
-                                key={i}
-                                className="text-xs bg-slate-50 p-2 rounded-lg border border-slate-200 flex items-center justify-between"
-                              >
-                                <div className="font-semibold text-slate-800">
-                                  {item.product_name || item.name || 'Produit'}
-                                  {(item.variant_title || item.variant_details) && (
-                                    <span className="text-[11px] text-slate-600 ml-1 font-bold">
-                                      ({typeof item.variant_details === 'object' ? Object.values(item.variant_details).join(' / ') : (item.variant_title || item.variant_details)})
-                                    </span>
-                                  )}
+                      {(() => {
+                        const displayItems = (child.items && child.items.length > 0)
+                          ? child.items
+                          : (child.raw_payload?.items && child.raw_payload.items.length > 0)
+                            ? child.raw_payload.items
+                            : (child.raw_payload?.product_title || child.product_title || child.total_amount)
+                              ? [{
+                                  product_name: child.raw_payload?.product_title || child.product_title || 'Article commande',
+                                  quantity: child.raw_payload?.quantity || child.quantity || 1,
+                                  unit_price: child.raw_payload?.price || child.total_amount || 0
+                                }]
+                              : [];
+
+                        return displayItems.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-extrabold uppercase text-slate-400">
+                              Produits de cette soumission :
+                            </p>
+                            <div className="grid gap-1.5">
+                              {displayItems.map((item: any, i: number) => (
+                                <div
+                                  key={i}
+                                  className="text-xs bg-slate-50 p-2 rounded-lg border border-slate-200 flex items-center justify-between"
+                                >
+                                  <div className="font-semibold text-slate-800">
+                                    {item.product_name || item.name || 'Produit'}
+                                    {(item.variant_title || item.variant_details) && (
+                                      <span className="text-[11px] text-slate-600 ml-1 font-bold">
+                                        ({typeof item.variant_details === 'object' ? Object.values(item.variant_details).join(' / ') : (item.variant_title || item.variant_details)})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="font-bold text-slate-600">
+                                    x{item.quantity || item.qty || 1} · {((item.unit_price || item.price || 0) * (item.quantity || item.qty || 1)).toLocaleString()} DA
+                                  </div>
                                 </div>
-                                <div className="font-bold text-slate-600">
-                                  x{item.quantity || item.qty || 1} · {((item.unit_price || item.price || 0) * (item.quantity || item.qty || 1)).toLocaleString()} DA
-                                </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs italic text-slate-400">Aucun détail d'article spécifique.</p>
-                      )}
+                        ) : (
+                          <p className="text-xs italic text-slate-400">Aucun détail d'article spécifique.</p>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
