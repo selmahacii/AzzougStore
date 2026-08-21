@@ -2053,6 +2053,7 @@ def create_order(
         pass
 
     try:
+        from sqlalchemy import or_
         # If this completes an abandoned cart, upgrade it instead of creating duplicate
         existing = None
         if order_in.abandoned_cart_id:
