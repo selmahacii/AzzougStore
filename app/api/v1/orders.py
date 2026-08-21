@@ -2050,19 +2050,29 @@ def create_order(
 
     try:
         # If this completes an abandoned cart, upgrade it instead of creating duplicate
+        existing = None
         if order_in.abandoned_cart_id:
             existing = db.query(Order).filter(Order.id == order_in.abandoned_cart_id).first()
-            if existing and existing.status == "ABANDONED":
-                for key, value in order_data.items():
-                    if key not in ["id", "status", "source", "is_abandoned_cart"]:
-                        setattr(existing, key, value)
-                
-                existing.status = "NEW"
-                existing.source = order_in.source or "storefront"  # they checked out themselves
-                # The customer completed the checkout THEMSELVES → this is a
-                # real NORMAL order, not a recovered cart (no confirmatrice
-                # recovery happened). The type badge must say Normal.
-                existing.is_abandoned_cart = False
+        if not existing and order_in.customer_phone:
+            existing = db.query(Order).filter(
+                Order.customer_phone == order_in.customer_phone,
+                or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
+                Order.is_deleted == False
+            ).order_by(Order.created_at.desc()).first()
+
+        if existing and (existing.status == "ABANDONED" or existing.is_abandoned_cart):
+            for key, value in order_data.items():
+                if key not in ["id", "status", "source", "is_abandoned_cart"]:
+                    setattr(existing, key, value)
+            
+            existing.status = "NEW"
+            existing.source = order_in.source or "storefront"  # they checked out themselves
+            # The customer completed the checkout THEMSELVES → this is a
+            # real NORMAL order, not a recovered cart (no confirmatrice
+            # recovery happened). The type badge must say Normal.
+            existing.is_abandoned_cart = False
+            if existing.order_number and existing.order_number.startswith("ABN-"):
+                existing.order_number = existing.order_number.replace("ABN-", "ORD-")
 
                 # Release old reservations
                 from app.services.inventory_service import InventoryService
