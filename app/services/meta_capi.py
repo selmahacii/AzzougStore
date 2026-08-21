@@ -956,8 +956,9 @@ def send_events(
     # When a relay is configured (backend host can't reach Meta directly, e.g.
     # HuggingFace's TLS block), post to the Vercel relay which forwards to Meta
     # from a network that isn't blocked. Otherwise post to Meta directly.
-    from app.core.config import settings as _settings
     relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
+    if relay_url.startswith("https://azghub.com/"):
+        relay_url = relay_url.replace("https://azghub.com/", "https://www.azghub.com/", 1)
 
     if relay_url:
         url = relay_url

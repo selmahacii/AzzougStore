@@ -174,6 +174,8 @@ def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0
     from app.core.config import settings as _settings
 
     relay_url = (getattr(_settings, "META_CAPI_RELAY_URL", "") or "").strip()
+    if relay_url.startswith("https://azghub.com/"):
+        relay_url = relay_url.replace("https://azghub.com/", "https://www.azghub.com/", 1)
     if relay_url:
         resp = httpx.post(
             relay_url,
@@ -1130,11 +1132,11 @@ def sync_meta_ads(
                 campaigns_data = []
                 for rc in raw_camps:
                     meta_purchases, meta_purchase_value = _extract_meta_purchases(rc)
-                    logger.info(
+                    logger.debug(
                         f"[META_INSIGHTS_DIAG] account_id={ad_account_id} campaign_id={rc.get('campaign_id')} "
                         f"campaign_name='{rc.get('campaign_name')}' date_start={rc.get('date_start')} date_stop={rc.get('date_stop')} "
                         f"spend={rc.get('spend')} impressions={rc.get('impressions')} reach={rc.get('reach')} clicks={rc.get('clicks')} "
-                        f"actions={rc.get('actions')} action_values={rc.get('action_values')} meta_purchases={meta_purchases}"
+                        f"meta_purchases={meta_purchases}"
                     )
                     campaigns_data.append({
                         "campaign_id": rc.get("campaign_id"),
