@@ -2070,56 +2070,60 @@ def create_order(
             # The customer completed the checkout THEMSELVES → this is a
             # real NORMAL order, not a recovered cart (no confirmatrice
             # recovery happened). The type badge must say Normal.
-            existing.is_abandoned_cart = False
             if existing.order_number and existing.order_number.startswith("ABN-"):
                 existing.order_number = existing.order_number.replace("ABN-", "ORD-")
 
-                # Release old reservations
-                from app.services.inventory_service import InventoryService
-                inv_svc = InventoryService()
-                for old_item in existing.items:
-                    try:
-                        inv_svc.release_reservation(
-                            db,
-                            product_id=old_item.product_id,
-                            quantity=old_item.quantity,
-                            order_id=existing.id,
-                            variant_details=old_item.variant_details
-                        )
-                    except Exception as exc:
-                        logger.warning(f"Could not release reservation for upgrading abandoned cart {existing.id}: {exc}")
-                
-                db.query(OrderItem).filter(OrderItem.order_id == existing.id).delete()
-                for i_data in items:
-                    db_item = OrderItem(
-                        id=str(uuid.uuid4()) if not i_data.get("id") else i_data["id"],
-                        order_id=existing.id,
-                        **{k: v for k, v in i_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
-                    )
-                    db.add(db_item)
-                    
-                    # Reserve new stock
-                    try:
-                        inv_svc.reserve_stock(
-                            db,
-                            product_id=db_item.product_id,
-                            quantity=db_item.quantity,
-                            order_id=existing.id,
-                            variant_details=db_item.variant_details
-                        )
-                    except Exception as exc:
-                        logger.warning(f"Could not reserve stock for upgrading abandoned cart {existing.id}: {exc}")
-                    
-                db.commit()
-                db.refresh(existing)
+            logger.info(
+                "🟢 [ORDER DETECTION] Upgrade Draft -> Normal Order: order_id=%s, num=%s, client='%s' (%s), is_abandoned_cart=False, status=NEW",
+                existing.id, existing.order_number, existing.customer_name, existing.customer_phone
+            )
 
+            # Release old reservations
+            from app.services.inventory_service import InventoryService
+            inv_svc = InventoryService()
+            for old_item in existing.items:
                 try:
-                    if auto_merge_duplicates(db, existing, actor_id=actor_id):
-                        db.commit()
-                        db.refresh(existing)
-                except Exception as merge_err:
-                    db.rollback()
-                    logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
+                    inv_svc.release_reservation(
+                        db,
+                        product_id=old_item.product_id,
+                        quantity=old_item.quantity,
+                        order_id=existing.id,
+                        variant_details=old_item.variant_details
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not release reservation for upgrading abandoned cart {existing.id}: {exc}")
+            
+            db.query(OrderItem).filter(OrderItem.order_id == existing.id).delete()
+            for i_data in items:
+                db_item = OrderItem(
+                    id=str(uuid.uuid4()) if not i_data.get("id") else i_data["id"],
+                    order_id=existing.id,
+                    **{k: v for k, v in i_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
+                )
+                db.add(db_item)
+                
+                # Reserve new stock
+                try:
+                    inv_svc.reserve_stock(
+                        db,
+                        product_id=db_item.product_id,
+                        quantity=db_item.quantity,
+                        order_id=existing.id,
+                        variant_details=db_item.variant_details
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not reserve stock for upgrading abandoned cart {existing.id}: {exc}")
+                
+            db.commit()
+            db.refresh(existing)
+
+            try:
+                if auto_merge_duplicates(db, existing, actor_id=actor_id):
+                    db.commit()
+                    db.refresh(existing)
+            except Exception as merge_err:
+                db.rollback()
+                logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
 
                 # The customer just completed checkout THEMSELVES from an
                 # abandoned-cart link — this is a genuine sale, exactly like a
@@ -2147,9 +2151,12 @@ def create_order(
                             # same Purchase can still recover them — see
                             # _handle_claimed_row's fallback in meta_capi.py.
                             existing.client_ip = client_ip
-                            existing.client_user_agent = user_agent
                             enqueue_purchase_for_order(db, existing)
                             db.commit()
+                            logger.info(
+                                "🚀 [META CAPI DETECTION] Purchase Event Queued: order_id=%s, num=%s, client='%s' (%s)",
+                                existing.id, existing.order_number, existing.customer_name, existing.customer_phone
+                            )
                             background_tasks.add_task(
                                 send_purchase_for_order,
                                 order_id=str(existing.id),
