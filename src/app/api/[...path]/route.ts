@@ -171,6 +171,9 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
       headers: resHeaders,
     });
   } catch (error: any) {
+    if (error?.name === 'AbortError' || error?.code === 20) {
+      return new NextResponse(null, { status: 499, statusText: 'Client Closed Request' });
+    }
     console.error(`[API Proxy Error] failed to proxy /api/${path.join('/')}:`, error);
     return NextResponse.json(
       { 
