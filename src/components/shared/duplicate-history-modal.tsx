@@ -45,11 +45,15 @@ interface DuplicateOrder {
   status: string;
   status_before_merge?: string | null;
   total?: number | null;
+  total_amount?: number | null;
   delivery_fee?: number | null;
   created_at?: string;
   merged_at?: string;
   merged_by?: string;
   items?: OrderItem[];
+  product_title?: string;
+  quantity?: number;
+  raw_payload?: any;
   notes?: string;
   tracking_number?: string;
 }
