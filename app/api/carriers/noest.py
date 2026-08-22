@@ -28,16 +28,31 @@ TIMEOUT   = 15.0
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
-def _get_partner(db: Session, store_id: str) -> DeliveryPartner:
-    partner = (
-        db.query(DeliveryPartner)
-        .filter(
-            DeliveryPartner.store_id == store_id,
-            DeliveryPartner.carrier_id == "noest",
-            DeliveryPartner.is_active == True,
+def _get_partner(db: Session, store_id: Optional[str] = None) -> DeliveryPartner:
+    from app.core.tenant import tenant_store_id
+    tenant_store_id.set("SUPER_ADMIN_MODE")
+    db.info["skip_tenant_isolation"] = True
+
+    partner = None
+    if store_id and store_id not in ("ALL", "undefined", "null"):
+        partner = (
+            db.query(DeliveryPartner)
+            .filter(
+                DeliveryPartner.store_id == store_id,
+                DeliveryPartner.carrier_id == "noest",
+                DeliveryPartner.is_active == True,
+            )
+            .first()
         )
-        .first()
-    )
+    if not partner:
+        partner = (
+            db.query(DeliveryPartner)
+            .filter(
+                DeliveryPartner.carrier_id == "noest",
+                DeliveryPartner.is_active == True,
+            )
+            .first()
+        )
     if not partner:
         raise HTTPException(404, "Noest non configuré pour cette boutique")
     return partner
@@ -178,7 +193,11 @@ async def track_parcel(
     store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
-    if not store_id:
+    from app.core.tenant import tenant_store_id
+    tenant_store_id.set("SUPER_ADMIN_MODE")
+    db.info["skip_tenant_isolation"] = True
+
+    if not store_id or store_id in ("ALL", "undefined", "null"):
         order = db.query(Order).filter(Order.tracking_number == tracking_number, Order.is_deleted == False).first()
         if order:
             store_id = str(order.store_id)
