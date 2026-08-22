@@ -317,6 +317,17 @@ def merge_child_into_parent(
     child.merged_at = datetime.now(timezone.utc).replace(tzinfo=None)
     child.is_duplicate = True
 
+    # Inherit Meta Attribution & CAPI parameters from child if parent lacks them
+    attribution_fields = [
+        "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+        "campaign_id", "adset_id", "ad_id", "campaign_name", "adset_name", "ad_name",
+        "placement", "site_source_name", "fbclid", "fbp", "fbc", "pixel_id",
+        "client_ip", "client_user_agent", "user_agent", "ip_address", "event_source_url", "landing_url"
+    ]
+    for attr in attribution_fields:
+        if not getattr(parent, attr, None) and getattr(child, attr, None):
+            setattr(parent, attr, getattr(child, attr))
+
     for item in list(child.items or []):
         for sub in _expand_order_item(item):
             qty = int(sub.get("quantity") or 0)
