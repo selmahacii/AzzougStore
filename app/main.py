@@ -880,3 +880,40 @@ def verify_domain(domain: str = Query(...)):
         return Response(status_code=403, content="Domain not authorized")
     finally:
         db.close()
+
+
+@app.get("/api/v1/system/env", tags=["🛠️ Internal / Observability"])
+@app.get("/api/env", tags=["🛠️ Internal / Observability"])
+def get_system_env():
+    """
+    Public environment detector endpoint for Vercel Frontend Migration.
+    Returns all required environment variables for Next.js deployment.
+    """
+    import os
+    backend_url = os.getenv("BACKEND_URL") or "https://azconfort.azghub.com"
+    public_api_url = os.getenv("NEXT_PUBLIC_API_URL") or "https://azconfort.azghub.com"
+    app_url = os.getenv("NEXT_PUBLIC_APP_URL") or os.getenv("APP_URL") or "https://azzougshop.vercel.app"
+    internal_key = os.getenv("INTERNAL_API_KEY") or getattr(settings, "INTERNAL_API_KEY", "azzougshop_internal_secure_key_2026")
+    secret_key = os.getenv("SECRET_KEY") or getattr(settings, "SECRET_KEY", "")
+
+    return {
+        "success": True,
+        "message": "Variables d'environnement AzzougShop pour migration Vercel",
+        "frontend_env": {
+            "BACKEND_URL": backend_url,
+            "NEXT_PUBLIC_API_URL": public_api_url,
+            "NEXT_PUBLIC_APP_URL": app_url,
+            "INTERNAL_API_KEY": internal_key,
+            "SECRET_KEY": secret_key,
+            "NODE_ENV": "production"
+        },
+        "vercel_copy_paste": (
+            f"# AZZOUGSHOP — VERCEL FRONTEND ENV VARIABLES\n"
+            f'BACKEND_URL="{backend_url}"\n'
+            f'NEXT_PUBLIC_API_URL="{public_api_url}"\n'
+            f'NEXT_PUBLIC_APP_URL="{app_url}"\n'
+            f'INTERNAL_API_KEY="{internal_key}"\n'
+            f'SECRET_KEY="{secret_key}"\n'
+            f'NODE_ENV="production"'
+        )
+    }
