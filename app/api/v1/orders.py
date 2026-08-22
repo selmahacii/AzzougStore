@@ -5195,15 +5195,16 @@ def backfill_missing_capi(
     )
     cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - timedelta(days=META_CAPI_EVENT_TIME_WINDOW_DAYS)
     q = db.query(Order).filter(
-        Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
         Order.is_deleted == False,
         sqlfunc.coalesce(Order.source, "") != "MANUAL",
         sqlfunc.coalesce(Order.source, "") != "POS",
-        Order.created_at >= cutoff,  # hors de cette fenêtre = Meta rejette l'event_time réel, non contournable
+        Order.created_at >= cutoff,
         ~capi_success_exists,
     )
     if order_ids:
         q = q.filter(Order.id.in_(order_ids))
+    else:
+        q = q.filter(Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")))
     targets = q.limit(500).all()
     analyzed = len(targets)
 
