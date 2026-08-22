@@ -74,14 +74,17 @@ async def get_noest_stats(
     end_date: Optional[str] = Query(None),
     product_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
 ) -> Any:
     """Return real-time Noest tracking stats & active count for a store."""
     from datetime import datetime, timezone
     from app.models.order import Order, OrderItem
     from app.core.dates import parse_local_date_filter
+    from app.core.tenant import tenant_store_id
     from sqlalchemy.orm import joinedload
     from sqlalchemy import and_
 
+    tenant_store_id.set("SUPER_ADMIN_MODE")
     db.info["skip_tenant_isolation"] = True
 
     filters = [
