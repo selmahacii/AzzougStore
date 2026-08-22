@@ -69,7 +69,7 @@ def _headers(token: str) -> dict:
 
 @router.get("/stats")
 async def get_noest_stats(
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     product_id: Optional[str] = Query(None),
@@ -80,13 +80,19 @@ async def get_noest_stats(
     from app.models.order import Order, OrderItem
     from app.core.dates import parse_local_date_filter
     from sqlalchemy.orm import joinedload
+    from sqlalchemy import and_
 
-    q = db.query(Order).filter(
-        Order.store_id == store_id,
+    db.info["skip_tenant_isolation"] = True
+
+    filters = [
         Order.tracking_number.isnot(None),
         Order.tracking_number != "",
         Order.is_deleted == False,
-    )
+    ]
+    if store_id and store_id not in ("ALL", "undefined", "null"):
+        filters.append(Order.store_id == store_id)
+
+    q = db.query(Order).filter(and_(*filters))
 
     if start_date:
         try:
