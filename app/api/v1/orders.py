@@ -1642,18 +1642,24 @@ def list_orders(
             .exists()
         )
     if search:
-        from sqlalchemy import or_
-        query = query.filter(
-            or_(
-                Order.customer_name.ilike(f"%{search}%"),
-                Order.customer_phone.ilike(f"%{search}%"),
-                Order.order_number.ilike(f"%{search}%"),
-                Order.tracking_number.ilike(f"%{search}%"),
-                db.query(OrderItem.id)
-                .filter(OrderItem.order_id == Order.id, OrderItem.product_name.ilike(f"%{search}%"))
-                .exists(),
-            )
-        )
+        from sqlalchemy import or_, cast, String
+        clean_search = search.strip().replace("N°", "").replace("n°", "").strip()
+        search_terms = [
+            Order.customer_name.ilike(f"%{clean_search}%"),
+            Order.customer_phone.ilike(f"%{clean_search}%"),
+            Order.customer_phone2.ilike(f"%{clean_search}%"),
+            Order.order_number.ilike(f"%{clean_search}%"),
+            Order.tracking_number.ilike(f"%{clean_search}%"),
+            Order.customer_wilaya.ilike(f"%{clean_search}%"),
+            Order.customer_commune.ilike(f"%{clean_search}%"),
+            db.query(OrderItem.id)
+            .filter(OrderItem.order_id == Order.id, OrderItem.product_name.ilike(f"%{clean_search}%"))
+            .exists(),
+        ]
+        if clean_search.isdigit():
+            search_terms.append(Order.store_sequence_number == int(clean_search))
+
+        query = query.filter(or_(*search_terms))
     if start_date:
         from app.core.dates import parse_local_date_filter
         try:

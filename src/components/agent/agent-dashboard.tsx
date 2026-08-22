@@ -2277,13 +2277,164 @@ export default function AgentDashboard() {
     staleTime: 60 * 1000,
     refetchInterval: 180000,
     refetchIntervalInBackground: false,
+  // ─── Global cross-module live search across ALL orders, statuses, dates & stores ───
+  const globalSearchQuery = useQuery({
+    queryKey: ['agent-global-search', search.trim(), showAllStores, activeStore?.id],
+    queryFn: async () => {
+      const q = search.trim();
+      if (!q || q.length < 2) return [];
+      let url = `/api/v1/orders?search=${encodeURIComponent(q)}&pageSize=30`;
+      if (!showAllStores && activeStore?.id) {
+        url += `&store_id=${activeStore.id}`;
+      }
+      const res = await apiFetch<{ data: Order[] }>(url, { allStores: true });
+      return res?.data || [];
+    },
+    enabled: search.trim().length >= 2,
+    staleTime: 5 * 1000,
   });
 
-  let filteredOrders = (ordersQuery.data?.data ?? []).filter(o => 
-    o.order_number.toLowerCase().includes(search.toLowerCase()) ||
-    o.customer_name.toLowerCase().includes(search.toLowerCase()) ||
-    o.customer_phone.includes(search)
-  );
+  const searchResults = globalSearchQuery.data || [];
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'NEW':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">🟡 Nouvelle</span>;
+      case 'ASSIGNED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">🔵 Assignée</span>;
+      case 'CALLED':
+      case 'IN_PROGRESS':
+      case 'RESCHEDULED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">🟣 En cours</span>;
+      case 'CONFIRMED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">🟢 Confirmée</span>;
+      case 'SHIPPED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">📦 En livraison</span>;
+      case 'DELIVERED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-green-500 text-white shadow-xs">💚 Livrée (COD)</span>;
+      case 'CANCELLED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">🔴 Annulée</span>;
+      case 'RETURNED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">🟠 Retournée</span>;
+      case 'ABANDONED':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">🛒 Panier Abandonné</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">{status}</span>;
+    }
+  };
+
+  const getOrderTypeBadge = (order: Order) => {
+    if (order.is_store_pickup) {
+      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">🏪 Retrait Magasin</span>;
+    }
+    if (order.is_abandoned_cart) {
+      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">🛒 Panier Abandonné</span>;
+    }
+    if (order.is_upsell) {
+      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">⚡ Upsell</span>;
+    }
+    return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-slate-100 text-slate-600">🟦 Normale</span>;
+  };
+
+  const renderSearchResultsOverlay = () => {
+    if (search.trim().length < 2) return null;
+
+    return (
+      <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden max-h-[500px] flex flex-col">
+        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Search className="size-3.5 text-indigo-600 animate-pulse" />
+            <span className="text-xs font-bold text-slate-800">
+              Recherche globale : <span className="text-indigo-600">"{search}"</span>
+            </span>
+          </div>
+          {globalSearchQuery.isFetching ? (
+            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+              <RefreshCw className="size-3 animate-spin" /> Recherche...
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-full">
+              {searchResults.length} résultat(s)
+            </span>
+          )}
+        </div>
+
+        <div className="overflow-y-auto divide-y divide-slate-100 max-h-[440px]">
+          {globalSearchQuery.isFetching && searchResults.length === 0 ? (
+            <div className="p-6 text-center text-slate-400">
+              <RefreshCw className="size-5 animate-spin mx-auto mb-2 text-indigo-500" />
+              <p className="text-xs font-semibold">Recherche en cours dans tous les modules...</p>
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="p-6 text-center text-slate-400">
+              <p className="text-xs font-bold text-slate-600">Aucune commande trouvée</p>
+              <p className="text-[11px] text-slate-400 mt-1">Vérifiez le nom, téléphone ou numéro de commande (N°812).</p>
+            </div>
+          ) : (
+            searchResults.map((ord: Order) => (
+              <div
+                key={ord.id}
+                onClick={() => {
+                  setSelectedOrder(ord);
+                  setSearch('');
+                }}
+                className="p-3.5 hover:bg-indigo-50/50 cursor-pointer transition-colors flex items-center justify-between gap-3 group"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      {ord.order_number} {ord.store_sequence_number ? `(N°${ord.store_sequence_number})` : ''}
+                    </span>
+                    {getOrderTypeBadge(ord)}
+                    {getStatusBadge(ord.status)}
+                    {ord.store?.name && (
+                      <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
+                        {ord.store.name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                    <span className="font-bold text-slate-900">{ord.customer_name || 'Client sans nom'}</span>
+                    <span className="text-slate-400">•</span>
+                    <span className="font-mono text-indigo-600">{ord.customer_phone}</span>
+                    {ord.customer_wilaya && (
+                      <>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-slate-500">{ord.customer_wilaya}</span>
+                      </>
+                    )}
+                  </div>
+                  {ord.items && ord.items.length > 0 && (
+                    <p className="text-[11px] text-slate-500 truncate">
+                      📦 {ord.items.map(i => `${i.product_name} (x${i.quantity})`).join(', ')}
+                    </p>
+                  )}
+                </div>
+
+                <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                  <span className="text-xs font-black text-slate-900">
+                    {(ord.total || 0).toLocaleString()} DA
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 group-hover:underline flex items-center gap-1">
+                    Ouvrir &rarr;
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  let filteredOrders = search.trim().length >= 2 && searchResults.length > 0
+    ? searchResults
+    : (ordersQuery.data?.data ?? []).filter(o => 
+        o.order_number.toLowerCase().includes(search.toLowerCase()) ||
+        o.customer_name.toLowerCase().includes(search.toLowerCase()) ||
+        o.customer_phone.includes(search) ||
+        (o.store_sequence_number && String(o.store_sequence_number).includes(search))
+      );
 
   const phoneCounts = (ordersQuery.data?.data ?? []).reduce((acc: any, o: any) => {
     acc[o.customer_phone] = (acc[o.customer_phone] || 0) + 1;
@@ -2642,8 +2793,23 @@ export default function AgentDashboard() {
                    <Menu className="size-5" />
                 </button>
                 <div className="relative w-full max-w-md hidden sm:block">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-                  <Input placeholder="Rechercher..." className="pl-10 h-9 bg-slate-50 border-none shadow-none text-xs rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 z-10" />
+                  <Input
+                    placeholder="Recherche globale (nom, n° N°812, tel, produit)..."
+                    className="pl-10 pr-8 h-9 bg-slate-50 border-none shadow-none text-xs rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  {search.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 z-10"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                  {renderSearchResultsOverlay()}
                 </div>
                 
                 {/* On Desktop, show the toggle here */}
