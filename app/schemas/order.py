@@ -328,6 +328,7 @@ class OrderInfoUpdate(BaseModel):
     is_upsell: Optional[bool] = None
     is_abandoned_cart: Optional[bool] = None
     abandoned_cart_recovery_fee: Optional[int] = None
+    created_at: Optional[datetime] = None
     carrier_id: Optional[str] = None
     delivery_type: Optional[str] = None
     items: Optional[List[dict]] = None
