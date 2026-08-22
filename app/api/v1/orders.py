@@ -5194,17 +5194,17 @@ def backfill_missing_capi(
         MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
     )
     cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - timedelta(days=META_CAPI_EVENT_TIME_WINDOW_DAYS)
-    q = db.query(Order).filter(
-        Order.is_deleted == False,
-        sqlfunc.coalesce(Order.source, "") != "MANUAL",
-        sqlfunc.coalesce(Order.source, "") != "POS",
-        Order.created_at >= cutoff,
-        ~capi_success_exists,
-    )
     if order_ids:
-        q = q.filter(Order.id.in_(order_ids))
+        q = db.query(Order).filter(Order.id.in_(order_ids), Order.is_deleted == False)
     else:
-        q = q.filter(Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")))
+        q = db.query(Order).filter(
+            Order.is_deleted == False,
+            sqlfunc.coalesce(Order.source, "") != "MANUAL",
+            sqlfunc.coalesce(Order.source, "") != "POS",
+            Order.created_at >= cutoff,
+            Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")),
+            ~capi_success_exists,
+        )
     targets = q.limit(500).all()
     analyzed = len(targets)
 
