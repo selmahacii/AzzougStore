@@ -2786,6 +2786,24 @@ async def upload_delivery_proof(
     return {"success": True, "url": url}
 
 
+@router.post("/{id}/override-created-at", response_model=dict)
+def override_order_created_at(
+    id: str,
+    created_at_iso: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    from datetime import datetime as _dt_override
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="Non autorisé")
+    order = db.query(Order).filter(Order.id == id, Order.is_deleted == False).first()
+    if not order:
+        raise OrderNotFoundError()
+    order.created_at = _dt_override.fromisoformat(created_at_iso)
+    db.commit()
+    return {"success": True, "order_id": order.id, "created_at": order.created_at.isoformat()}
+
+
 @router.get("/{id}/delivery-proof", response_model=dict)
 def get_delivery_proofs(
     id: str,
