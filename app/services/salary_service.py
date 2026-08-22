@@ -285,12 +285,13 @@ def _count_normal_delivered(
     """
     store_filter = _build_store_filter(db, user_id, store_id)
 
+    from sqlalchemy import or_
     filters = [
         store_filter,
         Order.assigned_to       == user_id,
         Order.status            == "DELIVERED",
-        Order.is_abandoned_cart == False,
-        Order.is_marketplace_upsell == False,
+        or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)),
+        or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until, date_by=date_by)
 
@@ -448,8 +449,10 @@ def _sum_frozen_amount(
         Order.status == status,
         Order.is_deleted == False,
     ] + _build_time_filters(since, until, date_by=date_by)
-    if is_abandoned_cart is not None:
-        filters.append(Order.is_abandoned_cart == is_abandoned_cart)
+    if is_abandoned_cart is False:
+        filters.append(or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)))
+    elif is_abandoned_cart is True:
+        filters.append(Order.is_abandoned_cart == True)
     if is_upsell is not None:
         filters.append(Order.is_upsell == is_upsell)
     if is_marketplace_upsell is not None:
