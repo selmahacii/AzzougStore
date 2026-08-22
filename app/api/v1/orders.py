@@ -3456,6 +3456,13 @@ def update_order_info(
     for field, value in data.items():
         if field == "items":
             continue
+        if field == "created_at" and value is not None:
+            if isinstance(value, str):
+                from datetime import datetime as _dt_p
+                value = _dt_p.fromisoformat(value.replace("Z", ""))
+            setattr(order, "created_at", value)
+            changed_fields.append(f"date de création (modifiée vers {value})")
+            continue
         if hasattr(order, field):
             old_val = getattr(order, field)
             if old_val != value:
