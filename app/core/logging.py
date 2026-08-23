@@ -213,3 +213,151 @@ def log_order_event(event_type: str, order: Any, note: str = "") -> None:
         )
 
 
+def log_landing_page_diagnostic(
+    lp: Any,
+    health_score: int,
+    health_badge: str,
+    overview_kpis: Dict[str, Any],
+    meta_data: Dict[str, Any],
+    quality_data: Dict[str, Any],
+    smart_alerts: List[Dict[str, Any]],
+    period_str: str = "7 derniers jours",
+) -> None:
+    """
+    High-visibility structured diagnostic log with emoji badges highlighting:
+    - Overall Landing Page Health Score & Performance
+    - Exact tracking status (Pixel, CAPI, Meta campaign matching)
+    - Detailed anomalies, root causes & concrete corrective actions to fix the landing page.
+    """
+    if not lp:
+        return
+
+    lp_logger = logging.getLogger("app.landing_pages")
+
+    # Determine Badge Severity
+    has_critical = any(str(a.get("severity", "")).lower() == "critical" for a in smart_alerts)
+    has_warning = any(str(a.get("severity", "")).lower() == "warning" for a in smart_alerts)
+
+    if has_critical or health_score < 50:
+        badge_header = "🔴 [DIAGNOSTIC CRITIQUE LANDING PAGE]"
+        badge_icon = "🔴"
+    elif has_warning or health_score < 75:
+        badge_header = "🟠 [DIAGNOSTIC ATTENTION LANDING PAGE]"
+        badge_icon = "🟠"
+    elif health_score < 85:
+        badge_header = "🟡 [DIAGNOSTIC MODÉRÉ LANDING PAGE]"
+        badge_icon = "🟡"
+    else:
+        badge_header = "🟢 [DIAGNOSTIC OPTIMAL LANDING PAGE]"
+        badge_icon = "🟢"
+
+    lp_name = getattr(lp, "headline", None) or getattr(lp, "product_name", None) or getattr(lp, "slug", "Landing Page")
+    slug = getattr(lp, "slug", "—")
+    lp_id = getattr(lp, "id", "—")
+    store_id = getattr(lp, "store_id", "—")
+    is_active = getattr(lp, "is_active", True)
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # KPI extracts
+    orders_info = overview_kpis.get("orders", {})
+    cr_info = overview_kpis.get("conversion_rate", {})
+    recovered_info = overview_kpis.get("recovered_carts", {})
+    delivered_info = overview_kpis.get("delivered", {})
+    returned_info = overview_kpis.get("returned", {})
+    shipped_info = overview_kpis.get("shipped", {})
+
+    total_orders = orders_info.get("value", 0)
+    sessions = cr_info.get("sessions_count", 0)
+    cr_str = cr_info.get("formatted", "—")
+    recovered_count = recovered_info.get("recovered_count", 0)
+    abandoned_count = recovered_info.get("abandoned_count", 0)
+    rec_rate_str = recovered_info.get("formatted_rate", "—")
+
+    shipped_count = shipped_info.get("shipped_count", 0)
+    with_tracking = shipped_info.get("with_tracking_count", 0)
+    delivered_count = delivered_info.get("value", 0)
+    returned_count = returned_info.get("value", 0)
+
+    # Tracking & Meta Status
+    tracking_status = quality_data.get("tracking_status", {})
+    pixel_configured = tracking_status.get("meta_pixel_configured", False)
+    pixel_id = quality_data.get("meta_config", {}).get("meta_pixel_id")
+    capi_active = tracking_status.get("meta_capi_active", False)
+
+    pixel_display = f"✅ Configuré (ID: {pixel_id})" if pixel_configured else "❌ Non configuré"
+    capi_display = "✅ Actif (Conversions API Connectée)" if capi_active else "❌ Inactif / Token non renseigné"
+
+    if meta_data.get("is_available"):
+        meta_display = f"✅ Liée déterministe ({meta_data.get('campaign_name')} | {meta_data.get('purchases', 0)} achats déclarés Meta)"
+    else:
+        meta_display = f"⚠️ {meta_data.get('reason', 'Campagne non liée')}"
+
+    # Build Diagnostic lines
+    alert_lines = []
+    if not is_active:
+        alert_lines.append(
+            "      🔴 [PAGE DÉSACTIVÉE] La Landing Page est hors-ligne\n"
+            "         ↳ 🔍 Cause Détectée  : is_active=False — Aucun acheteur ne peut accéder au tunnel d'achat.\n"
+            "         ↳ 🛠️ Action à Poser  : Réactiver la landing page depuis le tableau de bord Admin."
+        )
+
+    if smart_alerts:
+        for alert in smart_alerts:
+            icon = alert.get("icon", "⚠️")
+            sev = str(alert.get("severity", "warning")).upper()
+            title = alert.get("title", "")
+            desc = alert.get("description", "")
+            action = alert.get("action", "")
+            alert_lines.append(
+                f"      {icon} [{sev}] {title}\n"
+                f"         ↳ 🔍 Cause Détectée  : {desc}\n"
+                f"         ↳ 🛠️ Action à Poser  : {action}"
+            )
+    elif is_active:
+        alert_lines.append(
+            "      ✅ [STATUT OPTIMAL] Aucun problème détecté sur cette Landing Page.\n"
+            "         ↳ Tous les indicateurs de conversion, tracking CAPI et logistique sont équilibrés."
+        )
+
+    alerts_formatted = "\n\n".join(alert_lines)
+
+    recom_count = len(smart_alerts) + (1 if not is_active else 0)
+    if recom_count > 0:
+        recom_text = f"⚠️ {recom_count} action(s) corrective(s) nécessaire(s) pour maximiser le ROI et la délivrabilité."
+    else:
+        recom_text = "✨ Performance optimale — La landing page convertit et transmet les données correctement."
+
+    sep = "=" * 88
+    sub_sep = "-" * 84
+
+    diagnostic_msg = (
+        f"\n{sep}\n"
+        f"🏷️ 📊 {badge_header} | « {lp_name} » (Slug: /{slug})\n"
+        f"   ⏰ HORODATAGE TEMPS RÉEL : {now_str} | ID: {lp_id} | Store: {store_id}\n"
+        f"   🏆 HEALTH SCORE : {badge_icon} {health_score}/100 ({health_badge}) | Période: {period_str}\n"
+        f"   {sub_sep}\n"
+        f"   📈 ACTIVITÉ & CONVERSION FIRST-PARTY ERP :\n"
+        f"      • 👥 Sessions Qualifiées (LP) : {sessions} visiteurs\n"
+        f"      • 🛒 Commandes Totales        : {total_orders} commandes (Taux de conversion: {cr_str})\n"
+        f"      • 🔄 Paniers Récupérés (CRM)  : {recovered_count} / {abandoned_count} abandonnés (Taux récup.: {rec_rate_str})\n"
+        f"      • 🚚 Flux Logistique Expédition: {shipped_count} expédiées (dont {with_tracking} avec N° Noest) | {delivered_count} livrées | {returned_count} retours\n"
+        f"   {sub_sep}\n"
+        f"   🔍 ÉTAT DU TRACKING & CONNEXIONS MARKETING :\n"
+        f"      • 🌐 Meta Pixel ID            : {pixel_display}\n"
+        f"      • 🔌 Meta Conversions API     : {capi_display}\n"
+        f"      • 📣 Attribution Campagne Meta: {meta_display}\n"
+        f"   {sub_sep}\n"
+        f"   🚨 DIAGNOSTIC DES ANOMALIES & RAISONS DE CORRECTION :\n"
+        f"{alerts_formatted}\n"
+        f"   {sub_sep}\n"
+        f"   💡 RECOMMANDATION GLOBALE : {recom_text}\n"
+        f"{sep}"
+    )
+
+    if has_critical or health_score < 50:
+        lp_logger.warning(diagnostic_msg)
+    else:
+        lp_logger.info(diagnostic_msg)
+
+
+

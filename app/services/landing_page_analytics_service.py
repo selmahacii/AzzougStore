@@ -137,6 +137,23 @@ class LandingPageAnalyticsService:
             db, lp, query_date_start, query_date_end, current_orders_daily, meta_data
         )
 
+        # ─── 14. Emit Real-Time Terminal Diagnostic Log with Emoji Badges ────
+        try:
+            from app.core.logging import log_landing_page_diagnostic
+            period_str = f"{query_date_start.strftime('%d/%m/%Y')} au {query_date_end.strftime('%d/%m/%Y')}"
+            log_landing_page_diagnostic(
+                lp=lp,
+                health_score=health_score_data.get("score", 0),
+                health_badge=health_score_data.get("badge", "—"),
+                overview_kpis=overview_kpis,
+                meta_data=meta_data,
+                quality_data=quality_data,
+                smart_alerts=smart_alerts,
+                period_str=period_str,
+            )
+        except Exception as log_err:
+            logger.debug(f"[LP Analytics] Diagnostic logging skipped: {log_err}")
+
         return {
             "landing_page": {
                 "id": lp.id,
