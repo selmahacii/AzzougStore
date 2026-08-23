@@ -404,7 +404,7 @@ class LandingPageAnalyticsService:
                 "purchase_value_raw": 0.0,
                 "conversion_rate_pct": None,
                 "cpa_purchases_dzd": None,
-                "last_meta_sync_at": meta_cfg.last_sync_at.isoformat() if meta_cfg and meta_cfg.last_sync_at else None,
+                "last_meta_sync_at": None,
             }
 
         # Query daily slices from MetaAdsDailyInsight
@@ -450,6 +450,9 @@ class LandingPageAnalyticsService:
         meta_cr = round((purchases / clicks) * 100.0, 2) if clicks > 0 else None
         cpa = round(spend_dzd / purchases, 2) if purchases > 0 else None
 
+        last_sync_dt = getattr(matched_campaign, "updated_at", None) or getattr(meta_cfg, "created_at", None)
+        last_sync_str = last_sync_dt.isoformat() if last_sync_dt else None
+
         return {
             "is_available": True,
             "reason": None,
@@ -468,7 +471,7 @@ class LandingPageAnalyticsService:
             "purchase_value_raw": round(pval, 2),
             "conversion_rate_pct": meta_cr,
             "cpa_purchases_dzd": cpa,
-            "last_meta_sync_at": meta_cfg.last_sync_at.isoformat() if meta_cfg and meta_cfg.last_sync_at else None,
+            "last_meta_sync_at": last_sync_str,
         }
 
     @classmethod
