@@ -234,8 +234,9 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
           {/* Section 1 : Suivi Logistique ERP (Micro-détails complets) */}
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes (Micro-détails)</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12 gap-2">
               {[
+                { label: 'Confirmées', value: totals.confirmed ?? totals.confirmed_delivered ?? 0, sub: 'validées / expédiées', color: '#4B7BEC' },
                 { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
                 { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
                 { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
@@ -243,6 +244,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
                 { label: 'En Hub', value: totals.in_hub ?? 0, sub: 'reçu au centre', color: '#8B5CF6' },
                 { label: 'En Transit', value: totals.shipped ?? 0, sub: 'en route', color: '#0984E3' },
                 { label: 'Colis Suspendus', value: totals.suspended ?? 0, sub: 'bloqués / problème', color: '#F7B731' },
+                { label: 'Commandes Annulées', value: totals.cancelled ?? 0, sub: 'annulées client/agent', color: '#EB4D4B' },
                 { label: 'Retours Reçus', value: totals.returned_received ?? totals.returned ?? 0, sub: 'reçus en agence', color: '#D63031' },
                 { label: 'Retours En Cours', value: totals.returned_in_transit ?? 0, sub: 'demandés / transit', color: '#E17055' },
                 { label: 'Total Retours', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#B2BEC3' },

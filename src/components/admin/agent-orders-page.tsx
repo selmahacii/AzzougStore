@@ -614,6 +614,7 @@ export default function AgentOrdersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [filter, setFilter] = useState<'active' | 'reminder' | 'done'>('active');
   const [search, setSearch] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState<string>('ALL');
   const prevCountRef = useRef(0);
   const [hasNew, setHasNew] = useState(false);
 
@@ -753,12 +754,25 @@ export default function AgentOrdersPage() {
   const baseDisplayOrders = filter === 'active' ? activeOrders : filter === 'reminder' ? reminderOrders : doneOrders;
 
   const displayOrders = (() => {
+    let list = baseDisplayOrders;
+    if (selectedProductId && selectedProductId !== 'ALL') {
+      list = list.filter(o => (o.items || []).some((it: any) => it.product_id === selectedProductId));
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return baseDisplayOrders;
-    return baseDisplayOrders.filter(o =>
+    if (!q) return list;
+    return list.filter(o =>
       o.order_number?.toLowerCase().includes(q) ||
       o.customer_name?.toLowerCase().includes(q) ||
-      o.customer_phone?.includes(q),
+      o.customer_phone?.includes(q) ||
+      o.customer_wilaya?.toLowerCase().includes(q) ||
+      o.customer_commune?.toLowerCase().includes(q) ||
+      o.tracking_number?.toLowerCase().includes(q) ||
+      (o.items || []).some((it: any) =>
+        it.product_name?.toLowerCase().includes(q) ||
+        it.sku?.toLowerCase().includes(q) ||
+        it.product_id?.toLowerCase().includes(q) ||
+        JSON.stringify(it.variant_details || {}).toLowerCase().includes(q)
+      )
     );
   })();
 
@@ -892,14 +906,14 @@ export default function AgentOrdersPage() {
         ))}
       </div>
 
-      {/* ── Search ── */}
-      <div className="px-6 pt-3 shrink-0">
-        <div className="relative">
+      {/* ── Search & Product Filter ── */}
+      <div className="px-6 pt-3 shrink-0 flex items-center gap-2">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-300 pointer-events-none" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher par n° de commande, nom ou téléphone..."
+            placeholder="Rechercher par n° commande, client, téléphone, produit..."
             className="w-full h-10 pl-9 pr-9 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:border-slate-400 transition-colors"
           />
           {search && (
@@ -911,6 +925,23 @@ export default function AgentOrdersPage() {
             </button>
           )}
         </div>
+        
+        <Select
+          value={selectedProductId}
+          onValueChange={(v) => setSelectedProductId(v)}
+        >
+          <SelectTrigger className="h-10 bg-white border-slate-200 rounded-xl text-xs font-bold w-[180px] shrink-0 truncate">
+            <SelectValue placeholder="Tous les produits" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL" className="text-xs font-bold">Tous les produits</SelectItem>
+            {(productsQuery.data?.data ?? []).map((p: any) => (
+              <SelectItem key={p.id} value={p.id} className="text-xs font-bold truncate max-w-[200px]" title={p.name}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ── Orders List ── */}

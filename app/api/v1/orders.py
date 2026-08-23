@@ -1634,13 +1634,13 @@ def list_orders(
     if source:
         query = query.filter(Order.source == source)
     if product_id:
-        # EXISTS, pas un JOIN — une commande avec plusieurs lignes du même
-        # produit ne doit pas apparaître en double dans la liste.
-        query = query.filter(
-            db.query(OrderItem.id)
-            .filter(OrderItem.order_id == Order.id, OrderItem.product_id == product_id)
-            .exists()
-        )
+        p_ids = [p.strip() for p in product_id.split(",") if p.strip() and p.strip() != "ALL"]
+        if p_ids:
+            query = query.filter(
+                db.query(OrderItem.id)
+                .filter(OrderItem.order_id == Order.id, OrderItem.product_id.in_(p_ids))
+                .exists()
+            )
     if search:
         from sqlalchemy import or_, cast, String
         clean_search = search.strip().replace("N°", "").replace("n°", "").strip()
@@ -1652,8 +1652,17 @@ def list_orders(
             Order.tracking_number.ilike(f"%{clean_search}%"),
             Order.customer_wilaya.ilike(f"%{clean_search}%"),
             Order.customer_commune.ilike(f"%{clean_search}%"),
+            Order.customer_address.ilike(f"%{clean_search}%"),
             db.query(OrderItem.id)
-            .filter(OrderItem.order_id == Order.id, OrderItem.product_name.ilike(f"%{clean_search}%"))
+            .filter(
+                OrderItem.order_id == Order.id,
+                or_(
+                    OrderItem.product_name.ilike(f"%{clean_search}%"),
+                    OrderItem.sku.ilike(f"%{clean_search}%"),
+                    OrderItem.product_id.ilike(f"%{clean_search}%"),
+                    cast(OrderItem.variant_details, String).ilike(f"%{clean_search}%"),
+                )
+            )
             .exists(),
         ]
         if clean_search.isdigit():
