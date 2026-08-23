@@ -859,11 +859,35 @@ class LandingPageAnalyticsService:
     def _compute_quality_block(
         cls, db: Session, lp: LandingPage, totals: Dict[str, Any], d_start: datetime, d_end: datetime
     ) -> Dict[str, Any]:
-        """Audits technical, tracking and mobile quality signals."""
-        meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
+        """Audits technical, tracking and mobile quality signals across LandingPage, MetaAdsConfig and Store."""
+        from app.models.store import Store
 
-        pixel_configured = bool(meta_cfg and meta_cfg.pixel_id and len(meta_cfg.pixel_id) > 5)
-        capi_configured = bool(meta_cfg and meta_cfg.access_token and len(meta_cfg.access_token) > 15)
+        meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
+        store = db.query(Store).filter(Store.id == lp.store_id).first()
+        store_mcfg = (store.marketing_config or {}) if store else {}
+        lp_tcfg = (lp.tracking_config or {}) if (hasattr(lp, "tracking_config") and isinstance(lp.tracking_config, dict)) else {}
+
+        # Resolve Pixel ID across LP tracking_config, MetaAdsConfig, and Store marketing_config
+        raw_pixel = (
+            lp_tcfg.get("pixel_id")
+            or lp_tcfg.get("facebook_pixel_id")
+            or (meta_cfg.pixel_id if meta_cfg and meta_cfg.pixel_id else None)
+            or store_mcfg.get("facebook_pixel_id")
+            or store_mcfg.get("meta_pixel_id")
+            or store_mcfg.get("pixel_id")
+        )
+        resolved_pixel_id = str(raw_pixel).strip() if raw_pixel else None
+        pixel_configured = bool(resolved_pixel_id and len(resolved_pixel_id) > 5)
+
+        # Resolve CAPI access token across MetaAdsConfig and Store marketing_config
+        raw_token = (
+            (meta_cfg.access_token if meta_cfg and meta_cfg.access_token else None)
+            or store_mcfg.get("fb_access_token")
+            or store_mcfg.get("meta_access_token")
+            or store_mcfg.get("access_token")
+        )
+        resolved_token = str(raw_token).strip() if raw_token else None
+        capi_configured = bool(resolved_token and len(resolved_token) > 15)
 
         return {
             "technical_speed": {
@@ -873,7 +897,8 @@ class LandingPageAnalyticsService:
             },
             "tracking_status": {
                 "meta_pixel_active": pixel_configured,
-                "meta_pixel_id": meta_cfg.pixel_id if pixel_configured else None,
+                "meta_pixel_configured": pixel_configured,
+                "meta_pixel_id": resolved_pixel_id if pixel_configured else None,
                 "meta_capi_active": capi_configured,
                 "event_id_dedup_supported": True,
             },

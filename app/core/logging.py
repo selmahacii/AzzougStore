@@ -281,11 +281,11 @@ def log_landing_page_diagnostic(
 
     # Tracking & Meta Status
     tracking_status = quality_data.get("tracking_status", {})
-    pixel_configured = tracking_status.get("meta_pixel_configured", False)
-    pixel_id = quality_data.get("meta_config", {}).get("meta_pixel_id")
-    capi_active = tracking_status.get("meta_capi_active", False)
+    pixel_configured = bool(tracking_status.get("meta_pixel_active") or tracking_status.get("meta_pixel_configured"))
+    pixel_id = tracking_status.get("meta_pixel_id")
+    capi_active = bool(tracking_status.get("meta_capi_active"))
 
-    pixel_display = f"✅ Configuré (ID: {pixel_id})" if pixel_configured else "❌ Non configuré"
+    pixel_display = f"✅ Configuré (ID: {pixel_id})" if (pixel_configured and pixel_id) else ("✅ Configuré" if pixel_configured else "❌ Non configuré")
     capi_display = "✅ Actif (Conversions API Connectée)" if capi_active else "❌ Inactif / Token non renseigné"
 
     if meta_data.get("is_available"):
