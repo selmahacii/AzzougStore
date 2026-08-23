@@ -147,3 +147,52 @@ def test_get_performance_center_not_found():
     db_mock.query.return_value.filter.return_value.first.return_value = None
     with pytest.raises(ValueError, match="introuvable"):
         LandingPageAnalyticsService.get_performance_center(db_mock, "non-existent-id")
+
+
+def test_build_unified_funnel_with_comparisons():
+    """Test multi-stage funnel calculation with previous period comparisons without dict shadowing bugs"""
+    meta_curr = {"impressions": 10000, "clicks": 500}
+    funnel_curr = {"pageviews": 450, "add_to_cart": 80, "initiate_checkout": 60}
+    orders_curr = {"total_orders": 30, "shipped_orders": 25, "delivered_orders": 20}
+
+    meta_prev = {"impressions": 8000, "clicks": 400}
+    funnel_prev = {"pageviews": 380, "add_to_cart": 70, "initiate_checkout": 50}
+    orders_prev = {"total_orders": 25, "shipped_orders": 20, "delivered_orders": 18}
+
+    pipeline = LandingPageAnalyticsService._build_unified_funnel(
+        meta_curr=meta_curr,
+        funnel_curr=funnel_curr,
+        orders_curr=orders_curr,
+        meta_prev=meta_prev,
+        funnel_prev=funnel_prev,
+        orders_prev=orders_prev,
+    )
+
+    assert len(pipeline) == 8
+    stage_names = [s["stage"] for s in pipeline]
+    assert stage_names == [
+        "Impressions",
+        "Clics",
+        "Visites Landing Page",
+        "Ajouts Panier",
+        "Checkout",
+        "Commandes",
+        "Expédiées",
+        "Livrées",
+    ]
+    # Check that Commandes and subsequent steps correctly read from orders_prev dict
+    orders_step = pipeline[5]
+    assert orders_step["stage"] == "Commandes"
+    assert orders_step["volume"] == 30
+    assert orders_step["previous_volume"] == 25
+
+    shipped_step = pipeline[6]
+    assert shipped_step["stage"] == "Expédiées"
+    assert shipped_step["volume"] == 25
+    assert shipped_step["previous_volume"] == 20
+
+    delivered_step = pipeline[7]
+    assert delivered_step["stage"] == "Livrées"
+    assert delivered_step["volume"] == 20
+    assert delivered_step["previous_volume"] == 18
+

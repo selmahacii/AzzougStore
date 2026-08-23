@@ -622,25 +622,24 @@ class LandingPageAnalyticsService:
 
         checkout = funnel_curr.get("initiate_checkout", 0) or 0
         checkout_prev = funnel_prev.get("initiate_checkout", 0) or 0
+        orders_val = orders_curr.get("total_orders", 0) or 0
+        orders_val_prev = orders_prev.get("total_orders", 0) or 0
 
-        orders = orders_curr.get("total_orders", 0) or 0
-        orders_prev = orders_prev.get("total_orders", 0) or 0
+        shipped_val = orders_curr.get("shipped_orders", 0) or 0
+        shipped_val_prev = orders_prev.get("shipped_orders", 0) or 0
 
-        shipped = orders_curr.get("shipped_orders", 0) or 0
-        shipped_prev = orders_prev.get("shipped_orders", 0) or 0
-
-        delivered = orders_curr.get("delivered_orders", 0) or 0
-        delivered_prev = orders_prev.get("delivered_orders", 0) or 0
+        delivered_val = orders_curr.get("delivered_orders", 0) or 0
+        delivered_val_prev = orders_prev.get("delivered_orders", 0) or 0
 
         return [
             step("Impressions", impr, impr_prev, None, "Vues des publicités Meta", "Meta Ads Insights"),
             step("Clics", clicks, clicks_prev, impr, "Clics sur les liens publicitaires", "Meta Ads Insights"),
             step("Visites Landing Page", visits, visits_prev, clicks, "Sessions qualifiées sur la LP", "AzzougShop Analytics"),
             step("Ajouts Panier", cart if cart > 0 else checkout, cart_prev, visits, "Clics d'engagement / sélection d'offre", "AzzougShop Funnel"),
-            step("Checkout", checkout if checkout > 0 else orders, checkout_prev, cart if cart > 0 else visits, "Formulaire de commande initié", "AzzougShop Funnel"),
-            step("Commandes", orders, orders_prev, checkout if checkout > 0 else visits, "Commandes enregistrées dans l'ERP", "AzzougShop ERP"),
-            step("Expédiées", shipped, shipped_prev, orders, "Colis remis au transporteur", "AzzougShop Logistics"),
-            step("Livrées", delivered, delivered_prev, shipped, "Colis livrés et encaissés", "AzzougShop Logistics"),
+            step("Checkout", checkout if checkout > 0 else orders_val, checkout_prev, cart if cart > 0 else visits, "Formulaire de commande initié", "AzzougShop Funnel"),
+            step("Commandes", orders_val, orders_val_prev, checkout if checkout > 0 else visits, "Commandes enregistrées dans l'ERP", "AzzougShop ERP"),
+            step("Expédiées", shipped_val, shipped_val_prev, orders_val, "Colis remis au transporteur", "AzzougShop Logistics"),
+            step("Livrées", delivered_val, delivered_val_prev, shipped_val, "Colis livrés et encaissés", "AzzougShop Logistics"),
         ]
 
     @classmethod
