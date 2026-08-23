@@ -79,6 +79,14 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
 import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
 
+const isValidIsoDate = (val: string): boolean => {
+   if (!val) return false;
+   const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
+   if (!match) return false;
+   const y = parseInt(match[1], 10);
+   return y >= 2020 && y <= 2050;
+};
+
 // ═══════════════════════════════════════════════════════════════
 // Human Made Design System (Denim Blue)
 // ═══════════════════════════════════════════════════════════════
@@ -1947,14 +1955,6 @@ export default function EmployeesPage() {
       const mapped = MAP[adminSubView];
       if (mapped && mapped !== activeTab) setActiveTab(mapped);
    }, [adminSubView]);
-
-   const isValidIsoDate = (val: string): boolean => {
-      if (!val) return false;
-      const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
-      if (!match) return false;
-      const y = parseInt(match[1], 10);
-      return y >= 2020 && y <= 2050;
-   };
 
    const buildQueryStr = (basePath: string) => {
       const params = new URLSearchParams({ store_id: storeId });

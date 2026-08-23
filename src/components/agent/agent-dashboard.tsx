@@ -33,6 +33,14 @@ import ProductsPage from '@/components/admin/products-page';
 import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
 import { DuplicatePopover } from '@/components/shared/duplicate-popover';
 
+const isValidIsoDate = (val: string): boolean => {
+  if (!val) return false;
+  const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
+  if (!match) return false;
+  const y = parseInt(match[1], 10);
+  return y >= 2020 && y <= 2050;
+};
+
 // ─── Constants ──────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string; bg: string; next: string[] }> = {
   NEW:          { label: 'Nouvelle',         color: '#0f172a', bg: '#f1f5f9', next: ['ASSIGNED', 'IN_PROGRESS', 'CONFIRMED', 'CANCELLED'] },
@@ -2570,14 +2578,6 @@ export default function AgentDashboard() {
   useEffect(() => {
     setPage(1);
   }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
-
-  const isValidIsoDate = (val: string): boolean => {
-    if (!val) return false;
-    const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
-    if (!match) return false;
-    const y = parseInt(match[1], 10);
-    return y >= 2020 && y <= 2050;
-  };
 
   const ordersQuery = useQuery({
     queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
