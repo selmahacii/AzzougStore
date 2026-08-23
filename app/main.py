@@ -225,6 +225,94 @@ def run_db_migrations():
                     db_mig.rollback()
                     logger.debug("Failed to purge child duplicate %s: %s", getattr(child, "id", "unknown"), child_del_err)
             print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
+
+            # Ensure ORD-20260821-0E08AD (Olmi, Batna, phone 0669411840) is present and marked as DELIVERED
+            try:
+                olmi_order = db_mig.query(Order).filter(
+                    (Order.order_number == "ORD-20260821-0E08AD") |
+                    (Order.tracking_number == "OZW-35B-19778918") |
+                    (Order.customer_phone == "0669411840")
+                ).first()
+
+                deliv_time = datetime(2026, 8, 23, 22, 0, 13)
+                created_time = datetime(2026, 8, 21, 22, 59, 17)
+
+                if olmi_order:
+                    olmi_order.status = "DELIVERED"
+                    olmi_order.delivered_at = deliv_time
+                    olmi_order.updated_at = deliv_time
+                    olmi_order.carrier_stage = "delivered"
+                    olmi_order.carrier_stage_label = "Livré"
+                    olmi_order.tracking_number = "OZW-35B-19778918"
+                    olmi_order.is_abandoned_cart = False
+                    olmi_order.is_deleted = False
+                    db_mig.commit()
+                else:
+                    from app.models.store import Store
+                    from app.models.user import User
+                    st = db_mig.query(Store).filter(Store.id == "2c81d28d-a453-4645-a8b7-b79dd32ba6f7").first() or db_mig.query(Store).first()
+                    ag = db_mig.query(User).filter(User.id == "76560324-bd0a-4d49-a013-d1e1cf7843e3").first() or db_mig.query(User).filter(User.role.in_(["CONFIRMATEUR", "ADMIN", "SUPER_ADMIN"])).first()
+
+                    if st:
+                        new_order = Order(
+                            id=str(uuid.uuid4()),
+                            store_id=st.id,
+                            order_number="ORD-20260821-0E08AD",
+                            customer_name="Olmi",
+                            customer_phone="0669411840",
+                            customer_address="Batna",
+                            customer_wilaya="Batna",
+                            customer_commune="Batna",
+                            delivery_type="HOME",
+                            delivery_fee=0,
+                            subtotal=5200,
+                            total=5200,
+                            status="DELIVERED",
+                            assigned_to=ag.id if ag else None,
+                            carrier_stage="delivered",
+                            carrier_stage_label="Livré",
+                            tracking_number="OZW-35B-19778918",
+                            is_abandoned_cart=False,
+                            is_deleted=False,
+                            created_at=created_time,
+                            updated_at=deliv_time,
+                            delivered_at=deliv_time
+                        )
+                        db_mig.add(new_order)
+                        db_mig.flush()
+
+                        item1 = OrderItem(
+                            id=str(uuid.uuid4()),
+                            order_id=new_order.id,
+                            product_name="Coussin de Voyage",
+                            quantity=2,
+                            unit_price=1300,
+                            total_price=2600,
+                            variant_details={"couleur": "noir"}
+                        )
+                        item2 = OrderItem(
+                            id=str(uuid.uuid4()),
+                            order_id=new_order.id,
+                            product_name="Coussin de Voyage",
+                            quantity=1,
+                            unit_price=1300,
+                            total_price=1300,
+                            variant_details={"couleur": "bleu"}
+                        )
+                        item3 = OrderItem(
+                            id=str(uuid.uuid4()),
+                            order_id=new_order.id,
+                            product_name="Coussin de Voyage",
+                            quantity=1,
+                            unit_price=1300,
+                            total_price=1300,
+                            variant_details={"couleur": "bordeaux"}
+                        )
+                        db_mig.add_all([item1, item2, item3])
+                        db_mig.commit()
+            except Exception as olmi_err:
+                db_mig.rollback()
+                logger.debug("Olmi order check: %s", olmi_err)
         finally:
             db_mig.close()
     except Exception as exc:
