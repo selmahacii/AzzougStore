@@ -754,8 +754,9 @@ def get_user_performance(
         func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
         func.sum(case((Order.status == "CANCELLED", 1), else_=0)).label("cancelled"),
         func.sum(case((Order.is_upsell == True, 1), else_=0)).label("upsell"),
-        func.sum(case((and_(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), Order.is_abandoned_cart == True), 1), else_=0)).label("recovered_confirmed"),
-        func.sum(case((and_(Order.status == "DELIVERED", Order.is_abandoned_cart == True), 1), else_=0)).label("recovered_delivered"),
+        func.sum(case((and_(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_confirmed"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_delivered"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None)), 1), else_=0)).label("normal_delivered"),
     ).one()
     total_assigned   = totals_row.total or 0
     confirmed_count  = totals_row.confirmed or 0
@@ -765,10 +766,12 @@ def get_user_performance(
     upsell_count     = totals_row.upsell or 0
     recovered_confirmed_count = totals_row.recovered_confirmed or 0
     recovered_delivered_count = totals_row.recovered_delivered or 0
+    normal_delivered_count    = totals_row.normal_delivered or 0
 
     salary_data = compute_salary(db, db_user, store_id, since=since, until=until, date_by=date_by)
 
-    recent_orders = base_q.order_by(Order.id.desc()).limit(20).all()
+    # Detailed orders for the period with tracking and carrier status
+    period_orders = base_q.order_by(date_col.desc()).limit(250).all()
 
     audit_logs = (
         db.query(OrderEvent)
@@ -778,6 +781,43 @@ def get_user_performance(
         .limit(30)
         .all()
     )
+
+    # ── Daily detailed breakdown (Normal Delivered vs Recovered vs Returns) ──
+    daily_breakdown_rows = base_q.with_entities(
+        func.date(date_col).label("day"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None)), 1), else_=0)).label("normal_delivered"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_delivered"),
+        func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
+        func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("total_delivered"),
+        func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
+    ).group_by(func.date(date_col)).order_by(func.date(date_col).desc()).all()
+
+    norm_rate = int(salary_data.get("payment_amount") or 100)
+    rec_rate  = int(salary_data.get("payment_recovered_cart") or 150)
+    pen_rate  = int(salary_data.get("payment_lost_cart") or 0)
+
+    daily_breakdown = []
+    for row in daily_breakdown_rows:
+        if not row.day:
+            continue
+        n_del = int(row.normal_delivered or 0)
+        r_del = int(row.recovered_delivered or 0)
+        ret   = int(row.returned or 0)
+        tot_del = int(row.total_delivered or 0)
+        conf  = int(row.confirmed or 0)
+        earnings = (n_del * norm_rate + r_del * rec_rate - ret * pen_rate) if salary_data.get("payment_type") != "MONTHLY_SALARY" else 0
+        
+        daily_breakdown.append({
+            "date": str(row.day),
+            "date_formatted": row.day.strftime("%d/%m/%Y") if hasattr(row.day, "strftime") else str(row.day),
+            "date_short": row.day.strftime("%d/%m") if hasattr(row.day, "strftime") else str(row.day),
+            "normal_delivered": n_del,
+            "recovered_delivered": r_del,
+            "returned": ret,
+            "total_delivered": tot_del,
+            "confirmed": conf,
+            "daily_earnings": earnings,
+        })
 
     chart_days = min(period_days, 7)
     range_start = (datetime.now() - timedelta(days=chart_days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: DTZ005
@@ -861,6 +901,36 @@ def get_user_performance(
             "tasks": tasks_by_day.get(key, 0),
         })
 
+    # Prepare detailed order list
+    formatted_orders = []
+    for o in period_orders:
+        is_rec = bool(o.is_abandoned_cart or o.recovered_at)
+        comm_earned = 0
+        if o.status == "DELIVERED":
+            comm_earned = rec_rate if is_rec else norm_rate
+        elif o.status == "RETURNED":
+            comm_earned = -pen_rate
+
+        formatted_orders.append({
+            "id":                     o.id,
+            "order_number":           o.order_number,
+            "tracking_number":        o.tracking_number,
+            "carrier":                getattr(o, "carrier", None) or "Noest",
+            "customer_name":          o.customer_name,
+            "customer_phone":         o.customer_phone,
+            "wilaya":                 o.customer_wilaya,
+            "commune":                o.customer_commune,
+            "total":                  o.total,
+            "status":                 o.status,
+            "is_abandoned_cart":      is_rec,
+            "recovered_at":           o.recovered_at.isoformat() if getattr(o, "recovered_at", None) else None,
+            "order_type":             "RECOVERED" if is_rec else "NORMAL",
+            "created_at":             o.created_at.isoformat() if o.created_at else None,
+            "delivered_at":           o.updated_at.isoformat() if o.status == "DELIVERED" and o.updated_at else (o.created_at.isoformat() if o.created_at else None),
+            "carrier_tracking_note":  getattr(o, "carrier_tracking_note", None) or getattr(o, "delivery_note", None),
+            "commission_amount":      comm_earned,
+        })
+
     return {
         "user": {
             "id":           db_user.id,
@@ -881,6 +951,7 @@ def get_user_performance(
             "days_active": len(day_work_durations),
         },
         "task_evolution_chart": task_evolution_chart,
+        "daily_breakdown": daily_breakdown,
         "stats": {
             "total_assigned":            total_assigned,
             "confirmed_count":           confirmed_count,
@@ -890,6 +961,7 @@ def get_user_performance(
             "upsell_count":              upsell_count,
             "recovered_confirmed_count": recovered_confirmed_count,
             "recovered_delivered_count": recovered_delivered_count,
+            "normal_delivered_count":    normal_delivered_count,
             "confirmed_delivered_rate":  round((delivered_count / confirmed_count * 100) if confirmed_count else 0, 1),
             "recovered_delivered_rate":  round((recovered_delivered_count / delivered_count * 100) if delivered_count else 0, 1),
             "salary":                    salary_data["salary"],
@@ -903,15 +975,12 @@ def get_user_performance(
             "recovered_store_pickup_delivered_count": salary_data.get("recovered_store_pickup_delivered_count", 0),
             "base_salary":               salary_data.get("base_salary", 0),
             "abandoned_bonus":           salary_data.get("abandoned_bonus", 0),
-            "normal_delivered_count":    salary_data.get("normal_delivered_count", 0),
             "recovered_count":           salary_data.get("recovered_count", 0),
-            "recovered_delivered_count": salary_data.get("recovered_delivered_count", 0),
             "lost_count":                salary_data.get("lost_count", 0),
             "returned_penalty":          salary_data.get("returned_penalty", 0),
             "payment_upsell":            salary_data.get("payment_upsell", 0),
             "upsell_delivered_count":    salary_data.get("upsell_delivered_count", 0),
             "upsell_bonus":              salary_data.get("upsell_bonus", 0),
-            # commission_per_order: per-order rate (None for MONTHLY_SALARY)
             "commission_per_order": (
                 salary_data["payment_amount"]
                 if salary_data["payment_type"] != "MONTHLY_SALARY"
@@ -919,17 +988,7 @@ def get_user_performance(
             ),
             "confirmation_rate":  round((confirmed_count / total_assigned * 100) if total_assigned else 0, 1),
         },
-        "recent_orders": [
-            {
-                "id":            o.id,
-                "order_number":  o.order_number,
-                "customer_name": o.customer_name,
-                "total":         o.total,
-                "status":        o.status,
-                "wilaya":        o.customer_wilaya,
-            }
-            for o in recent_orders
-        ],
+        "recent_orders": formatted_orders,
         "audit_logs": [
             {
                 "id":         a.id,

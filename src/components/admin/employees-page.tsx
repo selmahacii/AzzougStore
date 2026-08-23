@@ -37,6 +37,7 @@ import {
    Target,
    Clock,
    TrendingUp,
+   Truck,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -2183,6 +2184,8 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const [startDate, setStartDate] = useState<string>('');
    const [endDate, setEndDate] = useState<string>('');
    const [dateBy, setDateBy] = useState<'created_at' | 'delivered_at'>('created_at');
+   const [orderSearch, setOrderSearch] = useState<string>('');
+   const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | 'NORMAL_DELIVERED' | 'RECOVERED_DELIVERED' | 'RETURNED' | 'IN_TRANSIT'>('ALL');
 
    const payMutation = useMutation({
       mutationFn: () => apiFetch<{ success: boolean; total_paid: number; breakdown: { store_id: string; amount: number }[] }>(
@@ -2253,9 +2256,38 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const totalSalary = computedSalary + bonus;
    const maxBar = Math.max(...(perf?.daily_chart ?? [{ count: 1 }]).map((d: any) => d.count), 1);
 
+   // Filtered orders for the orders tab
+   const rawOrders: any[] = perf?.recent_orders ?? [];
+   const filteredOrders = rawOrders.filter((o: any) => {
+      if (orderStatusFilter === 'NORMAL_DELIVERED') {
+         return o.status === 'DELIVERED' && !o.is_abandoned_cart;
+      }
+      if (orderStatusFilter === 'RECOVERED_DELIVERED') {
+         return o.status === 'DELIVERED' && !!o.is_abandoned_cart;
+      }
+      if (orderStatusFilter === 'RETURNED') {
+         return o.status === 'RETURNED';
+      }
+      if (orderStatusFilter === 'IN_TRANSIT') {
+         return ['SHIPPED', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'].includes(o.status);
+      }
+      return true;
+   }).filter((o: any) => {
+      if (!orderSearch.trim()) return true;
+      const q = orderSearch.toLowerCase();
+      return (
+         (o.order_number || '').toLowerCase().includes(q) ||
+         (o.tracking_number || '').toLowerCase().includes(q) ||
+         (o.customer_name || '').toLowerCase().includes(q) ||
+         (o.customer_phone || '').toLowerCase().includes(q) ||
+         (o.wilaya || '').toLowerCase().includes(q) ||
+         (o.commune || '').toLowerCase().includes(q)
+      );
+   });
+
    return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-         <DialogContent className="max-w-3xl w-[96vw] p-0 border-none bg-white rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+         <DialogContent className="max-w-4xl w-[96vw] p-0 border-none bg-white rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[94vh]">
             {/* Header */}
             <div className="bg-slate-900 p-6 sm:p-8 text-white shrink-0">
                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
@@ -2265,7 +2297,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      </div>
                      <div>
                         <DialogTitle className="text-lg sm:text-xl font-bold">{employee?.name}</DialogTitle>
-                        <p className="text-emerald-100 text-xs font-medium mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance</p>
+                        <p className="text-emerald-100 text-xs font-medium mt-1">{ROLE_LABELS[employee?.role as UserRole] || employee?.role} · Rapport Performance & Suivi Transporteur</p>
                         {(employee?.created_at || perf?.user?.created_at) && (
                             <div className="flex items-center gap-1.5 text-xs text-slate-300 mt-2 font-medium bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 w-fit">
                                <Calendar className="size-3.5 text-emerald-400" />
@@ -2276,12 +2308,12 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                   </div>
                   <div className="flex items-center gap-4">
                      <div className="flex flex-col">
-                        <p className="text-xs font-medium text-slate-400">Livrées</p>
+                        <p className="text-xs font-medium text-slate-400">Total Livrées</p>
                         <p className="text-2xl font-bold text-emerald-400">{delivered}</p>
                      </div>
                      <div className="w-px h-10 bg-slate-700 hidden sm:block"></div>
                      <div className="flex flex-col">
-                        <p className="text-xs font-medium text-slate-400">Salaire estimé</p>
+                        <p className="text-xs font-medium text-slate-400">Salaire & Commissions</p>
                         <p className="text-2xl font-bold text-white">{formatPrice(computedSalary)}</p>
                      </div>
                   </div>
@@ -2341,20 +2373,20 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         className="bg-slate-800 border border-slate-700 text-white text-[11px] px-2 py-1 rounded-lg font-bold cursor-pointer"
                      >
                         <option value="created_at">Date de création</option>
-                        <option value="delivered_at">Date de livraison</option>
+                        <option value="delivered_at">Date de livraison réelle</option>
                      </select>
                   </div>
                </div>
 
                {/* Tabs */}
                <div className="flex gap-2 mt-6 border-b border-slate-700">
-                  {([['salary', 'Bulletin de Paie', Banknote], ['orders', 'Commandes', Package], ['audit', 'Traçabilité', Activity]] as const).map(([id, label, Icon]) => (
+                  {([['salary', 'Bulletin & Ventilation par Date', Banknote], ['orders', `Micro-détails Colis & Suivi (${rawOrders.length})`, Package], ['audit', 'Traçabilité Actions', Activity]] as const).map(([id, label, Icon]) => (
                      <button key={id} onClick={() => setActiveProfileTab(id)}
                         className={cn(
                            "flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px",
-                           activeProfileTab === id ? "border-emerald-500 text-white" : "border-transparent text-slate-400 hover:text-slate-200"
+                           activeProfileTab === id ? "border-emerald-500 text-white font-bold" : "border-transparent text-slate-400 hover:text-slate-200"
                         )}>
-                        <Icon className="size-4" /><span className="hidden sm:inline">{label}</span>
+                        <Icon className="size-4" /><span>{label}</span>
                      </button>
                   ))}
                </div>
@@ -2374,7 +2406,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      {/* Daily chart */}
                      {(perf?.daily_chart ?? []).length > 0 && (
                         <div className="space-y-3">
-                           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Activité 7 derniers jours</p>
+                           <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Activité Livraisons (7 derniers jours)</p>
                            <div className="flex items-end gap-2 h-20">
                               {(perf?.daily_chart ?? []).map((d: any, i: number) => (
                                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
@@ -2387,13 +2419,15 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            </div>
                         </div>
                      )}
-            {/* Stats grid */}
+
+                     {/* Stats grid */}
                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                         {[
                            { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
                            { label: 'Confirmées', value: confirmed, color: '#20bf6b' },
-                           { label: 'Livrées', value: delivered, color: '#26de81' },
-                           { label: 'Annulées', value: cancelled, color: '#eb4d4b' },
+                           { label: 'Livrées (Total)', value: delivered, color: '#26de81' },
+                           { label: 'Paniers Récup. Livrés', value: stats.recovered_delivered_count || 0, color: '#f59e0b' },
+                           { label: 'Retours', value: returned, color: '#eb4d4b' },
                         ].map(s => (
                            <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
                               <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{s.label}</p>
@@ -2404,7 +2438,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
 
                      {/* Salary breakdown */}
                      <div className="bg-slate-50 rounded-3xl p-6 space-y-3.5 border border-slate-100">
-                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Détail des commissions & paie</p>
+                        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Détail des commissions & calcul de paie</p>
 
                         {paymentType === 'MONTHLY_SALARY' ? (
                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
@@ -2414,25 +2448,26 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         ) : (
                            <>
                               {/* Commandes normales livrées */}
-                              <div className="flex justify-between items-center text-xs font-bold text-slate-700">
-                                 <span>Commandes normales livrées</span>
-                                 <span className="font-mono font-bold">
+                              <div className="flex justify-between items-center text-xs font-bold text-slate-700 bg-white p-3 rounded-2xl border border-slate-200">
+                                 <span className="flex items-center gap-2">
+                                    <span className="size-2 rounded-full bg-blue-500"></span>
+                                    🟦 Commandes normales livrées
+                                 </span>
+                                 <span className="font-mono font-bold text-blue-900">
                                     {stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))} × {formatPrice(paymentAmount)} = {formatPrice(stats.base_salary ?? (Math.max(0, delivered - (stats.recovered_delivered_count || 0)) * paymentAmount))}
                                  </span>
                               </div>
 
                               {/* Paniers abandonnés récupérés & livrés */}
-                              {(stats.recovered_delivered_count || 0) > 0 && (
-                                 <div className="flex justify-between items-center text-xs font-bold text-amber-800 bg-amber-50 p-3 rounded-2xl border border-amber-200/60">
-                                    <span className="flex items-center gap-1.5 font-bold">
-                                       <span className="size-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                       Paniers abandonnés récupérés & livrés
-                                    </span>
-                                    <span className="font-mono font-black text-amber-900">
-                                       + {stats.recovered_delivered_count} × {formatPrice(stats.payment_recovered_cart || 500)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 500)))}
-                                    </span>
-                                 </div>
-                              )}
+                              <div className="flex justify-between items-center text-xs font-bold text-amber-800 bg-amber-50 p-3 rounded-2xl border border-amber-200/60">
+                                 <span className="flex items-center gap-1.5 font-bold">
+                                    <span className="size-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                    🟩 Paniers abandonnés récupérés & livrés
+                                 </span>
+                                 <span className="font-mono font-black text-amber-900">
+                                    + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))}
+                                 </span>
+                              </div>
 
                               {/* Bonus Upsell */}
                               {(stats.upsell_bonus || 0) > 0 && (
@@ -2445,7 +2480,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                               {/* Pénalité retours */}
                               {(stats.returned_penalty || 0) > 0 && (
                                  <div className="flex justify-between items-center text-xs font-bold text-rose-600 bg-rose-50 p-3 rounded-2xl border border-rose-200/60">
-                                    <span>Pénalité retours</span>
+                                    <span>Pénalité retours ({returned} colis)</span>
                                     <span className="font-mono font-black text-rose-900">- {formatPrice(stats.returned_penalty)}</span>
                                  </div>
                               )}
@@ -2478,43 +2513,210 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            </div>
                         </div>
                      </div>
+
+                     {/* Daily Breakdown Table */}
+                     {(perf?.daily_breakdown ?? []).length > 0 && (
+                        <div className="bg-slate-50 rounded-3xl p-6 space-y-4 border border-slate-100">
+                           <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-1.5">
+                                 <Calendar className="size-3.5 text-emerald-500" />
+                                 Ventilation des Livraisons par Date (Journalier)
+                              </p>
+                              <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200">
+                                 {perf.daily_breakdown.length} jours d&apos;activité
+                              </span>
+                           </div>
+                           <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs border-collapse">
+                                 <thead>
+                                    <tr className="border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                       <th className="pb-2.5 font-bold">Date</th>
+                                       <th className="pb-2.5 font-bold text-center">🟦 Normales</th>
+                                       <th className="pb-2.5 font-bold text-center">🟩 Paniers Récup.</th>
+                                       <th className="pb-2.5 font-bold text-center">🔴 Retours</th>
+                                       <th className="pb-2.5 font-bold text-center">🚚 Total Livré</th>
+                                       {paymentType !== 'MONTHLY_SALARY' && <th className="pb-2.5 font-bold text-right">💵 Gain du jour</th>}
+                                    </tr>
+                                 </thead>
+                                 <tbody className="divide-y divide-slate-100 font-medium">
+                                    {perf.daily_breakdown.map((row: any, idx: number) => (
+                                       <tr key={idx} className="hover:bg-white/80 transition-colors">
+                                          <td className="py-2.5 font-bold text-slate-800 flex items-center gap-1.5">
+                                             <span className="size-1.5 rounded-full bg-slate-300"></span>
+                                             {row.date_formatted || row.date}
+                                          </td>
+                                          <td className="py-2.5 text-center font-bold text-blue-600">
+                                             {row.normal_delivered > 0 ? (
+                                                <span className="bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                                   {row.normal_delivered}
+                                                </span>
+                                             ) : '—'}
+                                          </td>
+                                          <td className="py-2.5 text-center font-bold text-emerald-600">
+                                             {row.recovered_delivered > 0 ? (
+                                                <span className="bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 font-black">
+                                                   +{row.recovered_delivered}
+                                                </span>
+                                             ) : '—'}
+                                          </td>
+                                          <td className="py-2.5 text-center font-bold text-rose-500">
+                                             {row.returned > 0 ? (
+                                                <span className="bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
+                                                   {row.returned}
+                                                </span>
+                                             ) : '—'}
+                                          </td>
+                                          <td className="py-2.5 text-center font-black text-slate-800">
+                                             {row.total_delivered > 0 ? (
+                                                <span className="bg-slate-200/60 px-2.5 py-0.5 rounded-md text-slate-900">
+                                                   {row.total_delivered}
+                                                </span>
+                                             ) : '0'}
+                                          </td>
+                                          {paymentType !== 'MONTHLY_SALARY' && (
+                                             <td className="py-2.5 text-right font-black text-emerald-600 font-mono">
+                                                {row.daily_earnings > 0 ? `+${formatPrice(row.daily_earnings)}` : (row.daily_earnings < 0 ? `-${formatPrice(Math.abs(row.daily_earnings))}` : '0 DA')}
+                                             </td>
+                                          )}
+                                       </tr>
+                                    ))}
+                                 </tbody>
+                              </table>
+                           </div>
+                        </div>
+                     )}
                   </div>
 
                /* ── ORDERS TAB ── */
                ) : activeProfileTab === 'orders' ? (
-                  <div className="p-4 sm:p-6">
-                     {(perf?.recent_orders ?? []).length === 0 ? (
+                  <div className="p-4 sm:p-6 space-y-4">
+                     {/* Search & Filter Toolbar */}
+                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <div className="relative flex-1">
+                           <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                           <input
+                              type="text"
+                              value={orderSearch}
+                              onChange={e => setOrderSearch(e.target.value)}
+                              placeholder="Rechercher par N° commande, bordereau Noest, client, tél, wilaya..."
+                              className="w-full pl-9 pr-4 py-1.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 font-medium placeholder:text-slate-400 focus:outline-none focus:border-emerald-500"
+                           />
+                        </div>
+                        <div className="flex items-center gap-1.5 overflow-x-auto flex-wrap">
+                           {[
+                              { id: 'ALL', label: `Toutes (${rawOrders.length})` },
+                              { id: 'NORMAL_DELIVERED', label: '🟦 Normales Livrées' },
+                              { id: 'RECOVERED_DELIVERED', label: '🟩 Paniers Récup. Livrés' },
+                              { id: 'RETURNED', label: '🔴 Retours' },
+                              { id: 'IN_TRANSIT', label: '🟡 En Transit' },
+                           ].map(tab => (
+                              <button
+                                 key={tab.id}
+                                 type="button"
+                                 onClick={() => setOrderStatusFilter(tab.id as any)}
+                                 className={cn(
+                                    "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap",
+                                    orderStatusFilter === tab.id
+                                       ? "bg-slate-900 text-white shadow-sm"
+                                       : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                                 )}
+                              >
+                                 {tab.label}
+                              </button>
+                           ))}
+                        </div>
+                     </div>
+
+                     {filteredOrders.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-center">
                            <div className="size-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                               <Package className="size-8 text-slate-300" />
                            </div>
-                           <h3 className="text-sm font-semibold text-slate-700">Aucune commande</h3>
-                           <p className="text-sm text-slate-500 mt-1">Cet employé n'a pas encore de commandes assignées.</p>
+                           <h3 className="text-sm font-semibold text-slate-700">Aucune commande trouvée</h3>
+                           <p className="text-sm text-slate-500 mt-1">Aucune commande ne correspond aux filtres actuels.</p>
                         </div>
                      ) : (
                         <div className="space-y-3">
-                           {(perf?.recent_orders ?? []).map((o: any) => (
-                              <div key={o.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-colors gap-4">
-                                 <div className="flex items-start sm:items-center gap-4">
-                                    <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                       <Package className="size-5 text-slate-500" />
+                           {filteredOrders.map((o: any) => (
+                              <div key={o.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm hover:border-slate-300 transition-all space-y-3">
+                                 {/* Top line: IDs, Type badge, Status & Commission */}
+                                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                       <span className="font-mono font-black text-slate-900 text-xs">
+                                          #{o.order_number}
+                                       </span>
+                                       {o.tracking_number && (
+                                          <span className="flex items-center gap-1 font-mono text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-lg border border-blue-200 font-bold">
+                                             <Truck className="size-3 text-blue-600" />
+                                             {o.tracking_number}
+                                          </span>
+                                       )}
+                                       {o.is_abandoned_cart ? (
+                                          <span className="text-[10px] font-black bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+                                             <span className="size-1.5 rounded-full bg-amber-500"></span>
+                                             🟩 Panier Récupéré
+                                          </span>
+                                       ) : (
+                                          <span className="text-[10px] font-black bg-blue-50 text-blue-800 px-2 py-0.5 rounded-md border border-blue-200">
+                                             🟦 Commande Normale
+                                          </span>
+                                       )}
                                     </div>
-                                    <div>
-                                       <p className="text-sm font-semibold text-slate-900">{o.customer_name}</p>
-                                       <p className="text-xs text-slate-500 mt-0.5">#{o.order_number} · {o.wilaya}</p>
+
+                                    <div className="flex items-center gap-3">
+                                       <span className="text-xs font-black text-slate-800 font-mono">
+                                          {formatPrice(o.total)}
+                                       </span>
+                                       <span className="px-2.5 py-1 rounded-md text-xs font-bold" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
+                                          {({
+                                             NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
+                                             IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
+                                             CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: '🟢 Livrée',
+                                             CANCELLED: '🔴 Annulée', RETURNED: '🔴 Retournée', ABANDONED: 'Abandonné'
+                                          } as Record<string, string>)[o.status] || o.status}
+                                       </span>
+                                       {o.commission_amount !== 0 && (
+                                          <span className={cn(
+                                             "text-xs font-black font-mono px-2 py-0.5 rounded-lg border",
+                                             o.commission_amount > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                                          )}>
+                                             {o.commission_amount > 0 ? `+${formatPrice(o.commission_amount)}` : `-${formatPrice(Math.abs(o.commission_amount))}`}
+                                          </span>
+                                       )}
                                     </div>
                                  </div>
-                                 <div className="flex items-center justify-between sm:justify-end gap-6 sm:w-auto w-full border-t sm:border-t-0 pt-3 sm:pt-0">
-                                    <span className="text-sm font-medium text-slate-700">{formatPrice(o.total)}</span>
-                                    <span className="px-2.5 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: (STATUS_COLORS[o.status] || '#a5b1c2') + '15', color: STATUS_COLORS[o.status] || '#a5b1c2' }}>
-                                       {({
-                                          NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
-                                          IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
-                                          CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: 'Livrée',
-                                          CANCELLED: 'Annulée', RETURNED: 'Retournée', ABANDONED: 'Abandonné'
-                                       } as Record<string, string>)[o.status] || o.status}
-                                    </span>
+
+                                 {/* Client details & Wilaya / Commune */}
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                    <div className="flex items-center gap-2">
+                                       <span className="font-bold text-slate-900">{o.customer_name}</span>
+                                       {o.customer_phone && (
+                                          <a href={`tel:${o.customer_phone}`} className="text-slate-500 font-mono hover:text-emerald-600 transition-colors">
+                                             ({o.customer_phone})
+                                          </a>
+                                       )}
+                                    </div>
+                                    <div className="text-slate-500 sm:text-right font-medium">
+                                       📍 {o.wilaya} {o.commune ? `· ${o.commune}` : ''}
+                                    </div>
                                  </div>
+
+                                 {/* Transporteur Tracking Notes & Real Delivery Date */}
+                                 {(o.carrier_tracking_note || o.delivered_at || o.created_at) && (
+                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[11px] space-y-1">
+                                       {o.delivered_at && o.status === 'DELIVERED' && (
+                                          <p className="font-bold text-emerald-700 flex items-center gap-1.5">
+                                             <span>🟢 Livré le :</span>
+                                             <span className="font-mono">{new Date(o.delivered_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                          </p>
+                                       )}
+                                       {o.carrier_tracking_note && (
+                                          <p className="text-slate-600 font-medium">
+                                             🚚 <strong className="text-slate-800">Suivi Transporteur :</strong> {o.carrier_tracking_note}
+                                          </p>
+                                       )}
+                                    </div>
+                                 )}
                               </div>
                            ))}
                         </div>
