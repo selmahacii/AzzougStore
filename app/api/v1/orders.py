@@ -2288,6 +2288,9 @@ def create_order(
         db.commit()
         db.refresh(order)
 
+        from app.core.logging import log_order_event
+        log_order_event("COMMANDE_NORMALE_RECUE", order, "Nouvelle commande reçue en temps réel depuis la boutique / landing page")
+
         # Automatic duplicate grouping: same phone + same store, still in
         # confirmation stage → one operational parent, children become MERGED.
         try:
