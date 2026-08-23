@@ -616,6 +616,7 @@ def get_landing_page_analytics(
             func.count(distinct(case((_is_suspended, Order.id)))).label("suspended"),
             func.count(distinct(case((Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.id)))).label("confirmed"),
             func.count(distinct(case((Order.status == "CONFIRMED", Order.id)))).label("confirmed_only"),
+            func.count(distinct(case((and_(Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.tracking_number.isnot(None), Order.tracking_number != ""), Order.id)))).label("with_tracking"),
             func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
             func.count(distinct(case(
                 (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
@@ -677,6 +678,7 @@ def get_landing_page_analytics(
             "suspended": int(r.suspended or 0) if r else 0,
             "confirmed": int(r.confirmed or 0) if r else 0,
             "confirmed_only": int(r.confirmed_only or 0) if r else 0,
+            "with_tracking": int(r.with_tracking or 0) if r else 0,
             "cancelled": int(r.cancelled or 0) if r else 0,
             "manual": int(r.manual or 0) if r else 0,
             "normal": int(r.normal or 0) if r else 0,
@@ -702,6 +704,7 @@ def get_landing_page_analytics(
         "suspended": sum(d["suspended"] for d in daily),
         "confirmed": sum(d["confirmed"] for d in daily),
         "confirmed_only": sum(d["confirmed_only"] for d in daily),
+        "with_tracking": sum(d["with_tracking"] for d in daily),
         "cancelled": sum(d["cancelled"] for d in daily),
         "manual": sum(d["manual"] for d in daily),
         "revenue": sum(d["revenue"] for d in daily),

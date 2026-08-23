@@ -237,6 +237,7 @@ function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose:
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12 gap-2">
               {[
                 { label: 'Confirmées', value: totals.confirmed ?? totals.confirmed_delivered ?? 0, sub: 'validées / expédiées', color: '#4B7BEC' },
+                { label: 'Avec N° Suivi', value: totals.with_tracking ?? totals.shipped ?? 0, sub: 'N° de suivi généré', color: '#00CEC9' },
                 { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
                 { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
                 { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
