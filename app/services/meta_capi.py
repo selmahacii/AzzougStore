@@ -2874,6 +2874,12 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
                 _signal_eval["missing_fields"], _signal_eval["warnings"],
             )
 
+        logger.info(
+            "[META_PURCHASE_EVENT] order_id=%s num=%s event_id=%s value=%s currency=%s source=%s landing_url=%s",
+            order.id, order.order_number, event.get("event_id"), event.get("custom_data", {}).get("value"),
+            event.get("custom_data", {}).get("currency"), order.source, order.landing_url,
+        )
+
         result = send_events(
             config["pixel_id"], config["access_token"], [event],
             store_label=order.store.name if order.store else str(order.store_id),
@@ -2901,14 +2907,11 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
             row.last_http_status = result.get("http_status")
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             row.error_message = None
-            # Stocké aussi en succès (avant : seulement sur échec/retry) — sans
-            # ça, l'Event Match Quality est incalculable après coup pour
-            # n'importe quel envoi réussi, la grande majorité des lignes.
             row.payload = event_with_response
             db.commit()
             logger.info(
-                "[MetaCAPI] queue: order=%s SUCCESS event_id=%s received=%s fbtrace=%s",
-                order.order_number, event["event_id"], result["events_received"], result.get("fbtrace_id"),
+                "[META_CAPI_RESPONSE] order_id=%s num=%s event_id=%s status=success http_status=%s events_received=%s latency_ms=%s fbtrace=%s",
+                order.id, order.order_number, event.get("event_id"), result.get("http_status"), result.get("events_received"), result.get("latency_ms"), result.get("fbtrace_id"),
             )
         elif result.get("retryable"):
             row.error_message = result["error"]

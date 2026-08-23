@@ -8,7 +8,9 @@ import {
   ChevronRight, BarChart3, Star, ArrowRight, Palette,
   Image as ImageIcon, MessageSquare, HelpCircle, Settings,
   TrendingUp, Users, ShoppingCart, Link, RefreshCw, Calendar,
-  Truck, Upload, Sparkles,
+  Truck, Upload, Sparkles, ShieldCheck, AlertTriangle, AlertCircle,
+  ArrowUpRight, ArrowDownRight, Activity, Percent, Layers, Globe,
+  CheckCircle2, ChevronDown, ChevronUp, Info, MousePointerClick,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,453 +128,781 @@ function toLocalYYYYMMDD(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// ─── LP Analytics detail dialog ──────────────────────────────────────────────
-// Opened by clicking a card's thumbnail/title: creation date, period totals
-// and a daily orders/revenue chart, filterable by date range.
-function LandingPageAnalyticsDialog({ lp, onClose }: { lp: LandingPage; onClose: () => void }) {
+// ─── LP Analytics & Performance Center ─────────────────────────────────────────
+function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; onClose: () => void; onEdit?: () => void }) {
+  const [periodPreset, setPeriodPreset] = useState<string>('30d');
   const [dStart, setDStart] = useState(() => {
-    const d = new Date(); d.setDate(1); // 1st of current month
+    const d = new Date(); d.setDate(d.getDate() - 30);
     return toLocalYYYYMMDD(d);
   });
   const [dEnd, setDEnd] = useState(() => toLocalYYYYMMDD(new Date()));
+  const [comparePrevious, setComparePrevious] = useState(true);
+  const [activeChartTab, setActiveChartTab] = useState<'orders' | 'conversion' | 'funnel' | 'status' | 'meta_vs_erp' | 'logistics'>('orders');
+  const [showReconciliationModal, setShowReconciliationModal] = useState(false);
+  const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
+  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
+
+  const applyPreset = (preset: string) => {
+    setPeriodPreset(preset);
+    const now = new Date();
+    if (preset === 'today') {
+      const todayStr = toLocalYYYYMMDD(now);
+      setDStart(todayStr);
+      setDEnd(todayStr);
+    } else if (preset === 'yesterday') {
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      const yStr = toLocalYYYYMMDD(y);
+      setDStart(yStr);
+      setDEnd(yStr);
+    } else if (preset === '7d') {
+      const s = new Date(); s.setDate(s.getDate() - 7);
+      setDStart(toLocalYYYYMMDD(s));
+      setDEnd(toLocalYYYYMMDD(now));
+    } else if (preset === '14d') {
+      const s = new Date(); s.setDate(s.getDate() - 14);
+      setDStart(toLocalYYYYMMDD(s));
+      setDEnd(toLocalYYYYMMDD(now));
+    } else if (preset === '30d') {
+      const s = new Date(); s.setDate(s.getDate() - 30);
+      setDStart(toLocalYYYYMMDD(s));
+      setDEnd(toLocalYYYYMMDD(now));
+    } else if (preset === 'this_month') {
+      const s = new Date(now.getFullYear(), now.getMonth(), 1);
+      setDStart(toLocalYYYYMMDD(s));
+      setDEnd(toLocalYYYYMMDD(now));
+    } else if (preset === 'last_month') {
+      const s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const e = new Date(now.getFullYear(), now.getMonth(), 0);
+      setDStart(toLocalYYYYMMDD(s));
+      setDEnd(toLocalYYYYMMDD(e));
+    }
+  };
 
   const analyticsQuery = useQuery<any>({
-    queryKey: ['lp-analytics', lp.id, dStart, dEnd],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
-    staleTime: 0,
+    queryKey: ['lp-performance-center', lp.id, dStart, dEnd, comparePrevious],
+    queryFn: () =>
+      apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z&compare_previous=${comparePrevious}`),
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
   });
 
-  const data = analyticsQuery.data?.data;
-  const daily: any[] = data?.daily ?? [];
-  const totals = data?.totals ?? {};
-  const maxOrders = Math.max(1, ...daily.map(d => d.orders));
+  const reconQuery = useQuery<any>({
+    queryKey: ['lp-recon-events', lp.id, dStart, dEnd],
+    queryFn: () =>
+      apiFetch(`/api/v1/landing-pages/${lp.id}/reconciliation-events?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
+    enabled: showReconciliationModal,
+    staleTime: 30 * 1000,
+  });
 
-  const trackingQuery = useQuery<any>({
-    queryKey: ['lp-tracking-quality', lp.id, dStart, dEnd],
-    queryFn: () => apiFetch(`/api/v1/landing-pages/${lp.id}/tracking-quality?date_from=${dStart}T00:00:00.000Z&date_to=${dEnd}T23:59:59.999Z`),
-    refetchOnWindowFocus: false,
-  });
-  const tq = trackingQuery.data?.data;
-  const queryClient = useQueryClient();
-  const backfillMutation = useMutation({
-    mutationFn: () => apiFetch<{ success: boolean; message: string }>('/api/v1/orders/capi/backfill-missing', {
-      method: 'POST',
-      body: JSON.stringify({ order_ids: null }),
-    }),
-    onSuccess: (res) => {
-      toast.success(res.message || 'Réintégration lancée');
-      queryClient.invalidateQueries({ queryKey: ['lp-tracking-quality'] });
-    },
-    onError: (err: any) => toast.error('Échec', { description: err.message }),
-  });
+  const data = analyticsQuery.data?.data;
+  const kpis = data?.kpis || {};
+  const health = data?.health_score || {};
+  const meta = data?.meta_performance || {};
+  const funnel = data?.funnel || [];
+  const charts = data?.charts || {};
+  const alerts = data?.alerts || [];
+  const quality = data?.quality || {};
+  const reconciliation = data?.reconciliation || {};
+  const diagnostic = data?.diagnostic_table || [];
+  const period = data?.period || {};
+
+  const copyUrl = () => {
+    const url = `${window.location.origin}/lp/${lp.slug}`;
+    navigator.clipboard.writeText(url);
+    toast.success('URL copiée dans le presse-papier !');
+  };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[94vw] max-w-[820px] max-h-[90dvh] overflow-y-auto custom-scrollbar bg-white rounded-[24px] p-0 border-none shadow-2xl">
-        <div className="px-6 py-5 border-b border-slate-100 sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-2 pr-8">
-            <DialogTitle className="text-base font-black text-slate-800 truncate">
-              {lp.headline || lp.product_name || lp.slug}
-            </DialogTitle>
-            {tq?.available && tq.health_score != null && (
-              <span
-                className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black"
-                style={{
-                  backgroundColor: { green: '#00B89422', yellow: '#FDCB6E33', orange: '#F7B73133', red: '#E1705533' }[tq.health_color as string] || '#E2E8F0',
-                  color: { green: '#00875A', yellow: '#B7791F', orange: '#B7550A', red: '#C0392B' }[tq.health_color as string] || '#475569',
-                }}
-                title={`${tq.health_score}% des ventes correctement transmises à Meta`}
+      <DialogContent className="w-[96vw] max-w-[1100px] max-h-[92dvh] overflow-y-auto custom-scrollbar bg-slate-50/50 dark:bg-slate-950 p-0 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl">
+        {/* ─── 1. Header & Health Score ────────────────────────────────────── */}
+        <div className="px-6 py-5 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 sticky top-0 z-20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <DialogTitle className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">
+                  {lp.headline || lp.product_name || lp.slug}
+                </DialogTitle>
+                <span className={cn(
+                  "px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1",
+                  lp.is_active ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400"
+                )}>
+                  <span className={cn("size-1.5 rounded-full", lp.is_active ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
+                  {lp.is_active ? "Actif" : "Inactif"}
+                </span>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono">
+                  /lp/{lp.slug}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                <span>Créée le {lp.created_at ? new Date(lp.created_at).toLocaleDateString('fr-FR') : '—'}</span>
+                <span>·</span>
+                <span>Source dominante : <strong className="text-slate-600 dark:text-slate-300">Paid Social (Meta Ads)</strong></span>
+              </p>
+            </div>
+
+            {/* Health Score Badge & Quick Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0">
+              {health.score != null && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowHealthBreakdown(!showHealthBreakdown)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all hover:scale-[1.02] shadow-sm bg-white dark:bg-slate-900"
+                    style={{ borderColor: health.color + '44' }}
+                    title="Cliquer pour voir le détail du calcul du score de santé"
+                  >
+                    <ShieldCheck className="size-4" style={{ color: health.color }} />
+                    <div className="text-left">
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Health Score</div>
+                      <div className="text-xs font-black" style={{ color: health.color }}>
+                        {health.score} / 100
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Health Score Breakdown Popover */}
+                  {showHealthBreakdown && (
+                    <div className="absolute right-0 top-12 w-80 p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl z-30 space-y-3 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                        <span className="font-extrabold text-slate-900 dark:text-slate-100">Calcul du Health Score</span>
+                        <button onClick={() => setShowHealthBreakdown(false)} className="text-slate-400 hover:text-slate-600">
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Performance Conversion (max 30)</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">+{health.breakdown?.conversion_score} pts</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Transmission Meta CAPI (max 25)</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">+{health.breakdown?.tracking_quality_score} pts</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Succès Livraison / Retours (max 25)</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">+{health.breakdown?.delivery_success_score} pts</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Numéros de suivi Noest (max 10)</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">+{health.breakdown?.tracking_completeness_score} pts</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Fiabilité & Zéro Erreur CAPI (max 10)</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">+{health.breakdown?.capi_reliability_score} pts</span>
+                        </div>
+                      </div>
+                      {health.reasons?.length > 0 && (
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] space-y-1 text-slate-500">
+                          {health.reasons.map((r: string, idx: number) => (
+                            <div key={idx} className="flex items-start gap-1">
+                              <span>•</span>
+                              <span>{r}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-white dark:bg-slate-900 hover:bg-slate-100"
+                onClick={() => window.open(`/lp/${lp.slug}`, '_blank')}
               >
-                {{ green: '🟢 Suivi Meta OK', yellow: '🟡 À surveiller', orange: '🟠 À vérifier', red: '🔴 À corriger' }[tq.health_color as string] || '⚪ —'}
-              </span>
-            )}
+                <ExternalLink className="size-3.5" /> Aperçu
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-white dark:bg-slate-900 hover:bg-slate-100"
+                onClick={copyUrl}
+              >
+                <Copy className="size-3.5" /> Copier URL
+              </Button>
+            </div>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 font-mono mt-1">
-            /lp/{lp.slug}
-            {data?.created_at && <> · créée le {new Date(data.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</>}
-          </p>
         </div>
 
-        <div className="p-6 space-y-5">
-          {/* Barre de Filtrage par Date (Appliquée au Graphe & à la Logistique ERP) */}
-          <div className="flex items-center gap-2 flex-wrap bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-800">
-            <Calendar className="size-4 text-slate-400" />
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Période ERP Logistique :</span>
-            <input type="date" value={dStart} onChange={e => setDStart(e.target.value)}
-              className="h-8 px-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none" />
-            <span className="text-slate-300">→</span>
-            <input type="date" value={dEnd} onChange={e => setDEnd(e.target.value)}
-              className="h-8 px-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none" />
-            <button type="button"
-              onClick={() => {
-                const s = new Date(); s.setDate(1);
-                setDStart(toLocalYYYYMMDD(s));
-                setDEnd(toLocalYYYYMMDD(new Date()));
-              }}
-              className="h-8 px-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 text-[10px] font-black uppercase transition-colors">
-              Ce mois
-            </button>
-            {([['7j', 7], ['30j', 30], ['90j', 90]] as const).map(([label, days]) => (
-              <button key={label} type="button"
-                onClick={() => {
-                  const s = new Date(); s.setDate(s.getDate() - days);
-                  setDStart(toLocalYYYYMMDD(s));
-                  setDEnd(toLocalYYYYMMDD(new Date()));
-                }}
-                className="h-8 px-2.5 rounded-xl bg-slate-200/60 hover:bg-slate-200 text-[10px] font-black uppercase text-slate-600 transition-colors">
-                {label}
+        <div className="p-6 space-y-6">
+          {/* ─── 2. Global Date Filter Bar ───────────────────────────────── */}
+          <div className="bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Calendar className="size-4 text-slate-400 mr-1" />
+              {[
+                { id: 'today', label: "Aujourd'hui" },
+                { id: 'yesterday', label: 'Hier' },
+                { id: '7d', label: '7 jours' },
+                { id: '14d', label: '14 jours' },
+                { id: '30d', label: '30 jours' },
+                { id: 'this_month', label: 'Ce mois' },
+                { id: 'last_month', label: 'Mois dernier' },
+              ].map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p.id)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-xl text-xs font-bold transition-colors",
+                    periodPreset === p.id
+                      ? "bg-[#6C5CE7] text-white shadow-sm"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 ml-auto flex-wrap">
+              <input
+                type="date"
+                value={dStart}
+                onChange={e => { setPeriodPreset('custom'); setDStart(e.target.value); }}
+                className="h-8 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none"
+              />
+              <span className="text-slate-400">→</span>
+              <input
+                type="date"
+                value={dEnd}
+                onChange={e => { setPeriodPreset('custom'); setDEnd(e.target.value); }}
+                className="h-8 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold outline-none"
+              />
+
+              <label className="flex items-center gap-1.5 cursor-pointer ml-2 text-xs font-bold text-slate-500">
+                <input
+                  type="checkbox"
+                  checked={comparePrevious}
+                  onChange={e => setComparePrevious(e.target.checked)}
+                  className="rounded text-[#6C5CE7]"
+                />
+                <span>vs période précédente</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={() => analyticsQuery.refetch()}
+                disabled={analyticsQuery.isFetching}
+                className="h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors ml-1"
+                title="Actualiser les métriques"
+              >
+                <RefreshCw className={cn("size-3.5", analyticsQuery.isFetching && "animate-spin text-[#6C5CE7]")} />
+                <span>Actualiser</span>
               </button>
-            ))}
-            <button type="button"
-              onClick={() => analyticsQuery.refetch()}
-              className="h-8 px-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 text-[10px] font-black uppercase flex items-center gap-1 transition-colors ml-auto">
-              <RefreshCw className={cn("size-3", analyticsQuery.isFetching && "animate-spin")} /> Actualiser Meta Live
-            </button>
+            </div>
           </div>
 
-          {/* Section 1 : Suivi Logistique ERP (Micro-détails complets) */}
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">📦 État Logistique des Commandes (Micro-détails)</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12 gap-2">
-              {[
-                { label: 'Confirmées', value: totals.confirmed ?? totals.confirmed_delivered ?? 0, sub: 'validées / expédiées', color: '#4B7BEC' },
-                { label: 'Avec N° Suivi', value: totals.with_tracking ?? totals.shipped ?? 0, sub: 'N° de suivi généré', color: '#00CEC9' },
-                { label: 'Commandes Livrées', value: totals.delivered ?? 0, sub: `${totals.delivered_items ?? totals.delivered ?? 0} articles`, color: '#00B894' },
-                { label: 'Livraison Noest', value: totals.out_for_delivery_noest ?? 0, sub: 'transporteur noest', color: '#6C5CE7' },
-                { label: 'Livraison Interne', value: totals.out_for_delivery_internal ?? 0, sub: 'livreur interne', color: '#10B981' },
-                { label: 'Expédition Hub', value: totals.expedition_hub ?? 0, sub: 'transfert hub', color: '#3B82F6' },
-                { label: 'En Hub', value: totals.in_hub ?? 0, sub: 'reçu au centre', color: '#8B5CF6' },
-                { label: 'En Transit', value: totals.shipped ?? 0, sub: 'en route', color: '#0984E3' },
-                { label: 'Colis Suspendus', value: totals.suspended ?? 0, sub: 'bloqués / problème', color: '#F7B731' },
-                { label: 'Commandes Annulées', value: totals.cancelled ?? 0, sub: 'annulées client/agent', color: '#EB4D4B' },
-                { label: 'Retours Reçus', value: totals.returned_received ?? totals.returned ?? 0, sub: 'reçus en agence', color: '#D63031' },
-                { label: 'Retours En Cours', value: totals.returned_in_transit ?? 0, sub: 'demandés / transit', color: '#E17055' },
-                { label: 'Total Retours', value: totals.returned ?? 0, sub: `${totals.returned_items ?? totals.returned ?? 0} articles`, color: '#B2BEC3' },
-              ].map(s => (
-                <div key={s.label} className="text-center p-2.5 rounded-2xl border transition-all hover:scale-[1.02]"
-                  style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                  <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                  <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-                  <p className="text-[9px] font-semibold text-slate-400 mt-0.5">{s.sub}</p>
+          {/* Period Range Subtitle */}
+          {period.date_start_str && (
+            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+              <div>
+                Période analysée : <strong className="text-slate-700 dark:text-slate-300">{period.date_start_str} au {period.date_end_str}</strong> ({period.days_count} jours)
+                {comparePrevious && period.previous_start_str && (
+                  <span className="ml-2 text-slate-400">· Comparée à : {period.previous_start_str} au {period.previous_end_str}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ─── 3. Section Alertes Intelligentes (Si Anomalies) ─────────── */}
+          {alerts.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-500">
+                <AlertTriangle className="size-4 text-amber-500" />
+                <span>Alertes & Anomalies Détectées ({alerts.length})</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {alerts.map((a: any, idx: number) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "p-3.5 rounded-2xl border flex items-start gap-3",
+                      a.severity === 'critical'
+                        ? "bg-rose-50/70 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50 text-rose-900 dark:text-rose-200"
+                        : "bg-amber-50/70 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-900 dark:text-amber-200"
+                    )}
+                  >
+                    <span className="text-base shrink-0">{a.icon}</span>
+                    <div className="space-y-1">
+                      <p className="text-xs font-black">{a.title}</p>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">{a.description}</p>
+                      {a.action && (
+                        <p className="text-[10px] font-bold text-slate-500 mt-1">
+                          👉 <em>Action recommandée :</em> {a.action}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── 4. KPIs Principaux (6 Cartes Épurées) ───────────────────── */}
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">KPIs Principaux (First-Party ERP)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* KPI 1 - Commandes */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Commandes</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-slate-900 dark:text-slate-100 tabular-nums">
+                    {kpis.orders?.value ?? 0}
+                  </span>
+                  {kpis.orders?.variation_pct != null && (
+                    <span className={cn("text-[10px] font-bold flex items-center", kpis.orders.variation_pct >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                      {kpis.orders.variation_pct >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+                      {Math.abs(kpis.orders.variation_pct)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Total attribué à la LP</p>
+              </div>
+
+              {/* KPI 2 - Taux de Conversion */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Conversion</p>
+                  <span title="Commandes / Visiteurs qualifiés" className="text-slate-300 hover:text-slate-500 cursor-help">
+                    <Info className="size-3" />
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    {kpis.conversion_rate?.formatted ?? '—'}
+                  </span>
+                  {kpis.conversion_rate?.variation_pct != null && (
+                    <span className={cn("text-[10px] font-bold flex items-center", kpis.conversion_rate.variation_pct >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                      {kpis.conversion_rate.variation_pct >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
+                      {Math.abs(kpis.conversion_rate.variation_pct)}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">{kpis.conversion_rate?.sessions_count ?? 0} sessions qualifiées</p>
+              </div>
+
+              {/* KPI 3 - Paniers Récupérés */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Paniers Récupérés</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-purple-600 dark:text-purple-400 tabular-nums">
+                    {kpis.recovered_carts?.recovered_count ?? 0}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-500">
+                    {kpis.recovered_carts?.formatted_rate ?? '—'}
+                  </span>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">sur {kpis.recovered_carts?.abandoned_count ?? 0} abandons</p>
+              </div>
+
+              {/* KPI 4 - Commandes Livrées */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Livrées</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-[#00B894] tabular-nums">
+                    {kpis.delivered?.value ?? 0}
+                  </span>
+                  {kpis.delivered?.delivery_rate_pct != null && (
+                    <span className="text-[10px] font-bold text-[#00B894]">
+                      {kpis.delivered.delivery_rate_pct}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Statut DELIVERED</p>
+              </div>
+
+              {/* KPI 5 - Retours */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Retours</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-[#D63031] tabular-nums">
+                    {kpis.returned?.value ?? 0}
+                  </span>
+                  {kpis.returned?.return_rate_pct != null && (
+                    <span className="text-[10px] font-bold text-[#D63031]">
+                      {kpis.returned.return_rate_pct}%
+                    </span>
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Statut RETURNED</p>
+              </div>
+
+              {/* KPI 6 - Expédiées & Tracking */}
+              <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Expédiées & Suivi</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xl font-black text-[#0984E3] tabular-nums">
+                    {kpis.shipped?.shipped_count ?? 0}
+                  </span>
+                  <span className="text-[10px] font-bold text-[#0984E3]">
+                    {kpis.shipped?.with_tracking_count ?? 0} trackés
+                  </span>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Numéro de bordereau Noest</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── 5. Section Performance Meta Ads (Séparée de l'ERP) ──────── */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-purple-700 dark:text-purple-400 flex items-center gap-1.5">
+                  <span>📢 Performance Meta Ads</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 font-bold">
+                    Données déclarées par Meta Ads Insights
+                  </span>
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Source de vérité publicitaire distincte de l'ERP interne — basée sur la campagne Meta associée.
+                </p>
+              </div>
+              {meta.last_meta_sync_at && (
+                <div className="text-[10px] text-slate-400 font-mono">
+                  Dernière synchro : {new Date(meta.last_meta_sync_at).toLocaleTimeString('fr-FR')}
+                </div>
+              )}
+            </div>
+
+            {meta.is_available ? (
+              <div className="space-y-3">
+                {/* Matched Campaign Banner */}
+                <div className="p-2.5 bg-purple-50/50 dark:bg-purple-950/20 rounded-xl border border-purple-100 dark:border-purple-900/40 text-xs flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Campagne liée :</span>
+                    <strong className="text-purple-700 dark:text-purple-300">{meta.campaign_name}</strong>
+                    <span className="text-[10px] text-slate-400 font-mono">({meta.campaign_id})</span>
+                  </div>
+                  <div className="text-xs font-black text-purple-700 dark:text-purple-300">
+                    Dépense : {meta.spend_raw} {meta.currency} {meta.currency !== 'DZD' && `(${meta.spend_dzd.toLocaleString('fr-FR')} DA)`}
+                  </div>
+                </div>
+
+                {/* 6 Meta Metric Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums">{(meta.impressions ?? 0).toLocaleString('fr-FR')}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">Impressions</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums">{(meta.reach ?? 0).toLocaleString('fr-FR')}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">Portée (Reach)</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums">{(meta.clicks ?? 0).toLocaleString('fr-FR')}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">Clics sur liens</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums">{meta.ctr_pct != null ? `${meta.ctr_pct}%` : '—'}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">CTR Meta</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{meta.purchases ?? 0}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">Achats Meta</p>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/50 dark:border-slate-800">
+                    <p className="text-base font-black text-emerald-600 dark:text-emerald-400 tabular-nums">{meta.conversion_rate_pct != null ? `${meta.conversion_rate_pct}%` : '—'}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-0.5">Taux Conv. Meta</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl text-center space-y-1">
+                <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Données Meta non associées</p>
+                <p className="text-[11px] text-slate-400">{meta.reason || "Aucune campagne publicitaire Meta active n'a été liée à cette landing page pour cette période."}</p>
+              </div>
+            )}
+          </div>
+
+          {/* ─── 6. Grand Funnel Visuel (Pipeline Complet) ───────────────── */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                🎯 Entonnoir de Conversion Global (Funnel)
+              </p>
+              <span className="text-[10px] text-slate-400">Taux de passage étape par étape</span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+              {funnel.map((f: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center space-y-1 relative"
+                >
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 truncate" title={f.stage}>
+                    {f.stage}
+                  </p>
+                  <p className="text-base font-black text-slate-900 dark:text-slate-100 tabular-nums">
+                    {(f.volume ?? 0).toLocaleString('fr-FR')}
+                  </p>
+                  {f.conversion_from_prev_pct != null && (
+                    <div className="text-[10px] font-bold text-purple-600 dark:text-purple-400 flex items-center justify-center gap-0.5">
+                      <span>↓</span> {f.conversion_from_prev_pct}%
+                    </div>
+                  )}
+                  <p className="text-[8px] text-slate-400 truncate" title={f.source}>{f.source}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Section 2 : Financement & Performances Meta Ads */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">📢 Performances & Financement Meta Ads (Dernier Mois)</p>
-              <span className="text-[9px] font-extrabold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
-                📊 Résultats du Dernier Mois — Meta Ads
-              </span>
-            </div>
-            {(() => {
-              const curr = (totals.meta_currency || 'DZD').toUpperCase();
-              const fmtCurr = (val: number, rawVal?: number) => {
-                if (curr === 'DZD' || curr === 'DA') {
-                  return `${Math.round(val).toLocaleString('fr-FR')} DA`;
-                }
-                const effectiveRaw = (rawVal != null && rawVal > 0) ? rawVal : (val > 0 && val < 5000 ? val : 0);
-                const symbol = curr === 'USD' ? '$' : curr === 'EUR' ? '€' : curr === 'GBP' ? '£' : curr;
-                const formattedRaw = symbol === '$' 
-                  ? `$${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : symbol === '€' ? `${effectiveRaw.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
-                  : `${effectiveRaw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${curr}`;
-                
-                if (val > 0 && Math.abs(val - effectiveRaw) > 0.01 && val > effectiveRaw) {
-                  return `${formattedRaw} (${Math.round(val).toLocaleString('fr-FR')} DA)`;
-                }
-                return formattedRaw;
-              };
-
-              const spendStr = fmtCurr(totals.meta_spend ?? 0, totals.meta_raw_spend);
-              const budgetStr = (totals.meta_raw_budget_daily ?? 0) > 0 
-                ? `$${totals.meta_raw_budget_daily.toFixed(2)}/j`
-                : totals.meta_budget_daily > 0 
-                  ? `${fmtCurr(totals.meta_budget_daily ?? 0, totals.meta_raw_budget_daily)}/j` 
-                  : '0 $/j';
-              const cpaStr = (totals.meta_raw_cpa_purchases ?? 0) > 0 
-                ? `$${totals.meta_raw_cpa_purchases.toFixed(2)}`
-                : (totals.meta_cpa_purchases ?? 0) > 0 
-                  ? `${Math.round(totals.meta_cpa_purchases).toLocaleString('fr-FR')} DA` 
-                  : '—';
-
-              return (
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
-                  {[
-                    { label: 'Impressions Meta', value: (totals.meta_impressions ?? 0).toLocaleString('fr-FR'), color: '#1877F2', title: "Nombre total d'impressions des annonces Meta" },
-                    { label: 'Montant Dépensé', value: spendStr, color: '#E17055', title: `Dépenses publicitaires totales (${curr}) sur cette période` },
-                    { label: 'Dépense moy. / jour', value: budgetStr, color: '#0984E3', title: "Dépense quotidienne moyenne réelle sur la période sélectionnée" },
-                    { label: 'Achats Meta', value: totals.meta_purchases ?? 0, color: '#00B894', title: "Nombre d'achats déclarés directement par Meta" },
-                    { label: 'Coût / Résultat', value: cpaStr, color: '#8E44AD', title: "Coût moyen par achat publicitaire Meta (Dépense ÷ Achats Meta)" },
-                    { label: 'Taux de Conversion', value: totals.taux_conversion_pct != null ? `${totals.taux_conversion_pct}%` : '—', color: '#F7B731', title: "Achats / Commandes ÷ Clics Meta (%)" },
-                  ].map(s => (
-                    <div key={s.label} title={s.title} className="text-center p-3 rounded-2xl border"
-                      style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            {/* Micro-détails des Conversions Meta (Web Pixel vs Messagerie vs Totaux) */}
-            <div className="mt-3 p-3 rounded-2xl border border-emerald-500/20 bg-emerald-50/40 dark:bg-emerald-950/20 text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
-              <div className="flex items-center justify-between font-bold text-emerald-700 dark:text-emerald-400">
-                <span>🎯 Ventilation des Conversions Meta Ads (Dernier Mois)</span>
-                <span className="text-[9px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-full font-extrabold">
-                  Détail du Dernier Mois
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
-                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="font-extrabold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                    <span>🛒 Achats Site Web (Pixel)</span>
-                    <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded">Par défaut</span>
-                  </div>
-                  <div className="text-emerald-600 dark:text-emerald-400 text-base font-black mt-1">
-                    {totals.meta_web_purchases ?? totals.meta_purchases ?? 0}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
-                    Achats réels effectués sur votre Landing Page / Site Web captés par le Pixel.
-                  </div>
-                </div>
-                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="font-extrabold text-slate-900 dark:text-slate-100">💬 Achats In-App & Messagerie</div>
-                  <div className="text-sky-600 dark:text-sky-400 text-base font-black mt-1">
-                    {totals.meta_onsite_purchases ?? 0}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
-                    Conversions générées via Instant Forms, Messenger, WhatsApp ou IG Shopping.
-                  </div>
-                </div>
-                <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                  <div className="font-extrabold text-slate-900 dark:text-slate-100">🌐 Achats Totaux Omnicanal</div>
-                  <div className="text-purple-600 dark:text-purple-400 text-base font-black mt-1">
-                    {totals.meta_omni_purchases ?? ((totals.meta_purchases ?? 0) + (totals.meta_onsite_purchases ?? 0))}
-                  </div>
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
-                    Somme globale Meta ({(totals.meta_web_purchases ?? totals.meta_purchases ?? 0)} Web + {(totals.meta_onsite_purchases ?? 0)} Messagerie = {totals.meta_omni_purchases ?? ((totals.meta_purchases ?? 0) + (totals.meta_onsite_purchases ?? 0))}).
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Micro-détails — regroupés par question claire ("d'où viennent
-              mes commandes ?" / "combien de relances téléphoniques ?"),
-              chaque groupe visuellement séparé pour que le client s'y
-              retrouve sans avoir à deviner ce que chaque chiffre veut dire. */}
-          <div className="space-y-3">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">D'où viennent ces commandes ?</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {/* ─── 7. Graphiques Analytiques (Onglets Épurés) ──────────────── */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {[
-                  { label: 'Panier normal', value: totals.normal ?? 0, color: '#6C5CE7', title: "Commande passée normalement au checkout — pas un panier abandonné, pas manuelle, pas un doublon." },
-                  { label: 'Panier abandonné', value: totals.abandoned ?? 0, color: '#FDCB6E', title: "Client parti sans finaliser — total, qu'il ait été récupéré ensuite ou non." },
-                  { label: 'dont récupéré', value: totals.recovered ?? 0, color: '#00B894', title: "Panier abandonné rappelé et confirmé/livré par la suite." },
-                  { label: 'dont jamais récupéré', value: totals.abandoned_not_recovered ?? 0, color: '#E17055', title: "Panier abandonné resté sans suite — toujours ouvert ou définitivement perdu." },
-                  { label: 'Doublons fusionnés', value: totals.duplicates ?? 0, color: '#B2BEC3', title: "Même client, même produit, soumis plusieurs fois — fusionnés automatiquement en une seule commande." },
-                  { label: 'Manuelles', value: totals.manual ?? 0, color: '#636E72', title: "Créées à la main par un agent (téléphone, réseaux sociaux) — jamais vues par Meta." },
-                ].map(s => (
-                  <div key={s.label} title={s.title} className="text-center p-2.5 rounded-xl border" style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                    <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                    <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-                  </div>
-                ))}
+                  { id: 'orders', label: 'Évolution Commandes', icon: TrendingUp },
+                  { id: 'status', label: 'Par Statut Réel', icon: BarChart3 },
+                  { id: 'meta_vs_erp', label: 'Meta vs AzzougShop', icon: Layers },
+                  { id: 'logistics', label: 'Qualité Livraison', icon: Truck },
+                ].map(t => {
+                  const Icon = t.icon;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setActiveChartTab(t.id as any)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors",
+                        activeChartTab === t.id
+                          ? "bg-[#6C5CE7] text-white shadow-sm"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
+                      )}
+                    >
+                      <Icon className="size-3.5" />
+                      <span>{t.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {(totals.nrp ?? 0) > 0 && (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Relances téléphoniques (NRP — ne répond pas)</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'Total NRP', value: totals.nrp ?? 0, color: '#E17055', title: "Commandes en cours (pas encore livrées/annulées) où le client n'a pas répondu au moins une fois." },
-                    { label: 'NRP panier normal', value: totals.nrp_normal ?? 0, color: '#FDCB6E', title: "NRP sur une commande passée normalement au checkout." },
-                    { label: 'NRP panier abandonné', value: totals.nrp_abandoned ?? 0, color: '#FDCB6E', title: "NRP sur un panier abandonné en cours de récupération téléphonique." },
-                  ].map(s => (
-                    <div key={s.label} title={s.title} className="text-center p-2.5 rounded-xl border" style={{ borderColor: s.color + '33', backgroundColor: s.color + '0D' }}>
-                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Graphe Comparatif Commandes vs Impressions Meta */}
-          <div className="bg-slate-50 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold text-slate-500">Performances vs Trafic Meta</p>
-            </div>
-            {analyticsQuery.isLoading ? (
-              <div className="h-64 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
-            ) : daily.length === 0 ? (
-              <div className="h-64 flex items-center justify-center text-xs font-bold text-slate-300">
-                Aucune donnée sur cette période
-              </div>
-            ) : (
-              <div className="h-64 w-full">
+            {/* Chart Area */}
+            <div className="h-64 w-full">
+              {analyticsQuery.isLoading ? (
+                <div className="h-full flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+              ) : activeChartTab === 'orders' ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={daily} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <ComposedChart data={charts.orders_timeline || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                    <XAxis 
-                      dataKey="date" 
-                      tickFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 10, fill: '#94A3B8' }} 
-                      dy={10}
-                    />
-                    <YAxis yAxisId="left" orientation="left" stroke="#1E293B" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={30} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#1877F2" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={45} tickFormatter={(val) => val >= 1000 ? `${(val/1000).toFixed(0)}k` : val} />
-                    <YAxis yAxisId="right-percent" orientation="right" stroke="#E17055" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} width={35} tickFormatter={(val) => `${val}%`} />
-                    <Tooltip 
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', fontSize: '12px', fontWeight: 'bold' }}
-                      labelFormatter={(val) => new Date(val).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                      formatter={(value: any, name: string) => {
-                        if (name === "Taux de Conv.") return [`${value}%`, name];
-                        return [value, name];
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', paddingTop: '10px' }} />
-                    <Bar yAxisId="left" dataKey="normal" name="Cmd. Normale" stackId="a" fill="#2C3E50" maxBarSize={40} />
-                    <Bar yAxisId="left" dataKey="manual" name="Cmd. Manuelle" stackId="a" fill="#7F8C8D" maxBarSize={40} />
-                    <Bar yAxisId="left" dataKey="recovered" name="Panier Récup." stackId="a" fill="#8E44AD" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    <Bar yAxisId="left" dataKey="delivered" name="Livrées" fill="#00B894" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    <Line yAxisId="right" type="monotone" dataKey="meta_impressions" name="Impressions Meta" stroke="#1877F2" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-                    <Line yAxisId="right-percent" type="monotone" dataKey="conversion_rate" name="Taux de Conv." stroke="#E17055" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#FFF' }} activeDot={{ r: 6 }} />
+                    <XAxis dataKey="date" tickFormatter={v => v.slice(5)} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }} />
+                    <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 'bold' }} />
+                    <Bar dataKey="normal" name="Commandes Normales" stackId="a" fill="#6C5CE7" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                    <Bar dataKey="recovered" name="Paniers Récupérés" stackId="a" fill="#00B894" radius={[4, 4, 0, 0]} maxBarSize={35} />
+                    <Line type="monotone" dataKey="delivered" name="Livrées" stroke="#0984E3" strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="returned" name="Retours" stroke="#D63031" strokeWidth={2.5} dot={{ r: 3 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-
-          {/* Qualité du Tracking — pourquoi Meta et l'ERP ne matchent pas */}
-          <div className="bg-slate-50 rounded-2xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Qualité du Tracking (ERP → Meta CAPI)</p>
-              {tq?.available && (
-                <div className="flex items-center gap-3">
-                  {(tq.gap_breakdown?.jamais_tente?.count ?? 0) > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => backfillMutation.mutate()}
-                      disabled={backfillMutation.isPending}
-                      title="Renvoie le Purchase Meta pour les commandes confirmées/livrées dont aucune ligne CAPI n'existe — typiquement des paniers abandonnés récupérés par téléphone avant que ce déclencheur n'existe."
-                      className="text-[9px] font-black uppercase tracking-wider text-amber-600 hover:underline disabled:opacity-50"
-                    >
-                      {backfillMutation.isPending ? 'Réintégration…' : 'Réintégrer les CAPI manquants'}
-                    </button>
-                  )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const res = await fetch(`/api/v1/landing-pages/${lp.id}/tracking-quality/export?format=csv`, { credentials: 'include' });
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = `diagnostic-${lp.slug}.csv`;
-                    document.body.appendChild(a); a.click(); a.remove();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="text-[9px] font-black uppercase tracking-wider text-[#6C5CE7] hover:underline"
-                >
-                  Télécharger le diagnostic
-                </button>
+              ) : activeChartTab === 'status' ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={charts.status_breakdown || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                    <XAxis dataKey="status" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }} />
+                    <Bar dataKey="count" name="Nombre de commandes" fill="#6C5CE7" radius={[6, 6, 0, 0]} maxBarSize={45} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : activeChartTab === 'meta_vs_erp' ? (
+                <div className="h-full flex items-center justify-around p-6 text-center">
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800 w-48">
+                    <p className="text-xs font-bold text-purple-600">Achats Déclarés Meta</p>
+                    <p className="text-3xl font-black text-purple-700 dark:text-purple-300 mt-2">{charts.meta_vs_erp?.meta_purchases ?? 0}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Source : Meta Ads Insights</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 w-48">
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Commandes Réelles ERP</p>
+                    <p className="text-3xl font-black text-slate-900 dark:text-slate-100 mt-2">{charts.meta_vs_erp?.erp_orders ?? 0}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Source : AzzougShop ERP</p>
+                  </div>
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-800 w-48">
+                    <p className="text-xs font-bold text-emerald-600">Écart Observé</p>
+                    <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400 mt-2">{charts.meta_vs_erp?.gap_label ?? '0'}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">ERP vs Meta Insights</p>
+                  </div>
                 </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={charts.delivery_quality || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+                    <Tooltip contentStyle={{ borderRadius: '12px', fontSize: '11px', fontWeight: 'bold' }} />
+                    <Bar dataKey="value" name="Nombre de commandes" fill="#00B894" radius={[6, 6, 0, 0]} maxBarSize={45} />
+                  </ComposedChart>
+                </ResponsiveContainer>
               )}
             </div>
-            {trackingQuery.isLoading ? (
-              <div className="h-24 flex items-center justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
-            ) : !tq?.available ? (
-              <div className="text-xs font-bold text-slate-400 text-center py-4">Aucun produit lié à cette page — qualité du tracking indisponible</div>
-            ) : (
-              <>
-                {/* 3 chiffres seulement, sans jargon — le détail technique
-                    (queue/retry/cause_inconnue…) reste dans l'API mais ne
-                    sert plus à rien à afficher pour un utilisateur non-tech :
-                    soit c'est réglé automatiquement, soit le bouton
-                    "Réintégrer" ci-dessus le corrige en un clic. */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'Ventes', value: tq.eligible_for_capi, color: '#0984E3' },
-                    { label: 'Bien envoyées à Meta', value: tq.capi.success, color: '#00B894' },
-                    { label: 'Déclarées par Meta', value: tq.meta_ads_purchases ?? '—', color: '#F7B731' },
-                  ].map(s => (
-                    <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
-                      <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5" style={{ color: s.color }}>{s.label}</p>
-                    </div>
+          </div>
+
+          {/* ─── 8. Réconciliation Meta ↔ AzzougShop ──────────────────────── */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  ⚖️ Réconciliation Meta ↔ AzzougShop
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  Comparaison directe des données d'achat avec traçabilité unitaire.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-slate-50 hover:bg-slate-100"
+                onClick={() => setShowReconciliationModal(true)}
+              >
+                🔍 Voir les événements concernés
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 text-left">
+                    <th className="pb-2 font-bold">Indicateur</th>
+                    <th className="pb-2 font-bold text-right">Déclaré par Meta</th>
+                    <th className="pb-2 font-bold text-right">Enregistré ERP</th>
+                    <th className="pb-2 font-bold text-right">Écart</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                  {(reconciliation.metrics || []).map((m: any, idx: number) => (
+                    <tr key={idx}>
+                      <td className="py-2.5 font-bold text-slate-700 dark:text-slate-300">{m.name}</td>
+                      <td className="py-2.5 text-right font-mono">{m.meta_value}</td>
+                      <td className="py-2.5 text-right font-mono font-bold">{m.erp_value}</td>
+                      <td className="py-2.5 text-right font-mono font-black text-purple-600">{m.gap}</td>
+                    </tr>
                   ))}
-                </div>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10px] text-slate-400 italic">
+              ℹ️ {reconciliation.notice}
+            </p>
+          </div>
 
-                {((tq.capi.realtime ?? 0) > 0 || (tq.capi.backfill ?? 0) > 0) && (
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400" title="Temps réel = envoyé automatiquement dans les heures suivant la vente. Backfill = rattrapé plus tard (ex: après une correction technique).">
-                    <span>🟢 {tq.capi.realtime ?? 0} temps réel</span>
-                    <span>·</span>
-                    <span>🟡 {tq.capi.backfill ?? 0} rattrapé après coup</span>
-                  </div>
-                )}
+          {/* ─── 9. Tableau de Diagnostic Détaillé (Pliable) ──────────────── */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsDiagnosticOpen(!isDiagnosticOpen)}
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors"
+            >
+              <div>
+                <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  📑 Tableau de Diagnostic Quotidien (Audit Détaillé)
+                </p>
+                <p className="text-[10px] text-slate-400">Historique jour par jour de toutes les étapes</p>
+              </div>
+              {isDiagnosticOpen ? <ChevronUp className="size-4 text-slate-400" /> : <ChevronDown className="size-4 text-slate-400" />}
+            </button>
 
-                {tq.gap_total > 0 && (
-                  <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100">
-                    <div className="flex-1">
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${tq.health_score ?? 0}%`, backgroundColor: tq.health_score >= 90 ? '#00B894' : tq.health_score >= 70 ? '#FDCB6E' : '#E17055' }} />
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-1.5">
-                        {tq.gap_total} vente{tq.gap_total > 1 ? 's' : ''} sur {tq.eligible_for_capi} pas encore bien transmise{tq.gap_total > 1 ? 's' : ''} à Meta.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {tq.problematic_orders?.length > 0 && (
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-2">Commandes problématiques ({tq.problematic_orders.length})</p>
-                    <div className="overflow-x-auto custom-scrollbar">
-                      <table className="w-full text-[10px]">
-                        <thead>
-                          <tr className="text-slate-400 text-left">
-                            <th className="pb-1 pr-2">Commande</th>
-                            <th className="pb-1 pr-2">Statut ERP</th>
-                            <th className="pb-1 pr-2">Statut CAPI</th>
-                            <th className="pb-1">Cause</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tq.problematic_orders.slice(0, 15).map((o: any) => (
-                            <tr key={o.order_id} className="border-t border-slate-100">
-                              <td className="py-1 pr-2 font-mono">{o.order_number}</td>
-                              <td className="py-1 pr-2">{o.erp_status}</td>
-                              <td className="py-1 pr-2">{o.capi_status}</td>
-                              <td className="py-1 text-slate-500 truncate max-w-[200px]" title={o.cause}>{o.cause}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                <details className="text-[9px] text-slate-400">
-                  <summary className="cursor-pointer font-bold uppercase tracking-wider">Métriques non disponibles</summary>
-                  <ul className="mt-1 space-y-1 pl-3 list-disc">
-                    {Object.entries(tq.unavailable_metrics || {}).map(([k, v]) => (
-                      <li key={k}>{v as string}</li>
+            {isDiagnosticOpen && (
+              <div className="p-4 pt-0 overflow-x-auto border-t border-slate-100 dark:border-slate-800">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 font-bold">
+                      <th className="py-2">Date</th>
+                      <th className="py-2 text-right">Commandes</th>
+                      <th className="py-2 text-right">Normales</th>
+                      <th className="py-2 text-right">Abandons</th>
+                      <th className="py-2 text-right">Récupérées</th>
+                      <th className="py-2 text-right">Expédiées</th>
+                      <th className="py-2 text-right">Trackées</th>
+                      <th className="py-2 text-right">Livrées</th>
+                      <th className="py-2 text-right">Retours</th>
+                      <th className="py-2 text-right">Chiffre d'Affaires</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
+                    {diagnostic.map((row: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                        <td className="py-2 font-mono font-bold text-slate-600 dark:text-slate-400">{row.date}</td>
+                        <td className="py-2 text-right font-black">{row.orders}</td>
+                        <td className="py-2 text-right text-slate-500">{row.normal}</td>
+                        <td className="py-2 text-right text-amber-600">{row.abandoned}</td>
+                        <td className="py-2 text-right text-purple-600">{row.recovered}</td>
+                        <td className="py-2 text-right text-blue-600">{row.shipped}</td>
+                        <td className="py-2 text-right text-sky-600">{row.with_tracking}</td>
+                        <td className="py-2 text-right text-emerald-600 font-bold">{row.delivered}</td>
+                        <td className="py-2 text-right text-rose-600">{row.returned}</td>
+                        <td className="py-2 text-right font-mono">{Math.round(row.revenue_dzd).toLocaleString('fr-FR')} DA</td>
+                      </tr>
                     ))}
-                  </ul>
-                </details>
-              </>
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
+
+        {/* ─── Sub-Modal: Reconciliation Events Drilldown ───────────────── */}
+        {showReconciliationModal && (
+          <Dialog open={showReconciliationModal} onOpenChange={setShowReconciliationModal}>
+            <DialogContent className="max-w-3xl w-[90vw] max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl p-5 space-y-4">
+              <DialogHeader>
+                <DialogTitle className="text-sm font-black flex items-center justify-between">
+                  <span>Événements & Commandes — Audit Meta CAPI</span>
+                  <span className="text-xs font-mono text-slate-400">{reconQuery.data?.count ?? 0} commandes analysées</span>
+                </DialogTitle>
+              </DialogHeader>
+
+              {reconQuery.isLoading ? (
+                <div className="py-12 flex justify-center"><Loader2 className="size-6 animate-spin text-slate-300" /></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-slate-400 text-left">
+                        <th className="pb-2">N° Commande</th>
+                        <th className="pb-2">Date</th>
+                        <th className="pb-2">Client</th>
+                        <th className="pb-2">Statut ERP</th>
+                        <th className="pb-2">Statut Meta CAPI</th>
+                        <th className="pb-2">Détails / Erreurs</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {(reconQuery.data?.events || []).map((ev: any) => (
+                        <tr key={ev.order_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="py-2 font-mono font-bold">{ev.order_number}</td>
+                          <td className="py-2 text-slate-400 text-[11px]">{ev.created_at ? new Date(ev.created_at).toLocaleDateString('fr-FR') : '—'}</td>
+                          <td className="py-2">{ev.customer_name}</td>
+                          <td className="py-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                              {ev.status}
+                            </span>
+                          </td>
+                          <td className="py-2">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-bold",
+                              ev.capi_status === 'success' ? "bg-emerald-50 text-emerald-700" :
+                              ev.capi_status === 'queued' ? "bg-sky-50 text-sky-700" :
+                              ev.capi_status === 'failed' || ev.capi_status === 'error' ? "bg-rose-50 text-rose-700" :
+                              "bg-slate-100 text-slate-500"
+                            )}>
+                              {ev.capi_status}
+                            </span>
+                          </td>
+                          <td className="py-2 text-[10px] text-slate-500 truncate max-w-[200px]" title={ev.capi_error || ev.capi_event_id}>
+                            {ev.capi_error ? `⚠️ ${ev.capi_error}` : ev.capi_event_id ? `ID: ${ev.capi_event_id}` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );

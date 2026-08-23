@@ -456,185 +456,111 @@ def get_landing_page_analytics(
     response: Response,
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    compare_previous: bool = Query(True),
     db: Session = Depends(get_db),
     _auth: Any = Depends(deps.get_current_active_user),
 ) -> Any:
     """
-    Daily orders/delivered/cancelled/revenue for THIS page's product, plus
-    period totals — powers the click-through detail dialog in the LP module.
-    Same counting rules as the list metrics: MERGED and soft-deleted orders
-    excluded, every order of the product in the store counts (source-agnostic).
-    Defaults to the last 30 days when no range is given.
+    Landing Page Performance Center — Canonical analytics endpoint.
+    Aggregates first-party ERP orders, unified funnel, Meta Ads Insights,
+    health score, smart alerts, and reconciliation.
     """
-    # Cache on Edge (Vercel) for 5 minutes, allow stale while revalidating.
-    # This prevents duplicate Vercel invocations/Supabase queries when repeatedly opening the modal.
-    response.headers["Cache-Control"] = "public, s-maxage=300, stale-while-revalidate=600"
+    response.headers["Cache-Control"] = "public, s-maxage=120, stale-while-revalidate=300"
 
-    from datetime import timedelta
+    from app.services.landing_page_analytics_service import LandingPageAnalyticsService
+
+    try:
+        data = LandingPageAnalyticsService.get_performance_center(
+            db=db,
+            lp_id=lp_id,
+            start_date_str=start_date,
+            end_date_str=end_date,
+            compare_previous=compare_previous,
+        )
+    except ValueError as val_err:
+        raise HTTPException(404, str(val_err))
+
+    # Add legacy compatibility fields so existing widgets never break
+    legacy_daily = data.get("diagnostic_table", [])
+    legacy_totals = {
+        "orders": data["kpis"]["orders"]["value"],
+        "delivered": data["kpis"]["delivered"]["value"],
+        "returned": data["kpis"]["returned"]["value"],
+        "shipped": data["kpis"]["shipped"]["shipped_count"],
+        "with_tracking": data["kpis"]["shipped"]["with_tracking_count"],
+        "recovered": data["kpis"]["recovered_carts"]["recovered_count"],
+        "abandoned": data["kpis"]["recovered_carts"]["abandoned_count"],
+        "meta_impressions": data["meta_performance"].get("impressions", 0),
+        "meta_clicks": data["meta_performance"].get("clicks", 0),
+        "meta_purchases": data["meta_performance"].get("purchases", 0),
+        "meta_spend": data["meta_performance"].get("spend_dzd", 0.0),
+        "meta_raw_spend": data["meta_performance"].get("spend_raw", 0.0),
+        "meta_currency": data["meta_performance"].get("currency", "DZD"),
+        "taux_conversion_pct": data["kpis"]["conversion_rate"]["value_pct"],
+        "health_score": data["health_score"]["score"],
+        "health_badge": data["health_score"]["badge"],
+        "health_color": data["health_score"]["color"],
+    }
+
+    return {
+        "success": True,
+        "data": {
+            **data,
+            "daily": legacy_daily,
+            "totals": legacy_totals,
+            "created_at": data["landing_page"]["created_at"],
+            "views": data["kpis"]["conversion_rate"]["sessions_count"],
+        },
+    }
+
+
+@router.get("/{lp_id}/reconciliation-events")
+def get_landing_page_reconciliation_events(
+    lp_id: str,
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _auth: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Returns the granular list of orders and their Meta CAPI tracking status
+    for the selected Landing Page and date range to inspect discrepancies.
+    """
+    from app.core.dates import parse_local_date_filter
     from app.models.order import Order, OrderItem
+    from app.models.marketing import MetaCapiLog
+    from sqlalchemy import or_
 
-    db.info["skip_tenant_isolation"] = True  # explicit store scope below
+    db.info["skip_tenant_isolation"] = True
     lp = db.query(LandingPage).filter(LandingPage.id == lp_id).first()
     if not lp:
         raise HTTPException(404, "Landing page introuvable")
-    from app.core.dates import parse_local_date_filter, ALGERIA_UTC_OFFSET_HOURS
+
     now = datetime.utcnow()
     d_start = now - timedelta(days=30)
     d_end = now
     if start_date:
         try:
             d_start = parse_local_date_filter(start_date)
-        except ValueError:
+        except Exception:
             pass
     if end_date:
         try:
             d_end = parse_local_date_filter(end_date)
-        except ValueError:
+        except Exception:
             pass
 
-    # Safely extract exact YYYY-MM-DD calendar dates for Meta Ads insights queries
-    d_start_date = d_start.date()
-    if start_date:
-        try:
-            clean_s = start_date.split("T")[0] if "T" in start_date else start_date[:10]
-            d_start_date = datetime.strptime(clean_s, "%Y-%m-%d").date()
-        except Exception:
-            d_start_date = d_start.date()
-
-    d_end_date = d_end.date()
-    if end_date:
-        try:
-            clean_e = end_date.split("T")[0] if "T" in end_date else end_date[:10]
-            d_end_date = datetime.strptime(clean_e, "%Y-%m-%d").date()
-        except Exception:
-            d_end_date = d_end.date()
-
-    query_date_start = d_start_date.strftime("%Y-%m-%d")
-    query_date_end = d_end_date.strftime("%Y-%m-%d")
-
-    day = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
-
-    from sqlalchemy import or_
     product_or_slug_filter = (
         or_(
             OrderItem.product_id == lp.product_id,
-            Order.landing_url.ilike(f"%{lp.slug}%")
-        ) if lp.product_id else Order.landing_url.ilike(f"%{lp.slug}%")
+            Order.landing_url.ilike(f"%{lp.slug}%"),
+        )
+        if lp.product_id
+        else Order.landing_url.ilike(f"%{lp.slug}%")
     )
 
-    _is_out_for_delivery = and_(
-        Order.status == "SHIPPED",
-        or_(
-            Order.carrier_stage.in_(("fdr_activated", "en livraison", "out_for_delivery")),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%livraison%"),
-        )
-    )
-    _has_external_tracking = or_(
-        Order.carrier_id.isnot(None),
-        and_(Order.tracking_number.isnot(None), Order.tracking_number != "")
-    )
-    _is_out_for_delivery_noest = and_(_is_out_for_delivery, _has_external_tracking)
-    _is_out_for_delivery_internal = or_(
-        and_(_is_out_for_delivery, ~_has_external_tracking),
-        Order.livreur_id.isnot(None),
-        Order.status == "ASSIGNED"
-    )
-
-    _is_suspended = or_(
-        Order.carrier_stage == "colis_suspendu",
-        func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%suspendu%"),
-        func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%bloqu%"),
-    )
-    _is_expedition_hub = and_(
-        Order.status == "SHIPPED",
-        or_(
-            Order.carrier_stage.in_(("expedition_hub", "en_expedition_hub", "transfert_hub", "expedition")),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%exp%hub%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%expedition%hub%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%transfert%"),
-        )
-    )
-    _is_in_hub = and_(
-        Order.status == "SHIPPED",
-        not_(_is_expedition_hub),
-        or_(
-            Order.carrier_stage.in_(("en_hub", "recu_hub", "hub", "bureau", "centre_tri")),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%hub%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%en hub%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%au hub%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%bureau%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%centre%"),
-        )
-    )
-    _is_returned = Order.status == "RETURNED"
-    _is_returned_received = and_(
-        Order.status == "RETURNED",
-        or_(
-            Order.carrier_stage == "colis_retour_receptionne",
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%reception%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%station%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%agence%"),
-            func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%entrepot%"),
-        )
-    )
-    _is_returned_in_transit = and_(
-        Order.status == "RETURNED",
-        not_(
-            or_(
-                Order.carrier_stage == "colis_retour_receptionne",
-                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%recu%"),
-                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%reception%"),
-                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%station%"),
-                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%agence%"),
-                func.lower(func.coalesce(Order.carrier_stage_label, "")).like("%entrepot%"),
-            )
-        )
-    )
-    _is_in_transit = and_(Order.status == "SHIPPED", not_(_is_out_for_delivery), not_(_is_suspended), not_(_is_expedition_hub), not_(_is_in_hub))
-
-    rows = (
-        db.query(
-            day.label("day"),
-            func.count(distinct(case((Order.status != "MERGED", Order.id)))).label("orders"),
-            func.count(distinct(case((Order.status == "DELIVERED", Order.id)))).label("delivered"),
-            func.coalesce(func.sum(case(
-                (Order.status == "DELIVERED", func.coalesce(OrderItem.quantity, 1)), else_=0
-            )), 0).label("delivered_items"),
-            func.count(distinct(case((_is_returned, Order.id)))).label("returned"),
-            func.count(distinct(case((_is_returned_received, Order.id)))).label("returned_received"),
-            func.count(distinct(case((_is_returned_in_transit, Order.id)))).label("returned_in_transit"),
-            func.coalesce(func.sum(case(
-                (_is_returned, func.coalesce(OrderItem.quantity, 1)), else_=0
-            )), 0).label("returned_items"),
-            func.count(distinct(case((_is_in_transit, Order.id)))).label("shipped"),
-            func.count(distinct(case((_is_expedition_hub, Order.id)))).label("expedition_hub"),
-            func.count(distinct(case((_is_in_hub, Order.id)))).label("in_hub"),
-            func.count(distinct(case((_is_out_for_delivery_internal, Order.id)))).label("out_for_delivery_internal"),
-            func.count(distinct(case((_is_out_for_delivery_noest, Order.id)))).label("out_for_delivery_noest"),
-            func.count(distinct(case((_is_out_for_delivery, Order.id)))).label("out_for_delivery"),
-            func.count(distinct(case((_is_suspended, Order.id)))).label("suspended"),
-            func.count(distinct(case((Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.id)))).label("confirmed"),
-            func.count(distinct(case((Order.status == "CONFIRMED", Order.id)))).label("confirmed_only"),
-            func.count(distinct(case((and_(Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")), Order.tracking_number.isnot(None), Order.tracking_number != ""), Order.id)))).label("with_tracking"),
-            func.count(distinct(case((Order.status == "CANCELLED", Order.id)))).label("cancelled"),
-            func.count(distinct(case(
-                (and_(Order.status != "MERGED", func.coalesce(Order.source, "") == "MANUAL"), Order.id)
-            ))).label("manual"),
-            func.count(distinct(case(
-                (and_(Order.status != "MERGED", func.coalesce(Order.source, "") != "MANUAL", func.coalesce(Order.is_abandoned_cart, False) == False), Order.id)
-            ))).label("normal"),
-            func.count(distinct(case(
-                (and_(Order.is_abandoned_cart == True, Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED"))), Order.id)
-            ))).label("recovered"),
-            func.count(distinct(case(
-                (Order.is_abandoned_cart == True, Order.id)
-            ))).label("abandoned"),
-            func.coalesce(func.sum(case(
-                (Order.status != "MERGED", func.coalesce(OrderItem.quantity, 1) * func.coalesce(OrderItem.unit_price, Order.total, 0)), else_=0
-            )), 0).label("revenue"),
-        )
-        .select_from(Order)
+    orders = (
+        db.query(Order)
         .outerjoin(OrderItem, OrderItem.order_id == Order.id)
         .filter(
             Order.store_id == lp.store_id,
@@ -643,589 +569,54 @@ def get_landing_page_analytics(
             Order.created_at >= d_start,
             Order.created_at <= d_end,
         )
-        .group_by(day)
-        .order_by(day)
+        .order_by(Order.created_at.desc())
+        .limit(100)
         .all()
     )
 
-    current_date = d_start.date()
-    end_date_val = d_end.date()
-    all_dates = []
-    while current_date <= end_date_val:
-        all_dates.append(str(current_date))
-        current_date += timedelta(days=1)
-
-    orders_by_date = {str(r.day): r for r in rows if r.day is not None}
-
-    daily = []
-    for d_str in all_dates:
-        r = orders_by_date.get(d_str)
-        daily.append({
-            "date": d_str,
-            "orders": int(r.orders or 0) if r else 0,
-            "delivered": int(r.delivered or 0) if r else 0,
-            "delivered_items": int(r.delivered_items or 0) if r else 0,
-            "returned": int(r.returned or 0) if r else 0,
-            "returned_received": int(r.returned_received or 0) if r else 0,
-            "returned_in_transit": int(r.returned_in_transit or 0) if r else 0,
-            "returned_items": int(r.returned_items or 0) if r else 0,
-            "shipped": int(r.shipped or 0) if r else 0,
-            "expedition_hub": int(r.expedition_hub or 0) if r else 0,
-            "in_hub": int(r.in_hub or 0) if r else 0,
-            "out_for_delivery_internal": int(r.out_for_delivery_internal or 0) if r else 0,
-            "out_for_delivery_noest": int(r.out_for_delivery_noest or 0) if r else 0,
-            "out_for_delivery": int(r.out_for_delivery or 0) if r else 0,
-            "suspended": int(r.suspended or 0) if r else 0,
-            "confirmed": int(r.confirmed or 0) if r else 0,
-            "confirmed_only": int(r.confirmed_only or 0) if r else 0,
-            "with_tracking": int(r.with_tracking or 0) if r else 0,
-            "cancelled": int(r.cancelled or 0) if r else 0,
-            "manual": int(r.manual or 0) if r else 0,
-            "normal": int(r.normal or 0) if r else 0,
-            "recovered": int(r.recovered or 0) if r else 0,
-            "abandoned": int(r.abandoned or 0) if r else 0,
-            "revenue": float(r.revenue or 0) if r else 0.0,
-        })
-
-    totals = {
-        "orders": sum(d["orders"] for d in daily),
-        "delivered": sum(d["delivered"] for d in daily),
-        "delivered_items": sum(d["delivered_items"] for d in daily),
-        "returned": sum(d["returned"] for d in daily),
-        "returned_received": sum(d["returned_received"] for d in daily),
-        "returned_in_transit": sum(d["returned_in_transit"] for d in daily),
-        "returned_items": sum(d["returned_items"] for d in daily),
-        "shipped": sum(d["shipped"] for d in daily),
-        "expedition_hub": sum(d["expedition_hub"] for d in daily),
-        "in_hub": sum(d["in_hub"] for d in daily),
-        "out_for_delivery_internal": sum(d["out_for_delivery_internal"] for d in daily),
-        "out_for_delivery_noest": sum(d["out_for_delivery_noest"] for d in daily),
-        "out_for_delivery": sum(d["out_for_delivery"] for d in daily),
-        "suspended": sum(d["suspended"] for d in daily),
-        "confirmed": sum(d["confirmed"] for d in daily),
-        "confirmed_only": sum(d["confirmed_only"] for d in daily),
-        "with_tracking": sum(d["with_tracking"] for d in daily),
-        "cancelled": sum(d["cancelled"] for d in daily),
-        "manual": sum(d["manual"] for d in daily),
-        "revenue": sum(d["revenue"] for d in daily),
-    }
-
-    _not_manual = func.coalesce(Order.source, "") != "MANUAL"
-    _is_abandoned = Order.is_abandoned_cart == True
-    _DELIVERED_STATES = ("CONFIRMED", "SHIPPED", "DELIVERED")
-    detail_row = (
-        db.query(
-            func.count(distinct(case(
-                (and_(Order.status != "MERGED", _not_manual, func.coalesce(Order.is_abandoned_cart, False) == False), Order.id)
-            ))).label("normal"),
-            func.count(distinct(case((_is_abandoned, Order.id)))).label("abandoned"),
-            func.count(distinct(case(
-                (and_(_is_abandoned, Order.status.in_(_DELIVERED_STATES)), Order.id)
-            ))).label("recovered"),
-            func.count(distinct(case((Order.status == "MERGED", Order.id)))).label("duplicates"),
-            func.count(distinct(case((Order.status.in_(_DELIVERED_STATES), Order.id)))).label("confirmed_delivered"),
-            func.coalesce(func.sum(case(
-                (Order.status.in_(_DELIVERED_STATES), func.coalesce(OrderItem.quantity, 1)), else_=0
-            )), 0).label("delivered_items_total"),
-            func.count(distinct(case(
-                (and_(Order.nrp_count > 0, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
-            ))).label("nrp"),
-            func.count(distinct(case(
-                (and_(Order.nrp_count > 0, _is_abandoned, Order.status.in_(("ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"))), Order.id)
-            ))).label("nrp_abandoned"),
+    order_ids = [str(o.id) for o in orders]
+    capi_logs = {}
+    if order_ids:
+        logs = (
+            db.query(MetaCapiLog)
+            .filter(MetaCapiLog.order_id.in_(order_ids), MetaCapiLog.event_name == "Purchase")
+            .all()
         )
-        .select_from(Order)
-        .outerjoin(OrderItem, OrderItem.order_id == Order.id)
-        .filter(
-            Order.store_id == lp.store_id,
-            product_or_slug_filter,
-            Order.is_deleted == False,
-            Order.created_at >= d_start,
-            Order.created_at <= d_end,
-        )
-        .first()
-    )
-    totals["normal"] = int(detail_row.normal or 0)
-    totals["abandoned"] = int(detail_row.abandoned or 0)
-    totals["recovered"] = int(detail_row.recovered or 0)
-    totals["duplicates"] = int(detail_row.duplicates or 0)
-    totals["confirmed_delivered"] = int(detail_row.confirmed_delivered or 0)
-    totals["nrp"] = int(detail_row.nrp or 0)
-    totals["nrp_abandoned"] = int(detail_row.nrp_abandoned or 0)
-    totals["nrp_normal"] = max(0, totals["nrp"] - totals["nrp_abandoned"])
-    totals["abandoned_not_recovered"] = max(0, totals["abandoned"] - totals["recovered"])
-
-    from app.models.marketing import MetaAdsCampaign, MetaAdsDailyInsight
-    from sqlalchemy import or_
-
-    filters = []
-    lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
-    if lp_meta_campaign_id:
-        filters.append(MetaAdsCampaign.campaign_id == str(lp_meta_campaign_id))
-    if lp.product_id:
-        filters.append(MetaAdsCampaign.product_id == lp.product_id)
-    if lp.slug:
-        clean_slug = lp.slug.replace("-", " ").strip()
-        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{clean_slug}%"))
-        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.slug}%"))
-    if lp.product and lp.product.name:
-        filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.product.name}%"))
-
-    if filters:
-        meta_campaigns = db.query(MetaAdsCampaign).filter(
-            MetaAdsCampaign.store_id == lp.store_id,
-            or_(*filters),
-        ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
-    else:
-        meta_campaigns = db.query(MetaAdsCampaign).filter(
-            MetaAdsCampaign.store_id == lp.store_id,
-        ).order_by(MetaAdsCampaign.raw_spend.desc().nullslast()).all()
-
-    # Keep primary matching campaign when multiple campaigns match to prevent double-counting old/draft campaigns
-    if meta_campaigns and len(meta_campaigns) > 1:
-        exact_match = [
-            c for c in meta_campaigns 
-            if (lp_meta_campaign_id and str(c.campaign_id) == str(lp_meta_campaign_id))
-            or (lp.slug and (lp.slug.lower() in c.campaign_name.lower() or lp.slug.replace("-", " ").lower() in c.campaign_name.lower()))
-            or (lp.product and lp.product.name and lp.product.name.lower() in c.campaign_name.lower())
-        ]
-        if exact_match:
-            meta_campaigns = exact_match[:1]
-        else:
-            meta_campaigns = meta_campaigns[:1]
-
-    from app.models.marketing import MetaAdsConfig
-    meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
-
-    live_camps_data = None
-    # Trigger live auto-sync for requested date window if config is active
-    if meta_cfg and meta_cfg.is_connected and meta_cfg.access_token and meta_cfg.ad_account_id:
-        try:
-            from app.api.v1.meta_ads import sync_meta_ads
-            sync_res = sync_meta_ads(
-                store_id=lp.store_id,
-                date_start=query_date_start,
-                date_end=query_date_end,
-                db=db,
-                current_user=current_user
-            )
-            if sync_res and isinstance(sync_res, dict) and sync_res.get("campaigns"):
-                live_camps_data = sync_res.get("campaigns")
-        except Exception as sync_err:
-            logger.debug("[Landing Page Analytics] Live Meta sync skipped: %s", sync_err)
-
-    meta_currency = (
-        meta_cfg.currency if (meta_cfg and meta_cfg.currency)
-        else (meta_campaigns[0].currency if (meta_campaigns and meta_campaigns[0].currency) else "USD")
-    ).upper()
-
-    days_count = max(1, (d_end.date() - d_start.date()).days + 1)
-
-    # Construct unified campaign pool (Prefer live API response if available, fallback to DB synced campaigns)
-    camps_pool = []
-    if live_camps_data:
-        camps_pool = live_camps_data
-    elif meta_campaigns:
-        camps_pool = [
-            {
-                "campaign_id": str(c.campaign_id),
-                "campaign_name": c.campaign_name,
-                "spend": c.raw_spend,
-                "impressions": c.impressions,
-                "reach": c.reach,
-                "clicks": c.clicks,
-                "meta_purchases": c.meta_purchases,
-                "meta_purchase_value": c.meta_purchase_value,
-            }
-            for c in meta_campaigns
-        ]
-
-    campaign_match = False
-    campaign_match_method = None
-    target_camps = []
-
-    logger.info(
-        f"[LP_ANALYTICS_DIAG] LP ID '{lp_id}' (slug: '{lp.slug}', store_id: '{lp.store_id}', "
-        f"meta_campaign_id: '{lp_meta_campaign_id}', date_range: {query_date_start}..{query_date_end})"
-    )
-    logger.info(
-        f"[LP_ANALYTICS_DIAG] camps_pool count: {len(camps_pool)}. "
-        f"Campaigns in pool: {[{'id': str(c.get('campaign_id')), 'name': c.get('campaign_name')} for c in camps_pool]}"
-    )
-
-    if camps_pool:
-        # Priority 1: Explicit meta_campaign_id on Landing Page
-        if lp_meta_campaign_id:
-            matched = [c for c in camps_pool if str(c.get("campaign_id")) == str(lp_meta_campaign_id)]
-            if matched:
-                target_camps = matched
-                campaign_match = True
-                campaign_match_method = "meta_campaign_id"
-                logger.info(f"[LP_ANALYTICS_DIAG] Priority 1 MATCH via meta_campaign_id '{lp_meta_campaign_id}' -> {matched[0].get('campaign_name')}")
-
-        # Priority 2: Controlled matching by name (slug or product.name, with hyphen-to-space tolerance)
-        if not campaign_match:
-            clean_slug = (lp.slug or "").replace("-", " ").strip().lower()
-            matched_by_name = [
-                c for c in camps_pool 
-                if (clean_slug and clean_slug in str(c.get("campaign_name", "")).lower()) 
-                or (lp.slug and lp.slug.lower() in str(c.get("campaign_name", "")).lower())
-                or (lp.product and lp.product.name and lp.product.name.lower() in str(c.get("campaign_name", "")).lower())
-            ]
-            if len(matched_by_name) == 1:
-                target_camps = matched_by_name
-                campaign_match = True
-                campaign_match_method = "campaign_name_unique"
-                logger.info(f"[LP_ANALYTICS_DIAG] Priority 2 MATCH via campaign_name_unique -> {matched_by_name[0].get('campaign_name')}")
-            elif len(matched_by_name) > 1:
-                campaign_match = False
-                campaign_match_method = "ambiguous_name_match"
-                target_camps = []
-                logger.warning(f"[LP_ANALYTICS_DIAG] Ambiguous name match! Multiple campaigns matched: {[c.get('campaign_name') for c in matched_by_name]}")
-
-    # Apply metrics if deterministic match was established
-    if campaign_match and target_camps:
-        primary = target_camps[0]
-        matched_camp_id = str(primary.get("campaign_id"))
-        totals["campaign_match"] = True
-        totals["campaign_match_method"] = campaign_match_method
-        totals["campaign_id"] = matched_camp_id
-        totals["campaign_name"] = str(primary.get("campaign_name"))
-        totals["campaign_match_candidates"] = len(target_camps)
-
-        # Check if date-sliced insights exist in DB for this matched campaign ID and date range
-        daily_rows = (
-            db.query(
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
-                func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
-            )
-            .filter(
-                MetaAdsDailyInsight.campaign_id == matched_camp_id,
-                MetaAdsDailyInsight.date >= d_start_date,
-                MetaAdsDailyInsight.date <= d_end_date,
-            )
-            .first()
-        )
-
-        # Prioritize campaign totals to strictly match Meta Ads Manager UI figures (113 purchases / $120.82 spend)
-        if target_camps and len(target_camps) > 0:
-            totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
-            totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
-            totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
-            totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
-            totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
-            totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
-            logger.info(f"[LP_ANALYTICS_DIAG] Using matched campaign totals for {matched_camp_id}: purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}")
-        elif daily_rows and (daily_rows[2] > 0 or daily_rows[3] > 0 or daily_rows[0] > 0):
-            # Fallback to date-filtered slice from DB daily insights
-            totals["meta_purchases"] = int(daily_rows[0] or 0)
-            totals["meta_purchase_value"] = float(daily_rows[1] or 0.0)
-            totals["meta_raw_spend"] = round(float(daily_rows[2] or 0.0), 2)
-            totals["meta_impressions"] = int(daily_rows[3] or 0)
-            totals["meta_reach"] = int(daily_rows[4] or 0)
-            totals["meta_clicks"] = int(daily_rows[5] or 0)
-            logger.info(f"[LP_ANALYTICS_DIAG] Using MetaAdsDailyInsight slice for {matched_camp_id} ({d_start.date()}..{d_end.date()}): purchases={totals['meta_purchases']}, spend=${totals['meta_raw_spend']}")
-        else:
-            # Fallback to campaign-level totals
-            totals["meta_purchases"] = sum(int(c.get("meta_purchases", 0) or 0) for c in target_camps)
-            totals["meta_purchase_value"] = sum(float(c.get("meta_purchase_value", 0.0) or 0.0) for c in target_camps)
-            totals["meta_raw_spend"] = round(sum(float(c.get("spend", 0.0) or 0.0) for c in target_camps), 2)
-            totals["meta_impressions"] = sum(int(c.get("impressions", 0) or 0) for c in target_camps)
-            totals["meta_reach"] = sum(int(c.get("reach", 0) or 0) for c in target_camps)
-            totals["meta_clicks"] = sum(int(c.get("clicks", 0) or 0) for c in target_camps)
-
-        rate = get_conversion_rate(meta_currency, config.currency, config.exchange_rate) if 'config' in locals() else 220.0
-        totals["meta_spend"] = round(totals["meta_raw_spend"] * rate, 2)
-
-        # Extract breakdown of Web (Pixel), Onsite (Messaging/Lead) and Omni (Total) purchases
-        actions_raw = primary.get("actions_raw") or []
-        web_from_actions = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("offsite_conversion.fb_pixel_purchase", "onsite_web_purchase", "web_in_store_purchase")), None)
-        omni_from_actions = next((int(float(a.get("value", 0))) for a in actions_raw if a.get("action_type") in ("omni_purchase", "onsite_web_app_purchase")), None)
-
-        if web_from_actions is not None:
-            web_val = web_from_actions
-            omni_val = omni_from_actions if omni_from_actions is not None else (web_val + 10)
-            onsite_val = max(0, omni_val - web_val)
-        elif omni_from_actions is not None:
-            omni_val = omni_from_actions
-            onsite_val = 10 if omni_val >= 10 else 0
-            web_val = max(0, omni_val - onsite_val)
-        else:
-            # Fallback when raw actions array is absent:
-            # totals["meta_purchases"] is the Omni Total (123)
-            omni_val = totals["meta_purchases"]
-            onsite_val = 10 if omni_val >= 10 else 0
-            web_val = max(0, omni_val - onsite_val)
-
-        # Ensure main card and breakdown match Pixel Web purchases (113)
-        totals["meta_purchases"] = web_val
-        totals["meta_web_purchases"] = web_val
-        totals["meta_onsite_purchases"] = onsite_val
-        totals["meta_omni_purchases"] = omni_val
-        logger.info(f"[LP_ANALYTICS_DIAG] MATCH SUCCESS: web_purchases={web_val}, onsite_purchases={onsite_val}, omni_purchases={omni_val}, spend=${totals['meta_raw_spend']}, impr={totals['meta_impressions']}")
-    else:
-        # NO MATCH or AMBIGUOUS MATCH -> ZERO/NULL metrics
-        totals["campaign_match"] = False
-        totals["campaign_match_method"] = campaign_match_method
-        totals["campaign_id"] = None
-        totals["campaign_name"] = None
-        totals["campaign_match_candidates"] = 0
-
-        totals["meta_purchases"] = 0
-        totals["meta_web_purchases"] = 0
-        totals["meta_onsite_purchases"] = 0
-        totals["meta_omni_purchases"] = 0
-        totals["meta_purchase_value"] = 0.0
-        totals["meta_spend"] = 0.0
-        totals["meta_raw_spend"] = 0.0
-        totals["meta_impressions"] = 0
-        totals["meta_reach"] = 0
-        totals["meta_clicks"] = 0
-        logger.warning(f"[LP_ANALYTICS_DIAG] NO CAMPAIGN MATCHED for LP '{lp_id}' (lp_meta_campaign_id='{lp_meta_campaign_id}', slug='{lp.slug}')")
-
-    totals["meta_currency"] = meta_currency
-    totals["average_daily_spend"] = round(totals["meta_spend"] / days_count, 2)
-    totals["meta_raw_average_daily_spend"] = round(totals["meta_raw_spend"] / days_count, 2)
-    totals["meta_budget_daily"] = totals["average_daily_spend"]
-    totals["meta_raw_budget_daily"] = totals["meta_raw_average_daily_spend"]
-
-    totals["meta_cpa_purchases"] = round(totals["meta_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
-    totals["meta_raw_cpa_purchases"] = round(totals["meta_raw_spend"] / totals["meta_purchases"], 2) if totals["meta_purchases"] > 0 else 0
-    totals["meta_cpa_orders"] = round(totals["meta_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
-    totals["meta_raw_cpa_orders"] = round(totals["meta_raw_spend"] / totals["orders"], 2) if totals["orders"] > 0 else 0
-
-    from sqlalchemy import or_
-    from app.models.funnel_rollup import FunnelRollup
-    local_view_content = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
-        FunnelRollup.store_id == lp.store_id,
-        FunnelRollup.event_name == "ViewContent",
-        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
-        FunnelRollup.day >= d_start.date(),
-        FunnelRollup.day <= d_end.date(),
-    ).scalar() or 0
-
-    daily_views_rows = db.query(
-        FunnelRollup.day,
-        func.coalesce(func.sum(FunnelRollup.count), 0)
-    ).filter(
-        FunnelRollup.store_id == lp.store_id,
-        FunnelRollup.event_name == "ViewContent",
-        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
-        FunnelRollup.day >= d_start.date(),
-        FunnelRollup.day <= d_end.date(),
-    ).group_by(FunnelRollup.day).all()
-    daily_views_by_date = {str(r[0]): int(r[1] or 0) for r in daily_views_rows}
-
-    totals["taux_conversion_pct"] = (
-        round(totals["meta_purchases"] / totals["meta_clicks"] * 100, 2) if (totals.get("meta_purchases", 0) > 0 and totals.get("meta_clicks", 0) > 0)
-        else (round(totals["orders"] / totals["meta_clicks"] * 100, 2) if totals.get("meta_clicks", 0) > 0
-        else (round(totals["orders"] / local_view_content * 100, 2) if local_view_content > 0 else None))
-    )
-
-    if totals.get("meta_reach", 0) == 0 and totals.get("meta_impressions", 0) > 0:
-        totals["meta_reach"] = int(round(totals["meta_impressions"] * 0.82))
-
-    meta_daily_by_date: dict = {}
-    if campaign_match and target_camps:
-        matched_camp_ids = [str(c.get("campaign_id")) for c in target_camps if c.get("campaign_id")]
-        if matched_camp_ids:
-            _rows = (
-                db.query(
-                    MetaAdsDailyInsight.date,
-                    func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchases), 0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.meta_purchase_value), 0.0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.spend), 0.0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.impressions), 0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.reach), 0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.clicks), 0),
-                    func.coalesce(func.sum(MetaAdsDailyInsight.raw_spend), 0.0),
-                )
-                .filter(
-                    MetaAdsDailyInsight.campaign_id.in_(matched_camp_ids),
-                    MetaAdsDailyInsight.date >= d_start.date(),
-                    MetaAdsDailyInsight.date <= d_end.date(),
-                )
-                .group_by(MetaAdsDailyInsight.date)
-                .all()
-            )
-            meta_daily_by_date = {
-                str(r[0]): {
-                    "purchases": int(r[1] or 0),
-                    "value": float(r[2] or 0.0),
-                    "spend": float(r[3] or 0.0),
-                    "impressions": int(r[4] or 0),
-                    "reach": int(r[5] or 0),
-                    "clicks": int(r[6] or 0),
-                    "raw_spend": float(r[7] or 0.0),
-                }
-                for r in _rows
+        for log in logs:
+            capi_logs[str(log.order_id)] = {
+                "id": log.id,
+                "status": log.status,
+                "event_id": log.event_id,
+                "error_message": log.error_message,
+                "error_category": log.error_category,
+                "completed_at": log.completed_at.isoformat() if log.completed_at else None,
+                "retry_count": log.retry_count,
             }
 
-    total_campaign_impressions = totals.get("meta_impressions", 0)
-    total_campaign_clicks = totals.get("meta_clicks", 0)
-    total_campaign_reach = totals.get("meta_reach", 0)
-    total_views_sum = sum(daily_views_by_date.values()) or 1
-
-    for d in daily:
-        d["meta_purchases"] = meta_daily_by_date.get(d["date"], {}).get("purchases", 0)
-        d_imp = meta_daily_by_date.get(d["date"], {}).get("impressions", 0)
-        d_clicks = meta_daily_by_date.get(d["date"], {}).get("clicks", 0)
-        d_reach = meta_daily_by_date.get(d["date"], {}).get("reach", 0)
-        v = daily_views_by_date.get(d["date"], 0)
-        d["views"] = v
-
-        if d_imp == 0 and total_campaign_impressions > 0:
-            if v > 0:
-                d_imp = int(round((v / total_views_sum) * total_campaign_impressions))
-            elif len(daily) > 0:
-                d_imp = int(round(total_campaign_impressions / len(daily)))
-
-        if d_clicks == 0 and total_campaign_clicks > 0:
-            if v > 0:
-                d_clicks = int(round((v / total_views_sum) * total_campaign_clicks))
-            elif len(daily) > 0:
-                d_clicks = int(round(total_campaign_clicks / len(daily)))
-
-        if d_reach == 0 and d_imp > 0:
-            d_reach = int(round(d_imp * 0.82))
-
-        d["meta_impressions"] = d_imp
-        d["meta_clicks"] = d_clicks
-        d["meta_reach"] = d_reach
-        base = d_clicks if d_clicks > 0 else v
-        d["conversion_rate"] = round(d["orders"] / base * 100, 2) if base > 0 else 0
-
-    from sqlalchemy import or_
-    from app.models.funnel_rollup import FunnelRollup
-    local_view_content = db.query(func.coalesce(func.sum(FunnelRollup.count), 0)).filter(
-        FunnelRollup.store_id == lp.store_id,
-        FunnelRollup.event_name == "ViewContent",
-        or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
-        FunnelRollup.day >= d_start.date(),
-        FunnelRollup.day <= d_end.date(),
-    ).scalar() or 0
-
-    # meta_capi_logs ne stocke le payload complet (donc content_ids/produit)
-    # QUE pour les lignes error/pending_retry — les envois réussis n'ont pas
-    # de payload persistant (voir _dispatch_capi_event). Impossible de scoper
-    # ce compteur par landing page précise sans le fabriquer : affiché tel
-    # quel, à l'échelle de la boutique entière, jamais présenté comme
-    # spécifique à cette LP.
-    from app.models.marketing import MetaCapiLog
-    meta_view_content_store_wide = db.query(func.count(MetaCapiLog.id)).filter(
-        MetaCapiLog.store_id == lp.store_id,
-        MetaCapiLog.event_name == "ViewContent",
-        MetaCapiLog.status == "success",
-        MetaCapiLog.created_at >= d_start,
-        MetaCapiLog.created_at <= d_end,
-    ).scalar() or 0
-
-    # Qualité du site = Vues de page de destination ÷ Clics sur un lien
-    # (définition standard Meta du "Landing Page View Rate") — vues réelles
-    # de CETTE LP (local_view_content, funnel_rollups) sur clics Meta
-    # réellement facturés (meta_clicks, ci-dessus). Ne mélange jamais avec le
-    # ViewContent CAPI store-wide (meta_view_content_store_wide) qui n'est
-    # pas scopable par LP et fausserait ce ratio.
-    qualite_site_pct = (
-        round(int(local_view_content) / totals["meta_clicks"] * 100, 2) if totals["meta_clicks"] > 0 else None
-    )
-
-    # ── Ad Set Performance ──
-    # Calculate conversion rate per ad set on the exact date range using local orders and local funnel views (ViewContent)
-    from app.models.marketing import MetaAdsAdInsight
-    
-    order_adsets = (
-        db.query(
-            Order.adset_id,
-            func.max(Order.adset_name).label("adset_name"),
-            func.count(distinct(Order.id)).label("orders")
-        )
-        .select_from(OrderItem)
-        .join(Order, Order.id == OrderItem.order_id)
-        .filter(
-            Order.store_id == lp.store_id,
-            OrderItem.product_id == lp.product_id,
-            Order.is_deleted == False,
-            Order.status != "MERGED",
-            Order.created_at >= d_start,
-            Order.created_at <= d_end,
-            Order.adset_id.isnot(None)
-        )
-        .group_by(Order.adset_id)
-        .all()
-    )
-    
-    funnel_adsets = (
-        db.query(
-            FunnelRollup.adset_id,
-            func.sum(FunnelRollup.count).label("views")
-        )
-        .filter(
-            FunnelRollup.store_id == lp.store_id,
-            FunnelRollup.event_name == "ViewContent",
-            or_(FunnelRollup.lp_id == lp_id, FunnelRollup.product_id == lp.product_id),
-            FunnelRollup.day >= d_start.date(),
-            FunnelRollup.day <= d_end.date(),
-            FunnelRollup.adset_id.isnot(None)
-        )
-        .group_by(FunnelRollup.adset_id)
-        .all()
-    )
-    
-    adset_views = {r.adset_id: int(r.views) for r in funnel_adsets}
-    
-    # Lookup missing adset names
-    all_adset_ids = {r.adset_id for r in order_adsets} | {r.adset_id for r in funnel_adsets}
-    adset_names = {}
-    if all_adset_ids:
-        _names = db.query(MetaAdsAdInsight.adset_id, func.max(MetaAdsAdInsight.adset_name)).filter(
-            MetaAdsAdInsight.store_id == lp.store_id,
-            MetaAdsAdInsight.adset_id.in_(all_adset_ids)
-        ).group_by(MetaAdsAdInsight.adset_id).all()
-        adset_names = {r[0]: r[1] for r in _names}
-    
-    adsets = []
-    for r in order_adsets:
-        views = adset_views.get(r.adset_id, 0)
-        orders = int(r.orders)
-        adsets.append({
-            "adset_id": r.adset_id,
-            "adset_name": r.adset_name or adset_names.get(r.adset_id) or r.adset_id,
-            "orders": orders,
-            "views": views,
-            "conversion_rate": round(orders / views * 100, 2) if views > 0 else 0
+    events_list = []
+    for o in orders:
+        c_info = capi_logs.get(str(o.id))
+        events_list.append({
+            "order_id": str(o.id),
+            "order_number": o.order_number,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+            "customer_name": o.customer_name or "Client",
+            "customer_phone": o.customer_phone or "—",
+            "total_amount": float(o.total or 0.0),
+            "status": str(o.status),
+            "source": o.source,
+            "is_abandoned_cart": bool(o.is_abandoned_cart),
+            "tracking_number": o.tracking_number,
+            "capi_status": c_info["status"] if c_info else "never_queued",
+            "capi_event_id": c_info["event_id"] if c_info else None,
+            "capi_error": c_info["error_message"] if c_info else None,
         })
-    
-    # Add adsets from funnel that had views but 0 orders
-    order_adset_ids = {r.adset_id for r in order_adsets}
-    for r in funnel_adsets:
-        if r.adset_id not in order_adset_ids:
-            adsets.append({
-                "adset_id": r.adset_id,
-                "adset_name": adset_names.get(r.adset_id) or r.adset_id,
-                "orders": 0,
-                "views": int(r.views),
-                "conversion_rate": 0
-            })
-            
-    adsets.sort(key=lambda x: x["conversion_rate"], reverse=True)
 
     return {
         "success": True,
-        "data": {
-            "daily": daily,
-            "totals": totals,
-            "created_at": lp.created_at.isoformat() if lp.created_at else None,
-            "views": lp.views or 0,
-            "local_view_content": int(local_view_content),
-            "meta_view_content_store_wide": int(meta_view_content_store_wide),
-            "qualite_site_pct": qualite_site_pct,
-            "adsets": adsets,
-        },
+        "landing_page_id": lp.id,
+        "count": len(events_list),
+        "events": events_list,
     }
 
 
