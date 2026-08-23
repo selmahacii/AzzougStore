@@ -206,11 +206,11 @@ def run_db_migrations():
             ).all()
             purged = 0
             for child in child_orders:
-                parent = db_mig.query(Order).filter(Order.id == child.parent_order_id).first()
-                if parent and child.created_at and parent.created_at:
-                    diff_sec = abs((child.created_at - parent.created_at).total_seconds())
-                    if diff_sec <= 600:
-                        try:
+                try:
+                    parent = db_mig.query(Order).filter(Order.id == child.parent_order_id).first()
+                    if parent and child.created_at and parent.created_at:
+                        diff_sec = abs((child.created_at - parent.created_at).total_seconds())
+                        if diff_sec <= 600:
                             child_id = str(child.id)
                             # Unlink any orders referencing this child as parent
                             db_mig.execute(text("UPDATE orders SET parent_order_id = NULL WHERE parent_order_id = :cid"), {"cid": child_id})
@@ -219,10 +219,11 @@ def run_db_migrations():
                             db_mig.execute(text("DELETE FROM meta_capi_logs WHERE order_id = :cid"), {"cid": child_id})
                             db_mig.execute(text("DELETE FROM order_items WHERE order_id = :cid"), {"cid": child_id})
                             db_mig.execute(text("DELETE FROM orders WHERE id = :cid"), {"cid": child_id})
+                            db_mig.commit()
                             purged += 1
-                        except Exception as child_del_err:
-                            logger.debug("Failed to purge child duplicate %s: %s", child.id, child_del_err)
-            db_mig.commit()
+                except Exception as child_del_err:
+                    db_mig.rollback()
+                    logger.debug("Failed to purge child duplicate %s: %s", getattr(child, "id", "unknown"), child_del_err)
             print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
         finally:
             db_mig.close()
