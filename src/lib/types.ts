@@ -247,6 +247,7 @@ export interface Order {
   is_pack?: boolean;
   is_upsell?: boolean;
   is_abandoned_cart?: boolean;
+  is_store_pickup?: boolean;
   abandoned_cart_recovery_fee?: number;
 
   // Business origin marker — set once when an abandoned cart is first
