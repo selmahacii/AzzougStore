@@ -291,6 +291,7 @@ def _count_normal_delivered(
         Order.assigned_to       == user_id,
         Order.status            == "DELIVERED",
         or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)),
+        Order.recovered_at.is_(None),
         or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until, date_by=date_by)
@@ -308,12 +309,13 @@ def _count_recovered_delivered(
 ) -> int:
     store_filter = _build_store_filter(db, user_id, store_id)
 
+    from sqlalchemy import or_
     filters = [
         store_filter,
         Order.assigned_to       == user_id,
         Order.status            == "DELIVERED",
-        Order.is_abandoned_cart == True,
-        Order.is_marketplace_upsell == False,
+        or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None)),
+        or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until, date_by=date_by)
 
@@ -413,11 +415,12 @@ def _count_recovered_store_pickup_delivered(
     date_by: str = "created_at",
 ) -> int:
     store_filter = _build_store_filter(db, user_id, store_id)
+    from sqlalchemy import or_
     filters = [
         store_filter,
         Order.assigned_to == user_id,
         Order.status == "DELIVERED",
-        Order.is_abandoned_cart == True,
+        or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None)),
         Order.delivery_type.in_(STORE_PICKUP_TYPES),
         Order.is_deleted == False,
     ] + _build_time_filters(since, until, date_by=date_by)
@@ -440,7 +443,7 @@ def _sum_frozen_amount(
     is_store_pickup: Optional[bool] = None,
     date_by: str = "created_at",
 ) -> int:
-    from sqlalchemy import func as _func, case as _case, or_
+    from sqlalchemy import func as _func, case as _case, or_, and_
 
     store_filter = _build_store_filter(db, user_id, store_id)
     filters = [
@@ -450,13 +453,16 @@ def _sum_frozen_amount(
         Order.is_deleted == False,
     ] + _build_time_filters(since, until, date_by=date_by)
     if is_abandoned_cart is False:
-        filters.append(or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)))
+        filters.append(and_(
+            or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)),
+            Order.recovered_at.is_(None)
+        ))
     elif is_abandoned_cart is True:
-        filters.append(Order.is_abandoned_cart == True)
+        filters.append(or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None)))
     if is_upsell is not None:
         filters.append(Order.is_upsell == is_upsell)
     if is_marketplace_upsell is not None:
-        filters.append(Order.is_marketplace_upsell == is_marketplace_upsell)
+        filters.append(or_(Order.is_marketplace_upsell == is_marketplace_upsell, Order.is_marketplace_upsell.is_(None) if is_marketplace_upsell is False else False))
     if is_store_pickup is True:
         filters.append(Order.delivery_type.in_(STORE_PICKUP_TYPES))
     elif is_store_pickup is False:
