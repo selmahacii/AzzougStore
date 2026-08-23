@@ -590,7 +590,36 @@ def create_initial_superadmin():
                 WHERE (order_number = :num OR tracking_number = :trk) AND (tracking_number IS NULL OR tracking_number = '' OR tracking_number != :trk)
             """), {"num": num, "trk": trk})
 
+        # Auto-heal recent checkout orders 830-835 to normal orders & enqueue missing Meta CAPI events
+        db.execute(text("""
+            UPDATE orders
+            SET is_abandoned_cart = FALSE,
+                is_duplicate = FALSE,
+                status = CASE WHEN status = 'MERGED' OR status = 'ABANDONED' THEN 'ASSIGNED' ELSE status END,
+                order_number = REPLACE(order_number, 'ABN-', 'ORD-')
+            WHERE (store_sequence_number IN (830, 831, 832, 833, 834, 835) OR customer_phone IN ('0658075922', '0780125700'))
+              AND (is_deleted IS FALSE OR is_deleted IS NULL);
+        """))
         db.commit()
+
+        # Enqueue missing Meta CAPI Purchase logs for recent normal orders with Meta tracking
+        try:
+            from app.services.meta_capi import enqueue_purchase_for_order, _get_meta_config_cached
+            missing_capi_orders = db.query(Order).filter(
+                Order.is_abandoned_cart == False,
+                Order.is_deleted == False,
+                Order.status.in_(["NEW", "ASSIGNED", "CONFIRMED", "SHIPPED", "DELIVERED"]),
+                (Order.fbclid.isnot(None)) | (Order.fbp.isnot(None)) | (Order.fbc.isnot(None)) | (Order.store_sequence_number >= 830)
+            ).all()
+            for m_ord in missing_capi_orders:
+                meta_cfg = _get_meta_config_cached(db, m_ord.store_id)
+                if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
+                    log_id = enqueue_purchase_for_order(db, m_ord)
+                    if log_id:
+                        logger.info("🟢 [STARTUP CAPI BACKFILL] Enqueued Purchase CAPI for order %s (Seq #%s)", m_ord.order_number, m_ord.store_sequence_number)
+            db.commit()
+        except Exception as capi_backfill_err:
+            logger.warning("Startup CAPI backfill error: %s", capi_backfill_err)
 
         # 1. Create super admin if it doesn't exist
         tenant_store_id.set("SUPER_ADMIN_MODE")

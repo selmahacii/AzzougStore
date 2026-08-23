@@ -2234,15 +2234,50 @@ def create_order(
                     _recent_query = _recent_query.filter(Order.store_id == order_data["store_id"])
                 _prev = _recent_query.order_by(Order.created_at.asc()).first()
                 if _prev:
-                    # Update existing draft/abandoned cart into real order silently (is_duplicate = False)
-                    if _prev.is_abandoned_cart or _prev.status in ("ABANDONED", "NEW"):
-                        _prev.status = order_data.get("status", "NEW")
-                        _prev.is_abandoned_cart = False
-                        _prev.is_duplicate = False  # DO NOT flag as duplicate for fast 0-3min re-submits!
-                        valid_order_cols = {c.name for c in Order.__table__.columns}
-                        for k, v in order_data.items():
-                            if k in valid_order_cols and k not in ("id", "order_number", "store_sequence_number") and hasattr(_prev, k):
-                                setattr(_prev, k, v)
+                    _prev.status = order_data.get("status", "NEW")
+                    _prev.is_abandoned_cart = False
+                    _prev.is_duplicate = False  # DO NOT flag as duplicate for fast 0-3min re-submits!
+                    if _prev.order_number and _prev.order_number.startswith("ABN-"):
+                        _prev.order_number = _prev.order_number.replace("ABN-", "ORD-")
+                    valid_order_cols = {c.name for c in Order.__table__.columns}
+                    for k, v in order_data.items():
+                        if k in valid_order_cols and k not in ("id", "order_number", "store_sequence_number") and hasattr(_prev, k):
+                            setattr(_prev, k, v)
+
+                    # Update items if provided
+                    if items:
+                        from app.services.inventory_service import InventoryService
+                        inv_svc = InventoryService()
+                        for old_item in _prev.items:
+                            try:
+                                inv_svc.release_reservation(
+                                    db,
+                                    product_id=old_item.product_id,
+                                    quantity=old_item.quantity,
+                                    order_id=_prev.id,
+                                    variant_details=old_item.variant_details
+                                )
+                            except Exception as exc:
+                                logger.warning(f"Could not release reservation for 3-min updating order {_prev.id}: {exc}")
+                        
+                        db.query(OrderItem).filter(OrderItem.order_id == _prev.id).delete()
+                        for i_data in items:
+                            db_item = OrderItem(
+                                id=str(uuid.uuid4()) if not i_data.get("id") else i_data["id"],
+                                order_id=_prev.id,
+                                **{k: v for k, v in i_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
+                            )
+                            db.add(db_item)
+                            try:
+                                inv_svc.reserve_stock(
+                                    db,
+                                    product_id=db_item.product_id,
+                                    quantity=db_item.quantity,
+                                    order_id=_prev.id,
+                                    variant_details=db_item.variant_details
+                                )
+                            except Exception as exc:
+                                logger.warning(f"Could not reserve stock for 3-min updating order {_prev.id}: {exc}")
                     
                     # Merge any other duplicate drafts for this customer
                     other_dups = db.query(Order).filter(
@@ -2259,8 +2294,57 @@ def create_order(
                         dup.is_deleted = True
                     
                     db.commit()
+                    db.refresh(_prev)
+
+                    # Bump Landing Page counter
+                    if _prev.source == "landing_page":
+                        try:
+                            from app.models.landing_page import LandingPage
+                            if items and items[0].get("product_id"):
+                                lp = db.query(LandingPage).filter(
+                                    LandingPage.store_id == _prev.store_id,
+                                    LandingPage.product_id == items[0]["product_id"]
+                                ).first()
+                                if lp:
+                                    lp.orders = (lp.orders or 0) + 1
+                                    db.add(lp)
+                                    db.commit()
+                        except Exception as lp_err:
+                            logger.warning(f"Failed to increment landing page orders count for 3-min deduplicated order: {lp_err}")
+
+                    from app.core.logging import log_order_event
+                    log_order_event("COMMANDE_NORMALE_RECUE", _prev, "Commande validée directement par le client depuis le checkout (fenêtre 3-min)")
+
+                    # Trigger Meta Conversions API (CAPI)
+                    try:
+                        from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                        meta_cfg = _get_meta_config_cached(db, _prev.store_id)
+                        if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
+                            client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+                            user_agent = request.headers.get("user-agent")
+                            _prev.client_ip = client_ip
+                            _prev.client_user_agent = user_agent
+                            log_id = enqueue_purchase_for_order(db, _prev)
+                            db.commit()
+                            if log_id:
+                                logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour commande 3-min (Log ID: %s, Order: %s, Pixel: %s)", log_id, _prev.order_number, meta_cfg.get("pixel_id"))
+                                log_order_event("ENVOI_META_CAPI_QUEUED", _prev, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                                background_tasks.add_task(
+                                    send_purchase_for_order,
+                                    order_id=str(_prev.id),
+                                    client_ip=client_ip,
+                                    user_agent=user_agent
+                                )
+                            else:
+                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
+                        else:
+                            logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète pour la boutique %s", _prev.store_id)
+                    except Exception as capi_err:
+                        db.rollback()
+                        logger.warning(f"Failed to queue Meta CAPI event for 3-min order {_prev.id}: {capi_err}")
+
                     logger.info(
-                        "Deduplicated submit: phone %s submitted within 3-min window → updated existing order %s (is_duplicate=False)",
+                        "Deduplicated submit: phone %s submitted within 3-min window → updated existing order %s (is_duplicate=False, CAPI queued)",
                         phone_digits, _prev.order_number,
                     )
                     return _prev
@@ -2315,16 +2399,23 @@ def create_order(
             logger.warning("Auto-merge failed for order %s: %s", order.id, merge_err)
 
 
+        # Target operational order (parent if order was merged)
+        target_order = order
+        if order.status == "MERGED" and order.parent_order_id:
+            parent_ord = db.query(Order).filter(Order.id == order.parent_order_id).first()
+            if parent_ord:
+                target_order = parent_ord
+
         # Only bump the LP counter for a real, standalone order. If auto-merge
         # just folded this submission into an existing parent (same phone), the
         # order is now MERGED and counting it would double-count one customer —
         # the same inflation the LP list recount deliberately excludes.
-        if order.source == "landing_page" and str(order.status) != "MERGED":
+        if target_order.source == "landing_page" and str(target_order.status) != "MERGED":
             try:
                 from app.models.landing_page import LandingPage
                 if items and items[0].get("product_id"):
                     lp = db.query(LandingPage).filter(
-                        LandingPage.store_id == order.store_id,
+                        LandingPage.store_id == target_order.store_id,
                         LandingPage.product_id == items[0]["product_id"]
                     ).first()
                     if lp:
@@ -2339,33 +2430,33 @@ def create_order(
         else:
             logger.info("Order %s created by guest", order.order_number)
             
-        # Trigger Meta Conversions API (CAPI) if configured — fully normalized
+        # Trigger Meta Conversions API (CAPI) on target_order if configured — fully normalized
         # user_data, retries, logging, and an event_id shared with the browser
-        # Pixel (purchase-{order.id}) so Meta deduplicates the two signals.
+        # Pixel (purchase-{target_order.id}) so Meta deduplicates the two signals.
         try:
             from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
-            meta_cfg = _get_meta_config_cached(db, order.store_id)
+            meta_cfg = _get_meta_config_cached(db, target_order.store_id)
             if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
-                order.client_ip = client_ip
-                order.client_user_agent = user_agent
-                log_id = enqueue_purchase_for_order(db, order)
+                target_order.client_ip = client_ip
+                target_order.client_user_agent = user_agent
+                log_id = enqueue_purchase_for_order(db, target_order)
                 db.commit()
                 if log_id:
-                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, order.order_number, meta_cfg.get("pixel_id"))
+                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, target_order.order_number, meta_cfg.get("pixel_id"))
                     from app.core.logging import log_order_event
-                    log_order_event("ENVOI_META_CAPI_QUEUED", order, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                    log_order_event("ENVOI_META_CAPI_QUEUED", target_order, "Événement Purchase CAPI ajouté à la file d'attente durable")
                     background_tasks.add_task(
                         send_purchase_for_order,
-                        order_id=str(order.id),
+                        order_id=str(target_order.id),
                         client_ip=client_ip,
                         user_agent=user_agent
                     )
                 else:
-                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", order.order_number)
+                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
             else:
-                logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", order.store_id)
+                logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", target_order.store_id)
         except Exception as capi_err:
             db.rollback()
             logger.warning(f"Failed to queue Meta CAPI event: {capi_err}")
