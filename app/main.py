@@ -148,6 +148,7 @@ def run_db_migrations():
         "UPDATE orders SET is_deleted = TRUE, status = 'DELETED' WHERE order_number IN ('ABN-20260819-051F94', 'ABN-20260819-5AEEAE', 'ABN-20260819-F6C4F1') OR order_number LIKE '%5AEEAE%' OR order_number LIKE '%F6C4F1%' OR order_number LIKE '%051F94%' OR (customer_phone = '0780125700' AND order_number LIKE 'ABN%')",
         "UPDATE orders SET delivery_fee = CASE WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('16', 'alger') THEN 400 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('9', 'blida', '35', 'boumerdès', 'boumerdes', '42', 'tipaza') THEN 500 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('19', 'sétif', 'setif', '23', 'annaba', '25', 'constantine', '31', 'oran') THEN 600 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('3', 'laghouat', '30', 'ouargla', '32', 'el bayadh', '38', 'tissemsilt', '45', 'naâma', 'naama', '47', 'ghardaïa', 'ghardaia', '51', 'ouled djellal', '55', 'touggourt', '57', 'el m''ghair', 'el mghair', '58', 'el meniaa') THEN 950 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('1', 'adrar', '8', 'béchar', 'bechar', '11', 'tamanrasset', '33', 'illizi', '37', 'tindouf', '49', 'timimoun', '50', 'bordj badji mokhtar', '52', 'béni abbès', 'beni abbes', '53', 'in salah', '54', 'in guezzam', '56', 'djanet') THEN 1200 ELSE 800 END WHERE (delivery_fee IS NULL OR delivery_fee = 0) AND customer_wilaya IS NOT NULL AND TRIM(customer_wilaya) != ''",
         "UPDATE orders SET subtotal = CASE WHEN (subtotal IS NULL OR subtotal = 0) THEN (total - COALESCE(delivery_fee, 0)) ELSE subtotal END, total = (CASE WHEN (subtotal IS NOT NULL AND subtotal > 0) THEN subtotal ELSE (total - COALESCE(delivery_fee, 0)) END) - COALESCE(discount, 0) + COALESCE(delivery_fee, 0) WHERE is_deleted IS FALSE OR is_deleted IS NULL",
+        "UPDATE orders SET is_abandoned_cart = FALSE, status = 'NEW', order_number = REPLACE(order_number, 'ABN-', 'ORD-') WHERE (store_sequence_number IN (832, 833) OR order_number LIKE '%832%' OR order_number LIKE '%833%') AND status != 'CANCELLED'",
     ]
 
     for stmt in statements:
@@ -196,8 +197,6 @@ def run_db_migrations():
                     subtotal = sum(int(i.quantity or 1) * float(i.unit_price or 0) for i in p.items if i not in to_remove)
                     p.subtotal = int(subtotal)
                     p.total = max(0, int(subtotal) + int(p.delivery_fee or 0) - int(p.discount or 0))
-            # Auto-repair any abandoned cart draft that had status set to NEW by mistake
-            db_mig.execute(text("UPDATE orders SET status = 'ABANDONED' WHERE is_abandoned_cart = True AND (status = 'NEW' OR status IS NULL OR status = '')"))
             
             # Delete any MERGED child orders created within 10 minutes of their parent order
             child_orders = db_mig.query(Order).filter(
