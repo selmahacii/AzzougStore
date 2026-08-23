@@ -2144,32 +2144,25 @@ def create_order(
                 db.rollback()
                 logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
 
-                # The customer just completed checkout THEMSELVES from an
-                # abandoned-cart link — this is a genuine sale, exactly like a
-                # brand-new order, so it must fire Purchase CAPI exactly once
-                # (send_purchase_for_order's own idempotency guard protects
-                # against ever double-firing if a confirmatrice later also
-                # touches this order's status).
-                if str(existing.status) != "MERGED":
-                    try:
-                        from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
-                        meta_cfg = _get_meta_config_cached(db, existing.store_id)
-                        if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
-                            # Durable queue: write status='queued' and COMMIT it
-                            # before scheduling the background task. If the
-                            # process dies right after this commit (HF
-                            # redeploy), the row survives and is replayed by
-                            # app.main.resume_pending_queues on the next boot —
-                            # this is what closes the exact gap that silently
-                            # lost 22 real ORD-* Purchases in production.
-                            client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-                            user_agent = request.headers.get("user-agent")
-                            # Persisted on the order (not just passed to this one
-                            # synchronous call) so a LATER retry/backfill of this
-                            # same Purchase can still recover them — see
-                            # _handle_claimed_row's fallback in meta_capi.py.
-                            existing.client_ip = client_ip
-                            enqueue_purchase_for_order(db, existing)
+            # The customer just completed checkout THEMSELVES from an
+            # abandoned-cart link — this is a genuine sale, exactly like a
+            # brand-new order, so it must fire Purchase CAPI exactly once
+            # (send_purchase_for_order's own idempotency guard protects
+            # against ever double-firing if a confirmatrice later also
+            # touches this order's status).
+            if str(existing.status) != "MERGED":
+                try:
+                    from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                    meta_cfg = _get_meta_config_cached(db, existing.store_id)
+                    if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
+                        client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+                        user_agent = request.headers.get("user-agent")
+                        existing.client_ip = client_ip
+                        existing.client_user_agent = user_agent
+                        log_id = enqueue_purchase_for_order(db, existing)
+                        db.commit()
+                        if log_id:
+                            logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente (Log ID: %s, Order: %s, Pixel: %s)", log_id, existing.order_number, meta_cfg.get("pixel_id"))
                             from app.core.logging import log_order_event
                             log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
                             background_tasks.add_task(
@@ -2178,11 +2171,15 @@ def create_order(
                                 client_ip=client_ip,
                                 user_agent=user_agent
                             )
-                    except Exception as capi_err:
-                        db.rollback()
-                        logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
+                        else:
+                            logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
+                    else:
+                        logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", existing.store_id)
+                except Exception as capi_err:
+                    db.rollback()
+                    logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
 
-                return existing
+            return existing
 
         from datetime import datetime, timezone, timedelta
 
@@ -2332,28 +2329,26 @@ def create_order(
             from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
             meta_cfg = _get_meta_config_cached(db, order.store_id)
             if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
-                # Durable queue: the 'queued' row is written and COMMITTED
-                # here, before add_task is even scheduled — not inside the
-                # background task itself. If the HF container is killed
-                # anywhere after this commit (mid-request, between response
-                # and task execution, whenever), the row already exists on
-                # disk and app.main.resume_pending_queues replays it on the
-                # next boot. This is the fix for the proven gap: 22 real
-                # ORD-* orders got ZERO CAPI attempt (not even a failed one)
-                # because nothing was ever written before the old
-                # BackgroundTasks callback started running.
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 order.client_ip = client_ip
                 order.client_user_agent = user_agent
-                enqueue_purchase_for_order(db, order)
+                log_id = enqueue_purchase_for_order(db, order)
                 db.commit()
-                background_tasks.add_task(
-                    send_purchase_for_order,
-                    order_id=str(order.id),
-                    client_ip=client_ip,
-                    user_agent=user_agent
-                )
+                if log_id:
+                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, order.order_number, meta_cfg.get("pixel_id"))
+                    from app.core.logging import log_order_event
+                    log_order_event("ENVOI_META_CAPI_QUEUED", order, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                    background_tasks.add_task(
+                        send_purchase_for_order,
+                        order_id=str(order.id),
+                        client_ip=client_ip,
+                        user_agent=user_agent
+                    )
+                else:
+                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", order.order_number)
+            else:
+                logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", order.store_id)
         except Exception as capi_err:
             db.rollback()
             logger.warning(f"Failed to queue Meta CAPI event: {capi_err}")
