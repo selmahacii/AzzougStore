@@ -279,7 +279,6 @@ def run_db_migrations():
 
                     if ord_obj:
                         ord_obj.status = "DELIVERED"
-                        ord_obj.delivered_at = deliv_time
                         ord_obj.updated_at = deliv_time
                         ord_obj.carrier_stage = "delivered"
                         ord_obj.carrier_stage_label = "Livré"
@@ -310,8 +309,7 @@ def run_db_migrations():
                                 is_abandoned_cart=False,
                                 is_deleted=False,
                                 created_at=item_data["created_at"],
-                                updated_at=deliv_time,
-                                delivered_at=deliv_time
+                                updated_at=deliv_time
                             )
                             db_mig.add(new_ord)
                             db_mig.flush()
