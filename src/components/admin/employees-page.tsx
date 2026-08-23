@@ -1948,10 +1948,18 @@ export default function EmployeesPage() {
       if (mapped && mapped !== activeTab) setActiveTab(mapped);
    }, [adminSubView]);
 
+   const isValidIsoDate = (val: string): boolean => {
+      if (!val) return false;
+      const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
+      if (!match) return false;
+      const y = parseInt(match[1], 10);
+      return y >= 2020 && y <= 2050;
+   };
+
    const buildQueryStr = (basePath: string) => {
       const params = new URLSearchParams({ store_id: storeId });
-      if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
-      if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
+      if (isValidIsoDate(startDate)) params.set('start_date', startDate + 'T00:00:00.000Z');
+      if (isValidIsoDate(endDate)) params.set('end_date', endDate + 'T23:59:59.999Z');
       return `${basePath}?${params.toString()}`;
    };
 
@@ -1981,13 +1989,9 @@ export default function EmployeesPage() {
    const auditQuery = useQuery<any>({
       queryKey: ['audit', 'recent', storeId, startDate, endDate],
       queryFn: () => {
-         // Was 15 with a "Accéder à l'audit complet" button underneath that
-         // did nothing (no destination page exists) — removed the dead
-         // button and fetch a bit more directly instead, since the panel
-         // already scrolls.
          const params = new URLSearchParams({ store_id: storeId, pageSize: '30' });
-         if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
-         if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
+         if (isValidIsoDate(startDate)) params.set('start_date', startDate + 'T00:00:00.000Z');
+         if (isValidIsoDate(endDate)) params.set('end_date', endDate + 'T23:59:59.999Z');
          return apiFetch(`/api/v1/audit/?${params.toString()}`);
       },
    });
@@ -2219,7 +2223,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
          let url = `/api/v1/users/${employee.id}/performance?date_by=${dateBy}`;
          if (storeId) url += `&store_id=${storeId}`;
 
-         if (period === 'custom' && startDate && endDate) {
+         if (period === 'custom' && isValidIsoDate(startDate) && isValidIsoDate(endDate)) {
             url += `&start_date=${startDate}&end_date=${endDate}`;
          } else if (period === 'today') {
             const today = new Date().toISOString().slice(0, 10);

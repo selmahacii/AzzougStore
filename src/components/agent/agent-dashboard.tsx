@@ -2571,6 +2571,14 @@ export default function AgentDashboard() {
     setPage(1);
   }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
 
+  const isValidIsoDate = (val: string): boolean => {
+    if (!val) return false;
+    const match = val.match(/^(\d{4})-\d{2}-\d{2}$/);
+    if (!match) return false;
+    const y = parseInt(match[1], 10);
+    return y >= 2020 && y <= 2050;
+  };
+
   const ordersQuery = useQuery({
     queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
     queryFn: () => {
@@ -2584,25 +2592,14 @@ export default function AgentDashboard() {
       if (currentFilter !== 'ALL') {
         url += `&status=${encodeURIComponent(currentFilter)}`;
       }
-      if (startDate) {
+      if (isValidIsoDate(startDate)) {
         url += `&start_date=${encodeURIComponent(new Date(startDate).toISOString())}`;
       }
-      if (endDate) {
+      if (isValidIsoDate(endDate)) {
         const d = new Date(endDate);
         d.setHours(23, 59, 59, 999);
         url += `&end_date=${encodeURIComponent(d.toISOString())}`;
       }
-      // allStores: ALWAYS bypass the X-Store-Id tenant header on agent list
-      // queries. The header follows the Zustand "active store", which can
-      // desync from the store the agent is browsing (default store ≠ selected
-      // store) — the server then intersects everything with the wrong store
-      // and her real orders vanish (observed live: store_id=trustshop with
-      // X-Store-Id=azconfort → total=0). The explicit store_id param + the
-      // CONFIRMATEUR RBAC in list_orders do all the real scoping server-side.
-      console.log('[AgentDebug] requête commandes →', url, {
-        modeToutesBoutiques: showAllStores,
-        boutiqueActive: activeStore?.name,
-      });
       return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
@@ -2630,8 +2627,8 @@ export default function AgentDashboard() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (!showAllStores && activeStore?.id) params.set('store_id', activeStore.id);
-      if (startDate) params.set('start_date', new Date(startDate).toISOString());
-      if (endDate) {
+      if (isValidIsoDate(startDate)) params.set('start_date', new Date(startDate).toISOString());
+      if (isValidIsoDate(endDate)) {
         const d = new Date(endDate);
         d.setHours(23, 59, 59, 999);
         params.set('end_date', d.toISOString());
@@ -2652,10 +2649,10 @@ export default function AgentDashboard() {
       if (!showAllStores && activeStore?.id) {
         url += `store_id=${activeStore.id}&`;
       }
-      if (startDate) {
+      if (isValidIsoDate(startDate)) {
         url += `start_date=${encodeURIComponent(new Date(startDate).toISOString())}&`;
       }
-      if (endDate) {
+      if (isValidIsoDate(endDate)) {
         const d = new Date(endDate);
         d.setHours(23, 59, 59, 999);
         url += `end_date=${encodeURIComponent(d.toISOString())}&`;

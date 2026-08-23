@@ -27,4 +27,6 @@ def parse_local_date_filter(date_str: str) -> datetime:
     compare directly against DB columns, which are stored naive-UTC.
     """
     dt = datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+    if dt.year < 2020 or dt.year > 2050:
+        raise ValueError(f"Invalid filter year: {dt.year}")
     return dt - timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)
