@@ -9,7 +9,8 @@ import {
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus, Save,
-  Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock, Store, CheckCircle2
+  Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock, Store, CheckCircle2,
+  ExternalLink, Copy, Check
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -1863,8 +1864,14 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   );
 }
 
-function SalaryView({ perf, user }: any) {
+function SalaryView({ perf, user, onSelectOrder }: any) {
+  const [drilldownFilter, setDrilldownFilter] = useState<string | null>(null);
+  const [drilldownSearch, setDrilldownSearch] = useState<string>('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const stats = perf?.stats ?? {};
+  const rawOrders: any[] = perf?.recent_orders ?? [];
+
   const paymentType = stats.payment_type ?? user?.payment_type ?? 'PER_DELIVERED_ORDER';
   const paymentAmount = stats.payment_amount ?? user?.payment_amount ?? 0;
   
@@ -1887,7 +1894,6 @@ function SalaryView({ perf, user }: any) {
   
   const marketplaceDeliveredCount = stats.marketplace_delivered_count ?? 0;
   const marketplaceBonus = stats.marketplace_bonus ?? 0;
-  const paymentMarketplace = 50; // Typically fixed, though we could read it if we send it in stats
 
   const storePickupCount = stats.store_pickup_delivered_count ?? 0;
   const recoveredStorePickupCount = stats.recovered_store_pickup_delivered_count ?? 0;
@@ -1896,7 +1902,7 @@ function SalaryView({ perf, user }: any) {
   
   const totalSalary = stats.salary ?? 0;
 
-  // Calculate base salary amount for display (using stats.base_salary or normalDeliveredCount)
+  // Calculate base salary amount for display
   const baseSalaryVal = stats.base_salary !== undefined 
     ? stats.base_salary 
     : (paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCount * paymentAmount);
@@ -1908,26 +1914,115 @@ function SalaryView({ perf, user }: any) {
     baseSalaryExplain = `${normalDeliveredCount} livraisons normales × ${formatPrice(paymentAmount)}`;
   }
 
+  const FILTER_CONFIG: Record<string, { title: string; badge: string; color: string; bg: string }> = {
+    NORMAL_DELIVERED:    { title: 'Commandes Normales Livrées', badge: '🟦 Normales Livrées', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+    RECOVERED_DELIVERED: { title: 'Paniers Abandonnés Récupérés et Livrés', badge: '🟩 Paniers Récupérés Livrés', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+    DELIVERED:           { title: 'Toutes les Commandes Livrées', badge: '🚚 Livraisons (Total)', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+    CONFIRMED:           { title: 'Commandes Confirmées', badge: '📞 Confirmations', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+    RECOVERED:           { title: 'Tous les Paniers Récupérés', badge: '🛒 Paniers Récupérés', color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
+    STORE_PICKUP:        { title: 'Retraits Point de Vente / Magasin', badge: '🏪 Retrait Magasin', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200' },
+    ALL:                 { title: 'Toutes les Commandes Assignées', badge: '👥 Total Assigné', color: 'text-slate-800', bg: 'bg-slate-50 border-slate-200' },
+    CANCELLED:           { title: 'Commandes Annulées', badge: '⚪ Annulées', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
+    RETURNED:            { title: 'Commandes Retournées (Échecs)', badge: '🔴 Retours', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
+    UPSELL:              { title: 'Commandes Upsell / Multi-produits', badge: '🛍️ Upsell', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+  };
+
+  const filteredDrilldownOrders = useMemo(() => {
+    if (!drilldownFilter) return [];
+    return rawOrders.filter((ord: any) => {
+      let matches = true;
+      const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
+      const isDel = ord.status === 'DELIVERED';
+
+      if (drilldownFilter === 'NORMAL_DELIVERED') {
+        matches = isDel && !isRec;
+      } else if (drilldownFilter === 'RECOVERED_DELIVERED') {
+        matches = isDel && isRec;
+      } else if (drilldownFilter === 'DELIVERED') {
+        matches = isDel;
+      } else if (drilldownFilter === 'CONFIRMED') {
+        matches = ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(ord.status);
+      } else if (drilldownFilter === 'RECOVERED') {
+        matches = isRec;
+      } else if (drilldownFilter === 'RETURNED') {
+        matches = ord.status === 'RETURNED';
+      } else if (drilldownFilter === 'CANCELLED') {
+        matches = ord.status === 'CANCELLED';
+      } else if (drilldownFilter === 'UPSELL') {
+        matches = Boolean(ord.is_upsell);
+      } else if (drilldownFilter === 'STORE_PICKUP') {
+        matches = ord.delivery_type === 'OFFICE' || ord.delivery_type === 'STORE_PICKUP';
+      } else if (drilldownFilter === 'ALL') {
+        matches = true;
+      }
+
+      if (!matches) return false;
+
+      if (drilldownSearch.trim()) {
+        const q = drilldownSearch.trim().toLowerCase();
+        const num = (ord.order_number || '').toLowerCase();
+        const trk = (ord.tracking_number || '').toLowerCase();
+        const name = (ord.customer_name || '').toLowerCase();
+        const phone = (ord.customer_phone || '').toLowerCase();
+        const wilaya = (ord.wilaya || '').toLowerCase();
+        const commune = (ord.commune || '').toLowerCase();
+        const note = (ord.carrier_tracking_note || '').toLowerCase();
+        const itemsStr = (ord.items || []).map((it: any) => (it.product_name || '')).join(' ').toLowerCase();
+
+        return (
+          num.includes(q) || trk.includes(q) || name.includes(q) || 
+          phone.includes(q) || wilaya.includes(q) || commune.includes(q) || 
+          note.includes(q) || itemsStr.includes(q)
+        );
+      }
+
+      return true;
+    });
+  }, [rawOrders, drilldownFilter, drilldownSearch]);
+
+  const copyToClipboard = (text: string, id: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+    toast.success(`Copié : ${text}`);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-       {/* High Level Stats Grid */}
+       {/* High Level Stats Grid (Interactive / Clickable for Drilldown) */}
        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
           {[
-            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
-            { label: 'Livraisons (Total)', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50', border: 'border-blue-100' },
-            { label: '🟦 Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100' },
-            { label: '🟩 Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-            { label: '🏪 Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100' },
-            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50', border: 'border-violet-100' },
-            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50', border: 'border-slate-200' },
-            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50', border: 'border-slate-200' },
-            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50', border: 'border-rose-100' },
-            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50', border: 'border-amber-100' },
+            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterKey: 'CONFIRMED' },
+            { label: 'Livraisons (Total)', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50', border: 'border-blue-100', filterKey: 'DELIVERED' },
+            { label: '🟦 Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100', filterKey: 'NORMAL_DELIVERED' },
+            { label: '🟩 Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200', filterKey: 'RECOVERED_DELIVERED' },
+            { label: '🏪 Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100', filterKey: 'STORE_PICKUP' },
+            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50', border: 'border-violet-100', filterKey: 'RECOVERED' },
+            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'ALL' },
+            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'CANCELLED' },
+            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50', border: 'border-rose-100', filterKey: 'RETURNED' },
+            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50', border: 'border-amber-100', filterKey: 'UPSELL' },
           ].map(s => (
-            <div key={s.label} className={cn("p-4 border rounded-2xl bg-white shadow-xs transition-all hover:scale-[1.02]", s.bg, s.border)}>
-               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{s.label}</p>
+            <button
+               key={s.label}
+               type="button"
+               onClick={() => {
+                 setDrilldownFilter(s.filterKey);
+                 setDrilldownSearch('');
+               }}
+               className={cn(
+                 "p-4 border rounded-2xl bg-white shadow-xs transition-all hover:scale-[1.03] hover:shadow-md cursor-pointer text-left w-full relative group",
+                 s.bg, s.border
+               )}
+            >
+               <div className="flex items-center justify-between">
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{s.label}</p>
+                 <ChevronRight className="size-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+               </div>
                <p className={cn("text-2xl font-black mt-1", s.color)}>{s.val}</p>
-            </div>
+               <p className="text-[8px] font-bold text-slate-400/80 uppercase tracking-wider mt-1">Cliquer pour voir la liste ↗</p>
+            </button>
           ))}
        </div>
 
@@ -1940,9 +2035,15 @@ function SalaryView({ perf, user }: any) {
                 </h3>
                 
                 {/* Base Salary Breakdown */}
-                <div className="flex items-center justify-between py-2">
+                <div 
+                   onClick={() => { setDrilldownFilter('NORMAL_DELIVERED'); setDrilldownSearch(''); }}
+                   className="flex items-center justify-between py-2 cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors group"
+                >
                    <div>
-                      <p className="text-xs font-bold text-slate-800">Rémunération de base</p>
+                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                         <span>🟦 Rémunération de base (Normales)</span>
+                         <span className="text-[9px] text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
+                      </p>
                       <p className="text-[10px] text-slate-400 font-medium">{baseSalaryExplain}</p>
                    </div>
                    <span className="text-sm font-bold text-slate-800">{formatPrice(baseSalaryVal)}</span>
@@ -1955,7 +2056,10 @@ function SalaryView({ perf, user }: any) {
                          🏪 Retrait Point de Vente / Magasin
                       </p>
                       {storePickupCount > 0 && (
-                         <div className="flex items-center justify-between text-xs">
+                         <div 
+                           onClick={() => { setDrilldownFilter('STORE_PICKUP'); setDrilldownSearch(''); }}
+                           className="flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
+                         >
                             <div className="space-y-0.5">
                                <p className="font-bold text-slate-700">Retrait Magasin Normal</p>
                                <p className="text-[10px] text-slate-400">{storePickupCount} retrait{storePickupCount > 1 ? 's' : ''} × {formatPrice(paymentStorePickup)}</p>
@@ -1964,7 +2068,10 @@ function SalaryView({ perf, user }: any) {
                          </div>
                       )}
                       {recoveredStorePickupCount > 0 && (
-                         <div className="flex items-center justify-between text-xs">
+                         <div 
+                           onClick={() => { setDrilldownFilter('STORE_PICKUP'); setDrilldownSearch(''); }}
+                           className="flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
+                         >
                             <div className="space-y-0.5">
                                <p className="font-bold text-slate-700">Retrait Magasin Panier Récupéré</p>
                                <p className="text-[10px] text-slate-400">{recoveredStorePickupCount} retrait{recoveredStorePickupCount > 1 ? 's' : ''} × {formatPrice(paymentRecoveredStorePickup)}</p>
@@ -1981,9 +2088,15 @@ function SalaryView({ perf, user }: any) {
                       <p className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1.5">
                          <span>🟩</span> Paniers Abandonnés Récupérés Livrés (Bonus)
                       </p>
-                      <div className="flex items-center justify-between text-xs">
+                      <div 
+                        onClick={() => { setDrilldownFilter('RECOVERED_DELIVERED'); setDrilldownSearch(''); }}
+                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-emerald-50/60 p-2.5 rounded-xl transition-colors border border-emerald-100 group"
+                      >
                          <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700">Commission Paniers Récupérés Livrés</p>
+                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                               <span>Commission Paniers Récupérés Livrés</span>
+                               <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
+                            </p>
                             <p className="text-[10px] text-slate-400">{(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}</p>
                          </div>
                          <span className="font-black text-emerald-600">+{formatPrice(abandonedBonus || ((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150)))}</span>
@@ -1997,7 +2110,10 @@ function SalaryView({ perf, user }: any) {
                       <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">
                          Retours (Pénalité)
                       </p>
-                      <div className="flex items-center justify-between text-xs">
+                      <div 
+                        onClick={() => { setDrilldownFilter('RETURNED'); setDrilldownSearch(''); }}
+                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50/60 p-2 rounded-xl transition-colors"
+                      >
                          <div className="space-y-0.5">
                             <p className="font-bold text-slate-700">Commandes retournées</p>
                             <p className="text-[10px] text-slate-400">{lostCount} retour{lostCount > 1 ? 's' : ''} × {formatPrice(paymentLost)}</p>
@@ -2013,7 +2129,10 @@ function SalaryView({ perf, user }: any) {
                       <p className="text-[10px] font-black uppercase text-amber-600 tracking-wider">
                          Upsell (Bonus)
                       </p>
-                      <div className="flex items-center justify-between text-xs">
+                      <div 
+                        onClick={() => { setDrilldownFilter('UPSELL'); setDrilldownSearch(''); }}
+                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-amber-50/60 p-2 rounded-xl transition-colors"
+                      >
                          <div className="space-y-0.5">
                             <p className="font-bold text-slate-700">Commandes upsell livrées</p>
                             <p className="text-[10px] text-slate-400">{upsellDeliveredCount} commande{upsellDeliveredCount > 1 ? 's' : ''} × {formatPrice(paymentUpsell)}</p>
@@ -2076,6 +2195,277 @@ function SalaryView({ perf, user }: any) {
              </div>
           </div>
        </div>
+
+       {/* ═══════════════════════════════════════════════════════════════════════ */}
+       {/* 🔍 MODALE DE DÉTAIL / DRILLDOWN DE CHAQUE KPI DE SALAIRE             */}
+       {/* ═══════════════════════════════════════════════════════════════════════ */}
+       {drilldownFilter && (
+         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+             
+             {/* Header */}
+             <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+               <div>
+                 <div className="flex items-center gap-2">
+                   <span className={cn("px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider border", FILTER_CONFIG[drilldownFilter]?.bg, FILTER_CONFIG[drilldownFilter]?.color)}>
+                     {FILTER_CONFIG[drilldownFilter]?.badge || drilldownFilter}
+                   </span>
+                   <span className="text-xs font-bold text-slate-400">
+                     ({filteredDrilldownOrders.length} commande{filteredDrilldownOrders.length > 1 ? 's' : ''})
+                   </span>
+                 </div>
+                 <h3 className="text-lg font-black text-slate-900 mt-1">
+                   {FILTER_CONFIG[drilldownFilter]?.title}
+                 </h3>
+               </div>
+               
+               <button
+                 type="button"
+                 onClick={() => setDrilldownFilter(null)}
+                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+               >
+                 <X className="size-5" />
+               </button>
+             </div>
+
+             {/* Filter switchers & Search toolbar */}
+             <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
+               {/* Search bar */}
+               <div className="relative w-full sm:w-80">
+                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                 <input
+                   type="text"
+                   value={drilldownSearch}
+                   onChange={e => setDrilldownSearch(e.target.value)}
+                   placeholder="Rechercher par N°, client, tél, wilaya, article..."
+                   className="w-full pl-9 pr-8 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-800 font-medium placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                 />
+                 {drilldownSearch && (
+                   <button
+                     onClick={() => setDrilldownSearch('')}
+                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                   >
+                     <X className="size-3.5" />
+                   </button>
+                 )}
+               </div>
+
+               {/* Quick filter tabs */}
+               <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                 {[
+                   { id: 'NORMAL_DELIVERED', label: '🟦 Normales Livrées' },
+                   { id: 'RECOVERED_DELIVERED', label: '🟩 Paniers Récup. Livrés' },
+                   { id: 'DELIVERED', label: '🚚 Toutes Livrées' },
+                   { id: 'CONFIRMED', label: '📞 Confirmées' },
+                   { id: 'RETURNED', label: '🔴 Retours' },
+                   { id: 'ALL', label: 'Toutes' },
+                 ].map(tab => (
+                   <button
+                     key={tab.id}
+                     type="button"
+                     onClick={() => setDrilldownFilter(tab.id)}
+                     className={cn(
+                       "px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap",
+                       drilldownFilter === tab.id
+                         ? "bg-slate-900 text-white shadow-sm"
+                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                     )}
+                   >
+                     {tab.label}
+                   </button>
+                 ))}
+               </div>
+             </div>
+
+             {/* Order List Body */}
+             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 custom-scrollbar bg-slate-50/40">
+               {filteredDrilldownOrders.length === 0 ? (
+                 <div className="text-center py-16 px-4 space-y-3">
+                   <Package className="size-12 text-slate-300 mx-auto" />
+                   <p className="text-sm font-bold text-slate-700">Aucune commande trouvée</p>
+                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                     {drilldownSearch ? "Aucun résultat pour cette recherche. Essayez de modifier les termes." : "Aucune commande enregistrée pour ce critère dans la période sélectionnée."}
+                   </p>
+                   {drilldownSearch && (
+                     <button
+                       onClick={() => setDrilldownSearch('')}
+                       className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
+                     >
+                       Effacer la recherche
+                     </button>
+                   )}
+                 </div>
+               ) : (
+                 filteredDrilldownOrders.map((ord: any) => {
+                   const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
+                   const isDel = ord.status === 'DELIVERED';
+                   return (
+                     <div
+                       key={ord.id}
+                       className={cn(
+                         "bg-white rounded-2xl p-4 border transition-all hover:shadow-md space-y-3",
+                         isRec ? "border-emerald-200/80 bg-emerald-50/10" : "border-slate-200"
+                       )}
+                     >
+                       {/* Row 1: Order ref, Status, Date & Type Badge */}
+                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                         <div className="flex items-center gap-2">
+                           <span className="font-mono font-black text-xs text-slate-900">
+                             {ord.order_number}
+                           </span>
+                           <button
+                             type="button"
+                             onClick={() => copyToClipboard(ord.order_number, ord.id)}
+                             className="text-slate-400 hover:text-slate-700 transition-colors p-1"
+                             title="Copier le N° de commande"
+                           >
+                             {copiedId === ord.id ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                           </button>
+                           
+                           {isRec ? (
+                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                               🟩 Panier Récupéré
+                             </span>
+                           ) : (
+                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+                               🟦 Normale
+                             </span>
+                           )}
+
+                           <span className={cn(
+                             "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
+                             ord.status === 'DELIVERED' ? "bg-emerald-500 text-white" :
+                             ord.status === 'CONFIRMED' ? "bg-emerald-100 text-emerald-800" :
+                             ord.status === 'SHIPPED' ? "bg-cyan-100 text-cyan-800" :
+                             ord.status === 'RETURNED' ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
+                           )}>
+                             {ord.status === 'DELIVERED' ? 'Livrée' : ord.status}
+                           </span>
+                         </div>
+
+                         <div className="text-[11px] font-bold text-slate-400">
+                           {ord.delivered_at ? (
+                             <span>Livré le {new Date(ord.delivered_at).toLocaleDateString('fr-FR')} {new Date(ord.delivered_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                           ) : ord.created_at ? (
+                             <span>Créé le {new Date(ord.created_at).toLocaleDateString('fr-FR')}</span>
+                           ) : null}
+                         </div>
+                       </div>
+
+                       {/* Row 2: Customer, Items, Tracking & Financials */}
+                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                         {/* Customer */}
+                         <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Client</p>
+                           <p className="font-bold text-slate-900">{ord.customer_name || 'Client inconnu'}</p>
+                           <a href={`tel:${ord.customer_phone}`} className="text-indigo-600 hover:underline font-mono font-bold block">
+                             {ord.customer_phone}
+                           </a>
+                           <p className="text-slate-500 text-[11px] flex items-center gap-1">
+                             <MapPin className="size-3 text-slate-400 shrink-0" />
+                             <span>{ord.wilaya}{ord.commune ? ` (${ord.commune})` : ''}</span>
+                           </p>
+                         </div>
+
+                         {/* Items */}
+                         <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Articles commandés</p>
+                           {(ord.items || []).length > 0 ? (
+                             (ord.items || []).map((it: any, i: number) => {
+                               const varStr = typeof it.variant_details === 'object' && it.variant_details
+                                 ? Object.entries(it.variant_details).map(([k, v]) => `${v}`).join(' / ')
+                                 : (typeof it.variant_details === 'string' ? it.variant_details : '');
+                               return (
+                                 <p key={i} className="text-slate-700 font-medium leading-tight">
+                                   <span className="font-black text-slate-900">{it.quantity}x</span> {it.product_name}
+                                   {varStr ? <span className="text-slate-400 text-[10px]"> [{varStr}]</span> : ''}
+                                 </p>
+                               );
+                             })
+                           ) : (
+                             <p className="text-slate-400 italic">Détails articles non disponibles</p>
+                           )}
+                         </div>
+
+                         {/* Suivi Transporteur */}
+                         <div className="space-y-1">
+                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Transporteur & Suivi</p>
+                           {ord.tracking_number ? (
+                             <div className="space-y-0.5">
+                               <p className="font-mono font-bold text-slate-800 flex items-center gap-1">
+                                 <Truck className="size-3 text-slate-400" />
+                                 {ord.tracking_number}
+                               </p>
+                               {ord.carrier_stage_label && (
+                                 <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                                   {ord.carrier_stage_label}
+                                 </span>
+                               )}
+                               {ord.carrier_tracking_note && (
+                                 <p className="text-[10px] text-slate-500 italic line-clamp-1" title={ord.carrier_tracking_note}>
+                                   {ord.carrier_tracking_note}
+                                 </p>
+                               )}
+                             </div>
+                           ) : (
+                             <p className="text-slate-400 italic">Colis non expédié Noest</p>
+                           )}
+                         </div>
+
+                         {/* Financials & Commission */}
+                         <div className="space-y-1 sm:text-right flex flex-col justify-between">
+                           <div>
+                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Montant Total</p>
+                             <p className="text-base font-black text-slate-900 font-mono">{formatPrice(ord.total || 0)}</p>
+                             {ord.commission_amount !== undefined && (
+                               <p className={cn(
+                                 "text-[11px] font-black mt-0.5",
+                                 ord.commission_amount > 0 ? "text-emerald-600" : (ord.commission_amount < 0 ? "text-rose-600" : "text-slate-400")
+                               )}>
+                                 Commission: {ord.commission_amount > 0 ? `+${formatPrice(ord.commission_amount)}` : (ord.commission_amount < 0 ? `-${formatPrice(Math.abs(ord.commission_amount))}` : '0 DA')}
+                               </p>
+                             )}
+                           </div>
+
+                           {onSelectOrder && (
+                             <div className="pt-2">
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   onSelectOrder(ord);
+                                   setDrilldownFilter(null);
+                                 }}
+                                 className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
+                               >
+                                 <Eye className="size-3" />
+                                 Ouvrir la fiche
+                               </button>
+                             </div>
+                           )}
+                         </div>
+                       </div>
+                     </div>
+                   );
+                 })
+               )}
+             </div>
+
+             {/* Footer */}
+             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs">
+               <span className="font-bold text-slate-500">
+                 Affichage de {filteredDrilldownOrders.length} commande{filteredDrilldownOrders.length > 1 ? 's' : ''}
+               </span>
+               <button
+                 type="button"
+                 onClick={() => setDrilldownFilter(null)}
+                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition-colors"
+               >
+                 Fermer
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
     </div>
   );
 }
@@ -3056,7 +3446,14 @@ export default function AgentDashboard() {
                   )}
                 </div>
               </div>
-              <SalaryView perf={perfQuery.data} user={user} />
+              <SalaryView 
+                perf={perfQuery.data} 
+                user={user} 
+                onSelectOrder={(ord: any) => { 
+                  setSelectedOrder(ord); 
+                  setDrawerInitialEdit(false); 
+                }} 
+              />
             </div>
           ) : activeSubModule === 'products-catalog' ? (
             // Avantage préexistant du livreur : gestion produit complète

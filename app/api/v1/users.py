@@ -787,7 +787,7 @@ def get_user_performance(
     salary_data = compute_salary(db, db_user, store_id, since=since, until=until, date_by=date_by)
 
     # Detailed orders for the period with tracking and carrier status
-    period_orders = base_q.order_by(date_col.desc()).limit(250).all()
+    period_orders = base_q.order_by(date_col.desc()).limit(1000).all()
 
     audit_logs = (
         db.query(OrderEvent)
@@ -927,6 +927,17 @@ def get_user_performance(
         elif o.status == "RETURNED":
             comm_earned = -pen_rate
 
+        formatted_items = []
+        if getattr(o, "items", None):
+            for it in o.items:
+                formatted_items.append({
+                    "id": getattr(it, "id", None),
+                    "product_name": getattr(it, "product_name", None) or "Produit",
+                    "quantity": getattr(it, "quantity", 1) or 1,
+                    "unit_price": getattr(it, "unit_price", 0) or 0,
+                    "variant_details": getattr(it, "variant_details", None),
+                })
+
         formatted_orders.append({
             "id":                     o.id,
             "order_number":           o.order_number,
@@ -943,8 +954,13 @@ def get_user_performance(
             "order_type":             "RECOVERED" if is_rec else "NORMAL",
             "created_at":             o.created_at.isoformat() if o.created_at else None,
             "delivered_at":           o.updated_at.isoformat() if o.status == "DELIVERED" and o.updated_at else (o.created_at.isoformat() if o.created_at else None),
+            "carrier_stage":          getattr(o, "carrier_stage", None),
+            "carrier_stage_label":    getattr(o, "carrier_stage_label", None),
             "carrier_tracking_note":  getattr(o, "carrier_tracking_note", None) or getattr(o, "delivery_note", None),
+            "delivery_type":          getattr(o, "delivery_type", "HOME"),
+            "is_upsell":              bool(getattr(o, "is_upsell", False)),
             "commission_amount":      comm_earned,
+            "items":                  formatted_items,
         })
 
     return {

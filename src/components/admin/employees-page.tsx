@@ -2433,18 +2433,30 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      {/* Stats grid */}
                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[
-                           { label: 'Assignées', value: total_assigned, sub: '100% du flux', color: '#4b7bec', bg: 'bg-blue-50/50', border: 'border-blue-100' },
-                           { label: 'Confirmées', value: confirmed, sub: `Taux : ${stats.confirmation_rate ?? (total_assigned > 0 ? Math.round((confirmed / total_assigned) * 100) : 0)}%`, color: '#20bf6b', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
-                           { label: 'Livrées (Total)', value: delivered, sub: `Taux : ${stats.confirmed_delivered_rate ?? (confirmed > 0 ? Math.round((delivered / confirmed) * 100) : 0)}%`, color: '#10b981', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
-                           { label: '🟦 Normales Livrées', value: stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0)), sub: `Base : ${formatPrice((stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))) * paymentAmount)}`, color: '#3b82f6', bg: 'bg-blue-50/50', border: 'border-blue-100' },
-                           { label: '🟩 Paniers Récupérés', value: stats.recovered_delivered_count || 0, sub: `+${formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))} (${stats.recovered_delivered_rate || 0}%)`, color: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-                           { label: '🔴 Retours', value: returned, sub: `Taux : ${total_assigned > 0 ? Math.round((returned / total_assigned) * 100) : 0}%`, color: '#ef4444', bg: 'bg-rose-50/50', border: 'border-rose-100' },
+                           { label: 'Assignées', value: total_assigned, sub: '100% du flux', color: '#4b7bec', bg: 'bg-blue-50/50', border: 'border-blue-100', filterId: 'ALL' },
+                           { label: 'Confirmées', value: confirmed, sub: `Taux : ${stats.confirmation_rate ?? (total_assigned > 0 ? Math.round((confirmed / total_assigned) * 100) : 0)}%`, color: '#20bf6b', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterId: 'CONFIRMED' },
+                           { label: 'Livrées (Total)', value: delivered, sub: `Taux : ${stats.confirmed_delivered_rate ?? (confirmed > 0 ? Math.round((delivered / confirmed) * 100) : 0)}%`, color: '#10b981', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterId: 'DELIVERED' },
+                           { label: '🟦 Normales Livrées', value: stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0)), sub: `Base : ${formatPrice((stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))) * paymentAmount)}`, color: '#3b82f6', bg: 'bg-blue-50/50', border: 'border-blue-100', filterId: 'NORMAL_DELIVERED' },
+                           { label: '🟩 Paniers Récupérés', value: stats.recovered_delivered_count || 0, sub: `+${formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))} (${stats.recovered_delivered_rate || 0}%)`, color: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200', filterId: 'RECOVERED_DELIVERED' },
+                           { label: '🔴 Retours', value: returned, sub: `Taux : ${total_assigned > 0 ? Math.round((returned / total_assigned) * 100) : 0}%`, color: '#ef4444', bg: 'bg-rose-50/50', border: 'border-rose-100', filterId: 'RETURNED' },
                         ].map(s => (
-                           <div key={s.label} className={cn("rounded-2xl p-4 text-center border shadow-xs transition-all hover:scale-[1.02]", s.bg, s.border)}>
-                              <p className="text-[9px] font-black uppercase text-slate-500 tracking-wider mb-1 truncate">{s.label}</p>
-                              <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
-                              <p className="text-[10px] font-bold text-slate-400 mt-1 truncate">{s.sub}</p>
-                           </div>
+                           <button
+                              key={s.label}
+                              type="button"
+                              onClick={() => {
+                                 setActiveProfileTab('orders');
+                                 setOrderFilter(s.filterId as any);
+                              }}
+                              className={cn(
+                                 "rounded-2xl p-4 text-center border shadow-xs transition-all hover:scale-[1.03] hover:shadow-md cursor-pointer text-left w-full",
+                                 s.bg, s.border
+                              )}
+                           >
+                              <p className="text-[9px] font-black uppercase text-slate-500 tracking-wider mb-1 truncate text-center">{s.label}</p>
+                              <p className="text-2xl font-black text-center" style={{ color: s.color }}>{s.value}</p>
+                              <p className="text-[10px] font-bold text-slate-400 mt-1 truncate text-center">{s.sub}</p>
+                              <p className="text-[8px] font-extrabold text-slate-400/80 uppercase tracking-wider text-center mt-1">Cliquer pour voir ↗</p>
+                           </button>
                         ))}
                      </div>
 
