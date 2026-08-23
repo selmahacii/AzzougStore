@@ -137,7 +137,12 @@ class LandingPageAnalyticsService:
             db, lp, query_date_start, query_date_end, current_orders_daily, meta_data
         )
 
-        # ─── 14. Emit Real-Time Terminal Diagnostic Log with Emoji Badges ────
+        # ─── 14. Query Granular Delivery Breakdown by Variant ───────────────
+        variant_breakdown = cls._query_variant_breakdown(
+            db, lp, d_start, d_end
+        )
+
+        # ─── 15. Emit Real-Time Terminal Diagnostic Log with Emoji Badges ────
         try:
             from app.core.logging import log_landing_page_diagnostic
             period_str = f"{query_date_start.strftime('%d/%m/%Y')} au {query_date_end.strftime('%d/%m/%Y')}"
@@ -188,6 +193,7 @@ class LandingPageAnalyticsService:
             "alerts": smart_alerts,
             "reconciliation": reconciliation_data,
             "diagnostic_table": diagnostic_table,
+            "variants_breakdown": variant_breakdown,
         }
 
     # ────────────────────────────────────────────────────────────────────────
@@ -320,6 +326,109 @@ class LandingPageAnalyticsService:
             "revenue_dzd": sum(d["revenue_dzd"] for d in daily_list),
         }
         return daily_list, totals
+
+    @classmethod
+    def _query_variant_breakdown(
+        cls, db: Session, lp: LandingPage, d_start: datetime, d_end: datetime
+    ) -> List[Dict[str, Any]]:
+        """
+        Aggregates granular variant delivery metrics for the Landing Page.
+        Computes total units, confirmed units, delivered units, returned units,
+        and successful delivery rate per variant.
+        """
+        product_or_slug_filter = (
+            or_(
+                OrderItem.product_id == lp.product_id,
+                Order.landing_url.ilike(f"%{lp.slug}%"),
+            )
+            if lp.product_id
+            else Order.landing_url.ilike(f"%{lp.slug}%")
+        )
+
+        items_query = (
+            db.query(
+                OrderItem.variant_details,
+                OrderItem.product_name,
+                OrderItem.quantity,
+                OrderItem.unit_price,
+                Order.status,
+            )
+            .select_from(OrderItem)
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(
+                Order.store_id == lp.store_id,
+                product_or_slug_filter,
+                Order.is_deleted == False,
+                Order.status != "MERGED",
+                Order.created_at >= d_start,
+                Order.created_at <= d_end,
+            )
+            .all()
+        )
+
+        variants_map: Dict[str, Dict[str, Any]] = {}
+
+        for it_var, it_pname, it_qty, it_price, ord_status in items_query:
+            qty = int(it_qty or 1)
+            price = float(it_price or 0.0)
+
+            # Extract human readable variant label
+            var_label = ""
+            if isinstance(it_var, dict) and it_var:
+                var_label = " / ".join(str(v).strip() for v in it_var.values() if str(v).strip())
+            elif isinstance(it_var, str) and it_var.strip():
+                var_label = it_var.strip()
+            
+            if not var_label:
+                var_label = it_pname or "Standard / Unique"
+
+            if var_label not in variants_map:
+                variants_map[var_label] = {
+                    "variant_name": var_label,
+                    "total_ordered": 0,
+                    "confirmed": 0,
+                    "shipped": 0,
+                    "delivered": 0,
+                    "returned": 0,
+                    "cancelled": 0,
+                    "revenue_delivered": 0.0,
+                    "revenue_total": 0.0,
+                }
+
+            entry = variants_map[var_label]
+            entry["total_ordered"] += qty
+            entry["revenue_total"] += qty * price
+
+            st = (ord_status or "").upper()
+            if st == "DELIVERED":
+                entry["delivered"] += qty
+                entry["revenue_delivered"] += qty * price
+            elif st == "CONFIRMED":
+                entry["confirmed"] += qty
+            elif st == "SHIPPED":
+                entry["shipped"] += qty
+            elif st == "RETURNED":
+                entry["returned"] += qty
+            elif st == "CANCELLED":
+                entry["cancelled"] += qty
+
+        result = []
+        for v in variants_map.values():
+            processed = v["delivered"] + v["returned"] + v["shipped"]
+            rate = (
+                round((v["delivered"] / processed * 100), 1)
+                if processed > 0
+                else (
+                    round((v["delivered"] / v["total_ordered"] * 100), 1)
+                    if v["total_ordered"] > 0
+                    else 0.0
+                )
+            )
+            v["delivery_rate"] = rate
+            result.append(v)
+
+        result.sort(key=lambda x: (x["delivered"], x["total_ordered"]), reverse=True)
+        return result
 
     @classmethod
     def _query_funnel_rollups(
