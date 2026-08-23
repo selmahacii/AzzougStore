@@ -2085,10 +2085,11 @@ def create_order(
                     setattr(existing, key, value)
             
             existing.status = "NEW"
-            existing.source = order_in.source or "storefront"  # they checked out themselves
+            existing.is_abandoned_cart = False
+            existing.recovered_at = None
+            existing.source = order_in.source or "landing_page"  # they checked out themselves
             # The customer completed the checkout THEMSELVES → this is a
-            # real NORMAL order, not a recovered cart (no confirmatrice
-            # recovery happened). The type badge must say Normal.
+            # real NORMAL order, not an abandoned cart.
             if existing.order_number and existing.order_number.startswith("ABN-"):
                 existing.order_number = existing.order_number.replace("ABN-", "ORD-")
 
@@ -2136,6 +2137,10 @@ def create_order(
             db.commit()
             db.refresh(existing)
 
+            # Log normal order reception
+            from app.core.logging import log_order_event
+            log_order_event("COMMANDE_NORMALE_RECUE", existing, "Commande validée directement par le client depuis le checkout")
+
             try:
                 if auto_merge_duplicates(db, existing, actor_id=actor_id):
                     db.commit()
@@ -2144,12 +2149,25 @@ def create_order(
                 db.rollback()
                 logger.warning("Auto-merge failed for upgraded cart %s: %s", existing.id, merge_err)
 
+            # Bump LP counter for direct LP checkout
+            if existing.source == "landing_page" and str(existing.status) != "MERGED":
+                try:
+                    from app.models.landing_page import LandingPage
+                    if items and items[0].get("product_id"):
+                        lp = db.query(LandingPage).filter(
+                            LandingPage.store_id == existing.store_id,
+                            LandingPage.product_id == items[0]["product_id"]
+                        ).first()
+                        if lp:
+                            lp.orders = (lp.orders or 0) + 1
+                            db.add(lp)
+                            db.commit()
+                except Exception as lp_err:
+                    logger.warning(f"Failed to increment landing page orders count for upgraded cart: {lp_err}")
+
             # The customer just completed checkout THEMSELVES from an
             # abandoned-cart link — this is a genuine sale, exactly like a
             # brand-new order, so it must fire Purchase CAPI exactly once
-            # (send_purchase_for_order's own idempotency guard protects
-            # against ever double-firing if a confirmatrice later also
-            # touches this order's status).
             if str(existing.status) != "MERGED":
                 try:
                     from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
@@ -2163,7 +2181,6 @@ def create_order(
                         db.commit()
                         if log_id:
                             logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente (Log ID: %s, Order: %s, Pixel: %s)", log_id, existing.order_number, meta_cfg.get("pixel_id"))
-                            from app.core.logging import log_order_event
                             log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
                             background_tasks.add_task(
                                 send_purchase_for_order,
