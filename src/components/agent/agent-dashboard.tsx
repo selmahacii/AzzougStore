@@ -2277,6 +2277,8 @@ export default function AgentDashboard() {
     staleTime: 60 * 1000,
     refetchInterval: 180000,
     refetchIntervalInBackground: false,
+  });
+
   // ─── Global cross-module live search across ALL orders, statuses, dates & stores ───
   const globalSearchQuery = useQuery({
     queryKey: ['agent-global-search', search.trim(), showAllStores, activeStore?.id],

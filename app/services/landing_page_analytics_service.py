@@ -354,42 +354,41 @@ class LandingPageAnalyticsService:
         lp_meta_campaign_id = getattr(lp, "meta_campaign_id", None)
         meta_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
 
-        filters = []
-        if lp_meta_campaign_id:
-            filters.append(MetaAdsCampaign.campaign_id == str(lp_meta_campaign_id))
-        if lp.product_id:
-            filters.append(MetaAdsCampaign.product_id == lp.product_id)
-        if lp.slug:
-            clean_slug = lp.slug.replace("-", " ").strip()
-            filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{clean_slug}%"))
-            filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.slug}%"))
-        if lp.product and lp.product.name:
-            filters.append(MetaAdsCampaign.campaign_name.ilike(f"%{lp.product.name}%"))
-
         matched_campaign = None
         match_method = None
 
-        if filters:
-            candidates = (
+        # Deterministic Priority 1: Explicit meta_campaign_id on Landing Page
+        if lp_meta_campaign_id:
+            camp_row = (
                 db.query(MetaAdsCampaign)
-                .filter(MetaAdsCampaign.store_id == lp.store_id, or_(*filters))
-                .order_by(MetaAdsCampaign.raw_spend.desc().nullslast())
+                .filter(
+                    MetaAdsCampaign.store_id == lp.store_id,
+                    MetaAdsCampaign.campaign_id == str(lp_meta_campaign_id),
+                )
+                .first()
+            )
+            if camp_row:
+                matched_campaign = camp_row
+                match_method = "meta_campaign_id"
+
+        # Deterministic Priority 2: Unique 1-to-1 product_id link without ambiguity
+        if not matched_campaign and lp.product_id:
+            prod_camps = (
+                db.query(MetaAdsCampaign)
+                .filter(
+                    MetaAdsCampaign.store_id == lp.store_id,
+                    MetaAdsCampaign.product_id == lp.product_id,
+                )
                 .all()
             )
-            if candidates:
-                if lp_meta_campaign_id:
-                    exact = [c for c in candidates if str(c.campaign_id) == str(lp_meta_campaign_id)]
-                    if exact:
-                        matched_campaign = exact[0]
-                        match_method = "meta_campaign_id"
-                if not matched_campaign:
-                    matched_campaign = candidates[0]
-                    match_method = "campaign_name_slug"
+            if len(prod_camps) == 1:
+                matched_campaign = prod_camps[0]
+                match_method = "deterministic_product_id_unique"
 
         if not matched_campaign:
             return {
                 "is_available": False,
-                "reason": "Aucune campagne Meta Ads active associée à cette landing page.",
+                "reason": "Aucune campagne Meta Ads liée de manière déterministe (meta_campaign_id non défini). Les fallbacks approximatifs sont désactivés pour garantir l'exactitude des données.",
                 "campaign_id": None,
                 "campaign_name": None,
                 "match_method": None,
