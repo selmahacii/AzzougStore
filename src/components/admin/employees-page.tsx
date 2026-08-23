@@ -2449,7 +2449,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                               type="button"
                               onClick={() => {
                                  setActiveProfileTab('orders');
-                                 setOrderFilter(s.filterId as any);
+                                 setOrderStatusFilter(s.filterId as any);
                               }}
                               className={cn(
                                  "rounded-2xl p-4 text-center border shadow-xs transition-all hover:scale-[1.03] hover:shadow-md cursor-pointer text-left w-full",
