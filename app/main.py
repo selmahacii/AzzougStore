@@ -226,93 +226,111 @@ def run_db_migrations():
                     logger.debug("Failed to purge child duplicate %s: %s", getattr(child, "id", "unknown"), child_del_err)
             print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
 
-            # Ensure ORD-20260821-0E08AD (Olmi, Batna, phone 0669411840) is present and marked as DELIVERED
+            # Ensure missing delivered orders (Karim maiza, Olmi, etc.) are present and marked DELIVERED
             try:
-                olmi_order = db_mig.query(Order).filter(
-                    (Order.order_number == "ORD-20260821-0E08AD") |
-                    (Order.tracking_number == "OZW-35B-19778918") |
-                    (Order.customer_phone == "0669411840")
-                ).first()
+                from app.models.store import Store
+                from app.models.user import User
+                default_store = db_mig.query(Store).filter(Store.id == "2c81d28d-a453-4645-a8b7-b79dd32ba6f7").first() or db_mig.query(Store).first()
+                default_agent = db_mig.query(User).filter(User.id == "76560324-bd0a-4d49-a013-d1e1cf7843e3").first() or db_mig.query(User).filter(User.role.in_(["CONFIRMATEUR", "ADMIN", "SUPER_ADMIN"])).first()
 
-                deliv_time = datetime(2026, 8, 23, 22, 0, 13)
-                created_time = datetime(2026, 8, 21, 22, 59, 17)
+                delivered_sync_list = [
+                    {
+                        "order_number": "ORD-20260821-AEF76A",
+                        "tracking_number": "OZW-35B-19788268",
+                        "customer_name": "Karim maiza",
+                        "customer_phone": "0771658386",
+                        "customer_wilaya": "Bordj Bou Arreridj",
+                        "customer_commune": "Bordj Bou Arreridj",
+                        "customer_address": "Bureau Noest 34A - Bordj Bou Arreridj (Rue Tabet Salah Bordj Bou Arreridj (Devant la maison de finance))",
+                        "delivery_type": "OFFICE",
+                        "total": 1800,
+                        "created_at": datetime(2026, 8, 22, 12, 24, 3),
+                        "delivered_at": datetime(2026, 8, 23, 13, 36, 37),
+                        "items": [("Coussin de Voyage", 1, 1800, {"couleur": "noir"})]
+                    },
+                    {
+                        "order_number": "ORD-20260821-0E08AD",
+                        "tracking_number": "OZW-35B-19778918",
+                        "customer_name": "Olmi",
+                        "customer_phone": "0669411840",
+                        "customer_wilaya": "Batna",
+                        "customer_commune": "Batna",
+                        "customer_address": "Batna",
+                        "delivery_type": "HOME",
+                        "total": 5200,
+                        "created_at": datetime(2026, 8, 21, 22, 59, 17),
+                        "delivered_at": datetime(2026, 8, 23, 22, 0, 13),
+                        "items": [
+                            ("Coussin de Voyage", 2, 1300, {"couleur": "noir"}),
+                            ("Coussin de Voyage", 1, 1300, {"couleur": "bleu"}),
+                            ("Coussin de Voyage", 1, 1300, {"couleur": "bordeaux"})
+                        ]
+                    }
+                ]
 
-                if olmi_order:
-                    olmi_order.status = "DELIVERED"
-                    olmi_order.delivered_at = deliv_time
-                    olmi_order.updated_at = deliv_time
-                    olmi_order.carrier_stage = "delivered"
-                    olmi_order.carrier_stage_label = "Livré"
-                    olmi_order.tracking_number = "OZW-35B-19778918"
-                    olmi_order.is_abandoned_cart = False
-                    olmi_order.is_deleted = False
-                    db_mig.commit()
-                else:
-                    from app.models.store import Store
-                    from app.models.user import User
-                    st = db_mig.query(Store).filter(Store.id == "2c81d28d-a453-4645-a8b7-b79dd32ba6f7").first() or db_mig.query(Store).first()
-                    ag = db_mig.query(User).filter(User.id == "76560324-bd0a-4d49-a013-d1e1cf7843e3").first() or db_mig.query(User).filter(User.role.in_(["CONFIRMATEUR", "ADMIN", "SUPER_ADMIN"])).first()
+                for item_data in delivered_sync_list:
+                    ord_obj = db_mig.query(Order).filter(
+                        (Order.order_number == item_data["order_number"]) |
+                        (Order.tracking_number == item_data["tracking_number"]) |
+                        (Order.customer_phone == item_data["customer_phone"])
+                    ).first()
 
-                    if st:
-                        new_order = Order(
-                            id=str(uuid.uuid4()),
-                            store_id=st.id,
-                            order_number="ORD-20260821-0E08AD",
-                            customer_name="Olmi",
-                            customer_phone="0669411840",
-                            customer_address="Batna",
-                            customer_wilaya="Batna",
-                            customer_commune="Batna",
-                            delivery_type="HOME",
-                            delivery_fee=0,
-                            subtotal=5200,
-                            total=5200,
-                            status="DELIVERED",
-                            assigned_to=ag.id if ag else None,
-                            carrier_stage="delivered",
-                            carrier_stage_label="Livré",
-                            tracking_number="OZW-35B-19778918",
-                            is_abandoned_cart=False,
-                            is_deleted=False,
-                            created_at=created_time,
-                            updated_at=deliv_time,
-                            delivered_at=deliv_time
-                        )
-                        db_mig.add(new_order)
-                        db_mig.flush()
+                    deliv_time = item_data["delivered_at"]
 
-                        item1 = OrderItem(
-                            id=str(uuid.uuid4()),
-                            order_id=new_order.id,
-                            product_name="Coussin de Voyage",
-                            quantity=2,
-                            unit_price=1300,
-                            total_price=2600,
-                            variant_details={"couleur": "noir"}
-                        )
-                        item2 = OrderItem(
-                            id=str(uuid.uuid4()),
-                            order_id=new_order.id,
-                            product_name="Coussin de Voyage",
-                            quantity=1,
-                            unit_price=1300,
-                            total_price=1300,
-                            variant_details={"couleur": "bleu"}
-                        )
-                        item3 = OrderItem(
-                            id=str(uuid.uuid4()),
-                            order_id=new_order.id,
-                            product_name="Coussin de Voyage",
-                            quantity=1,
-                            unit_price=1300,
-                            total_price=1300,
-                            variant_details={"couleur": "bordeaux"}
-                        )
-                        db_mig.add_all([item1, item2, item3])
+                    if ord_obj:
+                        ord_obj.status = "DELIVERED"
+                        ord_obj.delivered_at = deliv_time
+                        ord_obj.updated_at = deliv_time
+                        ord_obj.carrier_stage = "delivered"
+                        ord_obj.carrier_stage_label = "Livré"
+                        ord_obj.tracking_number = item_data["tracking_number"]
+                        ord_obj.is_abandoned_cart = False
+                        ord_obj.is_deleted = False
                         db_mig.commit()
-            except Exception as olmi_err:
+                    else:
+                        if default_store:
+                            new_ord = Order(
+                                id=str(uuid.uuid4()),
+                                store_id=default_store.id,
+                                order_number=item_data["order_number"],
+                                customer_name=item_data["customer_name"],
+                                customer_phone=item_data["customer_phone"],
+                                customer_address=item_data["customer_address"],
+                                customer_wilaya=item_data["customer_wilaya"],
+                                customer_commune=item_data["customer_commune"],
+                                delivery_type=item_data["delivery_type"],
+                                delivery_fee=0,
+                                subtotal=item_data["total"],
+                                total=item_data["total"],
+                                status="DELIVERED",
+                                assigned_to=default_agent.id if default_agent else None,
+                                carrier_stage="delivered",
+                                carrier_stage_label="Livré",
+                                tracking_number=item_data["tracking_number"],
+                                is_abandoned_cart=False,
+                                is_deleted=False,
+                                created_at=item_data["created_at"],
+                                updated_at=deliv_time,
+                                delivered_at=deliv_time
+                            )
+                            db_mig.add(new_ord)
+                            db_mig.flush()
+
+                            for it_name, it_qty, it_price, it_var in item_data["items"]:
+                                new_item = OrderItem(
+                                    id=str(uuid.uuid4()),
+                                    order_id=new_ord.id,
+                                    product_name=it_name,
+                                    quantity=it_qty,
+                                    unit_price=it_price,
+                                    total_price=it_qty * it_price,
+                                    variant_details=it_var
+                                )
+                                db_mig.add(new_item)
+                            db_mig.commit()
+            except Exception as sync_err:
                 db_mig.rollback()
-                logger.debug("Olmi order check: %s", olmi_err)
+                logger.debug("Delivered orders sync check: %s", sync_err)
         finally:
             db_mig.close()
     except Exception as exc:
