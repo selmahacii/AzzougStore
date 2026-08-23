@@ -370,6 +370,9 @@ def get_users_performance_summary(
             func.count().label("total"),
             func.sum(case((Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), 1), else_=0)).label("confirmed"),
             func.sum(case((Order.status == "DELIVERED", 1), else_=0)).label("delivered"),
+            func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_delivered"),
+            func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None)), 1), else_=0)).label("normal_delivered"),
+            func.sum(case((Order.status == "RETURNED", 1), else_=0)).label("returned"),
         )
         .filter(
             Order.assigned_to.in_(ids),
@@ -389,16 +392,29 @@ def get_users_performance_summary(
         total = int(r.total or 0) if r else 0
         confirmed = int(r.confirmed or 0) if r else 0
         delivered = int(r.delivered or 0) if r else 0
+        recovered_delivered = int(r.recovered_delivered or 0) if r else 0
+        normal_delivered = int(r.normal_delivered or 0) if r else 0
+        returned = int(r.returned or 0) if r else 0
         rate = round((confirmed / total) * 100) if total else None
-        salary = (
-            u.payment_amount if u.payment_type == "MONTHLY_SALARY"
-            else delivered * (u.payment_amount or 0)
-        )
+        
+        # Calculate salary estimate including recovered cart rate
+        norm_rate = u.payment_amount or 100
+        rec_rate = u.payment_recovered_cart or 150
+        pen_rate = u.payment_lost_cart or 0
+        if u.payment_type == "MONTHLY_SALARY":
+            salary = u.payment_amount or 0
+        else:
+            salary = (normal_delivered * norm_rate) + (recovered_delivered * rec_rate) - (returned * pen_rate)
+            
         data[u.id] = {
             "total_assigned": total,
             "confirmed_count": confirmed,
             "delivered_count": delivered,
+            "recovered_delivered_count": recovered_delivered,
+            "normal_delivered_count": normal_delivered,
+            "returned_count": returned,
             "confirmation_rate": rate,
+            "recovered_delivered_rate": round((recovered_delivered / delivered * 100) if delivered else 0, 1),
             "salary": salary,
         }
     return {"success": True, "data": data}

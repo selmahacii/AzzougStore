@@ -799,11 +799,21 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, perfSummary }: {
                   <>
                      <div className="flex items-center gap-1.5">
                         <span className="text-sm font-black text-slate-900">{rate}%</span>
-                        <span className="text-[10px] text-slate-400">confirmation</span>
+                        <span className="text-[10px] text-slate-400">conf.</span>
                      </div>
                      <span className="text-[10px] text-slate-400">{confirmed}/{total} cmd</span>
                      <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full rounded-full" style={{ width: `${rate}%`, backgroundColor: rate >= 70 ? '#00B894' : rate >= 40 ? '#FDCB6E' : '#E17055' }} />
+                     </div>
+                     <div className="flex items-center gap-1 mt-1 text-[10px] font-bold">
+                        <span className="text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100" title="Commandes normales livrées">
+                           🟦 {stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))}
+                        </span>
+                        {(stats.recovered_delivered_count || 0) > 0 && (
+                           <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-black" title="Paniers abandonnés récupérés et livrés">
+                              🟩 +{stats.recovered_delivered_count}
+                           </span>
+                        )}
                      </div>
                   </>
                ) : (
@@ -2421,17 +2431,19 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                      )}
 
                      {/* Stats grid */}
-                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[
-                           { label: 'Assignées', value: total_assigned, color: '#4b7bec' },
-                           { label: 'Confirmées', value: confirmed, color: '#20bf6b' },
-                           { label: 'Livrées (Total)', value: delivered, color: '#26de81' },
-                           { label: 'Paniers Récup. Livrés', value: stats.recovered_delivered_count || 0, color: '#f59e0b' },
-                           { label: 'Retours', value: returned, color: '#eb4d4b' },
+                           { label: 'Assignées', value: total_assigned, sub: '100% du flux', color: '#4b7bec', bg: 'bg-blue-50/50', border: 'border-blue-100' },
+                           { label: 'Confirmées', value: confirmed, sub: `Taux : ${stats.confirmation_rate ?? (total_assigned > 0 ? Math.round((confirmed / total_assigned) * 100) : 0)}%`, color: '#20bf6b', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
+                           { label: 'Livrées (Total)', value: delivered, sub: `Taux : ${stats.confirmed_delivered_rate ?? (confirmed > 0 ? Math.round((delivered / confirmed) * 100) : 0)}%`, color: '#10b981', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
+                           { label: '🟦 Normales Livrées', value: stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0)), sub: `Base : ${formatPrice((stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))) * paymentAmount)}`, color: '#3b82f6', bg: 'bg-blue-50/50', border: 'border-blue-100' },
+                           { label: '🟩 Paniers Récupérés', value: stats.recovered_delivered_count || 0, sub: `+${formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))} (${stats.recovered_delivered_rate || 0}%)`, color: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+                           { label: '🔴 Retours', value: returned, sub: `Taux : ${total_assigned > 0 ? Math.round((returned / total_assigned) * 100) : 0}%`, color: '#ef4444', bg: 'bg-rose-50/50', border: 'border-rose-100' },
                         ].map(s => (
-                           <div key={s.label} className="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100">
-                              <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{s.label}</p>
+                           <div key={s.label} className={cn("rounded-2xl p-4 text-center border shadow-xs transition-all hover:scale-[1.02]", s.bg, s.border)}>
+                              <p className="text-[9px] font-black uppercase text-slate-500 tracking-wider mb-1 truncate">{s.label}</p>
                               <p className="text-2xl font-black" style={{ color: s.color }}>{s.value}</p>
+                              <p className="text-[10px] font-bold text-slate-400 mt-1 truncate">{s.sub}</p>
                            </div>
                         ))}
                      </div>
