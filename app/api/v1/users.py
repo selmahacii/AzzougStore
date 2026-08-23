@@ -1,6 +1,6 @@
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api import deps
 from app.models.user import User
@@ -786,8 +786,13 @@ def get_user_performance(
 
     salary_data = compute_salary(db, db_user, store_id, since=since, until=until, date_by=date_by)
 
-    # Detailed orders for the period with tracking and carrier status
-    period_orders = base_q.order_by(date_col.desc()).limit(1000).all()
+    # Detailed orders for the period with tracking and carrier status (eager-load items in one batch query)
+    period_orders = (
+        base_q.options(joinedload(Order.items))
+        .order_by(date_col.desc())
+        .limit(300)
+        .all()
+    )
 
     audit_logs = (
         db.query(OrderEvent)
