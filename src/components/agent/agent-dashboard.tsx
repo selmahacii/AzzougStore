@@ -1911,20 +1911,21 @@ function SalaryView({ perf, user }: any) {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
        {/* High Level Stats Grid */}
-       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
           {[
-            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50' },
-            { label: 'Livraisons', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50' },
-            { label: 'Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50' },
-            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50' },
-            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50' },
-            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50' },
-            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50' },
-            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50' },
-            { label: 'Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50' },
+            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-100' },
+            { label: 'Livraisons (Total)', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50', border: 'border-blue-100' },
+            { label: '🟦 Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100' },
+            { label: '🟩 Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+            { label: '🏪 Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100' },
+            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50', border: 'border-violet-100' },
+            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50', border: 'border-slate-200' },
+            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50', border: 'border-slate-200' },
+            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50', border: 'border-rose-100' },
+            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50', border: 'border-amber-100' },
           ].map(s => (
-            <div key={s.label} className={cn("p-4 border rounded-xl bg-white", s.bg)}>
-               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</p>
+            <div key={s.label} className={cn("p-4 border rounded-2xl bg-white shadow-xs transition-all hover:scale-[1.02]", s.bg, s.border)}>
+               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{s.label}</p>
                <p className={cn("text-2xl font-black mt-1", s.color)}>{s.val}</p>
             </div>
           ))}
@@ -1975,17 +1976,17 @@ function SalaryView({ perf, user }: any) {
                 )}
 
                 {/* Abandoned Cart Recovery breakdown */}
-                {paymentRecovered > 0 && (
+                {(paymentRecovered > 0 || (recoveredDeliveredCount || recoveredCount) > 0) && (
                    <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-violet-600 tracking-wider">
-                         Paniers Abandonnés (Bonus Récupération)
+                      <p className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1.5">
+                         <span>🟩</span> Paniers Abandonnés Récupérés Livrés (Bonus)
                       </p>
                       <div className="flex items-center justify-between text-xs">
                          <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700">Commission Paniers Récupérés</p>
-                            <p className="text-[10px] text-slate-400">{recoveredCount} paniers récupérés × {formatPrice(paymentRecovered)}</p>
+                            <p className="font-bold text-slate-700">Commission Paniers Récupérés Livrés</p>
+                            <p className="text-[10px] text-slate-400">{(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}</p>
                          </div>
-                         <span className="font-bold text-emerald-600">+{formatPrice(recoveredCount * paymentRecovered)}</span>
+                         <span className="font-black text-emerald-600">+{formatPrice(abandonedBonus || ((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150)))}</span>
                       </div>
                    </div>
                 )}
