@@ -1658,7 +1658,6 @@ def list_orders(
                 OrderItem.order_id == Order.id,
                 or_(
                     OrderItem.product_name.ilike(f"%{clean_search}%"),
-                    OrderItem.sku.ilike(f"%{clean_search}%"),
                     OrderItem.product_id.ilike(f"%{clean_search}%"),
                     cast(OrderItem.variant_details, String).ilike(f"%{clean_search}%"),
                 )
