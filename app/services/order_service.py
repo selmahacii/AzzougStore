@@ -1911,55 +1911,85 @@ class OrderService:
         _log_event(db, order_id=order.id, actor_id=actor_id, from_status=del_status, to_status=del_status, note="Commande supprimée (soft delete).")
 
     def _record_delivery_payment(self, db: Session, order: Order) -> None:
-        """Create a PAYMENT finance transaction when an order is delivered (COD)."""
+        """Create a PAYMENT finance transaction when an order is delivered (COD). Idempotent."""
         try:
-            wallet = db.query(Wallet).filter(Wallet.store_id == order.store_id).first()
-            if not wallet:
-                wallet = Wallet(
-                    id=str(uuid.uuid4()),
-                    store_id=order.store_id,
-                    name="Caisse Principale (COD)",
-                    type=WalletType.CASH,
-                    balance=0,
-                    total_in=0,
-                    total_out=0,
+            wallet = None
+            cod_ref = f"COD-{order.order_number}"
+            existing_cod_tx = (
+                db.query(FinancialTransaction)
+                .filter(
+                    FinancialTransaction.store_id == order.store_id,
+                    FinancialTransaction.reference == cod_ref,
                 )
-                db.add(wallet)
-                db.flush()
-            tx = FinancialTransaction(
-                id=str(uuid.uuid4()),
-                reference=f"COD-{order.order_number}",
-                wallet_id=wallet.id,
-                store_id=order.store_id,
-                type=TransactionType.PAYMENT,
-                amount=order.total,
-                description=f"Paiement COD — {order.order_number} ({order.customer_name})",
-                transaction_date=datetime.now(timezone.utc).replace(tzinfo=None),
+                .first()
             )
-            wallet.balance += order.total  # type: ignore[operator]
-            wallet.total_in += order.total  # type: ignore[operator]
-            db.add(tx)
-            logger.info("Payment recorded: %s DA for order %s", order.total, order.order_number)
-            
-            # Deduct abandoned cart recovery fee if applicable
-            if order.is_abandoned_cart and order.abandoned_cart_recovery_fee and order.abandoned_cart_recovery_fee > 0:
-                fee_tx = FinancialTransaction(
+
+            if not existing_cod_tx:
+                wallet = db.query(Wallet).filter(Wallet.store_id == order.store_id).first()
+                if not wallet:
+                    wallet = Wallet(
+                        id=str(uuid.uuid4()),
+                        store_id=order.store_id,
+                        name="Caisse Principale (COD)",
+                        type=WalletType.CASH,
+                        balance=0,
+                        total_in=0,
+                        total_out=0,
+                    )
+                    db.add(wallet)
+                    db.flush()
+                tx = FinancialTransaction(
                     id=str(uuid.uuid4()),
-                    reference=f"FEE-{order.order_number}",
+                    reference=cod_ref,
                     wallet_id=wallet.id,
                     store_id=order.store_id,
-                    type=TransactionType.DISBURSEMENT,
-                    category="commission",
-                    amount=-order.abandoned_cart_recovery_fee,
-                    description=f"Commission de récupération - {order.order_number}",
+                    type=TransactionType.PAYMENT,
+                    amount=order.total,
+                    description=f"Paiement COD — {order.order_number} ({order.customer_name})",
                     transaction_date=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
-                wallet.balance -= order.abandoned_cart_recovery_fee  # type: ignore[operator]
-                wallet.total_out += order.abandoned_cart_recovery_fee  # type: ignore[operator]
-                db.add(fee_tx)
-                logger.info("Recovery fee deducted: %s DA for order %s", order.abandoned_cart_recovery_fee, order.order_number)
+                wallet.balance += order.total  # type: ignore[operator]
+                wallet.total_in += order.total  # type: ignore[operator]
+                db.add(tx)
+                logger.info("Payment recorded: %s DA for order %s", order.total, order.order_number)
+            else:
+                logger.info("Payment reference %s already exists for order %s, skipping COD transaction", cod_ref, order.order_number)
+
+            # Deduct abandoned cart recovery fee if applicable
+            if order.is_abandoned_cart and order.abandoned_cart_recovery_fee and order.abandoned_cart_recovery_fee > 0:
+                fee_ref = f"FEE-{order.order_number}"
+                existing_fee_tx = (
+                    db.query(FinancialTransaction)
+                    .filter(
+                        FinancialTransaction.store_id == order.store_id,
+                        FinancialTransaction.reference == fee_ref,
+                    )
+                    .first()
+                )
+
+                if not existing_fee_tx:
+                    if not wallet:
+                        wallet = db.query(Wallet).filter(Wallet.store_id == order.store_id).first()
+
+                    if wallet:
+                        fee_tx = FinancialTransaction(
+                            id=str(uuid.uuid4()),
+                            reference=fee_ref,
+                            wallet_id=wallet.id,
+                            store_id=order.store_id,
+                            type=TransactionType.DISBURSEMENT,
+                            category="commission",
+                            amount=-order.abandoned_cart_recovery_fee,
+                            description=f"Commission de récupération - {order.order_number}",
+                            transaction_date=datetime.now(timezone.utc).replace(tzinfo=None),
+                        )
+                        wallet.balance -= order.abandoned_cart_recovery_fee  # type: ignore[operator]
+                        wallet.total_out += order.abandoned_cart_recovery_fee  # type: ignore[operator]
+                        db.add(fee_tx)
+                        logger.info("Recovery fee deducted: %s DA for order %s", order.abandoned_cart_recovery_fee, order.order_number)
+                else:
+                    logger.info("Recovery fee reference %s already exists for order %s, skipping fee transaction", fee_ref, order.order_number)
         except Exception as err:
-            db.rollback()
             logger.warning("Could not record delivery payment for order %s: %s", getattr(order, 'id', 'unknown'), err)
 
 order_service = OrderService()
