@@ -30,6 +30,7 @@ from app.models.store import Store
 # Initialize Logging
 setup_logging()
 
+logger = logging.getLogger("app")
 access_logger = logging.getLogger("access")
 
 
@@ -167,7 +168,7 @@ def run_db_migrations():
             sql_commands = [c.strip() for c in sql_content.split(";") if c.strip() and not c.strip().startswith("--")]
             with engine.begin() as conn:
                 for cmd in sql_commands:
-                    conn.execute(text(cmd))
+                    conn.exec_driver_sql(cmd)
             print(f"[OK] Executed delivered orders batch migration script ({len(sql_commands)} statements).")
     except Exception as e:
         print(f"[WARN] Failed to execute delivered orders migration script: {e}")
