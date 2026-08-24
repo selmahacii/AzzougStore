@@ -141,6 +141,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
   const [showReconciliationModal, setShowReconciliationModal] = useState(false);
   const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
+  const [isVariantsOpen, setIsVariantsOpen] = useState(false);
 
   const applyPreset = (preset: string) => {
     setPeriodPreset(preset);
@@ -217,7 +218,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[96vw] max-w-[1100px] max-h-[92dvh] overflow-y-auto custom-scrollbar bg-slate-50/50 dark:bg-slate-950 p-0 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl">
+      <DialogContent className="w-[96vw] max-w-[1100px] max-h-[92dvh] overflow-y-auto custom-scrollbar bg-white dark:bg-slate-950 p-0 border border-slate-200/80 dark:border-slate-800 rounded-3xl shadow-2xl">
         {/* ─── 1. Header & Health Score ────────────────────────────────────── */}
         <div className="px-6 py-5 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 sticky top-0 z-20">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -549,9 +550,13 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             </div>
           </div>
 
-          {/* ─── 4.5. Section Répartition des Livraisons par Variante ──────── */}
-          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
+          {/* ─── 4.5. Section Répartition des Livraisons par Variante (Pliable) ──────── */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4 transition-all">
+            <button
+              type="button"
+              onClick={() => setIsVariantsOpen(!isVariantsOpen)}
+              className="w-full flex items-center justify-between flex-wrap gap-2 text-left group cursor-pointer"
+            >
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
                   <span>🎨 Ventes & Livraisons par Variante</span>
@@ -560,74 +565,81 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                   </span>
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Nombre exact de pièces livrées avec succès, commandées et taux de livraison pour chaque variante de cette landing page.
+                  Nombre exact de pièces livrées avec succès, commandées et taux de livraison pour chaque variante.
                 </p>
               </div>
-              <div className="text-xs font-bold text-slate-500 flex items-center gap-3">
+              <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
                 <span>Total Commandé : <strong className="text-slate-800 dark:text-slate-200 font-black">{totalOrderedVariants} pcs</strong></span>
                 <span>•</span>
                 <span>Total Livré : <strong className="text-emerald-600 font-black">{totalDeliveredVariants} pcs</strong></span>
+                <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors ml-1">
+                  {isVariantsOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </div>
               </div>
-            </div>
+            </button>
 
-            {variantsList.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-800/40 rounded-xl">
-                Aucune commande avec variante enregistrée pour cette période.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {variantsList.map((v: any, idx: number) => (
-                  <div key={idx} className="p-4 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 space-y-3 transition-all hover:shadow-xs">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-xs font-black text-slate-900 dark:text-slate-100 line-clamp-1" title={v.variant_name}>
-                        {v.variant_name}
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap">
-                        {v.delivered} livrée{v.delivered > 1 ? 's' : ''}
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Taux de livraison :</span>
-                        <strong className="text-emerald-600 font-bold">{v.delivery_rate}%</strong>
-                      </div>
-                      {/* Progress bar */}
-                      <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min(100, Math.max(0, v.delivery_rate || 0))}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-1 text-center pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px]">
-                      <div>
-                        <p className="font-bold text-slate-400">Total</p>
-                        <p className="font-black text-slate-800 dark:text-slate-200">{v.total_ordered}</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-400">Livrées</p>
-                        <p className="font-black text-emerald-600">{v.delivered}</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-400">En cours</p>
-                        <p className="font-black text-blue-600">{v.confirmed + v.shipped}</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-400">Retours</p>
-                        <p className="font-black text-rose-600">{v.returned}</p>
-                      </div>
-                    </div>
-
-                    {v.revenue_delivered > 0 && (
-                      <div className="text-[10px] text-slate-400 text-right pt-0.5">
-                        CA Livré : <strong className="text-slate-700 dark:text-slate-300 font-mono font-bold">{Math.round(v.revenue_delivered).toLocaleString('fr-FR')} DA</strong>
-                      </div>
-                    )}
+            {isVariantsOpen && (
+              <>
+                {variantsList.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400 italic bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+                    Aucune commande avec variante enregistrée pour cette période.
                   </div>
-                ))}
-              </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                    {variantsList.map((v: any, idx: number) => (
+                      <div key={idx} className="p-4 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200/70 dark:border-slate-700/60 space-y-3 transition-all hover:shadow-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-xs font-black text-slate-900 dark:text-slate-100 line-clamp-1" title={v.variant_name}>
+                            {v.variant_name}
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 whitespace-nowrap">
+                            {v.delivered} livrée{v.delivered > 1 ? 's' : ''}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span>Taux de livraison :</span>
+                            <strong className="text-emerald-600 font-bold">{v.delivery_rate}%</strong>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                              style={{ width: `${Math.min(100, Math.max(0, v.delivery_rate || 0))}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-1 text-center pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px]">
+                          <div>
+                            <p className="font-bold text-slate-400">Total</p>
+                            <p className="font-black text-slate-800 dark:text-slate-200">{v.total_ordered}</p>
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-400">Livrées</p>
+                            <p className="font-black text-emerald-600">{v.delivered}</p>
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-400">En cours</p>
+                            <p className="font-black text-blue-600">{v.confirmed + v.shipped}</p>
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-400">Retours</p>
+                            <p className="font-black text-rose-600">{v.returned}</p>
+                          </div>
+                        </div>
+
+                        {v.revenue_delivered > 0 && (
+                          <div className="text-[10px] text-slate-400 text-right pt-0.5">
+                            CA Livré : <strong className="text-slate-700 dark:text-slate-300 font-mono font-bold">{Math.round(v.revenue_delivered).toLocaleString('fr-FR')} DA</strong>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
