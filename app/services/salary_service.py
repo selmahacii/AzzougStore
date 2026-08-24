@@ -116,56 +116,71 @@ def compute_salary(
     marketplace_rate = getattr(employee, "payment_marketplace_upsell_only", 50) or 50
     store_pickup_rate           = getattr(employee, "payment_store_pickup", 100) if getattr(employee, "payment_store_pickup", None) is not None else 100
     recovered_store_pickup_rate = getattr(employee, "payment_recovered_store_pickup", 150) if getattr(employee, "payment_recovered_store_pickup", None) is not None else 150
+    effective_rate   = payment_amount if payment_amount is not None else FALLBACK_RATE_PER_ORDER
 
-    # ── Count delivered orders, split by classification ──────────────────────
-    normal_delivered          = _count_normal_delivered(db, employee.id, store_id, since, until, date_by=date_by)
-    recovered_delivered       = _count_recovered_delivered(db, employee.id, store_id, since, until, date_by=date_by)
-    total_delivered           = normal_delivered + recovered_delivered
-    returned_count            = _count_returned(db, employee.id, store_id, since, until, date_by=date_by)
-    upsell_delivered          = _count_upsell_delivered(db, employee.id, store_id, since, until, date_by=date_by)
-    marketplace_delivered     = _count_marketplace_delivered(db, employee.id, store_id, since, until, date_by=date_by)
-    store_pickup_delivered    = _count_store_pickup_delivered(db, employee.id, store_id, since, until, date_by=date_by)
-    recovered_store_pickup_delivered = _count_recovered_store_pickup_delivered(db, employee.id, store_id, since, until, date_by=date_by)
+    from sqlalchemy import func as _func, case as _case, or_, and_, not_
 
-    # ── Commission historique figée avec support Retrait Point de Vente ─────
-    recovered_home_bonus = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=True, is_store_pickup=False,
-        snapshot_column=Order.commission_recovered_rate, fallback_rate=recovered_rate,
-        date_by=date_by,
+    store_filter = _build_store_filter(db, employee.id, store_id)
+    time_filters = _build_time_filters(since, until, date_by=date_by)
+
+    # Condition helpers for conditional single-query execution
+    _is_abandoned = or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))
+    _is_normal = and_(or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None))
+    _is_store_pickup = Order.delivery_type.in_(STORE_PICKUP_TYPES)
+    _is_home = or_(Order.delivery_type.is_(None), Order.delivery_type.notin_(STORE_PICKUP_TYPES))
+    _is_upsell = Order.is_upsell == True
+    _is_marketplace = Order.is_marketplace_upsell == True
+    _not_marketplace = or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None))
+
+    row = (
+        db.query(
+            # Counts
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _not_marketplace), 1), else_=0)).label("normal_delivered"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _not_marketplace), 1), else_=0)).label("recovered_delivered"),
+            _func.sum(_case((Order.status == "RETURNED", 1), else_=0)).label("returned_count"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_upsell), 1), else_=0)).label("upsell_delivered"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_marketplace), 1), else_=0)).label("marketplace_delivered"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _is_store_pickup), 1), else_=0)).label("store_pickup_delivered"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_store_pickup), 1), else_=0)).label("recovered_store_pickup_delivered"),
+
+            # Sums with snapshot fallback
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_home), _case((Order.commission_recovered_rate.isnot(None), Order.commission_recovered_rate), else_=recovered_rate)), else_=0)).label("recovered_home_bonus"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_store_pickup), _case((Order.commission_recovered_store_pickup_rate.isnot(None), Order.commission_recovered_store_pickup_rate), else_=recovered_store_pickup_rate)), else_=0)).label("recovered_store_pickup_bonus"),
+            _func.sum(_case((Order.status == "RETURNED", _case((Order.commission_lost_rate.isnot(None), Order.commission_lost_rate), else_=lost_rate)), else_=0)).label("returned_penalty"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_upsell), _case((Order.commission_upsell_rate.isnot(None), Order.commission_upsell_rate), else_=upsell_rate)), else_=0)).label("upsell_bonus"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_marketplace), _case((Order.commission_marketplace_rate.isnot(None), Order.commission_marketplace_rate), else_=marketplace_rate)), else_=0)).label("marketplace_bonus"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _is_home), _case((Order.commission_payment_amount.isnot(None), Order.commission_payment_amount), else_=effective_rate)), else_=0)).label("normal_home_salary"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _is_store_pickup), _case((Order.commission_store_pickup_rate.isnot(None), Order.commission_store_pickup_rate), else_=store_pickup_rate)), else_=0)).label("normal_store_pickup_salary"),
+        )
+        .filter(
+            store_filter,
+            Order.assigned_to == employee.id,
+            Order.is_deleted == False,
+            *time_filters
+        )
+        .one()
     )
-    recovered_store_pickup_bonus = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=True, is_store_pickup=True,
-        snapshot_column=Order.commission_recovered_store_pickup_rate, fallback_rate=recovered_store_pickup_rate,
-        date_by=date_by,
-    )
+
+    normal_delivered = int(row.normal_delivered or 0)
+    recovered_delivered = int(row.recovered_delivered or 0)
+    total_delivered = normal_delivered + recovered_delivered
+    returned_count = int(row.returned_count or 0)
+    upsell_delivered = int(row.upsell_delivered or 0)
+    marketplace_delivered = int(row.marketplace_delivered or 0)
+    store_pickup_delivered = int(row.store_pickup_delivered or 0)
+    recovered_store_pickup_delivered = int(row.recovered_store_pickup_delivered or 0)
+
+    recovered_home_bonus = int(row.recovered_home_bonus or 0)
+    recovered_store_pickup_bonus = int(row.recovered_store_pickup_bonus or 0)
     abandoned_bonus = recovered_home_bonus + recovered_store_pickup_bonus
 
-    returned_penalty = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="RETURNED", is_abandoned_cart=None,
-        snapshot_column=Order.commission_lost_rate, fallback_rate=lost_rate,
-        date_by=date_by,
-    )
-    upsell_bonus = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=None, is_upsell=True,
-        snapshot_column=Order.commission_upsell_rate, fallback_rate=upsell_rate,
-        date_by=date_by,
-    )
-    marketplace_bonus = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=None, is_marketplace_upsell=True,
-        snapshot_column=Order.commission_marketplace_rate, fallback_rate=marketplace_rate,
-        date_by=date_by,
-    )
+    returned_penalty = int(row.returned_penalty or 0)
+    upsell_bonus = int(row.upsell_bonus or 0)
+    marketplace_bonus = int(row.marketplace_bonus or 0)
 
-    # ── Branch by payment type ────────────────────────────────────────────────
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
-        salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
-
+        salary = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
         return _build_result(
             payment_type="MONTHLY_SALARY",
             payment_amount=payment_amount,
@@ -192,22 +207,10 @@ def compute_salary(
             until=until,
         )
 
-    # PER_DELIVERED_ORDER (explicit or implicit fallback when payment_type is None)
-    effective_rate = payment_amount if payment_amount is not None else FALLBACK_RATE_PER_ORDER
-    normal_home_salary = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=False, is_store_pickup=False,
-        snapshot_column=Order.commission_payment_amount, fallback_rate=effective_rate,
-        date_by=date_by,
-    )
-    normal_store_pickup_salary = _sum_frozen_amount(
-        db, employee.id, store_id, since, until,
-        status="DELIVERED", is_abandoned_cart=False, is_store_pickup=True,
-        snapshot_column=Order.commission_store_pickup_rate, fallback_rate=store_pickup_rate,
-        date_by=date_by,
-    )
+    normal_home_salary = int(row.normal_home_salary or 0)
+    normal_store_pickup_salary = int(row.normal_store_pickup_salary or 0)
     base_salary = normal_home_salary + normal_store_pickup_salary
-    salary      = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
+    salary = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
 
     return _build_result(
         payment_type=payment_type or "PER_DELIVERED_ORDER",

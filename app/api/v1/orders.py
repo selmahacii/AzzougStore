@@ -1059,7 +1059,7 @@ def get_agent_counts(
 
     _cache_key = (
         f"agent_counts:{current_user.id}:{current_user.role}:"
-        f"{store_id or '-'}:{start_date or '-'}:{end_date or '-'}"
+        f"{store_id or '-'}:{start_date or '-'}:{end_date or '-'}:{date_by or 'created_at'}"
     )
 
     def _compute_counts() -> dict:
