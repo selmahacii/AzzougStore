@@ -257,7 +257,11 @@ class LandingPageAnalyticsService:
         _has_tracking = and_(Order.tracking_number.isnot(None), Order.tracking_number != "")
         _is_abandoned = Order.is_abandoned_cart == True
         _is_recovered = and_(_is_abandoned, Order.status.in_(("CONFIRMED", "SHIPPED", "DELIVERED")))
-        _is_normal = and_(Order.status != "MERGED", func.coalesce(Order.source, "") != "MANUAL", _is_abandoned == False)
+        _is_manual = and_(Order.status != "MERGED", or_(func.coalesce(Order.source, "") == "MANUAL", Order.source == "POS"))
+        _has_meta_utm = and_(Order.status != "MERGED", or_(Order.campaign_id.isnot(None), Order.utm_campaign.isnot(None), Order.utm_source.ilike("%meta%"), Order.utm_source.ilike("%fb%"), Order.utm_source.ilike("%instagram%"), Order.utm_source.ilike("%ig%"), Order.fbclid.isnot(None)))
+        _is_normal = and_(Order.status != "MERGED", _is_manual == False, _is_abandoned == False)
+        _is_meta_direct = and_(_is_normal, _has_meta_utm == True)
+        _is_organic_direct = and_(_is_normal, _has_meta_utm == False)
 
         rows = (
             db.query(
@@ -266,6 +270,9 @@ class LandingPageAnalyticsService:
                 func.count(distinct(case((_is_normal, Order.id)))).label("normal_orders"),
                 func.count(distinct(case((_is_abandoned, Order.id)))).label("abandoned_carts"),
                 func.count(distinct(case((_is_recovered, Order.id)))).label("recovered_carts"),
+                func.count(distinct(case((_is_manual, Order.id)))).label("manual_orders"),
+                func.count(distinct(case((_is_meta_direct, Order.id)))).label("meta_direct_orders"),
+                func.count(distinct(case((_is_organic_direct, Order.id)))).label("organic_direct_orders"),
                 func.count(distinct(case((_is_delivered, Order.id)))).label("delivered_orders"),
                 func.count(distinct(case((_is_returned, Order.id)))).label("returned_orders"),
                 func.count(distinct(case((_is_shipped, Order.id)))).label("shipped_orders"),
@@ -306,6 +313,9 @@ class LandingPageAnalyticsService:
                 "normal_orders": int(r.normal_orders or 0) if r else 0,
                 "abandoned_carts": int(r.abandoned_carts or 0) if r else 0,
                 "recovered_carts": int(r.recovered_carts or 0) if r else 0,
+                "manual_orders": int(r.manual_orders or 0) if r else 0,
+                "meta_direct_orders": int(r.meta_direct_orders or 0) if r else 0,
+                "organic_direct_orders": int(r.organic_direct_orders or 0) if r else 0,
                 "delivered_orders": int(r.delivered_orders or 0) if r else 0,
                 "returned_orders": int(r.returned_orders or 0) if r else 0,
                 "shipped_orders": int(r.shipped_orders or 0) if r else 0,
@@ -322,6 +332,9 @@ class LandingPageAnalyticsService:
             "normal_orders": sum(d["normal_orders"] for d in daily_list),
             "abandoned_carts": sum(d["abandoned_carts"] for d in daily_list),
             "recovered_carts": sum(d["recovered_carts"] for d in daily_list),
+            "manual_orders": sum(d["manual_orders"] for d in daily_list),
+            "meta_direct_orders": sum(d["meta_direct_orders"] for d in daily_list),
+            "organic_direct_orders": sum(d["organic_direct_orders"] for d in daily_list),
             "delivered_orders": sum(d["delivered_orders"] for d in daily_list),
             "returned_orders": sum(d["returned_orders"] for d in daily_list),
             "shipped_orders": sum(d["shipped_orders"] for d in daily_list),
@@ -1097,20 +1110,35 @@ class LandingPageAnalyticsService:
     def _build_meta_reconciliation(
         cls, totals: Dict[str, Any], meta_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Constructs the Meta ↔ AzzougShop reconciliation matrix."""
+        """Constructs the Meta ↔ AzzougShop reconciliation matrix with full gap justification."""
         erp_purchases = totals.get("total_orders", 0)
         meta_purchases = meta_data.get("purchases", 0) if meta_data.get("is_available") else 0
         gap_purchases = erp_purchases - meta_purchases
+
+        manual_cnt = totals.get("manual_orders", 0)
+        recovered_cnt = totals.get("recovered_carts", 0)
+        organic_cnt = totals.get("organic_direct_orders", 0)
+        meta_direct_cnt = totals.get("meta_direct_orders", 0)
 
         erp_val = totals.get("revenue_dzd", 0.0)
         meta_val_raw = meta_data.get("purchase_value_raw", 0.0) if meta_data.get("is_available") else 0.0
 
         return {
             "is_comparable": meta_data.get("is_available", False),
-            "notice": "Les fenêtres d'attribution (1-day click vs 7-day view) et les délais de remontée Meta peuvent expliquer un écart naturel entre Meta Ads et l'ERP.",
+            "meta_purchases": meta_purchases,
+            "erp_purchases": erp_purchases,
+            "gap": f"{'+' if gap_purchases > 0 else ''}{gap_purchases}",
+            "gap_number": gap_purchases,
+            "justification": {
+                "meta_direct_orders": meta_direct_cnt,
+                "recovered_carts": recovered_cnt,
+                "manual_orders": manual_cnt,
+                "organic_direct_orders": organic_cnt,
+            },
+            "notice": "L'écart entre Meta et l'ERP s'explique mathématiquement par les commandes manuelles, les paniers abandonnés récupérés par téléphone et les commandes directes hors clic pub.",
             "metrics": [
                 {
-                    "name": "Achats / Commandes",
+                    "name": "Achats / Commandes (Total)",
                     "meta_value": meta_purchases if meta_data.get("is_available") else "Non dispo",
                     "erp_value": erp_purchases,
                     "gap": f"{'+' if gap_purchases > 0 else ''}{gap_purchases}" if meta_data.get("is_available") else "—",

@@ -819,15 +819,20 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             </div>
           </div>
 
-          {/* ─── 8. Réconciliation Meta ↔ AzzougShop ──────────────────────── */}
-          <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
+          {/* ─── 8. Réconciliation & Justification de l'Écart Meta ↔ ERP ──── */}
+          <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                  ⚖️ Réconciliation Meta ↔ AzzougShop
+                <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <span>⚖️ Réconciliation & Justification de l'Écart Meta ↔ ERP</span>
+                  {reconciliation.gap && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 font-bold">
+                      Écart : {reconciliation.gap} commandes
+                    </span>
+                  )}
                 </p>
-                <p className="text-[10px] text-slate-400">
-                  Comparaison directe des données d'achat avec traçabilité unitaire.
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Décomposition détaillée expliquant l'écart entre les achats déclarés par Meta et le total réel encaissé dans l'ERP.
                 </p>
               </div>
               <Button
@@ -840,6 +845,43 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
               </Button>
             </div>
 
+            {/* Justification Breakdown Cards */}
+            {reconciliation.justification && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="p-3 bg-purple-50/60 dark:bg-purple-950/20 rounded-xl border border-purple-200/60 dark:border-purple-800/40">
+                  <p className="text-[10px] font-bold text-purple-700 dark:text-purple-300">📢 Clic Publicité Direct Meta</p>
+                  <p className="text-lg font-black text-purple-900 dark:text-purple-100 mt-0.5">
+                    {reconciliation.justification.meta_direct_orders ?? 0} <span className="text-[10px] font-medium text-purple-600">cmd</span>
+                  </p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Avec tag pub / campagne UTM</p>
+                </div>
+
+                <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40">
+                  <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">📞 Paniers Récupérés (Téléphone)</p>
+                  <p className="text-lg font-black text-emerald-900 dark:text-emerald-100 mt-0.5">
+                    +{reconciliation.justification.recovered_carts ?? 0} <span className="text-[10px] font-medium text-emerald-600">cmd</span>
+                  </p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Relance confirmatrice / appel</p>
+                </div>
+
+                <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 rounded-xl border border-blue-200/60 dark:border-blue-800/40">
+                  <p className="text-[10px] font-bold text-blue-700 dark:text-blue-300">✍️ Saisies Manuelles / Staff</p>
+                  <p className="text-lg font-black text-blue-900 dark:text-blue-100 mt-0.5">
+                    +{reconciliation.justification.manual_orders ?? 0} <span className="text-[10px] font-medium text-blue-600">cmd</span>
+                  </p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Créées par agents / confirmatrices</p>
+                </div>
+
+                <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-800/40">
+                  <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300">🌐 Trafic Direct & WhatsApp</p>
+                  <p className="text-lg font-black text-amber-900 dark:text-amber-100 mt-0.5">
+                    +{reconciliation.justification.organic_direct_orders ?? 0} <span className="text-[10px] font-medium text-amber-600">cmd</span>
+                  </p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Partage de lien, revisites directes</p>
+                </div>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -847,7 +889,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                     <th className="pb-2 font-bold">Indicateur</th>
                     <th className="pb-2 font-bold text-right">Déclaré par Meta</th>
                     <th className="pb-2 font-bold text-right">Enregistré ERP</th>
-                    <th className="pb-2 font-bold text-right">Écart</th>
+                    <th className="pb-2 font-bold text-right">Écart Justifié</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
