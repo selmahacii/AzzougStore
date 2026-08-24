@@ -957,16 +957,16 @@ class LandingPageAnalyticsService:
 
         if total_score >= 80:
             color = "#00B894"
-            badge = "🟢 Excellente Santé"
+            badge = "Excellente Santé"
         elif total_score >= 60:
             color = "#0984E3"
-            badge = "🔵 Bonne Santé"
+            badge = "Bonne Santé"
         elif total_score >= 40:
             color = "#FDCB6E"
-            badge = "🟡 À Surveiller"
+            badge = "À Surveiller"
         else:
             color = "#E17055"
-            badge = "🔴 Attention Requise"
+            badge = "Attention Requise"
 
         return {
             "score": total_score,

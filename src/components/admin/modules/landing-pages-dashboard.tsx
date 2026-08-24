@@ -430,13 +430,17 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                         : "bg-amber-50/70 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-900 dark:text-amber-200"
                     )}
                   >
-                    <span className="text-base shrink-0">{a.icon}</span>
+                    {a.severity === 'critical' ? (
+                      <AlertCircle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="size-4 text-amber-600 shrink-0 mt-0.5" />
+                    )}
                     <div className="space-y-1">
                       <p className="text-xs font-black">{a.title}</p>
                       <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">{a.description}</p>
                       {a.action && (
                         <p className="text-[10px] font-bold text-slate-500 mt-1">
-                          👉 <em>Action recommandée :</em> {a.action}
+                          <em>Action recommandée :</em> {a.action}
                         </p>
                       )}
                     </div>
@@ -560,7 +564,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             >
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <span>🎨 Ventes & Livraisons par Variante</span>
+                  <span>Ventes & Livraisons par Variante</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 font-bold">
                     {variantsList.length} variante{variantsList.length > 1 ? 's' : ''}
                   </span>
@@ -649,7 +653,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-purple-700 dark:text-purple-400 flex items-center gap-1.5">
-                  <span>📢 Performance Meta Ads</span>
+                  <span>Performance Meta Ads</span>
                   <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 font-bold">
                     Données déclarées par Meta Ads Insights
                   </span>
@@ -719,7 +723,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                🎯 Entonnoir de Conversion Global (Funnel)
+                Entonnoir de Conversion Global (Funnel)
               </p>
               <span className="text-[10px] text-slate-400">Taux de passage étape par étape</span>
             </div>
@@ -824,7 +828,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <span>⚖️ Réconciliation & Justification de l'Écart Meta ↔ ERP</span>
+                  <span>Réconciliation & Justification de l'Écart Meta ↔ ERP</span>
                   {reconciliation.gap && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 font-bold">
                       Écart : {reconciliation.gap} commandes
@@ -841,7 +845,8 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-slate-50 hover:bg-slate-100"
                 onClick={() => setShowReconciliationModal(true)}
               >
-                🔍 Voir les événements concernés
+                <Eye className="size-3.5" />
+                <span>Voir les événements concernés</span>
               </Button>
             </div>
 
@@ -849,7 +854,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             {reconciliation.justification && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <div className="p-3 bg-purple-50/60 dark:bg-purple-950/20 rounded-xl border border-purple-200/60 dark:border-purple-800/40">
-                  <p className="text-[10px] font-bold text-purple-700 dark:text-purple-300">📢 Clic Publicité Direct Meta</p>
+                  <p className="text-[10px] font-bold text-purple-700 dark:text-purple-300">Clic Publicité Direct Meta</p>
                   <p className="text-lg font-black text-purple-900 dark:text-purple-100 mt-0.5">
                     {reconciliation.justification.meta_direct_orders ?? 0} <span className="text-[10px] font-medium text-purple-600">cmd</span>
                   </p>
@@ -857,7 +862,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 </div>
 
                 <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40">
-                  <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">📞 Paniers Récupérés (Téléphone)</p>
+                  <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">Paniers Récupérés (Téléphone)</p>
                   <p className="text-lg font-black text-emerald-900 dark:text-emerald-100 mt-0.5">
                     +{reconciliation.justification.recovered_carts ?? 0} <span className="text-[10px] font-medium text-emerald-600">cmd</span>
                   </p>
@@ -865,7 +870,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 </div>
 
                 <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 rounded-xl border border-blue-200/60 dark:border-blue-800/40">
-                  <p className="text-[10px] font-bold text-blue-700 dark:text-blue-300">✍️ Saisies Manuelles / Staff</p>
+                  <p className="text-[10px] font-bold text-blue-700 dark:text-blue-300">Saisies Manuelles / Staff</p>
                   <p className="text-lg font-black text-blue-900 dark:text-blue-100 mt-0.5">
                     +{reconciliation.justification.manual_orders ?? 0} <span className="text-[10px] font-medium text-blue-600">cmd</span>
                   </p>
@@ -873,7 +878,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 </div>
 
                 <div className="p-3 bg-amber-50/60 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-800/40">
-                  <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300">🌐 Trafic Direct & WhatsApp</p>
+                  <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300">Trafic Direct & WhatsApp</p>
                   <p className="text-lg font-black text-amber-900 dark:text-amber-100 mt-0.5">
                     +{reconciliation.justification.organic_direct_orders ?? 0} <span className="text-[10px] font-medium text-amber-600">cmd</span>
                   </p>
@@ -905,7 +910,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
               </table>
             </div>
             <p className="text-[10px] text-slate-400 italic">
-              ℹ️ {reconciliation.notice}
+              {reconciliation.notice}
             </p>
           </div>
 
@@ -918,7 +923,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
             >
               <div>
                 <p className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                  📑 Tableau de Diagnostic Quotidien (Audit Détaillé)
+                  Tableau de Diagnostic Quotidien (Audit Détaillé)
                 </p>
                 <p className="text-[10px] text-slate-400">Historique jour par jour de toutes les étapes</p>
               </div>
