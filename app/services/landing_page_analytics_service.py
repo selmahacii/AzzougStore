@@ -347,13 +347,106 @@ class LandingPageAnalyticsService:
         return daily_list, totals
 
     @classmethod
+    def _extract_available_lp_variants(cls, lp: LandingPage) -> List[str]:
+        """Extracts the canonical available variant names configured on the LP and its Product."""
+        options: List[str] = []
+        if lp.product and lp.product.variants:
+            raw_vars = lp.product.variants
+            if isinstance(raw_vars, list):
+                for item in raw_vars:
+                    if isinstance(item, dict):
+                        if "options" in item and isinstance(item["options"], list):
+                            for opt in item["options"]:
+                                if opt and str(opt).strip() and str(opt).strip() not in options:
+                                    options.append(str(opt).strip())
+                        elif "name" in item and str(item["name"]).strip() not in options:
+                            options.append(str(item["name"]).strip())
+                    elif isinstance(item, str) and item.strip() and item.strip() not in options:
+                        options.append(item.strip())
+            elif isinstance(raw_vars, dict):
+                for opts in raw_vars.values():
+                    if isinstance(opts, list):
+                        for o in opts:
+                            if o and str(o).strip() not in options:
+                                options.append(str(o).strip())
+                    elif isinstance(opts, str) and opts.strip() not in options:
+                        options.append(opts.strip())
+
+        if hasattr(lp, "offers") and isinstance(lp.offers, list):
+            for off in lp.offers:
+                if isinstance(off, dict) and "variants" in off and isinstance(off["variants"], list):
+                    for v in off["variants"]:
+                        if v and str(v).strip() and str(v).strip() not in options:
+                            options.append(str(v).strip())
+
+        return options
+
+    @classmethod
+    def _parse_item_variant_pieces(
+        cls, raw_var: Any, default_name: str, known_options: List[str]
+    ) -> List[Tuple[str, int]]:
+        """Parses a variant field and unpacks it into clean canonical variant pieces."""
+        text = ""
+        if isinstance(raw_var, dict):
+            text = " | ".join(f"{k}: {v}" for k, v in raw_var.items() if v)
+        elif isinstance(raw_var, str):
+            text = raw_var
+        else:
+            text = str(raw_var or "")
+
+        if not text.strip() or text.strip().lower() in ("none", "null", "{}"):
+            return [(default_name or "Standard", 1)]
+
+        # 1. Match against known LP/Product variants
+        if known_options:
+            found = []
+            for opt in known_options:
+                opt_clean = opt.strip()
+                pattern = re.compile(
+                    rf"(?:^|[^a-zA-Z0-9à-ÿÀ-Ý]){re.escape(opt_clean)}(?:[^a-zA-Z0-9à-ÿÀ-Ý]|$)",
+                    re.IGNORECASE,
+                )
+                matches = pattern.findall(text)
+                if matches:
+                    m_count = re.search(
+                        rf"{re.escape(opt_clean)}[^|]*?x\s*(\d+)", text, re.IGNORECASE
+                    )
+                    pieces = int(m_count.group(1)) if m_count else len(matches)
+                    found.append((opt_clean, pieces))
+            if found:
+                return found
+
+        # 2. Fallback: split by pack delimiters | or / and clean prefixes
+        parts = [p.strip() for p in re.split(r"[|/]+", text) if p.strip()]
+        if parts:
+            cleaned_list = []
+            for p in parts:
+                cleaned = re.sub(
+                    r"^(P\d+\s*:\s*|Couleur\s*:\s*|cv\s*:\s*|Color\s*:\s*)",
+                    "",
+                    p,
+                    flags=re.IGNORECASE,
+                ).strip()
+                m_cnt = re.search(r"\s*x\s*(\d+)$", cleaned, re.IGNORECASE)
+                p_cnt = 1
+                if m_cnt:
+                    p_cnt = int(m_cnt.group(1))
+                    cleaned = re.sub(r"\s*x\s*\d+$", "", cleaned, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r"^[^(]*\(|\)[^)]*$", "", cleaned).strip()
+                if cleaned:
+                    cleaned_list.append((cleaned, p_cnt))
+            if cleaned_list:
+                return cleaned_list
+
+        return [(default_name or "Standard", 1)]
+
+    @classmethod
     def _query_variant_breakdown(
         cls, db: Session, lp: LandingPage, d_start: datetime, d_end: datetime
     ) -> List[Dict[str, Any]]:
         """
-        Aggregates granular variant delivery metrics for the Landing Page.
-        Computes total units, confirmed units, delivered units, returned units,
-        and successful delivery rate per variant.
+        Aggregates granular variant delivery metrics strictly for the Landing Page's available variants.
+        Unpacks multi-piece combinations (packs) into their canonical individual variants.
         """
         product_or_slug_filter = (
             or_(
@@ -385,51 +478,67 @@ class LandingPageAnalyticsService:
             .all()
         )
 
+        known_variants = cls._extract_available_lp_variants(lp)
         variants_map: Dict[str, Dict[str, Any]] = {}
+
+        # Pre-initialize with known variants so all available options are displayed
+        for kv in known_variants:
+            variants_map[kv] = {
+                "variant_name": kv,
+                "total_ordered": 0,
+                "confirmed": 0,
+                "shipped": 0,
+                "delivered": 0,
+                "returned": 0,
+                "cancelled": 0,
+                "revenue_delivered": 0.0,
+                "revenue_total": 0.0,
+            }
 
         for it_var, it_pname, it_qty, it_price, ord_status in items_query:
             qty = int(it_qty or 1)
-            price = float(it_price or 0.0)
+            unit_price = float(it_price or 0.0)
 
-            # Extract human readable variant label
-            var_label = ""
-            if isinstance(it_var, dict) and it_var:
-                var_label = " / ".join(str(v).strip() for v in it_var.values() if str(v).strip())
-            elif isinstance(it_var, str) and it_var.strip():
-                var_label = it_var.strip()
-            
-            if not var_label:
-                var_label = it_pname or "Standard / Unique"
+            # Extract list of (variant_label, piece_multiplier)
+            pieces_list = cls._parse_item_variant_pieces(
+                it_var, it_pname or "Standard", known_variants
+            )
 
-            if var_label not in variants_map:
-                variants_map[var_label] = {
-                    "variant_name": var_label,
-                    "total_ordered": 0,
-                    "confirmed": 0,
-                    "shipped": 0,
-                    "delivered": 0,
-                    "returned": 0,
-                    "cancelled": 0,
-                    "revenue_delivered": 0.0,
-                    "revenue_total": 0.0,
-                }
+            total_pieces_in_item = sum(cnt for _, cnt in pieces_list) or 1
+            price_per_piece = (unit_price * qty) / total_pieces_in_item
 
-            entry = variants_map[var_label]
-            entry["total_ordered"] += qty
-            entry["revenue_total"] += qty * price
+            for var_label, piece_count in pieces_list:
+                total_var_qty = piece_count * qty
 
-            st = (ord_status or "").upper()
-            if st == "DELIVERED":
-                entry["delivered"] += qty
-                entry["revenue_delivered"] += qty * price
-            elif st == "CONFIRMED":
-                entry["confirmed"] += qty
-            elif st == "SHIPPED":
-                entry["shipped"] += qty
-            elif st == "RETURNED":
-                entry["returned"] += qty
-            elif st == "CANCELLED":
-                entry["cancelled"] += qty
+                if var_label not in variants_map:
+                    variants_map[var_label] = {
+                        "variant_name": var_label,
+                        "total_ordered": 0,
+                        "confirmed": 0,
+                        "shipped": 0,
+                        "delivered": 0,
+                        "returned": 0,
+                        "cancelled": 0,
+                        "revenue_delivered": 0.0,
+                        "revenue_total": 0.0,
+                    }
+
+                entry = variants_map[var_label]
+                entry["total_ordered"] += total_var_qty
+                entry["revenue_total"] += total_var_qty * price_per_piece
+
+                st = (ord_status or "").upper()
+                if st == "DELIVERED":
+                    entry["delivered"] += total_var_qty
+                    entry["revenue_delivered"] += total_var_qty * price_per_piece
+                elif st == "CONFIRMED":
+                    entry["confirmed"] += total_var_qty
+                elif st == "SHIPPED":
+                    entry["shipped"] += total_var_qty
+                elif st == "RETURNED":
+                    entry["returned"] += total_var_qty
+                elif st == "CANCELLED":
+                    entry["cancelled"] += total_var_qty
 
         result = []
         for v in variants_map.values():
