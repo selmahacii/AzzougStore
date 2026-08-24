@@ -206,7 +206,8 @@ class LandingPageAnalyticsService:
     ) -> Tuple[datetime, datetime, datetime, datetime]:
         """Calculates current datetime bounds and the equivalent previous period."""
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        d_start = now - timedelta(days=30)
+        # Default to start of current month (01/MM/YYYY)
+        d_start = datetime(now.year, now.month, 1)
         d_end = now
 
         if start_date_str:
@@ -216,7 +217,7 @@ class LandingPageAnalyticsService:
                 pass
         if end_date_str:
             try:
-                d_end = parse_local_date_filter(end_date_str)
+                d_end = parse_local_date_filter(end_date_str, is_end_of_day=True)
             except Exception:
                 pass
 
@@ -234,7 +235,12 @@ class LandingPageAnalyticsService:
         cls, db: Session, lp: LandingPage, d_start: datetime, d_end: datetime
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Single conditional aggregation query for all orders on this LP."""
-        day_col = func.date(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS))
+        bind = db.get_bind()
+        is_sqlite = bind.dialect.name == "sqlite" if bind else False
+        if is_sqlite:
+            day_col = func.date(Order.created_at, f"+{ALGERIA_UTC_OFFSET_HOURS} hours")
+        else:
+            day_col = func.to_char(Order.created_at + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS), "YYYY-MM-DD")
 
         product_or_slug_filter = (
             or_(
@@ -287,8 +293,8 @@ class LandingPageAnalyticsService:
         )
 
         daily_list = []
-        cur = d_start.date()
-        end_date = d_end.date()
+        cur = (d_start + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)).date()
+        end_date = (d_end + timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)).date()
         rows_by_day = {str(r.day): r for r in rows if r.day is not None}
 
         while cur <= end_date:
@@ -715,7 +721,7 @@ class LandingPageAnalyticsService:
         """Constructs the step-by-step pipeline from Meta Impressions to Delivered."""
         def step(name: str, val_curr: int, val_prev: int, prev_stage_val: Optional[int], desc: str, source: str) -> Dict[str, Any]:
             conversion_from_prev = (
-                round((val_curr / prev_stage_val) * 100.0, 1)
+                round(min(100.0, (val_curr / prev_stage_val) * 100.0), 1)
                 if (prev_stage_val is not None and prev_stage_val > 0)
                 else None
             )
@@ -761,11 +767,11 @@ class LandingPageAnalyticsService:
             step("Impressions", impr, impr_prev, None, "Vues des publicités Meta", "Meta Ads Insights"),
             step("Clics", clicks, clicks_prev, impr, "Clics sur les liens publicitaires", "Meta Ads Insights"),
             step("Visites Landing Page", visits, visits_prev, clicks, "Sessions qualifiées sur la LP", "AzzougShop Analytics"),
-            step("Ajouts Panier", cart if cart > 0 else checkout, cart_prev, visits, "Clics d'engagement / sélection d'offre", "AzzougShop Funnel"),
-            step("Checkout", checkout if checkout > 0 else orders_val, checkout_prev, cart if cart > 0 else visits, "Formulaire de commande initié", "AzzougShop Funnel"),
+            step("Ajouts Panier", cart, cart_prev, visits, "Clics d'engagement / sélection d'offre", "AzzougShop Funnel"),
+            step("Checkout", checkout, checkout_prev, visits if visits > 0 else cart, "Formulaire de commande initié", "AzzougShop Funnel"),
             step("Commandes", orders_val, orders_val_prev, checkout if checkout > 0 else visits, "Commandes enregistrées dans l'ERP", "AzzougShop ERP"),
             step("Expédiées", shipped_val, shipped_val_prev, orders_val, "Colis remis au transporteur", "AzzougShop Logistics"),
-            step("Livrées", delivered_val, delivered_val_prev, shipped_val, "Colis livrés et encaissés", "AzzougShop Logistics"),
+            step("Livrées", delivered_val, delivered_val_prev, shipped_val if shipped_val > 0 else orders_val, "Colis livrés et encaissés", "AzzougShop Logistics"),
         ]
 
     @classmethod

@@ -130,14 +130,15 @@ function toLocalYYYYMMDD(d: Date): string {
 
 // ─── LP Analytics & Performance Center ─────────────────────────────────────────
 function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; onClose: () => void; onEdit?: () => void }) {
-  const [periodPreset, setPeriodPreset] = useState<string>('30d');
+  const [periodPreset, setPeriodPreset] = useState<string>('this_month');
   const [dStart, setDStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
-    return toLocalYYYYMMDD(d);
+    const now = new Date();
+    const s = new Date(now.getFullYear(), now.getMonth(), 1);
+    return toLocalYYYYMMDD(s);
   });
   const [dEnd, setDEnd] = useState(() => toLocalYYYYMMDD(new Date()));
   const [comparePrevious, setComparePrevious] = useState(true);
-  const [activeChartTab, setActiveChartTab] = useState<'orders' | 'conversion' | 'funnel' | 'status' | 'meta_vs_erp' | 'logistics'>('orders');
+  const [activeChartTab, setActiveChartTab] = useState<'orders' | 'conversion' | 'funnel' | 'status' | 'logistics'>('orders');
   const [showReconciliationModal, setShowReconciliationModal] = useState(false);
   const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
@@ -753,7 +754,6 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 {[
                   { id: 'orders', label: 'Évolution Commandes', icon: TrendingUp },
                   { id: 'status', label: 'Par Statut Réel', icon: BarChart3 },
-                  { id: 'meta_vs_erp', label: 'Meta vs AzzougShop', icon: Layers },
                   { id: 'logistics', label: 'Qualité Livraison', icon: Truck },
                 ].map(t => {
                   const Icon = t.icon;
@@ -805,24 +805,6 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                     <Bar dataKey="count" name="Nombre de commandes" fill="#6C5CE7" radius={[6, 6, 0, 0]} maxBarSize={45} />
                   </ComposedChart>
                 </ResponsiveContainer>
-              ) : activeChartTab === 'meta_vs_erp' ? (
-                <div className="h-full flex items-center justify-around p-6 text-center">
-                  <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-2xl border border-purple-200 dark:border-purple-800 w-48">
-                    <p className="text-xs font-bold text-purple-600">Achats Déclarés Meta</p>
-                    <p className="text-3xl font-black text-purple-700 dark:text-purple-300 mt-2">{charts.meta_vs_erp?.meta_purchases ?? 0}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Source : Meta Ads Insights</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 w-48">
-                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Commandes Réelles ERP</p>
-                    <p className="text-3xl font-black text-slate-900 dark:text-slate-100 mt-2">{charts.meta_vs_erp?.erp_orders ?? 0}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Source : AzzougShop ERP</p>
-                  </div>
-                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-200 dark:border-emerald-800 w-48">
-                    <p className="text-xs font-bold text-emerald-600">Écart Observé</p>
-                    <p className="text-3xl font-black text-emerald-700 dark:text-emerald-400 mt-2">{charts.meta_vs_erp?.gap_label ?? '0'}</p>
-                    <p className="text-[10px] text-slate-400 mt-1">ERP vs Meta Insights</p>
-                  </div>
-                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={charts.delivery_quality || []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -921,7 +903,9 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 tabular-nums">
                     {diagnostic.map((row: any, idx: number) => (
                       <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="py-2 font-mono font-bold text-slate-600 dark:text-slate-400">{row.date}</td>
+                        <td className="py-2 font-mono font-bold text-slate-700 dark:text-slate-300">
+                          {row.date ? row.date.split('-').reverse().join('/') : '—'}
+                        </td>
                         <td className="py-2 text-right font-black">{row.orders}</td>
                         <td className="py-2 text-right text-slate-500">{row.normal}</td>
                         <td className="py-2 text-right text-amber-600">{row.abandoned}</td>
