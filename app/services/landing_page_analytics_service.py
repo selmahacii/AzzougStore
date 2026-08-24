@@ -1254,7 +1254,7 @@ class LandingPageAnalyticsService:
                 },
                 {
                     "name": "Valeur d'Achat",
-                    "meta_value": f"{meta_val_raw} {meta_data.get('currency', 'DZD')}" if meta_data.get("is_available") else "Non dispo",
+                    "meta_value": "—",
                     "erp_value": f"{round(erp_val)} DA",
                     "gap": "—",
                 },
