@@ -2593,12 +2593,13 @@ export default function AgentDashboard() {
         url += `&status=${encodeURIComponent(currentFilter)}`;
       }
       if (isValidIsoDate(startDate)) {
-        url += `&start_date=${encodeURIComponent(new Date(startDate).toISOString())}`;
+        url += `&start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}`;
       }
       if (isValidIsoDate(endDate)) {
-        const d = new Date(endDate);
-        d.setHours(23, 59, 59, 999);
-        url += `&end_date=${encodeURIComponent(d.toISOString())}`;
+        url += `&end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}`;
+      }
+      if (dateByMode) {
+        url += `&date_by=${encodeURIComponent(dateByMode)}`;
       }
       return apiFetch<{ data: Order[]; total: number; totalPages: number }>(url, { allStores: true });
     },
@@ -2627,12 +2628,8 @@ export default function AgentDashboard() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (!showAllStores && activeStore?.id) params.set('store_id', activeStore.id);
-      if (isValidIsoDate(startDate)) params.set('start_date', new Date(startDate).toISOString());
-      if (isValidIsoDate(endDate)) {
-        const d = new Date(endDate);
-        d.setHours(23, 59, 59, 999);
-        params.set('end_date', d.toISOString());
-      }
+      if (isValidIsoDate(startDate)) params.set('start_date', startDate + 'T00:00:00.000Z');
+      if (isValidIsoDate(endDate)) params.set('end_date', endDate + 'T23:59:59.999Z');
       params.set('date_by', dateByMode);
       const qs = params.toString();
       const url = `/api/v1/users/${user?.id}/performance${qs ? `?${qs}` : ''}`;
@@ -2643,19 +2640,20 @@ export default function AgentDashboard() {
   });
 
   const agentCountsQuery = useQuery({
-    queryKey: ['agent-orders-counts', user?.id, activeStore?.id, showAllStores, startDate, endDate],
+    queryKey: ['agent-orders-counts', user?.id, activeStore?.id, showAllStores, startDate, endDate, dateByMode],
     queryFn: () => {
       let url = `/api/v1/orders/agent-counts?`;
       if (!showAllStores && activeStore?.id) {
         url += `store_id=${activeStore.id}&`;
       }
       if (isValidIsoDate(startDate)) {
-        url += `start_date=${encodeURIComponent(new Date(startDate).toISOString())}&`;
+        url += `start_date=${encodeURIComponent(startDate + 'T00:00:00.000Z')}&`;
       }
       if (isValidIsoDate(endDate)) {
-        const d = new Date(endDate);
-        d.setHours(23, 59, 59, 999);
-        url += `end_date=${encodeURIComponent(d.toISOString())}&`;
+        url += `end_date=${encodeURIComponent(endDate + 'T23:59:59.999Z')}&`;
+      }
+      if (dateByMode) {
+        url += `date_by=${encodeURIComponent(dateByMode)}&`;
       }
       // Same rationale as ordersQuery: never let the active-store tenant
       // header intersect the results — explicit params + RBAC do the scoping.

@@ -732,12 +732,12 @@ def get_user_performance(
     until = None
     if start_date:
         try:
-            since = parse_local_date_filter(start_date)
+            since = parse_local_date_filter(start_date, is_end_of_day=False)
         except ValueError:
             pass
     if end_date:
         try:
-            until = parse_local_date_filter(end_date)
+            until = parse_local_date_filter(end_date, is_end_of_day=True)
         except ValueError:
             pass
 

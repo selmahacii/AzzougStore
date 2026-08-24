@@ -950,6 +950,7 @@ def get_agent_counts(
     store_id: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    date_by: str = Query("created_at"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -958,8 +959,9 @@ def get_agent_counts(
     cancelled, nrp, abandoned_in_progress, recovered, archived, shipped),
     scoped exactly like the agent's order list.
     """
-    from sqlalchemy import and_, or_
+    from sqlalchemy import and_, or_, func
     from datetime import datetime, timezone
+    from app.core.dates import parse_local_date_filter
 
     # Same reasoning as list_orders: this endpoint scopes itself explicitly
     # below (CONFIRMATEUR union scope, MANAGER's employee_store_id) including
@@ -1000,13 +1002,6 @@ def get_agent_counts(
         base = base_query.filter(Order.store_id == current_user.employee_store_id)
         base_wide = base
     elif current_user.role == "LIVREUR":
-        # Was completely unscoped before this fix (fell through to the
-        # `else` branch below) — a livreur's sidebar badges showed the
-        # ENTIRE store's Logistique numbers (every confirmatrice's shipped/
-        # delivered/returned totals), not just the orders in his own
-        # assigned territory. Same region+livreur_id match as list_orders,
-        # and the same carrier-tracked exclusion (once a parcel has a real
-        # tracking number it's the transporteur's job, not his).
         from sqlalchemy import select as _select_evt
         _acted_ids = _select_evt(OrderEvent.order_id).where(OrderEvent.actor_id == current_user.id)
         _livreur_scope = or_(
@@ -1025,14 +1020,22 @@ def get_agent_counts(
     if store_id and isinstance(store_id, str):
         base = base.filter(Order.store_id == store_id)
         base_wide = base_wide.filter(Order.store_id == store_id)
-    for bound, op_gte in ((start_date, True), (end_date, False)):
-        if bound and isinstance(bound, str):
-            try:
-                dt = datetime.fromisoformat(bound.replace("Z", "+00:00")).replace(tzinfo=None)
-                base = base.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
-                base_wide = base_wide.filter(Order.created_at >= dt if op_gte else Order.created_at <= dt)
-            except ValueError:
-                pass
+
+    date_col = func.coalesce(Order.updated_at, Order.created_at) if date_by in ("delivered_at", "updated_at") else Order.created_at
+    if start_date and isinstance(start_date, str):
+        try:
+            dt_s = parse_local_date_filter(start_date, is_end_of_day=False)
+            base = base.filter(date_col >= dt_s)
+            base_wide = base_wide.filter(date_col >= dt_s)
+        except ValueError:
+            pass
+    if end_date and isinstance(end_date, str):
+        try:
+            dt_e = parse_local_date_filter(end_date, is_end_of_day=True)
+            base = base.filter(date_col <= dt_e)
+            base_wide = base_wide.filter(date_col <= dt_e)
+        except ValueError:
+            pass
 
     # Was 23-24 separate .count() round trips (one per badge — base and
     # base_wide filtered ~10 and ~13 times respectively). Confirmed in prod:
@@ -1306,6 +1309,7 @@ def list_orders(
     customer_phone: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    date_by: str = Query("created_at"),
     delivery_method: Optional[str] = None,   # internal | carrier
     livreur_id: Optional[str] = None,
     carrier_id: Optional[str] = None,        # DeliveryPartner.id (Order.carrier_id)
@@ -1668,16 +1672,17 @@ def list_orders(
             search_terms.append(Order.store_sequence_number == int(clean_search))
 
         query = query.filter(or_(*search_terms))
+    date_col = func.coalesce(Order.updated_at, Order.created_at) if date_by in ("delivered_at", "updated_at") else Order.created_at
     if start_date:
         from app.core.dates import parse_local_date_filter
         try:
-            query = query.filter(Order.created_at >= parse_local_date_filter(start_date))
+            query = query.filter(date_col >= parse_local_date_filter(start_date, is_end_of_day=False))
         except ValueError:
             pass
     if end_date:
         from app.core.dates import parse_local_date_filter
         try:
-            query = query.filter(Order.created_at <= parse_local_date_filter(end_date))
+            query = query.filter(date_col <= parse_local_date_filter(end_date, is_end_of_day=True))
         except ValueError:
             pass
 
@@ -1695,7 +1700,7 @@ def list_orders(
             joinedload(Order.assignee),
             joinedload(Order.livreur),
             joinedload(Order.store),
-        ).order_by(Order.created_at.desc())
+        ).order_by(date_col.desc())
     
     logger.debug(f"[Orders] Query result: store_id={store_id!r}, total={total}, page={page}")
 

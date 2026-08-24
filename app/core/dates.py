@@ -20,13 +20,23 @@ from datetime import datetime, timedelta
 ALGERIA_UTC_OFFSET_HOURS = 1
 
 
-def parse_local_date_filter(date_str: str) -> datetime:
+def parse_local_date_filter(date_str: str, is_end_of_day: bool = False) -> datetime:
     """
-    Parse a 'YYYY-MM-DDTHH:MM:SS(.sss)Z' filter string as Algeria-local
+    Parse a 'YYYY-MM-DDTHH:MM:SS(.sss)Z' or 'YYYY-MM-DD' filter string as Algeria-local
     wall-clock time, returning the equivalent naive-UTC datetime — ready to
     compare directly against DB columns, which are stored naive-UTC.
     """
-    dt = datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+    cleaned = date_str.strip()
+    if len(cleaned) == 10 and cleaned.count("-") == 2:
+        if is_end_of_day:
+            cleaned = f"{cleaned}T23:59:59.999999Z"
+        else:
+            cleaned = f"{cleaned}T00:00:00.000Z"
+    elif is_end_of_day and "T00:00:00" in cleaned:
+        # If an end_date was incorrectly formatted with midnight T00:00:00
+        cleaned = cleaned.replace("T00:00:00.000Z", "T23:59:59.999999Z").replace("T00:00:00Z", "T23:59:59.999999Z")
+
+    dt = datetime.fromisoformat(cleaned.replace("Z", "+00:00")).replace(tzinfo=None)
     if dt.year < 2020 or dt.year > 2050:
         raise ValueError(f"Invalid filter year: {dt.year}")
     return dt - timedelta(hours=ALGERIA_UTC_OFFSET_HOURS)

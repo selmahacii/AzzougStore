@@ -2224,20 +2224,20 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
          if (storeId) url += `&store_id=${storeId}`;
 
          if (period === 'custom' && isValidIsoDate(startDate) && isValidIsoDate(endDate)) {
-            url += `&start_date=${startDate}&end_date=${endDate}`;
+            url += `&start_date=${startDate}T00:00:00.000Z&end_date=${endDate}T23:59:59.999Z`;
          } else if (period === 'today') {
             const today = new Date().toISOString().slice(0, 10);
-            url += `&start_date=${today}&end_date=${today}`;
+            url += `&start_date=${today}T00:00:00.000Z&end_date=${today}T23:59:59.999Z`;
          } else if (period === 'this_month') {
             const now = new Date();
             const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
             const today = now.toISOString().slice(0, 10);
-            url += `&start_date=${firstDay}&end_date=${today}`;
+            url += `&start_date=${firstDay}T00:00:00.000Z&end_date=${today}T23:59:59.999Z`;
          } else if (period === 'last_month') {
             const now = new Date();
             const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
             const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
-            url += `&start_date=${firstDay}&end_date=${lastDay}`;
+            url += `&start_date=${firstDay}T00:00:00.000Z&end_date=${lastDay}T23:59:59.999Z`;
          } else if (period === '7d') {
             url += `&period_days=7`;
          } else {
