@@ -35,6 +35,9 @@ interface TrackedOrder {
   total: number;
   created_at: string | null;
   updated_at: string | null;
+  livreur_id?: string | null;
+  source?: string | null;
+  is_marketplace_upsell?: boolean;
   items?: OrderItemInfo[];
 }
 
