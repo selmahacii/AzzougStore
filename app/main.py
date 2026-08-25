@@ -952,7 +952,7 @@ except Exception as e:
     traceback.print_exc()
 
 # ─── Health & System Endpoints ───────────────────────────────
-@app.get("/", tags=["système"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["système"])
 async def root():
     return {
         "status": "online",
@@ -962,7 +962,7 @@ async def root():
     }
 
 
-@app.get("/health", tags=["système"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["système"])
 async def health_check():
     """Health check endpoint for load balancers and Docker healthcheck."""
     return {"status": "healthy", "version": settings.VERSION}
