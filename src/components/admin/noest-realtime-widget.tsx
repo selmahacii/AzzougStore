@@ -55,7 +55,7 @@ export function NoestRealtimeWidget() {
   const { activeStore } = useAppStore();
   const storeId = activeStore?.id;
 
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OUT_FOR_DELIVERY' | 'SHIPPED' | 'DELIVERED' | 'RETURNED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<TrackedOrder | null>(null);
 
