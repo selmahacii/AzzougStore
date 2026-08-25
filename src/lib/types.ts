@@ -246,6 +246,8 @@ export interface Order {
   last_duplicate_at?: string | null;
   is_pack?: boolean;
   is_upsell?: boolean;
+  is_marketplace_upsell?: boolean;
+  commission_marketplace_rate?: number | null;
   is_abandoned_cart?: boolean;
   is_store_pickup?: boolean;
   abandoned_cart_recovery_fee?: number;
@@ -663,7 +665,7 @@ export interface CartItem {
 // ─── Navigation ─────────────────────────────────────────────
 export type AppView = 'storefront' | 'admin';
 export type StorefrontView = 'home' | 'shop' | 'product' | 'cart' | 'checkout' | 'order-tracking' | 'wishlist';
-export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'stores_menu' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages' | 'cost_calculator' | 'meta_ads' | 'returns' | 'tiktok_ads' | 'upsell' | 'purchase_vouchers' | 'commissions' | 'conversion_optimization';
+export type AdminView = 'overview' | 'orders' | 'employees' | 'analytics' | 'audit' | 'products' | 'stores' | 'stores_menu' | 'promotions' | 'customers' | 'settings' | 'pos' | 'scanner' | 'inventory' | 'expenses' | 'finances' | 'users_management' | 'clients_management' | 'partners' | 'sendpilot' | 'delivery' | 'delivery_partners' | 'visitors' | 'landing_pages' | 'cost_calculator' | 'meta_ads' | 'returns' | 'tiktok_ads' | 'upsell' | 'purchase_vouchers' | 'commissions' | 'conversion_optimization' | 'marketplace_orders';
 
 // ─── API Response ───────────────────────────────────────────
 export interface ApiResponse<T> {

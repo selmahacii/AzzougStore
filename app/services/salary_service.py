@@ -129,8 +129,11 @@ def compute_salary(
     _is_store_pickup = Order.delivery_type.in_(STORE_PICKUP_TYPES)
     _is_home = or_(Order.delivery_type.is_(None), Order.delivery_type.notin_(STORE_PICKUP_TYPES))
     _is_upsell = Order.is_upsell == True
-    _is_marketplace = Order.is_marketplace_upsell == True
-    _not_marketplace = or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None))
+    _is_marketplace = or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE")
+    _not_marketplace = and_(
+        or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
+        or_(Order.source != "MARKETPLACE", Order.source.is_(None))
+    )
 
     row = (
         db.query(
@@ -296,6 +299,7 @@ def _count_normal_delivered(
         or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)),
         Order.recovered_at.is_(None),
         or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
+        or_(Order.source != "MARKETPLACE", Order.source.is_(None)),
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until, date_by=date_by)
 
@@ -319,6 +323,7 @@ def _count_recovered_delivered(
         Order.status            == "DELIVERED",
         or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None)),
         or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
+        or_(Order.source != "MARKETPLACE", Order.source.is_(None)),
         Order.is_deleted        == False,
     ] + _build_time_filters(since, until, date_by=date_by)
 
@@ -380,7 +385,7 @@ def _count_marketplace_delivered(
         store_filter,
         Order.assigned_to  == user_id,
         Order.status       == "DELIVERED",
-        Order.is_marketplace_upsell == True,
+        or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE"),
         Order.is_deleted   == False,
     ] + _build_time_filters(since, until, date_by=date_by)
 

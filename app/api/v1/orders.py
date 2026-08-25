@@ -1135,8 +1135,9 @@ def get_agent_counts(
             # `base`: a manually-entered order can be created by any agent/admin,
             # and whoever's checking this count should see the store's total,
             # not just their own.
-            _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL", Order.is_upsell == False).label("manual"),
+            _sum(sqlfunc.coalesce(Order.source, "") == "MANUAL", Order.is_upsell == False, Order.is_marketplace_upsell == False).label("manual"),
             _sum(Order.is_upsell == True).label("upsell"),
+            _sum(or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE")).label("marketplace"),
             # Noest's own real-time carrier stage (see CARRIER_STAGE_BUCKETS) —
             # scoped to SHIPPED since that's the only state a carrier_stage is
             # meaningful for (before dispatch there's nothing to poll; after
@@ -1549,7 +1550,19 @@ def list_orders(
             # Whatever its current status, not scoped to the confirmation
             # stage like the filters above: a manually-entered order is
             # still "manual" whether it's still NEW or already DELIVERED.
-            query = query.filter(sqlfunc.coalesce(Order.source, "") == "MANUAL")
+            from sqlalchemy import or_ as _or_man
+            query = query.filter(
+                sqlfunc.coalesce(Order.source, "") == "MANUAL",
+                _or_man(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None))
+            )
+        elif status.upper() == "MARKETPLACE":
+            from sqlalchemy import or_ as _or_mp
+            query = query.filter(
+                _or_mp(
+                    Order.is_marketplace_upsell == True,
+                    Order.source == "MARKETPLACE",
+                )
+            )
         elif status.upper() == "UPSELL":
             # An extra product added on-call (agent-dashboard.tsx's "Ajouter
             # un produit existant (Upsell)" during order editing) — flagged
@@ -1614,10 +1627,22 @@ def list_orders(
             query = query.filter(
                 Order.is_abandoned_cart == False,
                 sqlfunc.coalesce(Order.source, "") != "MANUAL",
+                sqlfunc.coalesce(Order.source, "") != "MARKETPLACE",
                 Order.is_upsell == False,
+                or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
             )
         elif _tf == "MANUAL":
-            query = query.filter(sqlfunc.coalesce(Order.source, "") == "MANUAL")
+            query = query.filter(
+                sqlfunc.coalesce(Order.source, "") == "MANUAL",
+                or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)),
+            )
+        elif _tf == "MARKETPLACE":
+            query = query.filter(
+                or_(
+                    Order.is_marketplace_upsell == True,
+                    Order.source == "MARKETPLACE",
+                )
+            )
 
     if assigned_to:
         query = query.filter(Order.assigned_to == assigned_to)

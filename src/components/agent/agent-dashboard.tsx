@@ -83,7 +83,10 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
         { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
         { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
         { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
-        ...(isLivreur ? [] : [{ id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck }]),
+        ...(isLivreur ? [] : [
+          { id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck },
+          { id: 'orders-marketplace', label: 'Commandes Marketplace', filter: 'MARKETPLACE', icon: Store },
+        ]),
         ...(isLivreur ? [
           { id: 'orders-upsell', label: 'Upsell', filter: 'UPSELL', icon: TrendingUp },
           { id: 'orders-returned', label: 'Retours', filter: 'RETURNED', icon: XCircle },
@@ -2712,6 +2715,9 @@ export default function AgentDashboard() {
   };
 
   const getOrderTypeBadge = (order: Order) => {
+    if ((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') {
+      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-pink-50 text-pink-700 border border-pink-200">🏪 Marketplace (50 DA)</span>;
+    }
     if (order.is_store_pickup) {
       return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">🏪 Retrait Magasin</span>;
     }
@@ -3554,6 +3560,11 @@ export default function AgentDashboard() {
                                <StatusBadge status={order.status} />
                                <NrpBadge count={order.nrp_count || 0} />
                                <PendingBadge order={order} />
+                               {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
+                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
+                                     <Store className="size-2.5" /> Marketplace (50 DA)
+                                   </span>
+                                )}
                                {related.length > 0 ? (
                                   <RelatedOrdersBadge
                                     count={related.length}

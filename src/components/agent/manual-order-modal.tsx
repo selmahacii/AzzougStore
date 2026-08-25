@@ -22,7 +22,8 @@ import {
   Minus, 
   Trash2, 
   Layers,
-  ShoppingBag
+  ShoppingBag,
+  Store
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-client';
@@ -835,6 +836,22 @@ export function ManualOrderModal({
                       <label htmlFor="isUpsell" className="text-[10px] font-black uppercase text-purple-700 cursor-pointer flex items-center gap-1">
                         <Zap className="size-3 text-purple-600" />
                         Upsell
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-pink-50 px-2.5 py-1 border border-pink-200 rounded-lg">
+                      <Checkbox 
+                        id="isMarketplaceUpsell" 
+                        checked={isMarketplaceUpsell} 
+                        onCheckedChange={(c) => {
+                          setIsMarketplaceUpsell(!!c);
+                          if (!!c) setOrderSource('MARKETPLACE');
+                          else if (orderSource === 'MARKETPLACE') setOrderSource('MANUAL');
+                        }} 
+                        className="size-3.5 border-pink-300 data-[state=checked]:bg-pink-600 rounded" 
+                      />
+                      <label htmlFor="isMarketplaceUpsell" className="text-[10px] font-black uppercase text-pink-700 cursor-pointer flex items-center gap-1">
+                        <Store className="size-3 text-pink-600" />
+                        Marketplace (50 DA)
                       </label>
                     </div>
                   </div>

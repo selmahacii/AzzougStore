@@ -42,6 +42,7 @@ import {
   Hash,
   BarChart3,
   X,
+  Store,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -212,7 +213,7 @@ function CallbackCountdown({ nextCallbackTime }: { nextCallbackTime: string }) {
   );
 }
 
-export default function OrdersPage() {
+export default function OrdersPage({ initialTypeFilter, defaultMode }: { initialTypeFilter?: string; defaultMode?: string } = {}) {
   const { activeStore, allStores, switchToStore, adminSubView, setAdminSubView, selectedOrderId, setSelectedOrderId, user } = useAppStore();
   const storeId = activeStore?.id ?? '';
   const queryClient = useQueryClient();
@@ -228,6 +229,7 @@ const [timeLeft, setTimeLeft] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [statusFilter, setStatusFilter] = useState<string>(() => {
+    if (initialTypeFilter === 'MARKETPLACE' || defaultMode === 'MARKETPLACE') return 'MARKETPLACE';
     const m: Record<string, string> = {
       NEW: 'NEW', 'EN ATTENTE': 'ASSIGNED', CONFIRMED: 'CONFIRMED',
       FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED',
@@ -235,9 +237,11 @@ const [timeLeft, setTimeLeft] = useState('');
       // RETURNED orders too, not just CANCELLED, or returned orders are
       // invisible everywhere in the ERP despite the tab claiming to show them.
       CANCELLED: 'ARCHIVED',
-      ABANDONED: 'ABANDONED', ALL: 'all',
+      ABANDONED: 'ABANDONED',
+      MARKETPLACE: 'MARKETPLACE',
+      ALL: 'all',
     };
-    return m[(adminSubView as string) || 'NEW'] ?? 'NEW';
+    return m[(adminSubView as string) || defaultMode || 'NEW'] ?? 'NEW';
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -258,7 +262,7 @@ const [timeLeft, setTimeLeft] = useState('');
   }, [startDate, endDate]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [typeFilter, setTypeFilter] = useState<string>(() => initialTypeFilter || 'ALL');
   const [cancelConfirmOrder, setCancelConfirmOrder] = useState<{ orderId: string; orderNumber?: string | number } | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
@@ -628,6 +632,7 @@ const [timeLeft, setTimeLeft] = useState('');
     // ARCHIVED bucket (CANCELLED + RETURNED), not CANCELLED alone.
     CANCELLED: 'ARCHIVED',
     ABANDONED: 'ABANDONED',
+    MARKETPLACE: 'MARKETPLACE',
     ALL: 'all',
   };
 
@@ -660,6 +665,7 @@ const [timeLeft, setTimeLeft] = useState('');
     CANCELLED: 'CANCELLED',
     RETURNED: 'CANCELLED',
     ABANDONED: 'ABANDONED',
+    MARKETPLACE: 'MARKETPLACE',
     MERGED: 'ALL',
   };
 
@@ -981,8 +987,9 @@ const [timeLeft, setTimeLeft] = useState('');
     // JAMAIS les commandes saisies manuellement par un agent — ce sont deux
     // catégories distinctes (voir le filtre "Manuelle" ci-dessous), une
     // commande manuelle ne doit jamais compter dans les deux à la fois.
-    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
-    { id: 'MANUAL',    label: '✍️ Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' },
+    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && o.source !== 'MARKETPLACE' && !(o as any).is_marketplace_upsell && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    { id: 'MANUAL',    label: '✍️ Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' && !(o as any).is_marketplace_upsell },
+    { id: 'MARKETPLACE', label: '🏪 Marketplace (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => (o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE' },
     { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
     { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
     // Deux catégories d'annulation, jamais confondues : une commande NORMALE
@@ -1777,7 +1784,11 @@ const [timeLeft, setTimeLeft] = useState('');
                               📥 Reçue le {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
-                          {order.source === 'MANUAL' ? (
+                          {order.source === 'MARKETPLACE' || (order as any).is_marketplace_upsell ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-100 text-pink-700 border border-pink-200 uppercase flex items-center gap-1">
+                              <Store className="size-2.5" /> Marketplace (50 DA)
+                            </span>
+                          ) : order.source === 'MANUAL' ? (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 text-purple-700 border border-purple-200 uppercase">Manuel</span>
                           ) : order.source === 'FACEBOOK' ? (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase">Meta Ads</span>
@@ -1794,8 +1805,10 @@ const [timeLeft, setTimeLeft] = useState('');
                           {order.is_upsell && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-green-100 text-green-700 border border-green-200 uppercase">💸 Upsell</span>
                           )}
-                          {(order as any).is_marketplace_upsell && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-100 text-pink-700 border border-pink-200 uppercase">Marketplace</span>
+                          {((order as any).is_marketplace_upsell && order.source !== 'MARKETPLACE') && (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-100 text-pink-700 border border-pink-200 uppercase flex items-center gap-1">
+                              <Store className="size-2.5" /> Marketplace (50 DA)
+                            </span>
                           )}
                           {order.is_pack && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">📦 Pack</span>
@@ -2358,7 +2371,7 @@ const [timeLeft, setTimeLeft] = useState('');
 
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         {selectedOrder && (
-          <DialogContent className="max-w-[1300px] w-[96vw] bg-white border-none text-black p-0 rounded-[40px] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col">
+                      <DialogContent className="max-w-[1300px] w-[96vw] bg-white border-none text-black p-0 rounded-[40px] overflow-hidden shadow-2xl max-h-[94vh] flex flex-col">
              {/* Header */}
              <div className="bg-[#2D3436] px-5 sm:px-10 py-5 sm:py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
                 <div className="flex items-center gap-4">
@@ -2369,7 +2382,7 @@ const [timeLeft, setTimeLeft] = useState('');
                       <DialogTitle className="text-lg sm:text-2xl font-black uppercase tracking-tight text-white leading-none">{formatOrderRef(selectedOrder, 'admin')}</DialogTitle>
                       <div className="flex flex-wrap items-center gap-2 mt-1.5">
                          <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Source:</span>
-                         <span className="text-[10px] font-bold text-white/60 uppercase">{selectedOrder.source === 'landing_page' ? 'Landing Page' : selectedOrder.source === 'MANUAL' ? 'Manuel' : (selectedOrder.source || 'MANUAL')}</span>
+                         <span className="text-[10px] font-bold text-white/60 uppercase">{selectedOrder.source === 'landing_page' ? 'Landing Page' : selectedOrder.source === 'MARKETPLACE' ? 'Marketplace (50 DA)' : selectedOrder.source === 'MANUAL' ? 'Manuel' : (selectedOrder.source || 'MANUAL')}</span>
                          <span className="h-3 w-px bg-white/20" />
                          <span className="text-[10px] font-mono text-white/60">{selectedOrder.id.split('-')[0]}</span>
                          <span className="h-3 w-px bg-white/20 mx-1" />
@@ -2377,7 +2390,7 @@ const [timeLeft, setTimeLeft] = useState('');
                          <OrderTypeBadge order={selectedOrder} size="xs" short />
                          {selectedOrder.is_pack && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-[#6C5CE7]/20 text-indigo-200 border border-[#6C5CE7]/30 uppercase tracking-wide">Pack</span>}
                          {selectedOrder.is_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 uppercase tracking-wide">Upsell</span>}
-                         {(selectedOrder as any).is_marketplace_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-500/20 text-pink-200 border border-pink-500/30 uppercase tracking-wide">Marketplace Upsell</span>}
+                         {((selectedOrder as any).is_marketplace_upsell || selectedOrder.source === 'MARKETPLACE') && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-500/20 text-pink-200 border border-pink-500/30 uppercase tracking-wide">🏪 Marketplace (50 DA)</span>}
                          {selectedOrder.livreur_id && (
                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-500/20 text-sky-200 border border-sky-500/30 uppercase tracking-wide">
                              🚴 {selectedOrder.livreur?.name || 'Livreur assigné'}

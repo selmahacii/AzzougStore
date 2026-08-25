@@ -37,6 +37,8 @@ export default function SuperAdminView() {
       return <OverviewPage key="overview" />;
     case 'orders':
       return <OrdersPage key={`orders-${adminSubView || 'all'}`} />;
+    case 'marketplace_orders':
+      return <OrdersPage key="orders-marketplace" initialTypeFilter="MARKETPLACE" />;
     case 'products':
       return <ProductsPage key="products" />;
     case 'inventory':

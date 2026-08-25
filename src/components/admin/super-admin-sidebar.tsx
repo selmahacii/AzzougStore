@@ -93,9 +93,11 @@ const NAV: NavSection[] = [
           { label: 'En livraison',        view: 'orders', subView: 'FOLLOWUP' },
           { label: 'Livrées',             view: 'orders', subView: 'COMPLETED' },
           { label: 'Annulées & Retours',  view: 'orders', subView: 'CANCELLED' },
+          { label: 'Marketplace (50 DA)', view: 'orders', subView: 'MARKETPLACE' },
           { label: 'Toutes',              view: 'orders', subView: 'ALL' },
         ],
       },
+      { label: 'Marketplace', icon: Store, view: 'marketplace_orders' },
       {
         label: 'Inventaire',
         icon: Warehouse,

@@ -202,6 +202,8 @@ class OrderRead(BaseModel):
     assignee:        Optional[ActorRef] = None
     is_pack:         Optional[bool] = False
     is_upsell:       Optional[bool] = False
+    is_marketplace_upsell: Optional[bool] = False
+    commission_marketplace_rate: Optional[int] = None
     is_abandoned_cart: Optional[bool] = False
     abandoned_cart_recovery_fee: Optional[int] = 0
     is_duplicate:    Optional[bool] = False

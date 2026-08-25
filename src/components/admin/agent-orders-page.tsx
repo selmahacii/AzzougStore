@@ -1025,7 +1025,7 @@ export default function AgentOrdersPage() {
                   subtotal: lineTotal,
                   discount: orderDiscount,
                   total,
-                  source: orderSource,
+                  source: isMarketplaceUpsell ? 'MARKETPLACE' : orderSource || 'MANUAL',
                   carrier_id: selectedPartnerId || undefined,
                   assigned_to: user?.id || undefined, // Assigned directly to this agent
                   items: validItems.map(item => ({
@@ -1116,7 +1116,7 @@ export default function AgentOrdersPage() {
                           </div>
                           <div className="flex items-center gap-2 bg-pink-50 px-3 py-1.5 border border-pink-100 rounded-xl hover:bg-pink-100/50 transition-colors">
                              <Checkbox id="isMarketplaceUpsell" checked={isMarketplaceUpsell} onCheckedChange={(c) => setIsMarketplaceUpsell(!!c)} className="size-4 border-pink-200 data-[state=checked]:bg-pink-500 rounded-md" />
-                             <label htmlFor="isMarketplaceUpsell" className="text-[11px] font-black uppercase tracking-widest text-pink-600 cursor-pointer">Commande Marketplace</label>
+                             <label htmlFor="isMarketplaceUpsell" className="text-[11px] font-black uppercase tracking-widest text-pink-600 cursor-pointer">Commande Marketplace (50 DA)</label>
                           </div>
                        </div>
                     </div>
