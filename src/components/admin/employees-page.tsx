@@ -2490,12 +2490,25 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                               <div className="flex justify-between items-center text-xs font-bold text-amber-800 bg-amber-50 p-3 rounded-2xl border border-amber-200/60">
                                  <span className="flex items-center gap-1.5 font-bold">
                                     <span className="size-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                    🟩 Paniers abandonnés récupérés & livrés
+                                    Paniers abandonnés récupérés & livrés
                                  </span>
                                  <span className="font-mono font-black text-amber-900">
                                     + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))}
                                  </span>
                               </div>
+
+                              {/* Commission Marketplace (50 DA) */}
+                              {((stats.marketplace_bonus || 0) > 0 || (stats.marketplace_delivered_count || 0) > 0) && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-pink-700 bg-pink-50 p-3 rounded-2xl border border-pink-200/60">
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                       <span className="size-2 rounded-full bg-pink-500"></span>
+                                       Commandes Marketplace livrées
+                                    </span>
+                                    <span className="font-mono font-black text-pink-900">
+                                       + {stats.marketplace_delivered_count || 0} × {formatPrice(stats.payment_marketplace_upsell_only || 50)} = +{formatPrice(stats.marketplace_bonus ?? ((stats.marketplace_delivered_count || 0) * (stats.payment_marketplace_upsell_only || 50)))}
+                                    </span>
+                                 </div>
+                              )}
 
                               {/* Bonus Upsell */}
                               {(stats.upsell_bonus || 0) > 0 && (

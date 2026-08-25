@@ -772,7 +772,8 @@ def get_user_performance(
         func.sum(case((Order.is_upsell == True, 1), else_=0)).label("upsell"),
         func.sum(case((and_(Order.status.in_(["CONFIRMED", "DELIVERED", "SHIPPED"]), or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_confirmed"),
         func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == True, Order.recovered_at.isnot(None))), 1), else_=0)).label("recovered_delivered"),
-        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None)), 1), else_=0)).label("normal_delivered"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE")), 1), else_=0)).label("marketplace_delivered"),
+        func.sum(case((and_(Order.status == "DELIVERED", or_(Order.is_abandoned_cart == False, Order.is_abandoned_cart.is_(None)), Order.recovered_at.is_(None), or_(Order.is_marketplace_upsell == False, Order.is_marketplace_upsell.is_(None)), func.coalesce(Order.source, "") != "MARKETPLACE"), 1), else_=0)).label("normal_delivered"),
     ).one()
     total_assigned   = totals_row.total or 0
     confirmed_count  = totals_row.confirmed or 0
@@ -782,6 +783,7 @@ def get_user_performance(
     upsell_count     = totals_row.upsell or 0
     recovered_confirmed_count = totals_row.recovered_confirmed or 0
     recovered_delivered_count = totals_row.recovered_delivered or 0
+    marketplace_delivered_count = totals_row.marketplace_delivered or 0
     normal_delivered_count    = totals_row.normal_delivered or 0
 
     salary_data = compute_salary(db, db_user, store_id, since=since, until=until, date_by=date_by)
@@ -926,9 +928,15 @@ def get_user_performance(
     formatted_orders = []
     for o in period_orders:
         is_rec = bool(o.is_abandoned_cart or o.recovered_at)
+        is_mp = bool(getattr(o, "is_marketplace_upsell", False) or getattr(o, "source", None) == "MARKETPLACE")
         comm_earned = 0
         if o.status == "DELIVERED":
-            comm_earned = rec_rate if is_rec else norm_rate
+            if is_mp:
+                comm_earned = getattr(o, "commission_marketplace_rate", 50) or getattr(db_user, "payment_marketplace_upsell_only", 50) or 50
+            elif is_rec:
+                comm_earned = rec_rate
+            else:
+                comm_earned = norm_rate
         elif o.status == "RETURNED":
             comm_earned = -pen_rate
 
@@ -955,8 +963,10 @@ def get_user_performance(
             "total":                  o.total,
             "status":                 o.status,
             "is_abandoned_cart":      is_rec,
+            "is_marketplace_upsell":  is_mp,
+            "source":                 getattr(o, "source", None),
             "recovered_at":           o.recovered_at.isoformat() if getattr(o, "recovered_at", None) else None,
-            "order_type":             "RECOVERED" if is_rec else "NORMAL",
+            "order_type":             "MARKETPLACE" if is_mp else ("RECOVERED" if is_rec else "NORMAL"),
             "created_at":             o.created_at.isoformat() if o.created_at else None,
             "delivered_at":           o.updated_at.isoformat() if o.status == "DELIVERED" and o.updated_at else (o.created_at.isoformat() if o.created_at else None),
             "carrier_stage":          getattr(o, "carrier_stage", None),
@@ -998,6 +1008,9 @@ def get_user_performance(
             "upsell_count":              upsell_count,
             "recovered_confirmed_count": recovered_confirmed_count,
             "recovered_delivered_count": recovered_delivered_count,
+            "marketplace_delivered_count": totals_row.marketplace_delivered or salary_data.get("marketplace_delivered_count", 0),
+            "marketplace_bonus":         salary_data.get("marketplace_bonus", (totals_row.marketplace_delivered or 0) * (getattr(db_user, "payment_marketplace_upsell_only", 50) or 50)),
+            "payment_marketplace_upsell_only": salary_data.get("payment_marketplace_upsell_only", getattr(db_user, "payment_marketplace_upsell_only", 50) or 50),
             "normal_delivered_count":    normal_delivered_count,
             "confirmed_delivered_rate":  round((delivered_count / confirmed_count * 100) if confirmed_count else 0, 1),
             "recovered_delivered_rate":  round((recovered_delivered_count / delivered_count * 100) if delivered_count else 0, 1),

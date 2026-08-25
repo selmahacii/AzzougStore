@@ -1928,17 +1928,17 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
   }
 
   const FILTER_CONFIG: Record<string, { title: string; badge: string; color: string; bg: string }> = {
-    NORMAL_DELIVERED:    { title: 'Commandes Normales Livrées', badge: '🟦 Normales Livrées', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-    RECOVERED_DELIVERED: { title: 'Paniers Abandonnés Récupérés et Livrés', badge: '🟩 Paniers Récupérés Livrés', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-    DELIVERED:           { title: 'Toutes les Commandes Livrées', badge: '🚚 Livraisons (Total)', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-    CONFIRMED:           { title: 'Commandes Confirmées', badge: '📞 Confirmations', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-    RECOVERED:           { title: 'Tous les Paniers Récupérés', badge: '🛒 Paniers Récupérés', color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
-    STORE_PICKUP:        { title: 'Retraits Point de Vente / Magasin', badge: '🏪 Retrait Magasin', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200' },
-    ALL:                 { title: 'Toutes les Commandes Assignées', badge: '👥 Total Assigné', color: 'text-slate-800', bg: 'bg-slate-50 border-slate-200' },
-    CANCELLED:           { title: 'Commandes Annulées', badge: '⚪ Annulées', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
-    RETURNED:            { title: 'Commandes Retournées (Échecs)', badge: '🔴 Retours', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
-    UPSELL:              { title: 'Commandes Upsell / Multi-produits', badge: '🛍️ Upsell', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-    MARKETPLACE:         { title: 'Commandes Marketplace Livrées', badge: '🏪 Marketplace (50 DA)', color: 'text-pink-700', bg: 'bg-pink-50 border-pink-200' },
+    NORMAL_DELIVERED:    { title: 'Commandes Normales Livrées', badge: 'Normales Livrées', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+    RECOVERED_DELIVERED: { title: 'Paniers Abandonnés Récupérés et Livrés', badge: 'Paniers Récupérés Livrés', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+    DELIVERED:           { title: 'Toutes les Commandes Livrées', badge: 'Livraisons (Total)', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
+    CONFIRMED:           { title: 'Commandes Confirmées', badge: 'Confirmations', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+    RECOVERED:           { title: 'Tous les Paniers Récupérés', badge: 'Paniers Récupérés', color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
+    STORE_PICKUP:        { title: 'Retraits Point de Vente / Magasin', badge: 'Retrait Magasin', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200' },
+    ALL:                 { title: 'Toutes les Commandes Assignées', badge: 'Total Assigné', color: 'text-slate-800', bg: 'bg-slate-50 border-slate-200' },
+    CANCELLED:           { title: 'Commandes Annulées', badge: 'Annulées', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
+    RETURNED:            { title: 'Commandes Retournées (Échecs)', badge: 'Retours', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
+    UPSELL:              { title: 'Commandes Upsell / Multi-produits', badge: 'Upsell', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+    MARKETPLACE:         { title: 'Commandes Marketplace Livrées', badge: 'Marketplace (50 DA)', color: 'text-pink-700', bg: 'bg-pink-50 border-pink-200' },
   };
 
   const filteredDrilldownOrders = useMemo(() => {
@@ -1946,10 +1946,11 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
     return rawOrders.filter((ord: any) => {
       let matches = true;
       const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
+      const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
       const isDel = ord.status === 'DELIVERED';
 
       if (drilldownFilter === 'NORMAL_DELIVERED') {
-        matches = isDel && !isRec;
+        matches = isDel && !isRec && !isMp;
       } else if (drilldownFilter === 'RECOVERED_DELIVERED') {
         matches = isDel && isRec;
       } else if (drilldownFilter === 'DELIVERED') {
@@ -1965,7 +1966,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
       } else if (drilldownFilter === 'UPSELL') {
         matches = Boolean(ord.is_upsell);
       } else if (drilldownFilter === 'MARKETPLACE') {
-        matches = isDel && Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
+        matches = isDel && isMp;
       } else if (drilldownFilter === 'STORE_PICKUP') {
         matches = ord.delivery_type === 'OFFICE' || ord.delivery_type === 'STORE_PICKUP';
       } else if (drilldownFilter === 'ALL') {
@@ -2007,13 +2008,14 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
        {/* High Level Stats Grid (Interactive / Clickable for Drilldown) */}
-       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
           {[
             { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterKey: 'CONFIRMED' },
             { label: 'Livraisons (Total)', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50', border: 'border-blue-100', filterKey: 'DELIVERED' },
-            { label: '🟦 Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100', filterKey: 'NORMAL_DELIVERED' },
-            { label: '🟩 Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200', filterKey: 'RECOVERED_DELIVERED' },
-            { label: '🏪 Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100', filterKey: 'STORE_PICKUP' },
+            { label: 'Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100', filterKey: 'NORMAL_DELIVERED' },
+            { label: 'Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200', filterKey: 'RECOVERED_DELIVERED' },
+            { label: 'Marketplace Livrées', val: marketplaceDeliveredCount, color: 'text-pink-700 font-black', bg: 'bg-pink-50', border: 'border-pink-200', filterKey: 'MARKETPLACE' },
+            { label: 'Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100', filterKey: 'STORE_PICKUP' },
             { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50', border: 'border-violet-100', filterKey: 'RECOVERED' },
             { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'ALL' },
             { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'CANCELLED' },
@@ -2057,7 +2059,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                 >
                    <div>
                       <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                         <span>🟦 Rémunération de base (Normales)</span>
+                         <span>Rémunération de base (Normales)</span>
                          <span className="text-[9px] text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
                       </p>
                       <p className="text-[10px] text-slate-400 font-medium">{baseSalaryExplain}</p>
@@ -2069,7 +2071,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                 {(storePickupCount > 0 || recoveredStorePickupCount > 0) && (
                    <div className="border-t pt-4 space-y-3">
                       <p className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">
-                         🏪 Retrait Point de Vente / Magasin
+                         Retrait Point de Vente / Magasin
                       </p>
                       {storePickupCount > 0 && (
                          <div 
@@ -2102,7 +2104,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                 {(paymentRecovered > 0 || (recoveredDeliveredCount || recoveredCount) > 0) && (
                    <div className="border-t pt-4 space-y-3">
                       <p className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1.5">
-                         <span>🟩</span> Paniers Abandonnés Récupérés Livrés (Bonus)
+                         Paniers Abandonnés Récupérés Livrés (Bonus)
                       </p>
                       <div 
                         onClick={() => { setDrilldownFilter('RECOVERED_DELIVERED'); setDrilldownSearch(''); }}
@@ -2116,6 +2118,30 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                             <p className="text-[10px] text-slate-400">{(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}</p>
                          </div>
                          <span className="font-black text-emerald-600">+{formatPrice(abandonedBonus || ((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150)))}</span>
+                      </div>
+                   </div>
+                )}
+
+                {/* Marketplace bonus breakdown */}
+                {(marketplaceDeliveredCount > 0 || marketplaceBonus > 0 || (stats.payment_marketplace_upsell_only || 50) > 0) && (
+                   <div className="border-t pt-4 space-y-3">
+                      <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
+                         Marketplace (Commission 50 DA)
+                      </p>
+                      <div 
+                        onClick={() => { setDrilldownFilter('MARKETPLACE'); setDrilldownSearch(''); }}
+                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-pink-50/60 p-2.5 rounded-xl transition-colors border border-pink-100 group"
+                      >
+                         <div className="space-y-0.5">
+                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                               <span>Commission Commandes Marketplace Livrées</span>
+                               <span className="text-[9px] text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-medium">
+                               {marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)} = {formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}
+                            </p>
+                         </div>
+                         <span className="font-black text-pink-600">+{formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}</span>
                       </div>
                    </div>
                 )}
@@ -2157,28 +2183,6 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                       </div>
                    </div>
                 )}
-
-                {/* Marketplace bonus breakdown */}
-                {marketplaceDeliveredCount > 0 && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
-                         Marketplace (Commission 50 DA)
-                      </p>
-                      <div 
-                        onClick={() => { setDrilldownFilter('MARKETPLACE'); setDrilldownSearch(''); }}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-pink-50/60 p-2.5 rounded-xl transition-colors border border-pink-100 group"
-                      >
-                         <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                               <span>Commission Commandes Marketplace Livrées</span>
-                               <span className="text-[9px] text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
-                            </p>
-                            <p className="text-[10px] text-slate-400">{marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)}</p>
-                         </div>
-                         <span className="font-black text-pink-600">+{formatPrice(marketplaceBonus)}</span>
-                      </div>
-                   </div>
-                )}
              </div>
           </div>
 
@@ -2198,16 +2202,14 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                    <span className="font-medium">Bonus Paniers :</span>
                    <span className="font-bold">+{formatPrice(abandonedBonus)}</span>
                 </div>
+                <div className="flex items-center justify-between text-xs text-pink-300">
+                   <span className="font-medium">Bonus Marketplace ({marketplaceDeliveredCount} × 50 DA) :</span>
+                   <span className="font-bold">+{formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}</span>
+                </div>
                 {upsellBonus > 0 && (
                    <div className="flex items-center justify-between text-xs text-amber-300">
                       <span className="font-medium">Bonus Upsell :</span>
                       <span className="font-bold">+{formatPrice(upsellBonus)}</span>
-                   </div>
-                )}
-                {marketplaceBonus > 0 && (
-                   <div className="flex items-center justify-between text-xs text-pink-300">
-                      <span className="font-medium">Bonus Marketplace :</span>
-                      <span className="font-bold">+{formatPrice(marketplaceBonus)}</span>
                    </div>
                 )}
                 <div className="p-3 bg-slate-800/50 rounded-xl flex items-start gap-2.5 text-[10px] text-slate-400 leading-normal font-medium">
@@ -2275,11 +2277,12 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                {/* Quick filter tabs */}
                <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
                  {[
-                   { id: 'NORMAL_DELIVERED', label: '🟦 Normales Livrées' },
-                   { id: 'RECOVERED_DELIVERED', label: '🟩 Paniers Récup. Livrés' },
-                   { id: 'DELIVERED', label: '🚚 Toutes Livrées' },
-                   { id: 'CONFIRMED', label: '📞 Confirmées' },
-                   { id: 'RETURNED', label: '🔴 Retours' },
+                   { id: 'NORMAL_DELIVERED', label: 'Normales Livrées' },
+                   { id: 'RECOVERED_DELIVERED', label: 'Paniers Récup. Livrés' },
+                   { id: 'MARKETPLACE', label: 'Marketplace (50 DA)' },
+                   { id: 'DELIVERED', label: 'Toutes Livrées' },
+                   { id: 'CONFIRMED', label: 'Confirmées' },
+                   { id: 'RETURNED', label: 'Retours' },
                    { id: 'ALL', label: 'Toutes' },
                  ].map(tab => (
                    <button
@@ -2320,13 +2323,14 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                ) : (
                  filteredDrilldownOrders.map((ord: any) => {
                    const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
+                   const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
                    const isDel = ord.status === 'DELIVERED';
-                   return (
+return (
                      <div
                        key={ord.id}
                        className={cn(
                          "bg-white rounded-2xl p-4 border transition-all hover:shadow-md space-y-3",
-                         isRec ? "border-emerald-200/80 bg-emerald-50/10" : "border-slate-200"
+                         isMp ? "border-pink-200/80 bg-pink-50/10" : (isRec ? "border-emerald-200/80 bg-emerald-50/10" : "border-slate-200")
                        )}
                      >
                        {/* Row 1: Order ref, Status, Date & Type Badge */}
@@ -2344,13 +2348,17 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                              {copiedId === ord.id ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
                            </button>
                            
-                           {isRec ? (
+                           {isMp ? (
+                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-200">
+                               Marketplace (50 DA)
+                             </span>
+                           ) : isRec ? (
                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                               🟩 Panier Récupéré
+                               Panier Récupéré
                              </span>
                            ) : (
                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
-                               🟦 Normale
+                               Normale
                              </span>
                            )}
 
