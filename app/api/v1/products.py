@@ -295,6 +295,7 @@ def read_products(
                 "main_image": p.main_image, "images": p.images, "variants": p.variants,
                 "brand": p.brand, "category": p.category, "tags": p.tags,
                 "is_active": p.is_active, "is_featured": p.is_featured,
+                "is_upsell_only": getattr(p, "is_upsell_only", False),
                 "is_pack": p.is_pack, "pack_items": p.pack_items,
                 "shipping_model": p.shipping_model, "allowed_carriers": p.allowed_carriers,
                 "delivery_fees": p.delivery_fees,

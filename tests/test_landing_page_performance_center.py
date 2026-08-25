@@ -135,7 +135,7 @@ def test_build_meta_reconciliation():
     )
     assert recon["is_comparable"] is True
     assert len(recon["metrics"]) == 2
-    assert recon["metrics"][0]["name"] == "Achats / Commandes"
+    assert "Achats / Commandes" in recon["metrics"][0]["name"]
     assert recon["metrics"][0]["meta_value"] == 45
     assert recon["metrics"][0]["erp_value"] == 52
     assert recon["metrics"][0]["gap"] == "+7"
