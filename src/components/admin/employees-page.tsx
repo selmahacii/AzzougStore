@@ -1802,7 +1802,7 @@ Commission Upsell
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                              Commission Marketplace (Upsell Seul)
+                              Commission Marketplace (50 DA)
                            </h5>
                            <div className="space-y-1.5">
                                <Label className="text-[10px] font-semibold text-[#636E72]">Commande Marketplace livrée (DA)</Label>
@@ -1819,7 +1819,7 @@ Commission Upsell
                                </div>
                             </div>
                             <p className="text-[9px] text-[#4b6584] leading-normal font-medium">
-                               Commission unique de 50 DA (par défaut) pour les commandes de la marketplace qui ne contiennent que des produits upsell (remplace la commission normale).
+                               Commission fixe de 50 DA (par défaut) attribuée à la confirmatrice pour chaque commande marketplace livrée (remplace la commission normale).
                             </p>
                         </div>
                      </div>

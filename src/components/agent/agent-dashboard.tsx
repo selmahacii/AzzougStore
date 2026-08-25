@@ -1936,6 +1936,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
     CANCELLED:           { title: 'Commandes Annulées', badge: '⚪ Annulées', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
     RETURNED:            { title: 'Commandes Retournées (Échecs)', badge: '🔴 Retours', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
     UPSELL:              { title: 'Commandes Upsell / Multi-produits', badge: '🛍️ Upsell', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+    MARKETPLACE:         { title: 'Commandes Marketplace Livrées', badge: '🏪 Marketplace (50 DA)', color: 'text-pink-700', bg: 'bg-pink-50 border-pink-200' },
   };
 
   const filteredDrilldownOrders = useMemo(() => {
@@ -1961,6 +1962,8 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
         matches = ord.status === 'CANCELLED';
       } else if (drilldownFilter === 'UPSELL') {
         matches = Boolean(ord.is_upsell);
+      } else if (drilldownFilter === 'MARKETPLACE') {
+        matches = isDel && Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
       } else if (drilldownFilter === 'STORE_PICKUP') {
         matches = ord.delivery_type === 'OFFICE' || ord.delivery_type === 'STORE_PICKUP';
       } else if (drilldownFilter === 'ALL') {
@@ -2157,14 +2160,20 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                 {marketplaceDeliveredCount > 0 && (
                    <div className="border-t pt-4 space-y-3">
                       <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
-                         Marketplace Upsell (Bonus)
+                         Marketplace (Commission 50 DA)
                       </p>
-                      <div className="flex items-center justify-between text-xs">
+                      <div 
+                        onClick={() => { setDrilldownFilter('MARKETPLACE'); setDrilldownSearch(''); }}
+                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-pink-50/60 p-2.5 rounded-xl transition-colors border border-pink-100 group"
+                      >
                          <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700">Commandes marketplace livrées</p>
-                            <p className="text-[10px] text-slate-400">{marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''}</p>
+                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                               <span>Commission Commandes Marketplace Livrées</span>
+                               <span className="text-[9px] text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400">{marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)}</p>
                          </div>
-                         <span className="font-bold text-pink-600">+{formatPrice(marketplaceBonus)}</span>
+                         <span className="font-black text-pink-600">+{formatPrice(marketplaceBonus)}</span>
                       </div>
                    </div>
                 )}
