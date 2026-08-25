@@ -68,6 +68,7 @@ const PAGE_TITLES: Record<AdminView, string> = {
    upsell: 'Upsell & Commissions',
    purchase_vouchers: 'Achats & Entrées',
    commissions: 'Commissions',
+   marketplace_orders: 'Commandes Marketplace',
 };
 
 
