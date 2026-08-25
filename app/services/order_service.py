@@ -47,13 +47,13 @@ _VALID_TRANSITIONS: dict[str, list[str]] = {
     "NEW":         ["ASSIGNED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED", "DELIVERED"],
     "ASSIGNED":    ["CALLED", "RETURNED", "CANCELLED", "IN_PROGRESS", "CONFIRMED", "RESCHEDULED", "DELIVERED"],
     "CALLED":      ["CONFIRMED", "NEW", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
-    "IN_PROGRESS": ["CONFIRMED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS", "DELIVERED"],
-    "RESCHEDULED": ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
+    "IN_PROGRESS": ["CONFIRMED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS", "DELIVERED", "SHIPPED"],
+    "RESCHEDULED": ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED", "SHIPPED"],
     "CONFIRMED":   ["SHIPPED", "DELIVERED", "RETURNED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED"],
-    "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED"],
-    "DELIVERED":   ["RETURNED"],
-    "RETURNED":    [],
-    "CANCELLED":   ["IN_PROGRESS", "CONFIRMED", "DELIVERED"],
+    "SHIPPED":     ["DELIVERED", "RETURNED", "CANCELLED", "RESCHEDULED", "IN_PROGRESS", "CONFIRMED"],
+    "DELIVERED":   ["RETURNED", "CANCELLED"],
+    "RETURNED":    ["IN_PROGRESS", "CONFIRMED", "RESCHEDULED", "CANCELLED"],
+    "CANCELLED":   ["IN_PROGRESS", "CONFIRMED", "DELIVERED", "RESCHEDULED", "NEW"],
     "ABANDONED":   ["CONFIRMED", "CANCELLED", "IN_PROGRESS", "RESCHEDULED", "DELIVERED"],
 }
 
@@ -1580,8 +1580,8 @@ class OrderService:
                     logger.warning("Could not push note update to Noest for order %s: %s", order.id, exc)
 
         if new_status and new_status != old_status:
-            # Enforce state machine (SUPER_ADMIN and ADMIN are allowed to override state machine constraints)
-            if actor_role not in ("SUPER_ADMIN", "ADMIN") and not _is_valid_transition(old_status, new_status):
+            # Enforce state machine (SUPER_ADMIN, ADMIN, MANAGER, and AGENT_MANAGER are allowed to override state machine constraints)
+            if actor_role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "AGENT_MANAGER") and not _is_valid_transition(old_status, new_status):
                 raise InvalidStateTransitionError(
                     message=f"Transition invalide: {old_status} → {new_status}.",
                     context={"from": old_status, "to": new_status},
