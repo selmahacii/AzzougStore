@@ -1129,6 +1129,20 @@ def get_agent_counts(
                 or_(Order.tracking_number == None, Order.tracking_number == ""),
                 Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
             ).label("internal_delivery"),
+            _sum(
+                Order.status == "DELIVERED",
+                Order.livreur_id.isnot(None),
+                or_(Order.tracking_number == None, Order.tracking_number == ""),
+            ).label("internal_delivered"),
+            _sum(
+                Order.status == "DELIVERED",
+                or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE"),
+            ).label("marketplace_delivered"),
+            _sum(
+                Order.status == "DELIVERED",
+                Order.livreur_id.isnot(None),
+                or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE"),
+            ).label("marketplace_internal_delivered"),
             _sum(Order.status.in_(["CANCELLED", "RETURNED"])).label("archived"),
             # "Commandes Manuelles" sidebar badge — store-wide like shipped/
             # delivered/returned above, not scoped to the confirmatrice's own
@@ -1593,6 +1607,22 @@ def list_orders(
                 _or(Order.tracking_number.is_(None), Order.tracking_number == ""),
                 Order.status.notin_(["DELIVERED", "RETURNED", "MERGED"]),
             )
+        elif status.upper() == "INTERNAL_DELIVERED":
+            from sqlalchemy import or_ as _or_id
+            query = query.filter(
+                Order.status == "DELIVERED",
+                Order.livreur_id.isnot(None),
+                _or_id(Order.tracking_number.is_(None), Order.tracking_number == ""),
+            )
+        elif status.upper() == "MARKETPLACE_DELIVERED":
+            from sqlalchemy import or_ as _or_mpd
+            query = query.filter(
+                Order.status == "DELIVERED",
+                _or_mpd(
+                    Order.is_marketplace_upsell == True,
+                    Order.source == "MARKETPLACE",
+                )
+            )
         else:
             query = query.filter(Order.status == status.upper())
     else:
@@ -1643,6 +1673,24 @@ def list_orders(
                     Order.source == "MARKETPLACE",
                 )
             )
+        elif _tf == "INTERNAL_DELIVERED":
+            from sqlalchemy import or_ as _or_id_tf
+            query = query.filter(
+                Order.status == "DELIVERED",
+                Order.livreur_id.isnot(None),
+                _or_id_tf(Order.tracking_number.is_(None), Order.tracking_number == ""),
+            )
+        elif _tf == "MARKETPLACE_DELIVERED":
+            from sqlalchemy import or_ as _or_mpd_tf
+            query = query.filter(
+                Order.status == "DELIVERED",
+                _or_mpd_tf(
+                    Order.is_marketplace_upsell == True,
+                    Order.source == "MARKETPLACE",
+                )
+            )
+        elif _tf == "INTERNAL":
+            query = query.filter(Order.livreur_id.isnot(None))
 
     if assigned_to:
         query = query.filter(Order.assigned_to == assigned_to)

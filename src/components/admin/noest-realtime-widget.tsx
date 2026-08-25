@@ -239,6 +239,10 @@ export function NoestRealtimeWidget() {
         if (o.status !== 'SHIPPED') return false;
       } else if (statusFilter === 'DELIVERED') {
         if (o.status !== 'DELIVERED') return false;
+      } else if (statusFilter === 'INTERNAL_DELIVERED') {
+        if (o.status !== 'DELIVERED' || !o.livreur_id || Boolean(o.tracking_number)) return false;
+      } else if (statusFilter === 'MARKETPLACE_DELIVERED') {
+        if (o.status !== 'DELIVERED' || !(Boolean((o as any).is_marketplace_upsell || o.source === 'MARKETPLACE'))) return false;
       } else if (statusFilter === 'RETURNED') {
         if (o.status !== 'RETURNED') return false;
       } else {
@@ -389,6 +393,8 @@ export function NoestRealtimeWidget() {
         <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-10 gap-2">
           {(() => {
             const deliveredCount = orders.filter(o => getStageConfig(o).key === 'DELIVERED').length;
+            const internalDeliveredCount = orders.filter(o => o.status === 'DELIVERED' && o.livreur_id && !o.tracking_number).length;
+            const marketplaceDeliveredCount = orders.filter(o => o.status === 'DELIVERED' && ((o as any).is_marketplace_upsell || o.source === 'MARKETPLACE')).length;
             const outNoestCount = orders.filter(o => getStageConfig(o).key === 'OUT_NOEST').length;
             const outInternalCount = orders.filter(o => getStageConfig(o).key === 'OUT_INTERNAL').length;
             const versHubCount = orders.filter(o => getStageConfig(o).key === 'VERS_HUB').length;
@@ -401,8 +407,10 @@ export function NoestRealtimeWidget() {
 
             const items = [
               { label: 'Commandes Livrées', value: deliveredCount, sub: `${deliveredCount} articles`, color: '#00B894', filterKey: 'DELIVERED' },
+              { label: 'Interne Livrées', value: internalDeliveredCount, sub: 'livreur interne', color: '#059669', filterKey: 'INTERNAL_DELIVERED' },
+              { label: 'Marketplace Livrées', value: marketplaceDeliveredCount, sub: 'marketplace (50 DA)', color: '#DB2777', filterKey: 'MARKETPLACE_DELIVERED' },
               { label: 'Livraison Noest', value: outNoestCount, sub: 'transporteur noest', color: '#6C5CE7', filterKey: 'OUT_NOEST' },
-              { label: 'Livraison Interne', value: outInternalCount, sub: 'livreur interne', color: '#10B981', filterKey: 'OUT_INTERNAL' },
+              { label: 'Livraison Interne', value: outInternalCount, sub: 'en cours livreur', color: '#10B981', filterKey: 'OUT_INTERNAL' },
               { label: 'Vers Hub / Ramassé', value: versHubCount, sub: 'ramassé / vers centre', color: '#3B82F6', filterKey: 'VERS_HUB' },
               { label: 'En Hub', value: inHubCount, sub: 'reçu au centre', color: '#8B5CF6', filterKey: 'IN_HUB' },
               { label: 'En Transit', value: shippedCount, sub: 'en route', color: '#0984E3', filterKey: 'IN_TRANSIT' },

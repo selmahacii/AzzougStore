@@ -100,6 +100,8 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
       subModules: [
         { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
         { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
+        { id: 'delivery-internal-delivered', label: 'Interne Livrées', filter: 'INTERNAL_DELIVERED', icon: CheckCircle2 },
+        { id: 'delivery-marketplace-delivered', label: 'Marketplace Livrées', filter: 'MARKETPLACE_DELIVERED', icon: Store },
         { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
         ...(isLivreur ? [] : [
           { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
@@ -3527,6 +3529,107 @@ export default function AgentDashboard() {
                          : `${filteredOrders.length} résultats`}
                      </span>
                   </div>
+
+                {/* Indicateurs Logistique & Livraison Interne */}
+                {(activeModule === 'logistics' || isLivreur || activeSubModule.startsWith('delivery-')) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div 
+                      onClick={() => {
+                        setActiveModule('logistics');
+                        setActiveSubModule('delivery-internal-delivered');
+                      }}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
+                        activeSubModule === 'delivery-internal-delivered'
+                          ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/20"
+                          : "bg-white border-slate-100 hover:border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Interne Livrées</span>
+                        <div className="size-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                          <CheckCircle2 className="size-3.5" />
+                        </div>
+                      </div>
+                      <p className="text-xl font-black text-emerald-900 mt-2">
+                        {agentCountsQuery.data?.counts?.internal_delivered ?? 0}
+                      </p>
+                      <p className="text-[10px] font-semibold text-emerald-600/80 mt-0.5">Par livreur interne</p>
+                    </div>
+
+                    <div 
+                      onClick={() => {
+                        setActiveModule('logistics');
+                        setActiveSubModule('delivery-marketplace-delivered');
+                      }}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
+                        activeSubModule === 'delivery-marketplace-delivered'
+                          ? "bg-pink-50 border-pink-300 ring-2 ring-pink-400/20"
+                          : "bg-white border-slate-100 hover:border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-pink-700">Marketplace Livrées</span>
+                        <div className="size-7 rounded-lg bg-pink-100 text-pink-600 flex items-center justify-center">
+                          <Store className="size-3.5" />
+                        </div>
+                      </div>
+                      <p className="text-xl font-black text-pink-900 mt-2">
+                        {agentCountsQuery.data?.counts?.marketplace_delivered ?? 0}
+                      </p>
+                      <p className="text-[10px] font-semibold text-pink-600/80 mt-0.5">Commission 50 DA</p>
+                    </div>
+
+                    <div 
+                      onClick={() => {
+                        setActiveModule('logistics');
+                        setActiveSubModule('delivery-internal');
+                      }}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
+                        activeSubModule === 'delivery-internal'
+                          ? "bg-sky-50 border-sky-300 ring-2 ring-sky-400/20"
+                          : "bg-white border-slate-100 hover:border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">En cours livreur</span>
+                        <div className="size-7 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center">
+                          <Truck className="size-3.5" />
+                        </div>
+                      </div>
+                      <p className="text-xl font-black text-sky-900 mt-2">
+                        {agentCountsQuery.data?.counts?.internal_delivery ?? 0}
+                      </p>
+                      <p className="text-[10px] font-semibold text-sky-600/80 mt-0.5">Tournées en cours</p>
+                    </div>
+
+                    <div 
+                      onClick={() => {
+                        setActiveModule('logistics');
+                        setActiveSubModule('delivery-completed');
+                      }}
+                      className={cn(
+                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
+                        activeSubModule === 'delivery-completed'
+                          ? "bg-blue-50 border-blue-300 ring-2 ring-blue-400/20"
+                          : "bg-white border-slate-100 hover:border-slate-200"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Total Livrées</span>
+                        <div className="size-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                          <Package className="size-3.5" />
+                        </div>
+                      </div>
+                      <p className="text-xl font-black text-blue-900 mt-2">
+                        {agentCountsQuery.data?.counts?.delivered ?? 0}
+                      </p>
+                      <p className="text-[10px] font-semibold text-blue-600/80 mt-0.5">Toutes expéditions</p>
+                    </div>
+                  </div>
+                )}
                </div>
 
                {ordersQuery.isLoading ? (

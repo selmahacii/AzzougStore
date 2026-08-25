@@ -1012,6 +1012,8 @@ const [timeLeft, setTimeLeft] = useState('');
     { id: 'PACK',      label: '📦 Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
     { id: 'TRACKED',   label: '🔵 NOEST/Transporteur', color: 'bg-cyan-50 text-cyan-700 border-cyan-200',       match: (o) => !!o.tracking_number },
     { id: 'INTERNAL',  label: '🚴 Livraison interne',  color: 'bg-sky-50 text-sky-700 border-sky-200',          match: (o) => !!o.livreur_id },
+    { id: 'INTERNAL_DELIVERED', label: '🚴 Interne Livrées', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => o.status === 'DELIVERED' && !!o.livreur_id && !o.tracking_number },
+    { id: 'MARKETPLACE_DELIVERED', label: '🏪 Marketplace Livrées (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => o.status === 'DELIVERED' && ((o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE') },
     { id: 'PROMO',     label: '🏷️ Avec promo',      color: 'bg-pink-50 text-pink-700 border-pink-200',          match: (o) => !!o.promo_code },
   ];
   const displayOrders = typeFilter === 'ALL'
