@@ -446,10 +446,14 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
                     <p className="font-mono font-bold text-slate-800">{order.customer_phone2}</p>
                   </div>
                 )}
-                {typeof (order as any).commission === 'number' && (
+                {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE' || typeof (order as any).commission === 'number') && (
                   <div className="space-y-0.5">
-                    <p className="font-bold text-slate-400 text-[10px] uppercase tracking-wider">Ma Commission</p>
-                    <p className="font-extrabold text-emerald-600">{formatPrice((order as any).commission)}</p>
+                    <p className="font-bold text-slate-400 text-[10px] uppercase tracking-wider">
+                      {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') ? 'Commission Marketplace' : 'Ma Commission'}
+                    </p>
+                    <p className={cn("font-extrabold", ((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') ? "text-pink-600 font-mono" : "text-emerald-600")}>
+                      {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') ? '+50 DA' : formatPrice((order as any).commission)}
+                    </p>
                   </div>
                 )}
                 <div className="space-y-0.5 col-span-2">

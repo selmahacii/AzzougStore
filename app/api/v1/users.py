@@ -930,13 +930,10 @@ def get_user_performance(
         is_rec = bool(o.is_abandoned_cart or o.recovered_at)
         is_mp = bool(getattr(o, "is_marketplace_upsell", False) or getattr(o, "source", None) == "MARKETPLACE")
         comm_earned = 0
-        if o.status == "DELIVERED":
-            if is_mp:
-                comm_earned = getattr(o, "commission_marketplace_rate", 50) or getattr(db_user, "payment_marketplace_upsell_only", 50) or 50
-            elif is_rec:
-                comm_earned = rec_rate
-            else:
-                comm_earned = norm_rate
+        if is_mp:
+            comm_earned = getattr(o, "commission_marketplace_rate", 50) or getattr(db_user, "payment_marketplace_upsell_only", 50) or 50
+        elif o.status == "DELIVERED":
+            comm_earned = rec_rate if is_rec else norm_rate
         elif o.status == "RETURNED":
             comm_earned = -pen_rate
 

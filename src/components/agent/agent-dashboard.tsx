@@ -838,6 +838,22 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 </button>
               </div>
             )}
+            {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
+              <div className="p-3 bg-pink-50 border border-pink-200 rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-7 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold">
+                    <Store className="size-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-pink-950">Commande Marketplace</p>
+                    <p className="text-[10px] font-semibold text-pink-600/80">Attribution confirmateur</p>
+                  </div>
+                </div>
+                <span className="text-xs font-black font-mono text-pink-700 bg-white px-2.5 py-1 rounded-xl border border-pink-200 shadow-xs">
+                  Commission : +50 DA
+                </span>
+              </div>
+            )}
             {order.status === 'ABANDONED' && (
               <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl text-[11px] text-violet-700 font-semibold leading-relaxed flex gap-2">
                 <AlertCircle className="size-4 shrink-0 text-violet-500 mt-0.5" />
@@ -2431,14 +2447,9 @@ return (
                                    {ord.carrier_stage_label}
                                  </span>
                                )}
-                               {ord.carrier_tracking_note && (
-                                 <p className="text-[10px] text-slate-500 italic line-clamp-1" title={ord.carrier_tracking_note}>
-                                   {ord.carrier_tracking_note}
-                                 </p>
-                               )}
                              </div>
                            ) : (
-                             <p className="text-slate-400 italic">Colis non expédié Noest</p>
+                             <p className="text-slate-400 italic">Colis non expédié</p>
                            )}
                          </div>
 
@@ -2447,14 +2458,28 @@ return (
                            <div>
                              <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Montant Total</p>
                              <p className="text-base font-black text-slate-900 font-mono">{formatPrice(ord.total || 0)}</p>
-                             {ord.commission_amount !== undefined && (
-                               <p className={cn(
-                                 "text-[11px] font-black mt-0.5",
-                                 ord.commission_amount > 0 ? "text-emerald-600" : (ord.commission_amount < 0 ? "text-rose-600" : "text-slate-400")
-                               )}>
-                                 Commission: {ord.commission_amount > 0 ? `+${formatPrice(ord.commission_amount)}` : (ord.commission_amount < 0 ? `-${formatPrice(Math.abs(ord.commission_amount))}` : '0 DA')}
-                               </p>
-                             )}
+                             {(() => {
+                               const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
+                               const comm = isMp ? (ord.commission_marketplace_rate || ord.commission_amount || 50) : ord.commission_amount;
+                               if (isMp) {
+                                 return (
+                                   <p className="text-[11px] font-black mt-0.5 text-pink-600 font-mono">
+                                     Commission: +{formatPrice(comm || 50)}
+                                   </p>
+                                 );
+                               }
+                               if (comm !== undefined && comm !== null) {
+                                 return (
+                                   <p className={cn(
+                                     "text-[11px] font-black mt-0.5 font-mono",
+                                     comm > 0 ? "text-emerald-600" : (comm < 0 ? "text-rose-600" : "text-slate-400")
+                                   )}>
+                                     Commission: {comm > 0 ? `+${formatPrice(comm)}` : (comm < 0 ? `-${formatPrice(Math.abs(comm))}` : '0 DA')}
+                                   </p>
+                                 );
+                               }
+                               return null;
+                             })()}
                            </div>
 
                            {onSelectOrder && (

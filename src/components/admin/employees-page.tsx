@@ -2712,18 +2712,22 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                           {({
                                              NEW: 'Nouvelle', ASSIGNED: 'Assignée', CALLED: 'Appelée',
                                              IN_PROGRESS: 'En attente', RESCHEDULED: 'Reportée',
-                                             CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: '🟢 Livrée',
-                                             CANCELLED: '🔴 Annulée', RETURNED: '🔴 Retournée', ABANDONED: 'Abandonné'
+                                             CONFIRMED: 'Confirmée', SHIPPED: 'Expédiée', DELIVERED: 'Livrée',
+                                             CANCELLED: 'Annulée', RETURNED: 'Retournée', ABANDONED: 'Abandonné'
                                           } as Record<string, string>)[o.status] || o.status}
                                        </span>
-                                       {o.commission_amount !== 0 && (
+                                       {((o as any).is_marketplace_upsell || o.source === 'MARKETPLACE') ? (
+                                          <span className="text-xs font-black font-mono px-2 py-0.5 rounded-lg border bg-pink-50 text-pink-700 border-pink-200">
+                                             +50 DA
+                                          </span>
+                                       ) : (o.commission_amount !== 0 && (
                                           <span className={cn(
                                              "text-xs font-black font-mono px-2 py-0.5 rounded-lg border",
                                              o.commission_amount > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
                                           )}>
                                              {o.commission_amount > 0 ? `+${formatPrice(o.commission_amount)}` : `-${formatPrice(Math.abs(o.commission_amount))}`}
                                           </span>
-                                       )}
+                                       ))}
                                     </div>
                                  </div>
 
