@@ -1794,13 +1794,18 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               })}
             </div>
           </div>
-          {/* Traçabilité / Historique des actions */}
+          {/* Traçabilité & Historique d'accès (Vendeur / Admin / Agent) */}
           <div className="space-y-3 pt-4 border-t">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-              <Activity className="size-3.5" />
-              Traçabilité / Historique
-            </p>
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                <Activity className="size-3.5 text-blue-600" />
+                Traçabilité & Historique d'accès
+              </p>
+              <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                Consultations, modifications & appels
+              </span>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 shadow-xs">
               <OrderTraceabilityPanel orderId={order.id} />
             </div>
           </div>

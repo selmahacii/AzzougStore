@@ -35,7 +35,9 @@ interface TraceEvent {
 const EVENT_CONFIG: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   NEW:          { label: 'Commande créée',       icon: Package,      color: '#3b82f6', bg: '#eff6ff' },
   ASSIGNED:     { label: 'Assignée à un agent',  icon: UserCheck,    color: '#8b5cf6', bg: '#f5f3ff' },
-  AGENT_VIEWED: { label: 'Vue par l\'agent',     icon: Eye,          color: '#06b6d4', bg: '#ecfeff' },
+  AGENT_VIEWED: { label: 'Vue par l\'agent',     icon: Eye,          color: '#0284c7', bg: '#f0f9ff' },
+  VIEWED:       { label: 'Consultation de la fiche', icon: Eye,      color: '#0284c7', bg: '#f0f9ff' },
+  ORDER_VIEWED: { label: 'Consultation de la fiche', icon: Eye,      color: '#0284c7', bg: '#f0f9ff' },
   CALLED:       { label: 'Client appelé',        icon: Phone,        color: '#f59e0b', bg: '#fffbeb' },
   CONFIRMED:    { label: 'Commande confirmée',   icon: CheckCircle2, color: '#10b981', bg: '#ecfdf5' },
   SHIPPED:      { label: 'Expédiée',             icon: Truck,        color: '#6366f1', bg: '#eef2ff' },
@@ -58,9 +60,12 @@ const CALL_RESULT_LABELS: Record<string, { label: string; icon: any; color: stri
 
 function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?: TraceEvent; isLast: boolean }) {
   const isModificationOnly = event.from_status === event.to_status && event.note?.startsWith("Modification");
-  const cfg = isModificationOnly
-    ? { label: 'Modification des détails', icon: ArrowRightLeft, color: '#d97706', bg: '#fef3c7' }
-    : (EVENT_CONFIG[event.to_status] ?? EVENT_CONFIG.NEW);
+  const isViewOnly = ['VIEWED', 'ORDER_VIEWED', 'AGENT_VIEWED'].includes(event.to_status) || (event.note && (event.note.includes('Consultation') || event.note.includes('consultée')));
+  const cfg = isViewOnly
+    ? { label: 'Consultation de la fiche', icon: Eye, color: '#0284c7', bg: '#f0f9ff' }
+    : (isModificationOnly
+      ? { label: 'Modification des détails', icon: ArrowRightLeft, color: '#d97706', bg: '#fef3c7' }
+      : (EVENT_CONFIG[event.to_status] ?? EVENT_CONFIG.NEW));
   const Icon = cfg.icon;
   const callCfg = event.call_result ? CALL_RESULT_LABELS[event.call_result] : null;
   const CallIcon = callCfg?.icon;
@@ -141,8 +146,8 @@ function EventRow({ event, prevEvent, isLast }: { event: TraceEvent; prevEvent?:
         )}
 
         {/* Note */}
-        {event.note && event.note !== 'Commande consultée par l\'agent' && (
-          <div className="mt-1.5 px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-600">
+        {event.note && (
+          <div className="mt-1.5 px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700 font-medium leading-relaxed">
             {event.note}
           </div>
         )}

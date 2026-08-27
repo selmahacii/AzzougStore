@@ -12,6 +12,7 @@ import re
 from collections import Counter
 from typing import Any, List, Optional
 import uuid
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, Request, HTTPException, BackgroundTasks, Body, UploadFile, File
 from sqlalchemy import func, func as sqlfunc, and_
@@ -2720,6 +2721,37 @@ def get_order(
 
     _assert_order_access(order, current_user, db)
     _sync_item_images_from_product(db, [order])
+
+    # Audit trail: log consultation of order details (debounced by 5 min per actor)
+    try:
+        five_mins_ago = datetime.utcnow() - timedelta(minutes=5)
+        recent_view = (
+            db.query(OrderEvent)
+            .filter(
+                OrderEvent.order_id == order.id,
+                OrderEvent.actor_id == current_user.id,
+                OrderEvent.to_status.in_(["VIEWED", "ORDER_VIEWED", "AGENT_VIEWED"]),
+                OrderEvent.created_at >= five_mins_ago,
+            )
+            .first()
+        )
+        if not recent_view:
+            role_label = current_user.role or "Utilisateur"
+            view_event = OrderEvent(
+                id=str(uuid.uuid4()),
+                order_id=order.id,
+                actor_id=current_user.id,
+                actor_role=current_user.role,
+                from_status=order.status,
+                to_status="VIEWED",
+                note=f"Consultation de la fiche commande par {current_user.name} ({role_label})",
+                created_at=datetime.utcnow(),
+            )
+            db.add(view_event)
+            db.commit()
+    except Exception as _ev_err:
+        logger.warning(f"Failed to record view event: {_ev_err}")
+        db.rollback()
 
     # Attach merged duplicates for the duplication-history panel
     children = db.query(Order).filter(
