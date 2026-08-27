@@ -3566,8 +3566,8 @@ export default function AgentDashboard() {
                      </span>
                   </div>
 
-                {/* Indicateurs Logistique & Livraison Interne */}
-                {(activeModule === 'logistics' || isLivreur || activeSubModule.startsWith('delivery-')) && (
+                {/* Indicateurs Logistique & Livraison Interne (Confirmatrice / Admin uniquement) */}
+                {!isLivreur && (activeModule === 'logistics' || activeSubModule.startsWith('delivery-')) && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div 
                       onClick={() => {
