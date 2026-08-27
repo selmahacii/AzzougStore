@@ -843,9 +843,14 @@ export function ManualOrderModal({
                         id="isMarketplaceUpsell" 
                         checked={isMarketplaceUpsell} 
                         onCheckedChange={(c) => {
-                          setIsMarketplaceUpsell(!!c);
-                          if (!!c) setOrderSource('MARKETPLACE');
-                          else if (orderSource === 'MARKETPLACE') setOrderSource('MANUAL');
+                          const isChecked = !!c;
+                          setIsMarketplaceUpsell(isChecked);
+                          if (isChecked) {
+                            setOrderSource('MARKETPLACE');
+                            setProductTypeFilter('all');
+                          } else if (orderSource === 'MARKETPLACE') {
+                            setOrderSource('MANUAL');
+                          }
                         }} 
                         className="size-3.5 border-pink-300 data-[state=checked]:bg-pink-600 rounded" 
                       />
@@ -857,43 +862,65 @@ export function ManualOrderModal({
                   </div>
                 </div>
 
+                {/* Marketplace Info Banner */}
+                {isMarketplaceUpsell && (
+                  <div className="p-3 bg-pink-50 border border-pink-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2">
+                      <Store className="size-4 text-pink-600 shrink-0" />
+                      <div>
+                        <p className="text-xs font-black text-pink-900">
+                          Commande Marketplace sélectionnée (Commission: +50 DA)
+                        </p>
+                        <p className="text-[10px] text-pink-700 font-medium">
+                          Tous les produits standards du catalogue et produits upsells sont affichés et éligibles.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black font-mono text-pink-700 bg-white px-2.5 py-1 rounded-full border border-pink-200 shrink-0">
+                      +50 DA
+                    </span>
+                  </div>
+                )}
+
                 {/* Filter Tabs: Tous vs Standard vs Upsell */}
                 <div className="flex items-center justify-between gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                   <button
                     type="button"
                     onClick={() => setProductTypeFilter('all')}
                     className={cn(
-                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center",
+                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center flex items-center justify-center gap-1.5",
                       productTypeFilter === 'all' 
                         ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" 
                         : "text-slate-500 hover:text-slate-800"
                     )}
                   >
-                    🌟 Tous ({productsList.length})
+                    <Package className="size-3.5 text-blue-600" />
+                    Tous ({productsList.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setProductTypeFilter('standard')}
                     className={cn(
-                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center",
+                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center flex items-center justify-center gap-1.5",
                       productTypeFilter === 'standard' 
                         ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" 
                         : "text-slate-500 hover:text-slate-800"
                     )}
                   >
-                    📦 Standards ({standardProductsCount})
+                    <Layers className="size-3.5 text-indigo-600" />
+                    Standards ({standardProductsCount})
                   </button>
                   <button
                     type="button"
                     onClick={() => setProductTypeFilter('upsell')}
                     className={cn(
-                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center flex items-center justify-center gap-1",
+                      "flex-1 py-1.5 px-2 text-xs font-black rounded-lg transition-all text-center flex items-center justify-center gap-1.5",
                       productTypeFilter === 'upsell' 
                         ? "bg-purple-600 text-white shadow-xs" 
                         : "text-purple-700 hover:text-purple-900"
                     )}
                   >
-                    <Zap className="size-3" />
+                    <Zap className="size-3.5" />
                     Upsell ({upsellProductsCount})
                   </button>
                 </div>
