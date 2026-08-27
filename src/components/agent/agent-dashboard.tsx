@@ -10,7 +10,7 @@ import {
   LayoutGrid, Search, Filter, ChevronRight, Menu,
   List, Inbox, ShoppingCart, Home, Plus, Save,
   Warehouse, History, Bell, Wallet, UserCheck, Boxes, UserPlus, Lock, Store, CheckCircle2,
-  ExternalLink, Copy, Check
+  ExternalLink, Copy, Check, RotateCcw, Edit3
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
@@ -457,10 +457,12 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
   );
 }
 
-function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
+function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string, note?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
   const cfg = STATUS_CFG[order.status] ?? { next: [] };
   const queryClient = useQueryClient();
   const storeId = order.store_id;
+  const isLivreurRole = currentUser?.role === 'LIVREUR';
+  const [livreurNote, setLivreurNote] = useState('');
 
   // Per-store NRP ceilings (operations_config), with platform defaults
   const { allStores: drawerStores } = useAppStore();
@@ -814,24 +816,34 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
           <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-               <OrderTypeBadge order={order} />
-               <StatusBadge status={order.status} />
-               <NrpBadge count={order.nrp_count || 0} />
-               <PendingBadge order={order} />
-               <OrderTimer startTime={order.confirmation_start_time} />
-               {order.tracking_number && (
-                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
-                   📦 SUIVI: {order.tracking_number}
-                 </div>
-               )}
-               {order.nrp_count !== undefined && order.nrp_count > 0 && (
-                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 uppercase tracking-widest">
-                   <Phone className="size-3" />
-                   NRP {order.nrp_count}/{maxNrp}
-                 </div>
-               )}
+              {!isLivreurRole ? (
+                <>
+                  <OrderTypeBadge order={order} />
+                  <StatusBadge status={order.status} />
+                  <NrpBadge count={order.nrp_count || 0} />
+                  <PendingBadge order={order} />
+                  <OrderTimer startTime={order.confirmation_start_time} />
+                  {order.nrp_count !== undefined && order.nrp_count > 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100 uppercase tracking-widest">
+                      <Phone className="size-3" />
+                      NRP {order.nrp_count}/{maxNrp}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {['DELIVERED', 'RETURNED', 'CANCELLED', 'RESCHEDULED'].includes(order.status) && (
+                    <StatusBadge status={order.status} />
+                  )}
+                </>
+              )}
+              {order.tracking_number && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
+                  Suivi : {order.tracking_number}
+                </div>
+              )}
             </div>
-            {(order.status as string) !== 'DELIVERED' && (
+            {!isLivreurRole && (order.status as string) !== 'DELIVERED' && (
               <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl space-y-2 shadow-sm animate-in fade-in duration-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
@@ -846,7 +858,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <button
                   type="button"
                   disabled={isPending}
-                  onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP')}
+                  onClick={() => onStatusChange(order.id, 'DELIVERED', currentUser?.id, undefined, 'STORE_PICKUP')}
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
                 >
                   <CheckCircle2 className="size-4" />
@@ -1773,42 +1785,139 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
           )}
 
           <div className="space-y-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b pb-2">Actions</p>
-            <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
-              {(order.status as string) !== 'DELIVERED' && (
-                <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, undefined, 'STORE_PICKUP'); }}
-                        className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-950 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1 cursor-pointer">
-                  <span className="flex items-center gap-2">
-                    <Store className="size-4 text-emerald-600" />
-                    Confirmer Point de Vente
-                  </span>
-                  <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
-                </button>
-              )}
-              {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
-                <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id, 'NRP'); }}
-                        className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
-                  <span>Signaler Ne Répond Pas (NRP)</span>
-                  <Phone className="size-4" />
-                </button>
-              )}
-              {cfg.next?.map(ns => {
-                const isShippedWithoutTracking = ns === 'SHIPPED' && !order.tracking_number && order.carrier_id;
-                return (
-                  <button key={ns} onClick={() => { 
-                    if (isShippedWithoutTracking && onDispatch) {
-                      onDispatch(order.id);
-                    } else {
-                      onStatusChange(order.id, ns, currentUser?.role === 'LIVREUR' ? undefined : currentUser?.id); 
-                    }
-                  }}
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
-                    <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
-                    <ChevronRight className="size-4 text-slate-300" />
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">
+              {isLivreurRole ? "Mise à jour & Actions Livreur" : "Actions"}
+            </p>
+
+            {isLivreurRole ? (
+              <div className="space-y-3 animate-in fade-in duration-200">
+                {/* Note / Remarque de livraison transmise à la confirmatrice */}
+                <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <label className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-1.5">
+                    <FileText className="size-3.5 text-indigo-600" />
+                    Ajouter une note de livraison (visible confirmatrice)
+                  </label>
+                  <textarea
+                    value={livreurNote}
+                    onChange={(e) => setLivreurNote(e.target.value)}
+                    placeholder="Ex: Client absent, reporté à demain 14h / Client injoignable..."
+                    rows={2}
+                    className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  />
+                  {livreurNote.trim() && (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        onStatusChange(order.id, undefined, undefined, undefined, undefined, livreurNote.trim());
+                        setLivreurNote('');
+                        toast.success("Note enregistrée et transmise à la confirmatrice");
+                      }}
+                      className="w-full py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                    >
+                      Enregistrer la note seule
+                    </button>
+                  )}
+                </div>
+
+                {/* Boutons d'actions de statut de livraison */}
+                <div className={cn("grid grid-cols-2 gap-2.5", isPending && "opacity-50 pointer-events-none")}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onStatusChange(order.id, 'DELIVERED', undefined, undefined, undefined, livreurNote.trim() || 'Colis livré avec succès par le livreur');
+                      setLivreurNote('');
+                    }}
+                    className="p-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm text-xs font-black uppercase tracking-wider flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <CheckCircle2 className="size-5" />
+                    <span>Colis Livré</span>
                   </button>
-                );
-              })}
-            </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onStatusChange(order.id, 'RESCHEDULED', undefined, undefined, undefined, livreurNote.trim() || 'Livraison reportée par le livreur');
+                      setLivreurNote('');
+                    }}
+                    className="p-3.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-sm text-xs font-black uppercase tracking-wider flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Clock className="size-5" />
+                    <span>Reportée</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onStatusChange(order.id, 'RETURNED', undefined, undefined, undefined, livreurNote.trim() || 'Colis retourné par le livreur');
+                      setLivreurNote('');
+                    }}
+                    className="p-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-sm text-xs font-black uppercase tracking-wider flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="size-5" />
+                    <span>Retourné</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onStatusChange(order.id, 'CANCELLED', undefined, undefined, undefined, livreurNote.trim() || 'Commande annulée lors de la livraison');
+                      setLivreurNote('');
+                    }}
+                    className="p-3.5 bg-slate-600 hover:bg-slate-700 text-white rounded-xl shadow-sm text-xs font-black uppercase tracking-wider flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <XCircle className="size-5" />
+                    <span>Annulée</span>
+                  </button>
+                </div>
+
+                {/* Bouton de bascule de modification des coordonnées / articles */}
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(!isEditing)}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider border border-slate-200 transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
+                >
+                  <Edit3 className="size-3.5" />
+                  {isEditing ? 'Masquer le formulaire de modification' : 'Modifier adresse, nom ou articles'}
+                </button>
+              </div>
+            ) : (
+              <div className={cn("grid grid-cols-1 gap-2", isPending && "opacity-50 pointer-events-none")}>
+                {(order.status as string) !== 'DELIVERED' && (
+                  <button onClick={() => { onStatusChange(order.id, 'DELIVERED', currentUser?.id, undefined, 'STORE_PICKUP'); }}
+                          className="flex items-center justify-between p-3.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-950 rounded-xl hover:bg-emerald-100 transition-all text-xs font-black shadow-sm mb-1 cursor-pointer">
+                    <span className="flex items-center gap-2">
+                      <Store className="size-4 text-emerald-600" />
+                      Confirmer Point de Vente
+                    </span>
+                    <span className="text-[10px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Vente Directe</span>
+                  </button>
+                )}
+                {order.status !== 'CONFIRMED' && order.status !== 'CANCELLED' && order.status !== 'RETURNED' && order.status !== 'DELIVERED' && order.status !== 'SHIPPED' && (
+                  <button onClick={() => { onStatusChange(order.id, undefined, currentUser?.id, 'NRP'); }}
+                          className="flex items-center justify-between p-3 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg hover:bg-rose-100 transition-colors text-xs font-bold">
+                    <span>Signaler Ne Répond Pas (NRP)</span>
+                    <Phone className="size-4" />
+                  </button>
+                )}
+                {cfg.next?.map(ns => {
+                  const isShippedWithoutTracking = ns === 'SHIPPED' && !order.tracking_number && order.carrier_id;
+                  return (
+                    <button key={ns} onClick={() => { 
+                      if (isShippedWithoutTracking && onDispatch) {
+                        onDispatch(order.id);
+                      } else {
+                        onStatusChange(order.id, ns, currentUser?.id); 
+                      }
+                    }}
+                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-slate-50 transition-colors text-xs font-bold">
+                      <span>Passer à : {STATUS_CFG[ns]?.label || ns}</span>
+                      <ChevronRight className="size-4 text-slate-300" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           {/* Traçabilité & Historique d'accès (Vendeur / Admin / Agent) */}
           <div className="space-y-3 pt-4 border-t">
@@ -3029,12 +3138,13 @@ export default function AgentDashboard() {
   };
 
   const statusMutation = useMutation({
-    mutationFn: async ({ orderId, status, assigned_to, call_result, delivery_type }: { orderId: string; status?: string; assigned_to?: string; call_result?: string; delivery_type?: string }) => {
+    mutationFn: async ({ orderId, status, assigned_to, call_result, delivery_type, note }: { orderId: string; status?: string; assigned_to?: string; call_result?: string; delivery_type?: string; note?: string }) => {
       const payload: any = {};
       if (status) payload.status = status;
       if (assigned_to) payload.assigned_to = assigned_to;
       if (call_result) payload.call_result = call_result;
       if (delivery_type) payload.delivery_type = delivery_type;
+      if (note) payload.notes = note;
       
       // allStores: the order may belong to another of the agent's assigned stores
       // than the currently active one — the endpoint's own access check still applies.
@@ -3119,7 +3229,7 @@ export default function AgentDashboard() {
       {selectedOrder && <OrderDrawer order={selectedOrder} onClose={() => setSelectedOrder(null)} onOrderUpdate={(updated) => {
             console.log("[DEBUG FRONTEND] Parent onOrderUpdate called. Old selectedOrder:", selectedOrder, "New updated:", updated);
             setSelectedOrder(updated);
-          }} currentUser={user} initialEdit={drawerInitialEdit} isPending={statusMutation.isPending || dispatchMutation.isPending} onStatusChange={(id, s, assignTo, callResult, delType) => statusMutation.mutate({ orderId: id, status: s, assigned_to: assignTo, call_result: callResult, delivery_type: delType })} onDispatch={(id) => dispatchMutation.mutate(id)} />}
+          }} currentUser={user} initialEdit={drawerInitialEdit} isPending={statusMutation.isPending || dispatchMutation.isPending} onStatusChange={(id, s, assignTo, callResult, delType, note) => statusMutation.mutate({ orderId: id, status: s, assigned_to: assignTo, call_result: callResult, delivery_type: delType, note })} onDispatch={(id) => dispatchMutation.mutate(id)} />}
 
       {/* Sidebar Overlay for Mobile */}
       {isMobile && !sidebarCollapsed && (
@@ -3702,8 +3812,7 @@ export default function AgentDashboard() {
                     <p className="mt-4 text-xs font-bold text-slate-300 uppercase tracking-widest">Aucune donnée trouvée</p>
                  </div>
                ) : (
-                 <div className="grid grid-cols-1 gap-3">
-                    {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
+                  {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
                       const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
                       const isExpanded = expandedGroups.has(order.id);
                       const isFirstOfStore = showStoreSections && (idx === 0 || arr[idx - 1].primary.store_id !== order.store_id);
@@ -3726,89 +3835,105 @@ export default function AgentDashboard() {
                                style={{ backgroundColor: statusBg }}>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                              <div className="flex items-center gap-2 flex-wrap">
-                               {/* Origin (never changes) + status (evolves) — always both */}
-                               <OrderTypeBadge order={order} />
-                               <StatusBadge status={order.status} />
-                               <NrpBadge count={order.nrp_count || 0} />
-                               <PendingBadge order={order} />
-                               {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
-                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
-                                     <Store className="size-2.5" /> Marketplace (50 DA)
-                                   </span>
-                                )}
-                               {related.length > 0 ? (
-                                  <RelatedOrdersBadge
-                                    count={related.length}
-                                    expanded={isExpanded}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setExpandedGroups(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(order.id)) next.delete(order.id);
-                                        else next.add(order.id);
-                                        return next;
-                                      });
-                                    }}
-                                  />
-                                ) : (order.is_duplicate || (order.duplicate_count ?? 0) > 0) ? (
-                                  <DuplicatePopover
-                                    order={order}
-                                    onOpenFullModal={() => setSelectedDuplicateOrder(order)}
-                                    onUnmergeSuccess={() => ordersQuery.refetch()}
-                                  />
-                                ) : null}
-                               {order.store?.name && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
-                                    🏪 {order.store.name}
-                                  </span>
-                                )}
-                               {order.livreur_id && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
-                                    🚴 {order.livreur?.name || 'Livreur assigné'}
-                                  </span>
-                                )}
-                               {order.tracking_number && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
-                                    📦 {order.tracking_number}
-                                  </span>
-                                )}
-                               {!!order.events_count && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
-                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
-                                    title="Voir l'historique complet de cette commande"
-                                  >
-                                    🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
-                                  </button>
+                                {!isLivreur ? (
+                                  <>
+                                    <OrderTypeBadge order={order} />
+                                    <StatusBadge status={order.status} />
+                                    <NrpBadge count={order.nrp_count || 0} />
+                                    <PendingBadge order={order} />
+                                    {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
+                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
+                                        <Store className="size-2.5" /> Marketplace (50 DA)
+                                      </span>
+                                    )}
+                                    {related.length > 0 ? (
+                                      <RelatedOrdersBadge
+                                        count={related.length}
+                                        expanded={isExpanded}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedGroups(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(order.id)) next.delete(order.id);
+                                            else next.add(order.id);
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                    ) : (order.is_duplicate || (order.duplicate_count ?? 0) > 0) ? (
+                                      <DuplicatePopover
+                                        order={order}
+                                        onOpenFullModal={() => setSelectedDuplicateOrder(order)}
+                                        onUnmergeSuccess={() => ordersQuery.refetch()}
+                                      />
+                                    ) : null}
+                                    {order.store?.name && (
+                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
+                                        {order.store.name}
+                                      </span>
+                                    )}
+                                    {order.livreur_id && (
+                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
+                                        <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
+                                      </span>
+                                    )}
+                                    {order.tracking_number && (
+                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
+                                        Suivi: {order.tracking_number}
+                                      </span>
+                                    )}
+                                    {!!order.events_count && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
+                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                                        title="Voir l'historique complet de cette commande"
+                                      >
+                                        {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {['DELIVERED', 'RETURNED', 'CANCELLED', 'RESCHEDULED'].includes(order.status) && (
+                                      <StatusBadge status={order.status} />
+                                    )}
+                                    {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
+                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
+                                        <Store className="size-2.5" /> Marketplace
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                              </div>
                              <div>
                                 <p className="text-xs font-bold group-hover:text-blue-600 transition-colors">{formatOrderRef(order, 'admin')}</p>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{order.customer_name} · {order.customer_wilaya}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{order.customer_name} · {order.customer_wilaya} {order.customer_commune ? `(${order.customer_commune})` : ''}</p>
                                 {order.notes && (
                                   <p className="text-[9px] text-amber-700 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
                                     Note: {order.notes}
                                   </p>
                                 )}
-                                {order.internal_notes && (
+                                {order.internal_notes && !isLivreur && (
                                   <p className="text-[9px] text-purple-700 bg-purple-50/70 border border-purple-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
-                                    🔒 Interne: {order.internal_notes}
+                                    Interne: {order.internal_notes}
                                   </p>
                                 )}
-                                {/* Items and variants summary */}
                                 <div className="mt-1.5 space-y-0.5">
                                   {order.items?.map((item, i) => (
-                                    <p key={i} className="text-[10px] text-slate-400 font-medium">
-                                      📦 {item.product_name}
-                                      {item.variant_details && ` (${
-                                        typeof item.variant_details === 'string'
-                                          ? item.variant_details
-                                          : Object.entries(item.variant_details)
-                                              .filter(([k]) => k !== 'variant')
-                                              .map(([k, v]) => `${v}`)
-                                              .join(' / ') || item.variant_details.variant || ''
-                                      })`} x{item.quantity}
+                                    <p key={i} className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                                      <Package className="size-3 text-slate-400 shrink-0" />
+                                      <span>
+                                        {item.product_name}
+                                        {item.variant_details && ` (${
+                                          typeof item.variant_details === 'string'
+                                            ? item.variant_details
+                                            : Object.entries(item.variant_details)
+                                                .filter(([k]) => k !== 'variant')
+                                                .map(([k, v]) => `${v}`)
+                                                .join(' / ') || item.variant_details.variant || ''
+                                        })`} x{item.quantity}
+                                      </span>
                                     </p>
                                   ))}
                                 </div>
@@ -3816,15 +3941,21 @@ export default function AgentDashboard() {
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 border-t sm:border-t-0 pt-2 sm:pt-0">
                              <div className="text-left sm:text-right">
-<p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest sm:hidden">Téléphone</p>
-                                <p className="text-xs font-bold">{order.customer_phone}</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest sm:hidden">Téléphone</p>
+                                <a 
+                                  href={`tel:${order.customer_phone}`} 
+                                  onClick={(e) => e.stopPropagation()} 
+                                  className="text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors block"
+                                >
+                                  {order.customer_phone}
+                                </a>
                              </div>
                              <div className="text-right shrink-0">
                                 <p className="text-xs font-bold">{formatPrice(order.total)}</p>
                                  <p className="text-[9px] text-slate-400 font-bold uppercase" title={new Date(order.created_at).toLocaleString('fr-FR')}>
-                                   📅 {new Date(order.created_at).toLocaleDateString('fr-FR')} 
+                                   {new Date(order.created_at).toLocaleDateString('fr-FR')} 
                                    <span className="text-slate-300 mx-1">·</span> 
-                                   🕒 {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                   {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                                  </p>
                              </div>
                              <div className="flex items-center gap-2">
