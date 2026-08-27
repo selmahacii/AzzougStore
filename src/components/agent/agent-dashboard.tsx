@@ -68,6 +68,30 @@ type Module = { id: string; label: string; icon: any; subModules: SubModule[] };
 // Inventaire access (kept below), matching a confirmatrice's rights except
 // for what genuinely doesn't apply to his role.
 function getModules(isLivreur: boolean, user?: any): Module[] {
+  if (isLivreur) {
+    return [
+      {
+        id: 'orders',
+        label: 'Mes Livraisons',
+        icon: Truck,
+        subModules: [
+          { 
+            id: 'orders-assigned-new', 
+            label: 'Commandes assignées à toi (Nouvelles)', 
+            filter: 'INTERNAL_DELIVERY', 
+            icon: Inbox 
+          },
+          { 
+            id: 'orders-assigned-history', 
+            label: 'Historique des commandes assignées', 
+            filter: 'INTERNAL_DELIVERED', 
+            icon: CheckCircle2 
+          },
+        ]
+      }
+    ];
+  }
+
   const vis = user?.module_visibility || {};
   const modules: (Module | null)[] = [
     vis.orders === false ? null : {
@@ -83,14 +107,8 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
         { id: 'orders-recovered', label: 'Paniers Récupérés', filter: 'RECOVERED', icon: TrendingUp },
         { id: 'orders-confirmed', label: 'Confirmées', filter: 'CONFIRMED', icon: CheckCircle },
         { id: 'orders-cancelled', label: 'Annulées', filter: 'CANCELLED', icon: XCircle },
-        ...(isLivreur ? [] : [
-          { id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck },
-          { id: 'orders-marketplace', label: 'Commandes Marketplace', filter: 'MARKETPLACE', icon: Store },
-        ]),
-        ...(isLivreur ? [
-          { id: 'orders-upsell', label: 'Upsell', filter: 'UPSELL', icon: TrendingUp },
-          { id: 'orders-returned', label: 'Retours', filter: 'RETURNED', icon: XCircle },
-        ] : []),
+        { id: 'orders-manual', label: 'Commandes Manuelles', filter: 'MANUAL', icon: UserCheck },
+        { id: 'orders-marketplace', label: 'Commandes Marketplace', filter: 'MARKETPLACE', icon: Store },
       ]
     },
     (vis.deliveries === false && vis.orders === false) ? null : {
@@ -103,13 +121,11 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
         { id: 'delivery-internal-delivered', label: 'Interne Livrées', filter: 'INTERNAL_DELIVERED', icon: CheckCircle2 },
         { id: 'delivery-marketplace-delivered', label: 'Marketplace Livrées', filter: 'MARKETPLACE_DELIVERED', icon: Store },
         { id: 'delivery-in-progress', label: 'En livraison (tout)', filter: 'SHIPPED', icon: Truck },
-        ...(isLivreur ? [] : [
-          { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
-          { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
-          { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
-          { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
-          { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
-        ]),
+        { id: 'carrier-ready', label: 'Prêt à expédier', filter: 'CARRIER_READY_TO_SHIP', icon: Package },
+        { id: 'carrier-processing', label: 'En traitement', filter: 'CARRIER_PROCESSING', icon: Clock },
+        { id: 'carrier-transit', label: 'En expédition', filter: 'CARRIER_IN_TRANSIT', icon: Truck },
+        { id: 'carrier-out', label: 'En livraison', filter: 'CARRIER_OUT_FOR_DELIVERY', icon: Truck },
+        { id: 'carrier-suspended', label: 'Suspendus', filter: 'CARRIER_SUSPENDED', icon: AlertCircle },
         { id: 'delivery-completed', label: 'Livrées', filter: 'DELIVERED', icon: Home },
         { id: 'delivery-returned', label: 'Retournées', filter: 'RETURNED', icon: XCircle },
       ]
@@ -2604,8 +2620,14 @@ export default function AgentDashboard() {
       if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
       return next;
     });
-  };
-  const [activeSubModule, setActiveSubModule] = useState('orders-all');
+  const [activeSubModule, setActiveSubModule] = useState(isLivreur ? 'orders-assigned-new' : 'orders-new');
+
+  useEffect(() => {
+    if (isLivreur && activeSubModule !== 'orders-assigned-new' && activeSubModule !== 'orders-assigned-history') {
+      setActiveSubModule('orders-assigned-new');
+      setActiveModule('orders');
+    }
+  }, [isLivreur, activeSubModule]);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -3884,12 +3906,15 @@ export default function AgentDashboard() {
       {/* Mobile Bottom Navigation Bar */}
       {isMobile && (
         <div className="fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur-md border-t flex items-center justify-around px-4 z-[40] shadow-lg">
-          {[
+          {(isLivreur ? [
+            { id: 'orders-assigned-new', label: 'Nouvelles', icon: Inbox },
+            { id: 'orders-assigned-history', label: 'Historique', icon: CheckCircle2 },
+          ] : [
             { id: 'orders-all', label: 'Toutes', icon: List },
             { id: 'orders-new', label: 'Nouvelles', icon: Inbox },
             { id: 'inventory-stock', label: 'Stock', icon: Warehouse },
             { id: 'salary-details', label: 'Salaire', icon: Banknote },
-          ].map((tab) => {
+          ]).map((tab) => {
             const isActive = activeSubModule === tab.id;
             return (
               <button
