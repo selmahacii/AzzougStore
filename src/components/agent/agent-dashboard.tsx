@@ -18,7 +18,7 @@ import { formatPrice, formatOrderRef } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WILAYAS } from '@/lib/wilaya-data';
-import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
+import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { toast } from 'sonner';
 import type { Order } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -979,15 +979,13 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                        >
                          <option value="">Sélectionnez une commune</option>
                          {editData.customer_commune && !(() => {
-                           const cleanW = (editData.customer_wilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
-                           const communes = ALGERIAN_COMMUNES[cleanW] || ALGERIAN_COMMUNES[editData.customer_wilaya] || [];
+                           const communes = getCommunesForWilaya(editData.customer_wilaya);
                            return communes.some(c => c.nameAscii.toLowerCase() === editData.customer_commune.toLowerCase() || c.name.toLowerCase() === editData.customer_commune.toLowerCase());
                          })() && (
                             <option value={editData.customer_commune}>{editData.customer_commune} (Actuelle)</option>
                          )}
                          {(() => {
-                           const cleanW = (editData.customer_wilaya || '').replace(/^\d+\s*[-_–]\s*/, '').trim();
-                           const communes = ALGERIAN_COMMUNES[cleanW] || ALGERIAN_COMMUNES[editData.customer_wilaya] || [];
+                           const communes = getCommunesForWilaya(editData.customer_wilaya);
                            return communes.map(c => (
                              <option key={c.id} value={c.nameAscii}>{c.nameAscii}</option>
                            ));

@@ -31,7 +31,7 @@ import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { WILAYAS } from '@/lib/wilaya-data';
-import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
+import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 
 // ─── Interfaces & Types ───────────────────────────────────────────────────────
@@ -713,8 +713,8 @@ export function ManualOrderModal({
                           <SelectValue placeholder="Sélectionner Commune..." />
                         </SelectTrigger>
                         <SelectContent className="bg-white border-slate-200 text-slate-900 rounded-xl max-h-[300px]">
-                          {(orderWilaya ? ALGERIAN_COMMUNES[orderWilaya] || [] : []).map((c) => (
-                            <SelectItem key={c.id} value={c.nameAscii} className="text-sm font-medium py-2">
+                          {(orderWilaya ? getCommunesForWilaya(orderWilaya) : []).map((c) => (
+                            <SelectItem key={`${c.id}-${c.nameAscii}`} value={c.nameAscii} className="text-sm font-medium py-2">
                               {c.nameAscii}
                             </SelectItem>
                           ))}

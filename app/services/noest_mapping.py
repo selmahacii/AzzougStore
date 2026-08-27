@@ -223,6 +223,11 @@ EXPLICIT_MAPPING = {
     (25, "ouled rahmoun"): "Ouled Rahmoune",
     # Médéa
     (26, "ouled deid"): "Ouled Deide",
+    (26, "chellalat el adhaoura"): "Chellalet El Adhaoura",
+    (26, "chellala el adhaoura"): "Chellalet El Adhaoura",
+    (26, "chellalet eladhaoura"): "Chellalet El Adhaoura",
+    (26, "chellalat eladhaoura"): "Chellalet El Adhaoura",
+    (26, "chellala"): "Chellalet El Adhaoura",
     # Mostaganem
     (27, "benabdelmalek ramdane"): "Abdelmalek Ramdane",
     (27, "hassiane"): "El Hassiane",

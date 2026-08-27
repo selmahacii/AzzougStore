@@ -895,36 +895,56 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 2504, name: "زيغود يوسف", nameAscii: "Zighoud Youcef" },
   ],
   "Médéa": [
+    { id: 2603, name: "عين بوسيف", nameAscii: "Ain Boucif" },
+    { id: 2657, name: "عين قصير", nameAscii: "Ain Ouksir" },
     { id: 2605, name: "العيساوية", nameAscii: "Aissaouia" },
+    { id: 2623, name: "عزيز", nameAscii: "Aziz" },
     { id: 2624, name: "بعطة", nameAscii: "Baata" },
     { id: 2630, name: "بن شكاو", nameAscii: "Ben Chicao" },
     { id: 2646, name: "بني سليمان", nameAscii: "Beni Slimane" },
     { id: 2647, name: "البرواقية", nameAscii: "Berrouaghia" },
     { id: 2656, name: "بئر بن عابد", nameAscii: "Bir Ben Laabed" },
+    { id: 2632, name: "بوغار", nameAscii: "Boghar" },
+    { id: 2604, name: "بوعيش", nameAscii: "Bou Aiche" },
     { id: 2659, name: "بوعيشون", nameAscii: "Bouaichoune" },
     { id: 2621, name: "بوشراحيل", nameAscii: "Bouchrahil" },
+    { id: 2651, name: "بوغزول", nameAscii: "Boughezoul" },
     { id: 2619, name: "بوسكن", nameAscii: "Bouskene" },
+    { id: 2638, name: "الشهبونية", nameAscii: "Chahbounia" },
+    { id: 2618, name: "شلالة العذاورة", nameAscii: "Chellalet El Adhaoura" },
+    { id: 2610, name: "شنيقل", nameAscii: "Cheniguel" },
+    { id: 2622, name: "دراق", nameAscii: "Derrag" },
+    { id: 2653, name: "حوضين", nameAscii: "Deux Bassins" },
     { id: 2637, name: "جواب", nameAscii: "Djouab" },
     { id: 2654, name: "ذراع السمار", nameAscii: "Draa Esmar" },
     { id: 2636, name: "العزيزية", nameAscii: "El Azizia" },
     { id: 2609, name: "القلب الكبير", nameAscii: "El Guelbelkebir" },
     { id: 2616, name: "الحمدانية", nameAscii: "El Hamdania" },
-    { id: 2616, name: "الحوضان", nameAscii: "El Haoudane" },
+    { id: 2617, name: "الحوضان", nameAscii: "El Haoudane" },
     { id: 2607, name: "العمارية", nameAscii: "El Omaria" },
+    { id: 2642, name: "العوينات", nameAscii: "El Ouinet" },
     { id: 2660, name: "حناشة", nameAscii: "Hannacha" },
+    { id: 2649, name: "الكاف الأخضر", nameAscii: "Kef Lakhdar" },
     { id: 2663, name: "خمس جوامع", nameAscii: "Khams Djouamaa" },
+    { id: 2631, name: "قصر البخاري", nameAscii: "Ksar El Boukhari" },
     { id: 2639, name: "مغراوة", nameAscii: "Maghraoua" },
     { id: 2601, name: "المدية", nameAscii: "Medea" },
     { id: 2662, name: "مجبر", nameAscii: "Medjebar" },
+    { id: 2641, name: "مفتاحة", nameAscii: "Meftaha" },
     { id: 2611, name: "مزغنة", nameAscii: "Mezerana" },
     { id: 2650, name: "ميهوب", nameAscii: "Mihoub" },
     { id: 2643, name: "عوامري", nameAscii: "Ouamri" },
     { id: 2629, name: "وادي حربيل", nameAscii: "Oued Harbil" },
+    { id: 2608, name: "أولاد عنتر", nameAscii: "Ouled Antar" },
     { id: 2627, name: "أولاد بوعشرة", nameAscii: "Ouled Bouachra" },
     { id: 2612, name: "أولاد إبراهيم", nameAscii: "Ouled Brahim" },
     { id: 2606, name: "أولاد دايد", nameAscii: "Ouled Deid" },
+    { id: 2635, name: "أولاد هلال", nameAscii: "Ouled Hellal" },
+    { id: 2664, name: "أولاد معرف", nameAscii: "Ouled Maaref" },
+    { id: 2640, name: "أم الجليل", nameAscii: "Oum El Djalil" },
     { id: 2602, name: "وزرة", nameAscii: "Ouzera" },
     { id: 2620, name: "الربعية", nameAscii: "Rebaia" },
+    { id: 2625, name: "السانق", nameAscii: "Saneg" },
     { id: 2661, name: "سدراية", nameAscii: "Sedraya" },
     { id: 2648, name: "سغوان", nameAscii: "Seghouane" },
     { id: 2644, name: "سي المحجوب", nameAscii: "Si Mahdjoub" },
@@ -934,6 +954,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 2614, name: "سيدي زيان", nameAscii: "Sidi Ziane" },
     { id: 2633, name: "السواقي", nameAscii: "Souagui" },
     { id: 2652, name: "تابلاط", nameAscii: "Tablat" },
+    { id: 2658, name: "تفراوت", nameAscii: "Tafraout" },
     { id: 2615, name: "تمسقيدة", nameAscii: "Tamesguida" },
     { id: 2613, name: "تيزي مهدي", nameAscii: "Tizi Mahdi" },
     { id: 2645, name: "ثلاث دوائر", nameAscii: "Tletat Ed Douair" },
@@ -1610,3 +1631,30 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 5803, name: "حاسي القارة", nameAscii: "Hassi Gara" },
   ],
 };
+
+// Aliases for common spelling variants
+ALGERIAN_COMMUNES["Medea"] = ALGERIAN_COMMUNES["Médéa"];
+
+/**
+ * Universal helper to retrieve communes for any wilaya representation
+ * Supports accents, no-accents, numbers (e.g. "26", "26 - Médéa", "Medea", "Médéa")
+ */
+export function getCommunesForWilaya(wilayaInput: string | number | null | undefined): CommuneInfo[] {
+  if (!wilayaInput) return [];
+  const raw = String(wilayaInput).trim();
+  if (ALGERIAN_COMMUNES[raw]) return ALGERIAN_COMMUNES[raw];
+
+  // Strip leading number prefix (e.g. "26 - Médéa" -> "Médéa")
+  const clean = raw.replace(/^\d+\s*[-_–.]\s*/, '').trim();
+  if (ALGERIAN_COMMUNES[clean]) return ALGERIAN_COMMUNES[clean];
+
+  // Normalize (strip accents and special chars)
+  const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  const targetNorm = norm(clean || raw);
+
+  for (const [k, v] of Object.entries(ALGERIAN_COMMUNES)) {
+    if (norm(k) === targetNorm) return v;
+  }
+
+  return [];
+}

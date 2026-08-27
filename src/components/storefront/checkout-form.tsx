@@ -22,7 +22,7 @@ import { attributionPayload } from '@/lib/attribution';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import type { CartItem, ApiResponse } from '@/lib/types';
-import { ALGERIAN_COMMUNES } from '@/lib/algerian-communes';
+import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
 
 const primary = 'var(--store-primary, #4b7bec)';
@@ -162,11 +162,7 @@ export function SearchableCommuneSelect({
 
   const communes = useMemo(() => {
     if (!wilaya) return [];
-    const cleanW = wilaya.replace(/^\d+\s*[-_–]\s*/, '').trim();
-    const foundKey = Object.keys(ALGERIAN_COMMUNES).find(
-      k => k.toLowerCase() === cleanW.toLowerCase() || k.toLowerCase() === wilaya.toLowerCase()
-    );
-    return foundKey ? ALGERIAN_COMMUNES[foundKey] : [];
+    return getCommunesForWilaya(wilaya);
   }, [wilaya]);
 
   const filtered = useMemo(() => {
