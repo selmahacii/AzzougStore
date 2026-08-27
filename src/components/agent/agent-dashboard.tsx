@@ -2620,6 +2620,7 @@ export default function AgentDashboard() {
       if (next.has(moduleId)) next.delete(moduleId); else next.add(moduleId);
       return next;
     });
+  };
   const [activeSubModule, setActiveSubModule] = useState(isLivreur ? 'orders-assigned-new' : 'orders-new');
 
   useEffect(() => {
@@ -2785,7 +2786,7 @@ export default function AgentDashboard() {
 
   const getOrderTypeBadge = (order: Order) => {
     if ((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') {
-      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-pink-50 text-pink-700 border border-pink-200">🏪 Marketplace (50 DA)</span>;
+      return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-pink-50 text-pink-700 border border-pink-300 shadow-xs">🏪 Commande Normale Marketplace (50 DA)</span>;
     }
     if (order.is_store_pickup) {
       return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">🏪 Retrait Magasin</span>;
@@ -2796,7 +2797,7 @@ export default function AgentDashboard() {
     if (order.is_upsell) {
       return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">⚡ Upsell</span>;
     }
-    return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-slate-100 text-slate-600">🟦 Normale</span>;
+    return <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">🟦 Commande Normale</span>;
   };
 
   const renderSearchResultsOverlay = () => {

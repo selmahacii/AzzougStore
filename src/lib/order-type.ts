@@ -15,9 +15,10 @@
 
 import type { Order } from '@/lib/types';
 
-export type OrderType = 'NORMAL' | 'ABANDONED' | 'RECOVERED';
+export type OrderType = 'NORMAL' | 'MARKETPLACE' | 'ABANDONED' | 'RECOVERED';
 
-export function getOrderType(order: Pick<Order, 'is_abandoned_cart' | 'status'> & { recovered_at?: string | null }): OrderType {
+export function getOrderType(order: any): OrderType {
+  if (order.is_marketplace_upsell || order.source === 'MARKETPLACE') return 'MARKETPLACE';
   if (!order.is_abandoned_cart) return 'NORMAL';
   if (order.recovered_at) return 'RECOVERED';
   // Legacy fallback for rows created before recovered_at existed:
@@ -27,12 +28,17 @@ export function getOrderType(order: Pick<Order, 'is_abandoned_cart' | 'status'> 
 }
 
 /** Consistent color system (see docs/AUDIT — badges):
- *  blue = normal, orange = abandoned, green = recovered, purple = duplicates. */
+ *  blue = normal, pink = marketplace, orange = abandoned, green = recovered, purple = duplicates. */
 export const ORDER_TYPE_META: Record<OrderType, { label: string; emoji: string; className: string }> = {
   NORMAL: {
     label: 'Commande Normale',
     emoji: '🟦',
     className: 'bg-blue-50 text-blue-700 border-blue-200',
+  },
+  MARKETPLACE: {
+    label: 'Commande Normale Marketplace',
+    emoji: '🏪',
+    className: 'bg-pink-50 text-pink-700 border-pink-300 font-black',
   },
   ABANDONED: {
     label: 'Panier Abandonné',
