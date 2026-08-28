@@ -1529,7 +1529,7 @@ export default function MetaAdsDashboard() {
                         </h4>
                       </div>
                       <p className="text-xs text-slate-500">
-                        Transmettez immédiatement ces événements d'achat à Meta Conversions API pour optimiser vos algorithmes publicitaires.
+                        Transmettez immédiatement ces événements d&apos;achat à Meta Conversions API pour optimiser vos algorithmes publicitaires.
                       </p>
                     </div>
 
@@ -1618,7 +1618,7 @@ export default function MetaAdsDashboard() {
                       const eventLabels: Record<string, { label: string; desc: string; icon: string }> = {
                         Purchase: { label: 'Achat / Commande COD (Purchase)', desc: 'Confirmation de commande', icon: '💰' },
                         InitiateCheckout: { label: 'Formulaire COD Ouvert (InitiateCheckout)', desc: 'Intention de commande', icon: '📝' },
-                        AddToCart: { label: 'Ajout au Panier (AddToCart)', desc: 'Sélection d'offre ou variante', icon: '🛍️' },
+                        AddToCart: { label: 'Ajout au Panier (AddToCart)', desc: "Sélection d'offre ou variante", icon: '🛍️' },
                         ViewContent: { label: 'Consultation Fiche Produit (ViewContent)', desc: 'Visite page produit / LP', icon: '👁️' },
                         PageView: { label: 'Visite de Page (PageView)', desc: 'Navigation générale sur le site', icon: '📄' },
                       };
