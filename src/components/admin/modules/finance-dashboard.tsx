@@ -2034,6 +2034,7 @@ function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
 
 
 
+
 function TransactionDetailModal({
    transaction,
    open,
@@ -2049,11 +2050,18 @@ function TransactionDetailModal({
    const isPayment = transaction?.type === 'payment';
    const isDisbursement = transaction?.type === 'disbursement';
    const isTransfer = transaction?.type === 'transfer';
+   const isCharge = transaction?.type === 'charge';
 
-   // Fetch linked order details (workers, received date, delivery date, price modifications, items)
-   const { data: orderDetailsData, isLoading: isOrderLoading } = useQuery({
-      queryKey: ['transaction-order-details', transaction?.id, transaction?.reference],
-      queryFn: () => apiFetch<{ success: boolean; has_order: boolean; order?: any }>(
+   // Fetch linked audit details (order or meta ads marketing campaign)
+   const { data: auditData, isLoading: isAuditLoading } = useQuery({
+      queryKey: ['transaction-audit-details', transaction?.id, transaction?.reference],
+      queryFn: () => apiFetch<{ 
+         success: boolean; 
+         has_order: boolean; 
+         order?: any;
+         has_marketing: boolean;
+         marketing?: any;
+      }>(
          `/api/v1/finance/transactions/${transaction?.id || transaction?.reference}/order-details`
       ),
       enabled: !!transaction && open,
@@ -2061,7 +2069,8 @@ function TransactionDetailModal({
 
    if (!transaction) return null;
 
-   const order = orderDetailsData?.has_order ? orderDetailsData.order : null;
+   const order = auditData?.has_order ? auditData.order : null;
+   const marketing = auditData?.has_marketing ? auditData.marketing : null;
 
    const txDateStr = transaction.transaction_date || transaction.created_at;
    const txDate = txDateStr ? new Date(txDateStr) : null;
@@ -2071,6 +2080,13 @@ function TransactionDetailModal({
    const formattedTime = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
       ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       : '—';
+
+   // Marketing start date
+   const marketingStartDateStr = marketing?.date_start || txDateStr;
+   const marketingStartDate = marketingStartDateStr ? new Date(marketingStartDateStr) : null;
+   const formattedMarketingStart = marketingStartDate && !isNaN(marketingStartDate.getTime())
+      ? marketingStartDate.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) + ' à ' + marketingStartDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : formattedDate + ' à 00:00';
 
    // Order received date
    const orderReceivedDateStr = order?.created_at;
@@ -2099,8 +2115,9 @@ function TransactionDetailModal({
       window.print();
    };
 
-   const effectiveCategory = transaction.category || (isPayment ? 'VENTE_COD' : 'DÉCAISSEMENT');
-   const effectiveBeneficiary = order?.customer_name || transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Fournisseur / Prestataire'));
+   const isMetaAds = marketing || transaction.reference?.startsWith('META-') || transaction.reference?.startsWith('ADS-');
+   const effectiveCategory = transaction.category || (isPayment ? 'VENTE_COD' : isMetaAds ? 'PUBLICITÉ (META ADS)' : 'DÉCAISSEMENT');
+   const effectiveBeneficiary = order?.customer_name || transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : isMetaAds ? 'Meta Platforms Inc.' : (isPayment ? 'Client Acheteur' : 'Fournisseur / Prestataire'));
    const effectiveWallet = transaction.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Courant');
 
    return (
@@ -2111,18 +2128,31 @@ function TransactionDetailModal({
                "p-7 text-white relative shrink-0",
                isPayment 
                   ? "bg-[#00B894]" 
-                  : isTransfer
-                     ? "bg-[#6C5CE7]"
-                     : "bg-[#2D3436]"
+                  : isMetaAds
+                     ? "bg-[#1877F2]"
+                     : isTransfer
+                        ? "bg-[#6C5CE7]"
+                        : "bg-[#2D3436]"
             )}>
                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                      <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg bg-white/20 text-white">
-                        {isPayment ? "Bon d'Encaissement (Vente)" : isTransfer ? "Bon de Transfert Inter-Caisse" : "Bon de Décaissement (Dépense)"}
+                        {isPayment 
+                           ? "Bon d'Encaissement (Vente)" 
+                           : isMetaAds 
+                              ? "Bon de Décaissement (Publicité Meta Ads)" 
+                              : isTransfer 
+                                 ? "Bon de Transfert Inter-Caisse" 
+                                 : "Bon de Décaissement (Dépense)"}
                      </span>
                      {order && (
                         <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-lg bg-black/25 text-white">
                            Commande {order.order_number}
+                        </span>
+                     )}
+                     {marketing && (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-lg bg-black/25 text-white">
+                           Tracking Meta Actif
                         </span>
                      )}
                   </div>
@@ -2171,10 +2201,10 @@ function TransactionDetailModal({
                      <p className="text-xs font-bold text-slate-800 truncate">{effectiveWallet}</p>
                   </div>
 
-                  {/* Bénéficiaire / Client */}
+                  {/* Bénéficiaire / Prestataire */}
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Bénéficiaire / Client
+                        {isPayment ? 'Bénéficiaire / Client' : 'Prestataire / Destination'}
                      </span>
                      <p className="text-xs font-bold text-slate-800 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
                      {order && order.customer_phone && (
@@ -2188,7 +2218,7 @@ function TransactionDetailModal({
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
                      <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                           Enregistrement Financier
+                           Date d'Enregistrement
                         </span>
                         <span className="text-[9px] font-bold text-slate-500 bg-white px-1.5 py-0.2 rounded border border-slate-200">
                            GMT+1 (Algérie)
@@ -2198,6 +2228,104 @@ function TransactionDetailModal({
                      <p className="text-[10px] font-mono text-slate-500">{formattedTime}</p>
                   </div>
                </div>
+
+               {/* ── SECTION MARKETING & META ADS : DÉTAIL CAMPAGNE, LANDING PAGE, COMMANDES & PRODUITS ── */}
+               {marketing && (
+                  <div className="bg-blue-50/40 rounded-2xl p-4 border border-blue-100 space-y-4">
+                     <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+                           <TrendingUp className="size-3.5 text-blue-600" />
+                           Audit Dépense Publicitaire & Attribution Meta Ads
+                        </span>
+                        <Badge className="bg-blue-100 text-blue-800 border-none text-[9px] font-bold">
+                           ROAS : {marketing.roas}x
+                        </Badge>
+                     </div>
+
+                     {/* 1. Date et Heure de Début de Diffusion */}
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-0.5">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                              Date & Heure de Début (Diffusion)
+                           </span>
+                           <p className="font-bold text-slate-800 capitalize">
+                              {formattedMarketingStart}
+                           </p>
+                           <p className="text-[10px] text-slate-400">Période publicitaire active</p>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-0.5">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                              Campagne Ciblée
+                           </span>
+                           <p className="font-bold text-blue-700 truncate" title={marketing.campaign_name}>
+                              {marketing.campaign_name}
+                           </p>
+                           <p className="text-[10px] text-slate-400 font-mono">ID: {marketing.campaign_id}</p>
+                        </div>
+                     </div>
+
+                     {/* 2. Landing Pages Ciblées */}
+                     <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-1.5 text-xs">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                           Landing Page(s) de Destination
+                        </span>
+                        <div className="space-y-1">
+                           {marketing.landing_pages.map((url: string, idx: number) => (
+                              <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-slate-700 font-mono text-[11px] break-all border border-slate-100">
+                                 <Layers className="size-3 text-blue-500 shrink-0" />
+                                 <span className="truncate">{url}</span>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+
+                     {/* 3. Commandes Obtenues & Performance */}
+                     <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Commandes Obtenues</span>
+                           <span className="text-base font-black text-slate-900">{marketing.orders_count}</span>
+                           <span className="text-[9px] text-emerald-600 block mt-0.5">{marketing.delivered_orders_count} livrées</span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Chiffre d'Affaires</span>
+                           <span className="text-base font-black text-emerald-600 font-mono">{formatPrice(marketing.generated_revenue)}</span>
+                           <span className="text-[9px] text-slate-400 block mt-0.5">Généré par la pub</span>
+                        </div>
+                        <div className="bg-white p-2.5 rounded-xl border border-blue-100">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Coût Acquisition (CPA)</span>
+                           <span className="text-base font-black text-slate-900 font-mono">{marketing.cpa > 0 ? formatPrice(marketing.cpa) : '—'}</span>
+                           <span className="text-[9px] text-slate-400 block mt-0.5">par commande</span>
+                        </div>
+                     </div>
+
+                     {/* 4. Produits Concernés par cette Dépense */}
+                     {marketing.products && marketing.products.length > 0 && (
+                        <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-2">
+                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Produits Concernés par cette Publicité ({marketing.products.length})
+                           </span>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {marketing.products.map((p: any) => (
+                                 <div key={p.id} className="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100 text-xs">
+                                    <div className="size-8 rounded-md bg-white border border-slate-200 flex items-center justify-center text-slate-400 font-bold overflow-hidden shrink-0">
+                                       {p.image_url ? (
+                                          <img src={p.image_url} alt={p.name} className="size-full object-cover" />
+                                       ) : (
+                                          <ShoppingBag className="size-4 text-slate-400" />
+                                       )}
+                                    </div>
+                                    <div className="truncate">
+                                       <p className="font-bold text-slate-800 truncate">{p.name}</p>
+                                       <p className="text-[10px] text-slate-400 font-mono">{formatPrice(p.price)}</p>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
+                  </div>
+               )}
 
                {/* ── SECTION 2 : LOGISTIQUE & DATES DE LA COMMANDE (Si Commande Liée) ── */}
                {order && (
@@ -2371,8 +2499,8 @@ function TransactionDetailModal({
                   </div>
                )}
 
-               {/* Motif / Description standard si pas de commande */}
-               {transaction.description && !order && (
+               {/* Motif / Description standard si pas de commande ni marketing */}
+               {transaction.description && !order && !marketing && (
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-1">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         Libellé de l'opération
