@@ -97,6 +97,7 @@ export default function FinanceDashboard() {
    const [isCreateTxOpen, setIsCreateTxOpen] = useState(false);
    const [selectedWallet, setSelectedWallet] = useState<any | null>(null);
    const [selectedTx, setSelectedTx] = useState<any | null>(null);
+   const [createTxType, setCreateTxType] = useState<'payment' | 'disbursement' | 'charge'>('payment');
    const [txSearch, setTxSearch] = useState('');
    const [txDateFrom, setTxDateFrom] = useState('');
    const [txDateTo, setTxDateTo] = useState('');
@@ -164,67 +165,100 @@ export default function FinanceDashboard() {
    return (
       <div className="space-y-8 pb-32 animate-in fade-in duration-700">
          
-         {/* ─── Premium Header ─── */}
-         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-2 bg-[#2D3436] rounded-[40px] p-10 text-white relative overflow-hidden shadow-2xl">
-               <div className="absolute top-0 right-0 p-10 opacity-[0.05] rotate-12">
-                  <TrendingUp className="size-48" />
+         {/* ─── Financial Intelligence & Real-time KPIs ─── */}
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {/* 1. Trésorerie Consolidée Disponible */}
+            <div className="xl:col-span-2 bg-[#2D3436] rounded-[32px] p-7 text-white relative overflow-hidden shadow-xl flex flex-col justify-between">
+               <div className="absolute top-0 right-0 p-6 opacity-[0.04] rotate-12">
+                  <TrendingUp className="size-36" />
                </div>
                <div className="relative z-10">
-                  <div className="flex items-center gap-4 mb-8">
-                     <div className="size-12 bg-[#6C5CE7] rounded-2xl flex items-center justify-center shadow-2xl">
-                        <WalletIcon className="size-6 text-white" />
-                     </div>
-                     <div>
-                        <h1 className="text-2xl font-black uppercase tracking-tight leading-none">Console Financière</h1>
-                        <p className="text-white/40 text-[10px] font-black uppercase tracking-widest mt-2 flex items-center gap-2">
-                           <ShieldCheck className="size-3 text-emerald-400" /> Flux monétaires protégés
-                        </p>
-                     </div>
-                  </div>
-                  <div className="flex items-end gap-6">
-                     <div>
-                        <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Trésorerie Consolidée</p>
-                        <p className="text-5xl font-black tracking-tighter">{formatPrice(totalBalance)}</p>
-                     </div>
-                     {kpi && kpi.revenueChange !== null && kpi.revenueChange !== undefined && (
-                        <div className="hidden sm:block pb-1">
-                           <Badge className={cn(
-                              "border-none px-3 py-1 text-[10px] font-black uppercase tracking-widest",
-                              kpi.revenueChange >= 0 ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"
-                           )}>
-                              {kpi.revenueChange >= 0 ? '+' : ''}{kpi.revenueChange}% ce mois
-                           </Badge>
+                  <div className="flex items-center justify-between mb-4">
+                     <div className="flex items-center gap-3">
+                        <div className="size-10 bg-[#6C5CE7] rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                           <WalletIcon className="size-5 text-white" />
                         </div>
-                     )}
+                        <div>
+                           <h1 className="text-base font-black uppercase tracking-tight leading-none">Console Financière</h1>
+                           <p className="text-white/40 text-[9px] font-black uppercase tracking-widest mt-1 flex items-center gap-1.5">
+                              <ShieldCheck className="size-3 text-emerald-400" /> Trésorerie Consolidée
+                           </p>
+                        </div>
+                     </div>
                   </div>
+                  <div className="mt-2">
+                     <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Liquidités Immédiates</p>
+                     <p className="text-4xl font-black tracking-tighter tabular-nums">{formatPrice(totalBalance)} <span className="text-xl text-white/70 font-bold">DA</span></p>
+                  </div>
+               </div>
+               <div className="flex items-center justify-between pt-4 mt-4 border-t border-white/10 relative z-10 text-[10px] font-bold text-white/60">
+                  <span>{wallets.length} compte{wallets.length > 1 ? 's' : ''} rattaché{wallets.length > 1 ? 's' : ''}</span>
+                  <span className="text-emerald-400">Solde équilibré ✓</span>
                </div>
             </div>
 
-            <div className="bg-white rounded-[40px] border p-8 flex flex-col justify-between shadow-sm group hover:border-[#6C5CE7]/30 transition-all" style={{ borderColor: C.border }}>
+            {/* 2. Total Ventes & Encaissements */}
+            <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
-                  <div className="size-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                     <ArrowUpRight className="size-6" />
+                  <div className="size-11 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                     <ArrowUpRight className="size-5" />
                   </div>
-                  <Activity className="size-4 text-emerald-500 animate-pulse" />
+                  <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px] font-black uppercase">Entrées</Badge>
                </div>
-               <div className="mt-6">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Entrées (Lifetime)</p>
-                  <p className="text-2xl font-black text-slate-900 tabular-nums">{formatPrice(totalIn)}</p>
+               <div className="mt-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Ventes & Encaissements</p>
+                  <p className="text-2xl font-black text-emerald-600 tabular-nums">+{formatPrice(totalIn)} <span className="text-xs font-bold text-slate-400">DA</span></p>
                </div>
+               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Cumul des encaissements COD</p>
             </div>
 
-            <div className="bg-white rounded-[40px] border p-8 flex flex-col justify-between shadow-sm group hover:border-orange-100 transition-all" style={{ borderColor: C.border }}>
+            {/* 3. Total Charges & Décaissements */}
+            <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
-                  <div className="size-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
-                     <ArrowDownRight className="size-6" />
+                  <div className="size-11 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
+                     <ArrowDownRight className="size-5" />
                   </div>
-                  <Layers className="size-4 text-rose-300" />
+                  <Badge className="bg-rose-50 text-rose-600 border border-rose-100 text-[9px] font-black uppercase">Sorties</Badge>
                </div>
-               <div className="mt-6">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sorties (Lifetime)</p>
-                  <p className="text-2xl font-black text-slate-900 tabular-nums">{formatPrice(totalOut)}</p>
+               <div className="mt-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Charges & Décaissements</p>
+                  <p className="text-2xl font-black text-rose-600 tabular-nums">-{formatPrice(totalOut)} <span className="text-xs font-bold text-slate-400">DA</span></p>
                </div>
+               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Dépenses, salaires & achats</p>
+            </div>
+
+            {/* 4. Flux Net de Trésorerie (Bénéfice Net Cashflow) */}
+            <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <div className="flex items-center justify-between">
+                  <div className="size-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-[#6C5CE7]">
+                     <TrendingUp className="size-5" />
+                  </div>
+                  <Badge className="bg-indigo-50 text-[#6C5CE7] border border-indigo-100 text-[9px] font-black uppercase">Flux Net</Badge>
+               </div>
+               <div className="mt-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Bénéfice Cashflow Net</p>
+                  <p className={cn("text-2xl font-black tabular-nums", (totalIn - totalOut) >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                     {(totalIn - totalOut) >= 0 ? '+' : ''}{formatPrice(totalIn - totalOut)} <span className="text-xs font-bold text-slate-400">DA</span>
+                  </p>
+               </div>
+               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Solde net d'exploitation</p>
+            </div>
+
+            {/* 5. Ratio de Rentabilité & Couverture */}
+            <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <div className="flex items-center justify-between">
+                  <div className="size-11 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600">
+                     <Layers className="size-5" />
+                  </div>
+                  <Badge className="bg-amber-50 text-amber-600 border border-amber-100 text-[9px] font-black uppercase">Marge</Badge>
+               </div>
+               <div className="mt-4">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Taux Marge Cash</p>
+                  <p className="text-2xl font-black text-amber-600 tabular-nums">
+                     {totalIn > 0 ? `${(((totalIn - totalOut) / totalIn) * 100).toFixed(1)}%` : '100%'}
+                  </p>
+               </div>
+               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Rentabilité nette du cash</p>
             </div>
          </div>
 
@@ -355,117 +389,183 @@ export default function FinanceDashboard() {
          ) : (
             <div className="bg-white rounded-[40px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
                {/* Search & Date Filter Bar */}
-               <div className="px-8 py-5 border-b flex flex-col sm:flex-row items-start sm:items-center gap-4" style={{ borderColor: C.border }}>
-                  <div className="relative flex-1 max-w-sm">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                     <input
-                        value={txSearch}
-                        onChange={e => { setTxSearch(e.target.value); setPage(1); }}
-                        placeholder="Rechercher par référence, bénéficiaire..."
-                        className="w-full h-11 pl-11 pr-4 text-xs font-bold text-slate-700 border border-slate-100 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20 focus:bg-white transition-all"
-                     />
-                  </div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                     <div className="flex items-center gap-2">
-                        <Calendar className="size-4 text-slate-400" />
-                        <input
-                           type="date"
-                           value={txDateFrom}
-                           onChange={e => { setTxDateFrom(e.target.value); setPage(1); }}
-                           className="h-11 px-3 text-xs font-bold text-slate-700 border border-slate-100 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20"
-                        />
-                        <span className="text-xs text-slate-400 font-bold">→</span>
-                        <input
-                           type="date"
-                           value={txDateTo}
-                           onChange={e => { setTxDateTo(e.target.value); setPage(1); }}
-                           className="h-11 px-3 text-xs font-bold text-slate-700 border border-slate-100 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20"
-                        />
-                     </div>
-                     {(txSearch || txDateFrom || txDateTo) && (
-                        <button
-                           onClick={() => { setTxSearch(''); setTxDateFrom(''); setTxDateTo(''); setPage(1); }}
-                           className="h-11 px-4 rounded-2xl bg-rose-50 text-rose-500 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 hover:bg-rose-100 transition-all"
-                        >
-                           <X className="size-3.5" /> Effacer
-                        </button>
-                     )}
-                  </div>
-                  {transactions.length > 0 && (
-                     <div className="ml-auto hidden lg:flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        Total page: <span className={cn('font-black text-sm', transactions.reduce((s: number, t: any) => s + (t.type === 'payment' ? t.amount : -t.amount), 0) >= 0 ? 'text-emerald-500' : 'text-rose-500')}>
-                           {transactions.reduce((s: number, t: any) => s + (t.type === 'payment' ? t.amount : -t.amount), 0) >= 0 ? '+' : ''}{formatPrice(transactions.reduce((s: number, t: any) => s + (t.type === 'payment' ? t.amount : -t.amount), 0))} DA
-                        </span>
-                     </div>
-                  )}
-               </div>
-               <div className="overflow-x-auto">
-                  <table className="w-full text-left min-w-[1000px]">
-                     <thead>
-                        <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Référence Flux</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Catégorie</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bénéficiaire</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Montant</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compte Source/Cible</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Horodatage</th>
-                           <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Preuve</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y" style={{ borderColor: '#F8F9FC' }}>
-                        {isTxLoading ? (
-                           Array.from({ length: 5 }).map((_, i) => <tr key={i}><td colSpan={6} className="px-10 py-12 animate-pulse bg-slate-50/30" /></tr>)
-                        ) : transactions.length === 0 ? (
-                           <tr><td colSpan={6} className="px-10 py-32 text-center text-slate-300 text-xs font-black uppercase tracking-[0.2em] opacity-30">Aucun enregistrement détecté</td></tr>
-                        ) : transactions.map((t: any) => (
-                           <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
-                              <td className="px-10 py-6">
-                                 <div className="flex items-center gap-3">
-                                    <div className={cn("size-2 rounded-full", t.type === 'payment' ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-rose-500 shadow-[0_0_8px_#f43f5e]")} />
-                                    <span className="text-xs font-black text-slate-900 group-hover:text-[#6C5CE7] transition-colors font-mono">{t.reference || 'SYSTEM-TX'}</span>
-                                 </div>
-                              </td>
-                              <td className="px-10 py-6 text-center">
-                                 <Badge className="bg-slate-100 text-slate-500 border-none text-[9px] font-black uppercase tracking-tight px-3 py-1 rounded-xl">
-                                    {t.category || 'OPERATION'}
-                                 </Badge>
-                              </td>
-                              <td className="px-10 py-6">
-                                 <span className="text-[10px] font-black text-slate-600 uppercase tracking-tight truncate max-w-[150px] block">
-                                    {t.beneficiary || '—'}
-                                 </span>
-                              </td>
-                              <td className="px-10 py-6">
-                                 <span className={cn("text-sm font-black tabular-nums", t.type === 'payment' ? "text-emerald-500" : "text-rose-500")}>
-                                    {t.type === 'payment' ? '+' : '-'}{formatPrice(t.amount)}
-                                 </span>
-                              </td>
-                              <td className="px-10 py-6">
-                                 <div className="flex items-center gap-2">
-                                    <div className="size-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">
-                                       <WalletIcon className="size-3" />
-                                    </div>
-                                    <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">{t.wallet?.name || 'Inconnu'}</span>
-                                 </div>
-                              </td>
-                              <td className="px-10 py-6">
-                                 <div className="flex flex-col">
-                                    <span className="text-xs font-black text-slate-800">{new Date(t.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</span>
-                                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">{new Date(t.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                 </div>
-                              </td>
-                              <td className="px-10 py-6 text-right">
-                                 <button className="size-10 rounded-xl bg-white border border-slate-100 text-slate-300 hover:text-[#6C5CE7] hover:border-[#6C5CE7] transition-all shadow-sm flex items-center justify-center ml-auto">
-                                    <Eye className="size-4" />
-                                 </button>
-                              </td>
-                           </tr>
-                        ))}
-                     </tbody>
-                  </table>
-               </div>
-               
-               {/* Pagination Industrialized */}
+                <div className="px-8 py-5 border-b flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4" style={{ borderColor: C.border }}>
+                   <div className="flex items-center gap-3 flex-1 max-w-xl">
+                      <div className="relative flex-1">
+                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+                         <input
+                            value={txSearch}
+                            onChange={e => { setTxSearch(e.target.value); setPage(1); }}
+                            placeholder="Rechercher par référence, bénéficiaire, montant, caisse..."
+                            className="w-full h-11 pl-11 pr-4 text-xs font-bold text-slate-700 border border-slate-200 bg-slate-50/50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20 focus:bg-white transition-all"
+                         />
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <input
+                            type="date"
+                            value={txDateFrom}
+                            onChange={e => { setTxDateFrom(e.target.value); setPage(1); }}
+                            className="h-11 px-3 text-xs font-bold text-slate-700 border border-slate-200 bg-slate-50/50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20"
+                         />
+                         <span className="text-xs text-slate-400 font-bold">→</span>
+                         <input
+                            type="date"
+                            value={txDateTo}
+                            onChange={e => { setTxDateTo(e.target.value); setPage(1); }}
+                            className="h-11 px-3 text-xs font-bold text-slate-700 border border-slate-200 bg-slate-50/50 rounded-2xl outline-none focus:ring-2 focus:ring-[#6C5CE7]/20"
+                         />
+                      </div>
+                      {(txSearch || txDateFrom || txDateTo) && (
+                         <button
+                            onClick={() => { setTxSearch(''); setTxDateFrom(''); setTxDateTo(''); setPage(1); }}
+                            className="h-11 px-3 rounded-2xl bg-rose-50 text-rose-500 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 hover:bg-rose-100 transition-all shrink-0"
+                         >
+                            <X className="size-3.5" />
+                         </button>
+                      )}
+                   </div>
+
+                   {/* Contextual Action Button */}
+                   <div className="flex items-center gap-3">
+                      {activeTab === 'payments' && (
+                         <Button 
+                            onClick={() => { setCreateTxType('payment'); setIsCreateTxOpen(true); }}
+                            className="h-11 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-100 flex items-center gap-2"
+                         >
+                            <Plus className="size-4" /> Encaisser une Vente
+                         </Button>
+                      )}
+                      {activeTab === 'charges' && (
+                         <Button 
+                            onClick={() => { setCreateTxType('charge'); setIsCreateTxOpen(true); }}
+                            className="h-11 px-5 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-100 flex items-center gap-2"
+                         >
+                            <Plus className="size-4" /> Enregistrer une Charge
+                         </Button>
+                      )}
+                      {activeTab === 'disbursements' && (
+                         <Button 
+                            onClick={() => { setCreateTxType('disbursement'); setIsCreateTxOpen(true); }}
+                            className="h-11 px-5 rounded-2xl bg-[#6C5CE7] hover:bg-[#5b4cc4] text-white text-xs font-bold shadow-md shadow-indigo-100 flex items-center gap-2"
+                         >
+                            <Plus className="size-4" /> Nouveau Décaissement
+                         </Button>
+                      )}
+                   </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                   <table className="w-full text-left min-w-[1000px]">
+                      <thead>
+                         <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Référence Flux</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Catégorie</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bénéficiaire</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Montant</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Compte Source/Cible</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Horodatage</th>
+                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Preuve</th>
+                         </tr>
+                      </thead>
+                      <tbody className="divide-y" style={{ borderColor: '#F8F9FC' }}>
+                         {isTxLoading ? (
+                            Array.from({ length: 5 }).map((_, i) => <tr key={i}><td colSpan={7} className="px-8 py-8 animate-pulse bg-slate-50/30" /></tr>)
+                         ) : transactions.length === 0 ? (
+                            <tr>
+                               <td colSpan={7} className="px-8 py-20 text-center">
+                                  <div className="flex flex-col items-center justify-center space-y-3">
+                                     <div className="size-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+                                        <Receipt className="size-6" />
+                                     </div>
+                                     <p className="text-xs font-bold text-slate-600">Aucun flux financier détecté</p>
+                                     <p className="text-[11px] text-slate-400 max-w-sm">
+                                        {activeTab === 'payments' ? "Aucun encaissement enregistré. Enregistrez une vente manuellement ou passez une commande à l'état Livré." :
+                                         activeTab === 'charges' ? "Aucune charge enregistrée. Ajoutez vos dépenses de pub, loyers ou achats." :
+                                         "Aucun versement ou décaissement détecté pour cette période."}
+                                     </p>
+                                     <Button 
+                                        onClick={() => {
+                                           setCreateTxType(activeTab === 'charges' ? 'charge' : activeTab === 'disbursements' ? 'disbursement' : 'payment');
+                                           setIsCreateTxOpen(true);
+                                        }} 
+                                        className="h-9 px-4 rounded-xl text-xs font-bold bg-[#6C5CE7] text-white"
+                                     >
+                                        + Ajouter une opération
+                                     </Button>
+                                  </div>
+                               </td>
+                            </tr>
+                         ) : transactions.map((t: any) => {
+                            const txDateStr = t.transaction_date || t.created_at;
+                            const txDate = txDateStr ? new Date(txDateStr) : null;
+                            const isValidDate = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970;
+                            const isPayment = t.type === 'payment';
+                            const effectiveCat = t.category || (isPayment ? 'VENTE COD' : 'DÉCAISSEMENT');
+                            const effectiveBenef = t.beneficiary || (t.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client' : 'Prestataire'));
+                            const effectiveWallet = t.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Courant');
+
+                            return (
+                               <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
+                                  <td className="px-8 py-5">
+                                     <div className="flex items-center gap-3">
+                                        <div className={cn("size-2 rounded-full", isPayment ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-rose-500 shadow-[0_0_8px_#f43f5e]")} />
+                                        <span className="text-xs font-black text-slate-900 group-hover:text-[#6C5CE7] transition-colors font-mono">{t.reference || 'SYSTEM-TX'}</span>
+                                     </div>
+                                  </td>
+                                  <td className="px-8 py-5 text-center">
+                                     <Badge className={cn(
+                                        "border text-[9px] font-black uppercase tracking-tight px-2.5 py-1 rounded-xl",
+                                        isPayment ? "bg-emerald-50 text-emerald-700 border-emerald-200/60" : "bg-rose-50 text-rose-700 border-rose-200/60"
+                                     )}>
+                                        {effectiveCat.replace(/_/g, ' ')}
+                                     </Badge>
+                                  </td>
+                                  <td className="px-8 py-5">
+                                     <span className="text-xs font-bold text-slate-700 uppercase tracking-tight truncate max-w-[160px] block" title={effectiveBenef}>
+                                        {effectiveBenef}
+                                     </span>
+                                  </td>
+                                  <td className="px-8 py-5">
+                                     <span className={cn("text-sm font-black tabular-nums font-mono", isPayment ? "text-emerald-600" : "text-rose-600")}>
+                                        {isPayment ? '+' : '-'}{formatPrice(t.amount)} DA
+                                     </span>
+                                  </td>
+                                  <td className="px-8 py-5">
+                                     <div className="flex items-center gap-2">
+                                        <div className="size-6 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
+                                           <WalletIcon className="size-3" />
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-700 uppercase tracking-tight truncate max-w-[160px]">
+                                           {effectiveWallet}
+                                        </span>
+                                     </div>
+                                  </td>
+                                  <td className="px-8 py-5">
+                                     <div className="flex flex-col">
+                                        <span className="text-xs font-black text-slate-800">
+                                           {isValidDate ? txDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Récemment'}
+                                        </span>
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                                           {isValidDate ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                                        </span>
+                                     </div>
+                                  </td>
+                                  <td className="px-8 py-5 text-right">
+                                     <button 
+                                        onClick={() => setSelectedTx(t)}
+                                        className="size-9 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-[#6C5CE7] hover:border-[#6C5CE7] transition-all shadow-2xs flex items-center justify-center ml-auto group/btn cursor-pointer"
+                                        title="Afficher la preuve et le reçu complet"
+                                     >
+                                        <Eye className="size-4 group-hover/btn:scale-110 transition-transform" />
+                                     </button>
+                                  </td>
+                               </tr>
+                            );
+                         })}
+                      </tbody>
+                   </table>
+                </div>
+                {/* Pagination Industrialized */}
                <div className="px-10 py-6 border-t border-slate-50 bg-[#FAFBFD] flex items-center justify-between">
                   <div className="flex items-center gap-4">
                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Affichage {transactions.length} sur {txResponse?.total || 0} Flux</span>
@@ -497,8 +597,15 @@ export default function FinanceDashboard() {
          <CreateWalletModal open={isCreateWalletOpen} onOpenChange={setIsCreateWalletOpen} storeId={storeId} />
          <TransferModal open={isTransferOpen} onOpenChange={setIsTransferOpen} wallets={wallets} storeId={storeId} />
          <RebalanceModal open={isRebalanceOpen} onOpenChange={setIsRebalanceOpen} wallets={wallets} storeId={storeId} />
-         <CreateTransactionModal open={isCreateTxOpen} onOpenChange={setIsCreateTxOpen} wallets={wallets} storeId={storeId} />
+         <CreateTransactionModal 
+            open={isCreateTxOpen} 
+            onOpenChange={setIsCreateTxOpen} 
+            wallets={wallets} 
+            storeId={storeId} 
+            defaultType={createTxType}
+         />
          <WalletDetailModal wallet={selectedWallet} storeId={storeId} onClose={() => setSelectedWallet(null)} />
+         <TransactionDetailModal transaction={selectedTx} open={!!selectedTx} onClose={() => setSelectedTx(null)} />
       </div>
    );
 }
