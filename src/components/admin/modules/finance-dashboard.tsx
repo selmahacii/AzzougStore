@@ -188,7 +188,7 @@ export default function FinanceDashboard() {
                   </div>
                   <div className="mt-2">
                      <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Liquidités Immédiatement Mobilisables</p>
-                     <p className="text-4xl font-black tracking-tighter tabular-nums">{formatPrice(totalBalance)} <span className="text-xl text-white/70 font-bold">DA</span></p>
+                     <p className="text-4xl font-black tracking-tighter tabular-nums">{formatPrice(totalBalance)}</p>
                   </div>
                </div>
                <div className="pt-3 mt-3 border-t border-white/10 relative z-10 text-[10px] font-medium text-white/60 leading-relaxed">
@@ -206,7 +206,7 @@ export default function FinanceDashboard() {
                </div>
                <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Ventes & Encaissements</p>
-                  <p className="text-2xl font-black text-emerald-600 tabular-nums">+{formatPrice(totalIn)} <span className="text-xs font-bold text-slate-400">DA</span></p>
+                  <p className="text-2xl font-black text-emerald-600 tabular-nums">+{formatPrice(totalIn)}</p>
                </div>
                <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
                   Total des entrées financières réelles (encaissements des livraisons COD payées et règlements clients).
@@ -223,7 +223,7 @@ export default function FinanceDashboard() {
                </div>
                <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Charges & Décaissements</p>
-                  <p className="text-2xl font-black text-rose-600 tabular-nums">-{formatPrice(totalOut)} <span className="text-xs font-bold text-slate-400">DA</span></p>
+                  <p className="text-2xl font-black text-rose-600 tabular-nums">-{formatPrice(totalOut)}</p>
                </div>
                <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
                   Total des sorties d'argent (dépenses publicitaires Meta/TikTok, salaires, achats de stock, emballage, logistique).
@@ -241,7 +241,7 @@ export default function FinanceDashboard() {
                <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Bénéfice Cashflow Net</p>
                   <p className={cn("text-2xl font-black tabular-nums", (totalIn - totalOut) >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                     {(totalIn - totalOut) >= 0 ? '+' : ''}{formatPrice(totalIn - totalOut)} <span className="text-xs font-bold text-slate-400">DA</span>
+                     {(totalIn - totalOut) >= 0 ? '+' : ''}{formatPrice(totalIn - totalOut)}
                   </p>
                </div>
                <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
@@ -534,7 +534,7 @@ export default function FinanceDashboard() {
                                   </td>
                                   <td className="px-8 py-5">
                                      <span className={cn("text-sm font-black tabular-nums font-mono", isPayment ? "text-emerald-600" : "text-rose-600")}>
-                                        {isPayment ? '+' : '-'}{formatPrice(t.amount)} DA
+                                        {isPayment ? '+' : '-'}{formatPrice(t.amount)}
                                      </span>
                                   </td>
                                   <td className="px-8 py-5">
@@ -1199,7 +1199,7 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
    }, [fromWalletId, open]);
 
    const selectedTargets = Object.entries(targetsState)
-      .filter(([_, t]) => t.enabled)
+      .filter(([_, t]) => t.enabled && t.amount > 0)
       .map(([id, t]) => ({ to_wallet_id: id, amount: t.amount }));
 
    const totalAllocated = selectedTargets.reduce((acc, curr) => acc + curr.amount, 0);
@@ -1211,11 +1211,15 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
          .map(([id]) => id);
 
       if (activeIds.length === 0) {
-         toast.error("Veuillez sélectionner au moins un compte cible.");
+         toast.error("Veuillez cocher au moins un compte destinataire dans l'étape 4.");
          return;
       }
 
       if (strategy === 'EQUIPROPORTIONAL') {
+         if (totalAmountToDistribute <= 0) {
+            toast.error("Veuillez indiquer un montant global supérieur à 0.");
+            return;
+         }
          const splitAmount = Math.floor(totalAmountToDistribute / activeIds.length);
          setTargetsState(prev => {
             const next = { ...prev };
@@ -1227,6 +1231,10 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
          toast.success("Montant réparti équitablement !");
       } 
       else if (strategy === 'TARGET_BALANCE') {
+         if (targetBalanceGoal <= 0) {
+            toast.error("Veuillez indiquer un solde cible supérieur à 0.");
+            return;
+         }
          setTargetsState(prev => {
             const next = { ...prev };
             activeIds.forEach(id => {
@@ -1237,19 +1245,19 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
             });
             return next;
          });
-         toast.success("Deltas d'ajustement calculés !");
+         toast.success("Montants calculés pour atteindre le solde cible !");
       }
    };
 
    const rebalanceMutation = useMutation({
       mutationFn: (data: any) => {
          const richNote = [
-            data.note.trim(),
-            `--- RAPPORTS DE RÉÉQUILIBRAGE ---`,
-            `• Référence Documentaire : ${data.user_ref || 'N/A'}`,
-            `• Stratégie appliquée : ${data.strategy}`,
-            `• Total débité global : ${formatPrice(data.total_amount)} DA`,
-            `• Agent Responsable : ${data.accounting_agent.trim() || 'Système'}`
+            data.note?.trim() || 'Rééquilibrage de trésorerie',
+            `--- DÉTAIL DU RÉÉQUILIBRAGE ---`,
+            data.user_ref ? `• Référence : ${data.user_ref}` : null,
+            `• Méthode : ${data.strategy === 'CUSTOM' ? 'Manuelle' : data.strategy === 'EQUIPROPORTIONAL' ? 'Partage Équitable' : 'Seuil Cible'}`,
+            `• Montant total réparti : ${formatPrice(data.total_amount)}`,
+            `• Responsable : ${data.accounting_agent?.trim() || 'Responsable Trésorerie'}`
          ].filter(Boolean).join('\n');
 
          return apiFetch('/api/v1/finance/wallets/rebalance', {
@@ -1266,7 +1274,7 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['wallets'] });
          qc.invalidateQueries({ queryKey: ['transactions'] });
-         toast.success('Rééquilibrage de trésorerie réussi ! ⚡');
+         toast.success('Rééquilibrage de trésorerie effectué avec succès !');
          onOpenChange(false);
          setFromWalletId('');
          setNote('');
@@ -1274,232 +1282,290 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
          setAccountingAgent('');
          setStrategy('CUSTOM');
       },
-      onError: (err: any) => toast.error(err.message || 'Erreur de rééquilibrage'),
+      onError: (err: any) => toast.error(err.message || 'Erreur lors du rééquilibrage'),
    });
+
+   const handleConfirm = () => {
+      if (!fromWalletId) {
+         toast.error("Veuillez sélectionner le compte source.");
+         return;
+      }
+      if (selectedTargets.length === 0) {
+         toast.error("Veuillez saisir un montant pour au moins un compte destinataire.");
+         return;
+      }
+      if (isOverdrawn) {
+         toast.error("Le montant total dépasse le solde disponible sur le compte source.");
+         return;
+      }
+
+      rebalanceMutation.mutate({
+         from_wallet_id: fromWalletId,
+         targets: selectedTargets,
+         total_amount: totalAllocated,
+         note,
+         user_ref: userRef,
+         accounting_agent: accountingAgent,
+         strategy,
+      });
+   };
 
    return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-         <DialogContent showCloseButton={false} className="max-w-5xl w-[98vw] p-0 border-none bg-[#F8F9FC] rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
-            <div className="bg-gradient-to-br from-[#FD7014] to-[#e05e0a] p-10 text-white shrink-0 relative overflow-hidden">
-               <div className="absolute right-0 top-0 opacity-10 pointer-events-none translate-x-1/4 -translate-y-1/4">
-                  <RefreshCw className="size-64" />
-               </div>
-               <div className="flex items-center justify-between relative z-10">
-                  <div className="flex items-center gap-6">
-                     <div className="size-20 bg-white/20 backdrop-blur-md rounded-3xl flex items-center justify-center border border-white/10 shadow-inner">
-                        <Layers className="size-10 text-white" />
+         <DialogContent showCloseButton={false} className="max-w-5xl w-[98vw] p-0 border-none bg-[#F8F9FC] rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-8 text-white shrink-0">
+               <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-5">
+                     <div className="size-14 bg-white/10 rounded-2xl flex items-center justify-center border border-white/10">
+                        <ArrowRightLeft className="size-7 text-[#00B894]" />
                      </div>
                      <div>
-                        <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none font-sans drop-shadow-sm">Rééquilibrage de Trésorerie</DialogTitle>
-                        <p className="text-white/80 text-xs font-black uppercase tracking-widest mt-2 flex items-center gap-1.5 drop-shadow-sm">
-                           <ShieldCheck className="size-4" /> Distribution & Ajustement Inter-Nodes (Micro-Détaillé)
+                        <DialogTitle className="text-2xl font-black uppercase tracking-tight leading-none font-sans">
+                           Rééquilibrage de Trésorerie
+                        </DialogTitle>
+                        <p className="text-white/60 text-xs font-medium mt-1.5">
+                           Répartissez vos liquidités entre vos différentes caisses physiques et comptes bancaires / CCP
                         </p>
                      </div>
                   </div>
-                  <button onClick={() => onOpenChange(false)} className="p-4 rounded-2xl bg-black/10 hover:bg-black/20 transition-all shrink-0 backdrop-blur-md">
-                     <X className="size-6 text-white" />
+                  <button onClick={() => onOpenChange(false)} className="p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all shrink-0">
+                     <X className="size-5 text-white" />
                   </button>
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar bg-[#F8F9FC]">
-               {/* SOURCE */}
-               <div className="bg-white rounded-[32px] p-8 space-y-6 shadow-sm border border-slate-200/60 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-                     <ArrowUpRight className="size-32" />
+            {/* Corps du formulaire */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar bg-[#F8F9FC]">
+               {/* ── ÉTAPE 1 : COMPTE SOURCE ── */}
+               <div className="bg-white rounded-2xl p-6 space-y-4 shadow-xs border border-slate-200/80">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                     <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <span className="flex items-center justify-center size-6 rounded-full bg-slate-900 text-white text-[11px] font-bold">1</span> 
+                        Compte Source (D'où partent les fonds)
+                     </h4>
+                     {sourceWallet && (
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                           Solde disponible : {formatPrice(sourceWallet.balance)}
+                        </span>
+                     )}
                   </div>
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-3">
-                     <span className="flex items-center justify-center size-6 rounded-full bg-slate-100 text-slate-500 text-[10px]">1</span> 
-                     Source de financement (Compte Débiteur)
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
-                     <div className="space-y-3">
-                        <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Sélectionner le portefeuille de prélèvement *</label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                     <div className="space-y-2">
+                        <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">
+                           Sélectionner le compte de prélèvement *
+                        </label>
                         <Select value={fromWalletId} onValueChange={setFromWalletId}>
-                           <SelectTrigger className="h-16 border-slate-200 bg-slate-50/50 focus:bg-white rounded-[20px] px-6 text-sm font-bold shadow-sm transition-all hover:border-[#FD7014]/30 focus:border-[#FD7014]">
-                              <SelectValue placeholder="Choisir un compte source" />
+                           <SelectTrigger className="h-12 border-slate-200 bg-white rounded-xl px-4 text-xs font-bold shadow-xs">
+                              <SelectValue placeholder="Choisir un compte source..." />
                            </SelectTrigger>
-                           <SelectContent className="rounded-2xl">
+                           <SelectContent className="rounded-xl">
                               {wallets.map((w: any) => (
-                                 <SelectItem key={w.id} value={w.id} className="font-bold text-sm py-3">
-                                    <div className="flex items-center justify-between w-full">
+                                 <SelectItem key={w.id} value={w.id} className="font-bold text-xs py-2.5">
+                                    <div className="flex items-center justify-between w-full gap-4">
                                        <span>{w.name}</span>
-                                       <span className="text-slate-500 text-xs ml-4">{formatPrice(w.balance)} DA</span>
+                                       <span className="text-slate-500 font-mono">({formatPrice(w.balance)})</span>
                                     </div>
                                  </SelectItem>
                               ))}
                            </SelectContent>
                         </Select>
-                        {sourceWallet && (
-                           <div className="flex items-center gap-2 mt-4 px-3 bg-emerald-50 py-3 rounded-2xl border border-emerald-100">
-                              <div className="size-2.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                              <span className="text-xs font-bold text-slate-600">Solde Disponible: <span className="text-emerald-600 ml-1">{formatPrice(sourceWallet.balance)} DA</span></span>
-                           </div>
-                        )}
                      </div>
-                     <div className="space-y-3">
-                        <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Agent de Trésorerie (Responsable) *</label>
+
+                     <div className="space-y-2">
+                        <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">
+                           Responsable de l'opération
+                        </label>
                         <Input 
                            value={accountingAgent}
                            onChange={e => setAccountingAgent(e.target.value)}
-                           placeholder="Nom du trésorier ou mandataire..."
-                           className="h-16 border-slate-200 bg-white rounded-[20px] px-6 text-sm font-bold text-slate-800 shadow-sm transition-all focus:ring-2 focus:ring-[#FD7014]/20"
+                           placeholder="Ex: Selma Azzoug (Gérant / Trésorier)"
+                           className="h-12 border-slate-200 bg-white rounded-xl px-4 text-xs font-bold text-slate-800 shadow-xs"
                         />
                      </div>
                   </div>
                </div>
 
                {fromWalletId && (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                     {/* LEFT COLUMN: STRATEGY & INFO */}
-                     <div className="lg:col-span-5 space-y-8">
-                        <div className="bg-white rounded-[32px] p-8 space-y-6 shadow-sm border border-slate-200/60">
-                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-3">
-                              <span className="flex items-center justify-center size-6 rounded-full bg-slate-100 text-slate-500 text-[10px]">2</span> 
-                              Règle d'Allocation
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+                     {/* COLONNE GAUCHE : STRATÉGIE & INFOS */}
+                     <div className="lg:col-span-5 space-y-6">
+                        {/* ÉTAPE 2 : STRATÉGIE */}
+                        <div className="bg-white rounded-2xl p-6 space-y-4 shadow-xs border border-slate-200/80">
+                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
+                              <span className="flex items-center justify-center size-6 rounded-full bg-slate-900 text-white text-[11px] font-bold">2</span> 
+                              Méthode de Répartition
                            </h4>
-                           <div className="space-y-5">
-                              <div className="space-y-3">
-                                 <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Stratégie de rééquilibrage</label>
+
+                           <div className="space-y-4">
+                              <div className="space-y-2">
+                                 <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">Mode de calcul</label>
                                  <Select value={strategy} onValueChange={(v: any) => setStrategy(v)}>
-                                    <SelectTrigger className="h-16 border-slate-200 bg-slate-50/50 rounded-[20px] px-6 text-xs font-black uppercase shadow-sm focus:border-[#FD7014] hover:border-[#FD7014]/30">
-                                       <SelectValue placeholder="Stratégie" />
+                                    <SelectTrigger className="h-12 border-slate-200 bg-white rounded-xl px-4 text-xs font-bold shadow-xs">
+                                       <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent className="rounded-2xl">
-                                       <SelectItem value="CUSTOM" className="font-bold text-xs py-3">1. MANUELLE (SUR-MESURE)</SelectItem>
-                                       <SelectItem value="EQUIPROPORTIONAL" className="font-bold text-xs py-3">2. PARTAGE ÉQUITABLE (Split Exact)</SelectItem>
-                                       <SelectItem value="TARGET_BALANCE" className="font-bold text-xs py-3">3. AJUSTEMENT DE FLOT (Seuil Cible)</SelectItem>
+                                    <SelectContent className="rounded-xl">
+                                       <SelectItem value="CUSTOM" className="font-bold text-xs py-2.5">1. Saisie Libre (Montants personnalisés)</SelectItem>
+                                       <SelectItem value="EQUIPROPORTIONAL" className="font-bold text-xs py-2.5">2. Partage Équitable (Division égale)</SelectItem>
+                                       <SelectItem value="TARGET_BALANCE" className="font-bold text-xs py-2.5">3. Compléter un Seuil Cible (Plafond)</SelectItem>
                                     </SelectContent>
                                  </Select>
                               </div>
 
                               {strategy === 'EQUIPROPORTIONAL' && (
-                                 <div className="space-y-3 p-5 bg-[#FD7014]/5 rounded-3xl border border-[#FD7014]/20">
-                                    <label className="text-[11px] font-black uppercase text-[#FD7014] tracking-widest ml-1">Montant global à distribuer (DZD)</label>
-                                    <div className="flex gap-3">
-                                       <div className="relative flex-1">
-                                          <Input 
-                                             type="number" value={totalAmountToDistribute || ''} onChange={e => setTotalAmountToDistribute(parseFloat(e.target.value) || 0)}
-                                             placeholder="Ex: 150000"
-                                             className="h-14 border-white bg-white rounded-2xl pl-12 pr-12 text-sm font-black text-slate-800 shadow-sm"
-                                          />
-                                          <Zap className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#FD7014]" />
-                                       </div>
-                                       <button type="button" onClick={applyStrategy} className="h-14 px-6 rounded-2xl bg-[#FD7014] text-white font-black text-[11px] uppercase tracking-widest hover:bg-[#e05e0a] shadow-lg shadow-orange-500/20 transition-all">Split</button>
+                                 <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
+                                    <label className="text-[11px] font-bold uppercase text-indigo-700 tracking-wider block">
+                                       Montant global à diviser (DA)
+                                    </label>
+                                    <div className="flex gap-2">
+                                       <Input 
+                                          type="number" 
+                                          value={totalAmountToDistribute || ''} 
+                                          onChange={e => setTotalAmountToDistribute(parseFloat(e.target.value) || 0)}
+                                          placeholder="Ex: 50000"
+                                          className="h-11 border-indigo-200 bg-white rounded-xl px-3 text-xs font-bold text-slate-800"
+                                       />
+                                       <Button 
+                                          type="button" 
+                                          onClick={applyStrategy} 
+                                          className="h-11 px-4 rounded-xl bg-[#6C5CE7] hover:bg-[#5b4cc4] text-white font-bold text-xs shrink-0"
+                                       >
+                                          Diviser
+                                       </Button>
                                     </div>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2 ml-2">Divisera ce montant équitablement entre les comptes cochés.</p>
+                                    <p className="text-[11px] text-indigo-600/80 font-medium">
+                                       Ce montant sera partagé équitablement entre les comptes cochés à droite.
+                                    </p>
                                  </div>
                               )}
 
                               {strategy === 'TARGET_BALANCE' && (
-                                 <div className="space-y-3 p-5 bg-blue-50 rounded-3xl border border-blue-200">
-                                    <label className="text-[11px] font-black uppercase text-blue-600 tracking-widest ml-1">Seuil Cible par Compte (DZD)</label>
-                                    <div className="flex gap-3">
-                                       <div className="relative flex-1">
-                                          <Input 
-                                             type="number" value={targetBalanceGoal || ''} onChange={e => setTargetBalanceGoal(parseFloat(e.target.value) || 0)}
-                                             placeholder="Ex: 50000"
-                                             className="h-14 border-white bg-white rounded-2xl pl-12 pr-12 text-sm font-black text-slate-800 shadow-sm"
-                                          />
-                                          <TrendingUp className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-blue-500" />
-                                       </div>
-                                       <button type="button" onClick={applyStrategy} className="h-14 px-6 rounded-2xl bg-blue-600 text-white font-black text-[11px] uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-500/20 transition-all">Ajuster</button>
+                                 <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 space-y-3">
+                                    <label className="text-[11px] font-bold uppercase text-blue-700 tracking-wider block">
+                                       Solde cible à atteindre par compte (DA)
+                                    </label>
+                                    <div className="flex gap-2">
+                                       <Input 
+                                          type="number" 
+                                          value={targetBalanceGoal || ''} 
+                                          onChange={e => setTargetBalanceGoal(parseFloat(e.target.value) || 0)}
+                                          placeholder="Ex: 30000"
+                                          className="h-11 border-blue-200 bg-white rounded-xl px-3 text-xs font-bold text-slate-800"
+                                       />
+                                       <Button 
+                                          type="button" 
+                                          onClick={applyStrategy} 
+                                          className="h-11 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shrink-0"
+                                       >
+                                          Calculer
+                                       </Button>
                                     </div>
-                                    <p className="text-[10px] font-bold text-slate-500 mt-2 ml-2">Comblera le manque pour que chaque compte coché atteigne ce seuil.</p>
+                                    <p className="text-[11px] text-blue-600/80 font-medium">
+                                       Verse automatiquement la différence pour que chaque compte coché atteigne ce montant.
+                                    </p>
                                  </div>
                               )}
 
                               {strategy === 'CUSTOM' && (
-                                 <div className="p-5 bg-slate-50 rounded-3xl border border-slate-200 border-dashed flex items-start gap-4">
-                                    <Info className="size-6 text-slate-400 shrink-0 mt-0.5" />
-                                    <p className="text-xs font-semibold text-slate-500 leading-relaxed">
-                                       Saisie libre. Cochez les comptes cibles à droite et indiquez le montant exact à transférer pour chacun.
-                                    </p>
+                                 <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 text-xs text-slate-600 font-medium leading-relaxed">
+                                    Cochez les comptes cibles à droite et saisissez directement le montant souhaité pour chacun.
                                  </div>
                               )}
                            </div>
                         </div>
 
-                        <div className="bg-white rounded-[32px] p-8 space-y-6 shadow-sm border border-slate-200/60">
-                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-3">
-                              <span className="flex items-center justify-center size-6 rounded-full bg-slate-100 text-slate-500 text-[10px]">3</span> 
-                              Traçabilité (Micro-détails)
+                        {/* ÉTAPE 3 : MOTIF & RÉFÉRENCE */}
+                        <div className="bg-white rounded-2xl p-6 space-y-4 shadow-xs border border-slate-200/80">
+                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
+                              <span className="flex items-center justify-center size-6 rounded-full bg-slate-900 text-white text-[11px] font-bold">3</span> 
+                              Motif & Justificatif
                            </h4>
-                           <div className="space-y-5">
-                              <div className="space-y-3">
-                                 <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Référence Opération / Chèque</label>
-                                 <div className="relative">
-                                    <Input 
-                                       value={userRef} onChange={e => setUserRef(e.target.value)}
-                                       placeholder="Ex: VIR-84920, CHEQUE-002"
-                                       className="h-14 border-slate-200 bg-slate-50/50 rounded-2xl pl-12 px-5 text-sm font-bold text-slate-800 transition-all focus:bg-white focus:ring-2 focus:ring-[#FD7014]/20"
-                                    />
-                                    <Receipt className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-400" />
-                                 </div>
-                              </div>
-                              <div className="space-y-3">
-                                 <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-1">Motif comptable détaillé *</label>
+                           <div className="space-y-4">
+                              <div className="space-y-2">
+                                 <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">
+                                    Référence / N° de pièce (optionnel)
+                                 </label>
                                  <Input 
-                                    value={note} onChange={e => setNote(e.target.value)}
-                                    placeholder="Ex: Injection de liquidité pour achats..."
-                                    className="h-14 border-slate-200 bg-slate-50/50 rounded-2xl px-5 text-sm font-bold text-slate-800 transition-all focus:bg-white focus:ring-2 focus:ring-[#FD7014]/20"
+                                    value={userRef} 
+                                    onChange={e => setUserRef(e.target.value)}
+                                    placeholder="Ex: REBAL-20260828, VIR-001"
+                                    className="h-11 border-slate-200 bg-white rounded-xl px-4 text-xs font-bold text-slate-800"
+                                 />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">
+                                    Motif de l'opération
+                                 </label>
+                                 <Input 
+                                    value={note} 
+                                    onChange={e => setNote(e.target.value)}
+                                    placeholder="Ex: Alimentation caisse dépenses & CCP"
+                                    className="h-11 border-slate-200 bg-white rounded-xl px-4 text-xs font-bold text-slate-800"
                                  />
                               </div>
                            </div>
                         </div>
                      </div>
 
-                     {/* RIGHT COLUMN: TARGETS */}
-                     <div className="lg:col-span-7 bg-white rounded-[32px] p-8 shadow-sm border border-slate-200/60 flex flex-col h-[700px]">
-                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-3 mb-6">
-                           <span className="flex items-center justify-center size-6 rounded-full bg-slate-100 text-slate-500 text-[10px]">4</span> 
-                           Distribution vers les Comptes (Crédit)
-                        </h4>
+                     {/* COLONNE DROITE : DESTINATAIRES */}
+                     <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-xs border border-slate-200/80 flex flex-col min-h-[480px]">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                           <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                              <span className="flex items-center justify-center size-6 rounded-full bg-slate-900 text-white text-[11px] font-bold">4</span> 
+                              Comptes Destinataires (Vers où va l'argent)
+                           </h4>
+                           <span className="text-[11px] font-bold text-slate-400">
+                              {selectedTargets.length} compte{selectedTargets.length > 1 ? 's' : ''} sélectionné{selectedTargets.length > 1 ? 's' : ''}
+                           </span>
+                        </div>
                         
-                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-4">
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                            {eligibleTargets.map((w: any) => {
                               const item = targetsState[w.id] || { enabled: false, amount: 0 };
                               const newBalance = w.balance + (item.enabled ? item.amount : 0);
                               
                               return (
                                  <div key={w.id} className={cn(
-                                    "flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-3xl border-2 transition-all gap-5",
-                                    item.enabled ? "border-[#FD7014]/40 bg-[#FD7014]/5 shadow-sm" : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/50"
+                                    "p-4 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+                                    item.enabled ? "border-[#6C5CE7] bg-indigo-50/20" : "border-slate-200/80 bg-white hover:border-slate-300"
                                  )}>
-                                    <div className="flex items-center gap-5">
-                                       <div className="">
-                                          <input 
-                                             type="checkbox" checked={item.enabled}
-                                             onChange={e => setTargetsState(p => ({ ...p, [w.id]: { enabled: e.target.checked, amount: e.target.checked ? item.amount : 0 } }))}
-                                             className="size-6 text-[#FD7014] focus:ring-[#FD7014] rounded-lg cursor-pointer border-slate-300"
-                                          />
-                                       </div>
+                                    <div className="flex items-center gap-3.5">
+                                       <input 
+                                          type="checkbox" 
+                                          checked={item.enabled}
+                                          onChange={e => setTargetsState(p => ({ 
+                                             ...p, 
+                                             [w.id]: { enabled: e.target.checked, amount: e.target.checked ? item.amount : 0 } 
+                                          }))}
+                                          className="size-5 text-[#6C5CE7] focus:ring-[#6C5CE7] rounded cursor-pointer border-slate-300"
+                                       />
                                        <div>
-                                          <p className="text-base font-black text-slate-800 leading-tight mb-1.5">{w.name}</p>
-                                          <div className="flex items-center gap-3 text-xs font-bold">
-                                             <Badge variant="outline" className="text-[10px] uppercase tracking-wider px-2 py-0.5 border-slate-200 text-slate-500 bg-white">{w.type}</Badge>
-                                             {item.enabled && item.amount > 0 ? (
-                                                <span className="text-slate-500 flex items-center gap-2">
-                                                   <span className="line-through opacity-60">{formatPrice(w.balance)} DA</span>
-                                                   <ArrowRightLeft className="size-3.5 text-[#FD7014]" />
-                                                   <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">{formatPrice(newBalance)} DA</span>
+                                          <p className="text-xs font-bold text-slate-900 mb-0.5">{w.name}</p>
+                                          <div className="flex items-center gap-2 text-[11px]">
+                                             <span className="text-slate-400 font-medium">Solde actuel : {formatPrice(w.balance)}</span>
+                                             {item.enabled && item.amount > 0 && (
+                                                <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                                   → Estimé : {formatPrice(newBalance)}
                                                 </span>
-                                             ) : (
-                                                <span className="text-slate-500">{formatPrice(w.balance)} DA</span>
                                              )}
                                           </div>
                                        </div>
                                     </div>
                                     
                                     {item.enabled && (
-                                       <div className="relative w-full sm:w-48 shrink-0">
+                                       <div className="relative w-full sm:w-44 shrink-0">
                                           <Input 
-                                             type="number" min={0} value={item.amount || ''}
-                                             onChange={e => setTargetsState(p => ({ ...p, [w.id]: { ...p[w.id], amount: parseFloat(e.target.value) || 0 } }))}
+                                             type="number" 
+                                             min={0} 
+                                             value={item.amount || ''}
+                                             onChange={e => setTargetsState(p => ({ 
+                                                ...p, 
+                                                [w.id]: { ...p[w.id], amount: parseFloat(e.target.value) || 0 } 
+                                             }))}
                                              placeholder="Montant à verser"
-                                             className="h-14 border-white bg-white shadow-md rounded-2xl px-5 pr-14 text-sm font-black text-slate-800 text-right focus:ring-2 focus:ring-[#FD7014]/30"
+                                             className="h-10 border-slate-200 bg-white rounded-xl px-3 text-xs font-bold text-slate-900 text-right focus:border-[#6C5CE7]"
                                           />
-                                          <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">DA</span>
                                        </div>
                                     )}
                                  </div>
@@ -1508,10 +1574,10 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
                         </div>
 
                         {isOverdrawn && (
-                           <div className="mt-6 p-5 bg-rose-50 border border-rose-200 rounded-3xl text-xs text-rose-700 font-bold leading-relaxed flex gap-4 shadow-sm animate-in fade-in slide-in-from-bottom-2">
-                              <AlertCircle className="size-6 shrink-0 text-rose-500 mt-0.5" />
+                           <div className="mt-4 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center gap-3">
+                              <AlertCircle className="size-5 shrink-0 text-rose-600" />
                               <span>
-                                 Le total alloué ({formatPrice(totalAllocated)} DA) dépasse le solde disponible sur le compte source ({formatPrice(sourceWallet?.balance)} DA). Veuillez ajuster les montants.
+                                 Le total à prélever ({formatPrice(totalAllocated)}) dépasse le solde disponible ({formatPrice(sourceWallet?.balance)}).
                               </span>
                            </div>
                         )}
@@ -1520,54 +1586,41 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
                )}
             </div>
 
-            <DialogFooter className="p-8 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-6 shrink-0 relative z-20 shadow-[0_-20px_40px_rgba(0,0,0,0.02)] rounded-b-[40px]">
-               <div className="flex items-center gap-8 w-full sm:w-auto">
-                  <div className="flex flex-col bg-slate-50 px-6 py-4 rounded-3xl border border-slate-100">
-                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><ArrowDownRight className="size-4" /> Total à Préléver</span>
-                     <p className={cn("text-3xl font-black tabular-nums tracking-tighter", isOverdrawn ? "text-rose-500" : "text-[#FD7014]")}>
-                        -{formatPrice(totalAllocated)} <span className="text-base text-slate-400 ml-1">DA</span>
+            {/* Footer Récapitulatif */}
+            <DialogFooter className="p-6 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+               <div className="flex items-center gap-6 w-full sm:w-auto">
+                  <div className="flex flex-col">
+                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total à Prélever</span>
+                     <p className={cn("text-2xl font-black tabular-nums tracking-tight", isOverdrawn ? "text-rose-600" : "text-slate-900")}>
+                        -{formatPrice(totalAllocated)}
                      </p>
                   </div>
                   {sourceWallet && !isOverdrawn && totalAllocated > 0 && (
-                     <div className="hidden md:flex flex-col">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-2"><WalletIcon className="size-4" /> Nouveau Solde Source</span>
-                        <p className="text-xl font-black text-emerald-600 tabular-nums tracking-tighter">
-                           {formatPrice(sourceWallet.balance - totalAllocated)} <span className="text-sm text-emerald-600/60 ml-1">DA</span>
+                     <div className="hidden sm:flex flex-col border-l border-slate-200 pl-6">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Nouveau Solde Restant</span>
+                        <p className="text-xl font-black text-emerald-600 tabular-nums tracking-tight">
+                           {formatPrice(sourceWallet.balance - totalAllocated)}
                         </p>
                      </div>
                   )}
                </div>
-               
-               <div className="flex items-center gap-4 w-full sm:w-auto">
-                  <button type="button" onClick={() => onOpenChange(false)} className="h-16 px-8 rounded-3xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 transition-colors w-full sm:w-auto">Abandonner</button>
+
+               <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
                   <Button 
-                     onClick={() => {
-                        if (selectedTargets.length === 0) {
-                           toast.error("Veuillez sélectionner au moins un compte cible.");
-                           return;
-                        }
-                        if (isOverdrawn) {
-                           toast.error("Le montant total alloué dépasse le solde du compte de prélèvement.");
-                           return;
-                        }
-                        if (!accountingAgent || !note) {
-                           toast.error("Agent de trésorerie et motif obligatoires.");
-                           return;
-                        }
-                        rebalanceMutation.mutate({
-                           from_wallet_id: fromWalletId,
-                           targets: selectedTargets,
-                           note: note,
-                           user_ref: userRef,
-                           strategy: strategy,
-                           accounting_agent: accountingAgent,
-                           total_amount: totalAllocated
-                        });
-                     }}
-                     disabled={rebalanceMutation.isPending || !fromWalletId || selectedTargets.length === 0 || totalAllocated <= 0 || isOverdrawn}
-                     className="h-16 px-12 rounded-3xl bg-[#FD7014] hover:bg-[#e05e0a] text-white text-xs font-black uppercase tracking-widest shadow-2xl shadow-orange-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto flex items-center gap-3"
+                     type="button" 
+                     onClick={() => onOpenChange(false)} 
+                     variant="outline" 
+                     className="h-11 px-5 rounded-xl border-slate-200 text-xs font-bold text-slate-700"
                   >
-                     {rebalanceMutation.isPending ? <Loader2 className="size-6 animate-spin" /> : <><RefreshCw className="size-5" /> VALIDER LE RÉÉQUILIBRAGE</>}
+                     Annuler
+                  </Button>
+                  <Button 
+                     type="button" 
+                     onClick={handleConfirm}
+                     disabled={rebalanceMutation.isPending || !fromWalletId || selectedTargets.length === 0 || isOverdrawn}
+                     className="h-11 px-6 rounded-xl bg-[#00B894] hover:bg-[#00a382] text-white text-xs font-bold shadow-md shadow-emerald-100"
+                  >
+                     {rebalanceMutation.isPending ? 'En cours...' : 'Valider le Rééquilibrage'}
                   </Button>
                </div>
             </DialogFooter>
@@ -1577,9 +1630,6 @@ function RebalanceModal({ open, onOpenChange, wallets, storeId }: any) {
 }
 
 
-// ═══════════════════════════════════════════════════════════════
-// Create Transaction Modal (Micro-Complete)
-// ═══════════════════════════════════════════════════════════════
 function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
    const qc = useQueryClient();
    const [formData, setFormData] = useState({
