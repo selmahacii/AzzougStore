@@ -168,12 +168,12 @@ export default function FinanceDashboard() {
          {/* ─── Financial Intelligence & Real-time KPIs ─── */}
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             {/* 1. Trésorerie Consolidée Disponible */}
-            <div className="xl:col-span-2 bg-[#2D3436] rounded-[32px] p-7 text-white relative overflow-hidden shadow-xl flex flex-col justify-between">
+            <div className="xl:col-span-2 bg-[#2D3436] rounded-[32px] p-7 text-white relative overflow-hidden shadow-xl flex flex-col justify-between group hover:shadow-2xl transition-all">
                <div className="absolute top-0 right-0 p-6 opacity-[0.04] rotate-12">
                   <TrendingUp className="size-36" />
                </div>
                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-3">
                      <div className="flex items-center gap-3">
                         <div className="size-10 bg-[#6C5CE7] rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
                            <WalletIcon className="size-5 text-white" />
@@ -181,23 +181,22 @@ export default function FinanceDashboard() {
                         <div>
                            <h1 className="text-base font-black uppercase tracking-tight leading-none">Console Financière</h1>
                            <p className="text-white/40 text-[9px] font-black uppercase tracking-widest mt-1 flex items-center gap-1.5">
-                              <ShieldCheck className="size-3 text-emerald-400" /> Trésorerie Consolidée
+                              <ShieldCheck className="size-3 text-emerald-400" /> Trésorerie Consolidée Disponible
                            </p>
                         </div>
                      </div>
                   </div>
                   <div className="mt-2">
-                     <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Liquidités Immédiates</p>
+                     <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Liquidités Immédiatement Mobilisables</p>
                      <p className="text-4xl font-black tracking-tighter tabular-nums">{formatPrice(totalBalance)} <span className="text-xl text-white/70 font-bold">DA</span></p>
                   </div>
                </div>
-               <div className="flex items-center justify-between pt-4 mt-4 border-t border-white/10 relative z-10 text-[10px] font-bold text-white/60">
-                  <span>{wallets.length} compte{wallets.length > 1 ? 's' : ''} rattaché{wallets.length > 1 ? 's' : ''}</span>
-                  <span className="text-emerald-400">Solde équilibré ✓</span>
+               <div className="pt-3 mt-3 border-t border-white/10 relative z-10 text-[10px] font-medium text-white/60 leading-relaxed">
+                  Liquidités réelles immédiatement mobilisables réparties sur l'ensemble de vos caisses physiques et comptes bancaires/CCP.
                </div>
             </div>
 
-            {/* 2. Total Ventes & Encaissements */}
+            {/* 2. Ventes & Encaissements Entrants */}
             <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
                   <div className="size-11 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -205,14 +204,16 @@ export default function FinanceDashboard() {
                   </div>
                   <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px] font-black uppercase">Entrées</Badge>
                </div>
-               <div className="mt-4">
+               <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Ventes & Encaissements</p>
                   <p className="text-2xl font-black text-emerald-600 tabular-nums">+{formatPrice(totalIn)} <span className="text-xs font-bold text-slate-400">DA</span></p>
                </div>
-               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Cumul des encaissements COD</p>
+               <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
+                  Total des entrées financières réelles (encaissements des livraisons COD payées et règlements clients).
+               </p>
             </div>
 
-            {/* 3. Total Charges & Décaissements */}
+            {/* 3. Charges & Décaissements Sortants */}
             <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
                   <div className="size-11 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
@@ -220,14 +221,16 @@ export default function FinanceDashboard() {
                   </div>
                   <Badge className="bg-rose-50 text-rose-600 border border-rose-100 text-[9px] font-black uppercase">Sorties</Badge>
                </div>
-               <div className="mt-4">
+               <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Charges & Décaissements</p>
                   <p className="text-2xl font-black text-rose-600 tabular-nums">-{formatPrice(totalOut)} <span className="text-xs font-bold text-slate-400">DA</span></p>
                </div>
-               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Dépenses, salaires & achats</p>
+               <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
+                  Total des sorties d'argent (dépenses publicitaires Meta/TikTok, salaires, achats de stock, emballage, logistique).
+               </p>
             </div>
 
-            {/* 4. Flux Net de Trésorerie (Bénéfice Net Cashflow) */}
+            {/* 4. Bénéfice Cashflow Net (Flux Net) */}
             <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
                   <div className="size-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-[#6C5CE7]">
@@ -235,16 +238,18 @@ export default function FinanceDashboard() {
                   </div>
                   <Badge className="bg-indigo-50 text-[#6C5CE7] border border-indigo-100 text-[9px] font-black uppercase">Flux Net</Badge>
                </div>
-               <div className="mt-4">
+               <div className="mt-3">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Bénéfice Cashflow Net</p>
                   <p className={cn("text-2xl font-black tabular-nums", (totalIn - totalOut) >= 0 ? "text-emerald-600" : "text-rose-600")}>
                      {(totalIn - totalOut) >= 0 ? '+' : ''}{formatPrice(totalIn - totalOut)} <span className="text-xs font-bold text-slate-400">DA</span>
                   </p>
                </div>
-               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Solde net d'exploitation</p>
+               <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
+                  Différence exacte entre vos entrées et sorties de trésorerie (Entrées − Sorties). Indique si l'activité crée du cash.
+               </p>
             </div>
 
-            {/* 5. Ratio de Rentabilité & Couverture */}
+            {/* 5. Taux de Marge Nette de Cash (%) */}
             <div className="bg-white rounded-[32px] border p-6 flex flex-col justify-between shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
                <div className="flex items-center justify-between">
                   <div className="size-11 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600">
@@ -252,13 +257,15 @@ export default function FinanceDashboard() {
                   </div>
                   <Badge className="bg-amber-50 text-amber-600 border border-amber-100 text-[9px] font-black uppercase">Marge</Badge>
                </div>
-               <div className="mt-4">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Taux Marge Cash</p>
+               <div className="mt-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Taux Marge Nette Cash</p>
                   <p className="text-2xl font-black text-amber-600 tabular-nums">
                      {totalIn > 0 ? `${(((totalIn - totalOut) / totalIn) * 100).toFixed(1)}%` : '100%'}
                   </p>
                </div>
-               <p className="text-[10px] text-slate-400 font-bold mt-2 pt-2 border-t border-slate-100">Rentabilité nette du cash</p>
+               <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-3 pt-3 border-t border-slate-100">
+                  Ratio de rentabilité ((Flux Net / Entrées) × 100) : part de chaque dinar qui reste effectivement en trésorerie.
+               </p>
             </div>
          </div>
 
@@ -2111,7 +2118,7 @@ function TransactionDetailModal({
                         <Clock className="size-3.5 text-indigo-500" /> Horodatage & Enregistrement
                      </span>
                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                        Horodatage Certifié UTC+1
+                        Horodatage Certifié GMT+1 (Algérie)
                      </span>
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-xs">
