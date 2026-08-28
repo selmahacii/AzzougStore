@@ -120,12 +120,10 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 // Sub-tabs configuration
 // ═══════════════════════════════════════════════════════════════
 const TABS = [
-   { id: 'infra', label: 'Infrastructure Core', icon: RadioTower },
-   { id: 'roles', label: 'Matrice des Rôles', icon: Shield },
-   { id: 'admins', label: 'Administration', icon: UserCheck },
-   { id: 'agents', label: 'Force de Vente', icon: Users },
-   { id: 'marketers', label: 'Affiliés & Médias', icon: Megaphone },
-   { id: 'assignment-rules', label: "Règles d'Assignation", icon: Target },
+   { id: 'team', label: '👥 Équipe & Collaborateurs', icon: Users },
+   { id: 'assignment-rules', label: "🎯 Règles d&apos;Assignation", icon: Target },
+   { id: 'roles', label: '🛡️ Matrice des Rôles', icon: Shield },
+   { id: 'infra', label: '⚡ Infrastructure Live', icon: RadioTower },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -944,969 +942,501 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
 // ═══════════════════════════════════════════════════════════════
 const ADMINS_PAGE_SIZE = 15;
 
-function AdminsView({ employees, isLoading, onEdit, onDeactivate, onCreate, totalStaff }: {
-   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onCreate: () => void; totalStaff?: number;
+
+// ═══════════════════════════════════════════════════════════════
+// Unified Team & Staff Management Sub-View
+// ═══════════════════════════════════════════════════════════════
+function UnifiedTeamView({
+   employees,
+   marketers,
+   isLoading,
+   onCreate,
+   onEdit,
+   onDeactivate,
+   onDelete,
+   onOpenSalary,
+   storeId,
+}: {
+   employees: any[];
+   marketers: MarketerPerformance[];
+   isLoading: boolean;
+   onCreate: () => void;
+   onEdit: (emp: any) => void;
+   onDeactivate: (emp: any) => void;
+   onDelete: (emp: any) => void;
+   onOpenSalary: (emp: any) => void;
+   storeId: string;
 }) {
    const [search, setSearch] = useState('');
+   const [roleFilter, setRoleFilter] = useState<string>('ALL');
+   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
    const [page, setPage] = useState(1);
+   const pageSize = 15;
 
-   // Real, derivable stats only — no invented percentages. "Actifs" counts
-   // employees with is_active=true (a real column); "Accès privilégiés"
-   // counts real SUPER_ADMIN/ADMIN accounts. There is no last-activity
-   // tracking anywhere in this schema, so the previous "Actifs 24h: 100%"
-   // and "Sécurité: Maximale" tiles — and the per-row "Dernière active:
-   // Actif" shown identically for every employee, including deactivated
-   // ones — were fabricated, not computed from anything.
-   const activeCount = employees.filter(e => e.is_active).length;
-   const activePct = employees.length > 0 ? Math.round((activeCount / employees.length) * 100) : 0;
-   const privilegedCount = employees.filter(e => e.role === 'SUPER_ADMIN' || e.role === 'ADMIN').length;
+   // Single bulk query for agents performance summary
+   const perfQuery = useQuery({
+      queryKey: ['employees', 'performance-summary', storeId],
+      queryFn: () => apiFetch(`/api/v1/users/performance-summary?store_id=${storeId}`),
+      enabled: !!storeId,
+   });
 
-   const filtered = search.trim()
-      ? employees.filter(e =>
-           e.name.toLowerCase().includes(search.toLowerCase()) ||
-           e.email.toLowerCase().includes(search.toLowerCase())
-        )
-      : employees;
+   const perfData = (perfQuery.data as any)?.data ?? perfQuery.data ?? [];
+   const perfByAgent = Array.isArray(perfData)
+      ? Object.fromEntries(perfData.map((p: any) => [p.user_id, p]))
+      : {};
 
-   const totalPages = Math.max(1, Math.ceil(filtered.length / ADMINS_PAGE_SIZE));
+   const marketersByEmail = Array.isArray(marketers)
+      ? Object.fromEntries(marketers.map((m: any) => [m.email?.toLowerCase(), m]))
+      : {};
+
+   // Role Counts
+   const totalStaff = employees.length;
+   const activeStaff = employees.filter(e => e.is_active).length;
+   const confirmateursCount = employees.filter(e => e.role === 'CONFIRMATEUR').length;
+   const livreursCount = employees.filter(e => e.role === 'LIVREUR').length;
+   const marketersCount = employees.filter(e => e.role === 'MARKETER').length;
+   const adminsCount = employees.filter(e => ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(e.role)).length;
+
+   // Filter Logic
+   const filtered = employees.filter(emp => {
+      // Role filter
+      if (roleFilter === 'CONFIRMATEUR' && emp.role !== 'CONFIRMATEUR') return false;
+      if (roleFilter === 'LIVREUR' && emp.role !== 'LIVREUR') return false;
+      if (roleFilter === 'MARKETER' && emp.role !== 'MARKETER') return false;
+      if (roleFilter === 'ADMINS' && !['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(emp.role)) return false;
+
+      // Status filter
+      if (statusFilter === 'ACTIVE' && !emp.is_active) return false;
+      if (statusFilter === 'INACTIVE' && emp.is_active) return false;
+
+      // Search query
+      if (search.trim()) {
+         const q = search.toLowerCase().trim();
+         const matchName = (emp.name || '').toLowerCase().includes(q);
+         const matchEmail = (emp.email || '').toLowerCase().includes(q);
+         const matchPhone = (emp.phone || '').toLowerCase().includes(q);
+         const matchId = (emp.id || '').toLowerCase().includes(q);
+         const matchCode = (emp.tracking_code || emp.promo_code || '').toLowerCase().includes(q);
+         if (!matchName && !matchEmail && !matchPhone && !matchId && !matchCode) return false;
+      }
+
+      return true;
+   });
+
+   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
    const pageSafe = Math.min(page, totalPages);
-   const pageEmployees = filtered.slice((pageSafe - 1) * ADMINS_PAGE_SIZE, pageSafe * ADMINS_PAGE_SIZE);
+   const paginatedEmployees = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
    return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-         {/* Top Stats Bar */}
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
-               <div className="size-12 rounded-2xl flex items-center justify-center bg-indigo-50 text-[#4b7bec] shadow-inner"><Shield className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Total staff</p><p className="text-xl font-bold text-slate-900">{totalStaff ?? employees.length}</p></div>
-            </div>
-            <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
-               <div className="size-12 rounded-2xl flex items-center justify-center bg-emerald-50 text-emerald-500 shadow-inner"><Activity className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Comptes actifs</p><p className="text-xl font-bold text-slate-900">{activePct}% <span className="text-xs font-medium text-slate-400">({activeCount}/{employees.length})</span></p></div>
-            </div>
-            <div className="bg-white rounded-3xl border p-6 flex items-center gap-4" style={{ borderColor: C.border }}>
-               <div className="size-12 rounded-2xl flex items-center justify-center bg-amber-50 text-amber-500 shadow-inner"><Radio className="size-6" /></div>
-               <div><p className="text-xs font-bold text-slate-400">Accès privilégiés</p><p className="text-xl font-bold text-slate-900">{privilegedCount}</p></div>
-            </div>
-         </div>
-
-         <div className="bg-white rounded-3xl border px-8 py-6 shadow-sm flex items-center justify-between" style={{ borderColor: C.border }}>
-            <div className="flex items-center gap-4">
-               <div className="size-12 rounded-xl flex items-center justify-center shadow-inner" style={{ backgroundColor: C.primaryBg }}>
-                  <UserCheck className="size-6" style={{ color: C.primary }} />
+      <div className="space-y-6 animate-in fade-in duration-500">
+         {/* ── Top Metric Cards Grid ── */}
+         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">👥</span>
+                  <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">GLOBAL</span>
                </div>
                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Staff & Équipes</h2>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Gestion complète du personnel</p>
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{totalStaff}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Total Équipe</p>
                </div>
             </div>
-            <button onClick={onCreate} className="h-11 px-6 rounded-xl flex items-center gap-2 bg-[#4b7bec] text-white text-xs font-bold shadow-lg shadow-indigo-100 transition-all hover:scale-105" style={{ backgroundColor: C.primary }}>
-               <Plus className="size-4" /> Nouvel admin
-            </button>
-         </div>
 
-         <div className="bg-white rounded-3xl border px-6 py-4 flex items-center justify-between shadow-sm" style={{ borderColor: C.border }}>
-            <div className="relative max-w-md flex-1">
-               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-300" />
-               <Input
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                  placeholder="Rechercher par nom ou email..."
-                  className="pl-10 h-11 bg-slate-50/50 border-slate-100 rounded-2xl text-sm font-medium focus-visible:ring-[#4b7bec]"
-               />
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">🟢</span>
+                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{totalStaff > 0 ? Math.round((activeStaff / totalStaff) * 100) : 0}%</span>
+               </div>
+               <div>
+                  <p className="text-xl sm:text-2xl font-black text-emerald-600 tabular-nums">{activeStaff}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Comptes Actifs</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-base">📞</span>
+                  <span className="text-[9px] font-black text-[#4b7bec] bg-indigo-50 px-2 py-0.5 rounded-full">VENTE</span>
+               </div>
+               <div>
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{confirmateursCount}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Confirmatrices</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-base">🚚</span>
+                  <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">TERRAIN</span>
+               </div>
+               <div>
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{livreursCount}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Livreurs Interne</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-base">📣</span>
+                  <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">TRAFIC</span>
+               </div>
+               <div>
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{marketersCount}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Marketers / Affiliés</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
+               <div className="flex items-center justify-between">
+                  <span className="size-8 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center text-base">🛡️</span>
+                  <span className="text-[9px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">SYSTÈME</span>
+               </div>
+               <div>
+                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">{adminsCount}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Admins & Direction</p>
+               </div>
             </div>
          </div>
 
-         <div className="bg-white rounded-3xl border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
+         {/* ── Search, Filters & Action Bar ── */}
+         <div className="bg-white rounded-[32px] border border-slate-100 p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+               {/* Search Input */}
+               <div className="relative flex-1 max-w-lg">
+                  <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                     value={search}
+                     onChange={e => { setSearch(e.target.value); setPage(1); }}
+                     placeholder="Rechercher par nom, email, téléphone, code promo..."
+                     className="w-full h-11 pl-11 pr-4 bg-slate-50 border border-slate-200/80 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4b7bec]/20 focus:border-[#4b7bec]"
+                  />
+               </div>
+
+               {/* Right Actions */}
+               <div className="flex items-center gap-3 flex-wrap">
+                  {/* Status Toggle */}
+                  <div className="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200/80 text-[11px] font-black">
+                     <button
+                        onClick={() => { setStatusFilter('ALL'); setPage(1); }}
+                        className={cn("px-3 py-1.5 rounded-lg transition-all", statusFilter === 'ALL' ? "bg-white text-slate-800 shadow-xs" : "text-slate-400 hover:text-slate-600")}
+                     >
+                        Tous
+                     </button>
+                     <button
+                        onClick={() => { setStatusFilter('ACTIVE'); setPage(1); }}
+                        className={cn("px-3 py-1.5 rounded-lg transition-all", statusFilter === 'ACTIVE' ? "bg-emerald-50 text-emerald-700 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
+                     >
+                        🟢 Actifs
+                     </button>
+                     <button
+                        onClick={() => { setStatusFilter('INACTIVE'); setPage(1); }}
+                        className={cn("px-3 py-1.5 rounded-lg transition-all", statusFilter === 'INACTIVE' ? "bg-rose-50 text-rose-700 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
+                     >
+                        ⚪ Inactifs
+                     </button>
+                  </div>
+
+                  <button
+                     onClick={onCreate}
+                     className="h-11 px-5 rounded-2xl bg-[#4b7bec] hover:bg-[#3867d6] text-white text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md shadow-blue-500/20 transition-all shrink-0"
+                  >
+                     <Plus className="size-4" />
+                     <span>Nouvel Employé</span>
+                  </button>
+               </div>
+            </div>
+
+            {/* Quick Role Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-slate-100 custom-scrollbar pb-1">
+               <button
+                  onClick={() => { setRoleFilter('ALL'); setPage(1); }}
+                  className={cn(
+                     "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5",
+                     roleFilter === 'ALL' ? "bg-slate-900 text-white shadow-xs" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  )}
+               >
+                  <span>Tous</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">{totalStaff}</span>
+               </button>
+
+               <button
+                  onClick={() => { setRoleFilter('CONFIRMATEUR'); setPage(1); }}
+                  className={cn(
+                     "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5",
+                     roleFilter === 'CONFIRMATEUR' ? "bg-[#4b7bec] text-white shadow-xs" : "bg-blue-50 text-[#4b7bec] hover:bg-blue-100/80"
+                  )}
+               >
+                  <span>📞 Confirmatrices</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{confirmateursCount}</span>
+               </button>
+
+               <button
+                  onClick={() => { setRoleFilter('LIVREUR'); setPage(1); }}
+                  className={cn(
+                     "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5",
+                     roleFilter === 'LIVREUR' ? "bg-purple-600 text-white shadow-xs" : "bg-purple-50 text-purple-700 hover:bg-purple-100/80"
+                  )}
+               >
+                  <span>🚚 Livreurs</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{livreursCount}</span>
+               </button>
+
+               <button
+                  onClick={() => { setRoleFilter('MARKETER'); setPage(1); }}
+                  className={cn(
+                     "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5",
+                     roleFilter === 'MARKETER' ? "bg-amber-600 text-white shadow-xs" : "bg-amber-50 text-amber-700 hover:bg-amber-100/80"
+                  )}
+               >
+                  <span>📣 Marketers & Affiliés</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{marketersCount}</span>
+               </button>
+
+               <button
+                  onClick={() => { setRoleFilter('ADMINS'); setPage(1); }}
+                  className={cn(
+                     "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shrink-0 flex items-center gap-1.5",
+                     roleFilter === 'ADMINS' ? "bg-slate-700 text-white shadow-xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  )}
+               >
+                  <span>🛡️ Admins & Managers</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{adminsCount}</span>
+               </button>
+            </div>
+         </div>
+
+         {/* ── Unified Employee Table ── */}
+         <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
             {isLoading ? (
-               <div className="p-10 space-y-4">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}</div>
+               <div className="p-12 text-center space-y-4">
+                  <Loader2 className="size-8 mx-auto animate-spin text-[#4b7bec]" />
+                  <p className="text-xs font-bold text-slate-400">Chargement des collaborateurs...</p>
+               </div>
+            ) : paginatedEmployees.length === 0 ? (
+               <div className="p-16 text-center space-y-3">
+                  <div className="size-16 rounded-3xl bg-slate-50 flex items-center justify-center text-2xl mx-auto text-slate-300">
+                     👥
+                  </div>
+                  <h3 className="text-sm font-black text-slate-700 uppercase">Aucun collaborateur trouvé</h3>
+                  <p className="text-xs text-slate-400 font-medium">Modifiez vos filtres ou ajoutez un nouveau membre d'équipe.</p>
+               </div>
             ) : (
                <div className="overflow-x-auto">
-                  <table className="w-full text-left min-w-[1000px]">
+                  <table className="w-full text-left min-w-[1050px]">
                      <thead>
-                        <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500">Identité</th>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500">Communications</th>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500">Accréditation</th>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500 text-center">Statut</th>
-                           <th className="px-8 py-4 text-xs font-bold text-slate-500 text-right w-32">Actions</th>
+                        <tr className="border-b border-slate-100 bg-slate-50/80">
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Collaborateur</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Contact & Téléphone</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Rôle & Affectation</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Performance / Ventes</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Rémunération</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Statut</th>
+                           <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Actions</th>
                         </tr>
                      </thead>
-                     <tbody className="divide-y" style={{ borderColor: C.border }}>
-                        {pageEmployees.length === 0 ? (
-                           <tr><td colSpan={5} className="px-8 py-16 text-center text-sm text-slate-400 font-medium">
-                              {search ? 'Aucun membre ne correspond à votre recherche.' : 'Aucun membre pour le moment.'}
-                           </td></tr>
-                        ) : pageEmployees.map((emp) => (
-                           <tr key={emp.id} className="hover:bg-[#FAFBFD]/50 transition-colors group">
-                              <td className="px-8 py-5">
-                                 <div className="flex items-center gap-4">
-                                    <div className="size-10 rounded-[14px] flex items-center justify-center text-sm font-bold text-white shadow-sm relative" style={{ backgroundColor: emp.role === 'SUPER_ADMIN' ? '#2d3436' : C.primary }}>
-                                       {emp.name.charAt(0)}
-                                       {emp.is_active && <div className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-emerald-500 border-2 border-white" />}
+                     <tbody className="divide-y divide-slate-100">
+                        {paginatedEmployees.map((emp) => {
+                           const isAdm = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(emp.role);
+                           const isConf = emp.role === 'CONFIRMATEUR';
+                           const isLiv = emp.role === 'LIVREUR';
+                           const isMkt = emp.role === 'MARKETER';
+
+                           // Performance Stats
+                           const stats = perfByAgent[emp.id] ?? {};
+                           const totalAssigned = stats.total_assigned ?? 0;
+                           const confirmed = stats.confirmed_count ?? 0;
+                           const delivered = stats.delivered_count ?? 0;
+                           const confRate = stats.confirmation_rate ?? (totalAssigned > 0 ? Math.round((confirmed / totalAssigned) * 100) : null);
+
+                           // Marketer Stats if applicable
+                           const mktStats = marketersByEmail[emp.email?.toLowerCase()] ?? {};
+
+                           // Salary Info
+                           const paymentType = emp.payment_type ?? '';
+                           const paymentAmount = emp.payment_amount ?? 0;
+                           const computedSalary = stats.salary ?? (paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount);
+
+                           // Role Color Styling
+                           const roleBadgeStyles: Record<string, string> = {
+                              SUPER_ADMIN: 'bg-slate-900 text-white border-slate-800',
+                              ADMIN: 'bg-indigo-900 text-white border-indigo-800',
+                              MANAGER: 'bg-amber-100 text-amber-900 border-amber-200',
+                              CONFIRMATEUR: 'bg-blue-50 text-[#4b7bec] border-blue-200',
+                              LIVREUR: 'bg-purple-50 text-purple-700 border-purple-200',
+                              MARKETER: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                           };
+
+                           return (
+                              <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors group">
+                                 {/* 1. Identity */}
+                                 <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3.5">
+                                       <div className={cn(
+                                          "size-10 rounded-2xl flex items-center justify-center text-sm font-black text-white shadow-xs relative",
+                                          isAdm ? "bg-slate-800" : isConf ? "bg-[#4b7bec]" : isLiv ? "bg-purple-600" : isMkt ? "bg-emerald-600" : "bg-slate-600"
+                                       )}>
+                                          {(emp.name || 'U').charAt(0).toUpperCase()}
+                                          {emp.is_active && (
+                                             <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 border-2 border-white" />
+                                          )}
+                                       </div>
+                                       <div>
+                                          <span className="text-sm font-black text-slate-900 block group-hover:text-[#4b7bec] transition-colors">
+                                             {emp.name}
+                                          </span>
+                                          <span className="text-[10px] font-mono font-bold text-slate-400">
+                                             ID: {emp.id.slice(0, 8)}
+                                          </span>
+                                       </div>
                                     </div>
-                                    <div className="flex flex-col">
-                                       <span className="text-sm font-bold text-slate-800 tracking-tight group-hover:text-[#4b7bec] transition-colors">{emp.name}</span>
-                                       <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5 tracking-tight">ID: {emp.id.split('-')[0]}</span>
+                                 </td>
+
+                                 {/* 2. Contact */}
+                                 <td className="px-6 py-4">
+                                    <div className="space-y-1 text-xs">
+                                       <div className="flex items-center gap-1.5 text-slate-600 font-medium">
+                                          <Mail className="size-3 text-slate-400 shrink-0" />
+                                          <span className="truncate max-w-[160px]">{emp.email}</span>
+                                       </div>
+                                       <div className="flex items-center gap-1.5 text-slate-700 font-bold font-mono">
+                                          <Phone className="size-3 text-slate-400 shrink-0" />
+                                          <span>{emp.phone || 'Non renseigné'}</span>
+                                       </div>
                                     </div>
-                                 </div>
-                              </td>
-                              <td className="px-8 py-5">
-                                 <div className="flex flex-col gap-1.5 text-xs font-medium text-slate-500">
-                                    <div className="flex items-center gap-2">
-                                       <Mail className="size-3 text-slate-300" /> {emp.email}
+                                 </td>
+
+                                 {/* 3. Role & Assignment */}
+                                 <td className="px-6 py-4">
+                                    <div className="space-y-1">
+                                       <span className={cn(
+                                          "inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border",
+                                          roleBadgeStyles[emp.role] || 'bg-slate-100 text-slate-700 border-slate-200'
+                                       )}>
+                                          {ROLE_LABELS[emp.role as UserRole] || emp.role}
+                                       </span>
+                                       {emp.assigned_wilayas && emp.assigned_wilayas.length > 0 && (
+                                          <p className="text-[10px] text-slate-400 font-medium truncate max-w-[180px]">
+                                             📍 {emp.assigned_wilayas.join(', ')}
+                                          </p>
+                                       )}
+                                       {(emp.tracking_code || emp.promo_code) && (
+                                          <p className="text-[10px] text-emerald-600 font-mono font-bold">
+                                             🎟️ {emp.tracking_code || emp.promo_code}
+                                          </p>
+                                       )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                       <Phone className="size-3 text-slate-300" /> {emp.phone || 'Non renseigné'}
+                                 </td>
+
+                                 {/* 4. Performance */}
+                                 <td className="px-6 py-4 text-center">
+                                    {isConf ? (
+                                       <div className="flex flex-col items-center gap-0.5">
+                                          <div className="flex items-center gap-1 font-mono">
+                                             <span className="text-xs font-black text-slate-900">{confRate != null ? `${confRate}%` : '—'}</span>
+                                             <span className="text-[10px] text-slate-400">conf.</span>
+                                          </div>
+                                          <span className="text-[10px] text-slate-500 font-medium">{confirmed}/{totalAssigned} cmd</span>
+                                       </div>
+                                    ) : isLiv ? (
+                                       <div className="flex flex-col items-center gap-0.5 font-mono">
+                                          <span className="text-xs font-black text-purple-700">{delivered} livrés</span>
+                                          <span className="text-[10px] text-slate-400 font-medium">livraison directe</span>
+                                       </div>
+                                    ) : isMkt ? (
+                                       <div className="flex flex-col items-center gap-0.5 font-mono">
+                                          <span className="text-xs font-black text-emerald-600">{mktStats.delivered_orders || 0} ventes</span>
+                                          <span className="text-[10px] text-slate-400 font-medium">{formatPrice(mktStats.revenue || 0)}</span>
+                                       </div>
+                                    ) : (
+                                       <span className="text-[11px] font-bold text-slate-400">Accès Système</span>
+                                    )}
+                                 </td>
+
+                                 {/* 5. Salary & Payout */}
+                                 <td className="px-6 py-4 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                       <span className="text-xs font-black text-slate-900 font-mono">
+                                          {paymentType === 'MONTHLY_SALARY'
+                                             ? `${Number(paymentAmount).toLocaleString()} DA`
+                                             : paymentType === 'PER_DELIVERED_ORDER'
+                                             ? `${Number(computedSalary).toLocaleString()} DA`
+                                             : '—'}
+                                       </span>
+                                       <span className="text-[9px] text-slate-400 uppercase font-bold">
+                                          {paymentType === 'MONTHLY_SALARY' ? 'Fixe mensuel' : paymentType === 'PER_DELIVERED_ORDER' ? 'Commissions' : 'Non configuré'}
+                                       </span>
+                                       {emp.payday && (
+                                          <button
+                                             onClick={() => onOpenSalary(emp)}
+                                             className="text-[9px] font-bold text-[#4b7bec] hover:underline flex items-center gap-0.5"
+                                          >
+                                             <Banknote className="size-2.5" /> Fiche Paie (le {emp.payday})
+                                          </button>
+                                       )}
                                     </div>
-                                 </div>
-                              </td>
-                              <td className="px-8 py-5">
-                                 <Badge variant="outline" className="text-[10px] font-bold border-indigo-100 text-[#4b7bec] bg-indigo-50/30 uppercase tracking-widest px-3 py-1">
-                                    {emp.role}
-                                 </Badge>
-                              </td>
-                              <td className="px-8 py-5 text-center">
-                                 <span className={cn("text-xs font-bold", emp.is_active ? "text-emerald-600" : "text-slate-400")}>
-                                    {emp.is_active ? 'Actif' : 'Inactif'}
-                                 </span>
-                              </td>
-                              <td className="px-8 py-5 text-right w-32">
-                                 <div className="flex items-center justify-end gap-2">
-                                    <button onClick={() => onEdit(emp)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm">
-                                       <Pencil className="size-4" />
+                                 </td>
+
+                                 {/* 6. Status */}
+                                 <td className="px-6 py-4 text-center">
+                                    <button
+                                       onClick={() => onDeactivate(emp)}
+                                       className={cn(
+                                          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black transition-all",
+                                          emp.is_active ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-500 border border-slate-200"
+                                       )}
+                                    >
+                                       <span className={cn("size-1.5 rounded-full", emp.is_active ? "bg-emerald-500" : "bg-slate-400")} />
+                                       <span>{emp.is_active ? 'Actif' : 'Inactif'}</span>
                                     </button>
-                                    <button onClick={() => onDeactivate(emp)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-red-500 hover:border-red-500 transition-all shadow-sm">
-                                       <UserX className="size-4" />
-                                    </button>
-                                 </div>
-                              </td>
-                           </tr>
-                        ))}
+                                 </td>
+
+                                 {/* 7. Actions */}
+                                 <td className="px-6 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                       <button
+                                          onClick={() => onOpenSalary(emp)}
+                                          className="size-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-all border border-slate-200/60"
+                                          title="Bulletin & Calculateur de Salaire"
+                                       >
+                                          <Banknote className="size-3.5" />
+                                       </button>
+                                       <button
+                                          onClick={() => onEdit(emp)}
+                                          className="size-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-[#4b7bec] flex items-center justify-center transition-all border border-slate-200/60"
+                                          title="Modifier l'employé"
+                                       >
+                                          <Pencil className="size-3.5" />
+                                       </button>
+                                       <button
+                                          onClick={() => onDelete(emp)}
+                                          className="size-8 rounded-xl bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-all border border-slate-200/60"
+                                          title="Supprimer définitivement"
+                                       >
+                                          <Trash className="size-3.5" />
+                                       </button>
+                                    </div>
+                                 </td>
+                              </tr>
+                           );
+                        })}
                      </tbody>
                   </table>
                </div>
             )}
-            <TablePagination total={filtered.length} page={pageSafe} totalPages={totalPages} onPageChange={setPage} />
+
+            {/* Pagination */}
+            <TablePagination
+               total={filtered.length}
+               page={pageSafe}
+               totalPages={totalPages}
+               onPageChange={setPage}
+            />
          </div>
       </div>
    );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Agents Table Sub-View
-// ═══════════════════════════════════════════════════════════════
-function AgentRow({ agent, onEdit, onDeactivate, onDelete, perfSummary }: {
-   agent: any; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; perfSummary?: any;
-}) {
-   // Stats come from ONE bulk /users/performance-summary call made once by
-   // AgentsView for the whole visible page, not a per-row query — see that
-   // endpoint's docstring for why (N+1 was firing one full /performance
-   // call, and its recent_orders/audit_logs/daily-chart queries, PER AGENT
-   // ROW just to paint this badge).
-   const stats = perfSummary ?? {};
-   const total = stats.total_assigned ?? 0;
-   const confirmed = stats.confirmed_count ?? 0;
-   const rate = stats.confirmation_rate ?? (total > 0 ? Math.round((confirmed / total) * 100) : null);
 
-   // Salary calc
-   const paymentType = agent.payment_type ?? '';
-   const paymentAmount = agent.payment_amount ?? 0;
-   const delivered = stats.delivered_count ?? 0;
-   const salary = stats.salary ?? (
-      paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount
-   );
-
-   return (
-      <tr className="hover:bg-slate-50/50 transition-all group">
-         <td className="px-8 py-6">
-            <div className="flex items-center gap-4">
-               <div className="size-11 rounded-2xl flex items-center justify-center text-sm font-bold text-white shadow-sm" style={{ backgroundColor: C.primary }}>{agent.name.charAt(0)}</div>
-               <div className="flex flex-col">
-                  <span className="text-sm font-bold text-slate-900 group-hover:text-[#4b7bec] transition-colors">{agent.name}</span>
-                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mt-1">
-                     AGN-{agent.id.split('-')[0].toUpperCase()}
-                     {agent.assigned_store_id ? '' : ' · Toutes boutiques'}
-                  </span>
-               </div>
-            </div>
-         </td>
-         <td className="px-8 py-6">
-            <div className="flex flex-col gap-1 text-xs font-medium text-slate-500">
-               <span className="flex items-center gap-2"><Mail className="size-3.5 text-slate-200" /> {agent.email}</span>
-               <span className="flex items-center gap-2"><Phone className="size-3.5 text-slate-200" /> {agent.phone || 'N/A'}</span>
-            </div>
-         </td>
-         <td className="px-8 py-6 text-center">
-            <div className="flex flex-col items-center gap-1">
-               {rate !== null ? (
-                  <>
-                     <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-black text-slate-900">{rate}%</span>
-                        <span className="text-[10px] text-slate-400">conf.</span>
-                     </div>
-                     <span className="text-[10px] text-slate-400">{confirmed}/{total} cmd</span>
-                     <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${rate}%`, backgroundColor: rate >= 70 ? '#00B894' : rate >= 40 ? '#FDCB6E' : '#E17055' }} />
-                     </div>
-                     <div className="flex items-center gap-1 mt-1 text-[10px] font-bold">
-                        <span className="text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100" title="Commandes normales livrées">
-                           🟦 {stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))}
-                        </span>
-                        {(stats.recovered_delivered_count || 0) > 0 && (
-                           <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-black" title="Paniers abandonnés récupérés et livrés">
-                              🟩 +{stats.recovered_delivered_count}
-                           </span>
-                        )}
-                     </div>
-                  </>
-               ) : (
-                  <span className="text-[10px] text-slate-300">—</span>
-               )}
-            </div>
-         </td>
-         <td className="px-8 py-6 text-center">
-            <div className="flex flex-col items-center gap-1">
-               <span className="text-sm font-black text-[#2D3436] font-mono">{Number(salary).toLocaleString()} DA</span>
-               <span className="text-[9px] text-slate-400 uppercase tracking-wide font-bold">
-                  {paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
-               </span>
-               {(() => {
-                  const now = new Date();
-                  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                  const isPaidThisMonth = agent.last_salary_paid_month === currentMonthStr;
-                  if (isPaidThisMonth) {
-                     return (
-                        <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                           <Check className="size-2.5" /> Décaissé
-                        </span>
-                     );
-                  }
-                  if (agent.payday) {
-                     const isDue = now.getDate() >= agent.payday;
-                     return (
-                        <span className={cn(
-                           "text-[9px] font-black px-1.5 py-0.5 rounded border",
-                           isDue ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-500 border-slate-200"
-                        )}>
-                           {isDue ? `Dû le ${agent.payday}` : `Prévu le ${agent.payday}`}
-                        </span>
-                     );
-                  }
-                  return null;
-               })()}
-            </div>
-         </td>
-         <td className="px-8 py-6 text-center">
-            <div className={cn("inline-flex items-center gap-2 px-3 py-1 rounded-full border", agent.is_active ? "bg-emerald-50 border-emerald-100/50" : "bg-slate-50 border-slate-100")}>
-               <div className={cn("size-1.5 rounded-full", agent.is_active ? "bg-emerald-500" : "bg-slate-300")} />
-               <span className={cn("text-[11px] font-bold", agent.is_active ? "text-emerald-600" : "text-slate-400")}>{agent.is_active ? 'Actif' : 'Inactif'}</span>
-            </div>
-         </td>
-         <td className="px-8 py-6 text-right">
-            <div className="flex items-center justify-end gap-2">
-               <SalaryCalculatorButton employee={agent} />
-               <button onClick={() => onEdit(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm" title="Modifier"><Pencil className="size-4" /></button>
-               <button onClick={() => onDeactivate(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-amber-600 hover:border-amber-600 transition-all shadow-sm" title="Désactiver"><UserX className="size-4" /></button>
-               <button onClick={() => onDelete(agent)} className="size-9 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-red-600 hover:border-red-600 transition-all shadow-sm" title="Supprimer définitivement"><Trash className="size-4" /></button>
-            </div>
-         </td>
-      </tr>
-   );
-}
-
-const AGENTS_PAGE_SIZE = 15;
-
-function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCreate, totalStaff }: {
-   employees: any[]; isLoading: boolean; onEdit: (e: any) => void; onDeactivate: (e: any) => void; onDelete: (e: any) => void; onCreate: () => void; totalStaff?: number;
-}) {
-   const { activeStore } = useAppStore();
-   const storeId = activeStore?.id ?? '';
-   const allAgents = employees.filter(e => e.role === 'CONFIRMATEUR');
-   const [search, setSearch] = useState('');
-   const [page, setPage] = useState(1);
-
-   const agents = search.trim()
-      ? allAgents.filter(a =>
-           a.name.toLowerCase().includes(search.toLowerCase()) ||
-           a.email.toLowerCase().includes(search.toLowerCase())
-        )
-      : allAgents;
-
-   const totalPages = Math.max(1, Math.ceil(agents.length / AGENTS_PAGE_SIZE));
-   const pageSafe = Math.min(page, totalPages);
-   const pageAgents = agents.slice((pageSafe - 1) * AGENTS_PAGE_SIZE, pageSafe * AGENTS_PAGE_SIZE);
-
-   // ONE bulk call for whichever agents are actually visible on this page —
-   // see /users/performance-summary docstring for why this replaced N
-   // per-row queries.
-   const idsKey = pageAgents.map(a => a.id).join(',');
-   const perfQuery = useQuery<any>({
-      queryKey: ['employees-perf-summary', idsKey, storeId],
-      queryFn: () => apiFetch(`/api/v1/users/performance-summary?user_ids=${idsKey}&store_id=${storeId}`),
-      enabled: !!storeId && pageAgents.length > 0,
-   });
-   const perfByAgent: Record<string, any> = perfQuery.data?.data ?? {};
-
-   return (
-      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-         {/* Agents Header */}
-         <div className="bg-white rounded-[32px] border px-8 py-7 shadow-sm flex items-center justify-between" style={{ borderColor: C.border }}>
-            <div className="flex items-center gap-5">
-               <div className="size-14 rounded-2xl flex items-center justify-center bg-[#F0F5FF] text-[#4b7bec] shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]">
-                  <Users className="size-7" />
-               </div>
-               <div>
-                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">Force de vente</h2>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Vos équipes de confirmation et support client</p>
-               </div>
-            </div>
-            <button onClick={onCreate} className="h-11 px-8 rounded-2xl flex items-center gap-2 bg-[#4b7bec] text-white text-xs font-bold shadow-lg shadow-indigo-100/50 transition-all hover:scale-[1.02]">
-               <Plus className="size-4" /> Nouvel agent
-            </button>
-         </div>
-
-         {/* Agents Table */}
-         <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            <div className="px-8 py-6 border-b flex items-center justify-between bg-slate-50/30" style={{ borderColor: C.border }}>
-               <div className="relative max-sm-sm flex-1">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-300" />
-                  <Input
-                     value={search}
-                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                     placeholder="Rechercher un agent..."
-                     className="pl-10 h-11 bg-white border-slate-100 rounded-2xl text-sm font-medium"
-                  />
-               </div>
-            </div>
-
-            <div className="overflow-x-auto">
-               <table className="w-full text-left min-w-[1000px]">
-                  <thead>
-                     <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500">Agent</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500">Contact</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-center">Taux Confirmation</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-center">Salaire Estimé</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-center">Statut</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-right">Actions</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y" style={{ borderColor: C.border }}>
-                     {pageAgents.length === 0 ? (
-                        <tr><td colSpan={6} className="px-8 py-16 text-center text-sm text-slate-400 font-medium">
-                           {isLoading ? 'Chargement…' : search ? 'Aucun agent ne correspond à votre recherche.' : 'Aucun agent pour le moment.'}
-                        </td></tr>
-                     ) : pageAgents.map((agent) => (
-                        <AgentRow key={agent.id} agent={agent} onEdit={onEdit} onDeactivate={onDeactivate} onDelete={onDelete} perfSummary={perfByAgent[agent.id]} />
-                     ))}
-                  </tbody>
-               </table>
-            </div>
-            <TablePagination total={agents.length} page={pageSafe} totalPages={totalPages} onPageChange={setPage} />
-         </div>
-      </div>
-   );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Marketers Sub-View
-// ═══════════════════════════════════════════════════════════════
-interface MarketerPerformance {
-    id: string;
-    name: string;
-    email?: string;
-    pixel: string | null;
-    product: string;
-    roas: number;
-    leads: number;
-    delivered_orders?: number;
-    conversion_rate?: number;
-    is_active: boolean;
-    budget: number;
-    revenue?: number;
-    tracking_configured?: boolean;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Assignment Rules View — configuration du moteur d'assignation
-// (confirmatrices : PRODUCT > STORE > CATEGORY > BRAND, avec exceptions ;
-// livreurs : COMMUNE > WILAYA, auto-assignation directe). Consomme
-// /api/v1/assignment-rules — aucune logique de résolution ici, seulement
-// du CRUD sur les règles ; la résolution vit côté backend
-// (order_service.py resolve_assignment_rule / resolve_courier_rule).
-// ═══════════════════════════════════════════════════════════════
-
-const RULE_TYPE_LABELS: Record<string, string> = {
-   PRODUCT: 'Produit', STORE: 'Boutique', CATEGORY: 'Catégorie', BRAND: 'Marque',
-   COMMUNE: 'Commune', WILAYA: 'Wilaya',
-};
-
-function AssignmentRulesView({ employees }: { employees: any[] }) {
-   const qc = useQueryClient();
-   const [section, setSection] = useState<'confirmatrices' | 'livreurs'>('confirmatrices');
-
-   const rulesQuery = useQuery<any>({
-      queryKey: ['assignment-rules'],
-      queryFn: () => apiFetch('/api/v1/assignment-rules/'),
-   });
-   const storesQuery = useQuery<any>({
-      queryKey: ['stores'],
-      queryFn: () => apiFetch('/api/v1/stores'),
-   });
-
-   const allRules: any[] = (Array.isArray(rulesQuery.data) ? rulesQuery.data : rulesQuery.data?.data) ?? [];
-   const confirmatriceRules = allRules.filter(r => ['PRODUCT', 'STORE', 'CATEGORY', 'BRAND'].includes(r.rule_type));
-   const courierRules = allRules.filter(r => ['COMMUNE', 'WILAYA'].includes(r.rule_type));
-   const stores: any[] = (Array.isArray(storesQuery.data) ? storesQuery.data : storesQuery.data?.data) ?? [];
-
-   const confirmatriceAgents = employees.filter(e => ['CONFIRMATEUR', 'AGENT', 'AGENT_MANAGER'].includes(e.role));
-   const livreurAgents = employees.filter(e => e.role === 'LIVREUR');
-
-   const deactivateMutation = useMutation({
-      mutationFn: (ruleId: string) => apiFetch(`/api/v1/assignment-rules/${ruleId}/deactivate`, { method: 'PATCH' }),
-      onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignment-rules'] }); toast.success('Règle désactivée.'); },
-      onError: (e: any) => toast.error(e?.message || 'Échec de la désactivation.'),
-   });
-
-   const createRuleMutation = useMutation({
-      mutationFn: (payload: any) => apiFetch('/api/v1/assignment-rules/', { method: 'POST', body: JSON.stringify(payload) }),
-      onSuccess: () => { qc.invalidateQueries({ queryKey: ['assignment-rules'] }); toast.success('Règle créée.'); },
-      onError: (e: any) => toast.error(e?.message || 'Échec de la création — vérifiez qu\'aucune règle active ne cible déjà cette cible.'),
-   });
-
-   const courierZonesMutation = useMutation({
-      mutationFn: (payload: any) => apiFetch('/api/v1/assignment-rules/courier-zones', { method: 'POST', body: JSON.stringify(payload) }),
-      onSuccess: (res: any) => {
-         qc.invalidateQueries({ queryKey: ['assignment-rules'] });
-         const created = res?.data?.created?.length ?? 0;
-         const skipped = res?.data?.skipped?.length ?? 0;
-         toast.success(`${created} zone(s) associée(s)${skipped ? `, ${skipped} ignorée(s) (déjà prises)` : ''}.`);
-      },
-      onError: (e: any) => toast.error(e?.message || 'Échec de l\'association.'),
-   });
-
-   // ── Formulaire règle confirmatrice ──
-   const [ruleType, setRuleType] = useState<'PRODUCT' | 'STORE' | 'CATEGORY' | 'BRAND'>('STORE');
-   const [ruleTargetId, setRuleTargetId] = useState('');
-   const [ruleAgentId, setRuleAgentId] = useState('');
-   const [ruleIsExclusion, setRuleIsExclusion] = useState(false);
-
-   // ── Formulaire zones livreur (bulk) ──
-   const [courierAgentId, setCourierAgentId] = useState('');
-   const [courierWilaya, setCourierWilaya] = useState('');
-   const [selectedCommunes, setSelectedCommunes] = useState<string[]>([]);
-   const communesForWilaya = courierWilaya ? (ALGERIAN_COMMUNES[courierWilaya] || []) : [];
-
-   const agentName = (id: string) => employees.find(e => e.id === id)?.name || id;
-
-   return (
-      <div className="space-y-6">
-         <div className="flex items-center gap-2 bg-white rounded-2xl border p-1.5 w-fit">
-            {([['confirmatrices', 'Confirmatrices'], ['livreurs', 'Livreurs']] as const).map(([id, label]) => (
-               <button key={id} onClick={() => setSection(id)}
-                  className={cn('px-4 py-2 rounded-xl text-xs font-bold transition-all',
-                     section === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50')}>
-                  {label}
-               </button>
-            ))}
-         </div>
-
-         {section === 'confirmatrices' ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-               <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-4">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Nouvelle règle</h3>
-                  <p className="text-[11px] text-slate-400 -mt-2">Priorité : Produit &gt; Boutique &gt; Catégorie &gt; Marque — la plus spécifique gagne toujours.</p>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase">Type de règle</label>
-                     <select value={ruleType} onChange={e => { setRuleType(e.target.value as any); setRuleTargetId(''); }} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                        <option value="STORE">Boutique — responsable de toute la boutique</option>
-                        <option value="PRODUCT">Produit — responsable d'un produit précis (gagne même hors de sa boutique)</option>
-                        <option value="CATEGORY">Catégorie</option>
-                        <option value="BRAND">Marque</option>
-                     </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase">
-                        {ruleType === 'STORE' ? 'Boutique' : ruleType === 'PRODUCT' ? 'ID du produit' : ruleType === 'CATEGORY' ? 'Nom de la catégorie' : 'Nom de la marque'}
-                     </label>
-                     {ruleType === 'STORE' ? (
-                        <select value={ruleTargetId} onChange={e => setRuleTargetId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                           <option value="">Sélectionner une boutique…</option>
-                           {stores.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                     ) : (
-                        <Input value={ruleTargetId} onChange={e => setRuleTargetId(e.target.value)}
-                           placeholder={ruleType === 'PRODUCT' ? 'Coller l\'ID du produit (page Produits)' : 'Ex: Bagagerie'}
-                           className="h-10 text-xs rounded-xl" />
-                     )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase">Agent responsable</label>
-                     <select value={ruleAgentId} onChange={e => setRuleAgentId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                        <option value="">Sélectionner un agent…</option>
-                        {confirmatriceAgents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                     </select>
-                  </div>
-
-                  <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
-                     <input type="checkbox" checked={ruleIsExclusion} onChange={e => setRuleIsExclusion(e.target.checked)} className="size-4 rounded" />
-                     Exception (cet agent est EXCLU de cette cible, malgré une règle plus large)
-                  </label>
-
-                  <Button
-                     disabled={!ruleTargetId || !ruleAgentId || createRuleMutation.isPending}
-                     onClick={() => createRuleMutation.mutate({ rule_type: ruleType, target_id: ruleTargetId, agent_id: ruleAgentId, is_exclusion: ruleIsExclusion })}
-                     className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-black"
-                  >
-                     {createRuleMutation.isPending ? 'Création…' : 'Créer la règle'}
-                  </Button>
-               </div>
-
-               <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm p-6">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-4">Règles actives ({confirmatriceRules.length})</h3>
-                  {rulesQuery.isLoading ? (
-                     <div className="text-xs text-slate-400 font-bold py-8 text-center">Chargement…</div>
-                  ) : confirmatriceRules.length === 0 ? (
-                     <div className="text-xs text-slate-400 font-bold py-8 text-center italic">Aucune règle configurée — l'assignation automatique classique (spécialiste produit / boutique / moins chargé) s'applique.</div>
-                  ) : (
-                     <div className="space-y-2">
-                        {confirmatriceRules.map((r: any) => (
-                           <div key={r.id} className={cn("flex items-center justify-between p-3 rounded-2xl border", r.is_exclusion ? "bg-rose-50 border-rose-100" : "bg-slate-50 border-slate-100")}>
-                              <div className="flex items-center gap-3">
-                                 <Badge className={cn("text-[9px] font-black uppercase rounded-lg border-none", r.is_exclusion ? "bg-rose-100 text-rose-700" : "bg-slate-900 text-white")}>
-                                    {r.is_exclusion ? 'Exception' : RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
-                                 </Badge>
-                                 <span className="text-xs font-bold text-slate-800">{r.target_id}</span>
-                                 <span className="text-xs text-slate-400">→</span>
-                                 <span className="text-xs font-bold text-[#4b7bec]">{agentName(r.agent_id)}</span>
-                              </div>
-                              <button onClick={() => deactivateMutation.mutate(r.id)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider">
-                                 Désactiver
-                              </button>
-                           </div>
-                        ))}
-                     </div>
-                  )}
-               </div>
-            </div>
-         ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-               <div className="bg-white rounded-3xl border shadow-sm p-6 space-y-4">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800">Zones d'un livreur</h3>
-                  <p className="text-[11px] text-slate-400 -mt-2">Les commandes de ces communes lui sont attribuées directement, sans passer par une confirmatrice.</p>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase">Livreur</label>
-                     <select value={courierAgentId} onChange={e => setCourierAgentId(e.target.value)} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                        <option value="">Sélectionner un livreur…</option>
-                        {livreurAgents.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                     </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-bold text-slate-500 uppercase">Wilaya</label>
-                     <select value={courierWilaya} onChange={e => { setCourierWilaya(e.target.value); setSelectedCommunes([]); }} className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                        <option value="">Sélectionner une wilaya…</option>
-                        {Object.keys(ALGERIAN_COMMUNES).map(w => <option key={w} value={w}>{w}</option>)}
-                     </select>
-                  </div>
-
-                  {courierWilaya && (
-                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Communes ({selectedCommunes.length} sélectionnée{selectedCommunes.length > 1 ? 's' : ''})</label>
-                        <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50">
-                           {communesForWilaya.map(c => (
-                              <label key={c.id} className="flex items-center gap-2 text-[11px] font-bold text-slate-600 px-2 py-1 rounded-lg hover:bg-white cursor-pointer">
-                                 <input
-                                    type="checkbox"
-                                    checked={selectedCommunes.includes(c.nameAscii)}
-                                    onChange={e => setSelectedCommunes(prev => e.target.checked ? [...prev, c.nameAscii] : prev.filter(v => v !== c.nameAscii))}
-                                    className="size-3.5 rounded"
-                                 />
-                                 {c.nameAscii}
-                              </label>
-                           ))}
-                        </div>
-                     </div>
-                  )}
-
-                  <Button
-                     disabled={!courierAgentId || selectedCommunes.length === 0 || courierZonesMutation.isPending}
-                     onClick={() => courierZonesMutation.mutate({ agent_id: courierAgentId, communes: selectedCommunes })}
-                     className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-black"
-                  >
-                     {courierZonesMutation.isPending ? 'Association…' : `Associer ${selectedCommunes.length || ''} commune${selectedCommunes.length > 1 ? 's' : ''}`}
-                  </Button>
-               </div>
-
-               <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm p-6">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-4">Zones actives ({courierRules.length})</h3>
-                  {rulesQuery.isLoading ? (
-                     <div className="text-xs text-slate-400 font-bold py-8 text-center">Chargement…</div>
-                  ) : courierRules.length === 0 ? (
-                     <div className="text-xs text-slate-400 font-bold py-8 text-center italic">Aucune zone configurée — toutes les commandes passent par le workflow confirmatrice normal.</div>
-                  ) : (
-                     <div className="space-y-2">
-                        {courierRules.map((r: any) => (
-                           <div key={r.id} className="flex items-center justify-between p-3 rounded-2xl border bg-slate-50 border-slate-100">
-                              <div className="flex items-center gap-3">
-                                 <Badge className="text-[9px] font-black uppercase rounded-lg border-none bg-slate-900 text-white">
-                                    {RULE_TYPE_LABELS[r.rule_type] || r.rule_type}
-                                 </Badge>
-                                 <span className="text-xs font-bold text-slate-800">{r.target_id}</span>
-                                 <span className="text-xs text-slate-400">→</span>
-                                 <span className="text-xs font-bold text-[#4b7bec]">{agentName(r.agent_id)}</span>
-                              </div>
-                              <button onClick={() => deactivateMutation.mutate(r.id)} className="text-[10px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-wider">
-                                 Désactiver
-                              </button>
-                           </div>
-                        ))}
-                     </div>
-                  )}
-               </div>
-            </div>
-         )}
-      </div>
-   );
-}
-
-function EditMarketerTrackingModal({
-   marketer,
-   open,
-   onClose,
-   onSuccess
-}: {
-   marketer: MarketerPerformance | null;
-   open: boolean;
-   onClose: () => void;
-   onSuccess: () => void;
-}) {
-   const [trackingCode, setTrackingCode] = useState('');
-   const [budget, setBudget] = useState(0);
-   const [isActive, setIsActive] = useState(true);
-   const [saving, setSaving] = useState(false);
-
-   React.useEffect(() => {
-      if (marketer) {
-         setTrackingCode(marketer.pixel || '');
-         setBudget(marketer.budget || 0);
-         setIsActive(marketer.is_active !== false);
-      }
-   }, [marketer, open]);
-
-   if (!marketer) return null;
-
-   const handleSave = async () => {
-      setSaving(true);
-      try {
-         await apiFetch(`/api/v1/users/${marketer.id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-               tracking_code: trackingCode.trim() || null,
-               marketing_budget: Number(budget) || 0,
-               is_active: isActive
-            }),
-         });
-         toast.success(`Attribution & budget mis à jour pour ${marketer.name}`);
-         onSuccess();
-         onClose();
-      } catch (err: any) {
-         toast.error(err?.message || 'Erreur lors de la mise à jour');
-      } finally {
-         setSaving(false);
-      }
-   };
-
-   return (
-      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-         <DialogContent className="max-w-lg rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
-            <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white">
-               <div className="flex items-center gap-4">
-                  <div className="size-12 rounded-2xl flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
-                     <Megaphone className="size-6" />
-                  </div>
-                  <div>
-                     <DialogTitle className="text-lg font-black text-slate-900">Tracking & Budget : {marketer.name}</DialogTitle>
-                     <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                        Attribution des commandes et calcul ROAS
-                     </DialogDescription>
-                  </div>
-               </div>
-            </DialogHeader>
-
-            <div className="p-8 space-y-6 bg-[#F8FAFC]">
-               <div className="bg-white rounded-2xl p-5 border border-slate-100 space-y-4 shadow-2xs">
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        Code d'attribution Pixel / UTM Source *
-                     </label>
-                     <Input 
-                        value={trackingCode} 
-                        onChange={e => setTrackingCode(e.target.value)}
-                        placeholder="Ex: FB_CAMP_01, TIKTOK_AZZOUG, MEDIA_SALIM"
-                        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 font-mono font-bold text-slate-800"
-                     />
-                     <p className="text-[10px] text-slate-400">
-                        Ce code doit correspondre à <code>utm_source</code> ou <code>campaign_id</code> des commandes créées.
-                     </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                        Budget publicitaire alloué (DA)
-                     </label>
-                     <Input 
-                        type="number"
-                        value={budget} 
-                        onChange={e => setBudget(Number(e.target.value))}
-                        placeholder="Ex: 50000"
-                        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 font-mono font-black text-[#4b7bec]"
-                     />
-                     <p className="text-[10px] text-slate-400">
-                        Sert de base pour le calcul automatique du ROAS (Revenu Livré / Budget).
-                     </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                     <span className="text-xs font-bold text-slate-700">Partenaire actif</span>
-                     <input 
-                        type="checkbox" 
-                        checked={isActive} 
-                        onChange={e => setIsActive(e.target.checked)}
-                        className="size-5 accent-[#4b7bec] rounded cursor-pointer"
-                     />
-                  </div>
-               </div>
-            </div>
-
-            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-end gap-3">
-               <button onClick={onClose} className="h-11 px-5 rounded-xl font-bold text-xs text-slate-400 hover:bg-slate-50 transition-all">Annuler</button>
-               <button onClick={handleSave} disabled={saving}
-                  className="h-11 px-6 rounded-xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-bold text-xs shadow-md shadow-indigo-200 transition-all disabled:opacity-50 flex items-center gap-2">
-                  {saving ? <Loader2 className="size-4 animate-spin" /> : 'Enregistrer'}
-               </button>
-            </div>
-         </DialogContent>
-      </Dialog>
-   );
-}
-
-function MarketersView({ 
-   marketers, 
-   isLoading, 
-   onCreate,
-   onEdit
-}: { 
-   marketers: MarketerPerformance[]; 
-   isLoading: boolean; 
-   onCreate: () => void;
-   onEdit?: (emp: any) => void;
-}) {
-   const [search, setSearch] = useState('');
-   const [editingMarketer, setEditingMarketer] = useState<MarketerPerformance | null>(null);
-   const queryClient = useQueryClient();
-
-   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
-
-   const filteredMarketers = (marketers || []).filter(m => {
-      const q = search.toLowerCase().trim();
-      if (!q) return true;
-      return m.name.toLowerCase().includes(q) || 
-             (m.email && m.email.toLowerCase().includes(q)) || 
-             (m.pixel && m.pixel.toLowerCase().includes(q));
-   });
-
-   const totalLeads = (marketers || []).reduce((acc, m) => acc + (m.leads || 0), 0);
-   const totalDelivered = (marketers || []).reduce((acc, m) => acc + (m.delivered_orders || 0), 0);
-   const totalRevenue = (marketers || []).reduce((acc, m) => acc + (m.revenue || 0), 0);
-   const totalBudget = (marketers || []).reduce((acc, m) => acc + (m.budget || 0), 0);
-   const globalRoas = totalBudget > 0 ? (totalRevenue / totalBudget).toFixed(2) : (totalRevenue > 0 ? 'x' + (totalRevenue / 1000).toFixed(1) : 'x0');
-   const activeCount = (marketers || []).filter(m => m.is_active).length;
-
-   return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-         {/* Marketers Header */}
-         <div className="bg-white rounded-[32px] border px-8 py-7 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderColor: C.border }}>
-            <div className="flex items-center gap-5">
-               <div className="size-14 rounded-2xl flex items-center justify-center bg-orange-50 text-orange-500 shadow-inner shrink-0">
-                  <Megaphone className="size-7" />
-               </div>
-               <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Marketing, Affiliés & Média Buyers</h2>
-                  <p className="text-xs font-medium text-slate-400 mt-1">Acquisition de trafic, attribution des pixels et rentabilité des campagnes (ROAS en temps réel)</p>
-               </div>
-            </div>
-            <Button onClick={onCreate} className="h-11 px-6 rounded-2xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center border-none">
-               <Plus className="mr-2 size-4 text-white" /> Nouveau partenaire
-            </Button>
-         </div>
-
-         {/* Distribution KPIs */}
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Leads & Commandes</p>
-               <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">{totalLeads.toLocaleString()}</span>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                     {totalDelivered} livrées
-                  </span>
-               </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Chiffre d'Affaires Livré</p>
-               <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-black text-emerald-600 tracking-tight">{formatPrice(totalRevenue)}</span>
-                  <span className="text-[10px] font-bold text-slate-400">Attribué</span>
-               </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">ROAS Moyen</p>
-               <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-black text-indigo-600 tracking-tight">{globalRoas}</span>
-                  <span className="text-[10px] font-bold text-indigo-400">Efficacité</span>
-               </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Partenaires Actifs</p>
-               <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-black text-slate-900 tracking-tight">{activeCount}</span>
-                  <span className="text-[10px] font-bold text-slate-400">/ {marketers.length} total</span>
-               </div>
-            </div>
-         </div>
-
-         {/* Filters & Table */}
-         <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            <div className="px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50" style={{ borderColor: C.border }}>
-               <div className="relative max-w-sm flex-1">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                  <Input 
-                     value={search}
-                     onChange={e => setSearch(e.target.value)}
-                     placeholder="Rechercher par nom, email ou code pixel..." 
-                     className="pl-9 h-10 bg-white border-slate-200 rounded-xl text-xs font-medium" 
-                  />
-               </div>
-               <span className="text-xs text-slate-400 font-bold">
-                  {filteredMarketers.length} partenaire{filteredMarketers.length > 1 ? 's' : ''} listé{filteredMarketers.length > 1 ? 's' : ''}
-               </span>
-            </div>
-            
-            <div className="overflow-x-auto">
-               <table className="w-full text-left min-w-[900px]">
-                  <thead>
-                     <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Partenaire / Média</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Tracking Pixel (UTM)</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Leads & Livraisons</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Revenu Généré</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Budget & ROAS</th>
-                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-right">Actions</th>
-                     </tr>
-                  </thead>
-                  <tbody className="divide-y" style={{ borderColor: C.border }}>
-                     {filteredMarketers.length > 0 ? (
-                        filteredMarketers.map((m) => (
-                           <tr key={m.id} className="hover:bg-slate-50/50 transition-all group">
-                              <td className="px-6 py-4">
-                                 <div className="flex items-center gap-3">
-                                    <div className="size-10 rounded-xl flex items-center justify-center text-xs font-black text-orange-600 bg-orange-50 border border-orange-100 shrink-0">
-                                       {m.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="flex flex-col min-w-0">
-                                       <span className="text-xs font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors truncate">{m.name}</span>
-                                       <span className="text-[10px] text-slate-400 font-medium truncate">{m.email || 'Partenaire Média'}</span>
-                                    </div>
-                                 </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                 {m.pixel ? (
-                                    <div className="flex items-center gap-2">
-                                       <code className="text-[11px] font-bold font-mono text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                                          {m.pixel}
-                                       </code>
-                                       <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Actif</span>
-                                    </div>
-                                 ) : (
-                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/80">
-                                       Non configuré
-                                    </span>
-                                 )}
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                 <div className="flex flex-col items-center">
-                                    <span className="text-xs font-black text-slate-900">{m.leads.toLocaleString()} leads</span>
-                                    <span className="text-[10px] font-bold text-slate-400 mt-0.5">{m.delivered_orders || 0} livrées ({m.conversion_rate || 0}%)</span>
-                                 </div>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                 <span className="text-xs font-black text-emerald-600 font-mono">
-                                    {formatPrice(m.revenue || 0)}
-                                 </span>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                 <div className="inline-flex flex-col items-center px-3 py-1.5 rounded-xl bg-indigo-50/70 border border-indigo-100">
-                                    <span className="text-xs font-black text-indigo-600">x{m.roas}</span>
-                                    <span className="text-[9px] font-bold text-slate-400">Budget: {formatPrice(m.budget || 0)}</span>
-                                 </div>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                 <div className="flex items-center justify-end gap-2">
-                                    <button 
-                                       onClick={() => setEditingMarketer(m)}
-                                       className="h-8 px-3 rounded-lg flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4b7bec] text-xs font-bold transition-all">
-                                       <Settings2 className="size-3.5" /> Tracking & Budget
-                                    </button>
-                                 </div>
-                              </td>
-                           </tr>
-                        ))
-                     ) : (
-                        <tr>
-                           <td colSpan={6} className="px-8 py-12 text-center text-slate-400">
-                              <div className="flex flex-col items-center justify-center space-y-3">
-                                 <div className="size-12 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-400">
-                                    <Megaphone className="size-6" />
-                                 </div>
-                                 <p className="text-xs font-bold text-slate-600">Aucun partenaire marketing trouvé</p>
-                                 <p className="text-[11px] text-slate-400 max-w-sm">
-                                    Ajoutez un affilié ou media buyer pour suivre les leads, les dépenses publicitaires et le ROAS.
-                                 </p>
-                                 <Button onClick={onCreate} className="h-9 px-4 rounded-xl text-xs font-bold bg-[#4b7bec] text-white">
-                                    Créer le premier partenaire
-                                 </Button>
-                              </div>
-                           </td>
-                        </tr>
-                     )}
-                  </tbody>
-               </table>
-            </div>
-         </div>
-
-         {/* ── Dialog Édition Tracking & Budget ── */}
-         <EditMarketerTrackingModal
-            marketer={editingMarketer}
-            open={!!editingMarketer}
-            onClose={() => setEditingMarketer(null)}
-            onSuccess={() => {
-               queryClient.invalidateQueries({ queryKey: ['employees', 'marketers'] });
-            }}
-         />
-      </div>
-   );
-}
-// ═══════════════════════════════════════════════════════════════
-// Employee Form Dialog (CODpilot Style)
-// ═══════════════════════════════════════════════════════════════
 function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, createMutation, updateMutation }: {
    open: boolean; onOpenChange: (open: boolean) => void; editingEmployee: any | null; storeId: string;
     createMutation: ReturnType<typeof useMutation<any, Error, Record<string, unknown>>>;
@@ -2552,7 +2082,7 @@ export default function EmployeesPage() {
    const { activeStore, adminSubView } = useAppStore();
    const storeId = activeStore?.id ?? '';
    const queryClient = useQueryClient();
-   const [activeTab, setActiveTab] = useState(adminSubView || 'agents');
+   const [activeTab, setActiveTab] = useState(adminSubView || 'team');
    const [formDialogOpen, setFormDialogOpen] = useState(false);
    const [editingEmployee, setEditingEmployee] = useState<any | null>(null);
    const [deactivateTarget, setDeactivateTarget] = useState<any | null>(null);
@@ -2828,6 +2358,19 @@ export default function EmployeesPage() {
 
          {/* ── Content ── */}
          <div className="relative">
+            {(activeTab === 'team' || activeTab === 'agents' || activeTab === 'admins' || activeTab === 'marketers') && (
+               <UnifiedTeamView
+                  employees={employees}
+                  marketers={marketersQuery.data?.data || (Array.isArray(marketersQuery.data) ? marketersQuery.data : [])}
+                  isLoading={employeesQuery.isLoading}
+                  onCreate={handleCreate}
+                  onEdit={handleEdit}
+                  onDeactivate={handleDeactivate}
+                  onDelete={handleDelete}
+                  onOpenSalary={(emp) => setCalculatorEmployee(emp)}
+                  storeId={storeId}
+               />
+            )}
             {activeTab === 'infra' && (
                <InfrastructureView
                   stats={
