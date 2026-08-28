@@ -1437,6 +1437,13 @@ function UnifiedTeamView({
 }
 
 
+const RULE_TYPE_LABELS: Record<string, string> = {
+   PRODUCT: 'Produit', STORE: 'Boutique', CATEGORY: 'Catégorie', BRAND: 'Marque',
+   COMMUNE: 'Commune', WILAYA: 'Wilaya',
+};
+
+
+
 function AssignmentRulesView({ employees }: { employees: any[] }) {
    const qc = useQueryClient();
    const [section, setSection] = useState<'confirmatrices' | 'livreurs'>('confirmatrices');
