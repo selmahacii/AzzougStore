@@ -2407,7 +2407,7 @@ function TransactionDetailModal({
                               onClick={() => setShowTimeline(!showTimeline)}
                               className="text-[11px] font-bold text-[#6C5CE7] hover:underline flex items-center gap-1"
                            >
-                              {showTimeline ? 'Masquer l'historique des actions' : `Voir le journal des actions (${order.events.length} étapes)`}
+                              {showTimeline ? "Masquer l'historique des actions" : `Voir le journal des actions (${order.events.length} étapes)`}
                            </button>
 
                            {showTimeline && (
