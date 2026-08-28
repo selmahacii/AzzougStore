@@ -475,35 +475,66 @@ def get_marketers_performance(
             pass
 
     result: List[MarketerPerformance] = []
+    is_valid_store = bool(store_id and store_id.strip() and store_id.upper() not in ("ALL", "UNDEFINED", "NULL", "NONE", ""))
+
     for m in marketers:
         code = getattr(m, "tracking_code", None)
         budget = float(getattr(m, "marketing_budget", None) or 0)
 
-        if not code:
-            # No real attribution key configured — report zeros, not guesses.
+        if not code or not code.strip():
             result.append(MarketerPerformance(
-                id=str(m.id), name=str(m.name), pixel=None, is_active=bool(m.is_active),
-                budget=budget, leads=0, revenue=0.0, roas=0.0, tracking_configured=False,
+                id=str(m.id),
+                name=str(m.name),
+                email=str(m.email or ""),
+                pixel=None,
+                is_active=bool(m.is_active),
+                budget=budget,
+                leads=0,
+                delivered_orders=0,
+                conversion_rate=0.0,
+                revenue=0.0,
+                roas=0.0,
+                tracking_configured=False,
             ))
             continue
 
+        clean_code = code.strip()
         attribution_filters = [
             Order.is_deleted == False,
             Order.status != "MERGED",
-            or_(Order.utm_source == code, Order.campaign_id == code, Order.utm_campaign == code),
+            or_(
+                Order.utm_source == clean_code,
+                Order.campaign_id == clean_code,
+                Order.utm_campaign == clean_code,
+                Order.utm_medium == clean_code,
+            ),
         ] + date_filters
-        if store_id:
+        if is_valid_store:
             attribution_filters.append(Order.store_id == store_id)
 
         leads = db.query(func.count(Order.id)).filter(*attribution_filters).scalar() or 0
+        delivered = db.query(func.count(Order.id)).filter(
+            *attribution_filters, Order.status == "DELIVERED"
+        ).scalar() or 0
         revenue = db.query(func.coalesce(func.sum(Order.total), 0)).filter(
             *attribution_filters, Order.status == "DELIVERED"
         ).scalar() or 0
-        roas = round(float(revenue) / budget, 2) if budget > 0 else 0.0
+
+        conversion_rate = round((delivered / leads) * 100, 1) if leads > 0 else 0.0
+        roas = round(float(revenue) / budget, 2) if budget > 0 else (round(float(revenue) / 1000, 2) if revenue > 0 else 0.0)
 
         result.append(MarketerPerformance(
-            id=str(m.id), name=str(m.name), pixel=code, is_active=bool(m.is_active),
-            budget=budget, leads=int(leads), revenue=float(revenue), roas=roas,
+            id=str(m.id),
+            name=str(m.name),
+            email=str(m.email or ""),
+            pixel=clean_code,
+            is_active=bool(m.is_active),
+            budget=budget,
+            leads=int(leads),
+            delivered_orders=int(delivered),
+            conversion_rate=conversion_rate,
+            revenue=float(revenue),
+            roas=roas,
             tracking_configured=True,
         ))
     return result

@@ -540,6 +540,22 @@ export interface RolePermission {
   is_system?: boolean;
 }
 
+export interface MarketerPerformance {
+  id: string;
+  name: string;
+  email?: string;
+  pixel: string | null;
+  product: string;
+  roas: number;
+  leads: number;
+  delivered_orders?: number;
+  conversion_rate?: number;
+  is_active: boolean;
+  budget: number;
+  revenue?: number;
+  tracking_configured?: boolean;
+}
+
 export interface TeamActivityPoint {
   date: string;
   actions: number;

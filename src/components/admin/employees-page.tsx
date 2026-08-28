@@ -1315,12 +1315,17 @@ function AgentsView({ employees, isLoading, onEdit, onDeactivate, onDelete, onCr
 interface MarketerPerformance {
     id: string;
     name: string;
-    pixel: string;
+    email?: string;
+    pixel: string | null;
     product: string;
     roas: number;
     leads: number;
+    delivered_orders?: number;
+    conversion_rate?: number;
     is_active: boolean;
     budget: number;
+    revenue?: number;
+    tracking_configured?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1570,113 +1575,335 @@ function AssignmentRulesView({ employees }: { employees: any[] }) {
    );
 }
 
-function MarketersView({ marketers, isLoading, onCreate }: { marketers: MarketerPerformance[]; isLoading: boolean; onCreate: () => void }) {
-   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
+function EditMarketerTrackingModal({
+   marketer,
+   open,
+   onClose,
+   onSuccess
+}: {
+   marketer: MarketerPerformance | null;
+   open: boolean;
+   onClose: () => void;
+   onSuccess: () => void;
+}) {
+   const [trackingCode, setTrackingCode] = useState('');
+   const [budget, setBudget] = useState(0);
+   const [isActive, setIsActive] = useState(true);
+   const [saving, setSaving] = useState(false);
 
-   const totalLeads = marketers.reduce((acc, m) => acc + m.leads, 0);
-   const avgRoas = marketers.length > 0 ? (marketers.reduce((acc, m) => acc + m.roas, 0) / marketers.length).toFixed(2) : '0';
-   const totalBudget = marketers.reduce((acc, m) => acc + m.budget, 0);
+   React.useEffect(() => {
+      if (marketer) {
+         setTrackingCode(marketer.pixel || '');
+         setBudget(marketer.budget || 0);
+         setIsActive(marketer.is_active !== false);
+      }
+   }, [marketer, open]);
+
+   if (!marketer) return null;
+
+   const handleSave = async () => {
+      setSaving(true);
+      try {
+         await apiFetch(`/api/v1/users/${marketer.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+               tracking_code: trackingCode.trim() || null,
+               marketing_budget: Number(budget) || 0,
+               is_active: isActive
+            }),
+         });
+         toast.success(`Attribution & budget mis à jour pour ${marketer.name}`);
+         onSuccess();
+         onClose();
+      } catch (err: any) {
+         toast.error(err?.message || 'Erreur lors de la mise à jour');
+      } finally {
+         setSaving(false);
+      }
+   };
 
    return (
-      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+         <DialogContent className="max-w-lg rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
+            <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white">
+               <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl flex items-center justify-center bg-orange-50 text-orange-500 shadow-sm">
+                     <Megaphone className="size-6" />
+                  </div>
+                  <div>
+                     <DialogTitle className="text-lg font-black text-slate-900">Tracking & Budget : {marketer.name}</DialogTitle>
+                     <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        Attribution des commandes et calcul ROAS
+                     </DialogDescription>
+                  </div>
+               </div>
+            </DialogHeader>
+
+            <div className="p-8 space-y-6 bg-[#F8FAFC]">
+               <div className="bg-white rounded-2xl p-5 border border-slate-100 space-y-4 shadow-2xs">
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        Code d'attribution Pixel / UTM Source *
+                     </label>
+                     <Input 
+                        value={trackingCode} 
+                        onChange={e => setTrackingCode(e.target.value)}
+                        placeholder="Ex: FB_CAMP_01, TIKTOK_AZZOUG, MEDIA_SALIM"
+                        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 font-mono font-bold text-slate-800"
+                     />
+                     <p className="text-[10px] text-slate-400">
+                        Ce code doit correspondre à <code>utm_source</code> ou <code>campaign_id</code> des commandes créées.
+                     </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        Budget publicitaire alloué (DA)
+                     </label>
+                     <Input 
+                        type="number"
+                        value={budget} 
+                        onChange={e => setBudget(Number(e.target.value))}
+                        placeholder="Ex: 50000"
+                        className="h-11 rounded-xl border-slate-200 bg-slate-50/50 font-mono font-black text-[#4b7bec]"
+                     />
+                     <p className="text-[10px] text-slate-400">
+                        Sert de base pour le calcul automatique du ROAS (Revenu Livré / Budget).
+                     </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                     <span className="text-xs font-bold text-slate-700">Partenaire actif</span>
+                     <input 
+                        type="checkbox" 
+                        checked={isActive} 
+                        onChange={e => setIsActive(e.target.checked)}
+                        className="size-5 accent-[#4b7bec] rounded cursor-pointer"
+                     />
+                  </div>
+               </div>
+            </div>
+
+            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-end gap-3">
+               <button onClick={onClose} className="h-11 px-5 rounded-xl font-bold text-xs text-slate-400 hover:bg-slate-50 transition-all">Annuler</button>
+               <button onClick={handleSave} disabled={saving}
+                  className="h-11 px-6 rounded-xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-bold text-xs shadow-md shadow-indigo-200 transition-all disabled:opacity-50 flex items-center gap-2">
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : 'Enregistrer'}
+               </button>
+            </div>
+         </DialogContent>
+      </Dialog>
+   );
+}
+
+function MarketersView({ 
+   marketers, 
+   isLoading, 
+   onCreate,
+   onEdit
+}: { 
+   marketers: MarketerPerformance[]; 
+   isLoading: boolean; 
+   onCreate: () => void;
+   onEdit?: (emp: any) => void;
+}) {
+   const [search, setSearch] = useState('');
+   const [editingMarketer, setEditingMarketer] = useState<MarketerPerformance | null>(null);
+   const queryClient = useQueryClient();
+
+   if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
+
+   const filteredMarketers = (marketers || []).filter(m => {
+      const q = search.toLowerCase().trim();
+      if (!q) return true;
+      return m.name.toLowerCase().includes(q) || 
+             (m.email && m.email.toLowerCase().includes(q)) || 
+             (m.pixel && m.pixel.toLowerCase().includes(q));
+   });
+
+   const totalLeads = (marketers || []).reduce((acc, m) => acc + (m.leads || 0), 0);
+   const totalDelivered = (marketers || []).reduce((acc, m) => acc + (m.delivered_orders || 0), 0);
+   const totalRevenue = (marketers || []).reduce((acc, m) => acc + (m.revenue || 0), 0);
+   const totalBudget = (marketers || []).reduce((acc, m) => acc + (m.budget || 0), 0);
+   const globalRoas = totalBudget > 0 ? (totalRevenue / totalBudget).toFixed(2) : (totalRevenue > 0 ? 'x' + (totalRevenue / 1000).toFixed(1) : 'x0');
+   const activeCount = (marketers || []).filter(m => m.is_active).length;
+
+   return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
          {/* Marketers Header */}
-         <div className="bg-white rounded-[32px] border px-8 py-7 shadow-sm flex items-center justify-between" style={{ borderColor: C.border }}>
+         <div className="bg-white rounded-[32px] border px-8 py-7 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderColor: C.border }}>
             <div className="flex items-center gap-5">
-               <div className="size-14 rounded-2xl flex items-center justify-center bg-orange-50 text-orange-500 shadow-inner">
+               <div className="size-14 rounded-2xl flex items-center justify-center bg-orange-50 text-orange-500 shadow-inner shrink-0">
                   <Megaphone className="size-7" />
                </div>
                <div>
-                  <h2 className="text-xl font-bold text-slate-900 tracking-tight">Marketing & Affiliés</h2>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Acquisition de trafic et tracking de performance (Temps réel)</p>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Marketing, Affiliés & Média Buyers</h2>
+                  <p className="text-xs font-medium text-slate-400 mt-1">Acquisition de trafic, attribution des pixels et rentabilité des campagnes (ROAS en temps réel)</p>
                </div>
             </div>
-            <Button onClick={onCreate} className="h-11 px-8 rounded-2xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center group border-none">
-               <Plus className="mr-2 size-4 text-white transition-transform group-hover:scale-110" /> Nouveau partenaire
+            <Button onClick={onCreate} className="h-11 px-6 rounded-2xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center border-none">
+               <Plus className="mr-2 size-4 text-white" /> Nouveau partenaire
             </Button>
          </div>
 
          {/* Distribution KPIs */}
-         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {[
-               { label: 'Leads générés', val: totalLeads.toLocaleString(), diff: '+12%', color: 'orange' },
-               { label: 'ROAS moyen', val: `x${avgRoas}`, dot: 'emerald' },
-               { label: 'Budget géré', val: formatPrice(totalBudget), dot: 'indigo' },
-               { label: 'Partenaires actifs', val: marketers.filter(m => m.is_active).length.toString(), pulse: true },
-            ].map((kpi, i) => (
-               <div key={i} className="bg-white rounded-3xl border p-6 hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">{kpi.label}</p>
-                  <div className="flex items-center justify-between">
-                     <span className="text-2xl font-bold text-slate-900 tracking-tighter">{kpi.val}</span>
-                     {kpi.diff && <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-600 text-[10px] font-bold">+{kpi.diff}</span>}
-                     {kpi.dot && <div className={`size-2 rounded-full bg-${kpi.dot}-500 shadow-[0_0_8px_currentColor]`} />}
-                     {kpi.pulse && <Activity className="size-4 text-emerald-500 animate-pulse" />}
-                  </div>
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Leads & Commandes</p>
+               <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">{totalLeads.toLocaleString()}</span>
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                     {totalDelivered} livrées
+                  </span>
                </div>
-            ))}
+            </div>
+
+            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Chiffre d'Affaires Livré</p>
+               <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-black text-emerald-600 tracking-tight">{formatPrice(totalRevenue)}</span>
+                  <span className="text-[10px] font-bold text-slate-400">Attribué</span>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">ROAS Moyen</p>
+               <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-black text-indigo-600 tracking-tight">{globalRoas}</span>
+                  <span className="text-[10px] font-bold text-indigo-400">Efficacité</span>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-3xl border p-5 shadow-xs hover:shadow-md transition-all" style={{ borderColor: C.border }}>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Partenaires Actifs</p>
+               <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">{activeCount}</span>
+                  <span className="text-[10px] font-bold text-slate-400">/ {marketers.length} total</span>
+               </div>
+            </div>
          </div>
 
          {/* Filters & Table */}
          <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            <div className="px-8 py-6 border-b flex items-center justify-between bg-slate-50/30" style={{ borderColor: C.border }}>
+            <div className="px-6 py-4 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50" style={{ borderColor: C.border }}>
                <div className="relative max-w-sm flex-1">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-300" />
-                  <Input placeholder="Rechercher un marketer..." className="pl-10 h-11 bg-white border-slate-100 rounded-2xl text-sm font-medium" />
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <Input 
+                     value={search}
+                     onChange={e => setSearch(e.target.value)}
+                     placeholder="Rechercher par nom, email ou code pixel..." 
+                     className="pl-9 h-10 bg-white border-slate-200 rounded-xl text-xs font-medium" 
+                  />
                </div>
+               <span className="text-xs text-slate-400 font-bold">
+                  {filteredMarketers.length} partenaire{filteredMarketers.length > 1 ? 's' : ''} listé{filteredMarketers.length > 1 ? 's' : ''}
+               </span>
             </div>
             
             <div className="overflow-x-auto">
-               <table className="w-full text-left min-w-[1100px]">
+               <table className="w-full text-left min-w-[900px]">
                   <thead>
                      <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500">Partenaire</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500">Tracking (Pixel)</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-center">Performance</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-center">ROAS</th>
-                        <th className="px-8 py-5 text-xs font-bold text-slate-500 text-right">Actions</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Partenaire / Média</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Tracking Pixel (UTM)</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Leads & Livraisons</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Revenu Généré</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-center">Budget & ROAS</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-right">Actions</th>
                      </tr>
                   </thead>
                   <tbody className="divide-y" style={{ borderColor: C.border }}>
-                     {marketers.map((m) => (
-                        <tr key={m.id} className="hover:bg-slate-50/50 transition-all group">
-                           <td className="px-8 py-6">
-                              <div className="flex items-center gap-4">
-                                 <div className="size-11 rounded-2xl flex items-center justify-center text-sm font-bold text-orange-500 bg-orange-50 active:scale-95 transition-transform">{m.name.charAt(0)}</div>
-                                 <div className="flex flex-col">
-                                    <span className="text-sm font-bold text-slate-900 group-hover:text-[#4b7bec] transition-colors">{m.name}</span>
-                                    <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Agence Certifiée</span>
+                     {filteredMarketers.length > 0 ? (
+                        filteredMarketers.map((m) => (
+                           <tr key={m.id} className="hover:bg-slate-50/50 transition-all group">
+                              <td className="px-6 py-4">
+                                 <div className="flex items-center gap-3">
+                                    <div className="size-10 rounded-xl flex items-center justify-center text-xs font-black text-orange-600 bg-orange-50 border border-orange-100 shrink-0">
+                                       {m.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                       <span className="text-xs font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors truncate">{m.name}</span>
+                                       <span className="text-[10px] text-slate-400 font-medium truncate">{m.email || 'Partenaire Média'}</span>
+                                    </div>
                                  </div>
-                              </div>
-                           </td>
-                           <td className="px-8 py-6">
-                              <code className="text-[11px] font-bold font-mono text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 tracking-tight">{m.pixel}</code>
-                           </td>
-                           <td className="px-8 py-6 text-center">
-                              <div className="flex flex-col items-center">
-                                 <span className="text-sm font-bold text-slate-900">{m.leads.toLocaleString()}</span>
-                                 <span className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tight">Leads générés</span>
-                              </div>
-                           </td>
-                           <td className="px-8 py-6 text-center">
-                              <div className="inline-flex flex-col items-center px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100">
-                                 <span className="text-xs font-bold text-indigo-600">x{m.roas}</span>
-                                 <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-tighter mt-1">Efficiency</span>
-                              </div>
-                           </td>
-                           <td className="px-8 py-6 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                 <button className="size-10 rounded-xl flex items-center justify-center bg-white border border-slate-100 text-slate-300 hover:text-[#4b7bec] hover:border-[#4b7bec] transition-all shadow-sm"><Pencil className="size-4" /></button>
+                              </td>
+                              <td className="px-6 py-4">
+                                 {m.pixel ? (
+                                    <div className="flex items-center gap-2">
+                                       <code className="text-[11px] font-bold font-mono text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                                          {m.pixel}
+                                       </code>
+                                       <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">Actif</span>
+                                    </div>
+                                 ) : (
+                                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200/80">
+                                       Non configuré
+                                    </span>
+                                 )}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                 <div className="flex flex-col items-center">
+                                    <span className="text-xs font-black text-slate-900">{m.leads.toLocaleString()} leads</span>
+                                    <span className="text-[10px] font-bold text-slate-400 mt-0.5">{m.delivered_orders || 0} livrées ({m.conversion_rate || 0}%)</span>
+                                 </div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                 <span className="text-xs font-black text-emerald-600 font-mono">
+                                    {formatPrice(m.revenue || 0)}
+                                 </span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                 <div className="inline-flex flex-col items-center px-3 py-1.5 rounded-xl bg-indigo-50/70 border border-indigo-100">
+                                    <span className="text-xs font-black text-indigo-600">x{m.roas}</span>
+                                    <span className="text-[9px] font-bold text-slate-400">Budget: {formatPrice(m.budget || 0)}</span>
+                                 </div>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                 <div className="flex items-center justify-end gap-2">
+                                    <button 
+                                       onClick={() => setEditingMarketer(m)}
+                                       className="h-8 px-3 rounded-lg flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4b7bec] text-xs font-bold transition-all">
+                                       <Settings2 className="size-3.5" /> Tracking & Budget
+                                    </button>
+                                 </div>
+                              </td>
+                           </tr>
+                        ))
+                     ) : (
+                        <tr>
+                           <td colSpan={6} className="px-8 py-12 text-center text-slate-400">
+                              <div className="flex flex-col items-center justify-center space-y-3">
+                                 <div className="size-12 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-400">
+                                    <Megaphone className="size-6" />
+                                 </div>
+                                 <p className="text-xs font-bold text-slate-600">Aucun partenaire marketing trouvé</p>
+                                 <p className="text-[11px] text-slate-400 max-w-sm">
+                                    Ajoutez un affilié ou media buyer pour suivre les leads, les dépenses publicitaires et le ROAS.
+                                 </p>
+                                 <Button onClick={onCreate} className="h-9 px-4 rounded-xl text-xs font-bold bg-[#4b7bec] text-white">
+                                    Créer le premier partenaire
+                                 </Button>
                               </div>
                            </td>
                         </tr>
-                     ))}
+                     )}
                   </tbody>
                </table>
             </div>
          </div>
+
+         {/* ── Dialog Édition Tracking & Budget ── */}
+         <EditMarketerTrackingModal
+            marketer={editingMarketer}
+            open={!!editingMarketer}
+            onClose={() => setEditingMarketer(null)}
+            onSuccess={() => {
+               queryClient.invalidateQueries({ queryKey: ['employees', 'marketers'] });
+            }}
+         />
       </div>
    );
 }
-
 // ═══════════════════════════════════════════════════════════════
 // Employee Form Dialog (CODpilot Style)
 // ═══════════════════════════════════════════════════════════════
@@ -2373,7 +2600,7 @@ export default function EmployeesPage() {
    const marketersQuery = useQuery<ApiResponse<MarketerPerformance[]>>({
       queryKey: ['employees', 'marketers', storeId, startDate, endDate],
       queryFn: () => apiFetch(buildQueryStr('/api/v1/users/marketers')),
-      enabled: !!storeId,
+      enabled: true,
    });
 
    const auditQuery = useQuery<any>({

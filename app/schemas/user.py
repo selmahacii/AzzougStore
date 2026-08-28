@@ -153,11 +153,14 @@ class InfrastructureStats(BaseModel):
 class MarketerPerformance(BaseModel):
     id: str
     name: str
+    email: Optional[str] = None
     pixel: Optional[str] = None       # real tracking_code, or None if unconfigured
     product: str = "Multi-produits"
     roas: float = 0.0                 # real: attributed delivered revenue / budget
     leads: int = 0                    # real: orders attributed via tracking_code
-    is_active: bool
+    delivered_orders: int = 0
+    conversion_rate: float = 0.0
+    is_active: bool = True
     budget: float = 0.0                # real: admin-configured marketing_budget
     revenue: float = 0.0               # attributed delivered revenue (DA)
-    tracking_configured: bool = False  # False -> UI should show "Non configure", not a fake code
+    tracking_configured: bool = False  # False -> UI should show "Non configuré"
