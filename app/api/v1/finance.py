@@ -366,11 +366,13 @@ def get_transaction_order_details(
             p = db.query(Product).filter(Product.id == campaign.product_id).first()
             if p:
                 seen_prod_ids.add(p.id)
+                img = getattr(p, "main_image", None) or (p.images[0] if getattr(p, "images", None) else None)
                 targeted_products.append({
                     "id": p.id,
                     "name": p.name,
+                    "slug": getattr(p, "slug", None),
                     "price": p.price,
-                    "image_url": p.image_url,
+                    "image_url": img,
                     "category": p.category or "Catalogue"
                 })
 
@@ -389,11 +391,13 @@ def get_transaction_order_details(
             for p in prods:
                 if p.id not in seen_prod_ids:
                     seen_prod_ids.add(p.id)
+                    img = getattr(p, "main_image", None) or (p.images[0] if getattr(p, "images", None) else None)
                     targeted_products.append({
                         "id": p.id,
                         "name": p.name,
+                        "slug": getattr(p, "slug", None),
                         "price": p.price,
-                        "image_url": p.image_url,
+                        "image_url": img,
                         "category": p.category or "Catalogue"
                     })
 
