@@ -520,6 +520,35 @@ export interface KpiData {
   abandonedCartRevenue?: number;
 }
 
+export interface TeamActivityPoint {
+  date: string;
+  actions: number;
+  orders: number;
+  confirmed: number;
+  delivered: number;
+}
+
+export interface TopAgentStat {
+  id: string;
+  name: string;
+  role: string;
+  avatar?: string | null;
+  confirmed_count: number;
+  delivered_count: number;
+  total_actions: number;
+}
+
+export interface InfrastructureStats {
+  totalEffectif: number;
+  onlineCount: number;
+  qualityIndex: number | null;
+  interactionDelay: number | null;
+  nodeId: string;
+  activity_chart?: TeamActivityPoint[];
+  top_agents?: TopAgentStat[];
+  total_actions_period?: number;
+}
+
 export interface UserMetadata {
   last_login_ip: string;
   device_type: string;

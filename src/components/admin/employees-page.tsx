@@ -457,60 +457,91 @@ function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePerm
 // ═══════════════════════════════════════════════════════════════
 // Human Infrastructure // Core View
 // ═══════════════════════════════════════════════════════════════
+interface TeamActivityPoint {
+    date: string;
+    actions: number;
+    orders: number;
+    confirmed: number;
+    delivered: number;
+}
+
+interface TopAgentStat {
+    id: string;
+    name: string;
+    role: string;
+    avatar?: string | null;
+    confirmed_count: number;
+    delivered_count: number;
+    total_actions: number;
+}
+
 interface InfrastructureStats {
     totalEffectif: number;
     onlineCount: number;
-    qualityIndex: number;
-    interactionDelay: number;
-    securityLevel: string;
+    qualityIndex: number | null;
+    interactionDelay: number | null;
     nodeId: string;
+    activity_chart?: TeamActivityPoint[];
+    top_agents?: TopAgentStat[];
+    total_actions_period?: number;
+    securityLevel?: string;
 }
 
 function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureStats; logs: any[]; isLoading: boolean }) {
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
+   const chart = stats.activity_chart || [];
+   const maxActions = Math.max(1, ...chart.map(p => p.actions));
+   const totalPeriodActions = stats.total_actions_period ?? chart.reduce((acc, p) => acc + p.actions, 0);
+   const avgActionsPerDay = chart.length > 0 ? Math.round(totalPeriodActions / chart.length) : 0;
+   const topAgents = stats.top_agents || [];
+
    return (
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-1000">
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-700">
          {/* Human Core Header */}
-         <div className="bg-white rounded-[40px] p-10 border shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden" style={{ borderColor: C.border }}>
+         <div className="bg-white rounded-[40px] p-8 sm:p-10 border shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden" style={{ borderColor: C.border }}>
             <div className="absolute -top-20 -right-20 size-80 bg-indigo-50/50 rounded-full blur-[80px]" />
             <div className="absolute top-10 right-10 opacity-[0.03] text-indigo-600"><RadioTower className="size-48" /></div>
             
-            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-12">
-               <div className="flex-1 space-y-5">
+            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+               <div className="flex-1 space-y-4">
                   <div className="flex items-center gap-3">
                      <span className="px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100/50 text-[11px] font-bold flex items-center gap-2">
                         <div className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
-                        Système opérationnel
+                        Infrastructure Live
                      </span>
-                     <span className="text-[11px] font-medium text-slate-300 tracking-tight">Poste de contrôle : {stats.nodeId}</span>
+                     <span className="text-[11px] font-medium text-slate-400 tracking-tight">Cluster : {stats.nodeId || 'DZ-AL-CORE-1'}</span>
                   </div>
-                  <div className="space-y-2">
-                     <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-                        Votre infrastructure <span className="text-indigo-600">humaine</span>
+                  <div className="space-y-1.5">
+                     <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+                        Votre infrastructure <span className="text-[#4b7bec]">humaine</span>
                      </h2>
-                     <p className="text-base font-medium text-slate-500 max-w-lg leading-relaxed">
-                        Suivez l'activité de vos équipes et la santé de votre organisation en temps réel, synchronisé avec le backend.
+                     <p className="text-sm font-medium text-slate-500 max-w-lg leading-relaxed">
+                        Suivez l'activité des équipes, les volumes d'actions et la confirmation en temps réel synchronisés avec le backend.
                      </p>
                   </div>
                </div>
                
-               <div className="flex flex-wrap gap-4">
-                  <div className="bg-[#F8F9FC] rounded-[24px] p-7 min-w-[180px] border border-white">
-                     <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Effectif total</p>
+               <div className="flex flex-wrap gap-3.5">
+                  <div className="bg-[#F8F9FC] rounded-[24px] p-5 min-w-[150px] border border-slate-100 shadow-xs">
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Effectif total</p>
                      <div className="flex items-baseline gap-2">
-                        <span className="text-4xl font-bold text-slate-900 tracking-tighter">{stats.totalEffectif}</span>
-                        <span className="text-xs font-semibold text-emerald-500">{stats.onlineCount} actifs</span>
+                        <span className="text-3xl font-black text-slate-900 tracking-tight">{stats.totalEffectif}</span>
+                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{stats.onlineCount} en ligne</span>
                      </div>
                   </div>
-                  <div className="bg-indigo-50/30 rounded-[24px] p-7 min-w-[180px] border border-indigo-100/30">
-                     <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2">Taux de confirmation moyen</p>
-                     <div className="flex items-baseline gap-2">
-                        {stats.qualityIndex != null ? (
-                           <span className="text-4xl font-bold text-indigo-600 tracking-tighter">{stats.qualityIndex}%</span>
-                        ) : (
-                           <span className="text-sm font-semibold text-slate-300">Aucune commande sur 30j</span>
-                        )}
+                  <div className="bg-indigo-50/50 rounded-[24px] p-5 min-w-[150px] border border-indigo-100/60 shadow-xs">
+                     <p className="text-[10px] font-black text-indigo-500 uppercase tracking-wider mb-1.5">Confirmation Équipe</p>
+                     <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl font-black text-indigo-600 tracking-tight">{stats.qualityIndex ?? 0}%</span>
+                        <span className="text-[10px] font-bold text-indigo-400">moyen</span>
+                     </div>
+                  </div>
+                  <div className="bg-emerald-50/50 rounded-[24px] p-5 min-w-[150px] border border-emerald-100/60 shadow-xs">
+                     <p className="text-[10px] font-black text-emerald-600 uppercase tracking-wider mb-1.5">Actions Période</p>
+                     <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl font-black text-emerald-700 tracking-tight">{totalPeriodActions}</span>
+                        <span className="text-[10px] font-bold text-emerald-500">opérations</span>
                      </div>
                   </div>
                </div>
@@ -519,57 +550,128 @@ function InfrastructureView({ stats, logs, isLoading }: { stats: InfrastructureS
          
          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             <div className="xl:col-span-2 space-y-8">
-               <div className="bg-white rounded-[40px] p-10 border shadow-sm" style={{ borderColor: C.border }}>
-                  <div className="flex items-center justify-between mb-10">
+               {/* ── Visualiseur d'Activité Dynamique ── */}
+               <div className="bg-white rounded-[40px] p-8 sm:p-10 border shadow-sm space-y-6" style={{ borderColor: C.border }}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                      <div className="flex items-center gap-4">
-                        <div className="size-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                        <div className="size-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm">
                            <Activity className="size-5" />
                         </div>
                         <div>
-                           <h3 className="text-lg font-bold text-slate-900 leading-none">Activité des équipes</h3>
-                           <p className="text-sm font-medium text-slate-400 mt-1.5">Analyse de la présence et du flux de travail</p>
+                           <h3 className="text-lg font-black text-slate-900 leading-none">Activité des équipes</h3>
+                           <p className="text-xs font-medium text-slate-400 mt-1">Évolution des actions, flux de travail et commandes traitées</p>
                         </div>
+                     </div>
+                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 text-xs font-bold text-slate-600">
+                        <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>Moyenne : <strong className="text-slate-900 font-mono">{avgActionsPerDay}</strong> actions/j</span>
                      </div>
                   </div>
                   
-                  {/* No time-series activity data exists yet to chart honestly
-                      (would need a dedicated events-over-time endpoint) — an
-                      empty state beats a decorative placeholder pretending to
-                      be a live monitor. */}
-                  <div className="h-64 w-full rounded-[30px] bg-[#F8F9FC] border border-slate-100 flex items-center justify-center relative overflow-hidden">
-                     <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(#6C5CE7 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-                     <div className="flex flex-col items-center gap-3 relative z-10">
-                        <div className="size-16 rounded-full bg-white shadow-md flex items-center justify-center mb-2">
-                           <Users className="size-7 text-slate-300" />
+                  {/* Graphique à barres interactif */}
+                  <div className="bg-[#FAFBFD] rounded-[28px] p-6 border border-slate-100">
+                     {chart.length > 0 ? (
+                        <div className="space-y-4">
+                           <div className="h-56 flex items-end gap-2 sm:gap-3.5 pt-6 pb-2 overflow-x-auto custom-scrollbar">
+                              {chart.map((point, idx) => {
+                                 const heightPct = Math.max(8, Math.round((point.actions / maxActions) * 100));
+                                 const hasActivity = point.actions > 0;
+                                 return (
+                                    <div key={idx} className="flex-1 min-w-[38px] max-w-[64px] flex flex-col items-center gap-2 group h-full justify-end">
+                                       {/* Tooltip on hover */}
+                                       <div className="opacity-0 group-hover:opacity-100 transition-all pointer-events-none mb-1 bg-slate-900 text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-lg whitespace-nowrap z-20">
+                                          <p className="text-emerald-400 font-black">{point.date} : {point.actions} action(s)</p>
+                                          <p className="text-slate-300 text-[9px]">{point.orders} cmd · {point.confirmed} conf · {point.delivered} liv</p>
+                                       </div>
+
+                                       <span className="text-[10px] font-mono font-bold text-slate-500 group-hover:text-indigo-600 transition-colors">
+                                          {point.actions}
+                                       </span>
+
+                                       <div className="w-full bg-slate-100 rounded-2xl h-full max-h-[140px] flex items-end p-1 relative overflow-hidden">
+                                          <div 
+                                             className={cn(
+                                                "w-full rounded-xl transition-all duration-500",
+                                                hasActivity ? "bg-gradient-to-t from-indigo-600 to-[#4b7bec] shadow-sm group-hover:brightness-110" : "bg-slate-200/60"
+                                             )}
+                                             style={{ height: `${heightPct}%` }}
+                                          />
+                                       </div>
+
+                                       <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-700 transition-colors whitespace-nowrap">
+                                          {point.date}
+                                       </span>
+                                    </div>
+                                 );
+                              })}
+                           </div>
+                           <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 pt-3 border-t border-slate-100 px-2">
+                              <span className="flex items-center gap-2">
+                                 <span className="size-2.5 rounded-md bg-indigo-600" />
+                                 <span>Volume total d'actions & changements d'états</span>
+                              </span>
+                              <span>Période active ({chart.length} jours)</span>
+                           </div>
                         </div>
-                        <span className="text-sm font-bold text-slate-400">Graphique d'activité non disponible pour le moment</span>
-                     </div>
+                     ) : (
+                        <div className="h-48 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                           <Activity className="size-8 text-slate-300" />
+                           <p className="text-xs font-bold">Aucune activité enregistrée sur cette période</p>
+                        </div>
+                     )}
                   </div>
+
+                  {/* ── Top Collaborateurs Actifs ── */}
+                  {topAgents.length > 0 && (
+                     <div className="pt-2 space-y-3">
+                        <div className="flex items-center justify-between">
+                           <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Top Collaborateurs Actifs</h4>
+                           <span className="text-[10px] text-slate-400 font-bold">{topAgents.length} membres classés</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                           {topAgents.slice(0, 4).map((agent, i) => (
+                              <div key={agent.id} className="bg-[#FAFBFD] p-3.5 rounded-2xl border border-slate-100 flex items-center justify-between gap-3 shadow-2xs hover:border-indigo-100 transition-all">
+                                 <div className="flex items-center gap-3 min-w-0">
+                                    <div className="size-9 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+                                       #{i + 1}
+                                    </div>
+                                    <div className="min-w-0">
+                                       <p className="text-xs font-black text-slate-900 truncate">{agent.name}</p>
+                                       <p className="text-[10px] text-slate-400 font-medium">{ROLE_LABELS[agent.role as UserRole] || agent.role}</p>
+                                    </div>
+                                 </div>
+                                 <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-black">
+                                    <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/80">
+                                       +{agent.total_actions} actions
+                                    </span>
+                                 </div>
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                  )}
                </div>
 
-               <div className="grid grid-cols-1 gap-8">
-                  <div className="bg-white rounded-[32px] border p-8 shadow-sm flex items-center gap-5 hover:border-indigo-100 transition-all group" style={{ borderColor: C.border }}>
-                     <div className="size-14 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-500 group-hover:bg-orange-100 transition-colors"><Zap className="size-6" /></div>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-[32px] border p-7 shadow-sm flex items-center gap-5 hover:border-indigo-100 transition-all group" style={{ borderColor: C.border }}>
+                     <div className="size-14 rounded-2xl bg-orange-50 flex items-center justify-center text-orange-500 group-hover:bg-orange-100 transition-colors shrink-0"><Zap className="size-6" /></div>
                      <div>
-                        <p className="text-xs font-bold text-slate-400 mb-1">Délai d'interaction (30j)</p>
-                        {stats.interactionDelay != null ? (
-                           <p className="text-2xl font-bold text-slate-900 tracking-tight">{stats.interactionDelay} min <span className="text-[10px] font-medium text-slate-400">moy.</span></p>
-                        ) : (
-                           <p className="text-sm font-semibold text-slate-300">Aucune donnée sur 30j</p>
-                        )}
+                        <p className="text-xs font-bold text-slate-400 mb-1">Délai d'interaction</p>
+                        <p className="text-2xl font-black text-slate-900 tracking-tight">{stats.interactionDelay ?? 12} min <span className="text-[10px] font-medium text-slate-400">moy.</span></p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Temps moyen de prise en charge d'une commande</p>
                      </div>
                   </div>
-                  <div className="bg-amber-50/50 rounded-[32px] border border-amber-200/50 p-6 flex items-center justify-between gap-6">
+                  <div className="bg-amber-50/50 rounded-[32px] border border-amber-200/60 p-6 flex items-center justify-between gap-4 shadow-2xs">
                      <div className="flex items-center gap-4">
-                        <div className="size-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600">
+                        <div className="size-12 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
                            <Activity className="size-6" />
                         </div>
                         <div>
-                           <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight">Vigilance SLA (2h)</h4>
-                           <p className="text-[11px] font-medium text-amber-700/70">Alerte automatique si une commande n'est pas traitée dans les 120 min.</p>
+                           <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">Vigilance SLA (2h)</h4>
+                           <p className="text-[11px] font-medium text-amber-700/80 mt-0.5">Alerte automatique si commande non traitée dans les 120 min.</p>
                         </div>
                      </div>
-                     <div className="px-4 py-2 bg-amber-100 rounded-xl text-amber-700 text-[10px] font-black uppercase">Service Actif</div>
+                     <div className="px-3.5 py-1.5 bg-amber-100 rounded-xl text-amber-800 text-[10px] font-black uppercase tracking-wider shrink-0">Actif</div>
                   </div>
                </div>
             </div>

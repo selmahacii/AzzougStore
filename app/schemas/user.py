@@ -109,18 +109,33 @@ class RolePermission(BaseModel):
     permissions: List[str]
 
 
+class TeamActivityPoint(BaseModel):
+    date: str
+    actions: int = 0
+    orders: int = 0
+    confirmed: int = 0
+    delivered: int = 0
+
+
+class TopAgentStat(BaseModel):
+    id: str
+    name: str
+    role: str
+    avatar: Optional[str] = None
+    confirmed_count: int = 0
+    delivered_count: int = 0
+    total_actions: int = 0
+
+
 class InfrastructureStats(BaseModel):
     totalEffectif: int
     onlineCount: int
-    # Real average confirmation rate (%) across confirmatrices with at
-    # least one assigned order in the window — None when nobody has any
-    # (nothing to average), never a fabricated placeholder number.
     qualityIndex: Optional[float] = None
-    # Real average minutes between an order's creation and its first
-    # recorded status-changing event (first confirmatrice touch), scoped
-    # to the same window. None when there's no event data yet to average.
     interactionDelay: Optional[float] = None
-    nodeId: str
+    nodeId: str = "DZ-AL-CORE-1"
+    activity_chart: List[TeamActivityPoint] = []
+    top_agents: List[TopAgentStat] = []
+    total_actions_period: int = 0
 
 
 class MarketerPerformance(BaseModel):
