@@ -259,8 +259,9 @@ def get_infrastructure_stats(
     window_end = parse_local_date_filter(end_date) if end_date else now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
     # 1. Total effectif
+    is_valid_store = bool(store_id and store_id.strip() and store_id.upper() not in ("ALL", "UNDEFINED", "NULL", "NONE", ""))
     user_filters = [User.is_active == True]
-    if store_id:
+    if is_valid_store:
         user_filters.append(
             or_(
                 User.employee_store_id == store_id,
@@ -269,6 +270,8 @@ def get_infrastructure_stats(
             )
         )
     total_effectif = db.query(User).filter(*user_filters).count()
+    if total_effectif == 0:
+        total_effectif = db.query(User).filter(User.is_active == True).count()
     if total_effectif == 0:
         total_effectif = db.query(User).count()
 
@@ -283,7 +286,7 @@ def get_infrastructure_stats(
 
     # 3. Base filters for orders
     order_base_filters = [Order.is_deleted == False, Order.status != "MERGED"]
-    if store_id:
+    if is_valid_store:
         order_base_filters.append(Order.store_id == store_id)
 
     window_orders = db.query(

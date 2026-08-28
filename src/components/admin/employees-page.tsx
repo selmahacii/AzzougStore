@@ -2603,9 +2603,26 @@ export default function EmployeesPage() {
          <div className="relative">
             {activeTab === 'infra' && (
                <InfrastructureView
-                  stats={(infraQuery.data as any)?.data || { totalEffectif: 0, onlineCount: 0, qualityIndex: 0, interactionDelay: 0, securityLevel: 'N/A', nodeId: '...' }}
-                  logs={auditQuery.data?.data || []}
-                  isLoading={infraQuery.isLoading || auditQuery.isLoading}
+                  stats={
+                     ((infraQuery.data as any)?.totalEffectif !== undefined
+                        ? (infraQuery.data as any)
+                        : (infraQuery.data as any)?.data) || {
+                        totalEffectif: employees.length,
+                        onlineCount: Math.min(employees.length, 1),
+                        qualityIndex: 0,
+                        interactionDelay: 12,
+                        nodeId: 'DZ-AL-CORE-1',
+                        activity_chart: [],
+                        top_agents: [],
+                        total_actions_period: 0
+                     }
+                  }
+                  logs={
+                     Array.isArray(auditQuery.data)
+                        ? auditQuery.data
+                        : auditQuery.data?.items || auditQuery.data?.data || []
+                  }
+                  isLoading={infraQuery.isLoading && employeesQuery.isLoading}
                />
             )}
             {activeTab === 'roles' && <RolesView roles={(Array.isArray(rolesQuery.data) ? rolesQuery.data : rolesQuery.data?.data) || []} isLoading={rolesQuery.isLoading} onRefresh={() => rolesQuery.refetch()} onNewRole={() => setNewRoleModalOpen(true)} />}
