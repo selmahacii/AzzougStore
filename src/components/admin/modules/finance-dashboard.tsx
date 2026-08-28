@@ -1982,6 +1982,7 @@ function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
 
 
 
+
 function TransactionDetailModal({
    transaction,
    open,
@@ -2004,14 +2005,14 @@ function TransactionDetailModal({
       ? txDate.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
       : 'Récemment enregistré';
    const formattedTime = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
-      ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       : '—';
 
    const handleCopyRef = () => {
       if (transaction?.reference) {
          navigator.clipboard.writeText(transaction.reference);
          setCopied(true);
-         toast.success('Référence copiée dans le presse-papier !');
+         toast.success('Référence copiée !');
          setTimeout(() => setCopied(false), 2000);
       }
    };
@@ -2021,165 +2022,140 @@ function TransactionDetailModal({
    };
 
    const effectiveCategory = transaction.category || (isPayment ? 'VENTE_COD' : 'DÉCAISSEMENT');
-   const effectiveBeneficiary = transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Prestataire / Fournisseur'));
-   const effectiveWallet = transaction.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Trésorerie');
+   const effectiveBeneficiary = transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Fournisseur / Prestataire'));
+   const effectiveWallet = transaction.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Courant');
 
    return (
       <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-         <DialogContent className="max-w-xl rounded-[2.5rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden bg-white print:m-0 print:p-0 print:border-none print:shadow-none">
-            {/* ── Entête Pièce Comptable ── */}
+         <DialogContent className="max-w-xl rounded-[2rem] p-0 gap-0 border border-slate-200 shadow-2xl overflow-hidden bg-white print:m-0 print:p-0 print:border-none print:shadow-none">
+            {/* ── Entête Pièce Justificative ── */}
             <div className={cn(
-               "p-8 text-white relative",
+               "p-7 text-white relative",
                isPayment 
-                  ? "bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800" 
+                  ? "bg-[#00B894]" 
                   : isTransfer
-                     ? "bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800"
-                     : "bg-gradient-to-br from-rose-600 via-rose-700 to-slate-900"
+                     ? "bg-[#6C5CE7]"
+                     : "bg-[#2D3436]"
             )}>
                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                     <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-white/20 backdrop-blur-md border border-white/20">
-                        <ShieldCheck className="size-3.5" />
-                        Pièce Comptable Certifiée
-                     </span>
-                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/20 text-white/90">
-                        {isPayment ? 'Encaissement Entrant (+)' : isTransfer ? 'Transfert Inter-Caisses (⇄)' : 'Décaissement Sortant (-)'}
-                     </span>
-                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg bg-white/20 text-white">
+                     {isPayment ? 'Bon d'Encaissement (Vente)' : isTransfer ? 'Bon de Transfert Inter-Caisse' : 'Bon de Décaissement (Dépense)'}
+                  </span>
                   <button 
                      onClick={handleCopyRef}
-                     className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-white/15 hover:bg-white/25 transition-all flex items-center gap-1.5 text-white/90"
+                     className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-white/15 hover:bg-white/25 transition-all flex items-center gap-1.5 text-white"
                      title="Copier la référence"
                   >
                      <span>{transaction.reference || 'SYSTEM-TX'}</span>
-                     {copied ? <CheckCircle2 className="size-3 text-emerald-300" /> : <Receipt className="size-3" />}
+                     {copied ? <CheckCircle2 className="size-3 text-emerald-200" /> : <Receipt className="size-3" />}
                   </button>
                </div>
 
-               <div className="flex items-baseline justify-between mt-2">
+               <div className="flex items-baseline justify-between mt-1">
                   <div>
-                     <p className="text-[11px] font-bold text-white/70 uppercase tracking-widest">Montant du flux</p>
-                     <p className="text-4xl font-black tabular-nums tracking-tight mt-1">
-                        {isPayment ? '+' : '-'}{formatPrice(transaction.amount)} <span className="text-2xl font-bold text-white/80">DA</span>
+                     <p className="text-[10px] font-bold text-white/75 uppercase tracking-wider">Montant de l'opération</p>
+                     <p className="text-3xl font-black tabular-nums tracking-tight mt-0.5">
+                        {isPayment ? '+' : '-'}{formatPrice(transaction.amount)}
                      </p>
                   </div>
                   <div className="text-right">
-                     <span className="inline-block px-3 py-1 rounded-xl bg-white/20 text-xs font-black uppercase tracking-wider backdrop-blur-sm">
+                     <span className="inline-block px-3 py-1 rounded-lg bg-white/20 text-xs font-bold uppercase tracking-wider">
                         {effectiveCategory.replace(/_/g, ' ')}
                      </span>
                   </div>
                </div>
             </div>
 
-            {/* ── Grille des Attributs & Métadonnées ── */}
-            <div className="p-8 space-y-6 bg-slate-50/50 max-h-[65vh] overflow-y-auto">
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* ── Détails & Informations de la Transaction ── */}
+            <div className="p-7 space-y-5 bg-white max-h-[65vh] overflow-y-auto">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   {/* Référence Flux */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Receipt className="size-3 text-indigo-500" /> Référence Flux
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Référence de la pièce
                      </span>
-                     <p className="text-xs font-black font-mono text-slate-900 break-all">{transaction.reference || 'SYSTEM-TX'}</p>
-                     <p className="text-[10px] text-slate-400 font-medium">Identifiant unique vérifié</p>
+                     <p className="text-xs font-bold font-mono text-slate-800 break-all">{transaction.reference || 'SYSTEM-TX'}</p>
                   </div>
 
                   {/* Catégorie */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Layers className="size-3 text-amber-500" /> Catégorie Comptable
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Catégorie
                      </span>
-                     <p className="text-xs font-black text-slate-900 uppercase">{effectiveCategory.replace(/_/g, ' ')}</p>
-                     <p className="text-[10px] text-slate-400 font-medium">Classement financier</p>
+                     <p className="text-xs font-bold text-slate-800 uppercase">{effectiveCategory.replace(/_/g, ' ')}</p>
                   </div>
 
                   {/* Bénéficiaire */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <UserCircle className="size-3 text-emerald-500" /> Bénéficiaire / Tiers
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Bénéficiaire / Client
                      </span>
-                     <p className="text-xs font-black text-slate-900 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
-                     <p className="text-[10px] text-slate-400 font-medium">Destinataire ou payeur</p>
+                     <p className="text-xs font-bold text-slate-800 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
                   </div>
 
                   {/* Compte Source / Cible */}
-                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <WalletIcon className="size-3 text-blue-500" /> Compte Source / Cible
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Compte / Caisse rattaché
                      </span>
-                     <p className="text-xs font-black text-slate-900 truncate">{effectiveWallet}</p>
-                     <p className="text-[10px] text-slate-400 font-medium">Solde & journal rattachés</p>
+                     <p className="text-xs font-bold text-slate-800 truncate">{effectiveWallet}</p>
                   </div>
                </div>
 
-               {/* Horodatage & Audit Trail */}
-               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Clock className="size-3.5 text-indigo-500" /> Horodatage & Enregistrement
+               {/* Horodatage */}
+               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Date & Heure d'enregistrement
                      </span>
-                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                        Horodatage Certifié GMT+1 (Algérie)
+                     <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        GMT+1 (Algérie)
                      </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
                      <div>
-                        <span className="text-[10px] text-slate-400 block font-bold">Date Calendaire</span>
-                        <span className="font-black text-slate-800 capitalize">{formattedDate}</span>
+                        <span className="text-[10px] text-slate-400 block font-medium">Date</span>
+                        <span className="font-bold text-slate-800 capitalize">{formattedDate}</span>
                      </div>
                      <div>
-                        <span className="text-[10px] text-slate-400 block font-bold">Heure d'Exécution</span>
-                        <span className="font-black text-slate-800 font-mono">{formattedTime}</span>
+                        <span className="text-[10px] text-slate-400 block font-medium">Heure</span>
+                        <span className="font-bold text-slate-800 font-mono">{formattedTime}</span>
                      </div>
                   </div>
                </div>
 
-               {/* Description / Motif */}
+               {/* Motif / Description */}
                {transaction.description && (
-                  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs space-y-1.5">
-                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Info className="size-3.5 text-slate-400" /> Motif / Description du Flux
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-1">
+                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Libellé de l'opération
                      </span>
-                     <p className="text-xs font-bold text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100/80">
+                     <p className="text-xs font-medium text-slate-700 leading-relaxed">
                         {transaction.description}
                      </p>
                   </div>
                )}
-
-               {/* Certificat de Preuve Numérique */}
-               <div className="bg-slate-900 text-slate-300 p-5 rounded-2xl shadow-sm space-y-2 font-mono text-[11px]">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">
-                     <span className="flex items-center gap-1.5 text-emerald-400">
-                        <ShieldCheck className="size-3.5" /> Preuve & Empreinte Numérique ERP
-                     </span>
-                     <span>VERIFIED</span>
-                  </div>
-                  <div className="space-y-1 pt-1 text-[10px]">
-                     <p className="text-slate-400">UUID : <span className="text-white">{transaction.id || 'N/A'}</span></p>
-                     <p className="text-slate-400">Store ID : <span className="text-slate-200">{transaction.store_id || 'Global'}</span></p>
-                     <p className="text-slate-400">Signature : <span className="text-emerald-400">SHA256:AUTHENTICATED-LEDGER-TRANSACTION</span></p>
-                  </div>
-               </div>
             </div>
 
-            {/* ── Actions & Footer ── */}
-            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-between gap-3 print:hidden">
+            {/* ── Actions ── */}
+            <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 print:hidden">
                <button
                   onClick={handleCopyRef}
-                  className="h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-2"
+                  className="h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
                >
-                  <Receipt className="size-4 text-slate-500" /> Copier Référence
+                  <Receipt className="size-3.5 text-slate-400" /> Copier Référence
                </button>
 
                <div className="flex items-center gap-2">
                   <button
                      onClick={handlePrint}
-                     className="h-11 px-5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-2"
+                     className="h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
                   >
-                     <Banknote className="size-4 text-slate-500" /> Imprimer Justificatif
+                     <Banknote className="size-3.5 text-slate-400" /> Imprimer le Bon
                   </button>
                   <button
                      onClick={onClose}
-                     className="h-11 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-md"
+                     className="h-10 px-5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all"
                   >
                      Fermer
                   </button>
