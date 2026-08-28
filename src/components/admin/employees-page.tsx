@@ -73,7 +73,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
-import type { EmployeeStats, ApiResponse, UserRole, Product } from '@/lib/types';
+import type { EmployeeStats, ApiResponse, UserRole, Product, MarketerPerformance } from '@/lib/types';
 import { ROLE_LABELS } from '@/lib/types';
 import { formatPrice } from '@/lib/format';
 import { toast } from 'sonner';
