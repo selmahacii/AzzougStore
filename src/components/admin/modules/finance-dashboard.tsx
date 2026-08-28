@@ -2089,7 +2089,7 @@ function TransactionDetailModal({
             )}>
                <div className="flex items-center justify-between mb-4">
                   <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg bg-white/20 text-white">
-                     {isPayment ? 'Bon d'Encaissement (Vente)' : isTransfer ? 'Bon de Transfert Inter-Caisse' : 'Bon de Décaissement (Dépense)'}
+                     {isPayment ? "Bon d'Encaissement (Vente)" : isTransfer ? "Bon de Transfert Inter-Caisse" : "Bon de Décaissement (Dépense)"}
                   </span>
                   <button 
                      onClick={handleCopyRef}
