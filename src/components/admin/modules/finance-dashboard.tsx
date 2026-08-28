@@ -2266,22 +2266,59 @@ function TransactionDetailModal({
                         </div>
                      </div>
 
-                     {/* 2. Landing Pages Ciblées */}
-                     <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-1.5 text-xs">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                           Landing Page(s) de Destination
-                        </span>
-                        <div className="space-y-1">
-                           {marketing.landing_pages.map((url: string, idx: number) => (
-                              <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg text-slate-700 font-mono text-[11px] break-all border border-slate-100">
-                                 <Layers className="size-3 text-blue-500 shrink-0" />
-                                 <span className="truncate">{url}</span>
-                              </div>
-                           ))}
+                     {/* 2. Publicité(s) & Annonces (Ads) Concernées */}
+                     {marketing.ads && marketing.ads.length > 0 && (
+                        <div className="bg-white p-3.5 rounded-xl border border-blue-100 space-y-2 text-xs">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                 Publicité(s) & Annonces Meta (Ads) ({marketing.ads.length})
+                              </span>
+                              <span className="text-[10px] font-bold text-blue-600">
+                                 Attribution Active
+                              </span>
+                           </div>
+                           <div className="space-y-1.5">
+                              {marketing.ads.map((ad: any, idx: number) => (
+                                 <div key={idx} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between gap-3">
+                                    <div className="space-y-0.5 truncate">
+                                       <p className="font-bold text-slate-800 truncate">{ad.ad_name}</p>
+                                       <p className="text-[10px] text-slate-500 font-medium">
+                                          Ensemble : <span className="text-blue-600">{ad.adset_name}</span> · ID: <span className="font-mono text-slate-400">{ad.ad_id}</span>
+                                       </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                       <span className="font-mono font-bold text-slate-900 block">{ad.spend > 0 ? formatPrice(ad.spend) : formatPrice(marketing.spend)}</span>
+                                       <span className="text-[9px] text-slate-400">Dépense ad</span>
+                                    </div>
+                                 </div>
+                              ))}
+                           </div>
                         </div>
-                     </div>
+                     )}
 
-                     {/* 3. Commandes Obtenues & Performance */}
+                     {/* 3. Landing Pages Ciblées */}
+                     {marketing.landing_pages && marketing.landing_pages.length > 0 && (
+                        <div className="bg-white p-3.5 rounded-xl border border-blue-100 space-y-1.5 text-xs">
+                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Landing Page(s) de Destination
+                           </span>
+                           <div className="space-y-1">
+                              {marketing.landing_pages.map((lp: any, idx: number) => (
+                                 <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg text-slate-700 font-mono text-[11px] break-all border border-slate-100">
+                                    <div className="flex items-center gap-2 truncate">
+                                       <Layers className="size-3 text-blue-500 shrink-0" />
+                                       <span className="font-sans font-bold text-slate-800">{typeof lp === 'string' ? lp : lp.title}</span>
+                                    </div>
+                                    {typeof lp !== 'string' && lp.url && (
+                                       <span className="text-[10px] text-blue-600 font-mono shrink-0 ml-2">{lp.url}</span>
+                                    )}
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
+
+                     {/* 4. Commandes Obtenues & Performance */}
                      <div className="grid grid-cols-3 gap-3 text-center">
                         <div className="bg-white p-2.5 rounded-xl border border-blue-100">
                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Commandes Obtenues</span>
@@ -2300,9 +2337,9 @@ function TransactionDetailModal({
                         </div>
                      </div>
 
-                     {/* 4. Produits Concernés par cette Dépense */}
+                     {/* 5. Produits Concernés par cette Dépense */}
                      {marketing.products && marketing.products.length > 0 && (
-                        <div className="bg-white p-3 rounded-xl border border-blue-100 space-y-2">
+                        <div className="bg-white p-3.5 rounded-xl border border-blue-100 space-y-2">
                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                               Produits Concernés par cette Publicité ({marketing.products.length})
                            </span>
