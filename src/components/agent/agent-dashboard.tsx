@@ -2657,7 +2657,7 @@ return (
 
 export default function AgentDashboard() {
   const { user, activeStore, allStores, setActiveStore, setAppView, sidebarCollapsed, setSidebarCollapsed, toggleSidebar, clearUser } = useAppStore();
-  const isLivreur = user?.role === 'LIVREUR';
+  const isLivreur = user?.role?.toUpperCase() === 'LIVREUR';
   const MODULES = useMemo(() => getModules(isLivreur, user), [isLivreur, user]);
   const queryClient = useQueryClient();
   const workTimer = useWorkTimer();
@@ -3812,7 +3812,8 @@ export default function AgentDashboard() {
                     <p className="mt-4 text-xs font-bold text-slate-300 uppercase tracking-widest">Aucune donnée trouvée</p>
                  </div>
                ) : (
-                  {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
+                 <div className="grid grid-cols-1 gap-3">
+                   {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
                       const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
                       const isExpanded = expandedGroups.has(order.id);
                       const isFirstOfStore = showStoreSections && (idx === 0 || arr[idx - 1].primary.store_id !== order.store_id);
@@ -3833,146 +3834,135 @@ export default function AgentDashboard() {
                                  related.length > 0 && isExpanded && "rounded-b-none border-b-0"
                                )}
                                style={{ backgroundColor: statusBg }}>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                             <div className="flex items-center gap-2 flex-wrap">
-                                {!isLivreur ? (
-                                  <>
-                                    <OrderTypeBadge order={order} />
-                                    <StatusBadge status={order.status} />
-                                    <NrpBadge count={order.nrp_count || 0} />
-                                    <PendingBadge order={order} />
-                                    {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
-                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
-                                        <Store className="size-2.5" /> Marketplace (50 DA)
-                                      </span>
-                                    )}
-                                    {related.length > 0 ? (
-                                      <RelatedOrdersBadge
-                                        count={related.length}
-                                        expanded={isExpanded}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setExpandedGroups(prev => {
-                                            const next = new Set(prev);
-                                            if (next.has(order.id)) next.delete(order.id);
-                                            else next.add(order.id);
-                                            return next;
-                                          });
-                                        }}
-                                      />
-                                    ) : (order.is_duplicate || (order.duplicate_count ?? 0) > 0) ? (
-                                      <DuplicatePopover
-                                        order={order}
-                                        onOpenFullModal={() => setSelectedDuplicateOrder(order)}
-                                        onUnmergeSuccess={() => ordersQuery.refetch()}
-                                      />
-                                    ) : null}
-                                    {order.store?.name && (
-                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
-                                        {order.store.name}
-                                      </span>
-                                    )}
-                                    {order.livreur_id && (
-                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
-                                        <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
-                                      </span>
-                                    )}
-                                    {order.tracking_number && (
-                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
-                                        Suivi: {order.tracking_number}
-                                      </span>
-                                    )}
-                                    {!!order.events_count && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
-                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
-                                        title="Voir l'historique complet de cette commande"
-                                      >
-                                        {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
-                                      </button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <>
-                                    {['DELIVERED', 'RETURNED', 'CANCELLED', 'RESCHEDULED'].includes(order.status) && (
-                                      <StatusBadge status={order.status} />
-                                    )}
-                                    {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
-                                      <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
-                                        <Store className="size-2.5" /> Marketplace
-                                      </span>
-                                    )}
-                                  </>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                            {!isLivreur && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <OrderTypeBadge order={order} />
+                                <StatusBadge status={order.status} />
+                                <NrpBadge count={order.nrp_count || 0} />
+                                <PendingBadge order={order} />
+                                {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-pink-200 bg-pink-50 text-pink-700 shrink-0 flex items-center gap-1">
+                                    <Store className="size-2.5" /> Marketplace (50 DA)
+                                  </span>
                                 )}
-                             </div>
-                             <div>
-                                <p className="text-xs font-bold group-hover:text-blue-600 transition-colors">{formatOrderRef(order, 'admin')}</p>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{order.customer_name} · {order.customer_wilaya} {order.customer_commune ? `(${order.customer_commune})` : ''}</p>
-                                {order.notes && (
-                                  <p className="text-[9px] text-amber-700 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
-                                    Note: {order.notes}
-                                  </p>
+                                {related.length > 0 ? (
+                                  <RelatedOrdersBadge
+                                    count={related.length}
+                                    expanded={isExpanded}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedGroups(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(order.id)) next.delete(order.id);
+                                        else next.add(order.id);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                ) : (order.is_duplicate || (order.duplicate_count ?? 0) > 0) ? (
+                                  <DuplicatePopover
+                                    order={order}
+                                    onOpenFullModal={() => setSelectedDuplicateOrder(order)}
+                                    onUnmergeSuccess={() => ordersQuery.refetch()}
+                                  />
+                                ) : null}
+                                {order.store?.name && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-blue-200 bg-blue-50 text-blue-700 shrink-0">
+                                    {order.store.name}
+                                  </span>
                                 )}
-                                {order.internal_notes && !isLivreur && (
-                                  <p className="text-[9px] text-purple-700 bg-purple-50/70 border border-purple-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
-                                    Interne: {order.internal_notes}
-                                  </p>
+                                {order.livreur_id && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
+                                    <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
+                                  </span>
                                 )}
-                                <div className="mt-1.5 space-y-0.5">
-                                  {order.items?.map((item, i) => (
-                                    <p key={i} className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
-                                      <Package className="size-3 text-slate-400 shrink-0" />
-                                      <span>
-                                        {item.product_name}
-                                        {item.variant_details && ` (${
-                                          typeof item.variant_details === 'string'
-                                            ? item.variant_details
-                                            : Object.entries(item.variant_details)
-                                                .filter(([k]) => k !== 'variant')
-                                                .map(([k, v]) => `${v}`)
-                                                .join(' / ') || item.variant_details.variant || ''
-                                        })`} x{item.quantity}
-                                      </span>
-                                    </p>
-                                  ))}
-                                </div>
-                             </div>
-                          </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 border-t sm:border-t-0 pt-2 sm:pt-0">
-                             <div className="text-left sm:text-right">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest sm:hidden">Téléphone</p>
-                                <a 
-                                  href={`tel:${order.customer_phone}`} 
-                                  onClick={(e) => e.stopPropagation()} 
-                                  className="text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors block"
-                                >
-                                  {order.customer_phone}
-                                </a>
-                             </div>
-                             <div className="text-right shrink-0">
-                                <p className="text-xs font-bold">{formatPrice(order.total)}</p>
-                                 <p className="text-[9px] text-slate-400 font-bold uppercase" title={new Date(order.created_at).toLocaleString('fr-FR')}>
-                                   {new Date(order.created_at).toLocaleDateString('fr-FR')} 
-                                   <span className="text-slate-300 mx-1">·</span> 
-                                   {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                {order.tracking_number && (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>
+                                    Suivi: {order.tracking_number}
+                                  </span>
+                                )}
+                                {!!order.events_count && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); setDrawerInitialEdit(false); }}
+                                    className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-slate-200 bg-slate-50 text-slate-500 shrink-0 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                                    title="Voir l'historique complet de cette commande"
+                                  >
+                                    {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex-1 min-w-0">
+                               <p className="text-xs font-black text-slate-900 group-hover:text-blue-600 transition-colors">{formatOrderRef(order, 'admin')}</p>
+                               <p className="text-[10px] text-slate-600 font-bold uppercase mt-0.5">{order.customer_name} · {order.customer_wilaya} {order.customer_commune ? `(${order.customer_commune})` : ''}</p>
+                               {order.notes && (
+                                 <p className="text-[9px] text-amber-800 bg-amber-50 border border-amber-200/80 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
+                                   Note: {order.notes}
                                  </p>
-                             </div>
-                             <div className="flex items-center gap-2">
-                               <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedOrder(order);
-                                    setDrawerInitialEdit(true);
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-sm shrink-0"
-                                >
-                                  Modifier
-                                </button>
-                               <ChevronRight className="size-4 text-slate-200 group-hover:text-slate-400 transition-colors hidden sm:block" />
-                             </div>
-                          </div>
+                               )}
+                               {order.internal_notes && !isLivreur && (
+                                 <p className="text-[9px] text-purple-700 bg-purple-50/70 border border-purple-100/70 rounded px-1.5 py-0.5 mt-1 w-fit font-bold uppercase tracking-wide">
+                                   Interne: {order.internal_notes}
+                                 </p>
+                               )}
+                               <div className="mt-1.5 space-y-0.5">
+                                 {order.items?.map((item, i) => (
+                                   <p key={i} className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                                     <Package className="size-3 text-slate-400 shrink-0" />
+                                     <span>
+                                       {item.product_name}
+                                       {item.variant_details && ` (${
+                                         typeof item.variant_details === 'string'
+                                           ? item.variant_details
+                                           : Object.entries(item.variant_details)
+                                               .filter(([k]) => k !== 'variant')
+                                               .map(([k, v]) => `${v}`)
+                                               .join(' / ') || item.variant_details.variant || ''
+                                       })`} x{item.quantity}
+                                     </span>
+                                   </p>
+                                 ))}
+                               </div>
+                            </div>
+                         </div>
+                         <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 border-t sm:border-t-0 pt-2 sm:pt-0 shrink-0">
+                            <div className="text-left sm:text-right">
+                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest sm:hidden">Téléphone</p>
+                               <a 
+                                 href={`tel:${order.customer_phone}`} 
+                                 onClick={(e) => e.stopPropagation()} 
+                                 className="text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors block"
+                               >
+                                 {order.customer_phone}
+                                </a>
+                            </div>
+                            <div className="text-right shrink-0">
+                               <p className="text-xs font-bold text-slate-900 font-mono">{formatPrice(order.total)}</p>
+                               <p className="text-[9px] text-slate-400 font-bold uppercase" title={new Date(order.created_at).toLocaleString('fr-FR')}>
+                                 {new Date(order.created_at).toLocaleDateString('fr-FR')} 
+                                 <span className="text-slate-300 mx-1">·</span> 
+                                 {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                               </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                 type="button"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   setSelectedOrder(order);
+                                   setDrawerInitialEdit(false);
+                                 }}
+                                 className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all shadow-sm shrink-0 flex items-center gap-1"
+                               >
+                                 <Eye className="size-3" />
+                                 Détails
+                               </button>
+                              <ChevronRight className="size-4 text-slate-200 group-hover:text-slate-400 transition-colors hidden sm:block" />
+                            </div>
+                         </div>
                        </button>
                        {/* Commandes liées du même client, repliées sous la ligne principale */}
                        {related.length > 0 && isExpanded && (
