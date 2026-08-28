@@ -284,3 +284,151 @@ def create_transaction(
     db.commit()
     db.refresh(db_trans)
     return db_trans
+
+
+@router.get("/transactions/{transaction_id}/order-details")
+def get_transaction_order_details(
+    transaction_id: str,
+    db: Session = Depends(get_db)
+):
+    from app.models.order import Order, OrderItem
+    from app.models.events import OrderEvent
+    from app.models.user import User
+    from app.models.delivery import DeliveryPartner
+    import re
+
+    # 1. Fetch transaction
+    tx = db.query(FinancialTransaction).filter(FinancialTransaction.id == transaction_id).first()
+    if not tx:
+        tx = db.query(FinancialTransaction).filter(FinancialTransaction.reference == transaction_id).first()
+
+    order = None
+    if tx:
+        ref = str(tx.reference or "")
+        clean_ref = re.sub(r"^(COD|FEE|TRX)-", "", ref)
+        
+        order = db.query(Order).filter(
+            (Order.order_number == clean_ref)
+            | (Order.order_number == ref)
+            | (Order.id == clean_ref)
+        ).first()
+
+        if not order and tx.description:
+            match = re.search(r"(ORD-[A-Za-z0-9\-]+|ABN-[A-Za-z0-9\-]+)", tx.description)
+            if match:
+                order = db.query(Order).filter(Order.order_number == match.group(1)).first()
+
+    if not order:
+        clean_id = re.sub(r"^(COD|FEE|TRX)-", "", transaction_id)
+        order = db.query(Order).filter(
+            (Order.order_number == clean_id)
+            | (Order.order_number == transaction_id)
+            | (Order.id == clean_id)
+        ).first()
+
+    if not order:
+        return {
+            "success": True,
+            "has_order": False,
+            "message": "Aucune commande rattachée à cette transaction financière."
+        }
+
+    delivered_event = None
+    confirmation_event = None
+    all_events = []
+    
+    events = db.query(OrderEvent).filter(OrderEvent.order_id == order.id).order_by(OrderEvent.created_at.asc()).all()
+    for ev in events:
+        actor_name = "Système Automatique"
+        if ev.actor:
+            actor_name = ev.actor.name
+        elif ev.actor_id:
+            u = db.query(User).filter(User.id == ev.actor_id).first()
+            if u:
+                actor_name = u.name
+
+        ev_dict = {
+            "id": ev.id,
+            "from_status": ev.from_status,
+            "to_status": ev.to_status,
+            "actor_name": actor_name,
+            "actor_role": ev.actor_role or "Agent",
+            "created_at": ev.created_at.isoformat() if ev.created_at else None,
+            "note": ev.note,
+            "call_result": ev.call_result
+        }
+        all_events.append(ev_dict)
+
+        if ev.to_status == "DELIVERED" and not delivered_event:
+            delivered_event = ev_dict
+        if ev.to_status in ("CONFIRMED", "SHIPPED") and not confirmation_event:
+            confirmation_event = ev_dict
+
+    delivery_date = None
+    if delivered_event and delivered_event["created_at"]:
+        delivery_date = delivered_event["created_at"]
+    elif tx and (tx.transaction_date or tx.created_at):
+        delivery_date = (tx.transaction_date or tx.created_at).isoformat()
+    elif order.status == "DELIVERED":
+        delivery_date = order.created_at.isoformat() if order.created_at else None
+
+    assignee_name = order.assignee.name if order.assignee else (confirmation_event["actor_name"] if confirmation_event else "Non assigné")
+    livreur_name = order.livreur.name if order.livreur else (order.carrier.name if order.carrier else "Livreur COD")
+
+    items_data = []
+    computed_items_total = 0
+    for it in order.items:
+        it_total = (it.unit_price or 0) * (it.quantity or 1)
+        computed_items_total += it_total
+        items_data.append({
+            "id": it.id,
+            "product_name": it.product_name,
+            "quantity": it.quantity,
+            "unit_price": it.unit_price,
+            "total_price": it_total,
+            "variant_details": it.variant_details,
+            "image_url": it.image_url
+        })
+
+    expected_total = computed_items_total + (order.delivery_fee or 0)
+    has_discount = bool(order.discount and order.discount > 0)
+    has_tariff_diff = bool(order.total != expected_total or has_discount)
+    price_diff_amount = (expected_total - order.total) if has_tariff_diff else 0
+
+    return {
+        "success": True,
+        "has_order": True,
+        "order": {
+            "id": order.id,
+            "order_number": order.order_number,
+            "store_sequence_number": order.store_sequence_number,
+            "customer_name": order.customer_name,
+            "customer_phone": order.customer_phone,
+            "customer_wilaya": order.customer_wilaya,
+            "customer_commune": order.customer_commune,
+            "customer_address": order.customer_address,
+            "status": order.status,
+            
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "delivery_date": delivery_date,
+            "recovered_at": order.recovered_at.isoformat() if order.recovered_at else None,
+            
+            "assignee_name": assignee_name,
+            "assignee_role": order.assignee.role if order.assignee else "Confirmatrice",
+            "livreur_name": livreur_name,
+            "carrier_name": order.carrier.name if order.carrier else None,
+            
+            "subtotal": order.subtotal or computed_items_total,
+            "delivery_fee": order.delivery_fee or 0,
+            "discount": order.discount or 0,
+            "total": order.total,
+            "has_price_modification": has_tariff_diff or has_discount,
+            "price_diff_amount": price_diff_amount,
+            "promo_code": order.promo_code,
+            
+            "items": items_data,
+            "events": all_events,
+            "internal_notes": order.internal_notes,
+            "notes": order.notes
+        }
+    }

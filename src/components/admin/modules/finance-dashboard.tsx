@@ -2033,6 +2033,7 @@ function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
 
 
 
+
 function TransactionDetailModal({
    transaction,
    open,
@@ -2043,12 +2044,25 @@ function TransactionDetailModal({
    onClose: () => void;
 }) {
    const [copied, setCopied] = useState(false);
+   const [showTimeline, setShowTimeline] = useState(false);
+
+   const isPayment = transaction?.type === 'payment';
+   const isDisbursement = transaction?.type === 'disbursement';
+   const isTransfer = transaction?.type === 'transfer';
+
+   // Fetch linked order details (workers, received date, delivery date, price modifications, items)
+   const { data: orderDetailsData, isLoading: isOrderLoading } = useQuery({
+      queryKey: ['transaction-order-details', transaction?.id, transaction?.reference],
+      queryFn: () => apiFetch<{ success: boolean; has_order: boolean; order?: any }>(
+         `/api/v1/finance/transactions/${transaction?.id || transaction?.reference}/order-details`
+      ),
+      enabled: !!transaction && open,
+   });
 
    if (!transaction) return null;
 
-   const isPayment = transaction.type === 'payment';
-   const isDisbursement = transaction.type === 'disbursement';
-   const isTransfer = transaction.type === 'transfer';
+   const order = orderDetailsData?.has_order ? orderDetailsData.order : null;
+
    const txDateStr = transaction.transaction_date || transaction.created_at;
    const txDate = txDateStr ? new Date(txDateStr) : null;
    const formattedDate = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
@@ -2057,6 +2071,20 @@ function TransactionDetailModal({
    const formattedTime = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
       ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       : '—';
+
+   // Order received date
+   const orderReceivedDateStr = order?.created_at;
+   const orderReceivedDate = orderReceivedDateStr ? new Date(orderReceivedDateStr) : null;
+   const formattedOrderReceived = orderReceivedDate && !isNaN(orderReceivedDate.getTime())
+      ? orderReceivedDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) + ' à ' + orderReceivedDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : null;
+
+   // Order delivery date
+   const orderDeliveredDateStr = order?.delivery_date || txDateStr;
+   const orderDeliveredDate = orderDeliveredDateStr ? new Date(orderDeliveredDateStr) : null;
+   const formattedOrderDelivered = orderDeliveredDate && !isNaN(orderDeliveredDate.getTime())
+      ? orderDeliveredDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) + ' à ' + orderDeliveredDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : formattedDate + ' à ' + formattedTime;
 
    const handleCopyRef = () => {
       if (transaction?.reference) {
@@ -2072,15 +2100,15 @@ function TransactionDetailModal({
    };
 
    const effectiveCategory = transaction.category || (isPayment ? 'VENTE_COD' : 'DÉCAISSEMENT');
-   const effectiveBeneficiary = transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Fournisseur / Prestataire'));
+   const effectiveBeneficiary = order?.customer_name || transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Fournisseur / Prestataire'));
    const effectiveWallet = transaction.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Courant');
 
    return (
       <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-         <DialogContent className="max-w-xl rounded-[2rem] p-0 gap-0 border border-slate-200 shadow-2xl overflow-hidden bg-white print:m-0 print:p-0 print:border-none print:shadow-none">
+         <DialogContent className="max-w-2xl w-[95vw] rounded-[2.5rem] p-0 gap-0 border border-slate-200 shadow-2xl overflow-hidden bg-white print:m-0 print:p-0 print:border-none print:shadow-none max-h-[92vh] flex flex-col">
             {/* ── Entête Pièce Justificative ── */}
             <div className={cn(
-               "p-7 text-white relative",
+               "p-7 text-white relative shrink-0",
                isPayment 
                   ? "bg-[#00B894]" 
                   : isTransfer
@@ -2088,9 +2116,16 @@ function TransactionDetailModal({
                      : "bg-[#2D3436]"
             )}>
                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg bg-white/20 text-white">
-                     {isPayment ? "Bon d'Encaissement (Vente)" : isTransfer ? "Bon de Transfert Inter-Caisse" : "Bon de Décaissement (Dépense)"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                     <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-lg bg-white/20 text-white">
+                        {isPayment ? "Bon d'Encaissement (Vente)" : isTransfer ? "Bon de Transfert Inter-Caisse" : "Bon de Décaissement (Dépense)"}
+                     </span>
+                     {order && (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-lg bg-black/25 text-white">
+                           Commande {order.order_number}
+                        </span>
+                     )}
+                  </div>
                   <button 
                      onClick={handleCopyRef}
                      className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-white/15 hover:bg-white/25 transition-all flex items-center gap-1.5 text-white"
@@ -2116,9 +2151,10 @@ function TransactionDetailModal({
                </div>
             </div>
 
-            {/* ── Détails & Informations de la Transaction ── */}
-            <div className="p-7 space-y-5 bg-white max-h-[65vh] overflow-y-auto">
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {/* ── Corps du Justificatif & Détails Complets ── */}
+            <div className="p-6 space-y-5 bg-white overflow-y-auto flex-1 custom-scrollbar">
+               {/* ── SECTION 1 : ATTRIBUTS PRINCIPAUX ── */}
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Référence Flux */}
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -2127,55 +2163,216 @@ function TransactionDetailModal({
                      <p className="text-xs font-bold font-mono text-slate-800 break-all">{transaction.reference || 'SYSTEM-TX'}</p>
                   </div>
 
-                  {/* Catégorie */}
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
-                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Catégorie
-                     </span>
-                     <p className="text-xs font-bold text-slate-800 uppercase">{effectiveCategory.replace(/_/g, ' ')}</p>
-                  </div>
-
-                  {/* Bénéficiaire */}
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
-                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Bénéficiaire / Client
-                     </span>
-                     <p className="text-xs font-bold text-slate-800 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
-                  </div>
-
-                  {/* Compte Source / Cible */}
+                  {/* Compte / Caisse */}
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         Compte / Caisse rattaché
                      </span>
                      <p className="text-xs font-bold text-slate-800 truncate">{effectiveWallet}</p>
                   </div>
-               </div>
 
-               {/* Horodatage */}
-               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 space-y-2">
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                  {/* Bénéficiaire / Client */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Date & Heure d'enregistrement
+                        Bénéficiaire / Client
                      </span>
-                     <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-                        GMT+1 (Algérie)
-                     </span>
+                     <p className="text-xs font-bold text-slate-800 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
+                     {order && order.customer_phone && (
+                        <p className="text-[10px] font-medium text-slate-500 font-mono">
+                           Tél: {order.customer_phone} {order.customer_wilaya ? `· ${order.customer_wilaya}` : ''}
+                        </p>
+                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                     <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Date</span>
-                        <span className="font-bold text-slate-800 capitalize">{formattedDate}</span>
+
+                  {/* Date & Heure d'enregistrement financier */}
+                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-0.5">
+                     <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                           Enregistrement Financier
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-500 bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                           GMT+1 (Algérie)
+                        </span>
                      </div>
-                     <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Heure</span>
-                        <span className="font-bold text-slate-800 font-mono">{formattedTime}</span>
-                     </div>
+                     <p className="text-xs font-bold text-slate-800 capitalize">{formattedDate}</p>
+                     <p className="text-[10px] font-mono text-slate-500">{formattedTime}</p>
                   </div>
                </div>
 
-               {/* Motif / Description */}
-               {transaction.description && (
+               {/* ── SECTION 2 : LOGISTIQUE & DATES DE LA COMMANDE (Si Commande Liée) ── */}
+               {order && (
+                  <div className="bg-emerald-50/50 rounded-2xl p-4 border border-emerald-100 space-y-3">
+                     <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                           <Clock className="size-3.5 text-emerald-600" />
+                           Dates & Cycle de Vie de la Commande
+                        </span>
+                        <Badge className="bg-emerald-100 text-emerald-800 border-none text-[9px] font-bold">
+                           Statut: {order.status}
+                        </Badge>
+                     </div>
+
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-emerald-100/80 space-y-0.5">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                              1. Date & Heure Reçu (Passation)
+                           </span>
+                           <p className="font-bold text-slate-800">
+                              {formattedOrderReceived || '—'}
+                           </p>
+                           <p className="text-[10px] text-slate-400">Enregistrement initial sur la boutique</p>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-emerald-100/80 space-y-0.5">
+                           <span className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider block">
+                              2. Date & Heure de Livraison Réelle
+                           </span>
+                           <p className="font-bold text-emerald-800">
+                              {formattedOrderDelivered}
+                           </p>
+                           <p className="text-[10px] text-emerald-600/80">Remise au client et encaissement COD</p>
+                        </div>
+                     </div>
+                  </div>
+               )}
+
+               {/* ── SECTION 3 : QUI A TRAVAILLÉ SUR LA COMMANDE ── */}
+               {order && (
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+                     <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                           <UserCircle className="size-3.5 text-indigo-500" />
+                           Équipe & Collaborateurs Intervenus
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                           Traçabilité staff
+                        </span>
+                     </div>
+
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-0.5">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                              Traité / Confirmé par
+                           </span>
+                           <p className="font-bold text-slate-800">
+                              {order.assignee_name || 'Non assigné'}
+                           </p>
+                           <p className="text-[10px] text-slate-400">{order.assignee_role || 'Agent Confirmateur'}</p>
+                        </div>
+
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-0.5">
+                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                              Livreur / Transporteur
+                           </span>
+                           <p className="font-bold text-slate-800">
+                              {order.livreur_name || order.carrier_name || 'Livreur interne COD'}
+                           </p>
+                           <p className="text-[10px] text-slate-400">{order.carrier_name ? `Partenaire: ${order.carrier_name}` : 'Livraison assurée'}</p>
+                        </div>
+                     </div>
+
+                     {/* Journal chronologique des actions (Timeline) */}
+                     {order.events && order.events.length > 0 && (
+                        <div className="pt-2">
+                           <button
+                              type="button"
+                              onClick={() => setShowTimeline(!showTimeline)}
+                              className="text-[11px] font-bold text-[#6C5CE7] hover:underline flex items-center gap-1"
+                           >
+                              {showTimeline ? 'Masquer l'historique des actions' : `Voir le journal des actions (${order.events.length} étapes)`}
+                           </button>
+
+                           {showTimeline && (
+                              <div className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                                 {order.events.map((ev: any, idx: number) => (
+                                    <div key={ev.id || idx} className="p-2.5 bg-white rounded-lg border border-slate-200 text-[11px] space-y-0.5">
+                                       <div className="flex items-center justify-between">
+                                          <span className="font-bold text-slate-800">{ev.actor_name} <span className="text-slate-400 font-normal">({ev.actor_role})</span></span>
+                                          <span className="text-slate-400 text-[10px] font-mono">
+                                             {ev.created_at ? new Date(ev.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                          </span>
+                                       </div>
+                                       <p className="text-slate-600">
+                                          Statut : <span className="font-bold text-indigo-600">{ev.from_status || 'INIT'} → {ev.to_status}</span>
+                                          {ev.note ? ` · ${ev.note}` : ''}
+                                       </p>
+                                    </div>
+                                 ))}
+                              </div>
+                           )}
+                        </div>
+                     )}
+                  </div>
+               )}
+
+               {/* ── SECTION 4 : CONTRÔLE TARIFAIRE & DÉTAILS DES PRIX ── */}
+               {order && (
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+                     <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                           <Banknote className="size-3.5 text-emerald-600" />
+                           Détail & Modification des Tarifs
+                        </span>
+                        {order.has_price_modification ? (
+                           <Badge className="bg-amber-100 text-amber-800 border-none text-[9px] font-bold">
+                              ⚠️ Remise / Tarif modifié appliqué
+                           </Badge>
+                        ) : (
+                           <Badge className="bg-emerald-100 text-emerald-800 border-none text-[9px] font-bold">
+                              ✓ Conforme catalogue
+                           </Badge>
+                        )}
+                     </div>
+
+                     {/* Breakdown Produits */}
+                     {order.items && order.items.length > 0 && (
+                        <div className="space-y-1.5">
+                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Articles commandés ({order.items.length})
+                           </span>
+                           <div className="space-y-1 bg-white p-2.5 rounded-xl border border-slate-200">
+                              {order.items.map((it: any) => (
+                                 <div key={it.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-100 last:border-0">
+                                    <div className="flex items-center gap-2">
+                                       <span className="font-bold text-slate-800">{it.product_name}</span>
+                                       {it.variant_details && (
+                                          <span className="text-[10px] text-slate-400 font-medium">({typeof it.variant_details === 'string' ? it.variant_details : JSON.stringify(it.variant_details)})</span>
+                                       )}
+                                       <span className="text-slate-400 text-[11px]">× {it.quantity}</span>
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-700">{formatPrice(it.total_price || (it.unit_price * it.quantity))}</span>
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+                     )}
+
+                     {/* Récapitulatif Tarifaire Calculé */}
+                     <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                        <div className="flex justify-between text-slate-500">
+                           <span>Sous-total articles :</span>
+                           <span className="font-mono font-bold text-slate-700">{formatPrice(order.subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500">
+                           <span>Frais de livraison :</span>
+                           <span className="font-mono font-bold text-slate-700">+{formatPrice(order.delivery_fee)}</span>
+                        </div>
+                        {order.discount > 0 && (
+                           <div className="flex justify-between text-rose-600 font-bold">
+                              <span>Remise / Réduction accordée :</span>
+                              <span className="font-mono">-{formatPrice(order.discount)}</span>
+                           </div>
+                        )}
+                        <div className="flex justify-between text-slate-900 font-black border-t border-slate-100 pt-1.5 text-sm">
+                           <span>Montant Final Encaissé :</span>
+                           <span className="font-mono text-emerald-600">{formatPrice(order.total)}</span>
+                        </div>
+                     </div>
+                  </div>
+               )}
+
+               {/* Motif / Description standard si pas de commande */}
+               {transaction.description && !order && (
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-1">
                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         Libellé de l'opération
@@ -2187,8 +2384,8 @@ function TransactionDetailModal({
                )}
             </div>
 
-            {/* ── Actions ── */}
-            <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 print:hidden">
+            {/* ── Actions & Footer ── */}
+            <div className="px-7 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 print:hidden shrink-0">
                <button
                   onClick={handleCopyRef}
                   className="h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5"
