@@ -2477,24 +2477,34 @@ function TransactionDetailModal({
                      )}
 
                      {/* Récapitulatif Tarifaire Calculé */}
-                     <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-                        <div className="flex justify-between text-slate-500">
+                     <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2 text-xs">
+                        <div className="flex justify-between text-slate-600">
                            <span>Sous-total articles :</span>
-                           <span className="font-mono font-bold text-slate-700">{formatPrice(order.subtotal)}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-500">
-                           <span>Frais de livraison :</span>
-                           <span className="font-mono font-bold text-slate-700">+{formatPrice(order.delivery_fee)}</span>
+                           <span className="font-mono font-bold text-slate-800">{formatPrice(order.subtotal)}</span>
                         </div>
                         {order.discount > 0 && (
                            <div className="flex justify-between text-rose-600 font-bold">
-                              <span>Remise / Réduction accordée :</span>
+                              <span>Remise accordée :</span>
                               <span className="font-mono">-{formatPrice(order.discount)}</span>
                            </div>
                         )}
-                        <div className="flex justify-between text-slate-900 font-black border-t border-slate-100 pt-1.5 text-sm">
-                           <span>Montant Final Encaissé :</span>
-                           <span className="font-mono text-emerald-600">{formatPrice(order.total)}</span>
+                        <div className="flex justify-between items-center text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                           <div>
+                              <span className="font-medium text-slate-700 block">Frais de livraison :</span>
+                              <span className="text-[10px] text-slate-400">Reversés au transporteur / Livreur (Exclus de la caisse)</span>
+                           </div>
+                           <span className="font-mono font-bold text-slate-600">+{formatPrice(order.delivery_fee)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-emerald-800 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200">
+                           <div>
+                              <span className="font-black block">Net Produits Encaissé en Caisse :</span>
+                              <span className="text-[10px] text-emerald-600 font-medium">Montant réel crédité en trésorerie</span>
+                           </div>
+                           <span className="font-mono font-black text-sm text-emerald-700">+{formatPrice(Math.max(0, (order.subtotal || 0) - (order.discount || 0)))}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-400 font-bold text-[11px] pt-1 px-1">
+                           <span>Total global réglé par le client :</span>
+                           <span className="font-mono text-slate-600">{formatPrice(order.total)}</span>
                         </div>
                      </div>
                   </div>

@@ -1939,6 +1939,13 @@ class OrderService:
                     db.add(wallet)
                     db.flush()
                 now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+                # Delivery fee belongs to the carrier/delivery company and does not enter the store cash register
+                net_product_amount = max(0, int((order.total or 0) - (order.delivery_fee or 0)))
+                if order.subtotal is not None and order.subtotal > 0:
+                    calc_sub = max(0, int(order.subtotal - (order.discount or 0)))
+                    if calc_sub > 0:
+                        net_product_amount = calc_sub
+
                 tx = FinancialTransaction(
                     id=str(uuid.uuid4()),
                     reference=cod_ref,
@@ -1947,15 +1954,15 @@ class OrderService:
                     type=TransactionType.PAYMENT,
                     category="VENTE_COD",
                     beneficiary=str(order.customer_name or "Client COD"),
-                    amount=order.total,
-                    description=f"Paiement COD — {order.order_number} ({order.customer_name})",
+                    amount=net_product_amount,
+                    description=f"Paiement COD (Net Produits) — {order.order_number} ({order.customer_name}) [Frais livraison {order.delivery_fee or 0} DA exclus]",
                     transaction_date=now_dt,
                     created_at=now_dt,
                 )
-                wallet.balance += order.total  # type: ignore[operator]
-                wallet.total_in += order.total  # type: ignore[operator]
+                wallet.balance += net_product_amount  # type: ignore[operator]
+                wallet.total_in += net_product_amount  # type: ignore[operator]
                 db.add(tx)
-                logger.info("Payment recorded: %s DA for order %s", order.total, order.order_number)
+                logger.info("Payment recorded: %s DA (Net Produits, frais livraison %s DA exclus) for order %s", net_product_amount, order.delivery_fee or 0, order.order_number)
             else:
                 logger.info("Payment reference %s already exists for order %s, skipping COD transaction", cod_ref, order.order_number)
 
