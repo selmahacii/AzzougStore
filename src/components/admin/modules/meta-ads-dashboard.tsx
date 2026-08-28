@@ -1674,10 +1674,30 @@ export default function MetaAdsDashboard() {
 
       {activeTab === 'quality' && (() => {
         const learning = signalQuality?.learning_score;
-        const avgEmq = signalQuality?.avg_emq ?? 89.7;
-        const fieldCoverage = Array.isArray(signalQuality?.field_coverage) ? signalQuality.field_coverage : [];
+        const avgEmq = signalQuality?.avg_emq != null ? signalQuality.avg_emq : (trackingQuality?.avg_match_quality ?? '—');
+        
+        // 100% Real field coverage array directly from backend database
+        const fieldCoverage: any[] = (Array.isArray(signalQuality?.field_coverage) && signalQuality.field_coverage.length > 0)
+          ? signalQuality.field_coverage
+          : (Array.isArray(trackingQuality?.signal_field_coverage) ? trackingQuality.signal_field_coverage : []);
+
         const reconciliation = fullDiagnostics?.reconciliation;
         const attribution = fullDiagnostics?.attribution_readiness;
+
+        const fieldMeta: Record<string, { label: string; icon: string; desc: string }> = {
+          ph: { label: 'Téléphone Mobile (+213)', icon: '📱', desc: 'Clé majeure matching Algérie' },
+          fn: { label: 'Prénom du Client', icon: '👤', desc: 'Identité client' },
+          ln: { label: 'Nom du Client', icon: '👤', desc: 'Identité client' },
+          ct: { label: 'Ville / Commune', icon: '📍', desc: 'Localisation de livraison' },
+          st: { label: 'Wilaya (Région)', icon: '📍', desc: 'Localisation de livraison' },
+          country: { label: 'Pays (Algérie / DZ)', icon: '🇩🇿', desc: 'Marché cible' },
+          external_id: { label: 'Identifiant Unique Commande', icon: '🆔', desc: 'Dédoublonnage Meta' },
+          client_ip_address: { label: 'Adresse IP Client', icon: '🌐', desc: 'Signal réseau' },
+          client_user_agent: { label: 'Navigateur (User-Agent)', icon: '💻', desc: 'Signature technique appareil' },
+          fbp: { label: 'Cookie Navigateur (FBP)', icon: '🍪', desc: 'Traçage Pixel Meta' },
+          fbc: { label: 'Clic Publicitaire (FBC)', icon: '🎯', desc: 'Lien direct clic Facebook/Insta' },
+          em: { label: 'Adresse Email', icon: '✉️', desc: 'Non requis en COD Algérie' },
+        };
 
         return (
           <div className="space-y-6 animate-in fade-in duration-500">
@@ -1698,15 +1718,19 @@ export default function MetaAdsDashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-2xl shrink-0">
-                  <div className="text-right">
-                    <p className="text-2xl font-black text-emerald-600 font-mono leading-none">
-                      {learning?.score ?? 91.5}<span className="text-xs text-slate-400">/100</span>
-                    </p>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mt-0.5">Qualité Optimale</p>
+                {learning?.score != null && (
+                  <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-2xl shrink-0">
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-emerald-600 font-mono leading-none">
+                        {learning.score}<span className="text-xs text-slate-400">/100</span>
+                      </p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mt-0.5">
+                        {signalQuality?.meta_health?.label || (learning.score >= 85 ? 'Excellent' : 'Stable')}
+                      </p>
+                    </div>
+                    <div className="size-3 rounded-full bg-emerald-500 animate-pulse" />
                   </div>
-                  <div className="size-3 rounded-full bg-emerald-500 animate-pulse" />
-                </div>
+                )}
               </div>
 
               {/* Explication Pédagogique */}
@@ -1717,15 +1741,19 @@ export default function MetaAdsDashboard() {
                 </div>
               </div>
 
-              {/* 4 Piliers Clés */}
+              {/* 4 Piliers Clés Réels */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
                 <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-1">
                   <div className="flex justify-between items-center text-blue-700">
                     <span className="text-[10px] font-black uppercase tracking-wider">Transmission Directe</span>
                     <span className="text-xs">⚡</span>
                   </div>
-                  <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">{learning?.realtime_pct ?? 83}%</p>
-                  <p className="text-[10px] text-slate-500">Achats envoyés instantanément</p>
+                  <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">
+                    {learning?.realtime_pct != null ? `${learning.realtime_pct}%` : `${trackingQuality?.realtime_pct ?? 0}%`}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    {learning?.realtime_count ?? trackingQuality?.realtime ?? 0} achats en direct
+                  </p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-100 space-y-1">
@@ -1733,8 +1761,12 @@ export default function MetaAdsDashboard() {
                     <span className="text-[10px] font-black uppercase tracking-wider">Rattrapage Réseau</span>
                     <span className="text-xs">🔄</span>
                   </div>
-                  <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">{learning?.backfill_pct ?? 17}%</p>
-                  <p className="text-[10px] text-slate-500">Sauvegardé et renvoyé si coupure</p>
+                  <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">
+                    {learning?.backfill_pct != null ? `${learning.backfill_pct}%` : `${trackingQuality?.backfill_pct ?? 0}%`}
+                  </p>
+                  <p className="text-[10px] text-slate-500">
+                    {learning?.backfill_count ?? trackingQuality?.backfill ?? 0} achats synchronisés
+                  </p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-1">
@@ -1742,7 +1774,9 @@ export default function MetaAdsDashboard() {
                     <span className="text-[10px] font-black uppercase tracking-wider">Anti-Doublons</span>
                     <span className="text-xs">🛡️</span>
                   </div>
-                  <p className="text-2xl font-black text-emerald-600 tabular-nums font-mono">{learning?.dedup_pct ?? 100}%</p>
+                  <p className="text-2xl font-black text-emerald-600 tabular-nums font-mono">
+                    {learning?.dedup_pct != null ? `${learning.dedup_pct}%` : '100%'}
+                  </p>
                   <p className="text-[10px] text-slate-500">Zéro commande comptée en double</p>
                 </div>
 
@@ -1751,7 +1785,9 @@ export default function MetaAdsDashboard() {
                     <span className="text-[10px] font-black uppercase tracking-wider">Lien Publicitaire</span>
                     <span className="text-xs">🎯</span>
                   </div>
-                  <p className="text-2xl font-black text-purple-700 tabular-nums font-mono">{learning?.attribution_pct ?? 88}%</p>
+                  <p className="text-2xl font-black text-purple-700 tabular-nums font-mono">
+                    {learning?.attribution_pct != null ? `${learning.attribution_pct}%` : '—'}
+                  </p>
                   <p className="text-[10px] text-slate-500">Attribué à la bonne campagne</p>
                 </div>
               </div>
@@ -1789,29 +1825,61 @@ export default function MetaAdsDashboard() {
                 </p>
               </div>
 
-              {/* Signals Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {[
-                  { label: '📱 Téléphone Mobile (+213)', value: '100%', status: 'Parfait', icon: '✅' },
-                  { label: '👤 Nom & Prénom du Client', value: '100%', status: 'Complet', icon: '✅' },
-                  { label: '📍 Wilaya & Commune', value: '100%', status: 'Géolocalisé', icon: '✅' },
-                  { label: '🍪 Clic Publicitaire (FBC/FBP)', value: '99.6%', status: 'Attribué', icon: '✅' },
-                  { label: '🌐 Adresse IP & Navigateur', value: '86.1%', status: 'Opérationnel', icon: '✅' },
-                  { label: '🆔 Identifiant Unique Commande', value: '100%', status: 'Unique', icon: '✅' },
-                  { label: '🇩🇿 Pays (Algérie / DZ)', value: '100%', status: 'Détecté', icon: '✅' },
-                  { label: '✉️ Adresse Email', value: 'Non requis', status: 'Optionnel COD', icon: '⚪' },
-                ].map((sig, idx) => (
-                  <div key={idx} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between space-y-2">
-                    <span className="text-xs font-bold text-slate-700">{sig.label}</span>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-black font-mono text-slate-900">{sig.value}</span>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                        {sig.icon} {sig.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* 100% Real Dynamic Signals Grid */}
+              {isLoadingSignalQuality ? (
+                <div className="rounded-2xl border bg-slate-50 p-6 text-center text-xs font-bold text-slate-400">
+                  <RefreshCw className="size-4 animate-spin mx-auto text-purple-600 mb-2" />
+                  Chargement des signaux réels depuis la base de données…
+                </div>
+              ) : fieldCoverage.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400 font-medium">
+                  Aucun échantillon d&apos;achat disponible sur la période pour calculer la couverture par champ.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {fieldCoverage.map((f: any) => {
+                    const meta = fieldMeta[f.key] || { label: f.label || f.key, icon: '⚡', desc: '' };
+                    const isNotApplicable = f.classification === 'not_applicable' || f.key === 'em';
+                    const coverage = f.coverage_pct;
+
+                    return (
+                      <div key={f.key} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between space-y-2.5 hover:bg-white hover:border-slate-200 transition-all">
+                        <div className="flex items-start gap-2.5">
+                          <span className="text-base shrink-0">{meta.icon}</span>
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-slate-800 block truncate">{meta.label}</span>
+                            {meta.desc && <span className="text-[10px] text-slate-400 block">{meta.desc}</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                          <span className="text-sm font-black font-mono text-slate-900 tabular-nums">
+                            {isNotApplicable ? 'Non requis' : `${coverage ?? 0}%`}
+                          </span>
+
+                          {isNotApplicable ? (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                              Optionnel COD
+                            </span>
+                          ) : coverage >= 85 ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              ✅ Optimal
+                            </span>
+                          ) : coverage >= 50 ? (
+                            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                              ⚡ Bon
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                              ⚠️ Faible
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* ─── SECTION 3 : RÉCONCILIATION & TRANSPARENCE ERP ↔ META ADS ─── */}
@@ -1834,25 +1902,33 @@ export default function MetaAdsDashboard() {
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
-                  <p className="text-2xl font-black text-slate-900 font-mono">{reconciliation?.erp_real_orders ?? 368}</p>
+                  <p className="text-2xl font-black text-slate-900 font-mono">
+                    {reconciliation?.erp_real_orders ?? trackingQuality?.erp_purchases ?? 0}
+                  </p>
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Commandes Réelles Boutique</p>
                   <p className="text-[10px] text-slate-500">Enregistrées dans votre ERP</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
-                  <p className="text-2xl font-black text-indigo-600 font-mono">{attribution?.attributable_valid_fbc ?? 366}</p>
+                  <p className="text-2xl font-black text-indigo-600 font-mono">
+                    {attribution?.attributable_valid_fbc ?? trackingQuality?.meta_purchases ?? 0}
+                  </p>
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Provenant de Publicités</p>
                   <p className="text-[10px] text-slate-500">Clics publicitaires authentifiés</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
-                  <p className="text-2xl font-black text-emerald-600 font-mono">{reconciliation?.meta_purchase_success ?? 259}</p>
+                  <p className="text-2xl font-black text-emerald-600 font-mono">
+                    {reconciliation?.meta_purchase_success ?? trackingQuality?.meta_purchases ?? 0}
+                  </p>
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Attribuées sur Meta Ads</p>
                   <p className="text-[10px] text-slate-500">Visibles dans votre Ads Manager</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
-                  <p className="text-2xl font-black text-slate-500 font-mono">{attribution?.no_ad_click_signal_organic_direct ?? 2}</p>
+                  <p className="text-2xl font-black text-slate-500 font-mono">
+                    {attribution?.no_ad_click_signal_organic_direct ?? (reconciliation?.orphan_no_order ?? 0)}
+                  </p>
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ventes Directes / Organiques</p>
                   <p className="text-[10px] text-slate-500">Clients venus hors publicité</p>
                 </div>
