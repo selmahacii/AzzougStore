@@ -176,12 +176,24 @@ function TablePagination({ total, page, totalPages, onPageChange }: {
 // ═══════════════════════════════════════════════════════════════
 // Roles Table Sub-View
 // ═══════════════════════════════════════════════════════════════
+interface RoleMember {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    is_active: boolean;
+    avatar?: string | null;
+}
+
 interface RolePermission {
+    code: string;
     name: string;
     description: string;
     color: string;
     count: number;
     permissions: string[];
+    members?: RoleMember[];
+    is_system?: boolean;
 }
 
 const ALL_PERMISSIONS = [
@@ -333,47 +345,200 @@ function NewRoleModal({ open, onClose, storeId, onSuccess }: { open: boolean; on
    );
 }
 
+function EditRolePermissionsModal({
+   role,
+   open,
+   onClose,
+   onSuccess
+}: {
+   role: RolePermission | null;
+   open: boolean;
+   onClose: () => void;
+   onSuccess: () => void;
+}) {
+   const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
+   const [applyToUsers, setApplyToUsers] = useState(true);
+   const [saving, setSaving] = useState(false);
+
+   React.useEffect(() => {
+      if (role) {
+         setSelectedPerms(role.permissions || []);
+         setApplyToUsers(true);
+      }
+   }, [role, open]);
+
+   if (!role) return null;
+
+   const togglePerm = (p: string) => setSelectedPerms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+   const toggleGroup = (perms: string[]) => {
+      const allSelected = perms.every(p => selectedPerms.includes(p));
+      if (allSelected) setSelectedPerms(prev => prev.filter(p => !perms.includes(p)));
+      else setSelectedPerms(prev => [...new Set([...prev, ...perms])]);
+   };
+
+   const handleSave = async () => {
+      setSaving(true);
+      try {
+         await apiFetch(`/api/v1/users/roles/${role.code}/permissions`, {
+            method: 'PUT',
+            body: JSON.stringify({ permissions: selectedPerms, apply_to_users: applyToUsers }),
+         });
+         toast.success(`Permissions du rôle « ${role.name} » mises à jour`);
+         onSuccess();
+         onClose();
+      } catch (err: any) {
+         toast.error(err?.message || 'Erreur lors de la mise à jour des permissions');
+      } finally {
+         setSaving(false);
+      }
+   };
+
+   return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-[2rem] p-0 gap-0 border-0 shadow-2xl">
+            <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white sticky top-0 z-10">
+               <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-2xl flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: role.color }}>
+                     <Shield className="size-6" />
+                  </div>
+                  <div>
+                     <DialogTitle className="text-xl font-black text-slate-900">Permissions : {role.name}</DialogTitle>
+                     <DialogDescription className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {role.count} collaborateur{role.count > 1 ? 's' : ''} concerné{role.count > 1 ? 's' : ''} · Contrôle d'accès RBAC
+                     </DialogDescription>
+                  </div>
+               </div>
+            </DialogHeader>
+
+            <div className="p-8 space-y-6 bg-[#F8FAFC]">
+               <div className="bg-white rounded-2xl p-4 border border-slate-100 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                     <p className="text-xs font-black text-slate-900">Propagation automatique</p>
+                     <p className="text-[11px] text-slate-400">Appliquer immédiatement ces droits aux comptes des employés de ce rôle</p>
+                  </div>
+                  <input 
+                     type="checkbox" 
+                     checked={applyToUsers} 
+                     onChange={e => setApplyToUsers(e.target.checked)}
+                     className="size-5 accent-[#4b7bec] rounded cursor-pointer"
+                  />
+               </div>
+
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                     <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Matrice des permissions</h4>
+                     <span className="text-xs font-bold text-[#4b7bec] bg-indigo-50 px-3 py-1 rounded-xl">{selectedPerms.length} actives</span>
+                  </div>
+
+                  {ALL_PERMISSIONS.map(({ group, perms }) => {
+                     const allSelected = perms.every(p => selectedPerms.includes(p));
+                     const someSelected = perms.some(p => selectedPerms.includes(p));
+                     return (
+                        <div key={group} className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-2xs">
+                           <button type="button" onClick={() => toggleGroup(perms)}
+                              className="w-full flex items-center justify-between px-5 py-3 bg-slate-50/80 hover:bg-slate-100/80 transition-all">
+                              <span className="text-xs font-black text-slate-700">{group}</span>
+                              <div className={cn("size-5 rounded-md border-2 flex items-center justify-center transition-all",
+                                 allSelected ? "bg-[#4b7bec] border-[#4b7bec]" : someSelected ? "bg-indigo-100 border-[#4b7bec]" : "bg-white border-slate-200"
+                              )}>
+                                 {allSelected && <Check className="size-3 text-white" />}
+                                 {someSelected && !allSelected && <div className="size-2 rounded-sm bg-[#4b7bec]" />}
+                              </div>
+                           </button>
+                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-4">
+                              {perms.map(p => (
+                                 <label key={p} onClick={() => togglePerm(p)}
+                                    className={cn("flex items-center gap-2 p-2 rounded-xl cursor-pointer transition-all border text-xs font-bold",
+                                       selectedPerms.includes(p) ? "bg-indigo-50 border-indigo-200 text-[#4b7bec]" : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
+                                    )}>
+                                    <div className={cn("size-4 rounded shrink-0 flex items-center justify-center border transition-all",
+                                       selectedPerms.includes(p) ? "bg-[#4b7bec] border-[#4b7bec]" : "border-slate-200"
+                                    )}>
+                                       {selectedPerms.includes(p) && <Check className="size-2.5 text-white" />}
+                                    </div>
+                                    <span className="truncate font-mono text-[10px]">{p.split('.')[1] || p}</span>
+                                 </label>
+                              ))}
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+            </div>
+
+            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-end gap-3 sticky bottom-0">
+               <button onClick={onClose} className="h-12 px-6 rounded-2xl font-black text-[11px] uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all">Annuler</button>
+               <button onClick={handleSave} disabled={saving}
+                  className="h-12 px-8 rounded-2xl bg-[#4b7bec] hover:bg-[#3867d6] text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-200 transition-all disabled:opacity-50">
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : `Enregistrer les modifications`}
+               </button>
+            </div>
+         </DialogContent>
+      </Dialog>
+   );
+}
+
 function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePermission[]; isLoading: boolean; onRefresh: () => void; onNewRole: () => void }) {
    const [exploredRole, setExploredRole] = useState<RolePermission | null>(null);
+   const [editingRole, setEditingRole] = useState<RolePermission | null>(null);
+
    if (isLoading) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
    if (!Array.isArray(roles)) return <div className="p-10 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>;
 
    return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
          {/* Header */}
-         <div className="bg-white rounded-3xl border px-8 py-6 shadow-sm flex items-center justify-between" style={{ borderColor: C.border }}>
+         <div className="bg-white rounded-3xl border px-8 py-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderColor: C.border }}>
             <div className="flex items-center gap-4">
-               <div className="size-12 rounded-xl flex items-center justify-center shadow-inner" style={{ backgroundColor: C.primaryBg }}>
+               <div className="size-12 rounded-2xl flex items-center justify-center shadow-inner shrink-0" style={{ backgroundColor: C.primaryBg }}>
                   <Shield className="size-6" style={{ color: C.primary }} />
                </div>
                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Hiérarchie des rôles</h2>
-                  <p className="text-sm font-medium text-slate-400 mt-1">Structure des permissions et accès (Temps réel)</p>
+                  <h2 className="text-xl font-black text-slate-900">Hiérarchie des rôles & RBAC</h2>
+                  <p className="text-xs font-medium text-slate-400 mt-0.5">Structure dynamique des permissions et contrôle d'accès en temps réel</p>
                </div>
             </div>
-            <div className="flex gap-3">
-               <button onClick={onRefresh} className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold border hover:bg-[#F8F9FC] transition-all" style={{ borderColor: C.border, color: C.textLight }}>
-                  <RefreshCw className="size-4" /> Rafraîchir
+            <div className="flex items-center gap-3">
+               <button onClick={onRefresh} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border hover:bg-[#F8F9FC] transition-all text-slate-600" style={{ borderColor: C.border }}>
+                  <RefreshCw className="size-3.5" /> Rafraîchir
                </button>
-               <Button onClick={onNewRole} className="h-11 px-6 rounded-xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center group border-none">
-                  <Plus className="mr-2 size-4 text-white transition-transform group-hover:scale-110" /> Nouveau rôle
+               <Button onClick={onNewRole} className="h-10 px-5 rounded-xl text-xs font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-md shadow-indigo-100 transition-all flex items-center border-none">
+                  <Plus className="mr-1.5 size-3.5 text-white" /> Nouveau rôle
                </Button>
             </div>
          </div>
 
          {/* Grid Distribution */}
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {roles.map((r, i) => (
-               <div key={i} className="bg-white rounded-3xl border p-6 group hover:shadow-md transition-all" style={{ borderColor: C.border }}>
-                  <div className="flex items-center justify-between mb-5">
-                     <div className="size-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: r.color }}>{r.count}</div>
-                     <Badge variant="outline" className="text-[10px] font-bold" style={{ color: r.color, borderColor: r.color + '30' }}>Actif</Badge>
+               <div key={i} className="bg-white rounded-3xl border p-6 group hover:shadow-md transition-all flex flex-col justify-between" style={{ borderColor: C.border }}>
+                  <div>
+                     <div className="flex items-center justify-between mb-4">
+                        <div className="size-10 rounded-xl flex items-center justify-center font-black text-white shadow-sm" style={{ backgroundColor: r.color }}>
+                           {r.count}
+                        </div>
+                        <Badge variant="outline" className="text-[10px] font-bold" style={{ color: r.color, borderColor: r.color + '30', backgroundColor: r.color + '10' }}>
+                           {r.is_system ? 'Système' : 'Personnalisé'}
+                        </Badge>
+                     </div>
+                     <h3 className="text-sm font-black text-slate-900">{r.name}</h3>
+                     <p className="text-xs font-medium text-slate-400 mt-1.5 leading-relaxed min-h-[36px]">{r.description}</p>
                   </div>
-                  <h3 className="text-sm font-bold text-slate-900">{r.name}</h3>
-                  <p className="text-xs font-medium text-slate-400 mt-2 leading-relaxed">{r.description}</p>
-                  <div className="mt-5 pt-5 border-t flex items-center justify-between" style={{ borderColor: C.border }}>
+
+                  <div className="mt-5 pt-4 border-t flex items-center justify-between gap-2" style={{ borderColor: C.border }}>
                      <span className="text-[11px] font-bold text-slate-500">{r.permissions.length} permissions</span>
-                     <button className="size-8 rounded-lg flex items-center justify-center hover:bg-slate-50 text-slate-300 transition-colors"><Settings2 className="size-4" /></button>
+                     <div className="flex items-center gap-1.5">
+                        <button 
+                           onClick={() => setEditingRole(r)}
+                           className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 hover:bg-indigo-50 text-[#4b7bec] text-[11px] font-bold transition-colors">
+                           <Settings2 className="size-3.5" /> Modifier
+                        </button>
+                        <button 
+                           onClick={() => setExploredRole(r)}
+                           className="size-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+                           <Eye className="size-3.5" />
+                        </button>
+                     </div>
                   </div>
                </div>
             ))}
@@ -381,79 +546,147 @@ function RolesView({ roles, isLoading, onRefresh, onNewRole }: { roles: RolePerm
 
          {/* Detailed Table */}
          <div className="bg-white rounded-3xl border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-            <table className="w-full text-left">
-               <thead>
-                  <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
-                     <th className="px-8 py-4 text-xs font-bold text-slate-500">Définition du rôle</th>
-                     <th className="px-8 py-4 text-xs font-bold text-slate-500">Matrice de permissions</th>
-                     <th className="px-8 py-4 text-xs font-bold text-slate-500 text-right">Contrôle</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y" style={{ borderColor: C.border }}>
-                  {roles.map((role) => (
-                     <tr key={role.name} className="hover:bg-[#FAFBFD]/50 transition-colors group">
-                        <td className="px-8 py-6 align-top">
-                           <div className="flex flex-col">
-                              <span className="text-sm font-bold text-slate-800 tracking-tight group-hover:text-[#4b7bec] transition-colors">{role.name}</span>
-                              <span className="text-xs font-medium text-slate-400 mt-1">{role.description}</span>
+            <div className="overflow-x-auto">
+               <table className="w-full text-left">
+                  <thead>
+                     <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Définition du rôle</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500">Matrice de permissions</th>
+                        <th className="px-6 py-4 text-xs font-bold text-slate-500 text-right">Contrôle</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y" style={{ borderColor: C.border }}>
+                     {roles.map((role) => (
+                        <tr key={role.code || role.name} className="hover:bg-[#FAFBFD]/50 transition-colors group">
+                           <td className="px-6 py-5 align-top min-w-[200px]">
+                              <div className="flex flex-col">
+                                 <div className="flex items-center gap-2">
+                                    <div className="size-3 rounded-full shrink-0" style={{ backgroundColor: role.color }} />
+                                    <span className="text-sm font-black text-slate-900 group-hover:text-[#4b7bec] transition-colors">{role.name}</span>
+                                 </div>
+                                 <span className="text-xs font-medium text-slate-400 mt-1">{role.description}</span>
+                                 <span className="text-[10px] font-bold text-emerald-600 mt-1.5">{role.count} collaborateur{role.count > 1 ? 's' : ''}</span>
+                              </div>
+                           </td>
+                           <td className="px-6 py-5">
+                              <div className="flex flex-wrap gap-1.5 max-w-xl">
+                                 {role.permissions.slice(0, 12).map((perm) => (
+                                    <span key={perm} className="px-2.5 py-1 text-[10px] font-mono font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-md">
+                                       {perm}
+                                    </span>
+                                 ))}
+                                 {role.permissions.length > 12 && (
+                                    <span className="px-2 py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 rounded-md">
+                                       +{role.permissions.length - 12} autres
+                                    </span>
+                                 )}
+                              </div>
+                           </td>
+                           <td className="px-6 py-5 text-right align-top shrink-0">
+                              <div className="flex items-center justify-end gap-2">
+                                 <button 
+                                    onClick={() => setEditingRole(role)} 
+                                    className="h-9 px-3.5 rounded-xl flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold text-[#4b7bec] transition-all">
+                                    <Settings2 className="size-3.5" /> Permissions
+                                 </button>
+                                 <button 
+                                    onClick={() => setExploredRole(role)} 
+                                    className="h-9 px-3.5 rounded-xl flex items-center gap-1.5 border hover:bg-slate-50 text-xs font-bold text-slate-600 transition-all shadow-2xs" 
+                                    style={{ borderColor: C.border }}>
+                                    <Eye className="size-3.5" /> Membres
+                                 </button>
+                              </div>
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+         </div>
+
+         {/* ── Dialog Explorer / Membres du Rôle ── */}
+         <Dialog open={!!exploredRole} onOpenChange={(o) => { if (!o) setExploredRole(null); }}>
+            <DialogContent className="max-w-xl rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+               {exploredRole && (
+                  <>
+                     <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white shrink-0">
+                        <div className="flex items-center justify-between">
+                           <div className="flex items-center gap-4">
+                              <div className="size-12 rounded-xl flex items-center justify-center font-black text-white shadow-sm" style={{ backgroundColor: exploredRole.color }}>
+                                 {exploredRole.count}
+                              </div>
+                              <div>
+                                 <DialogTitle className="text-lg font-black text-slate-900">{exploredRole.name}</DialogTitle>
+                                 <DialogDescription className="text-xs font-medium text-slate-400 mt-0.5">{exploredRole.description}</DialogDescription>
+                              </div>
                            </div>
-                        </td>
-                        <td className="px-8 py-6">
-                           <div className="flex flex-wrap gap-2">
-                              {role.permissions.map((perm) => (
-                                 <span key={perm} className="px-3 py-1.5 text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-lg">
+                           <button 
+                              onClick={() => { const r = exploredRole; setExploredRole(null); setEditingRole(r); }}
+                              className="h-9 px-3.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#4b7bec] text-xs font-bold flex items-center gap-1.5 transition-colors">
+                              <Settings2 className="size-3.5" /> Éditer
+                           </button>
+                        </div>
+                     </DialogHeader>
+
+                     <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1 bg-[#F8FAFC]">
+                        {/* Membres assignés */}
+                        <div className="space-y-3">
+                           <div className="flex items-center justify-between">
+                              <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Collaborateurs ({exploredRole.members?.length || exploredRole.count})</h4>
+                           </div>
+                           {exploredRole.members && exploredRole.members.length > 0 ? (
+                              <div className="space-y-2">
+                                 {exploredRole.members.map((m) => (
+                                    <div key={m.id} className="bg-white p-3.5 rounded-2xl border border-slate-100 flex items-center justify-between gap-3 shadow-2xs">
+                                       <div className="flex items-center gap-3">
+                                          <div className="size-9 rounded-xl bg-slate-900 text-white text-xs font-black flex items-center justify-center shrink-0">
+                                             {m.name.charAt(0).toUpperCase()}
+                                          </div>
+                                          <div>
+                                             <p className="text-xs font-black text-slate-900">{m.name}</p>
+                                             <p className="text-[10px] text-slate-400">{m.email}</p>
+                                          </div>
+                                       </div>
+                                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
+                                          {m.is_active ? 'Compte Actif' : 'Inactif'}
+                                       </span>
+                                    </div>
+                                 ))}
+                              </div>
+                           ) : (
+                              <div className="bg-white p-6 rounded-2xl border border-slate-100 text-center text-xs text-slate-400 font-bold">
+                                 Aucun collaborateur n'est actuellement assigné à ce rôle
+                              </div>
+                           )}
+                        </div>
+
+                        {/* Permissions list */}
+                        <div className="space-y-3">
+                           <h4 className="text-xs font-black uppercase text-slate-400 tracking-widest">Permissions actives ({exploredRole.permissions.length})</h4>
+                           <div className="flex flex-wrap gap-1.5">
+                              {exploredRole.permissions.map((perm) => (
+                                 <span key={perm} className="px-2.5 py-1 text-[10px] font-mono font-bold text-slate-700 bg-white border border-slate-200 rounded-lg shadow-2xs">
                                     {perm}
                                  </span>
                               ))}
                            </div>
-                        </td>
-                        <td className="px-8 py-6 text-right align-top">
-                           <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => setExploredRole(role)} className="h-9 px-4 rounded-xl flex items-center gap-2 border hover:bg-white text-xs font-bold text-slate-500 transition-all shadow-sm" style={{ borderColor: C.border }}>
-                                 <Eye className="size-3.5" /> Explorer
-                              </button>
-                           </div>
-                        </td>
-                     </tr>
-                  ))}
-               </tbody>
-            </table>
-         </div>
-
-         <Dialog open={!!exploredRole} onOpenChange={(o) => { if (!o) setExploredRole(null); }}>
-            <DialogContent className="max-w-lg rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
-               {exploredRole && (
-                  <>
-                     <DialogHeader className="px-8 py-6 border-b border-slate-100 bg-white">
-                        <div className="flex items-center gap-4">
-                           <div className="size-12 rounded-xl flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: exploredRole.color }}>{exploredRole.count}</div>
-                           <div>
-                              <DialogTitle className="text-lg font-black text-slate-800">{exploredRole.name}</DialogTitle>
-                              <DialogDescription className="text-xs font-medium text-slate-400 mt-0.5">{exploredRole.description}</DialogDescription>
-                           </div>
-                        </div>
-                     </DialogHeader>
-                     <div className="px-8 py-6 space-y-4">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-500">
-                           <span>{exploredRole.count} utilisateur{exploredRole.count > 1 ? 's' : ''} actif{exploredRole.count > 1 ? 's' : ''}</span>
-                           <span>{exploredRole.permissions.length} permission{exploredRole.permissions.length > 1 ? 's' : ''}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                           {exploredRole.permissions.map((perm) => (
-                              <span key={perm} className="px-3 py-1.5 text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-lg">
-                                 {perm}
-                              </span>
-                           ))}
                         </div>
                      </div>
                   </>
                )}
             </DialogContent>
          </Dialog>
+
+         {/* ── Dialog Édition des Permissions du Rôle ── */}
+         <EditRolePermissionsModal
+            role={editingRole}
+            open={!!editingRole}
+            onClose={() => setEditingRole(null)}
+            onSuccess={onRefresh}
+         />
       </div>
    );
 }
-
 // ═══════════════════════════════════════════════════════════════
 // Human Infrastructure // Core View
 // ═══════════════════════════════════════════════════════════════

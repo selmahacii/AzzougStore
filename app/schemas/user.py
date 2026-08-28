@@ -101,12 +101,24 @@ class UserInDB(UserInDBBase):
 # Schemas for Personnel Management (Employees/Roles interface)
 # ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
 
+class RoleMember(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    is_active: bool = True
+    avatar: Optional[str] = None
+
+
 class RolePermission(BaseModel):
+    code: str
     name: str
     description: str
     color: str
-    count: int
-    permissions: List[str]
+    count: int = 0
+    permissions: List[str] = []
+    members: List[RoleMember] = []
+    is_system: bool = True
 
 
 class TeamActivityPoint(BaseModel):

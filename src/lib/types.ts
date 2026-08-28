@@ -520,6 +520,26 @@ export interface KpiData {
   abandonedCartRevenue?: number;
 }
 
+export interface RoleMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  avatar?: string | null;
+}
+
+export interface RolePermission {
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+  count: number;
+  permissions: string[];
+  members?: RoleMember[];
+  is_system?: boolean;
+}
+
 export interface TeamActivityPoint {
   date: string;
   actions: number;

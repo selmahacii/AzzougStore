@@ -23,80 +23,217 @@ from sqlalchemy import func, and_, or_, case
 
 router = APIRouter()
 
-# --- Roles Configuration ---------------------------------------------------
-ROLES_CONFIG = [
+# --- Dynamic Roles Configuration & RBAC -------------------------------------
+from app.schemas.user import RoleMember
+
+SYSTEM_ROLES_CONFIG = [
     {
+        "code": "SUPER_ADMIN",
         "name": "SUPER_ADMIN",
         "label": "Super Administrateur",
         "desc": "Accès total sans restrictions à toutes les boutiques",
         "color": "#4b7bec",
-        "perms": ["Tous les modules", "Gestion Boutiques", "Suppression données", "Accès API"]
+        "is_system": True,
+        "perms": [
+            "products.view", "products.create", "products.edit", "products.delete", "stock.view", "stock.adjust",
+            "orders.view", "orders.create", "orders.confirm", "orders.cancel", "orders.edit", "orders.upsell",
+            "customers.view", "customers.edit", "customers.export",
+            "finance.view", "finance.transactions", "expenses.view", "expenses.create", "expenses.delete",
+            "analytics.view", "audit.view", "reports.export",
+            "users.view", "users.create", "users.edit", "users.delete", "roles.manage",
+            "delivery.view", "delivery.manage", "delivery.scan", "delivery.cod_collect", "returns.manage",
+            "marketing.view", "marketing.pixels", "promotions.manage",
+            "settings.view", "settings.edit", "api_keys.manage", "stores.manage"
+        ]
     },
     {
+        "code": "ADMIN",
         "name": "ADMIN",
         "label": "Administrateur",
-        "desc": "Gestion globale d'une boutique assignée",
+        "desc": "Gestion globale de la boutique assignée et supervision",
         "color": "#2d3436",
-        "perms": ["Gestion Utilisateurs", "Paramètres Boutique", "Audit Logs", "Finance", "Analytics complets"]
+        "is_system": True,
+        "perms": [
+            "products.view", "products.create", "products.edit", "stock.view", "stock.adjust",
+            "orders.view", "orders.create", "orders.confirm", "orders.cancel", "orders.edit", "orders.upsell",
+            "customers.view", "customers.edit",
+            "finance.view", "finance.transactions", "expenses.view", "expenses.create",
+            "analytics.view", "audit.view",
+            "users.view", "users.create", "users.edit", "roles.manage",
+            "delivery.view", "delivery.manage", "returns.manage",
+            "marketing.view", "promotions.manage",
+            "settings.view"
+        ]
     },
     {
+        "code": "MANAGER",
         "name": "MANAGER",
         "label": "Responsable Boutique",
         "desc": "Gestion des stocks, achats et équipe locale",
         "color": "#2d98da",
-        "perms": ["Gestion Stocks", "Achats Fournisseurs", "Statut Commandes", "Analyse Logistique", "Assignation agents"]
+        "is_system": True,
+        "perms": [
+            "products.view", "products.create", "products.edit", "stock.view", "stock.adjust",
+            "orders.view", "orders.create", "orders.confirm", "orders.edit",
+            "customers.view",
+            "analytics.view",
+            "delivery.view", "delivery.manage", "returns.manage"
+        ]
     },
     {
+        "code": "CONFIRMATEUR",
         "name": "CONFIRMATEUR",
         "label": "Agent de Confirmation",
         "desc": "Validation des commandes clients et Upsell",
         "color": "#20bf6b",
-        "perms": ["Liste Commandes (assignées)", "Créer Commande", "Appels clients", "Upsell", "Notes commandes"]
+        "is_system": True,
+        "perms": [
+            "orders.view", "orders.create", "orders.confirm", "orders.edit", "orders.upsell",
+            "customers.view", "customers.edit"
+        ]
     },
     {
+        "code": "LIVREUR",
+        "name": "LIVREUR",
+        "label": "Livreur Interne",
+        "desc": "Livraison des colis, encaissement COD et retours",
+        "color": "#f39c12",
+        "is_system": True,
+        "perms": [
+            "delivery.view", "delivery.scan", "delivery.cod_collect", "returns.manage"
+        ]
+    },
+    {
+        "code": "MARKETER",
         "name": "MARKETER",
         "label": "Affilié & Média",
         "desc": "Acquisition de trafic et tracking performance",
         "color": "#eb4d4b",
-        "perms": ["Analytics Marketing", "Accès Pixels", "Rapport ROAS", "Leads générés"]
+        "is_system": True,
+        "perms": [
+            "marketing.view", "marketing.pixels", "marketing.roas", "promotions.view"
+        ]
     },
 ]
+
+CUSTOM_ROLES: List[dict] = []
+ROLE_PERMISSIONS_OVERRIDE: dict[str, list[str]] = {}
 
 
 @router.post("/roles", response_model=dict)
 def create_role(
     payload: dict,
-    _: Any = Depends(deps.get_current_active_user)
-):
-    """
-    Persist a custom role definition. Currently stores the intent and acknowledges -
-    role enforcement is handled via the user.role field.
-    """
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Le nom du rôle est obligatoire")
-    return {"success": True, "message": f"Rôle « {name} » enregistré avec succès"}
-
-
-@router.get("/roles-matrix", response_model=List[RolePermission])
-def get_roles_matrix(
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ):
     """
-    Get the roles and permissions matrix with live user counts per role.
+    Persist or update a custom role definition with its permissions.
     """
-    role_counts = db.query(User.role, func.count(User.id)).group_by(User.role).all()
-    counts_dict = {r[0]: r[1] for r in role_counts}
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Le nom du rôle est obligatoire")
+    
+    code = (payload.get("code") or name.upper().replace(" ", "_")).strip()
+    description = payload.get("description") or f"Rôle {name}"
+    color = payload.get("color") or "#a55eea"
+    permissions = payload.get("permissions") or []
 
+    for r in CUSTOM_ROLES:
+        if r["code"] == code:
+            r["label"] = name
+            r["desc"] = description
+            r["color"] = color
+            r["perms"] = permissions
+            ROLE_PERMISSIONS_OVERRIDE[code] = permissions
+            return {"success": True, "message": f"Rôle « {name} » mis à jour avec succès"}
+
+    new_role = {
+        "code": code,
+        "name": code,
+        "label": name,
+        "desc": description,
+        "color": color,
+        "is_system": False,
+        "perms": permissions
+    }
+    CUSTOM_ROLES.append(new_role)
+    ROLE_PERMISSIONS_OVERRIDE[code] = permissions
+    return {"success": True, "message": f"Rôle « {name} » créé avec succès"}
+
+
+@router.put("/roles/{role_code}/permissions", response_model=dict)
+def update_role_permissions(
+    role_code: str,
+    payload: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user)
+):
+    """
+    Update permissions for a specific role and sync them to all users with this role.
+    """
+    permissions = payload.get("permissions") or []
+    ROLE_PERMISSIONS_OVERRIDE[role_code] = permissions
+
+    # Update permissions in DB for all active users of this role
+    apply_to_users = payload.get("apply_to_users", True)
+    if apply_to_users:
+        users = db.query(User).filter(User.role == role_code).all()
+        for u in users:
+            u.permissions = permissions
+        db.commit()
+
+    return {"success": True, "message": f"Permissions du rôle {role_code} synchronisées avec succès"}
+
+
+@router.get("/roles-matrix", response_model=List[RolePermission])
+def get_roles_matrix(
+    store_id: Optional[str] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user)
+):
+    """
+    Get the roles and permissions matrix with live user members and counts per role.
+    """
+    user_filters = [User.is_active == True]
+    if store_id:
+        user_filters.append(
+            or_(
+                User.employee_store_id == store_id,
+                User.assigned_store_scope == "ALL",
+                User.role.in_(["SUPER_ADMIN", "ADMIN"])
+            )
+        )
+    all_active_users = db.query(User).filter(*user_filters).all()
+    users_by_role = {}
+    for u in all_active_users:
+        users_by_role.setdefault(u.role, []).append(u)
+
+    all_roles = SYSTEM_ROLES_CONFIG + CUSTOM_ROLES
     result = []
-    for r in ROLES_CONFIG:
+    for r in all_roles:
+        code = r["code"]
+        role_users = users_by_role.get(code, [])
+        members = [
+            RoleMember(
+                id=str(u.id),
+                name=str(u.name),
+                email=str(u.email),
+                role=str(u.role),
+                is_active=bool(u.is_active),
+                avatar=getattr(u, "avatar", None)
+            )
+            for u in role_users
+        ]
+        perms = ROLE_PERMISSIONS_OVERRIDE.get(code, r["perms"])
         result.append(RolePermission(
+            code=code,
             name=str(r["label"]),
             description=str(r["desc"]),
             color=str(r["color"]),
-            count=counts_dict.get(r["name"], 0),
-            permissions=r["perms"]
+            count=len(members),
+            permissions=perms,
+            members=members,
+            is_system=bool(r.get("is_system", True))
         ))
     return result
 
