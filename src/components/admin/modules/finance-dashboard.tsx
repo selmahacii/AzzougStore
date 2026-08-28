@@ -96,6 +96,7 @@ export default function FinanceDashboard() {
    const [isRebalanceOpen, setIsRebalanceOpen] = useState(false);
    const [isCreateTxOpen, setIsCreateTxOpen] = useState(false);
    const [selectedWallet, setSelectedWallet] = useState<any | null>(null);
+   const [selectedTx, setSelectedTx] = useState<any | null>(null);
    const [txSearch, setTxSearch] = useState('');
    const [txDateFrom, setTxDateFrom] = useState('');
    const [txDateTo, setTxDateTo] = useState('');
@@ -1848,6 +1849,81 @@ function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
                   </Button>
                </div>
             </DialogFooter>
+         </DialogContent>
+      </Dialog>
+   );
+}
+
+
+function TransactionDetailModal({
+   transaction,
+   open,
+   onClose,
+}: {
+   transaction: any | null;
+   open: boolean;
+   onClose: () => void;
+}) {
+   if (!transaction) return null;
+
+   const isPayment = transaction.type === 'payment';
+   const txDateStr = transaction.transaction_date || transaction.created_at;
+   const txDate = txDateStr ? new Date(txDateStr) : null;
+   const formattedDate = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
+      ? txDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) + ' à ' + txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : 'Récemment enregistré';
+
+   return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+         <DialogContent className="max-w-md rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
+            <div className={cn("p-8 text-white relative", isPayment ? "bg-gradient-to-br from-emerald-600 to-teal-700" : "bg-gradient-to-br from-slate-900 to-slate-800")}>
+               <div className="flex items-center justify-between mb-4">
+                  <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-xs">
+                     {isPayment ? 'Encaissement Entrant' : 'Décaissement Sortant'}
+                  </span>
+                  <span className="text-xs font-mono font-bold opacity-80">{transaction.reference}</span>
+               </div>
+               <p className="text-3xl font-black tabular-nums tracking-tight">
+                  {isPayment ? '+' : '-'}{formatPrice(transaction.amount)} DA
+               </p>
+               <p className="text-xs font-medium opacity-80 mt-1">
+                  {transaction.category || (isPayment ? 'Vente COD' : 'Opération financière')}
+               </p>
+            </div>
+
+            <div className="p-6 space-y-4 bg-white text-xs">
+               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div>
+                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Compte / Caisse</span>
+                     <span className="font-bold text-slate-800">{transaction.wallet?.name || 'Caisse Principale (COD)'}</span>
+                  </div>
+                  <div>
+                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Bénéficiaire / Tiers</span>
+                     <span className="font-bold text-slate-800">{transaction.beneficiary || 'Client COD'}</span>
+                  </div>
+                  <div>
+                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Date & Heure</span>
+                     <span className="font-bold text-slate-800">{formattedDate}</span>
+                  </div>
+                  <div>
+                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Statut Pièce</span>
+                     <span className="font-bold text-emerald-600">✓ Validé & Comptabilisé</span>
+                  </div>
+               </div>
+
+               {transaction.description && (
+                  <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-100">
+                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Motif / Description</span>
+                     <p className="text-slate-700 font-medium">{transaction.description}</p>
+                  </div>
+               )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
+               <button onClick={onClose} className="h-10 px-5 rounded-xl font-bold text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 transition-all">
+                  Fermer
+               </button>
+            </div>
          </DialogContent>
       </Dialog>
    );

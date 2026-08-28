@@ -1938,15 +1938,19 @@ class OrderService:
                     )
                     db.add(wallet)
                     db.flush()
+                now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
                 tx = FinancialTransaction(
                     id=str(uuid.uuid4()),
                     reference=cod_ref,
                     wallet_id=wallet.id,
                     store_id=order.store_id,
                     type=TransactionType.PAYMENT,
+                    category="VENTE_COD",
+                    beneficiary=str(order.customer_name or "Client COD"),
                     amount=order.total,
                     description=f"Paiement COD — {order.order_number} ({order.customer_name})",
-                    transaction_date=datetime.now(timezone.utc).replace(tzinfo=None),
+                    transaction_date=now_dt,
+                    created_at=now_dt,
                 )
                 wallet.balance += order.total  # type: ignore[operator]
                 wallet.total_in += order.total  # type: ignore[operator]

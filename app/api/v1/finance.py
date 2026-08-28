@@ -38,7 +38,7 @@ def create_wallet(
 
 @router.get("/transactions", response_model=TransactionPagination)
 def get_transactions(
-    store_id: str,
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     type: Optional[str] = None,
     transaction_type: Optional[str] = None,
@@ -49,7 +49,14 @@ def get_transactions(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100)
 ):
-    query = db.query(FinancialTransaction).filter(FinancialTransaction.store_id == store_id)
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import func, or_
+
+    query = db.query(FinancialTransaction).options(joinedload(FinancialTransaction.wallet))
+
+    is_valid_store = bool(store_id and store_id.strip() and store_id.upper() not in ("ALL", "UNDEFINED", "NULL", "NONE", ""))
+    if is_valid_store:
+        query = query.filter(FinancialTransaction.store_id == store_id)
 
     raw_type = (type or transaction_type or "").strip().lower()
     if raw_type:
@@ -69,17 +76,52 @@ def get_transactions(
         )
     if date_from:
         try:
-            query = query.filter(FinancialTransaction.transaction_date >= datetime.fromisoformat(date_from))
+            query = query.filter(func.coalesce(FinancialTransaction.transaction_date, FinancialTransaction.created_at) >= datetime.fromisoformat(date_from))
         except ValueError:
             pass
     if date_to:
         try:
-            query = query.filter(FinancialTransaction.transaction_date < datetime.fromisoformat(date_to) + timedelta(days=1))
+            query = query.filter(func.coalesce(FinancialTransaction.transaction_date, FinancialTransaction.created_at) < datetime.fromisoformat(date_to) + timedelta(days=1))
         except ValueError:
             pass
 
     total = query.count()
-    transactions = query.order_by(desc(FinancialTransaction.transaction_date)).offset((page - 1) * pageSize).limit(pageSize).all()
+    transactions = query.order_by(
+        desc(func.coalesce(FinancialTransaction.transaction_date, FinancialTransaction.created_at))
+    ).offset((page - 1) * pageSize).limit(pageSize).all()
+
+    # Normalize dates and metadata for frontend display
+    for t in transactions:
+        if not t.created_at and t.transaction_date:
+            t.created_at = t.transaction_date
+        elif not t.transaction_date and t.created_at:
+            t.transaction_date = t.created_at
+
+        if not t.category:
+            ref = str(t.reference or "")
+            if ref.startswith("COD-"):
+                t.category = "VENTE_COD"
+            elif ref.startswith("FEE-"):
+                t.category = "COMMISSION_RECUPERATION"
+            elif ref.startswith("SALARY-"):
+                t.category = "SALAIRE"
+            elif ref.startswith("TRF-"):
+                t.category = "VIREMENT"
+            elif ref.startswith("PURCHASE-"):
+                t.category = "ACHAT_STOCK"
+            elif ref.startswith("ADS-") or ref.startswith("META-"):
+                t.category = "PUBLICITÉ"
+            else:
+                t.category = "OPERATION"
+
+        if not t.beneficiary:
+            desc_text = str(t.description or "")
+            if "(" in desc_text and ")" in desc_text:
+                extracted = desc_text[desc_text.rfind("(") + 1 : desc_text.rfind(")")].strip()
+                if extracted:
+                    t.beneficiary = extracted
+            if not t.beneficiary and str(t.reference or "").startswith("COD-"):
+                t.beneficiary = "Client COD"
 
     return {
         "success": True,

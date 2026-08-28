@@ -52,6 +52,7 @@ class FinancialTransaction(TransactionBase):
     reference: str
     created_by: Optional[str] = None
     created_at: Optional[datetime] = None
+    wallet: Optional[Wallet] = None
 
     class Config:
         from_attributes = True
