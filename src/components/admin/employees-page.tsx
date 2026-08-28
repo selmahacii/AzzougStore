@@ -2452,8 +2452,8 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                            { label: 'Assignées', value: total_assigned, sub: '100% du flux', color: '#4b7bec', bg: 'bg-blue-50/50', border: 'border-blue-100', filterId: 'ALL' },
                            { label: 'Confirmées', value: confirmed, sub: `Taux : ${stats.confirmation_rate ?? (total_assigned > 0 ? Math.round((confirmed / total_assigned) * 100) : 0)}%`, color: '#20bf6b', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterId: 'CONFIRMED' },
                            { label: 'Livrées (Total)', value: delivered, sub: `Taux : ${stats.confirmed_delivered_rate ?? (confirmed > 0 ? Math.round((delivered / confirmed) * 100) : 0)}%`, color: '#10b981', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterId: 'DELIVERED' },
-                           { label: '🟦 Normales Livrées', value: stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0)), sub: `Base : ${formatPrice((stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))) * paymentAmount)}`, color: '#3b82f6', bg: 'bg-blue-50/50', border: 'border-blue-100', filterId: 'NORMAL_DELIVERED' },
-                           { label: '🟩 Paniers Récupérés', value: stats.recovered_delivered_count || 0, sub: `+${formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))} (${stats.recovered_delivered_rate || 0}%)`, color: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200', filterId: 'RECOVERED_DELIVERED' },
+                           { label: '🟦 Normales Livrées', value: stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0)), sub: paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe' : `Base : ${formatPrice((stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))) * paymentAmount)}`, color: '#3b82f6', bg: 'bg-blue-50/50', border: 'border-blue-100', filterId: 'NORMAL_DELIVERED' },
+                           { label: '🟩 Paniers Récupérés', value: stats.recovered_delivered_count || 0, sub: paymentType === 'MONTHLY_SALARY' ? 'Salaire fixe' : `+${formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))} (${stats.recovered_delivered_rate || 0}%)`, color: '#059669', bg: 'bg-emerald-50', border: 'border-emerald-200', filterId: 'RECOVERED_DELIVERED' },
                            { label: '🔴 Retours', value: returned, sub: `Taux : ${total_assigned > 0 ? Math.round((returned / total_assigned) * 100) : 0}%`, color: '#ef4444', bg: 'bg-rose-50/50', border: 'border-rose-100', filterId: 'RETURNED' },
                         ].map(s => (
                            <button
@@ -2481,56 +2481,15 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Détail des commissions & calcul de paie</p>
 
                         {paymentType === 'MONTHLY_SALARY' ? (
-                           <div className="space-y-2.5">
-                              <div className="flex justify-between items-center text-xs font-bold text-slate-700 bg-white p-3 rounded-2xl border border-slate-200">
-                                 <span className="flex items-center gap-2">
-                                    <span className="size-2 rounded-full bg-slate-900"></span>
+                           <div className="flex justify-between items-center text-xs font-bold text-slate-800 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                              <div className="space-y-0.5">
+                                 <span className="flex items-center gap-2 font-bold text-slate-900">
+                                    <span className="size-2 rounded-full bg-emerald-500"></span>
                                     Salaire fixe mensuel contractuel
                                  </span>
-                                 <span className="font-mono font-bold text-slate-900">{formatPrice(paymentAmount)}</span>
+                                 <p className="text-[10px] text-slate-400 font-medium">Régime à salaire fixe intégral (aucune commission par commande déduite ou ajoutée)</p>
                               </div>
-
-                              {/* Bonus paniers récupérés for monthly salary */}
-                              {(stats.abandoned_bonus > 0 || (stats.recovered_delivered_count || 0) > 0) && (
-                                 <div className="flex justify-between items-center text-xs font-bold text-emerald-800 bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/80">
-                                    <span className="flex items-center gap-1.5">
-                                       <span className="size-2 rounded-full bg-emerald-500"></span>
-                                       Prime Paniers abandonnés récupérés & livrés
-                                    </span>
-                                    <span className="font-mono font-black text-emerald-900">
-                                       + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))}
-                                    </span>
-                                 </div>
-                              )}
-
-                              {/* Bonus marketplace for monthly salary */}
-                              {((stats.marketplace_bonus || 0) > 0 || (stats.marketplace_delivered_count || 0) > 0) && (
-                                 <div className="flex justify-between items-center text-xs font-bold text-pink-700 bg-pink-50/80 p-3 rounded-2xl border border-pink-200/80">
-                                    <span className="flex items-center gap-1.5">
-                                       <span className="size-2 rounded-full bg-pink-500"></span>
-                                       Prime Marketplace (50 DA / commande livrée)
-                                    </span>
-                                    <span className="font-mono font-black text-pink-900">
-                                       + {stats.marketplace_delivered_count || 0} × {formatPrice(stats.payment_marketplace_upsell_only || 50)} = +{formatPrice(stats.marketplace_bonus ?? ((stats.marketplace_delivered_count || 0) * 50))}
-                                    </span>
-                                 </div>
-                              )}
-
-                              {/* Bonus upsell for monthly salary */}
-                              {(stats.upsell_bonus || 0) > 0 && (
-                                 <div className="flex justify-between items-center text-xs font-bold text-purple-700 bg-purple-50/80 p-3 rounded-2xl border border-purple-200/80">
-                                    <span>Prime Upsell / Ventes additionnelles</span>
-                                    <span className="font-mono font-black text-purple-900">+ {formatPrice(stats.upsell_bonus)}</span>
-                                 </div>
-                              )}
-
-                              {/* Pénalité retours for monthly salary */}
-                              {(stats.returned_penalty || 0) > 0 && (
-                                 <div className="flex justify-between items-center text-xs font-bold text-rose-600 bg-rose-50/80 p-3 rounded-2xl border border-rose-200/80">
-                                    <span>Pénalité retours ({returned} colis)</span>
-                                    <span className="font-mono font-black text-rose-900">- {formatPrice(stats.returned_penalty)}</span>
-                                 </div>
-                              )}
+                              <span className="font-mono font-black text-base text-slate-900">{formatPrice(paymentAmount)}</span>
                            </div>
                         ) : (
                            <>

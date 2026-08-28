@@ -185,15 +185,15 @@ def compute_salary(
 
     if payment_type == "MONTHLY_SALARY":
         base_salary = payment_amount or 0
-        salary = max(0, base_salary + abandoned_bonus + upsell_bonus + marketplace_bonus - returned_penalty)
+        salary = base_salary
         return _build_result(
             payment_type="MONTHLY_SALARY",
             payment_amount=payment_amount,
-            recovered_rate=recovered_rate,
-            lost_rate=lost_rate,
-            upsell_rate=upsell_rate,
-            store_pickup_rate=store_pickup_rate,
-            recovered_store_pickup_rate=recovered_store_pickup_rate,
+            recovered_rate=0,
+            lost_rate=0,
+            upsell_rate=0,
+            store_pickup_rate=0,
+            recovered_store_pickup_rate=0,
             total_delivered=total_delivered,
             normal_delivered=normal_delivered,
             recovered_delivered=recovered_delivered,
@@ -203,10 +203,10 @@ def compute_salary(
             recovered_store_pickup_delivered_count=recovered_store_pickup_delivered,
             returned_count=returned_count,
             base_salary=base_salary,
-            abandoned_bonus=abandoned_bonus,
-            upsell_bonus=upsell_bonus,
-            marketplace_bonus=marketplace_bonus,
-            returned_penalty=returned_penalty,
+            abandoned_bonus=0,
+            upsell_bonus=0,
+            marketplace_bonus=0,
+            returned_penalty=0,
             salary=salary,
             since=since,
             until=until,
