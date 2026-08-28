@@ -30,6 +30,14 @@ import {
   Eye,
   MousePointer,
   ExternalLink,
+  Smartphone,
+  User,
+  MapPin,
+  Globe,
+  Hash,
+  ShieldCheck,
+  CheckCheck,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1462,7 +1470,7 @@ export default function MetaAdsDashboard() {
                   <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100">
                     <div className="flex justify-between items-center text-blue-700">
                       <span className="text-[10px] font-black uppercase tracking-wider">Commandes ERP</span>
-                      <span className="text-xs">📦</span>
+                      <Package className="size-4" />
                     </div>
                     <p className="text-2xl font-black text-slate-900 mt-1 tabular-nums font-mono">{trackingQuality.erp_purchases ?? 0}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">Éligibles au tracking</p>
@@ -1471,7 +1479,7 @@ export default function MetaAdsDashboard() {
                   <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100">
                     <div className="flex justify-between items-center text-emerald-700">
                       <span className="text-[10px] font-black uppercase tracking-wider">Reçus par Meta</span>
-                      <span className="text-xs">✅</span>
+                      <CheckCircle className="size-4" />
                     </div>
                     <p className="text-2xl font-black text-emerald-600 mt-1 tabular-nums font-mono">{trackingQuality.meta_purchases ?? 0}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">Validés par CAPI</p>
@@ -1480,7 +1488,7 @@ export default function MetaAdsDashboard() {
                   <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100">
                     <div className="flex justify-between items-center text-[#4b7bec]">
                       <span className="text-[10px] font-black uppercase tracking-wider">Taux de Couverture</span>
-                      <span className="text-xs">🎯</span>
+                      <Target className="size-4" />
                     </div>
                     <p className="text-2xl font-black text-[#4b7bec] mt-1 tabular-nums font-mono">{trackingQuality.coverage_pct ?? 0}%</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">Efficacité de transmission</p>
@@ -1489,10 +1497,10 @@ export default function MetaAdsDashboard() {
                   <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100">
                     <div className="flex justify-between items-center text-purple-700">
                       <span className="text-[10px] font-black uppercase tracking-wider">Match Quality (EMQ)</span>
-                      <span className="text-xs">📱</span>
+                      <Smartphone className="size-4" />
                     </div>
                     <p className="text-2xl font-black text-purple-700 mt-1 tabular-nums font-mono">
-                      {trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '89%'}
+                      {trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '—'}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">Matching Téléphone / Wilaya</p>
                   </div>
@@ -1543,21 +1551,6 @@ export default function MetaAdsDashboard() {
                     </button>
                   </div>
                 )}
-
-                {/* Practical Algerian COD Recommendations */}
-                {trackingQuality.recommendations?.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recommandations & Analyse</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {trackingQuality.recommendations.map((r: string, i: number) => (
-                        <div key={i} className="flex items-start gap-2.5 text-xs text-slate-700 p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                          <span className="text-sm shrink-0">💡</span>
-                          <span className="font-medium leading-relaxed">{r}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1566,8 +1559,8 @@ export default function MetaAdsDashboard() {
           <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 sm:p-7 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-lg shadow-xs">
-                  ⚡
+                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs">
+                  <Activity className="size-5" />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
@@ -1615,27 +1608,22 @@ export default function MetaAdsDashboard() {
                       const quality = event.match_quality || 0;
                       const isHealthy = quality >= 80 && (!event.failures || event.failures < 50);
 
-                      const eventLabels: Record<string, { label: string; desc: string; icon: string }> = {
-                        Purchase: { label: 'Achat / Commande COD (Purchase)', desc: 'Confirmation de commande', icon: '💰' },
-                        InitiateCheckout: { label: 'Formulaire COD Ouvert (InitiateCheckout)', desc: 'Intention de commande', icon: '📝' },
-                        AddToCart: { label: 'Ajout au Panier (AddToCart)', desc: "Sélection d'offre ou variante", icon: '🛍️' },
-                        ViewContent: { label: 'Consultation Fiche Produit (ViewContent)', desc: 'Visite page produit / LP', icon: '👁️' },
-                        PageView: { label: 'Visite de Page (PageView)', desc: 'Navigation générale sur le site', icon: '📄' },
+                      const eventLabels: Record<string, { label: string; desc: string }> = {
+                        Purchase: { label: 'Achat / Commande COD (Purchase)', desc: 'Confirmation de commande' },
+                        InitiateCheckout: { label: 'Formulaire COD Ouvert (InitiateCheckout)', desc: 'Intention de commande' },
+                        AddToCart: { label: 'Ajout au Panier (AddToCart)', desc: "Sélection d'offre ou variante" },
+                        ViewContent: { label: 'Consultation Fiche Produit (ViewContent)', desc: 'Visite page produit / LP' },
+                        PageView: { label: 'Visite de Page (PageView)', desc: 'Navigation générale sur le site' },
                       };
 
-                      const info = eventLabels[event.event_name] || { label: event.event_name, desc: 'Événement personnalisé', icon: '⚡' };
+                      const info = eventLabels[event.event_name] || { label: event.event_name, desc: 'Événement standard' };
 
                       return (
                         <tr key={`${event.event_name}-${index}`} className="hover:bg-slate-50/70 transition-colors">
                           <td className="px-5 py-4">
-                            <div className="flex items-center gap-3">
-                              <span className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-base shadow-xs">
-                                {info.icon}
-                              </span>
-                              <div>
-                                <span className="text-sm font-black text-slate-900 block">{info.label}</span>
-                                <span className="text-[10px] font-medium text-slate-400">{info.desc}</span>
-                              </div>
+                            <div>
+                              <span className="text-sm font-black text-slate-900 block">{info.label}</span>
+                              <span className="text-[10px] font-medium text-slate-400">{info.desc}</span>
                             </div>
                           </td>
                           <td className="px-5 py-4 text-center">
@@ -1671,7 +1659,6 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-
       {activeTab === 'quality' && (() => {
         const learning = signalQuality?.learning_score;
         const avgEmq = signalQuality?.avg_emq != null ? signalQuality.avg_emq : (trackingQuality?.avg_match_quality ?? '—');
@@ -1684,36 +1671,36 @@ export default function MetaAdsDashboard() {
         const reconciliation = fullDiagnostics?.reconciliation;
         const attribution = fullDiagnostics?.attribution_readiness;
 
-        const fieldMeta: Record<string, { label: string; icon: string; desc: string }> = {
-          ph: { label: 'Téléphone Mobile (+213)', icon: '📱', desc: 'Clé majeure matching Algérie' },
-          fn: { label: 'Prénom du Client', icon: '👤', desc: 'Identité client' },
-          ln: { label: 'Nom du Client', icon: '👤', desc: 'Identité client' },
-          ct: { label: 'Ville / Commune', icon: '📍', desc: 'Localisation de livraison' },
-          st: { label: 'Wilaya (Région)', icon: '📍', desc: 'Localisation de livraison' },
-          country: { label: 'Pays (Algérie / DZ)', icon: '🇩🇿', desc: 'Marché cible' },
-          external_id: { label: 'Identifiant Unique Commande', icon: '🆔', desc: 'Dédoublonnage Meta' },
-          client_ip_address: { label: 'Adresse IP Client', icon: '🌐', desc: 'Signal réseau' },
-          client_user_agent: { label: 'Navigateur (User-Agent)', icon: '💻', desc: 'Signature technique appareil' },
-          fbp: { label: 'Cookie Navigateur (FBP)', icon: '🍪', desc: 'Traçage Pixel Meta' },
-          fbc: { label: 'Clic Publicitaire (FBC)', icon: '🎯', desc: 'Lien direct clic Facebook/Insta' },
-          em: { label: 'Adresse Email', icon: '✉️', desc: 'Non requis en COD Algérie' },
+        const fieldMeta: Record<string, { label: string; desc: string }> = {
+          ph: { label: 'Numéro de Téléphone (+213)', desc: 'Correspondance principale compte Meta' },
+          fn: { label: 'Prénom du Client', desc: 'Identité client' },
+          ln: { label: 'Nom du Client', desc: 'Identité client' },
+          ct: { label: 'Ville / Commune', desc: 'Localisation de livraison' },
+          st: { label: 'Wilaya (Région)', desc: 'Localisation de livraison' },
+          country: { label: 'Code Pays (DZ)', desc: 'Marché cible' },
+          external_id: { label: 'Identifiant Unique Commande', desc: 'Dédoublonnage technique' },
+          client_ip_address: { label: 'Adresse IP Client', desc: 'Signal réseau' },
+          client_user_agent: { label: 'User-Agent (Navigateur)', desc: 'Signature technique appareil' },
+          fbp: { label: 'Cookie Pixel (FBP)', desc: 'Traçage navigateur' },
+          fbc: { label: 'Paramètre de Clic (FBC)', desc: 'Attribution clic publicitaire' },
+          em: { label: 'Adresse Email', desc: 'Non requis en COD Algérie' },
         };
 
         return (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* ─── SECTION 1 : SCORE D'APPRENTISSAGE META ADS (LEARNING SCORE) ─── */}
+            {/* ─── SECTION 1 : SCORE D'APPRENTISSAGE META ADS ─── */}
             <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
                 <div className="flex items-center gap-4">
-                  <div className="size-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shadow-xs shrink-0">
-                    ⚡
+                  <div className="size-12 rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-xl shadow-xs shrink-0">
+                    <Zap className="size-6 text-[#4b7bec]" />
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
                       Score d&apos;Apprentissage Publicitaire (Learning Score)
                     </h3>
                     <p className="text-xs text-slate-400 font-medium mt-0.5">
-                      Mesure la vitesse et la précision de l&apos;algorithme Meta Ads pour trouver vos futurs acheteurs
+                      Indice d&apos;efficacité et de précision de transmission des signaux vers l&apos;algorithme Meta Ads
                     </p>
                   </div>
                 </div>
@@ -1725,7 +1712,7 @@ export default function MetaAdsDashboard() {
                         {learning.score}<span className="text-xs text-slate-400">/100</span>
                       </p>
                       <p className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mt-0.5">
-                        {signalQuality?.meta_health?.label || (learning.score >= 85 ? 'Excellent' : 'Stable')}
+                        {signalQuality?.meta_health?.label || (learning.score >= 85 ? 'Optimal' : 'Stable')}
                       </p>
                     </div>
                     <div className="size-3 rounded-full bg-emerald-500 animate-pulse" />
@@ -1733,21 +1720,10 @@ export default function MetaAdsDashboard() {
                 )}
               </div>
 
-              {/* Explication Pédagogique */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-600 leading-relaxed flex items-start gap-3">
-                <span className="text-base">💡</span>
-                <div>
-                  <strong className="text-slate-800">À quoi sert ce score ?</strong> Plus ce score est élevé, plus Meta comprend qui achète sur votre boutique. Cela permet de réduire directement votre coût par commande (CPA) et d&apos;augmenter la rentabilité (ROAS) de vos publicités.
-                </div>
-              </div>
-
               {/* 4 Piliers Clés Réels */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-1">
-                  <div className="flex justify-between items-center text-blue-700">
-                    <span className="text-[10px] font-black uppercase tracking-wider">Transmission Directe</span>
-                    <span className="text-xs">⚡</span>
-                  </div>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Transmission Directe</span>
                   <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">
                     {learning?.realtime_pct != null ? `${learning.realtime_pct}%` : `${trackingQuality?.realtime_pct ?? 0}%`}
                   </p>
@@ -1756,100 +1732,80 @@ export default function MetaAdsDashboard() {
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-100 space-y-1">
-                  <div className="flex justify-between items-center text-amber-700">
-                    <span className="text-[10px] font-black uppercase tracking-wider">Rattrapage Réseau</span>
-                    <span className="text-xs">🔄</span>
-                  </div>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Synchronisations Différées</span>
                   <p className="text-2xl font-black text-slate-900 tabular-nums font-mono">
                     {learning?.backfill_pct != null ? `${learning.backfill_pct}%` : `${trackingQuality?.backfill_pct ?? 0}%`}
                   </p>
                   <p className="text-[10px] text-slate-500">
-                    {learning?.backfill_count ?? trackingQuality?.backfill ?? 0} achats synchronisés
+                    {learning?.backfill_count ?? trackingQuality?.backfill ?? 0} achats réconciliés
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-1">
-                  <div className="flex justify-between items-center text-emerald-700">
-                    <span className="text-[10px] font-black uppercase tracking-wider">Anti-Doublons</span>
-                    <span className="text-xs">🛡️</span>
-                  </div>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Déduplication d&apos;Événements</span>
                   <p className="text-2xl font-black text-emerald-600 tabular-nums font-mono">
                     {learning?.dedup_pct != null ? `${learning.dedup_pct}%` : '100%'}
                   </p>
-                  <p className="text-[10px] text-slate-500">Zéro commande comptée en double</p>
+                  <p className="text-[10px] text-slate-500">Zéro doublon détecté</p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100 space-y-1">
-                  <div className="flex justify-between items-center text-purple-700">
-                    <span className="text-[10px] font-black uppercase tracking-wider">Lien Publicitaire</span>
-                    <span className="text-xs">🎯</span>
-                  </div>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Attribution aux Campagnes</span>
                   <p className="text-2xl font-black text-purple-700 tabular-nums font-mono">
                     {learning?.attribution_pct != null ? `${learning.attribution_pct}%` : '—'}
                   </p>
-                  <p className="text-[10px] text-slate-500">Attribué à la bonne campagne</p>
+                  <p className="text-[10px] text-slate-500">Attribué à la campagne source</p>
                 </div>
               </div>
             </div>
 
-            {/* ─── SECTION 2 : QUALITÉ DES DONNÉES CLIENTS (EVENT MATCH QUALITY - EMQ) ─── */}
+            {/* ─── SECTION 2 : QUALITÉ DE CORRESPONDANCE DES SIGNAUX CLIENTS (EMQ) ─── */}
             <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-lg shadow-xs">
-                    📱
+                  <div className="size-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-lg shadow-xs">
+                    <CheckCircle className="size-5 text-[#4b7bec]" />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                      Qualité de Reconnaissance Client (Event Match Quality)
+                      Qualité de Correspondance Client (Event Match Quality)
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      Précision avec laquelle Meta relie vos commandes aux profils des utilisateurs Facebook & Instagram
+                      Complétude des paramètres transmis pour l&apos;identification des profils acheteurs par Meta
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-100 rounded-xl text-xs font-black font-mono">
-                    Score Global : {avgEmq}%
+                  <span className="px-3 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-black font-mono">
+                    Score Moyen : {avgEmq}%
                   </span>
                 </div>
-              </div>
-
-              {/* Algerian COD explanation */}
-              <div className="p-4 bg-purple-50/40 rounded-2xl border border-purple-100 text-xs text-purple-900 flex items-start gap-2.5">
-                <span className="text-base">🇩🇿</span>
-                <p className="leading-relaxed">
-                  <strong>Spécificité E-commerce Algérie :</strong> Vos clients renseignent principalement leur <strong>numéro de téléphone mobile</strong> et leur <strong>commune / wilaya</strong>. Ces informations sont automatiquement cryptées (SHA-256) et suffisent amplement à Meta pour faire correspondre l&apos;achat sans besoin d&apos;email.
-                </p>
               </div>
 
               {/* 100% Real Dynamic Signals Grid */}
               {isLoadingSignalQuality ? (
                 <div className="rounded-2xl border bg-slate-50 p-6 text-center text-xs font-bold text-slate-400">
-                  <RefreshCw className="size-4 animate-spin mx-auto text-purple-600 mb-2" />
-                  Chargement des signaux réels depuis la base de données…
+                  <RefreshCw className="size-4 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                  Chargement des données en cours…
                 </div>
               ) : fieldCoverage.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400 font-medium">
-                  Aucun échantillon d&apos;achat disponible sur la période pour calculer la couverture par champ.
+                  Aucun échantillon disponible sur la période.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {fieldCoverage.map((f: any) => {
-                    const meta = fieldMeta[f.key] || { label: f.label || f.key, icon: '⚡', desc: '' };
+                    const meta = fieldMeta[f.key] || { label: f.label || f.key, desc: '' };
                     const isNotApplicable = f.classification === 'not_applicable' || f.key === 'em';
                     const coverage = f.coverage_pct;
 
                     return (
-                      <div key={f.key} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between space-y-2.5 hover:bg-white hover:border-slate-200 transition-all">
-                        <div className="flex items-start gap-2.5">
-                          <span className="text-base shrink-0">{meta.icon}</span>
-                          <div className="min-w-0">
-                            <span className="text-xs font-bold text-slate-800 block truncate">{meta.label}</span>
-                            {meta.desc && <span className="text-[10px] text-slate-400 block">{meta.desc}</span>}
-                          </div>
+                      <div key={f.key} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col justify-between space-y-2.5">
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-slate-800 block truncate">{meta.label}</span>
+                          {meta.desc && <span className="text-[10px] text-slate-400 block mt-0.5">{meta.desc}</span>}
                         </div>
 
                         <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
@@ -1858,20 +1814,20 @@ export default function MetaAdsDashboard() {
                           </span>
 
                           {isNotApplicable ? (
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded-md">
                               Optionnel COD
                             </span>
                           ) : coverage >= 85 ? (
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                              ✅ Optimal
+                              Optimal
                             </span>
                           ) : coverage >= 50 ? (
                             <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                              ⚡ Bon
+                              Conforme
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                              ⚠️ Faible
+                              Partiel
                             </span>
                           )}
                         </div>
@@ -1882,19 +1838,19 @@ export default function MetaAdsDashboard() {
               )}
             </div>
 
-            {/* ─── SECTION 3 : RÉCONCILIATION & TRANSPARENCE ERP ↔ META ADS ─── */}
+            {/* ─── SECTION 3 : RÉCONCILIATION ERP ↔ META ADS ─── */}
             <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg shadow-xs">
-                    📊
+                  <div className="size-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center text-lg shadow-xs">
+                    <Layers className="size-5 text-[#4b7bec]" />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                      Réconciliation & Transparence des Ventes (30 Derniers Jours)
+                      Réconciliation des Commandes (Période Sélectionnée)
                     </h3>
                     <p className="text-xs text-slate-400 font-medium">
-                      Comprendre la correspondance exacte entre les commandes de votre boutique et les conversions comptées par Meta
+                      Suivi comparatif des volumes de commandes réelles et des réceptions Meta Ads
                     </p>
                   </div>
                 </div>
@@ -1905,85 +1861,32 @@ export default function MetaAdsDashboard() {
                   <p className="text-2xl font-black text-slate-900 font-mono">
                     {reconciliation?.erp_real_orders ?? trackingQuality?.erp_purchases ?? 0}
                   </p>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Commandes Réelles Boutique</p>
-                  <p className="text-[10px] text-slate-500">Enregistrées dans votre ERP</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Commandes ERP</p>
+                  <p className="text-[10px] text-slate-500">Commandes boutique enregistrées</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
                   <p className="text-2xl font-black text-indigo-600 font-mono">
                     {attribution?.attributable_valid_fbc ?? trackingQuality?.meta_purchases ?? 0}
                   </p>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Provenant de Publicités</p>
-                  <p className="text-[10px] text-slate-500">Clics publicitaires authentifiés</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Clics Publicitaires Valides</p>
+                  <p className="text-[10px] text-slate-500">Attribuables avec paramètre FBC</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
                   <p className="text-2xl font-black text-emerald-600 font-mono">
                     {reconciliation?.meta_purchase_success ?? trackingQuality?.meta_purchases ?? 0}
                   </p>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Attribuées sur Meta Ads</p>
-                  <p className="text-[10px] text-slate-500">Visibles dans votre Ads Manager</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Reçus par Meta (CAPI)</p>
+                  <p className="text-[10px] text-slate-500">Événements Purchase validés</p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center space-y-1">
                   <p className="text-2xl font-black text-slate-500 font-mono">
                     {attribution?.no_ad_click_signal_organic_direct ?? (reconciliation?.orphan_no_order ?? 0)}
                   </p>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ventes Directes / Organiques</p>
-                  <p className="text-[10px] text-slate-500">Clients venus hors publicité</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-3 text-xs text-emerald-800 font-medium">
-                <span className="text-base">✅</span>
-                <span>
-                  <strong>Transmission Certifiée :</strong> 100% des commandes générées par vos campagnes publicitaires ont été transmises et validées par Meta Conversions API. Aucun écart inexpliqué.
-                </span>
-              </div>
-            </div>
-
-            {/* ─── SECTION 4 : CONSEILS PRATIQUES POUR VOTRE BOUTIQUE ─── */}
-            <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-4">
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <div className="size-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-lg shadow-xs">
-                  💡
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                    Bonnes Pratiques & Conseils pour Maximiser votre Rentabilité
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Recommandations opérationnelles adaptées à votre boutique
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                  <div className="flex items-center gap-2 text-slate-800 font-black text-xs">
-                    <span>⚡</span> <span>Temps Réel Automatique</span>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Vos commandes COD sont automatiquement relayées à Meta à la seconde où le client valide son panier, permettant à l&apos;IA Meta de réagir immédiatement.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                  <div className="flex items-center gap-2 text-slate-800 font-black text-xs">
-                    <span>📱</span> <span>Téléphone & Wilaya</span>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    La saisie d&apos;un numéro de téléphone propre (05/06/07) et de la wilaya garantit un taux de matching maximal avec les comptes Facebook et Instagram.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                  <div className="flex items-center gap-2 text-slate-800 font-black text-xs">
-                    <span>🛡️</span> <span>Sécurité Anti-Coupure</span>
-                  </div>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Si le serveur ou la connexion internet subit un ralentissement, le système met les événements en file sécurisée et les renvoie dès le rétablissement.
-                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Ventes Directes</p>
+                  <p className="text-[10px] text-slate-500">Achats sans clic publicitaire</p>
                 </div>
               </div>
             </div>
