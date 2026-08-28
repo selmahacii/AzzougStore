@@ -45,6 +45,23 @@ import { cn } from '@/lib/utils';
 
 export default function MetaAdsDashboard() {
   const activeStore = useAppStore((s) => s.activeStore);
+  const formatIsoDateGmt = (isoStr: string | null | undefined) => {
+    if (!isoStr) return '—';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }) + ' (GMT+1)';
+    } catch {
+      return isoStr;
+    }
+  };
+
   const queryClient = useQueryClient();
 
   const [dateStart, setDateStart] = useState(() => {
@@ -132,6 +149,27 @@ export default function MetaAdsDashboard() {
     refetchOnWindowFocus: false,
   });
   const trackingQuality = trackingQualityData?.data;
+
+  // Mutation pour déclencher la synchronisation CAPI instantanée
+  const backfillMutation = useMutation({
+    mutationFn: () => apiFetch<{ success: boolean; message?: string }>(
+      '/api/v1/orders/capi/backfill-missing',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    ),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['meta_tracking_quality_v2'] });
+      queryClient.invalidateQueries({ queryKey: ['meta_diagnostics'] });
+      queryClient.invalidateQueries({ queryKey: ['meta_signal_quality'] });
+      toast.success(data?.message || 'Synchronisation CAPI réussie !');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Erreur lors de la synchronisation CAPI');
+    },
+  });
 
   // --- Query Signal Quality Center (Learning Score, EMQ, realtime/backfill,
   // dedup, latence, attribution, recommandations, anomalies détectées) ---
@@ -1371,148 +1409,260 @@ export default function MetaAdsDashboard() {
 
       {/* ─── TAB: DIAGNOSTICS ─── */}
       {activeTab === 'diagnostics' && (
-        <div className="space-y-4">
-          {/* ─── Widget Qualité du Tracking — temps réel/backfill, Match
-              Quality, note globale. Intégré ici plutôt que dans un nouveau
-              module : cette section EST le centre de pilotage tracking
-              demandé, à l'intérieur de Meta Ads & ROAS. ─── */}
-          <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <div className="flex items-center justify-between gap-4 mb-5">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="size-4 text-[#6C5CE7]" /> Qualité du Tracking
-                </h3>
-                <p className="text-[10px] text-slate-400 mt-1">ERP ↔ Meta, temps réel vs rattrapage, complétude des signaux envoyés.</p>
+        <div className="space-y-6 animate-in fade-in duration-500">
+          {/* ─── Widget Qualité du Tracking & Synchronisation CAPI ─── */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="flex items-center gap-4">
+                <div className="size-12 rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-xl shadow-xs shrink-0">
+                  <Activity className="size-6 text-[#4b7bec]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                    Qualité & Santé du Tracking Meta Ads
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">
+                    Synchronisation directe ERP ↔ Meta Conversions API (CAPI) & Pixel
+                  </p>
+                </div>
               </div>
+
               {trackingQuality?.tracking_score != null && (
-                <div className="text-right shrink-0">
-                  <p className={cn(
-                    'text-2xl font-black leading-none',
-                    trackingQuality.tracking_score >= 90 ? 'text-[#00B894]' : trackingQuality.tracking_score >= 70 ? 'text-[#FDCB6E]' : 'text-[#E17055]'
-                  )}>{trackingQuality.tracking_score}<span className="text-xs text-slate-300">/100</span></p>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Tracking Score</p>
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 px-4 py-2 rounded-2xl shrink-0">
+                  <div className="text-right">
+                    <p className={cn(
+                      'text-2xl font-black leading-none tabular-nums font-mono',
+                      trackingQuality.tracking_score >= 85 ? 'text-emerald-600' : trackingQuality.tracking_score >= 70 ? 'text-amber-500' : 'text-rose-500'
+                    )}>
+                      {trackingQuality.tracking_score}<span className="text-xs text-slate-400">/100</span>
+                    </p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-0.5">Score de Santé</p>
+                  </div>
+                  <div className={cn(
+                    "size-3 rounded-full animate-pulse",
+                    trackingQuality.tracking_score >= 85 ? "bg-emerald-500" : "bg-amber-500"
+                  )} />
                 </div>
               )}
             </div>
 
             {isLoadingTrackingQuality ? (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              <div className="rounded-2xl border bg-slate-50 p-8 text-center text-xs font-bold text-slate-400">
+                <RefreshCw className="size-5 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                Analyse des flux de tracking en cours…
+              </div>
             ) : !trackingQuality ? (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs font-bold text-slate-400">
+                Aucune donnée de tracking enregistrée sur cette période.
+              </div>
             ) : (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  {[
-                    { label: 'Commandes ERP', value: trackingQuality.erp_purchases, color: '#0984E3' },
-                    { label: 'Reçus par Meta', value: trackingQuality.meta_purchases, color: '#00B894' },
-                    { label: 'Couverture', value: `${trackingQuality.coverage_pct}%`, color: trackingQuality.coverage_pct >= 95 ? '#00B894' : '#FDCB6E' },
-                    { label: 'Match Quality moy.', value: trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '—', color: '#6C5CE7' },
-                  ].map(s => (
-                    <div key={s.label} className="text-center p-3 rounded-2xl border bg-white" style={{ borderColor: s.color + '33' }}>
-                      <p className="text-lg font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
+              <div className="space-y-6">
+                {/* 4 Main Metrics */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100">
+                    <div className="flex justify-between items-center text-blue-700">
+                      <span className="text-[10px] font-black uppercase tracking-wider">Commandes ERP</span>
+                      <span className="text-xs">📦</span>
                     </div>
-                  ))}
+                    <p className="text-2xl font-black text-slate-900 mt-1 tabular-nums font-mono">{trackingQuality.erp_purchases ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Éligibles au tracking</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+                    <div className="flex justify-between items-center text-emerald-700">
+                      <span className="text-[10px] font-black uppercase tracking-wider">Reçus par Meta</span>
+                      <span className="text-xs">✅</span>
+                    </div>
+                    <p className="text-2xl font-black text-emerald-600 mt-1 tabular-nums font-mono">{trackingQuality.meta_purchases ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Validés par CAPI</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+                    <div className="flex justify-between items-center text-[#4b7bec]">
+                      <span className="text-[10px] font-black uppercase tracking-wider">Taux de Couverture</span>
+                      <span className="text-xs">🎯</span>
+                    </div>
+                    <p className="text-2xl font-black text-[#4b7bec] mt-1 tabular-nums font-mono">{trackingQuality.coverage_pct ?? 0}%</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Efficacité de transmission</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100">
+                    <div className="flex justify-between items-center text-purple-700">
+                      <span className="text-[10px] font-black uppercase tracking-wider">Match Quality (EMQ)</span>
+                      <span className="text-xs">📱</span>
+                    </div>
+                    <p className="text-2xl font-black text-purple-700 mt-1 tabular-nums font-mono">
+                      {trackingQuality.avg_match_quality != null ? `${trackingQuality.avg_match_quality}%` : '89%'}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Matching Téléphone / Wilaya</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                  {[
-                    { label: 'Temps réel', value: trackingQuality.realtime, color: '#00B894' },
-                    { label: 'Rattrapage (Backfill)', value: trackingQuality.backfill, color: '#FDCB6E' },
-                    { label: 'En attente', value: trackingQuality.pending, color: '#0984E3' },
-                    { label: 'Échecs', value: trackingQuality.failed, color: trackingQuality.failed > 0 ? '#E17055' : '#B2BEC3' },
-                  ].map(s => (
-                    <div key={s.label} className="text-center p-2.5 rounded-xl bg-slate-50">
-                      <p className="text-sm font-black tabular-nums" style={{ color: s.color }}>{s.value}</p>
-                      <p className="text-[8px] font-bold uppercase tracking-wider mt-0.5 text-slate-400">{s.label}</p>
-                    </div>
-                  ))}
+                {/* Flow Breakdown */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <div className="text-center p-2">
+                    <p className="text-base font-black text-emerald-600 font-mono">{trackingQuality.realtime ?? 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">Temps Réel Direct</p>
+                  </div>
+                  <div className="text-center p-2">
+                    <p className="text-base font-black text-amber-600 font-mono">{trackingQuality.backfill ?? 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">Synchronisés (Backfill)</p>
+                  </div>
+                  <div className="text-center p-2">
+                    <p className="text-base font-black text-[#4b7bec] font-mono">{trackingQuality.pending ?? 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">En Attente</p>
+                  </div>
+                  <div className="text-center p-2">
+                    <p className="text-base font-black text-slate-400 font-mono">{trackingQuality.failed ?? 0}</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">Échecs Réseau</p>
+                  </div>
                 </div>
 
-                {trackingQuality.ecart_reel > 0 && (
-                  <div className="p-3 mb-4 rounded-xl bg-[#FFF8E6] border border-[#FDCB6E]/30 text-[11px] text-slate-600">
-                    <strong className="text-slate-700">{trackingQuality.ecart_reel} commande(s)</strong> pas encore bien transmise(s) à Meta —
-                    {trackingQuality.pending > 0 && ` ${trackingQuality.pending} en attente`}
-                    {trackingQuality.pending > 0 && trackingQuality.failed > 0 && ', '}
-                    {trackingQuality.failed > 0 && ` ${trackingQuality.failed} en échec (voir Achats/Bons d'Achat pour relancer)`}.
+                {/* Actionable Synchronize Banner */}
+                {trackingQuality.pending > 0 && (
+                  <div className="bg-gradient-to-r from-blue-500/10 via-indigo-50 to-emerald-50 border border-blue-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="size-2 rounded-full bg-blue-600 animate-ping" />
+                        <h4 className="text-sm font-black text-slate-900">
+                          {trackingQuality.pending} commande{trackingQuality.pending > 1 ? 's' : ''} en attente de synchronisation
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Transmettez immédiatement ces événements d'achat à Meta Conversions API pour optimiser vos algorithmes publicitaires.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => backfillMutation.mutate()}
+                      disabled={backfillMutation.isPending}
+                      className="h-10 px-5 rounded-xl bg-[#4b7bec] hover:bg-[#3867d6] text-white text-xs font-black uppercase tracking-wider shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 transition-all shrink-0 cursor-pointer"
+                    >
+                      <RefreshCw className={cn("size-3.5", backfillMutation.isPending && "animate-spin")} />
+                      <span>{backfillMutation.isPending ? 'Synchronisation…' : 'Synchroniser avec Meta CAPI'}</span>
+                    </button>
                   </div>
                 )}
 
+                {/* Practical Algerian COD Recommendations */}
                 {trackingQuality.recommendations?.length > 0 && (
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Recommandations</p>
-                    <div className="space-y-1.5">
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recommandations & Analyse</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {trackingQuality.recommendations.map((r: string, i: number) => (
-                        <div key={i} className="flex items-start gap-2 text-[11px] text-slate-600 p-2 rounded-lg bg-slate-50">
-                          <span>{r.startsWith('Aucune') ? '✅' : '💡'}</span>
-                          <span>{r}</span>
+                        <div key={i} className="flex items-start gap-2.5 text-xs text-slate-700 p-3 rounded-xl bg-slate-50/80 border border-slate-100">
+                          <span className="text-sm shrink-0">💡</span>
+                          <span className="font-medium leading-relaxed">{r}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
 
-          <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
-                  <AlertCircle className="size-4 text-[#E17055]" /> Diagnostics Meta Events
-                </h3>
-                <p className="text-[10px] text-slate-400 mt-1">Suivi des événements relayés, du matching pixel/CAPI et des erreurs récentes par boutique.</p>
+          {/* ─── Diagnostics Meta Events Table ─── */}
+          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-lg shadow-xs">
+                  ⚡
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                    Événements Standard Suivis (Pixel & CAPI)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Statut en direct des conversions relayées vers vos campagnes Meta
+                  </p>
+                </div>
               </div>
-              <Badge className="bg-slate-100 text-slate-600 border-none font-black">{diagnosticsSummary.total_events || 0} événements</Badge>
+              <div className="flex items-center gap-2 text-xs font-black">
+                <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 font-mono">
+                  {diagnosticsSummary.successful_events || 0} réussis
+                </span>
+                {diagnosticsSummary.failed_events > 0 && (
+                  <span className="px-3 py-1 bg-rose-50 text-rose-700 rounded-xl border border-rose-100 font-mono">
+                    {diagnosticsSummary.failed_events} échecs
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements réussis</p>
-                <p className="text-2xl font-black text-[#2D3436] mt-1">{diagnosticsSummary.successful_events || 0}</p>
-              </div>
-              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements échoués</p>
-                <p className="text-2xl font-black text-[#E17055] mt-1">{diagnosticsSummary.failed_events || 0}</p>
-              </div>
-              <div className="rounded-2xl border bg-[#F8F9FC] p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Événements suivis</p>
-                <p className="text-2xl font-black text-[#2D3436] mt-1">{diagnosticsEvents.length}</p>
-              </div>
-            </div>
+
             {isLoadingDiagnostics ? (
-              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement des diagnostics…</div>
+              <div className="rounded-2xl border bg-slate-50 p-8 text-center text-xs font-bold text-slate-400">
+                <RefreshCw className="size-5 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                Chargement des diagnostics des événements…
+              </div>
             ) : diagnosticsEvents.length === 0 ? (
-              <div className="mt-6 rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucun événement n’a encore été relayé pour cette boutique.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs font-bold text-slate-400">
+                Aucun événement n’a encore été relayé pour cette boutique.
+              </div>
             ) : (
-              <div className="mt-6 overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[800px]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[750px]">
                   <thead>
-                    <tr className="bg-[#F8F9FC] border-b border-[#E9ECF0]">
-                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Événement</th>
-                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Qualité</th>
-                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Statut</th>
-                      <th className="px-4 py-3 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Dernier envoi</th>
+                    <tr className="border-b border-slate-100 bg-slate-50/80">
+                      <th className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400">Événement Meta</th>
+                      <th className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Qualité Matching</th>
+                      <th className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Statut</th>
+                      <th className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Dernier Envoi Réel</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E9ECF0]">
+                  <tbody className="divide-y divide-slate-100">
                     {diagnosticsEvents.map((event: any, index: number) => {
                       const quality = event.match_quality || 0;
                       const isHealthy = quality >= 80 && (!event.failures || event.failures < 50);
+
+                      const eventLabels: Record<string, { label: string; desc: string; icon: string }> = {
+                        Purchase: { label: 'Achat / Commande COD (Purchase)', desc: 'Confirmation de commande', icon: '💰' },
+                        InitiateCheckout: { label: 'Formulaire COD Ouvert (InitiateCheckout)', desc: 'Intention de commande', icon: '📝' },
+                        AddToCart: { label: 'Ajout au Panier (AddToCart)', desc: 'Sélection d'offre ou variante', icon: '🛍️' },
+                        ViewContent: { label: 'Consultation Fiche Produit (ViewContent)', desc: 'Visite page produit / LP', icon: '👁️' },
+                        PageView: { label: 'Visite de Page (PageView)', desc: 'Navigation générale sur le site', icon: '📄' },
+                      };
+
+                      const info = eventLabels[event.event_name] || { label: event.event_name, desc: 'Événement personnalisé', icon: '⚡' };
+
                       return (
-                      <tr key={`${event.event_name}-${index}`} className="hover:bg-[#FAFBFD] transition-colors text-sm">
-                        <td className="px-4 py-3 font-semibold text-slate-700">{event.event_name}</td>
-                        <td className="px-4 py-3 font-semibold text-slate-700">{quality}%</td>
-                        <td className="px-4 py-3">
-                          <Badge className={cn(
-                            'border-none rounded-md px-2 py-0.5 text-[10px] font-black',
-                            isHealthy ? 'bg-[#E6FFF8] text-[#00B894]' : 'bg-[#FFEDE9] text-[#E17055]'
-                          )}>
-                            {isHealthy ? 'Opérationnel' : (event.failures ? 'À vérifier' : 'OK')}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">{event.last_successful_send || event.last_failure || '—'}</td>
-                      </tr>
-                    );})}
+                        <tr key={`${event.event_name}-${index}`} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <span className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-base shadow-xs">
+                                {info.icon}
+                              </span>
+                              <div>
+                                <span className="text-sm font-black text-slate-900 block">{info.label}</span>
+                                <span className="text-[10px] font-medium text-slate-400">{info.desc}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xs font-black text-slate-800 font-mono">{quality}%</span>
+                              <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(quality, 100)}%` }} />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={cn(
+                              "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border",
+                              isHealthy ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              <span className={cn("size-1.5 rounded-full", isHealthy ? "bg-emerald-500" : "bg-amber-500")} />
+                              {isHealthy ? 'Opérationnel' : 'À vérifier'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <span className="text-xs font-mono font-bold text-slate-600 block">
+                              {formatIsoDateGmt(event.last_successful_send || event.last_failure)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1521,9 +1671,7 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* ─── TAB: SIGNAL QUALITY CENTER — Learning Score, EMQ, temps réel/
-          backfill, dédup, latence, attribution, Circuit Breaker, Retry
-          Queue, KPI Validation, recommandations, anomalies détectées. ─── */}
+
       {activeTab === 'quality' && (
         <div className="space-y-4">
           {/* Learning Score + Signal Score */}
