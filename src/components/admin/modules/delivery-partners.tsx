@@ -910,17 +910,15 @@ function PartnerModal({
 
 // ─── TAB CONFIG ───────────────────────────────────────────────
 const TAB_CONFIG = [
-  { id: 'carriers', label: '🚚 Carriers & API', desc: 'Configurer les transporteurs' },
-  { id: 'tracking', label: '📍 Suivi temps réel', desc: 'Suivre un colis en direct' },
-  { id: 'stats', label: '📊 Statistiques', desc: 'Performance des livraisons' },
+  { id: 'carriers', label: '🚚 Carriers & API', desc: 'Configurer les transporteurs & intégrations' },
+  { id: 'tracking', label: '📍 Suivi temps réel', desc: 'Suivi de colis & Performance temps réel' },
 ] as const;
 
 type TabId = typeof TAB_CONFIG[number]['id'];
 
 function normalizeTab(sv: string | null): TabId {
   if (!sv) return 'carriers';
-  if (sv === 'tracking' || sv === 'Suivi de colis') return 'tracking';
-  if (sv === 'stats' || sv === 'Statistiques') return 'stats';
+  if (sv === 'tracking' || sv === 'Suivi de colis' || sv === 'stats' || sv === 'Statistiques') return 'tracking';
   return 'carriers';
 }
 
@@ -1184,9 +1182,9 @@ export default function DeliveryPartners() {
   const statsQuery = useQuery({
     queryKey: ['delivery-stats', activeStore?.id, statsPeriod],
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
-    enabled: !!activeStore?.id && activeTab === 'stats',
+    enabled: !!activeStore?.id && activeTab === 'tracking',
     retry: false,
-    refetchInterval: activeTab === 'stats' ? 120_000 : false,
+    refetchInterval: activeTab === 'tracking' ? 60_000 : false,
     refetchIntervalInBackground: false,
   });
 
@@ -1236,133 +1234,7 @@ export default function DeliveryPartners() {
           <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex-wrap">
             <ChevronRight className="size-3.5" />
             {TAB_CONFIG.find(t => t.id === activeTab)?.desc}
-            {activeTab === 'tracking' && (
-              <span className="flex items-center gap-1 text-emerald-500 ml-2">
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                Actualisation auto toutes les 30s
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {activeTab === 'carriers' && (
-        <>
-          {/* Search + status bar */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            <div className="lg:col-span-3 bg-white rounded-[28px] border border-slate-100 px-5 sm:px-6 py-4 flex items-center gap-4 shadow-sm">
-              <Search className="size-5 text-slate-300 shrink-0" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Rechercher un transporteur..."
-                className="flex-1 outline-none text-sm font-bold text-slate-700 bg-transparent placeholder:text-slate-300"
-              />
-            </div>
-            <div className="bg-[#2D3436] rounded-[28px] p-5 flex items-center justify-between">
-              <div>
-                <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-1">Actifs</p>
-                <p className="text-3xl font-black text-white">{configuredIds.size}</p>
-              </div>
-              <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center"><Truck className="size-6 text-white/60" /></div>
-            </div>
-          </div>
-
-          {/* Carriers grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
-            {filteredCarriers.map(carrier => {
-              const isAddNew = carrier.id === 'add_new';
-              const isConfigured = !isAddNew && configuredIds.has(carrier.id);
-
-              if (isAddNew) {
-                return (
-                  <div
-                    key={carrier.id}
-                    onClick={() => setShowCustomModal(true)}
-                    className="bg-white rounded-[32px] border-2 border-dashed border-slate-200 p-7 flex flex-col items-center justify-center text-center gap-3 cursor-pointer hover:border-[#4b7bec] hover:bg-[#F0F5FF] transition-all min-h-[220px] group"
-                  >
-                    <div className="size-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl group-hover:bg-[#4b7bec] group-hover:text-white transition-all">
-                      ➕
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-black text-slate-600 group-hover:text-[#4b7bec]">Transporteur personnalisé</h3>
-                      <p className="text-[11px] text-slate-400 font-medium mt-1">Connecter n'importe quel carrier avec son API</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div
-                  key={carrier.id}
-                  className="bg-white rounded-[32px] border border-slate-100 p-7 hover:shadow-xl hover:shadow-slate-100 transition-all group relative overflow-hidden"
-                >
-                  <div className="absolute top-0 left-0 right-0 h-1 rounded-t-[32px]" style={{ backgroundColor: carrier.color }} />
-
-                  <div className="flex items-start justify-between mb-5">
-                    <div className="flex items-center gap-4">
-                      <div className="size-14 rounded-2xl flex items-center justify-center text-3xl border border-slate-100 bg-slate-50">
-                        {carrier.logo}
-                      </div>
-                      <div>
-                        <h3 className="text-base font-black text-slate-900">{carrier.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className={cn("size-2 rounded-full", isConfigured ? "bg-emerald-500 shadow-[0_0_6px_#20bf6b]" : "bg-slate-200")} />
-                          <span className="text-[10px] font-bold text-slate-400">{isConfigured ? 'Configuré' : 'Non configuré'}</span>
-                        </div>
-                      </div>
-                    </div>
-                    {isConfigured && (
-                      <span className="px-2 py-1 bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase tracking-wider rounded-lg border border-emerald-100">Actif</span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-4">{carrier.description}</p>
-
-                  <div className="flex flex-wrap gap-1.5 mb-5">
-                    {carrier.features.slice(0, 3).map(f => (
-                      <span key={f} className="text-[9px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-500 uppercase tracking-wide">{f}</span>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-50 flex-wrap gap-2">
-
-                    <div className="flex items-center gap-2">
-                      {isConfigured && (
-                        <button
-                          onClick={() => {
-                            const p = configuredPartnerByCarrier[carrier.id];
-                            if (p && confirm(`Supprimer la configuration de ${carrier.name} ?`)) deletePartner.mutate(p.id);
-                          }}
-                          disabled={deletePartner.isPending}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black text-[#E17055] bg-[#FFEDE9] hover:bg-[#E17055] hover:text-white transition-all"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setSelectedCarrier(carrier)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black text-white transition-all shadow-sm"
-                        style={{ backgroundColor: carrier.color }}
-                      >
-                        {isConfigured ? <><Settings className="size-3.5" />Reconfigurer</> : <><Plus className="size-3.5" />Connecter</>}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {activeTab === 'tracking' && (
-        <div className="w-full">
-          <TrackingLookup storeId={activeStore?.id ?? ''} />
-        </div>
-      )}
-
-      {activeTab === 'stats' && (() => {
+            {activeTab === 'tracking' && (() => {
         const sd = (statsQuery.data as any)?.data;
         const carriers: any[] = sd?.carriers ?? [];
         const summary = sd?.summary ?? {};
@@ -1377,348 +1249,355 @@ export default function DeliveryPartners() {
         const topCarrier = carriers.length > 0 ? carriers.reduce((a: any, b: any) => (a.deliveryRate ?? 0) > (b.deliveryRate ?? 0) ? a : b) : null;
 
         const PERIOD_LABELS: Record<string, string> = { today: "Aujourd'hui", '7d': '7 Jours', '30d': '30 Jours', all_time: 'Tout' };
-
         const maxChartVal = Math.max(...dailyBreakdown.map((x: any) => Math.max(x.shipped || 0, x.delivered || 0, x.returned || 0, 1)), 5);
 
         return (
-          <div className="space-y-6">
-            {/* ── Period Filter & Header ── */}
-            <div className="bg-white rounded-[28px] border border-slate-100 px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Période d'analyse :</span>
-                {(['today', '7d', '30d', 'all_time'] as const).map(p => (
-                  <button key={p} onClick={() => setStatsPeriod(p)}
-                    className={cn("h-9 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
-                      statsPeriod === p ? "bg-[#4b7bec] text-white shadow-md shadow-blue-500/20" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    )}>
-                    {PERIOD_LABELS[p]}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold text-slate-400 hidden sm:inline-block">
-                  Fuseau : GMT+1 (Algérie)
-                </span>
-                <button 
-                  onClick={() => statsQuery.refetch()} 
-                  disabled={statsQuery.isFetching} 
-                  className="h-9 px-4 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 text-[11px] font-black transition-all"
-                >
-                  <RefreshCw className={cn("size-3.5 text-[#4b7bec]", statsQuery.isFetching && "animate-spin")} /> 
-                  <span>Actualiser</span>
-                </button>
-              </div>
+          <div className="space-y-8">
+            {/* ── Section 1 : Widget Suivi & Recherche en Direct ── */}
+            <div className="w-full">
+              <TrackingLookup storeId={activeStore?.id ?? ''} />
             </div>
 
-            {/* ── 6 KPI Cards Grid ── */}
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3.5 sm:gap-4">
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">📦</span>
-                  <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">GLOBAL</span>
+            {/* ── Section 2 : Tableau de Bord Performance & Intelligence ── */}
+            <div className="space-y-6">
+              {/* Period Filter & Header */}
+              <div className="bg-white rounded-[28px] border border-slate-100 px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Période d'analyse :</span>
+                  {(['today', '7d', '30d', 'all_time'] as const).map(p => (
+                    <button key={p} onClick={() => setStatsPeriod(p)}
+                      className={cn("h-9 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
+                        statsPeriod === p ? "bg-[#4b7bec] text-white shadow-md shadow-blue-500/20" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      )}>
+                      {PERIOD_LABELS[p]}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
-                    {statsQuery.isLoading ? '...' : totalOrders > 0 ? totalOrders : '0'}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Colis Expédiés</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">✅</span>
-                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{totalDelivered} livrés</span>
-                </div>
-                <div>
-                  <p className="text-xl sm:text-2xl font-black text-emerald-600 tabular-nums">
-                    {statsQuery.isLoading ? '...' : avgDeliveryRate != null ? `${avgDeliveryRate}%` : '0%'}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Taux Livraison</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-base">⏱️</span>
-                  <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">SLA</span>
-                </div>
-                <div>
-                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
-                    {statsQuery.isLoading ? '...' : avgDays != null ? `${avgDays}j` : '—'}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Délai Moyen (j)</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-base">🔄</span>
-                  <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{avgReturnRate}%</span>
-                </div>
-                <div>
-                  <p className="text-xl sm:text-2xl font-black text-rose-600 tabular-nums">
-                    {statsQuery.isLoading ? '...' : totalReturned > 0 ? totalReturned : '0'}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Retours / Échecs</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-base">🚚</span>
-                  <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">RÉSEAU</span>
-                </div>
-                <div>
-                  <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
-                    {configuredIds.size}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Carriers Actifs</p>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">🏆</span>
-                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LEADER</span>
-                </div>
-                <div>
-                  <p className="text-lg sm:text-xl font-black text-slate-800 truncate" title={topCarrier?.name ?? '—'}>
-                    {statsQuery.isLoading ? '...' : topCarrier?.name ?? 'Noest'}
-                  </p>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Top Transporteur</p>
-                </div>
-              </div>
-            </div>
-
-            {/* ── High-Performance Interactive Chart ── */}
-            {dailyBreakdown.length > 0 ? (
-              <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                  <div>
-                    <h3 className="text-sm sm:text-base font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                      <BarChart3 className="size-4 text-[#4b7bec]" />
-                      Activité & Flux Journalier des Livraisons ({PERIOD_LABELS[statsPeriod]})
-                    </h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Suivi comparatif des volumes expédiés, colis livrés et retours enregistrés par date
-                    </p>
-                  </div>
-
-                  {/* Chart Legend */}
-                  <div className="flex items-center gap-4 text-xs font-bold">
-                    <div className="flex items-center gap-1.5">
-                      <span className="size-3 rounded-md bg-[#4b7bec] shadow-sm shadow-blue-500/30" />
-                      <span className="text-slate-700">Expédiés ({totalOrders})</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="size-3 rounded-md bg-[#10B981] shadow-sm shadow-emerald-500/30" />
-                      <span className="text-slate-700">Livrés ({totalDelivered})</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="size-3 rounded-md bg-[#EF4444] shadow-sm shadow-rose-500/30" />
-                      <span className="text-slate-700">Retours ({totalReturned})</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Visual Chart Container */}
-                <div className="relative pt-6 pb-2">
-                  {/* Y-Axis Reference Guide Lines */}
-                  <div className="absolute inset-x-0 top-6 bottom-8 flex flex-col justify-between pointer-events-none text-[10px] text-slate-300 font-mono">
-                    <div className="border-b border-slate-100 w-full flex items-center justify-between">
-                      <span className="bg-white pr-2 text-slate-400 font-bold">{maxChartVal} colis</span>
-                    </div>
-                    <div className="border-b border-slate-100/70 w-full flex items-center justify-between">
-                      <span className="bg-white pr-2 text-slate-400 font-bold">{Math.round(maxChartVal / 2)} colis</span>
-                    </div>
-                    <div className="border-b border-slate-200 w-full flex items-center justify-between">
-                      <span className="bg-white pr-2 text-slate-400 font-bold">0 colis</span>
-                    </div>
-                  </div>
-
-                  {/* Scrollable Bar Container on Mobile */}
-                  <div className="overflow-x-auto custom-scrollbar pb-2">
-                    <div className="min-w-[650px] sm:min-w-full flex items-end justify-between gap-1.5 sm:gap-2 h-56 px-2 relative z-10">
-                      {dailyBreakdown.map((d: any, i: number) => {
-                        const shippedH = maxChartVal > 0 ? Math.round(((d.shipped ?? 0) / maxChartVal) * 100) : 0;
-                        const deliveredH = maxChartVal > 0 ? Math.round(((d.delivered ?? 0) / maxChartVal) * 100) : 0;
-                        const returnedH = maxChartVal > 0 ? Math.round(((d.returned ?? 0) / maxChartVal) * 100) : 0;
-                        const dailyRate = d.shipped > 0 ? Math.round(((d.delivered || 0) / d.shipped) * 100) : (d.delivered > 0 ? 100 : 0);
-
-                        const dateObj = new Date(d.date);
-                        const formattedDay = !isNaN(dateObj.getTime())
-                          ? dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
-                          : d.date?.slice(5) || '—';
-
-                        return (
-                          <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer">
-                            {/* Hover Tooltip Card */}
-                            <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-30 min-w-[140px] space-y-1">
-                              <p className="font-black border-b border-slate-800 pb-1 text-slate-200 capitalize">
-                                {d.date}
-                              </p>
-                              <div className="flex justify-between text-blue-300">
-                                <span>Expédiés :</span>
-                                <span className="font-bold font-mono">{d.shipped ?? 0}</span>
-                              </div>
-                              <div className="flex justify-between text-emerald-300">
-                                <span>Livrés :</span>
-                                <span className="font-bold font-mono">{d.delivered ?? 0}</span>
-                              </div>
-                              {d.returned > 0 && (
-                                <div className="flex justify-between text-rose-300">
-                                  <span>Retours :</span>
-                                  <span className="font-bold font-mono">{d.returned ?? 0}</span>
-                                </div>
-                              )}
-                              <div className="border-t border-slate-800 pt-1 flex justify-between text-[10px] text-slate-400">
-                                <span>Taux du jour :</span>
-                                <span className="font-bold text-white font-mono">{dailyRate}%</span>
-                              </div>
-                            </div>
-
-                            {/* Dual Side-by-Side Bars */}
-                            <div className="flex items-end justify-center gap-1 w-full h-[82%]">
-                              {/* Shipped Bar */}
-                              <div
-                                className="w-2.5 sm:w-3.5 bg-gradient-to-t from-[#3867d6] to-[#4b7bec] rounded-t-md transition-all duration-300 group-hover:brightness-110 shadow-sm"
-                                style={{ height: `${Math.max(shippedH, d.shipped > 0 ? 6 : 2)}%` }}
-                              />
-                              {/* Delivered Bar */}
-                              <div
-                                className="w-2.5 sm:w-3.5 bg-gradient-to-t from-[#059669] to-[#10B981] rounded-t-md transition-all duration-300 group-hover:brightness-110 shadow-sm"
-                                style={{ height: `${Math.max(deliveredH, d.delivered > 0 ? 6 : 2)}%` }}
-                              />
-                              {/* Returned Bar (if any) */}
-                              {d.returned > 0 && (
-                                <div
-                                  className="w-1.5 sm:w-2 bg-rose-500 rounded-t-md transition-all duration-300 shadow-sm"
-                                  style={{ height: `${Math.max(returnedH, 6)}%` }}
-                                />
-                              )}
-                            </div>
-
-                            {/* Date Label on X-Axis */}
-                            <span className="text-[9px] font-mono text-slate-400 group-hover:text-slate-900 transition-colors mt-2 font-bold whitespace-nowrap">
-                              {formattedDay}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Summary Metrics Strip */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-bold text-slate-700">Performance Globale ({PERIOD_LABELS[statsPeriod]}) :</span>
-                    <span className="text-slate-500">{totalOrders} expédiés · {totalDelivered} livrés avec succès · {totalReturned} retours traités</span>
-                  </div>
-                  <div className="flex items-center gap-2 font-mono font-bold text-[#4b7bec]">
-                    <span>Taux d'Acheminement Réussi :</span>
-                    <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">{avgDeliveryRate != null ? `${avgDeliveryRate}%` : '0%'}</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-[28px] border border-slate-100 p-8 text-center">
-                <BarChart3 className="size-10 mx-auto text-slate-300 mb-2" />
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                  Aucune activité de livraison enregistrée sur cette période
-                </p>
-              </div>
-            )}
-
-            {/* ── Performance par Transporteur ── */}
-            {carriers.length > 0 ? (
-              <div className="bg-white rounded-[28px] border border-slate-100 overflow-hidden shadow-sm">
-                <div className="px-7 py-5 border-b border-slate-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <BarChart3 className="size-4 text-[#4b7bec]" />
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Performance & SLA par Transporteur</h3>
-                  </div>
-                  <span className="text-xs font-bold text-slate-400">
-                    {carriers.length} partenaire{carriers.length > 1 ? 's' : ''} actif{carriers.length > 1 ? 's' : ''}
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-400 hidden sm:inline-block">
+                    Fuseau : GMT+1 (Algérie)
                   </span>
+                  <button 
+                    onClick={() => statsQuery.refetch()} 
+                    disabled={statsQuery.isFetching} 
+                    className="h-9 px-4 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 text-[11px] font-black transition-all"
+                  >
+                    <RefreshCw className={cn("size-3.5 text-[#4b7bec]", statsQuery.isFetching && "animate-spin")} /> 
+                    <span>Actualiser</span>
+                  </button>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/80">
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400">Transporteur</th>
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Colis Confiés</th>
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Taux de Livraison</th>
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Taux de Retour</th>
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Délai Moyen</th>
-                        <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Statut API</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {carriers.map((c: any, i: number) => {
-                        const kc = KNOWN_CARRIERS.find(k => k.id === c.id || k.name === c.name);
-                        const rate = c.deliveryRate ?? 0;
-                        const retRate = c.returnRate ?? 0;
-                        return (
-                          <tr key={i} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <span className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl shadow-sm">
-                                  {kc?.logo ?? '📦'}
+              </div>
+
+              {/* 6 KPI Cards Grid */}
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3.5 sm:gap-4">
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">📦</span>
+                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">GLOBAL</span>
+                  </div>
+                  <div>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
+                      {statsQuery.isLoading ? '...' : totalOrders > 0 ? totalOrders : '0'}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Colis Expédiés</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">✅</span>
+                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{totalDelivered} livrés</span>
+                  </div>
+                  <div>
+                    <p className="text-xl sm:text-2xl font-black text-emerald-600 tabular-nums">
+                      {statsQuery.isLoading ? '...' : avgDeliveryRate != null ? `${avgDeliveryRate}%` : '0%'}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Taux Livraison</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-base">⏱️</span>
+                    <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">SLA</span>
+                  </div>
+                  <div>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
+                      {statsQuery.isLoading ? '...' : avgDays != null ? `${avgDays}j` : '—'}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Délai Moyen (j)</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-base">🔄</span>
+                    <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">{avgReturnRate}%</span>
+                  </div>
+                  <div>
+                    <p className="text-xl sm:text-2xl font-black text-rose-600 tabular-nums">
+                      {statsQuery.isLoading ? '...' : totalReturned > 0 ? totalReturned : '0'}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Retours / Échecs</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-base">🚚</span>
+                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">RÉSEAU</span>
+                  </div>
+                  <div>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums">
+                      {configuredIds.size}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Carriers Actifs</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">🏆</span>
+                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">LEADER</span>
+                  </div>
+                  <div>
+                    <p className="text-lg sm:text-xl font-black text-slate-800 truncate" title={topCarrier?.name ?? '—'}>
+                      {statsQuery.isLoading ? '...' : topCarrier?.name ?? 'Noest'}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Top Transporteur</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── High-Performance Interactive Chart ── */}
+              {dailyBreakdown.length > 0 ? (
+                <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                        <BarChart3 className="size-4 text-[#4b7bec]" />
+                        Activité & Flux Journalier des Livraisons ({PERIOD_LABELS[statsPeriod]})
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Suivi comparatif des volumes expédiés, colis livrés et retours enregistrés par date
+                      </p>
+                    </div>
+
+                    {/* Chart Legend */}
+                    <div className="flex items-center gap-4 text-xs font-bold">
+                      <div className="flex items-center gap-1.5">
+                        <span className="size-3 rounded-md bg-[#4b7bec] shadow-sm shadow-blue-500/30" />
+                        <span className="text-slate-700">Expédiés ({totalOrders})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="size-3 rounded-md bg-[#10B981] shadow-sm shadow-emerald-500/30" />
+                        <span className="text-slate-700">Livrés ({totalDelivered})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="size-3 rounded-md bg-[#EF4444] shadow-sm shadow-rose-500/30" />
+                        <span className="text-slate-700">Retours ({totalReturned})</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Visual Chart Container */}
+                  <div className="relative pt-6 pb-2">
+                    {/* Y-Axis Reference Guide Lines */}
+                    <div className="absolute inset-x-0 top-6 bottom-8 flex flex-col justify-between pointer-events-none text-[10px] text-slate-300 font-mono">
+                      <div className="border-b border-slate-100 w-full flex items-center justify-between">
+                        <span className="bg-white pr-2 text-slate-400 font-bold">{maxChartVal} colis</span>
+                      </div>
+                      <div className="border-b border-slate-100/70 w-full flex items-center justify-between">
+                        <span className="bg-white pr-2 text-slate-400 font-bold">{Math.round(maxChartVal / 2)} colis</span>
+                      </div>
+                      <div className="border-b border-slate-200 w-full flex items-center justify-between">
+                        <span className="bg-white pr-2 text-slate-400 font-bold">0 colis</span>
+                      </div>
+                    </div>
+
+                    {/* Scrollable Bar Container on Mobile */}
+                    <div className="overflow-x-auto custom-scrollbar pb-2">
+                      <div className="min-w-[650px] sm:min-w-full flex items-end justify-between gap-1.5 sm:gap-2 h-56 px-2 relative z-10">
+                        {dailyBreakdown.map((d: any, i: number) => {
+                          const shippedH = maxChartVal > 0 ? Math.round(((d.shipped ?? 0) / maxChartVal) * 100) : 0;
+                          const deliveredH = maxChartVal > 0 ? Math.round(((d.delivered ?? 0) / maxChartVal) * 100) : 0;
+                          const returnedH = maxChartVal > 0 ? Math.round(((d.returned ?? 0) / maxChartVal) * 100) : 0;
+                          const dailyRate = d.shipped > 0 ? Math.round(((d.delivered || 0) / d.shipped) * 100) : (d.delivered > 0 ? 100 : 0);
+
+                          const dateObj = new Date(d.date);
+                          const formattedDay = !isNaN(dateObj.getTime())
+                            ? dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+                            : d.date?.slice(5) || '—';
+
+                          return (
+                            <div key={i} className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer">
+                              {/* Hover Tooltip Card */}
+                              <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-30 min-w-[140px] space-y-1">
+                                <p className="font-black border-b border-slate-800 pb-1 text-slate-200 capitalize">
+                                  {d.date}
+                                </p>
+                                <div className="flex justify-between text-blue-300">
+                                  <span>Expédiés :</span>
+                                  <span className="font-bold font-mono">{d.shipped ?? 0}</span>
+                                </div>
+                                <div className="flex justify-between text-emerald-300">
+                                  <span>Livrés :</span>
+                                  <span className="font-bold font-mono">{d.delivered ?? 0}</span>
+                                </div>
+                                {d.returned > 0 && (
+                                  <div className="flex justify-between text-rose-300">
+                                    <span>Retours :</span>
+                                    <span className="font-bold font-mono">{d.returned ?? 0}</span>
+                                  </div>
+                                )}
+                                <div className="border-t border-slate-800 pt-1 flex justify-between text-[10px] text-slate-400">
+                                  <span>Taux du jour :</span>
+                                  <span className="font-bold text-white font-mono">{dailyRate}%</span>
+                                </div>
+                              </div>
+
+                              {/* Dual Side-by-Side Bars */}
+                              <div className="flex items-end justify-center gap-1 w-full h-[82%]">
+                                {/* Shipped Bar */}
+                                <div
+                                  className="w-2.5 sm:w-3.5 bg-gradient-to-t from-[#3867d6] to-[#4b7bec] rounded-t-md transition-all duration-300 group-hover:brightness-110 shadow-sm"
+                                  style={{ height: `${Math.max(shippedH, d.shipped > 0 ? 6 : 2)}%` }}
+                                />
+                                {/* Delivered Bar */}
+                                <div
+                                  className="w-2.5 sm:w-3.5 bg-gradient-to-t from-[#059669] to-[#10B981] rounded-t-md transition-all duration-300 group-hover:brightness-110 shadow-sm"
+                                  style={{ height: `${Math.max(deliveredH, d.delivered > 0 ? 6 : 2)}%` }}
+                                />
+                                {/* Returned Bar (if any) */}
+                                {d.returned > 0 && (
+                                  <div
+                                    className="w-1.5 sm:w-2 bg-rose-500 rounded-t-md transition-all duration-300 shadow-sm"
+                                    style={{ height: `${Math.max(returnedH, 6)}%` }}
+                                  />
+                                )}
+                              </div>
+
+                              {/* Date Label on X-Axis */}
+                              <span className="text-[9px] font-mono text-slate-400 group-hover:text-slate-900 transition-colors mt-2 font-bold whitespace-nowrap">
+                                {formattedDay}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Metrics Strip */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-bold text-slate-700">Performance Globale ({PERIOD_LABELS[statsPeriod]}) :</span>
+                      <span className="text-slate-500">{totalOrders} expédiés · {totalDelivered} livrés avec succès · {totalReturned} retours traités</span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono font-bold text-[#4b7bec]">
+                      <span>Taux d'Acheminement Réussi :</span>
+                      <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">{avgDeliveryRate != null ? `${avgDeliveryRate}%` : '0%'}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white rounded-[28px] border border-slate-100 p-8 text-center">
+                  <BarChart3 className="size-10 mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    Aucune activité de livraison enregistrée sur cette période
+                  </p>
+                </div>
+              )}
+
+              {/* ── Performance par Transporteur ── */}
+              {carriers.length > 0 ? (
+                <div className="bg-white rounded-[28px] border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="px-7 py-5 border-b border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <BarChart3 className="size-4 text-[#4b7bec]" />
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Performance & SLA par Transporteur</h3>
+                    </div>
+                    <span className="text-xs font-bold text-slate-400">
+                      {carriers.length} partenaire{carriers.length > 1 ? 's' : ''} actif{carriers.length > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="border-b border-slate-100 bg-slate-50/80">
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400">Transporteur</th>
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Colis Confiés</th>
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Taux de Livraison</th>
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Taux de Retour</th>
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Délai Moyen</th>
+                          <th className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Statut API</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {carriers.map((c: any, i: number) => {
+                          const kc = KNOWN_CARRIERS.find(k => k.id === c.id || k.name === c.name);
+                          const rate = c.deliveryRate ?? 0;
+                          const retRate = c.returnRate ?? 0;
+                          return (
+                            <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <span className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl shadow-sm">
+                                    {kc?.logo ?? '📦'}
+                                  </span>
+                                  <div>
+                                    <span className="text-sm font-black text-slate-900 block">{c.name}</span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase">{c.isSandbox ? 'Mode Test' : 'Production Directe'}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className="text-base font-black text-slate-900 tabular-nums">{c.totalOrders ?? '0'}</span>
+                                <span className="text-[10px] text-slate-400 block font-medium">colis traités</span>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-sm font-black text-emerald-600 font-mono">{rate}%</span>
+                                  <div className="w-24 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(rate, 100)}%` }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-sm font-black text-rose-500 font-mono">{retRate}%</span>
+                                  <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(retRate, 100)}%` }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className="inline-block px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 text-xs font-black font-mono">
+                                  {c.avgDeliveryDays != null ? `${c.avgDeliveryDays}j` : '—'}
                                 </span>
-                                <div>
-                                  <span className="text-sm font-black text-slate-900 block">{c.name}</span>
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase">{c.isSandbox ? 'Mode Test' : 'Production Directe'}</span>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="text-base font-black text-slate-900 tabular-nums">{c.totalOrders ?? '0'}</span>
-                              <span className="text-[10px] text-slate-400 block font-medium">colis traités</span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-sm font-black text-emerald-600 font-mono">{rate}%</span>
-                                <div className="w-24 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(rate, 100)}%` }} />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-sm font-black text-rose-500 font-mono">{retRate}%</span>
-                                <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                  <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(retRate, 100)}%` }} />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-block px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 text-xs font-black font-mono">
-                                {c.avgDeliveryDays != null ? `${c.avgDeliveryDays}j` : '—'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                                <span className="size-1.5 rounded-full bg-emerald-500" /> Connecté
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                  <span className="size-1.5 rounded-full bg-emerald-500" /> Connecté
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="bg-slate-50 rounded-[28px] border border-slate-100 p-10 text-center">
-                <BarChart3 className="size-12 mx-auto text-slate-200 mb-3" />
-                <p className="text-sm font-black text-slate-400 uppercase tracking-widest">
-                  {configuredIds.size === 0 ? 'Configurez un transporteur pour voir les statistiques' : 'Aucune donnée disponible pour cette période'}
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="bg-slate-50 rounded-[28px] border border-slate-100 p-10 text-center">
+                  <BarChart3 className="size-12 mx-auto text-slate-200 mb-3" />
+                  <p className="text-sm font-black text-slate-400 uppercase tracking-widest">
+                    {configuredIds.size === 0 ? 'Configurez un transporteur pour voir les statistiques' : 'Aucune donnée disponible pour cette période'}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         );
       })()}
