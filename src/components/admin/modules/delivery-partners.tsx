@@ -1234,7 +1234,128 @@ export default function DeliveryPartners() {
           <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 flex-wrap">
             <ChevronRight className="size-3.5" />
             {TAB_CONFIG.find(t => t.id === activeTab)?.desc}
-            {activeTab === 'tracking' && (() => {
+            {activeTab === 'tracking' && (
+              <span className="flex items-center gap-1 text-emerald-500 ml-2">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                Actualisation auto toutes les 60s
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── TAB 1 : CARRIERS & API ── */}
+      {activeTab === 'carriers' && (
+        <>
+          {/* Search + status bar */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="lg:col-span-3 bg-white rounded-[28px] border border-slate-100 px-5 sm:px-6 py-4 flex items-center gap-4 shadow-sm">
+              <Search className="size-5 text-slate-300 shrink-0" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Rechercher un transporteur..."
+                className="flex-1 outline-none text-sm font-bold text-slate-700 bg-transparent placeholder:text-slate-300"
+              />
+            </div>
+            <div className="bg-[#2D3436] rounded-[28px] p-5 flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-1">Actifs</p>
+                <p className="text-3xl font-black text-white">{configuredIds.size}</p>
+              </div>
+              <div className="size-12 rounded-2xl bg-white/10 flex items-center justify-center"><Truck className="size-6 text-white/60" /></div>
+            </div>
+          </div>
+
+          {/* Carriers grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
+            {filteredCarriers.map(carrier => {
+              const isAddNew = carrier.id === 'add_new';
+              const isConfigured = !isAddNew && configuredIds.has(carrier.id);
+
+              if (isAddNew) {
+                return (
+                  <div
+                    key={carrier.id}
+                    onClick={() => setShowCustomModal(true)}
+                    className="bg-white rounded-[32px] border-2 border-dashed border-slate-200 p-7 flex flex-col items-center justify-center text-center gap-3 cursor-pointer hover:border-[#4b7bec] hover:bg-[#F0F5FF] transition-all min-h-[220px] group"
+                  >
+                    <div className="size-14 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl group-hover:bg-[#4b7bec] group-hover:text-white transition-all">
+                      ➕
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-600 group-hover:text-[#4b7bec]">Transporteur personnalisé</h3>
+                      <p className="text-[11px] text-slate-400 font-medium mt-1">Connecter n'importe quel carrier avec son API</p>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={carrier.id}
+                  className="bg-white rounded-[32px] border border-slate-100 p-7 hover:shadow-xl hover:shadow-slate-100 transition-all group relative overflow-hidden"
+                >
+                  <div className="absolute top-0 left-0 right-0 h-1 rounded-t-[32px]" style={{ backgroundColor: carrier.color }} />
+
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="flex items-center gap-4">
+                      <div className="size-14 rounded-2xl flex items-center justify-center text-3xl border border-slate-100 bg-slate-50">
+                        {carrier.logo}
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">{carrier.name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className={cn("size-2 rounded-full", isConfigured ? "bg-emerald-500 shadow-[0_0_6px_#20bf6b]" : "bg-slate-200")} />
+                          <span className="text-[10px] font-bold text-slate-400">{isConfigured ? 'Configuré' : 'Non configuré'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {isConfigured && (
+                      <span className="px-2 py-1 bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase tracking-wider rounded-lg border border-emerald-100">Actif</span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-4">{carrier.description}</p>
+
+                  <div className="flex flex-wrap gap-1.5 mb-5">
+                    {carrier.features.slice(0, 3).map(f => (
+                      <span key={f} className="text-[9px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-500 uppercase tracking-wide">{f}</span>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-50 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      {isConfigured && (
+                        <button
+                          onClick={() => {
+                            const p = configuredPartnerByCarrier[carrier.id];
+                            if (p && confirm(`Supprimer la configuration de ${carrier.name} ?`)) deletePartner.mutate(p.id);
+                          }}
+                          disabled={deletePartner.isPending}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black text-[#E17055] bg-[#FFEDE9] hover:bg-[#E17055] hover:text-white transition-all"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setSelectedCarrier(carrier)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black text-white transition-all shadow-sm"
+                        style={{ backgroundColor: carrier.color }}
+                      >
+                        {isConfigured ? <><Settings className="size-3.5" />Reconfigurer</> : <><Plus className="size-3.5" />Connecter</>}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* ── TAB 2 : SUIVI TEMPS RÉEL (UNIFIÉ) ── */}
+      {activeTab === 'tracking' && (() => {
         const sd = (statsQuery.data as any)?.data;
         const carriers: any[] = sd?.carriers ?? [];
         const summary = sd?.summary ?? {};
@@ -1253,17 +1374,17 @@ export default function DeliveryPartners() {
 
         return (
           <div className="space-y-8">
-            {/* ── Section 1 : Widget Suivi & Recherche en Direct ── */}
+            {/* ── Section 1 : Suivi Colis Direct ── */}
             <div className="w-full">
               <TrackingLookup storeId={activeStore?.id ?? ''} />
             </div>
 
-            {/* ── Section 2 : Tableau de Bord Performance & Intelligence ── */}
+            {/* ── Section 2 : Performance & Intelligence Temps Réel ── */}
             <div className="space-y-6">
-              {/* Period Filter & Header */}
+              {/* Period Filter & Refresh Header */}
               <div className="bg-white rounded-[28px] border border-slate-100 px-6 py-4 flex items-center justify-between gap-4 shadow-sm flex-wrap">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Période d'analyse :</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Période :</span>
                   {(['today', '7d', '30d', 'all_time'] as const).map(p => (
                     <button key={p} onClick={() => setStatsPeriod(p)}
                       className={cn("h-9 px-4 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all",
@@ -1275,7 +1396,7 @@ export default function DeliveryPartners() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-bold text-slate-400 hidden sm:inline-block">
-                    Fuseau : GMT+1 (Algérie)
+                    GMT+1 (Algérie)
                   </span>
                   <button 
                     onClick={() => statsQuery.refetch()} 
