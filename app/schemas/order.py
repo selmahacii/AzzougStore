@@ -217,6 +217,7 @@ class OrderRead(BaseModel):
     livreur: Optional[ActorRef] = None
     seen_by_livreur: Optional[bool] = False
     livreur_seen_at: Optional[datetime] = None
+    livreur_seen_count: Optional[int] = 0
 
     # Confirmation Workflow
     confirmation_start_time: Optional[datetime] = None

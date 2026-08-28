@@ -1821,11 +1821,21 @@ const [timeLeft, setTimeLeft] = useState('');
                           {order.livreur_id && (
                             <>
                               <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">🚴 {order.livreur?.name || 'Livreur'}</span>
-                              {order.seen_by_livreur ? (
-                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase flex items-center gap-0.5" title={order.livreur_seen_at ? `Vu le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}` : "Vu par le livreur"}>
-                                  👁️ Vu livreur
-                                </span>
-                              ) : (
+                              {order.seen_by_livreur && order.livreur_seen_at ? (() => {
+                                const count = order.livreur_seen_count || 1;
+                                const d = new Date(order.livreur_seen_at);
+                                const isToday = new Date().toDateString() === d.toDateString();
+                                const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                                const displayStr = isToday ? timeStr : `${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} ${timeStr}`;
+                                return (
+                                  <span 
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase flex items-center gap-0.5" 
+                                    title={`Consultée ${count} fois par le livreur (${order.livreur?.name || 'Assigné'}) — Dernière: ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}`}
+                                  >
+                                    👁️ Vu {count > 1 ? `${count}x · ` : ''}{displayStr}
+                                  </span>
+                                );
+                              })() : (
                                 <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-400 border border-slate-200 uppercase flex items-center gap-0.5" title="Pas encore vu par le livreur">
                                   ⏳ Non vu
                                 </span>

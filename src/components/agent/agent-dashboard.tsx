@@ -237,6 +237,67 @@ function PendingBadge({ order }: { order: Order }) {
   );
 }
 
+function LivreurSeenBadge({ order, detailed = false }: { order: Order; detailed?: boolean }) {
+  if (!order.livreur_id) return null;
+
+  if (order.seen_by_livreur && order.livreur_seen_at) {
+    const d = new Date(order.livreur_seen_at);
+    const count = order.livreur_seen_count || 1;
+    const isToday = new Date().toDateString() === d.toDateString();
+    const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const fullDateStr = d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const fullDateTime = `${fullDateStr} à ${timeStr}`;
+    const displayTime = isToday ? timeStr : `${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} · ${timeStr}`;
+
+    const countLabel = count > 1 ? `${count}x` : '1x';
+    const tooltip = `Consultée ${count} fois par le livreur (${order.livreur?.name || 'Assigné'}) — Dernière ouverture : ${fullDateTime}`;
+
+    if (detailed) {
+      return (
+        <div 
+          className="flex items-center gap-1.5 text-[10px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 uppercase tracking-wider shadow-xs"
+          title={tooltip}
+        >
+          <Eye className="size-3 text-emerald-600" />
+          <span>Vu par {order.livreur?.name || 'Livreur'} : {count > 1 ? `${count} fois` : '1 fois'} (Dernière: {displayTime})</span>
+        </div>
+      );
+    }
+
+    return (
+      <span 
+        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-emerald-200 bg-emerald-50 text-emerald-700 shrink-0 flex items-center gap-1 shadow-xs" 
+        title={tooltip}
+      >
+        <Eye className="size-2.5 text-emerald-600" />
+        Vu {countLabel} · {displayTime}
+      </span>
+    );
+  }
+
+  if (detailed) {
+    return (
+      <div 
+        className="flex items-center gap-1.5 text-[10px] font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 uppercase tracking-wider shadow-xs"
+        title="Le livreur assigné n'a pas encore ouvert cette commande"
+      >
+        <Clock className="size-3 text-amber-600" />
+        <span>Non vu par le livreur ({order.livreur?.name || 'Assigné'})</span>
+      </div>
+    );
+  }
+
+  return (
+    <span 
+      className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700 shrink-0 flex items-center gap-1 shadow-xs" 
+      title="Le livreur assigné n'a pas encore ouvert cette commande"
+    >
+      <Clock className="size-2.5 text-amber-600" />
+      Non vu livreur
+    </span>
+  );
+}
+
 function OrderTimer({ startTime }: { startTime?: string }) {
   const [elapsed, setElapsed] = useState('');
   useEffect(() => {
@@ -838,19 +899,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                   Suivi : {order.tracking_number}
                 </div>
               )}
-              {!isLivreurRole && order.livreur_id && (
-                order.seen_by_livreur ? (
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 uppercase tracking-widest" title={order.livreur_seen_at ? `Fiche vue par le livreur le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}` : undefined}>
-                    <Eye className="size-3 text-emerald-600" />
-                    Vu par le livreur ({order.livreur?.name || 'Assigné'})
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 uppercase tracking-widest" title="Le livreur n'a pas encore ouvert cette commande">
-                    <Clock className="size-3 text-amber-600" />
-                    Non vu par le livreur ({order.livreur?.name || 'Assigné'})
-                  </div>
-                )
-              )}
+              {!isLivreurRole && <LivreurSeenBadge order={order} detailed />}
             </div>
             {!isLivreurRole && (order.status as string) !== 'DELIVERED' && (
               <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl space-y-2 shadow-sm animate-in fade-in duration-200">
@@ -3886,23 +3935,7 @@ export default function AgentDashboard() {
                                     <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
                                       <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
                                     </span>
-                                    {order.seen_by_livreur ? (
-                                      <span 
-                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-emerald-200 bg-emerald-50 text-emerald-700 shrink-0 flex items-center gap-1 shadow-xs" 
-                                        title={order.livreur_seen_at ? `Commande vue par le livreur le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : "Commande vue par le livreur"}
-                                      >
-                                        <Eye className="size-2.5 text-emerald-600" />
-                                        Vu livreur
-                                      </span>
-                                    ) : (
-                                      <span 
-                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700 shrink-0 flex items-center gap-1 shadow-xs" 
-                                        title="Le livreur assigné n'a pas encore ouvert cette commande"
-                                      >
-                                        <Clock className="size-2.5 text-amber-600" />
-                                        Non vu livreur
-                                      </span>
-                                    )}
+                                    <LivreurSeenBadge order={order} />
                                   </>
                                 )}
                                 {order.tracking_number && (
