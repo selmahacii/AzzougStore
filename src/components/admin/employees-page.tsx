@@ -2396,9 +2396,6 @@ export default function EmployeesPage() {
                />
             )}
             {activeTab === 'roles' && <RolesView roles={(Array.isArray(rolesQuery.data) ? rolesQuery.data : rolesQuery.data?.data) || []} isLoading={rolesQuery.isLoading} onRefresh={() => rolesQuery.refetch()} onNewRole={() => setNewRoleModalOpen(true)} />}
-            {activeTab === 'admins' && <AdminsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
-            {activeTab === 'agents' && <AgentsView employees={employees} isLoading={employeesQuery.isLoading} onEdit={handleEdit} onDeactivate={handleDeactivate} onDelete={handleDelete} onCreate={handleCreate} totalStaff={(infraQuery.data as any)?.data?.totalEffectif} />}
-            {activeTab === 'marketers' && <MarketersView marketers={(Array.isArray(marketersQuery.data) ? marketersQuery.data : marketersQuery.data?.data) || []} isLoading={marketersQuery.isLoading} onCreate={handleCreate} />}
             {activeTab === 'assignment-rules' && <AssignmentRulesView employees={employees} />}
          </div>
 
