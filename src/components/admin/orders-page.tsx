@@ -1819,7 +1819,18 @@ const [timeLeft, setTimeLeft] = useState('');
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase" title={`NOEST — ${order.tracking_number}`}>🚚 {order.tracking_number.slice(0, 12)}</span>
                           )}
                           {order.livreur_id && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">🚴 {order.livreur?.name || 'Livreur'}</span>
+                            <>
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">🚴 {order.livreur?.name || 'Livreur'}</span>
+                              {order.seen_by_livreur ? (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase flex items-center gap-0.5" title={order.livreur_seen_at ? `Vu le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}` : "Vu par le livreur"}>
+                                  👁️ Vu livreur
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-400 border border-slate-200 uppercase flex items-center gap-0.5" title="Pas encore vu par le livreur">
+                                  ⏳ Non vu
+                                </span>
+                              )}
+                            </>
                           )}
                           {order.utm_campaign && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase" title={`Campagne : ${order.utm_campaign}`}>📣 {String(order.utm_campaign).slice(0, 18)}</span>

@@ -492,13 +492,9 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const [loadingParentOrder, setLoadingParentOrder] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   useEffect(() => {
+    if (!order.id) return;
     const needsDuplicates = !!order.duplicate_count && order.duplicate_count > 0;
     const needsParent = order.status === 'MERGED';
-    if (!needsDuplicates && !needsParent) {
-      setDuplicateDetails(null);
-      setParentOrder(null);
-      return;
-    }
     if (needsDuplicates) setLoadingDuplicateDetails(true);
     if (needsParent) setLoadingParentOrder(true);
     apiFetch<any>(`/api/v1/orders/${order.id}`)
@@ -508,7 +504,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
       })
       .catch((err) => console.error('Failed to load order detail for order', order.id, err))
       .finally(() => { setLoadingDuplicateDetails(false); setLoadingParentOrder(false); });
-  }, [order.id, order.duplicate_count, order.status]);
+  }, [order.id]);
 
   useEffect(() => {
     if (!storeId) return;
@@ -841,6 +837,19 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase tracking-widest">
                   Suivi : {order.tracking_number}
                 </div>
+              )}
+              {!isLivreurRole && order.livreur_id && (
+                order.seen_by_livreur ? (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 uppercase tracking-widest" title={order.livreur_seen_at ? `Fiche vue par le livreur le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}` : undefined}>
+                    <Eye className="size-3 text-emerald-600" />
+                    Vu par le livreur ({order.livreur?.name || 'Assigné'})
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 uppercase tracking-widest" title="Le livreur n'a pas encore ouvert cette commande">
+                    <Clock className="size-3 text-amber-600" />
+                    Non vu par le livreur ({order.livreur?.name || 'Assigné'})
+                  </div>
+                )
               )}
             </div>
             {!isLivreurRole && (order.status as string) !== 'DELIVERED' && (
@@ -3873,9 +3882,28 @@ export default function AgentDashboard() {
                                   </span>
                                 )}
                                 {order.livreur_id && (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
-                                    <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
-                                  </span>
+                                  <>
+                                    <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-sky-200 bg-sky-50 text-sky-700 shrink-0" title="Livraison interne assignée">
+                                      <Truck className="size-2.5 inline mr-1" />{order.livreur?.name || 'Livreur assigné'}
+                                    </span>
+                                    {order.seen_by_livreur ? (
+                                      <span 
+                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-emerald-200 bg-emerald-50 text-emerald-700 shrink-0 flex items-center gap-1 shadow-xs" 
+                                        title={order.livreur_seen_at ? `Commande vue par le livreur le ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : "Commande vue par le livreur"}
+                                      >
+                                        <Eye className="size-2.5 text-emerald-600" />
+                                        Vu livreur
+                                      </span>
+                                    ) : (
+                                      <span 
+                                        className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-amber-200 bg-amber-50 text-amber-700 shrink-0 flex items-center gap-1 shadow-xs" 
+                                        title="Le livreur assigné n'a pas encore ouvert cette commande"
+                                      >
+                                        <Clock className="size-2.5 text-amber-600" />
+                                        Non vu livreur
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                                 {order.tracking_number && (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded border border-cyan-200 bg-cyan-50 text-cyan-700 shrink-0" title={`Suivi : ${order.tracking_number}`}>

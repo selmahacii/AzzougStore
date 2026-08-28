@@ -259,6 +259,8 @@ export interface Order {
   // Delivery agent (role LIVREUR)
   livreur_id?: string | null;
   livreur?: { id: string; name: string; avatar?: string | null } | null;
+  seen_by_livreur?: boolean | null;
+  livreur_seen_at?: string | null;
 
   // Campaign attribution (admin traceability: campaign → order → revenue)
   utm_source?: string | null;

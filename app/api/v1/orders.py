@@ -1819,9 +1819,33 @@ def list_orders(
         )
         _dup_counts = {r[0]: r[1] for r in _dup_rows}
         _dup_last_at = {r[0]: r[2] for r in _dup_rows}
+
+        # Livreur seen indicator: check if assigned driver has viewed/interacted with the order
+        _orders_with_livreur = [o for o in orders if o.livreur_id]
+        _seen_map = {}
+        if _orders_with_livreur:
+            _order_ids_with_livreur = [o.id for o in _orders_with_livreur]
+            _livreur_ids = list({o.livreur_id for o in _orders_with_livreur if o.livreur_id})
+            _seen_events = (
+                db.query(OrderEvent.order_id, sqlfunc.max(OrderEvent.created_at))
+                .filter(
+                    OrderEvent.order_id.in_(_order_ids_with_livreur),
+                    OrderEvent.actor_id.in_(_livreur_ids),
+                )
+                .group_by(OrderEvent.order_id)
+                .all()
+            )
+            _seen_map = {r[0]: r[1] for r in _seen_events}
+
         for o in orders:
             o.duplicate_count = _dup_counts.get(o.id, 0)  # type: ignore[attr-defined]
             o.last_duplicate_at = _dup_last_at.get(o.id)  # type: ignore[attr-defined]
+            if o.livreur_id and o.id in _seen_map:
+                o.seen_by_livreur = True  # type: ignore[attr-defined]
+                o.livreur_seen_at = _seen_map[o.id]  # type: ignore[attr-defined]
+            else:
+                o.seen_by_livreur = False  # type: ignore[attr-defined]
+                o.livreur_seen_at = None  # type: ignore[attr-defined]
 
     return {
         "success": True,
@@ -2761,6 +2785,19 @@ def get_order(
     from app.schemas.order import OrderReadFull as _OrderReadFull, OrderRead as _OrderRead
     result = _OrderReadFull.model_validate(order)
     result.child_orders = [_OrderRead.model_validate(c) for c in children]
+    if order.livreur_id:
+        livreur_ev = (
+            db.query(OrderEvent)
+            .filter(OrderEvent.order_id == order.id, OrderEvent.actor_id == order.livreur_id)
+            .order_by(OrderEvent.created_at.desc())
+            .first()
+        )
+        result.seen_by_livreur = bool(livreur_ev)
+        result.livreur_seen_at = livreur_ev.created_at if livreur_ev else None
+    else:
+        result.seen_by_livreur = False
+        result.livreur_seen_at = None
+
     # This order is itself a MERGED child — attach the parent it was
     # absorbed into so the confirmatrice can navigate straight to the
     # order she should actually be confirming/dispatching (see

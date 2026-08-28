@@ -215,6 +215,8 @@ class OrderRead(BaseModel):
     # Delivery agent (role LIVREUR)
     livreur_id: Optional[str] = None
     livreur: Optional[ActorRef] = None
+    seen_by_livreur: Optional[bool] = False
+    livreur_seen_at: Optional[datetime] = None
 
     # Confirmation Workflow
     confirmation_start_time: Optional[datetime] = None
