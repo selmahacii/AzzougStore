@@ -21,7 +21,9 @@ class UserBase(BaseModel):
     payment_marketplace_upsell_only: Optional[int] = 50
     payment_store_pickup: Optional[int] = 100
     payment_recovered_store_pickup: Optional[int] = 150
-    payday: Optional[int] = None  # day of month (1-28) this employee is due to be paid
+    payday: Optional[int] = None  # day of month (1-31) this employee is due to be paid
+    last_salary_paid_at: Optional[datetime] = None
+    last_salary_paid_month: Optional[str] = None
     assigned_store_scope: Optional[str] = "ALL"
     assigned_store_ids: Optional[List[str]] = []
     assigned_product_ids: Optional[List[str]] = []
@@ -39,7 +41,7 @@ class UserBase(BaseModel):
             return "PER_DELIVERED_ORDER"
         if v is not None and v not in VALID_PAYMENT_TYPES:
             raise ValueError(
-                f"Type de paiement invalide. Valeurs accept├®es : {', '.join(sorted(VALID_PAYMENT_TYPES))}"
+                f"Type de paiement invalide. Valeurs acceptées : {', '.join(sorted(VALID_PAYMENT_TYPES))}"
             )
         return v
 
@@ -47,15 +49,14 @@ class UserBase(BaseModel):
     @classmethod
     def validate_payment_amount(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
-            raise ValueError("Le montant de paiement ne peut pas ├¬tre n├®gatif.")
+            raise ValueError("Le montant de paiement ne peut pas être négatif.")
         return v
 
     @field_validator("payday")
     @classmethod
     def validate_payday(cls, v: Optional[int]) -> Optional[int]:
-        # Capped to 28 so it's a valid day in every month, including February.
-        if v is not None and not (1 <= v <= 28):
-            raise ValueError("Le jour de paie doit être compris entre 1 et 28.")
+        if v is not None and not (1 <= v <= 31):
+            raise ValueError("Le jour de paie doit être compris entre 1 et 31.")
         return v
 
     @model_validator(mode="after")

@@ -44,12 +44,11 @@ class User(Base):
     # Commission for Point de Vente / Store Pickup / Manual delivery
     payment_store_pickup            = Column(Integer, default=100)
     payment_recovered_store_pickup  = Column(Integer, default=150)
-    # Day of month (1-28, capped to stay valid in every month) this employee
-    # is due to be paid — admin-configured. Drives the personal SALARY_DUE
-    # reminder (app/services/noest_sync.py scan_payday_reminders) sent
-    # directly to the employee, separate from the admin-facing PAYROLL_DUE
-    # broadcast about generating payroll at all.
+    # Day of month (1-31) this employee is due to be paid / disbursed — admin-configured.
     payday = Column(Integer, nullable=True)
+    # Track the last salary disbursement date and month (e.g. "2026-08")
+    last_salary_paid_at = Column(DateTime, nullable=True)
+    last_salary_paid_month = Column(String, nullable=True)
 
     # Affiliate / marketing-partner tracking (role MARKETER). The code is
     # matched against Order.utm_source / Order.campaign_id to attribute real

@@ -835,6 +835,30 @@ function AgentRow({ agent, onEdit, onDeactivate, onDelete, perfSummary }: {
                <span className="text-[9px] text-slate-400 uppercase tracking-wide font-bold">
                   {paymentType === 'PER_DELIVERED_ORDER' ? 'par livraison' : paymentType === 'MONTHLY_SALARY' ? 'fixe' : '—'}
                </span>
+               {(() => {
+                  const now = new Date();
+                  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const isPaidThisMonth = agent.last_salary_paid_month === currentMonthStr;
+                  if (isPaidThisMonth) {
+                     return (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                           <Check className="size-2.5" /> Décaissé
+                        </span>
+                     );
+                  }
+                  if (agent.payday) {
+                     const isDue = now.getDate() >= agent.payday;
+                     return (
+                        <span className={cn(
+                           "text-[9px] font-black px-1.5 py-0.5 rounded border",
+                           isDue ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-500 border-slate-200"
+                        )}>
+                           {isDue ? `Dû le ${agent.payday}` : `Prévu le ${agent.payday}`}
+                        </span>
+                     );
+                  }
+                  return null;
+               })()}
             </div>
          </td>
          <td className="px-8 py-6 text-center">
@@ -1373,6 +1397,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
       payment_marketplace_upsell_only: '' as number | '',
       payment_store_pickup: 100 as number | '',
       payment_recovered_store_pickup: 150 as number | '',
+      payday: '' as number | '',
       assigned_store_scope: 'ALL' as 'ALL' | 'SPECIFIC',
       assigned_store_ids: [] as string[],
       assigned_product_ids: [] as string[],
@@ -1404,6 +1429,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             payment_marketplace_upsell_only: editingEmployee.payment_marketplace_upsell_only ?? '',
             payment_store_pickup: editingEmployee.payment_store_pickup ?? 100,
             payment_recovered_store_pickup: editingEmployee.payment_recovered_store_pickup ?? 150,
+            payday: editingEmployee.payday ?? '',
             assigned_store_scope: editingEmployee.assigned_store_ids?.length > 0 ? 'SPECIFIC' : (editingEmployee.assigned_store_id ? 'SPECIFIC' : 'ALL'),
             assigned_store_ids: editingEmployee.assigned_store_ids || (editingEmployee.assigned_store_id ? [editingEmployee.assigned_store_id] : []),
             assigned_product_ids: editingEmployee.assigned_product_ids || [],
@@ -1411,7 +1437,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
             module_visibility: editingEmployee.module_visibility || { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true },
          });
       } else if (open) {
-         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', payment_store_pickup: 100, payment_recovered_store_pickup: 150, assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true } });
+         setFormData({ name: '', email: '', password: '', phone: '', role: '', daily_target: 10, is_active: true, payment_type: '', payment_amount: '', payment_recovered_cart: '', payment_lost_cart: '', payment_upsell: '', payment_marketplace_upsell_only: '', payment_store_pickup: 100, payment_recovered_store_pickup: 150, payday: '', assigned_store_scope: 'ALL', assigned_store_ids: [], assigned_product_ids: [], permissions: [], module_visibility: { orders: true, inventory: true, deliveries: true, transfers: true, returns: true, analytics: true, products: true, customers: true, finances: true, promotions: true } });
       }
       setErrors({});
    }, [open, editingEmployee]);
@@ -1434,6 +1460,7 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payment_marketplace_upsell_only: Number(formData.payment_marketplace_upsell_only) || 50,
          payment_store_pickup: Number(formData.payment_store_pickup) || 100,
          payment_recovered_store_pickup: Number(formData.payment_recovered_store_pickup) || 150,
+         payday: formData.payday ? Number(formData.payday) : null,
       };
 
       const storePayload = formData.assigned_store_scope === 'SPECIFIC'
@@ -1714,6 +1741,33 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
                               </p>
                            </div>
                         )}
+
+                        {/* Jour de Décaissement Mensuel (Date de paie) */}
+                        <div className="space-y-1.5 border-t border-emerald-100/50 pt-3 mt-3">
+                           <Label className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                              <Calendar className="size-3.5 text-emerald-600" />
+                              <span>Jour de décaissement mensuel (Date de paie)</span>
+                           </Label>
+                           <Select
+                              value={formData.payday ? String(formData.payday) : 'NONE'}
+                              onValueChange={(val) => setFormData(p => ({ ...p, payday: val === 'NONE' ? '' : Number(val) }))}
+                           >
+                              <SelectTrigger className="h-10 border-emerald-100 rounded-lg bg-white">
+                                 <SelectValue placeholder="Choisir le jour du mois..." />
+                              </SelectTrigger>
+                              <SelectContent className="bg-white border-[#E9ECF0] rounded-xl max-h-56">
+                                 <SelectItem value="NONE">Non configuré</SelectItem>
+                                 {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                    <SelectItem key={day} value={String(day)}>
+                                       Le {day} de chaque mois {day === 28 ? '(Recommandé)' : day === 1 ? '(1er du mois)' : ''}
+                                    </SelectItem>
+                                 ))}
+                              </SelectContent>
+                           </Select>
+                           <p className="text-[10px] text-slate-500 font-medium">
+                              Un rappel automatique s'affichera chaque mois pour l'administrateur à cette date pour procéder au décaissement du salaire.
+                           </p>
+                        </div>
 
                         <div className="border-t border-emerald-100/50 pt-3 mt-3 space-y-3">
                            <h5 className="text-[9px] font-black uppercase tracking-wider text-emerald-800">
@@ -2053,8 +2107,116 @@ export default function EmployeesPage() {
 
    const activeCount = employees.filter(e => e.is_active).length;
 
+   const now = new Date();
+   const currentDay = now.getDate();
+   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+   const currentMonthLabel = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+   const markPaidMutation = useMutation({
+      mutationFn: ({ userId, month }: { userId: string; month?: string }) =>
+         apiFetch(`/api/v1/users/${userId}/salary/mark-paid`, {
+            method: 'POST',
+            body: JSON.stringify({ month: month || currentMonthStr })
+         }),
+      onSuccess: (res: any) => {
+         queryClient.invalidateQueries({ queryKey: ['employees'] });
+         toast.success(res?.message || 'Salaire marqué comme décaissé ✓');
+      },
+      onError: (err: any) => toast.error(err?.message || 'Erreur lors de la mise à jour'),
+   });
+
+   const duePayouts = React.useMemo(() => {
+      return employees.filter((emp: any) => {
+         if (!emp.is_active || !emp.payday) return false;
+         const isPaidThisMonth = emp.last_salary_paid_month === currentMonthStr;
+         if (isPaidThisMonth) return false;
+         return currentDay >= emp.payday;
+      });
+   }, [employees, currentDay, currentMonthStr]);
+
+   const [calculatorEmployee, setCalculatorEmployee] = useState<any | null>(null);
+
    return (
       <div className="space-y-5 pb-28 animate-in fade-in duration-700">
+         {/* ── Dialog Paie rapide depuis rappel ── */}
+         {calculatorEmployee && (
+            <SalaryCalculatorDialog 
+               open={!!calculatorEmployee} 
+               onOpenChange={(o) => { if (!o) setCalculatorEmployee(null); }} 
+               employee={calculatorEmployee} 
+            />
+         )}
+
+         {/* ── 🔔 BANDEAU DE RAPPEL DE DÉCAISSEMENT MENSUEL ── */}
+         {duePayouts.length > 0 && (
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-50/90 to-emerald-50/90 border border-amber-200 rounded-[28px] p-5 sm:p-6 shadow-sm space-y-4">
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3.5">
+                     <div className="size-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/30 shrink-0">
+                        <Bell className="size-5 animate-bounce" />
+                     </div>
+                     <div>
+                        <div className="flex items-center gap-2">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full border border-amber-300">
+                              Rappels Décaissements de Salaires
+                           </span>
+                           <span className="text-xs font-bold text-slate-500 capitalize">
+                              {currentMonthLabel}
+                           </span>
+                        </div>
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 mt-1">
+                           {duePayouts.length} collaborateur{duePayouts.length > 1 ? 's' : ''} à décaisser ce mois-ci
+                        </h3>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                  {duePayouts.map((emp: any) => {
+                     const isToday = currentDay === emp.payday;
+                     return (
+                        <div key={emp.id} className="bg-white rounded-2xl p-4 border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-3 hover:border-amber-300 transition-all">
+                           <div className="flex items-start justify-between gap-2">
+                              <div>
+                                 <p className="font-black text-slate-900 text-sm">{emp.name}</p>
+                                 <p className="text-[11px] text-slate-400 font-medium">
+                                    {ROLE_LABELS[emp.role as UserRole] || emp.role} · {emp.payment_type === 'MONTHLY_SALARY' ? `${formatPrice(emp.payment_amount || 0)} (Fixe)` : 'Commissions par colis'}
+                                 </p>
+                              </div>
+                              <span className={cn(
+                                 "px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap",
+                                 isToday ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-amber-100 text-amber-800 border border-amber-200"
+                              )}>
+                                 {isToday ? `Aujourd'hui (le ${emp.payday})` : `Dû le ${emp.payday}`}
+                              </span>
+                           </div>
+
+                           <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                              <button
+                                 type="button"
+                                 onClick={() => markPaidMutation.mutate({ userId: emp.id })}
+                                 disabled={markPaidMutation.isPending}
+                                 className="flex-1 h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                              >
+                                 <Check className="size-3.5" />
+                                 <span>C'est Décaissé ✓</span>
+                              </button>
+                              <button
+                                 type="button"
+                                 onClick={() => setCalculatorEmployee(emp)}
+                                 className="h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all flex items-center gap-1"
+                                 title="Ouvrir le bulletin de paie détaillé"
+                              >
+                                 <Banknote className="size-3.5" />
+                                 <span className="hidden sm:inline">Détail</span>
+                              </button>
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+            </div>
+         )}
 
          {/* ── Header ── */}
          <div className="bg-white rounded-[32px] border px-6 sm:px-8 py-5 shadow-sm sticky top-0 z-30 flex flex-col sm:flex-row items-center justify-between gap-4" style={{ borderColor: C.border }}>

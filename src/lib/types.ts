@@ -334,6 +334,9 @@ export interface User {
   payment_upsell?: number;
   payment_store_pickup?: number;
   payment_recovered_store_pickup?: number;
+  payday?: number | null;
+  last_salary_paid_at?: string | null;
+  last_salary_paid_month?: string | null;
   daily_target: number;
   created_at: string;
   employee_store?: Pick<Store, 'id' | 'name' | 'slug'> | null;

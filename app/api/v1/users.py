@@ -990,6 +990,9 @@ def get_user_performance(
             "phone":        db_user.phone,
             "is_active":    db_user.is_active,
             "daily_target": db_user.daily_target or 10,
+            "payday":       getattr(db_user, "payday", None),
+            "last_salary_paid_at": db_user.last_salary_paid_at.isoformat() if getattr(db_user, "last_salary_paid_at", None) else None,
+            "last_salary_paid_month": getattr(db_user, "last_salary_paid_month", None),
             "last_seen_at": last_seen_iso,
             "created_at":   db_user.created_at.isoformat() if getattr(db_user, 'created_at', None) else None,
         },
@@ -1114,6 +1117,9 @@ def get_employee_salary(
             "role":           db_user.role,
             "payment_type":   db_user.payment_type,
             "payment_amount": db_user.payment_amount,
+            "payday":         getattr(db_user, "payday", None),
+            "last_salary_paid_at": db_user.last_salary_paid_at.isoformat() if getattr(db_user, "last_salary_paid_at", None) else None,
+            "last_salary_paid_month": getattr(db_user, "last_salary_paid_month", None),
         },
         "salary": salary_data,
     }
@@ -1223,7 +1229,72 @@ def pay_employee_salary(
     if not breakdown:
         raise HTTPException(status_code=400, detail="Aucun montant à verser (salaire calculé à 0 sur toutes les boutiques concernées).")
 
+    # Update last payout timestamp and month
+    current_month_str = now.strftime("%Y-%m")
+    db_user.last_salary_paid_at = now
+    db_user.last_salary_paid_month = current_month_str
     db.commit()
 
     return {"success": True, "reference": ref, "total_paid": total_paid, "breakdown": breakdown}
+
+
+@router.post("/{user_id}/salary/mark-paid", response_model=dict)
+def mark_employee_salary_paid(
+    user_id: str,
+    payload: dict = Body(default={}),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Mark an employee's salary for the current month as disbursed / paid.
+    Dismisses the payday reminder for this month with one click.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants.")
+
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Employé introuvable.")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    month_str = payload.get("month") or now.strftime("%Y-%m")
+    
+    db_user.last_salary_paid_at = now
+    db_user.last_salary_paid_month = month_str
+    db.commit()
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "last_salary_paid_at": now.isoformat(),
+        "last_salary_paid_month": month_str,
+        "message": f"Salaire de {db_user.name} marqué comme décaissé pour {month_str} ✓",
+    }
+
+
+@router.post("/{user_id}/salary/unmark-paid", response_model=dict)
+def unmark_employee_salary_paid(
+    user_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Reset payout status for an employee.
+    """
+    if current_user.role not in ("SUPER_ADMIN", "ADMIN", "MANAGER"):
+        raise HTTPException(status_code=403, detail="Privilèges insuffisants.")
+
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Employé introuvable.")
+
+    db_user.last_salary_paid_at = None
+    db_user.last_salary_paid_month = None
+    db.commit()
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "message": f"Statut de paie de {db_user.name} réinitialisé.",
+    }
 
