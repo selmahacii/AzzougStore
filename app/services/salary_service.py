@@ -149,13 +149,13 @@ def compute_salary(
             _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_store_pickup), 1), else_=0)).label("recovered_store_pickup_delivered"),
 
             # Sums with snapshot fallback
-            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_home), _case((Order.commission_recovered_rate.isnot(None), Order.commission_recovered_rate), else_=recovered_rate)), else_=0)).label("recovered_home_bonus"),
-            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _is_store_pickup), _case((Order.commission_recovered_store_pickup_rate.isnot(None), Order.commission_recovered_store_pickup_rate), else_=recovered_store_pickup_rate)), else_=0)).label("recovered_store_pickup_bonus"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _not_marketplace, _is_home), _case((Order.commission_recovered_rate.isnot(None), Order.commission_recovered_rate), else_=recovered_rate)), else_=0)).label("recovered_home_bonus"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_abandoned, _not_marketplace, _is_store_pickup), _case((Order.commission_recovered_store_pickup_rate.isnot(None), Order.commission_recovered_store_pickup_rate), else_=recovered_store_pickup_rate)), else_=0)).label("recovered_store_pickup_bonus"),
             _func.sum(_case((Order.status == "RETURNED", _case((Order.commission_lost_rate.isnot(None), Order.commission_lost_rate), else_=lost_rate)), else_=0)).label("returned_penalty"),
             _func.sum(_case((and_(Order.status == "DELIVERED", _is_upsell), _case((Order.commission_upsell_rate.isnot(None), Order.commission_upsell_rate), else_=upsell_rate)), else_=0)).label("upsell_bonus"),
             _func.sum(_case((and_(Order.status == "DELIVERED", _is_marketplace), _case((Order.commission_marketplace_rate.isnot(None), Order.commission_marketplace_rate), else_=marketplace_rate)), else_=0)).label("marketplace_bonus"),
-            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _is_home), _case((Order.commission_payment_amount.isnot(None), Order.commission_payment_amount), else_=effective_rate)), else_=0)).label("normal_home_salary"),
-            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _is_store_pickup), _case((Order.commission_store_pickup_rate.isnot(None), Order.commission_store_pickup_rate), else_=store_pickup_rate)), else_=0)).label("normal_store_pickup_salary"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _not_marketplace, _is_home), _case((Order.commission_payment_amount.isnot(None), Order.commission_payment_amount), else_=effective_rate)), else_=0)).label("normal_home_salary"),
+            _func.sum(_case((and_(Order.status == "DELIVERED", _is_normal, _not_marketplace, _is_store_pickup), _case((Order.commission_store_pickup_rate.isnot(None), Order.commission_store_pickup_rate), else_=store_pickup_rate)), else_=0)).label("normal_store_pickup_salary"),
         )
         .filter(
             store_filter,

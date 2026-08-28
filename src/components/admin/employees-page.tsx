@@ -2769,9 +2769,16 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const paymentStorePickup = stats.payment_store_pickup ?? employee?.payment_store_pickup ?? 100;
    const paymentRecoveredStorePickup = stats.payment_recovered_store_pickup ?? employee?.payment_recovered_store_pickup ?? 150;
 
-   const computedSalary = stats.salary ?? (
-     paymentType === 'MONTHLY_SALARY' ? paymentAmount : delivered * paymentAmount
-   );
+   const normalDeliveredCalc = stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0));
+   const normalSalaryCalc = paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCalc * paymentAmount;
+   const recoveredBonusCalc = paymentType === 'MONTHLY_SALARY' ? 0 : (stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150);
+   const marketplaceBonusCalc = paymentType === 'MONTHLY_SALARY' ? 0 : (stats.marketplace_delivered_count || 0) * (stats.payment_marketplace_upsell_only || 50);
+   const upsellBonusCalc = paymentType === 'MONTHLY_SALARY' ? 0 : (stats.upsell_bonus || 0);
+   const returnedPenaltyCalc = paymentType === 'MONTHLY_SALARY' ? 0 : (stats.returned_penalty || 0);
+
+   const computedSalary = paymentType === 'MONTHLY_SALARY' 
+     ? paymentAmount 
+     : Math.max(0, normalSalaryCalc + recoveredBonusCalc + marketplaceBonusCalc + upsellBonusCalc - returnedPenaltyCalc);
    const totalSalary = computedSalary + bonus;
    const maxBar = Math.max(...(perf?.daily_chart ?? [{ count: 1 }]).map((d: any) => d.count), 1);
 
@@ -2998,7 +3005,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                     🟦 Commandes normales livrées
                                  </span>
                                  <span className="font-mono font-bold text-blue-900">
-                                    {stats.normal_delivered_count ?? Math.max(0, delivered - (stats.recovered_delivered_count || 0))} × {formatPrice(paymentAmount)} = {formatPrice(stats.base_salary ?? (Math.max(0, delivered - (stats.recovered_delivered_count || 0)) * paymentAmount))}
+                                    {normalDeliveredCalc} × {formatPrice(paymentAmount)} = {formatPrice(normalSalaryCalc)}
                                  </span>
                               </div>
 
@@ -3009,7 +3016,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                     Paniers abandonnés récupérés & livrés
                                  </span>
                                  <span className="font-mono font-black text-amber-900">
-                                    + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))}
+                                    + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(recoveredBonusCalc)}
                                  </span>
                               </div>
 
@@ -3021,7 +3028,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                        Commandes Marketplace livrées
                                     </span>
                                     <span className="font-mono font-black text-pink-900">
-                                       + {stats.marketplace_delivered_count || 0} × {formatPrice(stats.payment_marketplace_upsell_only || 50)} = +{formatPrice(stats.marketplace_bonus ?? ((stats.marketplace_delivered_count || 0) * (stats.payment_marketplace_upsell_only || 50)))}
+                                       + {stats.marketplace_delivered_count || 0} × {formatPrice(stats.payment_marketplace_upsell_only || 50)} = +{formatPrice(marketplaceBonusCalc)}
                                     </span>
                                  </div>
                               )}

@@ -2118,9 +2118,7 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
   const totalSalary = stats.salary ?? 0;
 
   // Calculate base salary amount for display
-  const baseSalaryVal = stats.base_salary !== undefined 
-    ? stats.base_salary 
-    : (paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCount * paymentAmount);
+  const baseSalaryVal = paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCount * paymentAmount;
 
   let baseSalaryExplain = '';
   if (paymentType === 'MONTHLY_SALARY') {
@@ -2317,9 +2315,11 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                                <span>Commission Paniers Récupérés Livrés</span>
                                <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
                             </p>
-                            <p className="text-[10px] text-slate-400">{(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}</p>
+                            <p className="text-[10px] text-slate-400 font-medium">
+                               {(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}
+                            </p>
                          </div>
-                         <span className="font-black text-emerald-600">+{formatPrice(abandonedBonus || ((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150)))}</span>
+                         <span className="font-black text-emerald-600">+{formatPrice((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150))}</span>
                       </div>
                    </div>
                 )}
@@ -2339,9 +2339,9 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
                                <span>Commission Commandes Marketplace Livrées</span>
                                <span className="text-[9px] text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
                             </p>
-                            <p className="text-[10px] text-slate-400 font-medium">
-                               {marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)} = {formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}
-                            </p>
+                                <p className="text-[10px] text-slate-400 font-medium">
+                                   {marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)} = {formatPrice(marketplaceDeliveredCount * (stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50))}
+                                </p>
                          </div>
                          <span className="font-black text-pink-600">+{formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}</span>
                       </div>
