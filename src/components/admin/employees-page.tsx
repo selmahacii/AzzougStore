@@ -2481,9 +2481,56 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Détail des commissions & calcul de paie</p>
 
                         {paymentType === 'MONTHLY_SALARY' ? (
-                           <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                              <span>Salaire fixe mensuel</span>
-                              <span className="font-mono font-bold">{formatPrice(paymentAmount)}</span>
+                           <div className="space-y-2.5">
+                              <div className="flex justify-between items-center text-xs font-bold text-slate-700 bg-white p-3 rounded-2xl border border-slate-200">
+                                 <span className="flex items-center gap-2">
+                                    <span className="size-2 rounded-full bg-slate-900"></span>
+                                    Salaire fixe mensuel contractuel
+                                 </span>
+                                 <span className="font-mono font-bold text-slate-900">{formatPrice(paymentAmount)}</span>
+                              </div>
+
+                              {/* Bonus paniers récupérés for monthly salary */}
+                              {(stats.abandoned_bonus > 0 || (stats.recovered_delivered_count || 0) > 0) && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-emerald-800 bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/80">
+                                    <span className="flex items-center gap-1.5">
+                                       <span className="size-2 rounded-full bg-emerald-500"></span>
+                                       Prime Paniers abandonnés récupérés & livrés
+                                    </span>
+                                    <span className="font-mono font-black text-emerald-900">
+                                       + {stats.recovered_delivered_count || 0} × {formatPrice(stats.payment_recovered_cart || 150)} = +{formatPrice(stats.abandoned_bonus ?? ((stats.recovered_delivered_count || 0) * (stats.payment_recovered_cart || 150)))}
+                                    </span>
+                                 </div>
+                              )}
+
+                              {/* Bonus marketplace for monthly salary */}
+                              {((stats.marketplace_bonus || 0) > 0 || (stats.marketplace_delivered_count || 0) > 0) && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-pink-700 bg-pink-50/80 p-3 rounded-2xl border border-pink-200/80">
+                                    <span className="flex items-center gap-1.5">
+                                       <span className="size-2 rounded-full bg-pink-500"></span>
+                                       Prime Marketplace (50 DA / commande livrée)
+                                    </span>
+                                    <span className="font-mono font-black text-pink-900">
+                                       + {stats.marketplace_delivered_count || 0} × {formatPrice(stats.payment_marketplace_upsell_only || 50)} = +{formatPrice(stats.marketplace_bonus ?? ((stats.marketplace_delivered_count || 0) * 50))}
+                                    </span>
+                                 </div>
+                              )}
+
+                              {/* Bonus upsell for monthly salary */}
+                              {(stats.upsell_bonus || 0) > 0 && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-purple-700 bg-purple-50/80 p-3 rounded-2xl border border-purple-200/80">
+                                    <span>Prime Upsell / Ventes additionnelles</span>
+                                    <span className="font-mono font-black text-purple-900">+ {formatPrice(stats.upsell_bonus)}</span>
+                                 </div>
+                              )}
+
+                              {/* Pénalité retours for monthly salary */}
+                              {(stats.returned_penalty || 0) > 0 && (
+                                 <div className="flex justify-between items-center text-xs font-bold text-rose-600 bg-rose-50/80 p-3 rounded-2xl border border-rose-200/80">
+                                    <span>Pénalité retours ({returned} colis)</span>
+                                    <span className="font-mono font-black text-rose-900">- {formatPrice(stats.returned_penalty)}</span>
+                                 </div>
+                              )}
                            </div>
                         ) : (
                            <>
