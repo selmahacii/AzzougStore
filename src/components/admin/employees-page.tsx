@@ -2199,7 +2199,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const [endDate, setEndDate] = useState<string>('');
    const [dateBy, setDateBy] = useState<'created_at' | 'delivered_at'>('created_at');
    const [orderSearch, setOrderSearch] = useState<string>('');
-   const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | 'NORMAL_DELIVERED' | 'RECOVERED_DELIVERED' | 'RETURNED' | 'IN_TRANSIT'>('ALL');
+   const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | 'NORMAL_DELIVERED' | 'RECOVERED_DELIVERED' | 'MARKETPLACE' | 'RETURNED' | 'IN_TRANSIT'>('ALL');
 
    const payMutation = useMutation({
       mutationFn: () => apiFetch<{ success: boolean; total_paid: number; breakdown: { store_id: string; amount: number }[] }>(
@@ -2223,20 +2223,27 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
          let url = `/api/v1/users/${employee.id}/performance?date_by=${dateBy}`;
          if (storeId) url += `&store_id=${storeId}`;
 
+         const formatLocal = (d: Date) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+         };
+
          if (period === 'custom' && isValidIsoDate(startDate) && isValidIsoDate(endDate)) {
             url += `&start_date=${startDate}T00:00:00.000Z&end_date=${endDate}T23:59:59.999Z`;
          } else if (period === 'today') {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = formatLocal(new Date());
             url += `&start_date=${today}T00:00:00.000Z&end_date=${today}T23:59:59.999Z`;
          } else if (period === 'this_month') {
             const now = new Date();
-            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-            const today = now.toISOString().slice(0, 10);
+            const firstDay = formatLocal(new Date(now.getFullYear(), now.getMonth(), 1));
+            const today = formatLocal(now);
             url += `&start_date=${firstDay}T00:00:00.000Z&end_date=${today}T23:59:59.999Z`;
          } else if (period === 'last_month') {
             const now = new Date();
-            const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
-            const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+            const firstDay = formatLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+            const lastDay = formatLocal(new Date(now.getFullYear(), now.getMonth(), 0));
             url += `&start_date=${firstDay}T00:00:00.000Z&end_date=${lastDay}T23:59:59.999Z`;
          } else if (period === '7d') {
             url += `&period_days=7`;
@@ -2273,11 +2280,16 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    // Filtered orders for the orders tab
    const rawOrders: any[] = perf?.recent_orders ?? [];
    const filteredOrders = rawOrders.filter((o: any) => {
+      const isRec = Boolean(o.is_abandoned_cart || o.recovered_at);
+      const isMp = Boolean(o.is_marketplace_upsell || o.source === 'MARKETPLACE');
       if (orderStatusFilter === 'NORMAL_DELIVERED') {
-         return o.status === 'DELIVERED' && !o.is_abandoned_cart;
+         return o.status === 'DELIVERED' && !isRec && !isMp;
       }
       if (orderStatusFilter === 'RECOVERED_DELIVERED') {
-         return o.status === 'DELIVERED' && !!o.is_abandoned_cart;
+         return o.status === 'DELIVERED' && isRec;
+      }
+      if (orderStatusFilter === 'MARKETPLACE') {
+         return o.status === 'DELIVERED' && isMp;
       }
       if (orderStatusFilter === 'RETURNED') {
          return o.status === 'RETURNED';
@@ -2294,8 +2306,8 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
          (o.tracking_number || '').toLowerCase().includes(q) ||
          (o.customer_name || '').toLowerCase().includes(q) ||
          (o.customer_phone || '').toLowerCase().includes(q) ||
-         (o.wilaya || '').toLowerCase().includes(q) ||
-         (o.commune || '').toLowerCase().includes(q)
+         (o.customer_wilaya || o.wilaya || '').toLowerCase().includes(q) ||
+         (o.customer_commune || o.commune || '').toLowerCase().includes(q)
       );
    });
 
@@ -2742,7 +2754,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                        )}
                                     </div>
                                     <div className="text-slate-500 sm:text-right font-medium">
-                                       📍 {o.wilaya} {o.commune ? `· ${o.commune}` : ''}
+                                       📍 {o.customer_wilaya || o.wilaya || 'Wilaya non spécifiée'}{(o.customer_commune || o.commune) ? ` · ${o.customer_commune || o.commune}` : ''}
                                     </div>
                                  </div>
 

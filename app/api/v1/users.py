@@ -750,10 +750,12 @@ def get_user_performance(
         scoped_stores = raw_stores if isinstance(raw_stores, list) else []
         store_filter = Order.store_id.in_(scoped_stores) if scoped_stores else False
 
+    user_filter = or_(Order.assigned_to == user_id, Order.livreur_id == user_id) if getattr(db_user, "role", None) == "LIVREUR" else (Order.assigned_to == user_id)
+
     base_q = db.query(Order).filter(
         and_(
             store_filter,
-            Order.assigned_to == user_id,
+            user_filter,
             Order.is_deleted  == False,
         )
     )
@@ -790,9 +792,13 @@ def get_user_performance(
 
     # Detailed orders for the period with tracking and carrier status (eager-load items in one batch query)
     period_orders = (
-        base_q.options(joinedload(Order.items))
+        base_q.options(
+            joinedload(Order.items),
+            joinedload(Order.livreur),
+            joinedload(Order.store),
+        )
         .order_by(date_col.desc())
-        .limit(300)
+        .limit(1500)
         .all()
     )
 
@@ -801,7 +807,7 @@ def get_user_performance(
         .join(Order, OrderEvent.order_id == Order.id)
         .filter(and_(OrderEvent.actor_id == user_id, store_filter))
         .order_by(OrderEvent.created_at.desc())
-        .limit(30)
+        .limit(50)
         .all()
     )
 
@@ -845,17 +851,17 @@ def get_user_performance(
     chart_days = min(period_days, 7)
     range_start = (datetime.now() - timedelta(days=chart_days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)  # noqa: DTZ005
     daily_rows = db.query(
-        func.date(Order.created_at).label("day"),
+        func.date(date_col).label("day"),
         func.count().label("count"),
     ).filter(
         and_(
             store_filter,
-            Order.assigned_to == user_id,
+            user_filter,
             Order.status      == "DELIVERED",
             Order.is_deleted  == False,
-            Order.created_at  >= range_start,
+            date_col          >= range_start,
         )
-    ).group_by(func.date(Order.created_at)).all()
+    ).group_by(func.date(date_col)).all()
     counts_by_day = {row.day.strftime("%d/%m") if hasattr(row.day, "strftime") else row.day: row.count for row in daily_rows}
 
     daily = []

@@ -2183,8 +2183,8 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
         const trk = (ord.tracking_number || '').toLowerCase();
         const name = (ord.customer_name || '').toLowerCase();
         const phone = (ord.customer_phone || '').toLowerCase();
-        const wilaya = (ord.wilaya || '').toLowerCase();
-        const commune = (ord.commune || '').toLowerCase();
+        const wilaya = (ord.customer_wilaya || ord.wilaya || '').toLowerCase();
+        const commune = (ord.customer_commune || ord.commune || '').toLowerCase();
         const note = (ord.carrier_tracking_note || '').toLowerCase();
         const itemsStr = (ord.items || []).map((it: any) => (it.product_name || '')).join(' ').toLowerCase();
 
@@ -2595,7 +2595,7 @@ return (
                            </a>
                            <p className="text-slate-500 text-[11px] flex items-center gap-1">
                              <MapPin className="size-3 text-slate-400 shrink-0" />
-                             <span>{ord.wilaya}{ord.commune ? ` (${ord.commune})` : ''}</span>
+                             <span>{ord.customer_wilaya || ord.wilaya || 'Wilaya non spécifiée'}{(ord.customer_commune || ord.commune) ? ` (${ord.customer_commune || ord.commune})` : ''}</span>
                            </p>
                          </div>
 
@@ -3629,6 +3629,55 @@ export default function AgentDashboard() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h2 className="text-xl font-bold tracking-tight">Mon Salaire</h2>
                 <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border shadow-sm w-full md:w-auto justify-between md:justify-start">
+                  {/* Presets */}
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border text-[10px] font-bold overflow-x-auto">
+                    {[
+                      { id: 'today', label: "Aujourd'hui" },
+                      { id: '7d', label: '7j' },
+                      { id: 'this_month', label: 'Ce mois' },
+                      { id: 'last_month', label: 'Mois dernier' },
+                      { id: '30d', label: '30j' },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          const formatLocal = (d: Date) => {
+                            const y = d.getFullYear();
+                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                            const day = String(d.getDate()).padStart(2, '0');
+                            return `${y}-${m}-${day}`;
+                          };
+                          if (p.id === 'today') {
+                            const t = formatLocal(now);
+                            setStartDate(t);
+                            setEndDate(t);
+                          } else if (p.id === 'this_month') {
+                            setStartDate(formatLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
+                            setEndDate(formatLocal(now));
+                          } else if (p.id === 'last_month') {
+                            setStartDate(formatLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+                            setEndDate(formatLocal(new Date(now.getFullYear(), now.getMonth(), 0)));
+                          } else if (p.id === '7d') {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 6);
+                            setStartDate(formatLocal(d));
+                            setEndDate(formatLocal(now));
+                          } else if (p.id === '30d') {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 29);
+                            setStartDate(formatLocal(d));
+                            setEndDate(formatLocal(now));
+                          }
+                        }}
+                        className="px-2 py-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white transition-all cursor-pointer whitespace-nowrap"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border text-[11px] font-bold">
                     <button
                       type="button"
@@ -3682,6 +3731,12 @@ export default function AgentDashboard() {
                     >
                       Effacer
                     </button>
+                  )}
+                  {perfQuery.isFetching && (
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 animate-pulse">
+                      <Loader2 className="size-3 animate-spin" />
+                      <span>Actualisation...</span>
+                    </div>
                   )}
                 </div>
               </div>

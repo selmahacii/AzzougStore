@@ -135,6 +135,8 @@ def compute_salary(
         or_(Order.source != "MARKETPLACE", Order.source.is_(None))
     )
 
+    user_filter = or_(Order.assigned_to == employee.id, Order.livreur_id == employee.id) if getattr(employee, "role", None) == "LIVREUR" else (Order.assigned_to == employee.id)
+
     row = (
         db.query(
             # Counts
@@ -157,7 +159,7 @@ def compute_salary(
         )
         .filter(
             store_filter,
-            Order.assigned_to == employee.id,
+            user_filter,
             Order.is_deleted == False,
             *time_filters
         )
