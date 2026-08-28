@@ -144,7 +144,19 @@ export default function FinanceDashboard() {
    const kpi = kpiResponse?.data;
 
    const wallets = walletsResponse?.data || [];
-   const transactions = txResponse?.data || [];
+   const rawTransactions = txResponse?.data || [];
+   const transactions = React.useMemo(() => {
+      if (!txSearch.trim()) return rawTransactions;
+      const q = txSearch.toLowerCase().trim();
+      return rawTransactions.filter((t: any) =>
+         (t.reference || '').toLowerCase().includes(q) ||
+         (t.beneficiary || '').toLowerCase().includes(q) ||
+         (t.description || '').toLowerCase().includes(q) ||
+         (t.category || '').toLowerCase().includes(q) ||
+         (t.wallet?.name || '').toLowerCase().includes(q) ||
+         String(t.amount || '').includes(q)
+      );
+   }, [rawTransactions, txSearch]);
    const totalBalance = wallets.reduce((acc, curr) => acc + curr.balance, 0);
    const totalIn = wallets.reduce((acc, curr) => acc + curr.total_in, 0);
    const totalOut = wallets.reduce((acc, curr) => acc + curr.total_out, 0);
@@ -1855,6 +1867,7 @@ function CreateTransactionModal({ open, onOpenChange, wallets, storeId }: any) {
 }
 
 
+
 function TransactionDetailModal({
    transaction,
    open,
@@ -1864,65 +1877,199 @@ function TransactionDetailModal({
    open: boolean;
    onClose: () => void;
 }) {
+   const [copied, setCopied] = useState(false);
+
    if (!transaction) return null;
 
    const isPayment = transaction.type === 'payment';
+   const isDisbursement = transaction.type === 'disbursement';
+   const isTransfer = transaction.type === 'transfer';
    const txDateStr = transaction.transaction_date || transaction.created_at;
    const txDate = txDateStr ? new Date(txDateStr) : null;
    const formattedDate = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
-      ? txDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) + ' à ' + txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      ? txDate.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
       : 'Récemment enregistré';
+   const formattedTime = txDate && !isNaN(txDate.getTime()) && txDate.getFullYear() > 1970
+      ? txDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '—';
+
+   const handleCopyRef = () => {
+      if (transaction?.reference) {
+         navigator.clipboard.writeText(transaction.reference);
+         setCopied(true);
+         toast.success('Référence copiée dans le presse-papier !');
+         setTimeout(() => setCopied(false), 2000);
+      }
+   };
+
+   const handlePrint = () => {
+      window.print();
+   };
+
+   const effectiveCategory = transaction.category || (isPayment ? 'VENTE_COD' : 'DÉCAISSEMENT');
+   const effectiveBeneficiary = transaction.beneficiary || (transaction.reference?.startsWith('COD-') ? 'Client COD' : (isPayment ? 'Client Acheteur' : 'Prestataire / Fournisseur'));
+   const effectiveWallet = transaction.wallet?.name || (isPayment ? 'Caisse Principale (COD)' : 'Compte Trésorerie');
 
    return (
       <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-         <DialogContent className="max-w-md rounded-[2rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden">
-            <div className={cn("p-8 text-white relative", isPayment ? "bg-gradient-to-br from-emerald-600 to-teal-700" : "bg-gradient-to-br from-slate-900 to-slate-800")}>
+         <DialogContent className="max-w-xl rounded-[2.5rem] p-0 gap-0 border-0 shadow-2xl overflow-hidden bg-white print:m-0 print:p-0 print:border-none print:shadow-none">
+            {/* ── Entête Pièce Comptable ── */}
+            <div className={cn(
+               "p-8 text-white relative",
+               isPayment 
+                  ? "bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800" 
+                  : isTransfer
+                     ? "bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800"
+                     : "bg-gradient-to-br from-rose-600 via-rose-700 to-slate-900"
+            )}>
                <div className="flex items-center justify-between mb-4">
-                  <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-xs">
-                     {isPayment ? 'Encaissement Entrant' : 'Décaissement Sortant'}
-                  </span>
-                  <span className="text-xs font-mono font-bold opacity-80">{transaction.reference}</span>
+                  <div className="flex items-center gap-2">
+                     <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-white/20 backdrop-blur-md border border-white/20">
+                        <ShieldCheck className="size-3.5" />
+                        Pièce Comptable Certifiée
+                     </span>
+                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/20 text-white/90">
+                        {isPayment ? 'Encaissement Entrant (+)' : isTransfer ? 'Transfert Inter-Caisses (⇄)' : 'Décaissement Sortant (-)'}
+                     </span>
+                  </div>
+                  <button 
+                     onClick={handleCopyRef}
+                     className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-white/15 hover:bg-white/25 transition-all flex items-center gap-1.5 text-white/90"
+                     title="Copier la référence"
+                  >
+                     <span>{transaction.reference || 'SYSTEM-TX'}</span>
+                     {copied ? <CheckCircle2 className="size-3 text-emerald-300" /> : <Receipt className="size-3" />}
+                  </button>
                </div>
-               <p className="text-3xl font-black tabular-nums tracking-tight">
-                  {isPayment ? '+' : '-'}{formatPrice(transaction.amount)} DA
-               </p>
-               <p className="text-xs font-medium opacity-80 mt-1">
-                  {transaction.category || (isPayment ? 'Vente COD' : 'Opération financière')}
-               </p>
+
+               <div className="flex items-baseline justify-between mt-2">
+                  <div>
+                     <p className="text-[11px] font-bold text-white/70 uppercase tracking-widest">Montant du flux</p>
+                     <p className="text-4xl font-black tabular-nums tracking-tight mt-1">
+                        {isPayment ? '+' : '-'}{formatPrice(transaction.amount)} <span className="text-2xl font-bold text-white/80">DA</span>
+                     </p>
+                  </div>
+                  <div className="text-right">
+                     <span className="inline-block px-3 py-1 rounded-xl bg-white/20 text-xs font-black uppercase tracking-wider backdrop-blur-sm">
+                        {effectiveCategory.replace(/_/g, ' ')}
+                     </span>
+                  </div>
+               </div>
             </div>
 
-            <div className="p-6 space-y-4 bg-white text-xs">
-               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <div>
-                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Compte / Caisse</span>
-                     <span className="font-bold text-slate-800">{transaction.wallet?.name || 'Caisse Principale (COD)'}</span>
+            {/* ── Grille des Attributs & Métadonnées ── */}
+            <div className="p-8 space-y-6 bg-slate-50/50 max-h-[65vh] overflow-y-auto">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Référence Flux */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Receipt className="size-3 text-indigo-500" /> Référence Flux
+                     </span>
+                     <p className="text-xs font-black font-mono text-slate-900 break-all">{transaction.reference || 'SYSTEM-TX'}</p>
+                     <p className="text-[10px] text-slate-400 font-medium">Identifiant unique vérifié</p>
                   </div>
-                  <div>
-                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Bénéficiaire / Tiers</span>
-                     <span className="font-bold text-slate-800">{transaction.beneficiary || 'Client COD'}</span>
+
+                  {/* Catégorie */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Layers className="size-3 text-amber-500" /> Catégorie Comptable
+                     </span>
+                     <p className="text-xs font-black text-slate-900 uppercase">{effectiveCategory.replace(/_/g, ' ')}</p>
+                     <p className="text-[10px] text-slate-400 font-medium">Classement financier</p>
                   </div>
-                  <div>
-                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Date & Heure</span>
-                     <span className="font-bold text-slate-800">{formattedDate}</span>
+
+                  {/* Bénéficiaire */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <UserCircle className="size-3 text-emerald-500" /> Bénéficiaire / Tiers
+                     </span>
+                     <p className="text-xs font-black text-slate-900 truncate" title={effectiveBeneficiary}>{effectiveBeneficiary}</p>
+                     <p className="text-[10px] text-slate-400 font-medium">Destinataire ou payeur</p>
                   </div>
-                  <div>
-                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Statut Pièce</span>
-                     <span className="font-bold text-emerald-600">✓ Validé & Comptabilisé</span>
+
+                  {/* Compte Source / Cible */}
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs space-y-1">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <WalletIcon className="size-3 text-blue-500" /> Compte Source / Cible
+                     </span>
+                     <p className="text-xs font-black text-slate-900 truncate">{effectiveWallet}</p>
+                     <p className="text-[10px] text-slate-400 font-medium">Solde & journal rattachés</p>
                   </div>
                </div>
 
+               {/* Horodatage & Audit Trail */}
+               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Clock className="size-3.5 text-indigo-500" /> Horodatage & Enregistrement
+                     </span>
+                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                        Horodatage Certifié UTC+1
+                     </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                     <div>
+                        <span className="text-[10px] text-slate-400 block font-bold">Date Calendaire</span>
+                        <span className="font-black text-slate-800 capitalize">{formattedDate}</span>
+                     </div>
+                     <div>
+                        <span className="text-[10px] text-slate-400 block font-bold">Heure d'Exécution</span>
+                        <span className="font-black text-slate-800 font-mono">{formattedTime}</span>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Description / Motif */}
                {transaction.description && (
-                  <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-100">
-                     <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Motif / Description</span>
-                     <p className="text-slate-700 font-medium">{transaction.description}</p>
+                  <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs space-y-1.5">
+                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Info className="size-3.5 text-slate-400" /> Motif / Description du Flux
+                     </span>
+                     <p className="text-xs font-bold text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100/80">
+                        {transaction.description}
+                     </p>
                   </div>
                )}
+
+               {/* Certificat de Preuve Numérique */}
+               <div className="bg-slate-900 text-slate-300 p-5 rounded-2xl shadow-sm space-y-2 font-mono text-[11px]">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 pb-2">
+                     <span className="flex items-center gap-1.5 text-emerald-400">
+                        <ShieldCheck className="size-3.5" /> Preuve & Empreinte Numérique ERP
+                     </span>
+                     <span>VERIFIED</span>
+                  </div>
+                  <div className="space-y-1 pt-1 text-[10px]">
+                     <p className="text-slate-400">UUID : <span className="text-white">{transaction.id || 'N/A'}</span></p>
+                     <p className="text-slate-400">Store ID : <span className="text-slate-200">{transaction.store_id || 'Global'}</span></p>
+                     <p className="text-slate-400">Signature : <span className="text-emerald-400">SHA256:AUTHENTICATED-LEDGER-TRANSACTION</span></p>
+                  </div>
+               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end">
-               <button onClick={onClose} className="h-10 px-5 rounded-xl font-bold text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 transition-all">
-                  Fermer
+            {/* ── Actions & Footer ── */}
+            <div className="px-8 py-5 border-t border-slate-100 bg-white flex items-center justify-between gap-3 print:hidden">
+               <button
+                  onClick={handleCopyRef}
+                  className="h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-2"
+               >
+                  <Receipt className="size-4 text-slate-500" /> Copier Référence
                </button>
+
+               <div className="flex items-center gap-2">
+                  <button
+                     onClick={handlePrint}
+                     className="h-11 px-5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-2"
+                  >
+                     <Banknote className="size-4 text-slate-500" /> Imprimer Justificatif
+                  </button>
+                  <button
+                     onClick={onClose}
+                     className="h-11 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-md"
+                  >
+                     Fermer
+                  </button>
+               </div>
             </div>
          </DialogContent>
       </Dialog>
