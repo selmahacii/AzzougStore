@@ -90,7 +90,8 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'funnel_integration' | 'diagnostics' | 'quality' | 'registry'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'funnel_integration' | 'diagnostics' | 'quality' | 'registry'>('roas');
+  const [campaignViewFilter, setCampaignViewFilter] = useState<'all' | 'campaigns' | 'products'>('all');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -785,18 +786,7 @@ export default function MetaAdsDashboard() {
               : "text-[#B2BEC3] hover:text-[#636E72]"
           )}
         >
-          <span className="flex items-center gap-1.5"><Sparkles className="size-3.5" /> Campagnes</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('products')}
-          className={cn(
-            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
-            activeTab === 'products'
-              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
-              : "text-[#B2BEC3] hover:text-[#636E72]"
-          )}
-        >
-          <span className="flex items-center gap-1.5"><Package className="size-3.5" /> Produits Sponsorisés</span>
+          <span className="flex items-center gap-1.5"><Sparkles className="size-3.5" /> Campagnes & Attribution Produits</span>
         </button>
         <button
           onClick={() => setActiveTab('funnel_integration')}
@@ -844,389 +834,417 @@ export default function MetaAdsDashboard() {
         </button>
       </div>
 
-      {/* ─── TAB: CAMPAGNES ─── */}
+      {/* ─── TAB: CAMPAGNES & ATTRIBUTION PRODUITS (FUSIONNÉ) ─── */}
       {activeTab === 'roas' && (
-        <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-          <div className="p-6 border-b flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="size-4 text-[#6C5CE7]" /> Historique des Campagnes — {activeStore?.name || 'Boutique'}
-              </h3>
-              <p className="text-[10px] text-slate-400 mt-1">Données isolées par boutique • Attribution UTM automatique • Cliquez sur une ligne pour les détails</p>
-              {lastSyncedAt && (
-                <p className="text-[9px] text-slate-400 font-bold mt-1 flex items-center gap-1">
-                  <RefreshCw className={cn("size-2.5", syncMutation.isPending && "animate-spin")} />
-                  {syncMutation.isPending
-                    ? 'Resynchronisation avec Meta en cours…'
-                    : <>Synchronisé {formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true, locale: fr })} — Meta Ads Manager peut afficher des chiffres légèrement plus récents entre deux synchros</>}
-                </p>
-              )}
-            </div>
-            <Badge className="bg-slate-100 text-slate-600 border-none font-black">{campaigns.length} campagnes</Badge>
-          </div>
+        <div className="space-y-6 animate-in fade-in duration-500">
           
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[1100px]">
-               <thead>
-                  <tr className="bg-[#F8F9FC] border-b border-[#E9ECF0]">
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Campagne</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Produit Associé</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Période</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Dépenses</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Reach</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Ventes</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">CA</th>
-                     <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">ROAS</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-[#E9ECF0]">
-                  {isLoadingCampaigns ? (
-                    [1,2,3].map(i => (
-                      <tr key={i} className="animate-pulse">
-                        <td colSpan={9} className="px-6 py-8 bg-[#FAFBFD]/50" />
-                      </tr>
-                    ))
-                  ) : campaigns.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="px-6 py-16 text-center">
-                        <div className="space-y-2">
-                          <div className="size-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
-                            <BarChart3 className="size-6 text-slate-400" />
-                          </div>
-                          <p className="text-sm font-bold text-slate-400">Aucune campagne disponible</p>
-                          <p className="text-xs text-slate-300">Cliquez sur "Synchroniser" pour récupérer vos campagnes Meta Ads</p>
-                        </div>
-                      </td>
+          {/* Sous-filtre Vue Globale / Campagnes / Produits */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+                <BarChart3 className="size-4 text-[#4b7bec]" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Performance Publicitaire & Attribution</h3>
+                <p className="text-[11px] text-slate-400">Suivi des campagnes Meta Ads et répartition des budgets par produit</p>
+              </div>
+            </div>
+            <div className="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200/80 text-[11px] font-black">
+              <button
+                onClick={() => setCampaignViewFilter('all')}
+                className={cn("px-3 py-1.5 rounded-lg transition-all", campaignViewFilter === 'all' ? "bg-white text-slate-900 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
+              >
+                Vue Complète
+              </button>
+              <button
+                onClick={() => setCampaignViewFilter('campaigns')}
+                className={cn("px-3 py-1.5 rounded-lg transition-all", campaignViewFilter === 'campaigns' ? "bg-white text-slate-900 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
+              >
+                Campagnes ({campaigns.length})
+              </button>
+              <button
+                onClick={() => setCampaignViewFilter('products')}
+                className={cn("px-3 py-1.5 rounded-lg transition-all", campaignViewFilter === 'products' ? "bg-white text-slate-900 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
+              >
+                Produits ({productsBreakdown.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Section 1 : Tableau des Campagnes Meta Ads */}
+          {(campaignViewFilter === 'all' || campaignViewFilter === 'campaigns') && (
+            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
+              <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <Sparkles className="size-4 text-[#4b7bec]" /> Historique des Campagnes — {activeStore?.name || 'Boutique'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-1">Données isolées par boutique • Attribution UTM automatique • Cliquez sur une ligne pour afficher les détails publicitaires</p>
+                  {lastSyncedAt && (
+                    <p className="text-[9px] text-slate-400 font-mono font-bold mt-1 flex items-center gap-1">
+                      <RefreshCw className={cn("size-2.5", syncMutation.isPending && "animate-spin")} />
+                      {syncMutation.isPending
+                        ? 'Resynchronisation avec Meta en cours…'
+                        : <>Synchronisé {formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true, locale: fr })} (GMT+1)</>}
+                    </p>
+                  )}
+                </div>
+                <span className="text-xs font-black text-slate-600 bg-slate-50 border border-slate-200/60 px-3 py-1.5 rounded-xl font-mono shrink-0">
+                  {campaigns.length} campagne{campaigns.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1100px] text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-100">
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Campagne</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Produit Associé</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Période</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Dépenses</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Reach</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Clics</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Ventes</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">CA</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">ROAS</th>
                     </tr>
-                  ) : campaigns.map((c: any) => {
-                    const isExpanded = expandedCampaign === c.id;
-                    const dateStart = c.date_start ? new Date(c.date_start) : null;
-                    const dateEnd = c.date_end ? new Date(c.date_end) : null;
-                    const durationDays = dateStart && dateEnd ? Math.ceil((dateEnd.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24)) : null;
-                    const statusColor = c.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : c.status === 'PAUSED' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500';
-                    const statusLabel = c.status === 'ACTIVE' ? 'Actif' : c.status === 'PAUSED' ? 'En pause' : (c.status || 'Archivé');
-                    return (
-                    <React.Fragment key={c.id}>
-                      <tr
-                        className={cn("transition-colors font-bold text-xs cursor-pointer", isExpanded ? "bg-[#F8F9FC]" : "hover:bg-[#FAFBFD]")}
-                        onClick={() => setExpandedCampaign(isExpanded ? null : c.id)}
-                      >
-                         <td className="px-6 py-5">
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {isLoadingCampaigns ? (
+                      [1,2,3].map(i => (
+                        <tr key={i} className="animate-pulse">
+                          <td colSpan={9} className="px-6 py-8 bg-slate-50/50" />
+                        </tr>
+                      ))
+                    ) : campaigns.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-6 py-16 text-center">
+                          <div className="space-y-2">
+                            <div className="size-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
+                              <BarChart3 className="size-6 text-slate-400" />
+                            </div>
+                            <p className="text-sm font-bold text-slate-400">Aucune campagne disponible sur cette période.</p>
+                            <p className="text-xs text-slate-300">Cliquez sur Synchroniser pour récupérer vos campagnes Meta Ads.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : campaigns.map((c: any) => {
+                      const isExpanded = expandedCampaign === c.id;
+                      const dateStart = c.date_start ? new Date(c.date_start) : null;
+                      const dateEnd = c.date_end ? new Date(c.date_end) : null;
+                      const durationDays = dateStart && dateEnd ? Math.ceil((dateEnd.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24)) : null;
+                      const statusColor = c.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : c.status === 'PAUSED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200';
+                      const statusLabel = c.status === 'ACTIVE' ? 'Actif' : c.status === 'PAUSED' ? 'En pause' : (c.status || 'Archivé');
+                      return (
+                      <React.Fragment key={c.id}>
+                        <tr
+                          className={cn("transition-colors font-bold text-xs cursor-pointer", isExpanded ? "bg-slate-50" : "hover:bg-slate-50/60")}
+                          onClick={() => setExpandedCampaign(isExpanded ? null : c.id)}
+                        >
+                          <td className="px-6 py-5">
                             <div className="flex items-start gap-2">
-                              <span className={cn("mt-0.5 text-[9px] px-1.5 py-0.5 rounded-md font-black shrink-0", statusColor)}>{statusLabel}</span>
+                              <span className={cn("mt-0.5 text-[9px] px-2 py-0.5 rounded-md font-black border font-mono shrink-0", statusColor)}>{statusLabel}</span>
                               <div>
-                                <p className="text-sm font-black text-[#2D3436] tracking-tight leading-tight">{c.campaign_name}</p>
+                                <p className="text-sm font-black text-slate-900 tracking-tight leading-tight">{c.campaign_name}</p>
                                 <p className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {c.campaign_id || c.id}</p>
                               </div>
                             </div>
-                         </td>
-                         <td className="px-6 py-5">
+                          </td>
+                          <td className="px-6 py-5">
                             {linkingCampaign === c.campaign_id ? (
-                                <div className="flex flex-col gap-2" onClick={e => e.stopPropagation()}>
-                                  <select 
-                                    className="text-xs border rounded-lg px-2 py-1.5 bg-white shadow-sm focus:ring-1 focus:ring-[#6C5CE7] outline-none"
-                                    defaultValue={c.product_id || ""}
-                                    onChange={(e) => linkProductMutation.mutate({ campaignId: c.campaign_id, productId: e.target.value || null })}
-                                    disabled={linkProductMutation.isPending}
-                                  >
-                                    <option value="">-- Détacher le produit --</option>
-                                    {products.map((p: any) => (
-                                      <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ''}</option>
-                                    ))}
-                                  </select>
-                                  <button onClick={() => setLinkingCampaign(null)} className="text-[10px] text-slate-400 hover:text-slate-600 self-start">Annuler</button>
-                                </div>
-                             ) : c.product_name ? (
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex items-center gap-2">
-                                    {c.product_image && (
-                                      <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
-                                    )}
-                                    <div>
-                                      <p className="text-xs font-black text-slate-700 leading-tight">{c.product_name}</p>
-                                      {c.product_sku && <p className="text-[10px] text-slate-400 font-mono">{c.product_sku}</p>}
-                                    </div>
+                              <div className="flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                                <select 
+                                  className="text-xs border rounded-lg px-2 py-1.5 bg-white shadow-sm focus:ring-1 focus:ring-[#4b7bec] outline-none"
+                                  defaultValue={c.product_id || ""}
+                                  onChange={(e) => linkProductMutation.mutate({ campaignId: c.campaign_id, productId: e.target.value || null })}
+                                  disabled={linkProductMutation.isPending}
+                                >
+                                  <option value="">-- Détacher le produit --</option>
+                                  {products.map((p: any) => (
+                                    <option key={p.id} value={p.id}>{p.name} {p.sku ? `(${p.sku})` : ''}</option>
+                                  ))}
+                                </select>
+                                <button onClick={() => setLinkingCampaign(null)} className="text-[10px] text-slate-400 hover:text-slate-600 self-start">Annuler</button>
+                              </div>
+                            ) : c.product_name ? (
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  {c.product_image && (
+                                    <img src={c.product_image} alt={c.product_name} className="size-8 rounded-lg object-cover border border-slate-100 shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="text-xs font-black text-slate-800 leading-tight">{c.product_name}</p>
+                                    {c.product_sku && <p className="text-[10px] text-slate-400 font-mono font-bold">{c.product_sku}</p>}
                                   </div>
-                                  <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#6C5CE7] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Modifier</button>
                                 </div>
-                              ) : (
-                                <div className="flex flex-col gap-2">
-                                  <span className="text-[10px] text-slate-400 italic">Non identifié</span>
-                                  <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#6C5CE7] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Associer</button>
-                                </div>
-                              )}
-                         </td>
-                         <td className="px-6 py-5">
+                                <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#4b7bec] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Modifier</button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                <span className="text-[10px] text-slate-400 italic">Non identifié</span>
+                                <button onClick={(e) => { e.stopPropagation(); setLinkingCampaign(c.campaign_id); }} className="text-[9px] font-bold text-[#4b7bec] hover:underline self-start flex items-center gap-1"><Link className="size-2.5" /> Associer</button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-5">
                             <div className="space-y-0.5">
                               {dateStart ? (
                                 <>
-                                  <p className="text-[11px] font-bold text-slate-600">{dateStart.toLocaleDateString('fr-DZ', { day: '2-digit', month: 'short', year: '2-digit' })}</p>
-                                  <p className="text-[10px] text-slate-400">{dateEnd ? `→ ${dateEnd.toLocaleDateString('fr-DZ', { day: '2-digit', month: 'short', year: '2-digit' })}` : '→ En cours'}</p>
+                                  <p className="text-[11px] font-bold text-slate-700 font-mono">{dateStart.toLocaleDateString('fr-DZ', { day: '2-digit', month: 'short', year: '2-digit' })}</p>
+                                  <p className="text-[10px] text-slate-400 font-mono">{dateEnd ? `→ ${dateEnd.toLocaleDateString('fr-DZ', { day: '2-digit', month: 'short', year: '2-digit' })}` : '→ En cours'}</p>
                                   {durationDays !== null && <p className="text-[9px] font-black text-slate-400">{durationDays}j de diffusion</p>}
                                 </>
                               ) : (
                                 <span className="text-[10px] text-slate-300">—</span>
                               )}
                             </div>
-                         </td>
-                         <td className="px-6 py-5 text-right">
+                          </td>
+                          <td className="px-6 py-5 text-right">
                             <div className="flex flex-col items-end">
-                               <span className="text-sm font-black text-[#2D3436] tabular-nums">{formatPrice(c.spend)}</span>
-                               {c.currency && c.currency !== 'DZD' && (
-                                  <span className="text-[10px] text-slate-400 font-bold tabular-nums">
-                                     {c.raw_spend?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {c.currency}
-                                  </span>
-                               )}
-                            </div>
-                         </td>
-                         <td className="px-6 py-5 text-right text-[#636E72] tabular-nums font-mono">{(c.reach || 0).toLocaleString()}</td>
-                         <td className="px-6 py-5 text-right text-[#636E72] tabular-nums font-mono">{(c.clicks || 0).toLocaleString()}</td>
-                         <td className="px-6 py-5 text-center">
-                            <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{c.orders_count || 0}</span>
-                         </td>
-                         <td className="px-6 py-5 text-right font-black font-mono text-[#2D3436] tabular-nums">{formatPrice(c.revenue || 0)}</td>
-                         <td className="px-6 py-5 text-center">
-                            <Badge className={cn(
-                              "border-none rounded-md px-2.5 py-1 text-xs font-black font-mono",
-                              (c.roas || 0) >= 4 ? "bg-[#E6FFF8] text-[#00B894]" : (c.roas || 0) >= 2.5 ? "bg-[#E8F4FE] text-[#0984E3]" : "bg-[#FFEDE9] text-[#E17055]"
-                            )}>
-                              {c.roas || 0}x
-                            </Badge>
-                         </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr className="bg-[#F0EDFF]/30">
-                          <td colSpan={9} className="px-8 py-5">
-                             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPM (Exposition)</p>
-                                 <p className="text-sm font-black text-slate-800 mt-1 tabular-nums">{formatPrice(c.cpm || 0)}</p>
-                                 <p className="text-[9px] text-slate-400">Coût / 1 000 vues</p>
-                               </div>
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CTR (Accroche)</p>
-                                 <p className="text-sm font-black text-slate-800 mt-1 tabular-nums">{(c.ctr || 0).toFixed(2)} %</p>
-                                 <p className="text-[9px] text-slate-400">Taux de clics / vues</p>
-                               </div>
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPC (Trafic)</p>
-                                 <p className="text-sm font-black text-slate-800 mt-1 tabular-nums">{formatPrice(c.cpc || 0)}</p>
-                                 <p className="text-[9px] text-slate-400">Coût par clic</p>
-                               </div>
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">ATC (Intention)</p>
-                                 <p className="text-sm font-black text-slate-800 mt-1 tabular-nums">{c.add_to_cart || c.atc || (c.impressions ? Math.round(c.clicks * 0.4) : '—')}</p>
-                                 <p className="text-[9px] text-slate-400">Ajouts au panier</p>
-                               </div>
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Checkout (Progression)</p>
-                                 <p className="text-sm font-black text-slate-800 mt-1 tabular-nums">{c.initiate_checkout || c.checkout || (c.impressions ? Math.round(c.clicks * 0.25) : '—')}</p>
-                                 <p className="text-[9px] text-slate-400">Initiations paiement</p>
-                               </div>
-                               <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
-                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPA (Résultat)</p>
-                                 <p className="text-sm font-black text-emerald-600 mt-1 tabular-nums">{c.cost_per_order ? formatPrice(c.cost_per_order) : '—'}</p>
-                                 <p className="text-[9px] text-slate-400">Coût par commande</p>
-                               </div>
-                             </div>
-                            <div className="mt-4 bg-white rounded-xl p-3 border border-slate-100">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Objectif</p>
-                                <p className="text-sm font-black text-slate-700 mt-1">{c.objective || '—'}</p>
-                                <p className="text-[9px] text-slate-400">Type de campagne</p>
-                            </div>
-                            {c.product_name && (
-                              <div className="mt-3 flex items-center gap-2 text-[10px] text-[#6C5CE7] font-black">
-                                <Package className="size-3" />
-                                Attribution : produit «{c.product_name}» identifié {c.product_sku ? `(SKU: ${c.product_sku})` : 'par correspondance du nom de campagne'}
-                              </div>
-                            )}
-
-                            {/* Per-ad breakdown — this campaign row is Meta's own
-                                rollup of every ad underneath it; several
-                                split-tested ads under one campaign show up here
-                                individually instead of only as one combined
-                                total above. */}
-                            <div className="mt-4 pt-4 border-t border-[#E9ECF0]">
-                              <div className="flex items-center justify-between mb-2">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                                  <Layers className="size-3" /> Détail par publicité
-                                </p>
-                                {campaignAds.length > 0 && campaignAds[0]?.last_synced_at && (
-                                  <p className="text-[9px] text-slate-300 font-bold">
-                                    Chiffres Meta au dernier sync — {formatDistanceToNow(new Date(campaignAds[0].last_synced_at), { addSuffix: true, locale: fr })}
-                                  </p>
-                                )}
-                              </div>
-                              {isLoadingCampaignAds ? (
-                                <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
-                              ) : campaignAds.length === 0 ? (
-                                <p className="text-[10px] text-slate-300 italic">Aucun détail par publicité disponible pour cette campagne — resynchronisez pour le récupérer.</p>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left border-collapse min-w-[700px]">
-                                    <thead>
-                                      <tr>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Publicité</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Dépenses</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Impressions</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Achats (Meta)</th>
-                                        <th className="px-3 py-2 text-[9px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Coût / achat</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-[#E9ECF0]/60">
-                                      {campaignAds.map((ad: any) => (
-                                        <tr key={ad.ad_id} className="text-xs font-bold bg-white">
-                                          <td className="px-3 py-2.5">
-                                            <p className="text-[11px] font-black text-[#2D3436]">{ad.ad_name}</p>
-                                            {ad.adset_name && <p className="text-[9px] text-slate-400">{ad.adset_name}</p>}
-                                          </td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums">{formatPrice(ad.spend)}</td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.impressions || 0).toLocaleString()}</td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.clicks || 0).toLocaleString()}</td>
-                                          <td className="px-3 py-2.5 text-center">
-                                            <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{ad.meta_purchases || 0}</span>
-                                          </td>
-                                          <td className="px-3 py-2.5 text-right tabular-nums font-mono">{ad.cost_per_purchase ? formatPrice(ad.cost_per_purchase) : '—'}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
+                              <span className="text-sm font-black text-slate-900 tabular-nums font-mono">{formatPrice(c.spend)}</span>
+                              {c.currency && c.currency !== 'DZD' && (
+                                <span className="text-[10px] text-slate-400 font-bold tabular-nums font-mono">
+                                  {c.raw_spend?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {c.currency}
+                                </span>
                               )}
                             </div>
                           </td>
+                          <td className="px-6 py-5 text-right text-slate-600 tabular-nums font-mono">{(c.reach || 0).toLocaleString()}</td>
+                          <td className="px-6 py-5 text-right text-slate-600 tabular-nums font-mono">{(c.clicks || 0).toLocaleString()}</td>
+                          <td className="px-6 py-5 text-center">
+                            <span className="bg-slate-100 text-slate-800 rounded-md px-2 py-0.5 font-black font-mono">{c.orders_count || 0}</span>
+                          </td>
+                          <td className="px-6 py-5 text-right font-black font-mono text-slate-900 tabular-nums">{formatPrice(c.revenue || 0)}</td>
+                          <td className="px-6 py-5 text-center">
+                            <span className={cn(
+                              "px-2.5 py-1 rounded-md text-xs font-black font-mono border",
+                              (c.roas || 0) >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : (c.roas || 0) >= 2.5 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                            )}>
+                              {c.roas || 0}x
+                            </span>
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  )})}
-               </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ─── TAB: PRODUITS SPONSORISÉS ─── */}
-      {activeTab === 'products' && (
-        <div className="space-y-6">
-          {/* Info banner */}
-          <div className="flex items-start gap-3 p-4 bg-[#F0EDFF] border border-[#6C5CE7]/20 rounded-2xl">
-            <Package className="size-4 text-[#6C5CE7] mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-black text-[#6C5CE7]">Comment fonctionne l'attribution produit ?</p>
-              <p className="text-[10px] text-[#636E72] mt-1 leading-relaxed">
-                Le système analyse vos commandes qui ont un <strong>UTM de campagne</strong> correspondant. Pour chaque commande, il identifie les produits achetés et leur attribue proportionnellement les dépenses pub. Si aucune commande UTM n'est disponible, il cherche le nom du produit dans le titre de la campagne.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-3xl border overflow-hidden shadow-sm">
-            <div className="p-6 border-b flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
-                  <Package className="size-4 text-[#6C5CE7]" /> Produits Sponsorisés — {activeStore?.name || 'Boutique'}
-                </h3>
-                <p className="text-[10px] text-slate-400 mt-1">Dépenses publicitaires attribuées par produit sur la période sélectionnée</p>
-              </div>
-              <Badge className="bg-slate-100 text-slate-600 border-none font-black">{productsBreakdown.length} produit(s)</Badge>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead>
-                  <tr className="bg-[#F8F9FC] border-b border-[#E9ECF0]">
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Produit</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest">Attribution</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Budget Investi</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Impressions</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">Clics</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">Ventes</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-right">CA Généré</th>
-                    <th className="px-6 py-4 text-[10px] font-extrabold text-[#B2BEC3] uppercase tracking-widest text-center">ROAS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E9ECF0]">
-                  {isLoadingCampaigns ? (
-                    [1,2,3].map(i => (
-                      <tr key={i} className="animate-pulse">
-                        <td colSpan={8} className="px-6 py-8 bg-[#FAFBFD]/50" />
-                      </tr>
-                    ))
-                  ) : productsBreakdown.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-16 text-center">
-                        <div className="space-y-2">
-                          <div className="size-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
-                            <Package className="size-6 text-slate-400" />
-                          </div>
-                          <p className="text-sm font-bold text-slate-400">Aucun produit identifié dans vos campagnes</p>
-                          <p className="text-[10px] text-slate-300 leading-relaxed max-w-xs mx-auto">
-                            Nommez vos campagnes Meta avec le nom ou le SKU de vos produits, ou assurez-vous que vos commandes ont des UTM configurés.
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : productsBreakdown.map((p: any) => {
-                    const roas = p.roas || (p.spend > 0 ? p.revenue / p.spend : 0);
-                    const hasImage = !!p.product_image;
-                    const isUtmBased = (p.orders_count || 0) > 0;
-                    return (
-                      <tr key={p.product_id} className="hover:bg-[#FAFBFD] transition-colors text-xs">
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            {hasImage ? (
-                              <img src={p.product_image} alt={p.product_name} className="size-10 rounded-xl object-cover border border-slate-100 shrink-0" />
-                            ) : (
-                              <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-                                <Package className="size-5 text-slate-400" />
+                        {isExpanded && (
+                          <tr className="bg-slate-50/70">
+                            <td colSpan={9} className="px-8 py-5">
+                              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPM (Exposition)</p>
+                                  <p className="text-sm font-black text-slate-800 mt-1 tabular-nums font-mono">{formatPrice(c.cpm || 0)}</p>
+                                  <p className="text-[9px] text-slate-400">Coût / 1 000 vues</p>
+                                </div>
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CTR (Accroche)</p>
+                                  <p className="text-sm font-black text-slate-800 mt-1 tabular-nums font-mono">{(c.ctr || 0).toFixed(2)} %</p>
+                                  <p className="text-[9px] text-slate-400">Taux de clics / vues</p>
+                                </div>
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPC (Trafic)</p>
+                                  <p className="text-sm font-black text-slate-800 mt-1 tabular-nums font-mono">{formatPrice(c.cpc || 0)}</p>
+                                  <p className="text-[9px] text-slate-400">Coût par clic</p>
+                                </div>
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">ATC (Intention)</p>
+                                  <p className="text-sm font-black text-slate-800 mt-1 tabular-nums font-mono">{c.add_to_cart || c.atc || (c.impressions ? Math.round(c.clicks * 0.4) : '—')}</p>
+                                  <p className="text-[9px] text-slate-400">Ajouts au panier</p>
+                                </div>
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Checkout (Progression)</p>
+                                  <p className="text-sm font-black text-slate-800 mt-1 tabular-nums font-mono">{c.initiate_checkout || c.checkout || (c.impressions ? Math.round(c.clicks * 0.25) : '—')}</p>
+                                  <p className="text-[9px] text-slate-400">Initiations paiement</p>
+                                </div>
+                                <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-2xs">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">CPA (Résultat)</p>
+                                  <p className="text-sm font-black text-emerald-700 mt-1 tabular-nums font-mono">{c.cost_per_order ? formatPrice(c.cost_per_order) : '—'}</p>
+                                  <p className="text-[9px] text-slate-400">Coût par commande</p>
+                                </div>
                               </div>
-                            )}
-                            <div>
-                              <p className="text-sm font-black text-[#2D3436] leading-tight">{p.product_name || 'Produit inconnu'}</p>
-                              {p.product_sku && <p className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {p.product_sku}</p>}
+                              <div className="mt-4 bg-white rounded-xl p-3 border border-slate-100">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Objectif</p>
+                                <p className="text-sm font-black text-slate-700 mt-1 font-mono">{c.objective || '—'}</p>
+                                <p className="text-[9px] text-slate-400">Type d&apos;optimisation de campagne Meta</p>
+                              </div>
+                              {c.product_name && (
+                                <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-700 font-bold">
+                                  <Package className="size-3 text-[#4b7bec]" />
+                                  Attribution : produit «{c.product_name}» identifié {c.product_sku ? `(SKU: ${c.product_sku})` : 'par correspondance du nom de campagne'}
+                                </div>
+                              )}
+
+                              {/* Détail par Publicité */}
+                              <div className="mt-4 pt-4 border-t border-slate-100">
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                                    <Layers className="size-3 text-[#4b7bec]" /> Détail par publicité
+                                  </p>
+                                  {campaignAds.length > 0 && campaignAds[0]?.last_synced_at && (
+                                    <p className="text-[9px] text-slate-400 font-mono">
+                                      Synchronisé {formatDistanceToNow(new Date(campaignAds[0].last_synced_at), { addSuffix: true, locale: fr })}
+                                    </p>
+                                  )}
+                                </div>
+                                {isLoadingCampaignAds ? (
+                                  <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
+                                ) : campaignAds.length === 0 ? (
+                                  <p className="text-[10px] text-slate-400 italic">Aucun détail par publicité disponible pour cette campagne.</p>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse min-w-[700px] text-xs">
+                                      <thead>
+                                        <tr className="border-b border-slate-100 bg-white">
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Publicité</th>
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Dépenses</th>
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Impressions</th>
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Clics</th>
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Achats (Meta)</th>
+                                          <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Coût / achat</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {campaignAds.map((ad: any) => (
+                                          <tr key={ad.ad_id} className="text-xs font-bold bg-white">
+                                            <td className="px-3 py-2.5">
+                                              <p className="text-[11px] font-black text-slate-900">{ad.ad_name}</p>
+                                              {ad.adset_name && <p className="text-[9px] text-slate-400">{ad.adset_name}</p>}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right tabular-nums font-mono">{formatPrice(ad.spend)}</td>
+                                            <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.impressions || 0).toLocaleString()}</td>
+                                            <td className="px-3 py-2.5 text-right tabular-nums text-slate-500 font-mono">{(ad.clicks || 0).toLocaleString()}</td>
+                                            <td className="px-3 py-2.5 text-center">
+                                              <span className="bg-slate-100 text-slate-800 rounded-md px-2 py-0.5 font-black font-mono">{ad.meta_purchases || 0}</span>
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right tabular-nums font-mono">{ad.cost_per_purchase ? formatPrice(ad.cost_per_purchase) : '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )})}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Section 2 : Décomposition & Attribution par Produit Sponsorisé */}
+          {(campaignViewFilter === 'all' || campaignViewFilter === 'products') && (
+            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm space-y-4 p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <Package className="size-4 text-[#4b7bec]" /> Produits Sponsorisés & Attribution — {activeStore?.name || 'Boutique'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Le système identifie les produits achetés via commandes UTM et leur attribue proportionnellement les dépenses publicitaires.
+                  </p>
+                </div>
+                <span className="text-xs font-black text-slate-600 bg-slate-50 border border-slate-200/60 px-3 py-1.5 rounded-xl font-mono shrink-0">
+                  {productsBreakdown.length} produit{productsBreakdown.length > 1 ? 's' : ''}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[1000px] text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-100">
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Produit</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Attribution</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Budget Investi</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Impressions</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Clics</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Ventes</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">CA Généré</th>
+                      <th className="px-6 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">ROAS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {isLoadingCampaigns ? (
+                      [1,2,3].map(i => (
+                        <tr key={i} className="animate-pulse">
+                          <td colSpan={8} className="px-6 py-8 bg-slate-50/50" />
+                        </tr>
+                      ))
+                    ) : productsBreakdown.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-16 text-center">
+                          <div className="space-y-2">
+                            <div className="size-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
+                              <Package className="size-6 text-slate-400" />
                             </div>
+                            <p className="text-sm font-bold text-slate-400">Aucun produit identifié dans vos campagnes sur cette période.</p>
+                            <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
+                              Nommez vos campagnes Meta avec le SKU de vos produits ou associez-les manuellement ci-dessus.
+                            </p>
                           </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <Badge className={cn(
-                            "border-none text-[9px] font-black px-2 py-0.5",
-                            isUtmBased ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                          )}>
-                            {isUtmBased ? 'Via commandes UTM' : 'Par nom campagne'}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="text-sm font-black text-[#2D3436] tabular-nums">{formatPrice(p.spend || 0)}</span>
-                            {p.currency && p.currency !== 'DZD' && (
-                              <span className="text-[10px] text-slate-400 font-bold tabular-nums">
-                                {p.raw_spend?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {p.currency}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5 text-right text-[#636E72] tabular-nums font-mono">{(p.impressions || 0).toLocaleString()}</td>
-                        <td className="px-6 py-5 text-right text-[#636E72] tabular-nums font-mono">{(p.clicks || 0).toLocaleString()}</td>
-                        <td className="px-6 py-5 text-center">
-                          <span className="bg-[#E8F4FE] text-[#0984E3] rounded-md px-2 py-0.5 font-black font-mono">{p.orders_count || 0}</span>
-                        </td>
-                        <td className="px-6 py-5 text-right font-black font-mono text-[#2D3436] tabular-nums">{formatPrice(p.revenue || 0)}</td>
-                        <td className="px-6 py-5 text-center">
-                          <Badge className={cn(
-                            "border-none rounded-md px-2.5 py-1 text-xs font-black font-mono",
-                            roas >= 4 ? "bg-[#E6FFF8] text-[#00B894]" : roas >= 2.5 ? "bg-[#E8F4FE] text-[#0984E3]" : "bg-[#FFEDE9] text-[#E17055]"
-                          )}>
-                            {roas.toFixed(2)}x
-                          </Badge>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ) : productsBreakdown.map((p: any) => {
+                      const roas = p.roas || (p.spend > 0 ? p.revenue / p.spend : 0);
+                      const hasImage = !!p.product_image;
+                      const isUtmBased = (p.orders_count || 0) > 0;
+                      return (
+                        <tr key={p.product_id} className="hover:bg-slate-50/60 transition-colors text-xs font-bold">
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-3">
+                              {hasImage ? (
+                                <img src={p.product_image} alt={p.product_name} className="size-10 rounded-xl object-cover border border-slate-100 shrink-0" />
+                              ) : (
+                                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                                  <Package className="size-5 text-slate-400" />
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-sm font-black text-slate-900 leading-tight">{p.product_name || 'Produit inconnu'}</p>
+                                {p.product_sku && <p className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {p.product_sku}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5">
+                            <span className={cn(
+                              "inline-block border text-[9px] font-black px-2.5 py-0.5 rounded-lg font-mono",
+                              isUtmBased ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              {isUtmBased ? 'Via commandes UTM' : 'Par nom campagne'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-5 text-right">
+                            <div className="flex flex-col items-end">
+                              <span className="text-sm font-black text-slate-900 tabular-nums font-mono">{formatPrice(p.spend || 0)}</span>
+                              {p.currency && p.currency !== 'DZD' && (
+                                <span className="text-[10px] text-slate-400 font-bold tabular-nums font-mono">
+                                  {p.raw_spend?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {p.currency}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-right text-slate-600 tabular-nums font-mono">{(p.impressions || 0).toLocaleString()}</td>
+                          <td className="px-6 py-5 text-right text-slate-600 tabular-nums font-mono">{(p.clicks || 0).toLocaleString()}</td>
+                          <td className="px-6 py-5 text-center">
+                            <span className="bg-slate-100 text-slate-800 rounded-md px-2 py-0.5 font-black font-mono">{p.orders_count || 0}</span>
+                          </td>
+                          <td className="px-6 py-5 text-right font-black font-mono text-slate-900 tabular-nums">{formatPrice(p.revenue || 0)}</td>
+                          <td className="px-6 py-5 text-center">
+                            <span className={cn(
+                              "px-2.5 py-1 rounded-md text-xs font-black font-mono border",
+                              roas >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : roas >= 2.5 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                            )}>
+                              {roas.toFixed(2)}x
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
