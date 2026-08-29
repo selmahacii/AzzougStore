@@ -90,7 +90,7 @@ export default function MetaAdsDashboard() {
   const [exchangeRate, setExchangeRate] = useState('1.0');
   const [isConfiguring, setIsConfiguring] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'integration' | 'funnel' | 'diagnostics' | 'quality' | 'registry'>('roas');
+  const [activeTab, setActiveTab] = useState<'roas' | 'products' | 'funnel_integration' | 'diagnostics' | 'quality' | 'registry'>('roas');
   const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
@@ -565,13 +565,13 @@ export default function MetaAdsDashboard() {
                       onChange={(e) => setCurrency(e.target.value)}
                       className="flex h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#1877F2] focus:border-[#1877F2]"
                     >
-                      <option value="USD">🇺🇸 USD – Dollar</option>
-                      <option value="EUR">🇪🇺 EUR – Euro</option>
-                      <option value="DZD">🇩🇿 DZD – Dinar</option>
-                      <option value="GBP">🇬🇧 GBP – Livre sterling</option>
-                      <option value="CAD">🇨🇦 CAD – Dollar canadien</option>
-                      <option value="MAD">🇲🇦 MAD – Dirham marocain</option>
-                      <option value="TND">🇹🇳 TND – Dinar tunisien</option>
+                      <option value="USD">USD – Dollar américain</option>
+                      <option value="EUR">EUR – Euro</option>
+                      <option value="DZD">DZD – Dinar algérien</option>
+                      <option value="GBP">GBP – Livre sterling</option>
+                      <option value="CAD">CAD – Dollar canadien</option>
+                      <option value="MAD">MAD – Dirham marocain</option>
+                      <option value="TND">TND – Dinar tunisien</option>
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -799,26 +799,15 @@ export default function MetaAdsDashboard() {
           <span className="flex items-center gap-1.5"><Package className="size-3.5" /> Produits Sponsorisés</span>
         </button>
         <button
-          onClick={() => setActiveTab('funnel')}
+          onClick={() => setActiveTab('funnel_integration')}
           className={cn(
             "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
-            activeTab === 'funnel'
+            activeTab === 'funnel_integration'
               ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
               : "text-[#B2BEC3] hover:text-[#636E72]"
           )}
         >
-          <span className="flex items-center gap-1.5"><Activity className="size-3.5" /> Entonnoir de Conversion</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('integration')}
-          className={cn(
-            "px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all",
-            activeTab === 'integration'
-              ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]"
-              : "text-[#B2BEC3] hover:text-[#636E72]"
-          )}
-        >
-          <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Intégration Modules</span>
+          <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Entonnoir & Rentabilité Cross-Module</span>
         </button>
         <button
           onClick={() => setActiveTab('diagnostics')}
@@ -1204,7 +1193,7 @@ export default function MetaAdsDashboard() {
                             "border-none text-[9px] font-black px-2 py-0.5",
                             isUtmBased ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
                           )}>
-                            {isUtmBased ? '✓ Via commandes UTM' : '~ Par nom campagne'}
+                            {isUtmBased ? 'Via commandes UTM' : 'Par nom campagne'}
                           </Badge>
                         </td>
                         <td className="px-6 py-5 text-right">
@@ -2604,7 +2593,7 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* 🚀 DIALOG: GUIDE D'INSTALLATION 🚀 */}
+      {/* DIALOG: GUIDE D'INSTALLATION */}
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-[32px] p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl border animate-in zoom-in-95 duration-200">
