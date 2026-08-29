@@ -155,10 +155,21 @@ class OrderRead(BaseModel):
     customer_wilaya: Optional[str] = None
     customer_commune: Optional[str] = None
     delivery_type: Optional[str] = "HOME"
-    delivery_fee:    int = 0
-    subtotal:        int = 0
-    discount:        int = 0
-    total:           int
+    delivery_fee:    Optional[int] = 0
+    subtotal:        Optional[int] = 0
+    discount:        Optional[int] = 0
+    total:           int = 0
+
+    @field_validator('discount', 'delivery_fee', 'subtotal', 'total', 'abandoned_cart_recovery_fee', 'commission_marketplace_rate', 'nrp_count', mode='before')
+    @classmethod
+    def sanitize_int_finance(cls, v: Any) -> int:
+        if v is None:
+            return 0
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return 0
+
     carrier_id:      Optional[str] = None
     promo_code:      Optional[str] = None
     status:          Optional[str] = "NEW"

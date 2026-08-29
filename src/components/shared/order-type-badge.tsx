@@ -30,7 +30,7 @@ export function OrderTypeBadge({
       )}
       title={`Origine : ${meta.label} — ne change jamais avec le statut`}
     >
-      {meta.emoji} {label}
+      {label}
     </span>
   );
 }
@@ -60,7 +60,7 @@ export function RelatedOrdersBadge({
       )}
       title={onClick ? (expanded ? 'Masquer les commandes liées' : 'Voir les commandes liées') : `${count} commande(s) liée(s)`}
     >
-      🟣 Doublons ({count}){onClick ? (expanded ? ' ▲' : ' ▼') : ''}
+      Doublons ({count}){onClick ? (expanded ? ' ▲' : ' ▼') : ''}
     </Tag>
   );
 }

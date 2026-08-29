@@ -42,6 +42,7 @@ import {
   Hash,
   BarChart3,
   X,
+  Check,
   Store,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -285,7 +286,7 @@ const [timeLeft, setTimeLeft] = useState('');
   const [recoveryFee, setRecoveryFee] = useState(0);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [selectedDuplicateOrder, setSelectedDuplicateOrder] = useState<any>(null);
-  // Store-wide duplicate count for the "🟣 Doublons" quick-filter badge —
+  // Store-wide duplicate count for the "Doublons" quick-filter badge —
   // was computed only from the currently-loaded page's `orders` array, so
   // it silently vanished (count===0 hides every non-ALL badge, see below)
   // whenever the current page/status-tab happened to have zero duplicates
@@ -987,17 +988,17 @@ const [timeLeft, setTimeLeft] = useState('');
     // JAMAIS les commandes saisies manuellement par un agent — ce sont deux
     // catégories distinctes (voir le filtre "Manuelle" ci-dessous), une
     // commande manuelle ne doit jamais compter dans les deux à la fois.
-    { id: 'NORMAL',    label: '🟦 Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && o.source !== 'MARKETPLACE' && !(o as any).is_marketplace_upsell && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
-    { id: 'MANUAL',    label: '✍️ Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' && !(o as any).is_marketplace_upsell },
-    { id: 'MARKETPLACE', label: '🏪 Marketplace (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => (o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE' },
-    { id: 'ABANDONED', label: '🟧 Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
-    { id: 'RECOVERED', label: '🟩 Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
+    { id: 'NORMAL',    label: 'Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && o.source !== 'MARKETPLACE' && !(o as any).is_marketplace_upsell && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    { id: 'MANUAL',    label: 'Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' && !(o as any).is_marketplace_upsell },
+    { id: 'MARKETPLACE', label: 'Marketplace (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => (o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE' },
+    { id: 'ABANDONED', label: 'Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
+    { id: 'RECOVERED', label: 'Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
     // Deux catégories d'annulation, jamais confondues : une commande NORMALE
     // annulée (vraie commande passée puis annulée) n'a rien à voir, côté
     // diagnostic, avec un simple PANIER ABANDONNÉ jamais confirmé — les
     // mélanger masquait le vrai taux d'annulation des ventes réelles.
-    { id: 'CANCELLED_NORMAL',   label: '❌ Annulée (Normale)',           color: 'bg-red-50 text-red-700 border-red-200',     match: (o) => o.status === 'CANCELLED' && !o.is_abandoned_cart },
-    { id: 'CANCELLED_ABANDONED', label: '❌🟧 Annulée (Panier Aband.)',  color: 'bg-orange-50 text-red-700 border-orange-200', match: (o) => o.status === 'CANCELLED' && !!o.is_abandoned_cart },
+    { id: 'CANCELLED_NORMAL',   label: 'Annulée (Normale)',           color: 'bg-red-50 text-red-700 border-red-200',     match: (o) => o.status === 'CANCELLED' && !o.is_abandoned_cart },
+    { id: 'CANCELLED_ABANDONED', label: 'Annulée (Panier Aband.)',  color: 'bg-orange-50 text-red-700 border-orange-200', match: (o) => o.status === 'CANCELLED' && !!o.is_abandoned_cart },
     // Matches orders that ABSORBED at least one duplicate (duplicate_count
     // attached by GET /orders, see orders.py) — was previously matching
     // is_duplicate/isDuplicatePhone, which flags the MERGED CHILD, not the
@@ -1006,15 +1007,15 @@ const [timeLeft, setTimeLeft] = useState('');
     // real duplicates in the store. This is what actually answers "why does
     // Meta Ads show more orders than the ERP" — click it to see exactly
     // which orders absorbed a resubmit, and how many.
-    { id: 'DUPLICATE', label: '🟣 Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => (o.duplicate_count ?? 0) > 0 },
-    { id: 'NRP',       label: '🟥 NRP',             color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
-    { id: 'UPSELL',    label: '💸 Upsell',          color: 'bg-green-50 text-green-700 border-green-200',       match: (o) => !!o.is_upsell },
-    { id: 'PACK',      label: '📦 Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
-    { id: 'TRACKED',   label: '🔵 NOEST/Transporteur', color: 'bg-cyan-50 text-cyan-700 border-cyan-200',       match: (o) => !!o.tracking_number },
-    { id: 'INTERNAL',  label: '🚴 Livraison interne',  color: 'bg-sky-50 text-sky-700 border-sky-200',          match: (o) => !!o.livreur_id },
-    { id: 'INTERNAL_DELIVERED', label: '🚴 Interne Livrées', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => o.status === 'DELIVERED' && !!o.livreur_id && !o.tracking_number },
-    { id: 'MARKETPLACE_DELIVERED', label: '🏪 Marketplace Livrées (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => o.status === 'DELIVERED' && ((o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE') },
-    { id: 'PROMO',     label: '🏷️ Avec promo',      color: 'bg-pink-50 text-pink-700 border-pink-200',          match: (o) => !!o.promo_code },
+    { id: 'DUPLICATE', label: 'Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => (o.duplicate_count ?? 0) > 0 },
+    { id: 'NRP',       label: 'NRP',             color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
+    { id: 'UPSELL',    label: 'Upsell',          color: 'bg-green-50 text-green-700 border-green-200',       match: (o) => !!o.is_upsell },
+    { id: 'PACK',      label: 'Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
+    { id: 'TRACKED',   label: 'NOEST / Transporteur', color: 'bg-cyan-50 text-cyan-700 border-cyan-200',       match: (o) => !!o.tracking_number },
+    { id: 'INTERNAL',  label: 'Livraison interne',  color: 'bg-sky-50 text-sky-700 border-sky-200',          match: (o) => !!o.livreur_id },
+    { id: 'INTERNAL_DELIVERED', label: 'Interne Livrées', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => o.status === 'DELIVERED' && !!o.livreur_id && !o.tracking_number },
+    { id: 'MARKETPLACE_DELIVERED', label: 'Marketplace Livrées (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => o.status === 'DELIVERED' && ((o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE') },
+    { id: 'PROMO',     label: 'Avec promo',      color: 'bg-pink-50 text-pink-700 border-pink-200',          match: (o) => !!o.promo_code },
   ];
   const displayOrders = typeFilter === 'ALL'
     ? orders
@@ -1783,7 +1784,7 @@ const [timeLeft, setTimeLeft] = useState('');
                               réception ne bouge jamais, contrairement au statut. */}
                           {order.created_at && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase" title="Commande reçue dans l'ERP, pas encore traitée">
-                              📥 Reçue le {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                              Reçue le {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
                           {order.source === 'MARKETPLACE' || (order as any).is_marketplace_upsell ? (
@@ -1799,13 +1800,13 @@ const [timeLeft, setTimeLeft] = useState('');
                           ) : null}
                           <OrderTypeBadge order={order} size="xs" short />
                           {(order.nrp_count || 0) > 0 && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-100 text-rose-700 border border-rose-200 uppercase">🟥 NRP {order.nrp_count}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-rose-100 text-rose-700 border border-rose-200 uppercase">NRP {order.nrp_count}</span>
                           )}
                           {order.next_callback_time && new Date(order.next_callback_time).getTime() <= Date.now() && !['CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'MERGED'].includes(order.status) && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-100 text-red-700 border border-red-200 uppercase animate-pulse">⏰ Rappel échu</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-red-100 text-red-700 border border-red-200 uppercase animate-pulse">Rappel échu</span>
                           )}
                           {order.is_upsell && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-green-100 text-green-700 border border-green-200 uppercase">💸 Upsell</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-green-100 text-green-700 border border-green-200 uppercase">Upsell</span>
                           )}
                           {((order as any).is_marketplace_upsell && order.source !== 'MARKETPLACE') && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-100 text-pink-700 border border-pink-200 uppercase flex items-center gap-1">
@@ -1813,14 +1814,14 @@ const [timeLeft, setTimeLeft] = useState('');
                             </span>
                           )}
                           {order.is_pack && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">📦 Pack</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">Pack</span>
                           )}
                           {order.tracking_number && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase" title={`NOEST — ${order.tracking_number}`}>🚚 {order.tracking_number.slice(0, 12)}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase" title={`NOEST — ${order.tracking_number}`}>{order.tracking_number.slice(0, 12)}</span>
                           )}
                           {order.livreur_id && (
                             <>
-                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">🚴 {order.livreur?.name || 'Livreur'}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-100 text-sky-700 border border-sky-200 uppercase" title="Livreur assigné">{order.livreur?.name || 'Livreur'}</span>
                               {order.seen_by_livreur && order.livreur_seen_at ? (() => {
                                 const count = order.livreur_seen_count || 1;
                                 const d = new Date(order.livreur_seen_at);
@@ -1832,18 +1833,18 @@ const [timeLeft, setTimeLeft] = useState('');
                                     className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase flex items-center gap-0.5" 
                                     title={`Consultée ${count} fois par le livreur (${order.livreur?.name || 'Assigné'}) — Dernière: ${new Date(order.livreur_seen_at).toLocaleString('fr-DZ')}`}
                                   >
-                                    👁️ Vu {count > 1 ? `${count}x · ` : ''}{displayStr}
+                                    Vu {count > 1 ? `${count}x · ` : ''}{displayStr}
                                   </span>
                                 );
                               })() : (
                                 <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-400 border border-slate-200 uppercase flex items-center gap-0.5" title="Pas encore vu par le livreur">
-                                  ⏳ Non vu
+                                  Non vu
                                 </span>
                               )}
                             </>
                           )}
                           {order.utm_campaign && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase" title={`Campagne : ${order.utm_campaign}`}>📣 {String(order.utm_campaign).slice(0, 18)}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-blue-100 text-blue-700 border border-blue-200 uppercase" title={`Campagne : ${order.utm_campaign}`}>{String(order.utm_campaign).slice(0, 18)}</span>
                           )}
                           {!!order.events_count && (
                             <button
@@ -1852,7 +1853,7 @@ const [timeLeft, setTimeLeft] = useState('');
                               className="px-1.5 py-0.5 rounded text-[8px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase hover:bg-slate-200 transition-colors"
                               title="Voir l'historique complet de cette commande"
                             >
-                              🕘 {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
+                              {order.events_count} évènement{order.events_count > 1 ? 's' : ''}
                             </button>
                           )}
                         </div>
@@ -1863,7 +1864,7 @@ const [timeLeft, setTimeLeft] = useState('');
                             title="Voir l'historique et le détail des commandes fusionnées"
                           >
                             <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                            🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
+                            {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
                           </button>
                         )}
                         {order.notes && (
@@ -2182,7 +2183,7 @@ const [timeLeft, setTimeLeft] = useState('');
                           title="Voir l'historique et le détail des commandes fusionnées"
                         >
                           <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          🟣 {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
+                          {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
                         </button>
                       )}
                     </div>
@@ -2333,9 +2334,10 @@ const [timeLeft, setTimeLeft] = useState('');
                 </div>
                 <button
                   onClick={() => setTypeFilter('ALL')}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-black text-slate-600 transition-all"
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[11px] font-black text-slate-600 transition-all flex items-center gap-1.5"
                 >
-                  ✕ Retirer le filtre & repaginer
+                  <X className="size-3 text-slate-400" />
+                  Retirer le filtre & repaginer
                 </button>
               </>
             ) : (
@@ -2413,10 +2415,10 @@ const [timeLeft, setTimeLeft] = useState('');
                          <OrderTypeBadge order={selectedOrder} size="xs" short />
                          {selectedOrder.is_pack && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-[#6C5CE7]/20 text-indigo-200 border border-[#6C5CE7]/30 uppercase tracking-wide">Pack</span>}
                          {selectedOrder.is_upsell && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 uppercase tracking-wide">Upsell</span>}
-                         {((selectedOrder as any).is_marketplace_upsell || selectedOrder.source === 'MARKETPLACE') && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-500/20 text-pink-200 border border-pink-500/30 uppercase tracking-wide">🏪 Marketplace (50 DA)</span>}
+                         {((selectedOrder as any).is_marketplace_upsell || selectedOrder.source === 'MARKETPLACE') && <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-pink-500/20 text-pink-200 border border-pink-500/30 uppercase tracking-wide">Marketplace (50 DA)</span>}
                          {selectedOrder.livreur_id && (
                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-sky-500/20 text-sky-200 border border-sky-500/30 uppercase tracking-wide">
-                             🚴 {selectedOrder.livreur?.name || 'Livreur assigné'}
+                             {selectedOrder.livreur?.name || 'Livreur assigné'}
                            </span>
                          )}
                       </div>
@@ -2436,7 +2438,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                  (selectedOrder as any).ad_id && `Annonce: ${(selectedOrder as any).ad_id}`,
                                  (selectedOrder as any).referrer && `Referrer: ${(selectedOrder as any).referrer}`,
                                ].filter(Boolean).join('\n') || 'Aucun paramètre UTM/campagne enregistré pour cette commande'}>
-                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">📣 Campagne:</span>
+                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Campagne:</span>
                              {hasUtm ? (
                                <span className="text-[10px] font-bold text-blue-300">
                                  {(selectedOrder as any).utm_campaign || (selectedOrder as any).campaign_id}
@@ -2464,7 +2466,7 @@ const [timeLeft, setTimeLeft] = useState('');
                       }}
                       className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 border border-purple-400/30"
                     >
-                      🟣 Ouvrir la commande parente
+                      Ouvrir la commande parente
                     </button>
                   )}
                   {(!['DELIVERED','RETURNED','CANCELLED'].includes(selectedOrder.status) || ['SUPER_ADMIN', 'ADMIN'].includes(user?.role || '')) && (
@@ -2710,8 +2712,9 @@ const [timeLeft, setTimeLeft] = useState('');
                                       ))}
                                     </select>
                                     {selectedOrder.livreur_id && (
-                                      <p className="text-[10px] font-bold text-sky-700">
-                                        ✓ Assignée à {selectedOrder.livreur?.name || 'ce livreur'} — visible immédiatement dans son espace.
+                                      <p className="text-[10px] font-bold text-sky-700 flex items-center gap-1">
+                                        <Check className="size-3 text-sky-600" />
+                                        Assignée à {selectedOrder.livreur?.name || 'ce livreur'} — visible immédiatement dans son espace.
                                       </p>
                                     )}
                                   </>
@@ -3136,7 +3139,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                <SelectContent className="bg-white border-neutral-100 text-black rounded-xl">
                                   <SelectItem value="home">Livraison à Domicile</SelectItem>
                                   <SelectItem value="stop_desk">Stop Desk (Bureau)</SelectItem>
-                                  <SelectItem value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</SelectItem>
+                                  <SelectItem value="STORE_PICKUP">Retrait Point de Vente / Magasin</SelectItem>
                                </SelectContent>
                             </Select>
                          </div>
@@ -3333,17 +3336,17 @@ const [timeLeft, setTimeLeft] = useState('');
                   onChange={e => setEditStatus(e.target.value)}
                   className="w-full h-12 rounded-xl bg-indigo-50/50 border border-indigo-200 text-sm font-black text-[#6C5CE7] px-4 focus:outline-none focus:ring-2 focus:ring-[#6C5CE7]"
                 >
-                  <option value="CONFIRMED">✅ Confirmée</option>
-                  <option value="CANCELLED">❌ Annulée</option>
-                  <option value="RESCHEDULED">📅 Reportée / Pas de réponse (NRP)</option>
-                  <option value="IN_PROGRESS">⏳ En cours de traitement</option>
-                  <option value="CALLED">📞 Appelée</option>
-                  <option value="ASSIGNED">🟡 En attente d'attribution</option>
-                  <option value="NEW">🔵 Nouvelle commande</option>
-                  <option value="SHIPPED">🚚 Expédiée</option>
-                  <option value="DELIVERED">📦 Livrée</option>
-                  <option value="RETURNED">↩️ Retour</option>
-                  <option value="ABANDONED">🟧 Panier Abandonné</option>
+                  <option value="CONFIRMED">Confirmée</option>
+                  <option value="CANCELLED">Annulée</option>
+                  <option value="RESCHEDULED">Reportée / Pas de réponse (NRP)</option>
+                  <option value="IN_PROGRESS">En cours de traitement</option>
+                  <option value="CALLED">Appelée</option>
+                  <option value="ASSIGNED">En attente d'attribution</option>
+                  <option value="NEW">Nouvelle commande</option>
+                  <option value="SHIPPED">Expédiée</option>
+                  <option value="DELIVERED">Livrée</option>
+                  <option value="RETURNED">Retour</option>
+                  <option value="ABANDONED">Panier Abandonné</option>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -3373,7 +3376,7 @@ const [timeLeft, setTimeLeft] = useState('');
                   >
                     <option value="home">Livraison à Domicile</option>
                     <option value="stop_desk">Stop Desk (Bureau)</option>
-                    <option value="STORE_PICKUP">🏪 Retrait Point de Vente / Magasin</option>
+                    <option value="STORE_PICKUP">Retrait Point de Vente / Magasin</option>
                   </select>
                 </div>
                 <div className="space-y-2">

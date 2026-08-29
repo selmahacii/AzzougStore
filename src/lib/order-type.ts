@@ -29,25 +29,21 @@ export function getOrderType(order: any): OrderType {
 
 /** Consistent color system (see docs/AUDIT — badges):
  *  blue = normal, pink = marketplace, orange = abandoned, green = recovered, purple = duplicates. */
-export const ORDER_TYPE_META: Record<OrderType, { label: string; emoji: string; className: string }> = {
+export const ORDER_TYPE_META: Record<OrderType, { label: string; className: string }> = {
   NORMAL: {
     label: 'Commande Normale',
-    emoji: '🟦',
     className: 'bg-blue-50 text-blue-700 border-blue-200',
   },
   MARKETPLACE: {
-    label: 'Commande Normale Marketplace',
-    emoji: '🏪',
+    label: 'Commande Marketplace',
     className: 'bg-pink-50 text-pink-700 border-pink-300 font-black',
   },
   ABANDONED: {
     label: 'Panier Abandonné',
-    emoji: '🟧',
     className: 'bg-orange-50 text-orange-700 border-orange-200',
   },
   RECOVERED: {
     label: 'Panier Récupéré',
-    emoji: '🟩',
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   },
 };
