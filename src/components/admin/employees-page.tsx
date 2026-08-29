@@ -120,10 +120,10 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 // Sub-tabs configuration
 // ═══════════════════════════════════════════════════════════════
 const TABS = [
-   { id: 'team', label: '👥 Équipe & Collaborateurs', icon: Users },
-   { id: 'assignment-rules', label: "🎯 Règles d&apos;Assignation", icon: Target },
-   { id: 'roles', label: '🛡️ Matrice des Rôles', icon: Shield },
-   { id: 'infra', label: '⚡ Infrastructure Live', icon: RadioTower },
+   { id: 'team', label: 'Équipe & Collaborateurs', icon: Users },
+   { id: 'assignment-rules', label: "Règles d&apos;Assignation", icon: Target },
+   { id: 'roles', label: 'Matrice des Rôles', icon: Shield },
+   { id: 'infra', label: 'Infrastructure Système', icon: RadioTower },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -195,15 +195,15 @@ interface RolePermission {
 }
 
 const ALL_PERMISSIONS = [
-   { group: '📦 Produits & Stock', perms: ['products.view', 'products.create', 'products.edit', 'products.delete', 'stock.view', 'stock.adjust'] },
-   { group: '🛒 Commandes', perms: ['orders.view', 'orders.create', 'orders.confirm', 'orders.cancel', 'orders.edit'] },
-   { group: '👥 Clients & CRM', perms: ['customers.view', 'customers.edit', 'customers.export'] },
+   { group: 'Produits & Stock', perms: ['products.view', 'products.create', 'products.edit', 'products.delete', 'stock.view', 'stock.adjust'] },
+   { group: 'Commandes', perms: ['orders.view', 'orders.create', 'orders.confirm', 'orders.cancel', 'orders.edit'] },
+   { group: 'Clients & CRM', perms: ['customers.view', 'customers.edit', 'customers.export'] },
    { group: '💰 Finance & Dépenses', perms: ['finance.view', 'finance.transactions', 'expenses.view', 'expenses.create', 'expenses.delete'] },
    { group: '📈 Analytics & Audit', perms: ['analytics.view', 'audit.view', 'reports.export'] },
    { group: '👤 Équipe & RH', perms: ['users.view', 'users.create', 'users.edit', 'users.delete', 'roles.manage'] },
-   { group: '🚚 Livraison & Partenaires', perms: ['delivery.view', 'delivery.manage', 'partners.view', 'partners.edit'] },
-   { group: '📣 Marketing & Promotions', perms: ['marketing.view', 'marketing.create', 'promotions.view', 'promotions.manage'] },
-   { group: '⚙️ Paramètres', perms: ['settings.view', 'settings.edit', 'api_keys.manage', 'stores.manage'] },
+   { group: 'Livraison & Partenaires', perms: ['delivery.view', 'delivery.manage', 'partners.view', 'partners.edit'] },
+   { group: 'Marketing & Promotions', perms: ['marketing.view', 'marketing.create', 'promotions.view', 'promotions.manage'] },
+   { group: 'Paramètres', perms: ['settings.view', 'settings.edit', 'api_keys.manage', 'stores.manage'] },
 ];
 
 const ROLE_COLORS = ['#4b7bec', '#20bf6b', '#f7b731', '#eb4d4b', '#a55eea', '#fd9644', '#45aaf2'];
@@ -974,9 +974,10 @@ function UnifiedTeamView({
    const pageSize = 15;
 
    // Single bulk query for agents performance summary
+   const empIds = employees.map((e: any) => e.id).filter(Boolean).join(',');
    const perfQuery = useQuery({
-      queryKey: ['employees', 'performance-summary', storeId],
-      queryFn: () => apiFetch(`/api/v1/users/performance-summary?store_id=${storeId}`),
+      queryKey: ['employees', 'performance-summary', storeId, empIds],
+      queryFn: () => apiFetch(`/api/v1/users/performance-summary?store_id=${storeId}&user_ids=${empIds}`),
       enabled: !!storeId,
    });
 
@@ -1033,7 +1034,7 @@ function UnifiedTeamView({
          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-base">👥</span>
+                  <span className="size-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center"><Users className="size-4" /></span>
                   <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">GLOBAL</span>
                </div>
                <div>
@@ -1044,7 +1045,7 @@ function UnifiedTeamView({
 
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-base">🟢</span>
+                  <span className="size-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><CheckCircle className="size-4" /></span>
                   <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{totalStaff > 0 ? Math.round((activeStaff / totalStaff) * 100) : 0}%</span>
                </div>
                <div>
@@ -1055,7 +1056,7 @@ function UnifiedTeamView({
 
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-base">📞</span>
+                  <span className="size-8 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center"><Phone className="size-4" /></span>
                   <span className="text-[9px] font-black text-[#4b7bec] bg-indigo-50 px-2 py-0.5 rounded-full">VENTE</span>
                </div>
                <div>
@@ -1066,7 +1067,7 @@ function UnifiedTeamView({
 
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-base">🚚</span>
+                  <span className="size-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center"><Truck className="size-4" /></span>
                   <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">TERRAIN</span>
                </div>
                <div>
@@ -1077,7 +1078,7 @@ function UnifiedTeamView({
 
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-base">📣</span>
+                  <span className="size-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center"><Megaphone className="size-4" /></span>
                   <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">TRAFIC</span>
                </div>
                <div>
@@ -1088,7 +1089,7 @@ function UnifiedTeamView({
 
             <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 shadow-xs space-y-1.5">
                <div className="flex items-center justify-between">
-                  <span className="size-8 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center text-base">🛡️</span>
+                  <span className="size-8 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center"><Shield className="size-4" /></span>
                   <span className="text-[9px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">SYSTÈME</span>
                </div>
                <div>
@@ -1126,13 +1127,13 @@ function UnifiedTeamView({
                         onClick={() => { setStatusFilter('ACTIVE'); setPage(1); }}
                         className={cn("px-3 py-1.5 rounded-lg transition-all", statusFilter === 'ACTIVE' ? "bg-emerald-50 text-emerald-700 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
                      >
-                        🟢 Actifs
+                        Actifs
                      </button>
                      <button
                         onClick={() => { setStatusFilter('INACTIVE'); setPage(1); }}
                         className={cn("px-3 py-1.5 rounded-lg transition-all", statusFilter === 'INACTIVE' ? "bg-rose-50 text-rose-700 shadow-xs font-black" : "text-slate-400 hover:text-slate-600")}
                      >
-                        ⚪ Inactifs
+                        Inactifs
                      </button>
                   </div>
 
@@ -1166,7 +1167,7 @@ function UnifiedTeamView({
                      roleFilter === 'CONFIRMATEUR' ? "bg-[#4b7bec] text-white shadow-xs" : "bg-blue-50 text-[#4b7bec] hover:bg-blue-100/80"
                   )}
                >
-                  <span>📞 Confirmatrices</span>
+                  <span>Confirmatrices</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{confirmateursCount}</span>
                </button>
 
@@ -1177,7 +1178,7 @@ function UnifiedTeamView({
                      roleFilter === 'LIVREUR' ? "bg-purple-600 text-white shadow-xs" : "bg-purple-50 text-purple-700 hover:bg-purple-100/80"
                   )}
                >
-                  <span>🚚 Livreurs</span>
+                  <span>Livreurs</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{livreursCount}</span>
                </button>
 
@@ -1188,7 +1189,7 @@ function UnifiedTeamView({
                      roleFilter === 'MARKETER' ? "bg-amber-600 text-white shadow-xs" : "bg-amber-50 text-amber-700 hover:bg-amber-100/80"
                   )}
                >
-                  <span>📣 Marketers & Affiliés</span>
+                  <span>Marketers & Affiliés</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{marketersCount}</span>
                </button>
 
@@ -1199,7 +1200,7 @@ function UnifiedTeamView({
                      roleFilter === 'ADMINS' ? "bg-slate-700 text-white shadow-xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   )}
                >
-                  <span>🛡️ Admins & Managers</span>
+                  <span>Admins & Managers</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/30">{adminsCount}</span>
                </button>
             </div>
@@ -1316,12 +1317,12 @@ function UnifiedTeamView({
                                        </span>
                                        {emp.assigned_wilayas && emp.assigned_wilayas.length > 0 && (
                                           <p className="text-[10px] text-slate-400 font-medium truncate max-w-[180px]">
-                                             📍 {emp.assigned_wilayas.join(', ')}
+                                             {emp.assigned_wilayas.join(', ')}
                                           </p>
                                        )}
                                        {(emp.tracking_code || emp.promo_code) && (
                                           <p className="text-[10px] text-emerald-600 font-mono font-bold">
-                                             🎟️ {emp.tracking_code || emp.promo_code}
+                                             Code : {emp.tracking_code || emp.promo_code}
                                           </p>
                                        )}
                                     </div>
@@ -2260,10 +2261,10 @@ Commission Upsell
                               <Label className="text-[10px] font-black text-purple-900 uppercase tracking-wider">Visibilité des modules du menu</Label>
                               <div className="grid grid-cols-2 gap-2">
                                  {[
-                                    { id: 'orders', label: '📦 Commandes Assignées' },
+                                    { id: 'orders', label: 'Commandes Assignées' },
                                     { id: 'inventory', label: '📊 Inventaire & Stocks' },
-                                    { id: 'deliveries', label: '🚚 Bords de Livraison' },
-                                    { id: 'transfers', label: '🔄 Transferts de Stock' },
+                                    { id: 'deliveries', label: 'Bords de Livraison' },
+                                    { id: 'transfers', label: 'Transferts de Stock' },
                                     { id: 'returns', label: '🔁 Retours & Échanges' },
                                     { id: 'analytics', label: '📈 Métriques & KPIs' },
                                  ].map(mod => {
@@ -2888,7 +2889,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                         { id: '30d', label: '30 jours' },
                         { id: '7d', label: '7 jours' },
                         { id: 'today', label: "Aujourd'hui" },
-                        { id: 'custom', label: '📅 Période' },
+                        { id: 'custom', label: 'Période' },
                      ].map(p => (
                         <button
                            key={p.id}
@@ -3124,7 +3125,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                        <th className="pb-2.5 font-bold text-center">🟦 Normales</th>
                                        <th className="pb-2.5 font-bold text-center">🟩 Paniers Récup.</th>
                                        <th className="pb-2.5 font-bold text-center">🔴 Retours</th>
-                                       <th className="pb-2.5 font-bold text-center">🚚 Total Livré</th>
+                                       <th className="pb-2.5 font-bold text-center">Total Livré</th>
                                        {paymentType !== 'MONTHLY_SALARY' && <th className="pb-2.5 font-bold text-right">💵 Gain du jour</th>}
                                     </tr>
                                  </thead>
@@ -3291,7 +3292,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                        )}
                                     </div>
                                     <div className="text-slate-500 sm:text-right font-medium">
-                                       📍 {o.customer_wilaya || o.wilaya || 'Wilaya non spécifiée'}{(o.customer_commune || o.commune) ? ` · ${o.customer_commune || o.commune}` : ''}
+                                       {o.customer_wilaya || o.wilaya || 'Wilaya non spécifiée'}{(o.customer_commune || o.commune) ? ` · ${o.customer_commune || o.commune}` : ''}
                                     </div>
                                  </div>
 
@@ -3306,7 +3307,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
                                        )}
                                        {o.carrier_tracking_note && (
                                           <p className="text-slate-600 font-medium">
-                                             🚚 <strong className="text-slate-800">Suivi Transporteur :</strong> {o.carrier_tracking_note}
+                                             <strong className="text-slate-800">Suivi Transporteur :</strong> {o.carrier_tracking_note}
                                           </p>
                                        )}
                                     </div>

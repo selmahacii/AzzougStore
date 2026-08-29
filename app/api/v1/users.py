@@ -624,7 +624,7 @@ def change_own_password(
 
 @router.get("/performance-summary")
 def get_users_performance_summary(
-    user_ids: str = Query(..., description="Comma-separated user IDs"),
+    user_ids: Optional[str] = Query(None, description="Comma-separated user IDs"),
     store_id: Optional[str] = Query(None),
     db: Session = Depends(deps.get_db),
 ):
@@ -633,22 +633,12 @@ def get_users_performance_summary(
     MUST be registered before GET /{user_id} — otherwise Starlette matches
     "performance-summary" as a user_id path param and this route is never
     reached at all.
-
-    The "Force de vente" table used to fire ONE full /performance call PER
-    ROW (each doing an order aggregation + recent_orders + audit_logs +
-    daily-chart query) just to paint a summary badge — free-tier DB budget
-    wasted on N+1 round trips for data a single GROUP BY query already
-    answers. This collapses it to 2 queries total (order aggregation +
-    one user lookup) regardless of how many agents are on the page.
-
-    Trade-off, deliberate: the salary figure here is base pay only
-    (delivered_count × payment_amount, or the flat monthly amount) — it
-    excludes recovered-cart/upsell bonuses that the full compute_salary()
-    adds. That's fine for a quick list-row badge; opening the salary
-    dialog for one employee still calls the single-user /performance
-    endpoint, which uses compute_salary() and is fully accurate.
     """
-    ids = [i.strip() for i in user_ids.split(",") if i.strip()]
+    ids = [i.strip() for i in (user_ids or "").split(",") if i.strip()]
+    if not ids and store_id:
+        from app.models.user import StoreUser
+        store_user_ids = [r[0] for r in db.query(StoreUser.user_id).filter(StoreUser.store_id == store_id).all()]
+        ids = store_user_ids
     if not ids:
         return {"success": True, "data": {}}
 
