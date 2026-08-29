@@ -5236,22 +5236,21 @@ def get_capi_tracking_quality_v2(
     tracking_score_classified = classify(tracking_score_global, meta_health_label)
     coverage_pct_classified = classify(coverage_pct, meta_health_label)
 
-    if pending > 0:
-        recommendations.append(f"{pending} commande(s) en attente d'envoi — vous pouvez déclencher la synchronisation CAPI instantanée.")
-    elif coverage_pct >= 95:
-        recommendations.append(f"Excellente couverture ({coverage_pct}%) : la quasi-totalité des commandes ERP est bien enregistrée chez Meta.")
-    
+    if coverage_pct < 95:
+        recommendations.append(f"Couverture à {coverage_pct}% — vérifier les commandes 'manquantes' via /orders/capi/backfill-audit.")
+    if avg_match_quality is not None and avg_match_quality < 70:
+        recommendations.append(f"Match Quality moyenne à {avg_match_quality}% — email/ville souvent absents, vérifier la collecte au checkout.")
     if failure_rate > 2:
-        recommendations.append(f"Taux d'échec CAPI à {failure_rate}% — vérifiez la validité de votre jeton d'accès Pixel/CAPI.")
-    
-    if realtime_ok > 0 or backfill_ok > 0:
-        recommendations.append(f"{realtime_ok} événement(s) Purchase transmis en temps réel et {backfill_ok} synchronisé(s) avec succès.")
-    
-    # Précision spécifique E-commerce COD Algérie (téléphone/wilaya prioritaires)
-    recommendations.append("Spécificité COD Algérie : Le numéro de téléphone (+213), le nom et la commune constituent les clés majeures de matching Meta.")
-    
+        recommendations.append(f"Taux d'échec CAPI à {failure_rate}% — vérifier la validité du token Meta (voir Santé du Pixel).")
+    if backfill_ok > realtime_ok * 0.2 and backfill_ok > 5:
+        recommendations.append(f"{backfill_ok} achat(s) en rattrapage — surveiller que le déclencheur temps réel fonctionne pour les nouvelles commandes.")
+    # Recommandations dérivées de la couverture par champ — jamais génériques,
+    # toujours le champ précis et son pourcentage réel mesuré.
+    for fc in signal_field_coverage:
+        if fc["coverage_pct"] is not None and fc["coverage_pct"] < 30 and fc["key"] in ("em", "fbc", "fbp"):
+            recommendations.append(f"{fc['label']} présent sur seulement {fc['coverage_pct']}% des Purchase — signal de correspondance faible pour Meta.")
     if not recommendations:
-        recommendations.append("Transmission CAPI fluide et signaux parfaitement alignés.")
+        recommendations.append("Aucune anomalie détectée sur la période.")
 
     _timing_total = realtime_ok + backfill_ok
     result = {

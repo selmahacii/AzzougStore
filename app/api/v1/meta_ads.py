@@ -2856,13 +2856,9 @@ def get_meta_capi_logs(
             "site_source_name": order.site_source_name if order else None,
             "utm_campaign": order.utm_campaign if order else None,
             "error_message": log.error_message,
-            "error_category": log.error_category,
             "retry_count": log.retry_count,
             "next_retry_at": log.next_retry_at.isoformat() if log.next_retry_at else None,
             "latency_ms": log.latency_ms,
-            "payload": log.payload,
-            "last_http_status": log.last_http_status,
-            "events_received": log.events_received,
             "created_at": log.created_at.isoformat() if log.created_at else None,
             "updated_at": log.updated_at.isoformat() if log.updated_at else None,
         }
@@ -2931,14 +2927,6 @@ def get_capi_volume_by_event(
         .all()
     )
 
-    _EVENT_ROLES = {
-        "Purchase": "Conversion finale (Achat COD)",
-        "InitiateCheckout": "Tunnel de commande (Ouverture formulaire)",
-        "AddToCart": "Engagement panier (Sélection d'offre)",
-        "ViewContent": "Navigation produit (Page produit)",
-        "PageView": "Visite globale (Trafic boutique)",
-    }
-
     by_event = []
     for event_name, total, success, avg_latency, dup_count in rows:
         success = success or 0
@@ -2951,7 +2939,7 @@ def get_capi_volume_by_event(
             "avg_latency_ms": round(avg_latency, 1) if avg_latency else None,
             "unique_event_ids": dup_count,
             "duplicate_rows_detected": max(0, total - dup_count),
-            "meta_learning_usage": _EVENT_ROLES.get(event_name, "Événement standard"),
+            "meta_learning_usage": "NON MESURABLE — Meta n'expose aucune API confirmant l'usage d'un évènement dans son Learning",
         })
 
     return {"success": True, "data": by_event}
