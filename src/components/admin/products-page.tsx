@@ -1126,8 +1126,8 @@ export default function ProductsPage() {
                <form onSubmit={handleSave} className="flex-1 flex flex-col min-h-0 relative bg-slate-50 w-full h-full">
                   <Tabs defaultValue="base" className="flex-1 flex flex-col md:flex-row w-full h-full min-h-0 relative">
                      {/* ── Sidebar (TabsList) ── */}
-                     <div className="shrink-0 md:w-[240px] lg:w-[280px] bg-white md:border-r border-slate-100 flex flex-col z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)] relative">
-                        <TabsList className="h-auto p-4 md:p-6 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-max md:w-full min-w-full md:min-w-0">
+                     <div className="shrink-0 md:w-[250px] lg:w-[270px] bg-white md:border-r border-slate-100 flex flex-col z-10 shadow-xs relative">
+                        <TabsList className="h-auto p-3.5 sm:p-5 flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-y-auto custom-scrollbar justify-start items-stretch bg-transparent border-none w-max md:w-full min-w-full md:min-w-0">
                            {([
                               { value: 'base',      icon: Info,      label: 'Infos',     labelFull: 'Informations' },
                               ...(form.is_pack ? [{ value: 'pack', icon: Boxes, label: 'Pack', labelFull: 'Composition Pack' }] : []),
@@ -1136,7 +1136,7 @@ export default function ProductsPage() {
                               { value: 'logistics', icon: Truck,     label: 'Livraison', labelFull: 'Logistique' },
                            ] as any[]).map(({ value, icon: Icon, label, labelFull }) => (
                               <TabsTrigger key={value} value={value}
-                                 className="h-12 md:h-14 px-4 md:px-5 justify-start gap-3 rounded-[14px] data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-500 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-black uppercase tracking-[0.15em] text-[10px] sm:text-[11px] shadow-none border-none group"
+                                 className="h-11 px-4 justify-start gap-3 rounded-xl data-[state=active]:bg-[#4b7bec] data-[state=active]:text-white text-slate-600 hover:bg-slate-50 data-[state=active]:hover:bg-[#4b7bec] transition-all font-bold text-xs shadow-none border-none group"
                               >
                                  <Icon className="size-4 shrink-0 transition-colors group-data-[state=active]:text-white" />
                                  <span className="md:hidden">{label}</span>
@@ -1212,7 +1212,7 @@ export default function ProductsPage() {
                                     onValueChange={v => setF({ store_id: v })}
                                     disabled={!!editingProduct}
                                  >
-                                    <SelectTrigger className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white text-sm font-black px-6 transition-all">
+                                    <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-white text-xs font-bold px-4 focus-visible:ring-[#4b7bec] transition-all">
                                        <SelectValue placeholder="Sélectionner une boutique..." />
                                     </SelectTrigger>
                                     <SelectContent className="rounded-2xl">
@@ -1240,7 +1240,7 @@ export default function ProductsPage() {
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
                               <div className="space-y-3">
                                  <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Nom commercial de l'article *</label>
-                                 <Input value={form.name} onChange={e => setF({ name: e.target.value })} placeholder="Ex: Basket Ultra Pro v2" className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white text-base font-black px-6 transition-all" />
+                                 <Input value={form.name} onChange={e => setF({ name: e.target.value })} placeholder="Ex: Basket Ultra Pro v2" className="h-11 rounded-xl border-slate-200 bg-white text-xs font-bold px-4 focus-visible:ring-[#4b7bec] transition-all" />
                               </div>
                               <div className="space-y-3">
                                  <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Catégorie Principale</label>
@@ -1250,7 +1250,7 @@ export default function ProductsPage() {
                                           variant="outline"
                                           role="combobox"
                                           aria-expanded={categoryOpen}
-                                          className="w-full h-14 rounded-2xl border-slate-100 bg-slate-50/50 hover:bg-white text-base font-black px-6 justify-between transition-all"
+                                          className="w-full h-11 rounded-xl border-slate-200 bg-white text-xs font-bold px-4 justify-between transition-all"
                                        >
                                           {form.category || "Sélectionner ou créer..."}
                                           <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
@@ -1329,12 +1329,12 @@ export default function ProductsPage() {
                                        value={form.sku}
                                        onChange={e => setF({ sku: e.target.value })}
                                        placeholder="E-COMM-001"
-                                       className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white text-base font-black px-6 font-mono transition-all flex-1"
+                                       className="h-11 rounded-xl border-slate-200 bg-white text-xs font-bold px-4 font-mono focus-visible:ring-[#4b7bec] transition-all flex-1"
                                     />
                                     <Button
                                        type="button"
                                        onClick={() => setF({ sku: generateSku(form.category) })}
-                                       className="h-14 px-4 rounded-2xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest whitespace-nowrap"
+                                       className="h-11 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider whitespace-nowrap"
                                     >
                                        <Zap className="size-4 mr-1" /> Auto
                                     </Button>
@@ -1342,13 +1342,13 @@ export default function ProductsPage() {
                               </div>
                               <div className="space-y-3">
                                  <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Code Barre (EAN/UPC)</label>
-                                 <Input value={form.barcode} onChange={e => setF({ barcode: e.target.value })} placeholder="613..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 focus:bg-white text-base font-black px-6 font-mono transition-all" />
+                                 <Input value={form.barcode} onChange={e => setF({ barcode: e.target.value })} placeholder="613..." className="h-11 rounded-xl border-slate-200 bg-white text-xs font-bold px-4 font-mono focus-visible:ring-[#4b7bec] transition-all" />
                               </div>
                            </div>
 
                            <div className="space-y-3">
                               <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Description Technique & Marketing</label>
-                              <textarea value={form.description} onChange={e => setF({ description: e.target.value })} placeholder="Décrivez les fonctionnalités clés, matières et avantages..." className="w-full min-h-[160px] p-6 rounded-[24px] border border-slate-100 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-50 text-sm font-medium transition-all outline-none resize-none" />
+                              <textarea value={form.description} onChange={e => setF({ description: e.target.value })} placeholder="Décrivez les fonctionnalités clés, matières et avantages..." className="w-full min-h-[130px] p-4 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-[#4b7bec] text-xs font-medium transition-all outline-none resize-none" />
                            </div>
 
                            {/* ── Image principale ── */}
@@ -2715,32 +2715,32 @@ export default function ProductsPage() {
                         </div>
                         
                         {/* ── Footer ── */}
-                        <div className="shrink-0 h-[80px] sm:h-[90px] px-4 sm:px-10 bg-white border-t border-slate-100 flex items-center justify-between gap-4 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.03)] z-20">
-                           <div className="hidden sm:flex items-center gap-2 text-slate-300">
-                              <CheckCircle2 className="size-4" />
-                              <span className="text-[10px] font-black uppercase tracking-[0.2em]">Autosave in cloud</span>
+                        <div className="shrink-0 h-18 px-6 sm:px-8 bg-white border-t border-slate-100 flex items-center justify-between gap-4 z-20 shadow-xs">
+                           <div className="hidden sm:flex items-center gap-2 text-slate-400 text-xs font-medium">
+                              <CheckCircle2 className="size-4 text-emerald-500" />
+                              <span>Catalogue synchronisé avec Meta & Logistique</span>
                            </div>
                            <div className="flex items-center justify-end gap-3 w-full sm:w-auto">
-                              <Button type="button" variant="ghost"
+                              <Button type="button" variant="outline"
                                  onClick={() => { setEditingProduct(null); setIsCreating(false); setForm({ ...EMPTY_FORM }); }}
-                                 className="h-12 sm:h-14 px-6 rounded-2xl font-black uppercase tracking-[0.15em] text-[11px] text-slate-400 hover:bg-slate-50"
+                                 className="h-11 px-5 rounded-xl font-bold text-xs text-slate-600 border-slate-200 hover:bg-slate-50"
                               >
                                  Annuler
                               </Button>
                               <Button type="submit"
                                  disabled={createMutation.isPending || updateMutation.isPending}
                                  className={cn(
-                                    "flex-1 sm:flex-none h-12 sm:h-14 px-8 rounded-2xl text-white font-black uppercase tracking-[0.15em] text-[11px] shadow-xl transition-all active:scale-[0.98]",
+                                    "h-11 px-7 rounded-xl text-white font-black text-xs shadow-md transition-all active:scale-[0.98]",
                                     form.is_upsell_only
                                        ? "bg-[#6C5CE7] hover:bg-[#5b4bd4] shadow-[#6C5CE7]/20"
-                                       : "bg-[#4b7bec] hover:bg-[#3867d6] shadow-indigo-500/20"
+                                       : "bg-[#4b7bec] hover:bg-[#3867d6] shadow-blue-100"
                                  )}
                               >
                                  {createMutation.isPending || updateMutation.isPending
-                                    ? <Loader2 className="size-5 animate-spin" />
+                                    ? <Loader2 className="size-4 animate-spin text-white" />
                                     : editingProduct
-                                       ? (form.is_upsell_only ? 'Valider le produit upsell' : 'Valider modifications')
-                                       : (form.is_upsell_only ? 'Créer le produit upsell' : 'Créer le produit')
+                                       ? (form.is_upsell_only ? 'Valider le produit upsell' : 'Enregistrer les modifications')
+                                       : (form.is_upsell_only ? 'Créer le produit upsell' : 'Créer la référence')
                                  }
                               </Button>
                            </div>
