@@ -75,20 +75,20 @@ const C = {
    bg: '#F8F9FC',
 };
 
-function MetricRow({ label, value, suffix = "(DZD)", badge, description }: {
+function MetricRow({ label, value, suffix = "DA", badge, description }: {
    label: string; value: string | number; suffix?: string; badge?: string; description?: string;
 }) {
    return (
-      <div className="flex items-center justify-between py-3 border-b border-[#F0F3F6] last:border-0 hover:bg-[#FAFBFD] px-3 -mx-3 rounded transition-colors">
+      <div className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0 hover:bg-slate-50/60 px-3 -mx-3 rounded-xl transition-colors">
          <div>
-            <span className="text-[13px] font-medium text-[#636E72] block">{label}</span>
-            {description && <span className="text-[9px] text-[#B2BEC3] leading-tight block mt-0.5 max-w-[180px]">{description}</span>}
+            <span className="text-xs font-bold text-slate-700 block">{label}</span>
+            {description && <span className="text-[10px] text-slate-400 leading-tight block mt-0.5 max-w-[240px]">{description}</span>}
          </div>
-         <div className="flex items-center gap-2">
-            <span className="text-[13px] font-bold text-[#2D3436] tabular-nums">{value}</span>
-            {suffix && <span className="text-[10px] font-semibold text-[#B2BEC3]">{suffix}</span>}
+         <div className="flex items-center gap-1.5">
+            <span className="text-xs sm:text-sm font-black text-slate-900 font-mono tabular-nums">{value}</span>
+            {suffix && <span className="text-[10px] font-bold text-slate-400 font-mono">{suffix}</span>}
             {badge && (
-               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">{badge}</span>
+               <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{badge}</span>
             )}
          </div>
       </div>
@@ -96,45 +96,45 @@ function MetricRow({ label, value, suffix = "(DZD)", badge, description }: {
 }
 
 function PerformanceGauge({ label, value, color, description }: { label: string; value: number; color: string; description?: string; }) {
-   const radius = 42;
+   const radius = 36;
    const circumference = 2 * Math.PI * radius;
    const offset = circumference - (Math.min(value, 100) / 100) * circumference;
    return (
-      <div className="flex flex-col items-center gap-2">
-         <div className="relative size-24">
+      <div className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-slate-50/60 border border-slate-100 w-full hover:bg-white transition-all">
+         <div className="relative size-20">
             <svg className="size-full transform -rotate-90">
-               <circle cx="48" cy="48" r={radius} className="fill-transparent" stroke="#F0F3F6" strokeWidth="7" />
-               <circle cx="48" cy="48" r={radius} className="fill-transparent transition-all duration-1000"
-                  stroke={color} strokeWidth="7" strokeLinecap="round"
+               <circle cx="40" cy="40" r={radius} className="fill-transparent stroke-slate-200/60" strokeWidth="6" />
+               <circle cx="40" cy="40" r={radius} className="fill-transparent transition-all duration-1000"
+                  stroke={color} strokeWidth="6" strokeLinecap="round"
                   style={{ strokeDasharray: circumference, strokeDashoffset: offset }}
                />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center flex-col">
-               <span className="text-[13px] font-extrabold tabular-nums" style={{ color }}>{value}%</span>
+               <span className="text-xs font-black font-mono tabular-nums text-slate-900">{value}%</span>
             </div>
          </div>
-         <div className="flex flex-col items-center">
-            <span className="text-[10px] font-bold text-[#636E72] text-center max-w-[90px] leading-tight">{label}</span>
-            {description && <span className="text-[8px] text-[#B2BEC3] text-center max-w-[100px] leading-tight mt-0.5">{description}</span>}
+         <div className="flex flex-col items-center text-center">
+            <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{label}</span>
+            {description && <span className="text-[9px] text-slate-400 leading-tight mt-0.5 max-w-[120px]">{description}</span>}
          </div>
       </div>
    );
 }
 
 function SectionPanel({ title, icon: Icon, iconColor, borderColor, children }: {
-   title: string; icon: React.ElementType; iconColor: string; borderColor: string; children: React.ReactNode;
+   title: string; icon: React.ElementType; iconColor: string; borderColor?: string; children: React.ReactNode;
 }) {
    return (
-      <div className="bg-white rounded-xl border border-[#E9ECF0] overflow-hidden">
-         <div className="px-5 py-4 border-b-2" style={{ borderColor }}>
-            <div className="flex items-center gap-3">
-               <div className="size-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: iconColor + '15' }}>
-                  <Icon className="size-4" style={{ color: iconColor }} />
-               </div>
-               <h3 className="text-sm font-bold" style={{ color: iconColor }}>{title}</h3>
+      <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-5 sm:p-6 shadow-sm space-y-4">
+         <div className="flex items-center gap-3 border-b border-slate-100 pb-3.5">
+            <div className="size-8 sm:size-9 rounded-xl flex items-center justify-center shadow-2xs shrink-0" style={{ backgroundColor: iconColor + '15' }}>
+               <Icon className="size-4" style={{ color: iconColor }} />
+            </div>
+            <div>
+               <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">{title}</h3>
             </div>
          </div>
-         <div className="p-5">
+         <div>
             {children}
          </div>
       </div>
@@ -223,120 +223,229 @@ export default function AnalyticsPage() {
       color: '#2D3436',
    };
 
-   return (
-      <div className="space-y-5 animate-in fade-in duration-500 pb-28" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+   const calculatedProfit = kpi?.totalProfit 
+      ? kpi.totalProfit 
+      : (kpi?.profitPerOrder && kpi?.deliveredOrders ? (kpi.profitPerOrder * kpi.deliveredOrders) : 0);
+   const profitMarginPct = kpi?.totalRevenue && kpi.totalRevenue > 0 && calculatedProfit > 0
+      ? ((calculatedProfit / kpi.totalRevenue) * 100).toFixed(1)
+      : '0.0';
 
-         {/* ─── Dynamic Header ────────────────────────── */}
-         <div className="bg-white rounded-xl border px-4 sm:px-8 py-6 sm:py-10" style={{ borderColor: C.border }}>
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-               <div className="flex items-center gap-4 sm:gap-6">
-                  <div className="size-12 sm:size-16 rounded-2xl flex items-center justify-center shadow-sm shrink-0" style={{ backgroundColor: C.primaryBg }}>
-                     {React.createElement(TAB_INFO[activeTab]?.icon || BarChart3, { 
-                        className: "size-6 sm:size-8", 
-                        style: { color: C.primary } 
-                     })}
-                  </div>
-                  <div className="space-y-1">
-                     <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Suivi d'activité & Performance</span>
-                        <div className="size-1.5 rounded-full bg-emerald-500 hidden sm:block" />
-                     </div>
-                     <h1 className="text-xl sm:text-3xl lg:text-4xl font-black uppercase tracking-tighter text-[#2D3436] leading-tight">
-                        {TAB_INFO[activeTab]?.label || 'Performance (KPI)'}
-                     </h1>
-                  </div>
+   return (
+      <div className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto w-full pb-28 animate-in fade-in duration-500">
+
+         {/* ─── Executive Header ─── */}
+         <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-4 sm:p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6 relative overflow-hidden">
+            <div className="flex items-center gap-3.5 sm:gap-5 relative z-10">
+               <div className="size-10 sm:size-12 rounded-xl sm:rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-lg sm:text-xl shadow-xs shrink-0">
+                  {React.createElement(TAB_INFO[activeTab]?.icon || BarChart3, { 
+                     className: "size-5 sm:size-6 text-[#4b7bec]"
+                  })}
                </div>
-               <div className="flex flex-wrap sm:flex-nowrap bg-[#F8F9FC] border border-[#E9ECF0] rounded-lg p-1 gap-1 sm:gap-0 w-full lg:w-auto overflow-x-auto custom-scrollbar">
+               <div>
+                  <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+                     <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
+                        {TAB_INFO[activeTab]?.label || 'Performance & KPI'}
+                     </h1>
+                     <span className="px-2.5 py-0.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase font-mono bg-indigo-50 text-[#4b7bec] border border-indigo-100">
+                        {activeStore?.name || 'Boutique'}
+                     </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+                     Analyse globale de rentabilité, marge nette, coûts logistiques et télémétrie des canaux de vente
+                  </p>
+               </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto relative z-10">
+               <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs overflow-x-auto no-scrollbar w-full sm:w-auto">
                   {['today', '7d', '30d', 'all_time'].map(p => (
                      <button
                         key={p}
                         onClick={() => setPeriod(p)}
                         className={cn(
-                           "px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs font-bold rounded transition-all whitespace-nowrap flex-1 sm:flex-none",
-                           period === p ? "bg-white text-[#2D3436] shadow-sm border border-[#E9ECF0]" : "text-[#B2BEC3] hover:text-[#2D3436]"
+                           "px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-lg transition-all whitespace-nowrap flex-1 sm:flex-none",
+                           period === p 
+                              ? "bg-white text-slate-900 shadow-xs font-black" 
+                              : "text-slate-500 hover:text-slate-700"
                         )}
                      >
                         {p === 'today' ? "Aujourd'hui" : p === '7d' ? '7 Jours' : p === '30d' ? '30 Jours' : 'Tout'}
                      </button>
                   ))}
                </div>
+               <button onClick={() => { kpiQuery.refetch(); revenueQuery.refetch(); }} className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-xs transition-all text-slate-500 shrink-0" title="Actualiser">
+                  <RefreshCw className={cn("size-4", (kpiQuery.isFetching || revenueQuery.isFetching) && "animate-spin text-[#4b7bec]")} />
+               </button>
             </div>
          </div>
 
          {/* ─── KPI Main View ────────────────────────── */}
          {activeTab === 'kpi' && (
             <>
-               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <SectionPanel title="Revenus & Profits" icon={Wallet} iconColor={C.primary} borderColor={C.primary}>
-                     <div className="space-y-0">
-                        <MetricRow label="Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Total des ventes avant déductions (Chiffre d'Affaires Brut)" />
-                        <MetricRow label="Revenus" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} description="Montant net encaissé après annulations (CA Net)" />
-                        <MetricRow label="Bénéfices" value={kpi?.totalProfit ? formatPrice(kpi.totalProfit) : (kpi?.profitPerOrder && kpi?.deliveredOrders ? formatPrice(kpi.profitPerOrder * kpi.deliveredOrders) : '0')} badge={kpi?.avgOrderValue && kpi?.profitPerOrder && kpi.avgOrderValue > 0 ? `${((kpi.profitPerOrder / kpi.avgOrderValue) * 100).toFixed(0)}%` : undefined} description="Profit net généré après soustraction de tous les coûts" />
-                        <MetricRow label="ROI" value={`${kpi?.roas || 0}%`} suffix="" description="Retour sur investissement global (Objectif: > 200%)" />
-                        <MetricRow label="Capital" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Fonds de roulement et liquidités disponibles" />
+               {/* ── 8 Executive KPI Cards (Row 1 Financials + Row 2 Operations) ── */}
+               <div className="space-y-3.5">
+                  {/* Row 1: Financials */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Chiffre d&apos;Affaires Brut</span>
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-mono tabular-nums">
+                           {kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0 DA'}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Total des ventes avant déductions</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Chiffre d&apos;Affaires Net</span>
+                        <h2 className="text-xl sm:text-2xl font-black text-indigo-600 font-mono tabular-nums">
+                           {kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0 DA'}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Montant net encaissé</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Bénéfice Net Réel</span>
+                           <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              +{profitMarginPct}%
+                           </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-emerald-600 font-mono tabular-nums">
+                           {calculatedProfit ? formatPrice(calculatedProfit) : '0 DA'}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Profit net généré après coûts</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Rentabilité / ROI Global</span>
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-mono tabular-nums">
+                           {kpi?.roas ? `${kpi.roas}%` : '0%'}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Objectif cible : &gt; 200%</span>
+                     </div>
+                  </div>
+
+                  {/* Row 2: Operations & Unit Costs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                     <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Frais de Livraison Payés</span>
+                        <h3 className="text-base sm:text-lg font-black text-slate-900 font-mono tabular-nums">
+                           {kpi?.shippingFeeGap ? formatPrice(Math.abs(kpi.shippingFeeGap)) : '0 DA'}
+                        </h3>
+                        <span className="text-[10px] text-slate-500 block font-medium">Sorties transporteurs</span>
+                     </div>
+
+                     <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux Confirmation</span>
+                        <div className="flex items-center justify-between">
+                           <h3 className="text-base sm:text-lg font-black text-[#4b7bec] font-mono tabular-nums">
+                              {kpi?.confirmationPerformance || 0}%
+                           </h3>
+                           <span className="text-[9px] font-mono text-slate-400">Obj &gt; 70%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                           <div className="h-full bg-[#4b7bec] rounded-full" style={{ width: `${Math.min(100, kpi?.confirmationPerformance || 0)}%` }} />
+                        </div>
+                     </div>
+
+                     <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux Livraison</span>
+                        <div className="flex items-center justify-between">
+                           <h3 className="text-base sm:text-lg font-black text-emerald-600 font-mono tabular-nums">
+                              {kpi?.deliveryPerformance || 0}%
+                           </h3>
+                           <span className="text-[9px] font-mono text-slate-400">Obj &gt; 80%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                           <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, kpi?.deliveryPerformance || 0)}%` }} />
+                        </div>
+                     </div>
+
+                     <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux de Retour</span>
+                        <div className="flex items-center justify-between">
+                           <h3 className="text-base sm:text-lg font-black text-rose-600 font-mono tabular-nums">
+                              {kpi?.returnRate || 0}%
+                           </h3>
+                           <span className="text-[9px] font-mono text-slate-400">Obj &lt; 15%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                           <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(100, kpi?.returnRate || 0)}%` }} />
+                        </div>
+                     </div>
+                  </div>
+               </div>
+
+               {/* ── 3 Section Panels: Detailed Breakdown ── */}
+               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                  <SectionPanel title="Revenus & Profits" icon={Wallet} iconColor="#4b7bec">
+                     <div className="space-y-0.5">
+                        <MetricRow label="Ventes Brutes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Total des ventes avant déductions (Chiffre d'Affaires Brut)" />
+                        <MetricRow label="Revenus Nets" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} description="Montant net encaissé après annulations (CA Net)" />
+                        <MetricRow label="Bénéfices Réels" value={calculatedProfit ? formatPrice(calculatedProfit) : '0'} badge={profitMarginPct !== '0.0' ? `+${profitMarginPct}%` : undefined} description="Profit net généré après soustraction de tous les coûts" />
+                        <MetricRow label="ROI Global" value={`${kpi?.roas || 0}%`} suffix="" description="Retour sur investissement global (Objectif: > 200%)" />
+                        <MetricRow label="Capital / Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Fonds de roulement et liquidités disponibles" />
                      </div>
                   </SectionPanel>
 
-                  <SectionPanel title="Dépenses & Frais" icon={CreditCard} iconColor={C.orange} borderColor={C.orange}>
-                     <div className="space-y-0">
+                  <SectionPanel title="Dépenses & Frais" icon={CreditCard} iconColor="#FD7014">
+                     <div className="space-y-0.5">
                         <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(Math.abs(kpi.shippingFeeGap)) : '0'} description="Dépenses payées aux sociétés de transport" />
-                        <MetricRow label="CAC" value={kpi?.cac ? formatPrice(kpi.cac) : '0'} description="Coût moyen d'Acquisition d'un Client via les pubs" />
-                        <MetricRow label="LTV" value={kpi?.ltv ? formatPrice(kpi.ltv) : '0'} description="Valeur à vie d'un client (Lifetime Value)" />
-                        <MetricRow label="Coût des Produits" value="Indisponible" description="Coût d'achat de la marchandise vendue (COGS)" />
+                        <MetricRow label="CAC (Acquisition)" value={kpi?.cac ? formatPrice(kpi.cac) : '0'} description="Coût moyen d'Acquisition d'un Client via les pubs" />
+                        <MetricRow label="LTV (Valeur Client)" value={kpi?.ltv ? formatPrice(kpi.ltv) : '0'} description="Valeur à vie moyenne d'un client (Lifetime Value)" />
+                        <MetricRow label="Coût Marchandises" value="Indisponible" description="Coût d'achat de la marchandise vendue (COGS)" />
                      </div>
                   </SectionPanel>
 
-                  <SectionPanel title="Performance" icon={Target} iconColor={C.success} borderColor={C.success}>
-                     <div className="grid grid-cols-2 gap-4 sm:gap-6 place-items-center py-4">
-                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color={C.primary} description="Commandes validées au tel (Obj: > 70%)" />
-                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color={C.success} description="Colis arrivés au client (Obj: > 80%)" />
-                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color={C.orange} description="Visites devenues achats (Obj: > 3%)" />
-                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color={C.danger} description="Commandes refusées (Obj: < 15%)" />
+                  <SectionPanel title="Efficacité Opérationnelle" icon={Target} iconColor="#00B894">
+                     <div className="grid grid-cols-2 gap-3 place-items-center py-1">
+                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color="#4b7bec" description="Validées au tel (Obj: > 70%)" />
+                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color="#00B894" description="Arrivées client (Obj: > 80%)" />
+                        <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color="#FD7014" description="Visites devenues achats (Obj: > 3%)" />
+                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color="#E17055" description="Refusées / retours (Obj: < 15%)" />
                      </div>
                   </SectionPanel>
                </div>
 
-               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="lg:col-span-2 bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
-                     <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: C.border }}>
-                        <div className="flex items-center gap-3">
-                           <div className="size-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: C.primaryBg }}>
-                              <TrendingUp className="size-4" style={{ color: C.primary }} />
-                           </div>
-                           <h3 className="text-sm font-bold text-[#2D3436]">Évolution des ventes (Multi-Canal)</h3>
+               {/* ── Charts: Sales Evolution & Channels ── */}
+               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                  <div className="lg:col-span-2 bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-5 sm:p-6 shadow-sm overflow-hidden space-y-4">
+                     <div className="flex items-center gap-3 border-b border-slate-100 pb-3.5">
+                        <div className="size-8 sm:size-9 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center shadow-2xs shrink-0">
+                           <TrendingUp className="size-4" />
                         </div>
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Évolution des ventes (Multi-Canal)</h3>
                      </div>
-                     <div className="p-5 h-[350px]">
+                     <div className="h-[320px] w-full">
                         {revenueQuery.isLoading ? (
-                           <Skeleton className="h-full w-full rounded-lg" style={{ backgroundColor: C.bg }} />
+                           <Skeleton className="h-full w-full rounded-2xl bg-slate-100" />
                         ) : (
                            <ResponsiveContainer width="100%" height="100%">
                               <AreaChart data={chartData}>
                                  <defs>
                                     <linearGradient id="orderGrad" x1="0" y1="0" x2="0" y2="1">
-                                       <stop offset="5%" stopColor={C.primary} stopOpacity={0.3} />
-                                       <stop offset="95%" stopColor={C.primary} stopOpacity={0.02} />
+                                       <stop offset="5%" stopColor="#4b7bec" stopOpacity={0.25} />
+                                       <stop offset="95%" stopColor="#4b7bec" stopOpacity={0.01} />
                                     </linearGradient>
                                     <linearGradient id="posGrad" x1="0" y1="0" x2="0" y2="1">
-                                       <stop offset="5%" stopColor={C.info} stopOpacity={0.3} />
-                                       <stop offset="95%" stopColor={C.info} stopOpacity={0.02} />
+                                       <stop offset="5%" stopColor="#0984E3" stopOpacity={0.25} />
+                                       <stop offset="95%" stopColor="#0984E3" stopOpacity={0.01} />
                                     </linearGradient>
                                  </defs>
                                  <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-                                 <CartesianGrid strokeDasharray="3 3" stroke="#F0F3F6" vertical={false} />
-                                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#B2BEC3', fontWeight: 600 }} axisLine={false} tickLine={false} />
-                                 <YAxis tick={{ fontSize: 10, fill: '#B2BEC3', fontWeight: 600 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}K`} />
+                                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                                 <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                                 <YAxis tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}K`} />
                                  <RechartsTooltip contentStyle={tooltipStyle} />
-                                 <Area name="E-commerce" type="monotone" dataKey="orderRevenue" stroke={C.primary} strokeWidth={2.5} fillOpacity={1} fill="url(#orderGrad)" stackId="1" />
-                                 <Area name="POS (Magasin)" type="monotone" dataKey="posRevenue" stroke={C.info} strokeWidth={2.5} fillOpacity={1} fill="url(#posGrad)" stackId="1" />
+                                 <Area name="E-commerce" type="monotone" dataKey="orderRevenue" stroke="#4b7bec" strokeWidth={2.5} fillOpacity={1} fill="url(#orderGrad)" stackId="1" />
+                                 <Area name="POS (Magasin)" type="monotone" dataKey="posRevenue" stroke="#0984E3" strokeWidth={2.5} fillOpacity={1} fill="url(#posGrad)" stackId="1" />
                               </AreaChart>
                            </ResponsiveContainer>
                         )}
                      </div>
                   </div>
 
-                  <SectionPanel title="Répartition par Canal" icon={Share2} iconColor={C.info} borderColor={C.info}>
-                     <div className="h-[280px] w-full mt-4">
+                  <SectionPanel title="Répartition par Canal" icon={Share2} iconColor="#0984E3">
+                     <div className="h-[240px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                            <PieChart>
                               <Pie
@@ -344,28 +453,28 @@ export default function AnalyticsPage() {
                                     { name: 'E-commerce', value: kpi?.orderRevenue || 0 },
                                     { name: 'POS (Magasin)', value: kpi?.posRevenue || 0 }
                                  ].filter(d => d.value > 0)}
-                                 innerRadius={60}
-                                 outerRadius={80}
+                                 innerRadius={55}
+                                 outerRadius={75}
                                  paddingAngle={5}
                                  dataKey="value"
                               >
-                                 <Cell fill={C.primary} />
-                                 <Cell fill={C.info} />
+                                 <Cell fill="#4b7bec" />
+                                 <Cell fill="#0984E3" />
                               </Pie>
                               <RechartsTooltip contentStyle={tooltipStyle} formatter={(v: number) => formatPrice(v)} />
                               <Legend verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
                            </PieChart>
                         </ResponsiveContainer>
                      </div>
-                     <div className="space-y-3 mt-4">
-                        <div className="flex items-center justify-between text-[11px] font-bold">
-                           <span className="text-[#636E72]">Contribution Digitale</span>
-                           <span className="text-[#6C5CE7]">
+                     <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                           <span className="text-slate-500">Contribution Digitale</span>
+                           <span className="text-[#4b7bec] font-mono">
                               {kpi?.totalRevenue ? ((kpi.orderRevenue / kpi.totalRevenue) * 100).toFixed(1) : '100'}%
                            </span>
                         </div>
-                        <div className="w-full h-1.5 bg-[#F0F3F6] rounded-full overflow-hidden">
-                           <div className="h-full bg-[#6C5CE7]" style={{ width: kpi?.totalRevenue ? `${(kpi.orderRevenue / kpi.totalRevenue) * 100}%` : '100%' }} />
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                           <div className="h-full bg-[#4b7bec]" style={{ width: kpi?.totalRevenue ? `${(kpi.orderRevenue / kpi.totalRevenue) * 100}%` : '100%' }} />
                         </div>
                      </div>
                   </SectionPanel>
@@ -393,7 +502,7 @@ export default function AnalyticsPage() {
                   ))}
                </div>
 
-               <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+               <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                      <table className="w-full text-left">
                         <thead>
@@ -576,7 +685,7 @@ export default function AnalyticsPage() {
                   </div>
 
                   {/* Detailed channel table */}
-                  <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+                  <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                      <div className="px-5 py-4 border-b bg-[#F8F9FC] flex items-center gap-3" style={{ borderColor: C.border }}>
                         <Share2 className="size-4" style={{ color: C.primary }} />
                         <h3 className="text-sm font-bold text-[#2D3436]">Détail par Canal</h3>
@@ -640,7 +749,7 @@ export default function AnalyticsPage() {
 
          {/* ─── Products Analytics ────────────────────── */}
          {activeTab === 'products' && (
-            <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+            <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                <div className="overflow-x-auto">
                   <table className="w-full text-left min-w-[1000px]">
                      <thead>
@@ -672,7 +781,7 @@ export default function AnalyticsPage() {
 
          {/* ─── Wilayas Analytics ─────────────────────── */}
          {activeTab === 'wilayas' && (
-            <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+            <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                <div className="overflow-x-auto">
                   <table className="w-full text-left min-w-[800px]">
                      <thead>
@@ -784,7 +893,7 @@ export default function AnalyticsPage() {
                   </div>
 
                   {/* Detailed table */}
-                  <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+                  <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                      <div className="px-5 py-4 border-b bg-[#F8F9FC]" style={{ borderColor: C.border }}>
                         <h3 className="text-sm font-bold text-[#2D3436] flex items-center gap-2">
                            <UserCheck className="size-4" style={{ color: C.primary }} />
@@ -950,7 +1059,7 @@ export default function AnalyticsPage() {
                   </div>
 
                   {/* Detailed leaderboard table */}
-                  <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: C.border }}>
+                  <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                      <div className="px-5 py-4 border-b bg-[#F8F9FC]" style={{ borderColor: C.border }}>
                         <h3 className="text-sm font-bold text-[#2D3436] flex items-center gap-2">
                            <Megaphone className="size-4" style={{ color: C.primary }} />
