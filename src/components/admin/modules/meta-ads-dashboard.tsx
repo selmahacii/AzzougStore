@@ -50,6 +50,8 @@ import { apiFetch } from '@/lib/api-client';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Copy } from 'lucide-react';
 
 export default function MetaAdsDashboard() {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -218,6 +220,7 @@ export default function MetaAdsDashboard() {
   const [registryCampaignSearch, setRegistryCampaignSearch] = useState<string>('');
   const [registryAdsetSearch, setRegistryAdsetSearch] = useState<string>('');
   const [registryAdSearch, setRegistryAdSearch] = useState<string>('');
+  const [selectedRegistryEvent, setSelectedRegistryEvent] = useState<any | null>(null);
   const { data: registryData, isLoading: isLoadingRegistry } = useQuery({
     queryKey: ['meta_event_registry', activeStore?.id, dateStart, dateEnd, registryPage, registryEventFilter,
       registryDedupFilter, registrySourceFilter, registryEventIdSearch, registryPhoneSearch,
@@ -1895,161 +1898,385 @@ export default function MetaAdsDashboard() {
       })()}
 
 
+      {/* ─── TAB: EVENT REGISTRY — Registre et Inspection d'Événements CAPI ─── */}
       {activeTab === 'registry' && (
-        <div className="space-y-4">
-          {/* Instrumentation volume/coût par évènement — mesure demandée
-              avant toute décision de retirer PageView/AddToWishlist du
-              miroir CAPI, pas une hypothèse. */}
-          <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-1">
-              <Activity className="size-4 text-[#6C5CE7]" /> Volume & coût par évènement (période sélectionnée)
-            </h3>
-            <p className="text-[10px] text-slate-400 mb-4">Le volume CAPI est un proxy fiable du volume Pixel (chaque déclenchement Pixel actuel tente un miroir CAPI par défaut). L'usage réel dans le Learning Meta n'est jamais mesurable depuis notre système — jamais inventé ici.</p>
+        <div className="space-y-6 animate-in fade-in duration-500">
+          {/* Section 1 : Volume & Métriques par Type d'Événement */}
+          <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-5">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs">
+                <BarChart3 className="size-5 text-[#4b7bec]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                  Volume & Performance par Type d&apos;Événement (Période Sélectionnée)
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Mesure du trafic CAPI, des taux de succès et de la latence de traitement
+                </p>
+              </div>
+            </div>
+
             {isLoadingVolumeByEvent ? (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              <div className="rounded-2xl border bg-slate-50 p-8 text-center text-xs font-bold text-slate-400">
+                <RefreshCw className="size-4 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                Chargement des volumes par événement…
+              </div>
             ) : Array.isArray(volumeByEventData?.data) && volumeByEventData.data.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs min-w-[700px]">
                   <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Évènement</th>
-                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Volume CAPI</th>
-                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Succès</th>
-                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Latence moy.</th>
-                      <th className="py-2 pr-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">event_id uniques</th>
-                      <th className="py-2 font-black text-slate-400 uppercase tracking-wider text-[10px]">Usage Learning Meta</th>
+                    <tr className="border-b border-slate-100 bg-slate-50/80">
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Événement</th>
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px] text-right">Volume CAPI</th>
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px] text-center">Taux Succès</th>
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px] text-right">Latence Moy.</th>
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px] text-right">event_id Uniques</th>
+                      <th className="py-3 px-4 font-black text-slate-400 uppercase tracking-wider text-[10px]">Rôle dans l&apos;Optimisation</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {volumeByEventData.data.map((e: any) => (
-                      <tr key={e.event_name} className="border-b border-slate-50 last:border-0">
-                        <td className="py-2.5 pr-4 font-bold text-slate-800">{e.event_name}</td>
-                        <td className="py-2.5 pr-4 tabular-nums font-bold">{e.capi_attempts_total}</td>
-                        <td className="py-2.5 pr-4 tabular-nums">{e.capi_success_rate_pct != null ? `${e.capi_success_rate_pct}%` : '—'}</td>
-                        <td className="py-2.5 pr-4 tabular-nums">{e.avg_latency_ms != null ? `${e.avg_latency_ms}ms` : '—'}</td>
-                        <td className="py-2.5 pr-4 tabular-nums">{e.unique_event_ids}</td>
-                        <td className="py-2.5 text-[10px] text-slate-400 italic">{e.meta_learning_usage}</td>
+                      <tr key={e.event_name} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3.5 px-4 font-black text-slate-900">{e.event_name}</td>
+                        <td className="py-3.5 px-4 tabular-nums font-mono font-bold text-slate-800 text-right">{e.capi_attempts_total}</td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md text-[10px] font-black font-mono border",
+                            (e.capi_success_rate_pct ?? 0) >= 95 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                          )}>
+                            {e.capi_success_rate_pct != null ? `${e.capi_success_rate_pct}%` : '—'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 tabular-nums font-mono text-slate-600 text-right">
+                          {e.avg_latency_ms != null ? `${e.avg_latency_ms} ms` : '—'}
+                        </td>
+                        <td className="py-3.5 px-4 tabular-nums font-mono text-slate-700 text-right font-bold">
+                          {e.unique_event_ids}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 font-medium">
+                          {e.meta_learning_usage || 'Événement standard'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucune donnée sur cette période.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs font-medium text-slate-400">
+                Aucun événement enregistré sur la période.
+              </div>
             )}
           </div>
 
-          {/* Registre central — chaque ligne = un évènement envoyé, avec son
-              parcours publicitaire complet et son statut de synchronisation/
-              déduplication. C'est la source de vérité : tout autre chiffre du
-              dashboard doit pouvoir remonter jusqu'ici. */}
-          <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5">
-                <Layers className="size-4 text-[#00B894]" /> Registre d'évènements
-              </h3>
-              <span className="text-[10px] font-bold text-slate-400">{registryData?.total ?? 0} évènement{(registryData?.total ?? 0) > 1 ? 's' : ''} — période sélectionnée en haut de page</span>
+          {/* Section 2 : Registre d'Événements avec Inspection au Clic */}
+          <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs">
+                  <Activity className="size-5 text-[#4b7bec]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                    Registre des Événements & Journal de Traçabilité
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Cliquez sur n&apos;importe quelle ligne pour inspecter la déduplication et le payload complet
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-black text-slate-500 bg-slate-50 border border-slate-200/60 px-3 py-1.5 rounded-xl font-mono">
+                {registryData?.total ?? 0} événement{(registryData?.total ?? 0) > 1 ? 's' : ''}
+              </span>
             </div>
 
-            {/* Barre de filtres complète — indispensable dès que le volume
-                dépasse quelques centaines de lignes (audit de production
-                2026-07-21). Chaque champ déclenche un filtre SQL côté
-                serveur, jamais un filtrage côté client sur la page chargée. */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
-              <select value={registryEventFilter} onChange={e => { setRegistryEventFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                <option value="">Tous les évènements</option>
-                {['PageView', 'ViewContent', 'AddToWishlist', 'AddToCart', 'InitiateCheckout', 'Purchase'].map(ev => (
+            {/* Filtres de Recherche */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+              <select value={registryEventFilter} onChange={e => { setRegistryEventFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5">
+                <option value="">Tous les événements</option>
+                {['PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout', 'Purchase'].map(ev => (
                   <option key={ev} value={ev}>{ev}</option>
                 ))}
               </select>
-              <select value={registrySourceFilter} onChange={e => { setRegistrySourceFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                <option value="">Toutes les sources</option>
-                <option value="capi_only">CAPI uniquement</option>
-                <option value="pixel_capi">Pixel + CAPI</option>
-              </select>
-              <select value={registryDedupFilter} onChange={e => { setRegistryDedupFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3">
-                <option value="">Tout statut dédup.</option>
+
+              <select value={registryDedupFilter} onChange={e => { setRegistryDedupFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5">
+                <option value="">Tous statuts dédup.</option>
                 <option value="unique">Unique</option>
-                <option value="doublon_reel">⚠️ Doublon réel</option>
+                <option value="doublon_reel">Doublon réel</option>
                 <option value="retry_normal">Retry normal</option>
-                <option value="jamais_synchronise">Jamais synchronisé</option>
               </select>
-              <input value={registryEventIdSearch} onChange={e => { setRegistryEventIdSearch(e.target.value); setRegistryPage(1); }} placeholder="event_id…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
-              <input value={registryPhoneSearch} onChange={e => { setRegistryPhoneSearch(e.target.value); setRegistryPage(1); }} placeholder="Téléphone…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
-              <input value={registryCampaignSearch} onChange={e => { setRegistryCampaignSearch(e.target.value); setRegistryPage(1); }} placeholder="Campagne…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
-              <input value={registryAdsetSearch} onChange={e => { setRegistryAdsetSearch(e.target.value); setRegistryPage(1); }} placeholder="Adset…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
-              <input value={registryAdSearch} onChange={e => { setRegistryAdSearch(e.target.value); setRegistryPage(1); }} placeholder="Annonce…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-3" />
-              <button onClick={resetRegistryFilters} className="h-9 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50 transition-colors">✕ Réinitialiser</button>
+
+              <select value={registrySourceFilter} onChange={e => { setRegistrySourceFilter(e.target.value); setRegistryPage(1); }} className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5">
+                <option value="">Toutes sources</option>
+                <option value="pixel_capi">Pixel + CAPI</option>
+                <option value="capi_only">CAPI uniquement</option>
+              </select>
+
+              <input value={registryEventIdSearch} onChange={e => { setRegistryEventIdSearch(e.target.value); setRegistryPage(1); }} placeholder="event_id…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5" />
+              <input value={registryPhoneSearch} onChange={e => { setRegistryPhoneSearch(e.target.value); setRegistryPage(1); }} placeholder="Téléphone…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5" />
+              <input value={registryCampaignSearch} onChange={e => { setRegistryCampaignSearch(e.target.value); setRegistryPage(1); }} placeholder="Campagne…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5" />
+              <input value={registryAdSearch} onChange={e => { setRegistryAdSearch(e.target.value); setRegistryPage(1); }} placeholder="Annonce…" className="h-9 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold px-2.5" />
+              <button onClick={resetRegistryFilters} className="h-9 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-100 transition-colors">Réinitialiser</button>
             </div>
 
             {isLoadingRegistry ? (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Chargement…</div>
+              <div className="rounded-2xl border bg-slate-50 p-8 text-center text-xs font-bold text-slate-400">
+                <RefreshCw className="size-4 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                Chargement du registre…
+              </div>
             ) : Array.isArray(registryData?.data) && registryData.data.length > 0 ? (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs min-w-[900px]">
                     <thead>
-                      <tr className="border-b border-slate-100">
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Évènement</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Étape</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Source</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">État Meta</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Dédup</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Commande</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Campagne</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Adset</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Annonce</th>
-                        <th className="py-2 pr-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Placement</th>
-                        <th className="py-2 font-black text-slate-400 uppercase tracking-wider text-[10px]">Reçu le</th>
+                      <tr className="border-b border-slate-100 bg-slate-50/80">
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Événement</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Source</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">État Meta</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Déduplication</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Commande</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Campagne</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px]">Reçu le</th>
+                        <th className="py-3 px-3 font-black text-slate-400 uppercase tracking-wider text-[10px] text-right">Détails</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {registryData.data.map((e: any) => (
-                        <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
-                          <td className="py-2.5 pr-3 font-bold text-slate-800">{e.event_name}</td>
-                          <td className="py-2.5 pr-3 tabular-nums text-slate-500">{e.funnel_step ?? '—'}</td>
-                          <td className="py-2.5 pr-3">
-                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase", e.source === 'CAPI uniquement' ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>{e.source}</span>
+                        <tr 
+                          key={e.id} 
+                          onClick={() => setSelectedRegistryEvent(e)}
+                          className="hover:bg-slate-50/90 transition-colors cursor-pointer group"
+                        >
+                          <td className="py-3 px-3 font-black text-slate-900 flex items-center gap-1.5">
+                            <span>{e.event_name}</span>
                           </td>
-                          <td className="py-2.5 pr-3">
-                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase",
-                              e.sync_status === 'success' ? "bg-emerald-50 text-emerald-700" :
-                              ['error', 'failed'].includes(e.sync_status) ? "bg-rose-50 text-rose-700" :
-                              "bg-amber-50 text-amber-700"
-                            )}>{e.meta_state}</span>
-                          </td>
-                          <td className="py-2.5 pr-3">
-                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase",
-                              e.dedup_status === 'doublon_reel' ? "bg-rose-50 text-rose-700" :
-                              e.dedup_status === 'unique' ? "bg-slate-50 text-slate-500" : "bg-amber-50 text-amber-700"
-                            )} title={e.dedup_status === 'doublon_reel' ? 'Double comptage réel confirmé côté Meta' : e.dedup_status === 'retry_normal' ? 'Retry normal, un seul succès' : e.dedup_status === 'jamais_synchronise' ? 'Jamais synchronisé avec succès' : 'Aucun doublon'}>
-                              {e.dedup_status === 'doublon_reel' ? '⚠️ Doublon' : e.dedup_status === 'retry_normal' ? 'Retry OK' : e.dedup_status === 'jamais_synchronise' ? 'Jamais sync.' : 'Unique'}
+                          <td className="py-3 px-3">
+                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase", e.source === 'CAPI uniquement' ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700")}>
+                              {e.source}
                             </span>
                           </td>
-                          <td className="py-2.5 pr-3 font-bold text-slate-600">{e.order_number || '—'}</td>
-                          <td className="py-2.5 pr-3 text-slate-500 max-w-[120px] truncate" title={e.campaign_name || e.campaign_id || ''}>{e.campaign_name || e.campaign_id || '—'}</td>
-                          <td className="py-2.5 pr-3 text-slate-500 max-w-[100px] truncate" title={e.adset_name || e.adset_id || ''}>{e.adset_name || e.adset_id || '—'}</td>
-                          <td className="py-2.5 pr-3 text-slate-500 max-w-[100px] truncate" title={e.ad_name || e.ad_id || ''}>{e.ad_name || e.ad_id || '—'}</td>
-                          <td className="py-2.5 pr-3 text-slate-500">{e.placement || '—'}</td>
-                          <td className="py-2.5 text-slate-400 whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                          <td className="py-3 px-3">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-black font-mono border",
+                              e.sync_status === 'success' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              ['error', 'failed'].includes(e.sync_status) ? "bg-rose-50 text-rose-700 border-rose-200" :
+                              "bg-amber-50 text-amber-700 border-amber-200"
+                            )}>
+                              {e.meta_state}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-black font-mono border",
+                              e.dedup_status === 'doublon_reel' ? "bg-rose-50 text-rose-700 border-rose-200" :
+                              e.dedup_status === 'retry_normal' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              "bg-slate-50 text-slate-700 border-slate-200"
+                            )}>
+                              {e.dedup_status === 'doublon_reel' ? 'Doublon Détecté' : e.dedup_status === 'retry_normal' ? 'Retry Réussi' : 'Unique'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 font-bold text-slate-700 font-mono">{e.order_number || '—'}</td>
+                          <td className="py-3 px-3 text-slate-600 max-w-[140px] truncate" title={e.campaign_name || e.campaign_id || ''}>
+                            {e.campaign_name || e.campaign_id || '—'}
+                          </td>
+                          <td className="py-3 px-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                            {e.created_at ? new Date(e.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-[#4b7bec] group-hover:underline">
+                              Inspecter →
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Pagination */}
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400">{registryData.total} évènement{registryData.total > 1 ? 's' : ''} au total</span>
+                  <span className="text-[10px] font-bold text-slate-400">{registryData.total} événement{registryData.total > 1 ? 's' : ''} au total</span>
                   <div className="flex items-center gap-2">
-                    <button disabled={registryPage <= 1} onClick={() => setRegistryPage(p => Math.max(1, p - 1))} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold disabled:opacity-30">← Précédent</button>
-                    <span className="text-xs font-bold text-slate-500">{registryPage} / {registryData.totalPages || 1}</span>
-                    <button disabled={registryPage >= (registryData.totalPages || 1)} onClick={() => setRegistryPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold disabled:opacity-30">Suivant →</button>
+                    <button disabled={registryPage <= 1} onClick={() => setRegistryPage(p => Math.max(1, p - 1))} className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold disabled:opacity-30 hover:bg-slate-50 transition-colors">← Précédent</button>
+                    <span className="text-xs font-mono font-bold text-slate-700">{registryPage} / {registryData.totalPages || 1}</span>
+                    <button disabled={registryPage >= (registryData.totalPages || 1)} onClick={() => setRegistryPage(p => p + 1)} className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold disabled:opacity-30 hover:bg-slate-50 transition-colors">Suivant →</button>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="rounded-2xl border bg-slate-50 p-6 text-sm text-slate-500">Aucun évènement sur cette période.</div>
+              <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs font-medium text-slate-400">
+                Aucun événement trouvé pour ces critères de recherche.
+              </div>
             )}
           </div>
+
+          {/* ─── MODALE D'INSPECTION DÉTAILLÉE DE L'ÉVÉNEMENT (AU CLIC) ─── */}
+          <Dialog open={!!selectedRegistryEvent} onOpenChange={open => !open && setSelectedRegistryEvent(null)}>
+            <DialogContent className="max-w-3xl w-[95vw] p-0 border-none bg-white rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+              {selectedRegistryEvent && (
+                <>
+                  <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-mono font-black text-slate-400 uppercase tracking-widest">
+                          Détails Événement Meta CAPI
+                        </span>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-md text-[10px] font-black font-mono border",
+                          selectedRegistryEvent.sync_status === 'success' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                        )}>
+                          {selectedRegistryEvent.meta_state}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-black text-slate-900">
+                        {selectedRegistryEvent.event_name}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                        Reçu le {selectedRegistryEvent.created_at ? new Date(selectedRegistryEvent.created_at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'medium' }) + ' (GMT+1)' : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                    {/* Explication Déduplication */}
+                    <div className={cn(
+                      "p-4 rounded-2xl border text-xs space-y-1.5",
+                      selectedRegistryEvent.dedup_status === 'doublon_reel' 
+                        ? "bg-rose-50/70 border-rose-200 text-rose-900" 
+                        : selectedRegistryEvent.dedup_status === 'retry_normal'
+                        ? "bg-amber-50/70 border-amber-200 text-amber-900"
+                        : "bg-slate-50 border-slate-200 text-slate-800"
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-black uppercase tracking-wider text-[10px]">
+                          Diagnostic Déduplication
+                        </span>
+                        <span className="font-mono font-bold text-[10px]">
+                          Statut : {selectedRegistryEvent.dedup_status === 'doublon_reel' ? 'Doublon Réel' : selectedRegistryEvent.dedup_status === 'retry_normal' ? 'Retry Réussi' : 'Unique'}
+                        </span>
+                      </div>
+                      <p className="leading-relaxed">
+                        {selectedRegistryEvent.dedup_status === 'doublon_reel' && 
+                          "Pourquoi est-ce un doublon ? Cet identifiant event_id a été transmis et validé plus d'une fois par le serveur CAPI. Cela se produit lorsque l'utilisateur recharge sa page, clique plusieurs fois rapidement sur le bouton de commande ou si le Pixel navigateur et l'API CAPI ont envoyé l'événement avec un léger décalage. Meta déduplique automatiquement ces événements côté serveur pour ne pas fausser vos statistiques publicitaires."}
+                        {selectedRegistryEvent.dedup_status === 'retry_normal' && 
+                          "Pourquoi le statut Retry ? Le premier envoi a échoué (micro-coupure réseau / timeout) ; le système l'a renvoyé avec succès lors de la tentative suivante. Meta n'a comptabilisé qu'une seule conversion."}
+                        {selectedRegistryEvent.dedup_status === 'unique' && 
+                          "Événement unique : Transmis avec succès et dédoublonné sans anomalie."}
+                      </p>
+                    </div>
+
+                    {/* Grille Métadonnées Clés */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Identifiant Unique (event_id)</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-mono font-bold text-slate-900 truncate">{selectedRegistryEvent.event_id || '—'}</span>
+                          {selectedRegistryEvent.event_id && (
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(selectedRegistryEvent.event_id);
+                                toast.success('event_id copié dans le presse-papier');
+                              }}
+                              className="text-slate-400 hover:text-slate-700 p-1"
+                              title="Copier l'event_id"
+                            >
+                              <Copy className="size-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Commande Liée</span>
+                        <p className="text-xs font-mono font-bold text-slate-900">
+                          {selectedRegistryEvent.order_number || selectedRegistryEvent.order_id || 'Aucune (Événement pré-commande)'}
+                        </p>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Campagne & Tracking</span>
+                        <p className="text-xs font-bold text-slate-800">
+                          {selectedRegistryEvent.campaign_name || selectedRegistryEvent.campaign_id || 'Direct / Organique'}
+                        </p>
+                        {selectedRegistryEvent.adset_name && <p className="text-[10px] text-slate-400">Adset: {selectedRegistryEvent.adset_name}</p>}
+                        {selectedRegistryEvent.ad_name && <p className="text-[10px] text-slate-400">Annonce: {selectedRegistryEvent.ad_name}</p>}
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Latence & Réseau</span>
+                        <p className="text-xs font-mono font-bold text-slate-900">
+                          {selectedRegistryEvent.latency_ms != null ? `${selectedRegistryEvent.latency_ms} ms` : '—'} · Source : {selectedRegistryEvent.source}
+                        </p>
+                        {selectedRegistryEvent.last_http_status && (
+                          <p className="text-[10px] text-slate-400 font-mono">HTTP Status : {selectedRegistryEvent.last_http_status}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Données de matching transmises (user_data) */}
+                    {selectedRegistryEvent.payload?.data?.[0]?.user_data && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                          Données Clients & Matching Transmis (user_data)
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                          {Object.entries(selectedRegistryEvent.payload.data[0].user_data).map(([k, v]) => (
+                            <div key={k} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase block">{k}</span>
+                              <span className="font-mono text-slate-800 truncate block text-[11px] mt-0.5">
+                                {Array.isArray(v) ? v[0] : String(v)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Données d'Achat (custom_data) */}
+                    {selectedRegistryEvent.payload?.data?.[0]?.custom_data && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                          Données Personnalisées de Commande (custom_data)
+                        </span>
+                        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-xs font-mono space-y-1">
+                          {selectedRegistryEvent.payload.data[0].custom_data.value != null && (
+                            <div>Valeur : <strong>{selectedRegistryEvent.payload.data[0].custom_data.value} {selectedRegistryEvent.payload.data[0].custom_data.currency || 'DZD'}</strong></div>
+                          )}
+                          {selectedRegistryEvent.payload.data[0].custom_data.order_id && (
+                            <div>Order ID : {selectedRegistryEvent.payload.data[0].custom_data.order_id}</div>
+                          )}
+                          {Array.isArray(selectedRegistryEvent.payload.data[0].custom_data.contents) && (
+                            <div>Articles : {selectedRegistryEvent.payload.data[0].custom_data.contents.length} article(s)</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Payload JSON Brut */}
+                    {selectedRegistryEvent.payload && (
+                      <details className="p-3.5 rounded-2xl bg-slate-900 text-slate-200 text-xs space-y-2 cursor-pointer">
+                        <summary className="font-mono font-bold uppercase text-[10px] tracking-wider text-slate-400">
+                          Inspecter le Payload JSON Brut Envoyé à Meta
+                        </summary>
+                        <pre className="mt-2 p-3 bg-black/40 rounded-xl overflow-x-auto text-[10px] font-mono text-emerald-400">
+                          {JSON.stringify(selectedRegistryEvent.payload, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+
+                  <div className="p-4 sm:p-6 border-t border-slate-100 flex justify-end">
+                    <button
+                      onClick={() => setSelectedRegistryEvent(null)}
+                      className="px-6 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider transition-colors"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
