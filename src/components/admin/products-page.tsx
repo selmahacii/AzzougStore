@@ -206,7 +206,7 @@ function SupplierInlineSelect({
           {value && (
             <button type="button" onClick={() => { onChange(''); setOpen(false); }}
               className="w-full px-3 py-2 border-t border-slate-100 text-[10px] text-slate-400 hover:text-rose-500 transition-all text-left">
-              ✕ Effacer
+              Effacer
             </button>
           )}
         </div>
@@ -715,115 +715,177 @@ export default function ProductsPage() {
    const total = productsQuery.data?.total ?? 0;
    const categories = productsQuery.data?.categories ?? [];
 
+   const totalStockUnits = products.reduce((acc: number, p: any) => acc + (p.stock || 0), 0);
+   const totalStockValue = products.reduce((acc: number, p: any) => acc + ((p.stock || 0) * (p.price || 0)), 0);
+   const lowStockCount = products.filter((p: any) => (p.stock || 0) <= (p.low_stock_threshold || 5)).length;
+
    return (
       <div className="space-y-6 pb-28 animate-in fade-in duration-500">
-         {/* ─── Premium Header ─── */}
-         <div className="bg-white rounded-[32px] lg:rounded-[40px] border p-4 sm:p-6 lg:p-10 shadow-sm relative overflow-hidden" style={{ borderColor: C.border }}>
-            <div className="absolute -top-10 -right-10 opacity-[0.03] text-[#4b7bec] rotate-12"><Package className="size-48" /></div>
-            <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-8">
-               <div className="flex items-center gap-4">
-                  <div className="size-12 sm:size-16 rounded-2xl sm:rounded-3xl flex items-center justify-center bg-[#F0F5FF] shadow-inner text-[#4b7bec] shrink-0">
-                     <Package className="size-6 sm:size-8" />
-                  </div>
-                  <div>
-                     <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight uppercase">Stock & Inventaire</h1>
-                     <p className="text-xs sm:text-sm font-bold text-slate-400 mt-1">Gérez vos références produits, niveaux de stock et marges</p>
-                  </div>
+         {/* ─── Executive Header ─── */}
+         <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
+            <div className="flex items-center gap-4 sm:gap-5 relative z-10">
+               <div className="size-12 rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-xl shadow-xs shrink-0">
+                  <Package className="size-6 text-[#4b7bec]" />
                </div>
-               <div className="flex items-center gap-2 sm:gap-3">
-                  <button onClick={() => toast.success('Export en cours...')} className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-[10px] sm:text-[11px] font-black uppercase tracking-widest border hover:bg-slate-50 transition-all text-slate-600 bg-white" style={{ borderColor: C.border }}>
-                     <Download className="size-4 mr-1.5 mb-0.5 inline-block" /> Exporter
-                  </button>
-                  <Button onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId }); setIsCreating(true); }} className="h-10 sm:h-14 px-5 sm:px-10 rounded-xl sm:rounded-2xl text-[11px] sm:text-[12px] font-black uppercase tracking-widest bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-200 transition-all border-none">
-                     <Plus className="mr-2 size-4 sm:size-6" /> <span className="hidden sm:inline">Ajouter un </span>Produit
-                  </Button>
-                  {/* Produit Upsell Indépendant : même formulaire, is_upsell_only
-                      pré-coché — l'admin n'a plus besoin de créer un produit
-                      normal puis d'aller cocher la case dans l'onglet Avancé. */}
-                  <Button onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId, is_upsell_only: true }); setIsCreating(true); }} className="h-10 sm:h-14 px-5 sm:px-10 rounded-xl sm:rounded-2xl text-[11px] sm:text-[12px] font-black uppercase tracking-widest bg-[#6C5CE7] hover:bg-[#5b4bd4] text-white shadow-lg shadow-[#6C5CE7]/20 transition-all border-none">
-                     <Zap className="mr-2 size-4 sm:size-6" /> <span className="hidden sm:inline">Ajouter un Produit </span>Upsell
-                  </Button>
+               <div>
+                  <div className="flex items-center gap-2.5">
+                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Catalogue & Inventaire Produits</h1>
+                     <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-indigo-50 text-[#4b7bec] border border-indigo-100">
+                        {activeStore?.name || 'Boutique'}
+                     </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">Gérez vos références articles, variantes, marges unitaires et niveaux de stock en temps réel</p>
+               </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap sm:flex-nowrap w-full lg:w-auto relative z-10">
+               <Button
+                  variant="outline"
+                  onClick={() => toast.success('Export des produits en cours...')}
+                  className="h-11 px-5 rounded-2xl text-xs font-bold border-slate-200 hover:bg-slate-50 transition-all text-slate-700 bg-white shadow-xs"
+               >
+                  <Download className="size-4 mr-2 text-slate-500" /> Exporter
+               </Button>
+               <Button
+                  onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId }); setIsCreating(true); }}
+                  className="h-11 px-5 rounded-2xl text-xs font-black bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-md shadow-blue-100 transition-all border-none"
+               >
+                  <Plus className="mr-2 size-4" /> Ajouter Produit
+               </Button>
+               <Button
+                  onClick={() => { setForm({ ...EMPTY_FORM, store_id: storeId, is_upsell_only: true }); setIsCreating(true); }}
+                  className="h-11 px-5 rounded-2xl text-xs font-black bg-[#6C5CE7] hover:bg-[#5b4bd4] text-white shadow-md shadow-[#6C5CE7]/20 transition-all border-none"
+               >
+                  <Zap className="mr-2 size-4" /> Produit Upsell
+               </Button>
+            </div>
+         </div>
+
+         {/* ─── 4 Executive KPI Cards ─── */}
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+               <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Références</span>
+                  <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{total}</h2>
+                  <p className="text-[10px] text-slate-500 font-medium">Articles actifs au catalogue</p>
+               </div>
+               <div className="size-11 rounded-2xl bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-[#4b7bec] shrink-0">
+                  <Boxes className="size-5" />
+               </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+               <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Stock Total (Unités)</span>
+                  <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{totalStockUnits.toLocaleString()}</h2>
+                  <p className="text-[10px] text-slate-500 font-medium">Pièces disponibles en entrepôt</p>
+               </div>
+               <div className="size-11 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0">
+                  <Package className="size-5" />
+               </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+               <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Valeur Marchande Stock</span>
+                  <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(totalStockValue)}</h2>
+                  <p className="text-[10px] text-slate-500 font-medium">Prix de vente total valorisé</p>
+               </div>
+               <div className="size-11 rounded-2xl bg-amber-50 border border-amber-100/80 flex items-center justify-center text-amber-600 shrink-0">
+                  <DollarSign className="size-5" />
+               </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+               <div className="space-y-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Alertes Stock</span>
+                  <h2 className={cn(
+                     "text-2xl font-black font-mono tabular-nums",
+                     lowStockCount > 0 ? "text-amber-600" : "text-emerald-600"
+                  )}>
+                     {lowStockCount}
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-medium">Produits en stock faible ou rupture</p>
+               </div>
+               <div className="size-11 rounded-2xl bg-rose-50 border border-rose-100/80 flex items-center justify-center text-rose-600 shrink-0">
+                  <AlertCircle className="size-5" />
                </div>
             </div>
          </div>
- 
-         {/* ─── Meta Ads Tip Banner ─── */}
-         <div className="bg-[#F0F5FF] border border-[#d9e2ec] rounded-[24px] p-5 flex items-start gap-4 shadow-sm animate-in fade-in duration-600">
-            <div className="size-10 rounded-xl bg-white flex items-center justify-center text-[#4b7bec] shrink-0 shadow-sm border border-[#e8edf5]">
-               <Zap className="size-5 animate-pulse" />
+
+         {/* ─── Meta Ads Attribution Notice (Pure & Clean) ─── */}
+         <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-2xs flex items-start gap-3.5">
+            <div className="size-8 rounded-xl bg-slate-100 flex items-center justify-center text-[#4b7bec] shrink-0 mt-0.5">
+               <Zap className="size-4 text-[#4b7bec]" />
             </div>
-            <div className="space-y-1">
-               <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                  💡 Optimisation Meta Ads (Pixel & API Conversions)
+            <div className="space-y-0.5 text-xs">
+               <h4 className="font-black text-slate-900 uppercase tracking-tight text-[11px]">
+                  Attribution Automatique Meta Ads (Pixel & CAPI)
                </h4>
-               <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                  Pour suivre la rentabilité de vos publicités (ROAS) en temps réel, assurez-vous d'inclure le <strong>Nom exact du produit</strong> ou son <strong>SKU</strong> (ex: <code className="bg-white/80 px-1.5 py-0.5 rounded border text-[10px] font-mono font-bold text-slate-700">{'{SKU}'}</code>) dans le titre de vos campagnes publicitaires sur Facebook. Le système associera automatiquement les dépenses pub à chaque produit.
+               <p className="text-slate-500 leading-relaxed font-medium text-[11px]">
+                  Pour associer automatiquement vos ventes et ROAS dans le module Meta Ads, nommez vos campagnes publicitaires avec le <strong>Nom du produit</strong> ou son <strong>SKU</strong> (ex: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-slate-700">PRD-XXXX</code>).
                </p>
             </div>
          </div>
- 
-         {/* ─── Tactical Search Bar ─── */}
-         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-3 bg-white rounded-[32px] border px-4 sm:px-8 py-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 shadow-sm" style={{ borderColor: C.border }}>
-               <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-[20px] px-4 py-3 shrink-0 h-14">
-                  <Calendar className="size-5 text-slate-300" />
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
-                  <span className="text-slate-300">-</span>
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-sm font-bold text-slate-600 outline-none w-[120px]" />
-               </div>
-               <div className="relative flex-1">
-                  <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-300" />
-                  <Input
-                     placeholder="ID, Nom, SKU ou Code barre..."
-                     value={searchQuery}
-                     onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-                     className="pl-14 h-14 bg-slate-50/50 border-slate-100 rounded-[20px] text-sm font-bold focus-visible:ring-[#4b7bec] placeholder:text-slate-300"
-                  />
-               </div>
+
+         {/* ─── Tactical Filter Rack ─── */}
+         <div className="bg-white rounded-[24px] border border-slate-100 p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 sticky top-4 z-20 backdrop-blur-md bg-white/95">
+            <div className="relative flex-1">
+               <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+               <Input
+                  placeholder="Rechercher par nom, SKU, code-barres ou ID..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                  className="pl-10 h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-medium focus-visible:ring-[#4b7bec] placeholder:text-slate-400"
+               />
+               {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                     <X className="size-3.5" />
+                  </button>
+               )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
-                  <SelectTrigger className="w-48 h-14 bg-slate-50/50 border-slate-100 rounded-2xl text-sm font-bold focus:ring-[#4b7bec]">
+                  <SelectTrigger className="w-44 h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold focus:ring-[#4b7bec]">
                      <div className="flex items-center gap-2">
-                        <Tag className="size-4 text-slate-400" />
+                        <Tag className="size-3.5 text-slate-400" />
                         <SelectValue placeholder="Catégorie" />
                      </div>
                   </SelectTrigger>
-                  <SelectContent className="rounded-2xl">
+                  <SelectContent className="rounded-xl">
                      <SelectItem value="all">Toutes Catégories</SelectItem>
                      {categories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                      ))}
                   </SelectContent>
                </Select>
-               <button onClick={() => productsQuery.refetch()} className="ml-4 p-4 rounded-2xl border border-slate-100 bg-white hover:bg-slate-50 transition-all text-slate-400 shrink-0 shadow-sm">
-                  <RefreshCw className={cn("size-6", productsQuery.isFetching && "animate-spin")} />
+
+               <button
+                  onClick={() => productsQuery.refetch()}
+                  className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-slate-500 shadow-xs"
+                  title="Actualiser"
+               >
+                  <RefreshCw className={cn("size-4", productsQuery.isFetching && "animate-spin text-[#4b7bec]")} />
                </button>
-            </div>
-            <div className="bg-[#2D3436] rounded-[32px] px-8 py-6 flex items-center justify-between shadow-xl">
-               <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Total Références</p>
-                  <p className="text-3xl font-black text-white leading-none">{total}</p>
-               </div>
-               <div className="size-14 rounded-2xl bg-white/10 flex items-center justify-center text-[#4b7bec]">
-                  <Boxes className="size-8" />
-               </div>
             </div>
          </div>
 
          {/* ─── Data Table ─── */}
-         <div className="bg-white rounded-[40px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
+         <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
                <table className="w-full text-left min-w-[1100px]">
                   <thead>
-                     <tr className="border-b bg-[#FAFBFD]" style={{ borderColor: C.border }}>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">Produit</th>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest">Catégorie / SKU</th>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Prix Vente</th>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Niveau Stock</th>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Statut</th>
-                        <th className="px-4 sm:px-8 py-6 text-[11px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                     <tr className="bg-slate-50/80 border-b border-slate-100">
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider">Produit</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider">Catégorie / SKU</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Prix Vente</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Niveau Stock</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Statut</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Actions</th>
                      </tr>
                   </thead>
-                  <tbody className="divide-y" style={{ borderColor: C.border }}>
+                  <tbody className="divide-y divide-slate-100">
                      {productsQuery.isLoading ? (
                         Array.from({ length: 5 }).map((_, i) => <tr key={i}><td colSpan={6} className="px-8 py-5"><Skeleton className="h-16 w-full rounded-2xl" /></td></tr>)
                      ) : products.length === 0 ? (
@@ -992,7 +1054,7 @@ export default function ProductsPage() {
 
             <div className="px-4 sm:px-10 py-4 sm:py-6 border-t bg-[#FAFBFD]/50 flex items-center justify-between" style={{ borderColor: C.border }}>
                <div className="flex items-center gap-6">
-                  <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Affichage <span className="text-slate-700">{products.length}</span> sur {total}</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider hidden sm:block">Affichage <span className="text-slate-700">{products.length}</span> sur {total}</span>
                   <span className="text-[11px] font-black text-slate-700 sm:hidden">{products.length}/{total}</span>
                </div>
                <div className="flex items-center gap-3">
@@ -1170,7 +1232,7 @@ export default function ProductsPage() {
                                     </SelectContent>
                                  </Select>
                                  {editingProduct && (
-                                    <p className="text-[10px] text-amber-500 font-medium ml-1">⚠ La boutique ne peut pas être modifiée après création.</p>
+                                    <p className="text-[10px] text-amber-500 font-medium ml-1">Attention : La boutique ne peut pas être modifiée après création.</p>
                                  )}
                               </div>
                            )}
@@ -1611,7 +1673,7 @@ export default function ProductsPage() {
                                                      }}
                                                      className="flex-1 py-1.5 border border-dashed rounded-xl text-[9px] font-black text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50/50 hover:border-indigo-400 transition-all uppercase tracking-wider bg-indigo-50/20"
                                                   >
-                                                     ⚡ Par Intervalle (ex: 40-45)
+                                                     Par Intervalle (ex: 40-45)
                                                   </button>
                                                 </div>
                                              </div>
@@ -1765,8 +1827,8 @@ export default function ProductsPage() {
                               {/* Toggle importé / production locale */}
                               <div className="flex gap-3">
                                  {([
-                                    { id: 'imported', label: '📦 Importé', desc: 'Prix d\'achat fournisseur (PAF)' },
-                                    { id: 'local',    label: '🏭 Production locale', desc: 'Coût de fabrication détaillé' },
+                                    { id: 'imported', label: 'Importé', desc: 'Prix d\'achat fournisseur (PAF)' },
+                                    { id: 'local',    label: 'Production locale', desc: 'Coût de fabrication détaillé' },
                                  ] as const).map(opt => (
                                     <button key={opt.id} type="button"
                                        onClick={() => setF({ production_source: opt.id })}
@@ -1822,10 +1884,10 @@ export default function ProductsPage() {
                                           const sup = suppliers.find((s: any) => s.id === form.supplier_id);
                                           return (
                                              <div className="flex gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 text-[10px] font-bold text-slate-500">
-                                                {sup.contact_name && <span>👤 {sup.contact_name}</span>}
-                                                {sup.contact_phone && <span>📞 {sup.contact_phone}</span>}
-                                                {sup.wilaya && <span>📍 {sup.wilaya}</span>}
-                                                {sup.payment_terms && <span>💳 {sup.payment_terms}</span>}
+                                                {sup.contact_name && <span>{sup.contact_name}</span>}
+                                                {sup.contact_phone && <span>{sup.contact_phone}</span>}
+                                                {sup.wilaya && <span>{sup.wilaya}</span>}
+                                                {sup.payment_terms && <span>{sup.payment_terms}</span>}
                                              </div>
                                           );
                                        })()}
@@ -1892,7 +1954,7 @@ export default function ProductsPage() {
                                        {/* Matières */}
                                        <div className="p-5 rounded-3xl border border-blue-100 bg-blue-50/30 space-y-4">
                                           <h5 className="text-[11px] font-black uppercase text-blue-600 tracking-widest flex items-center gap-2">
-                                             <span className="text-base">🧵</span> 1. Matières & Fournitures
+                                             1. Matières & Fournitures
                                           </h5>
                                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                              {/* Tissu */}
@@ -1919,7 +1981,7 @@ export default function ProductsPage() {
                                        {/* Main d'œuvre */}
                                        <div className="p-5 rounded-3xl border border-purple-100 bg-purple-50/30 space-y-4">
                                           <h5 className="text-[11px] font-black uppercase text-purple-600 tracking-widest flex items-center gap-2">
-                                             <span className="text-base">👷</span> 2. Main d'œuvre (Façonnier)
+                                             2. Main d'œuvre (Façonnier)
                                           </h5>
                                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                              <div className="space-y-1.5">
@@ -1952,7 +2014,7 @@ export default function ProductsPage() {
                                        {/* Logistique & Divers */}
                                        <div className="p-5 rounded-3xl border border-orange-100 bg-orange-50/30 space-y-4">
                                           <h5 className="text-[11px] font-black uppercase text-orange-600 tracking-widest flex items-center gap-2">
-                                             <span className="text-base">📦</span> 3. Logistique & Divers
+                                             3. Logistique & Divers
                                           </h5>
                                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                              <div className="space-y-1.5">
@@ -1964,7 +2026,7 @@ export default function ProductsPage() {
                                                 <SupplierInlineSelect value={form.prod_packaging_supplier} onChange={v => setF({ prod_packaging_supplier: v })} suppliers={suppliers} placeholder="Fournisseur emballage..." />
                                              </div>
                                              <div className="space-y-1.5">
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Transport Atelier ➔ Dépôt</label>
+                                                <label className="text-[10px] font-bold text-slate-500 uppercase">Transport Atelier - Dépôt</label>
                                                 <div className="relative">
                                                    <Input type="number" value={form.prod_transport_cost} onChange={e => setF({ prod_transport_cost: e.target.value })} className="h-11 rounded-xl border-orange-100 bg-white font-black pl-10" />
                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs font-black">DA</span>
@@ -1986,7 +2048,7 @@ export default function ProductsPage() {
                                        <div className="p-5 rounded-3xl border border-[#6C5CE7]/20 bg-[#6C5CE7]/5 space-y-4">
                                           <div className="flex items-center justify-between">
                                              <h5 className="text-[11px] font-black uppercase text-[#6C5CE7] tracking-widest flex items-center gap-2">
-                                                <span className="text-base">💎</span> 4. Frais supplémentaires personnalisés
+                                                4. Frais supplémentaires personnalisés
                                              </h5>
                                              <Button type="button" onClick={addCustomCharge} className="h-9 px-4 rounded-xl bg-[#6C5CE7] hover:bg-[#5849D1] text-white text-[10px] font-black uppercase tracking-widest transition-all">
                                                 <PlusCircle className="mr-1.5 size-3.5" /> Ajouter un frais
@@ -2131,7 +2193,7 @@ export default function ProductsPage() {
                                     </div>
 
                                     <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-3">
-                                       <span className="text-amber-500 text-lg mt-0.5">⚡</span>
+                                       <AlertCircle className="size-4 text-amber-500 mt-0.5 shrink-0" />
                                        <p className="text-[11px] text-amber-800 font-bold leading-relaxed">
                                           À la création du produit, le coût total du lot sera enregistré automatiquement comme <strong>charge de production détaillée</strong> dans le module Finance & Trésorerie pour suivre votre rentabilité globale.
                                        </p>
@@ -2425,7 +2487,7 @@ export default function ProductsPage() {
                                           <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Exceptions de livraison configurées</h5>
                                           {!form.delivery_fees?.fees || Object.keys(form.delivery_fees.fees).length === 0 ? (
                                              <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl text-center space-y-1">
-                                                <p className="text-xs font-bold text-slate-600">✅ Tarifs de vos transporteurs appliqués automatiquement</p>
+                                                <p className="text-xs font-bold text-slate-600">Tarifs de vos transporteurs appliqués automatiquement</p>
                                                 <p className="text-[10px] text-slate-400">Aucune exception n'est nécessaire. Utilisez le formulaire ci-dessus pour forcer un tarif spécifique sur une wilaya particulière.</p>
                                              </div>
                                           ) : (
@@ -2677,8 +2739,8 @@ export default function ProductsPage() {
                                  {createMutation.isPending || updateMutation.isPending
                                     ? <Loader2 className="size-5 animate-spin" />
                                     : editingProduct
-                                       ? (form.is_upsell_only ? 'Valider le produit upsell ✓' : 'Valider modifications ✓')
-                                       : (form.is_upsell_only ? 'Créer le produit upsell 🎁' : 'Créer le produit 🚀')
+                                       ? (form.is_upsell_only ? 'Valider le produit upsell' : 'Valider modifications')
+                                       : (form.is_upsell_only ? 'Créer le produit upsell' : 'Créer le produit')
                                  }
                               </Button>
                            </div>
@@ -2691,7 +2753,7 @@ export default function ProductsPage() {
                     <div className="space-y-5">
                       <div className="space-y-1.5 text-center">
                         <DialogTitle className="text-sm font-black uppercase tracking-widest text-slate-700">
-                          ⚡ Générer des pointures
+                          Générer des pointures
                         </DialogTitle>
                         <p className="text-xs text-slate-500 font-medium">Créez rapidement une série de pointures avec leur stock.</p>
                       </div>
