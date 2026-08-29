@@ -124,12 +124,10 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'En Cours de Livraison', view: 'orders', subView: 'FOLLOWUP' },
                { label: 'Livrées & Terminées', view: 'orders', subView: 'COMPLETED' },
                { label: 'Annulées & Retours', view: 'orders', subView: 'CANCELLED' },
-               { label: 'Marketplace (50 DA)', view: 'orders', subView: 'MARKETPLACE' },
                { label: 'Toutes les Commandes', view: 'orders', subView: 'ALL' },
             ]
          },
          { label: 'Produits', icon: Package, view: 'products' },
-         { label: 'Commandes Marketplace', icon: Store, view: 'marketplace_orders' },
          { label: 'Upsell', icon: Zap, view: 'upsell' },
          { 
             label: 'Suivi de Stock', 
