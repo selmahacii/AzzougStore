@@ -1152,69 +1152,69 @@ const [timeLeft, setTimeLeft] = useState('');
 
   return (
     <div className="flex flex-col min-h-screen bg-[#F8F9FC] animate-in fade-in duration-500">
-      <div className="p-8 space-y-8 max-w-[1600px] mx-auto w-full">
+      <div className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto w-full">
         {/* Main Header */}
-        <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
-          <div className="flex items-center gap-4 sm:gap-5 relative z-10">
-            <div className="size-12 rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-xl shadow-xs shrink-0">
-              <Package className="size-6 text-[#4b7bec]" />
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-4 sm:p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6 relative overflow-hidden">
+          <div className="flex items-center gap-3.5 sm:gap-5 relative z-10">
+            <div className="size-10 sm:size-12 rounded-xl sm:rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-lg sm:text-xl shadow-xs shrink-0">
+              <Package className="size-5 sm:size-6 text-[#4b7bec]" />
             </div>
             <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
+                <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
                   {VIEW_LABELS[viewMode] || 'Archive des Commandes'}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-indigo-50 text-[#4b7bec] border border-indigo-100">
+                <span className="px-2 py-0.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase font-mono bg-indigo-50 text-[#4b7bec] border border-indigo-100">
                   {activeStore?.name || 'Boutique'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
                 Gérez vos flux de commandes, réconciliations, confirmations et expéditions logistiques
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto relative z-10 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-2.5 sm:gap-3 w-full lg:w-auto relative z-10 flex-col sm:flex-row">
             <Button
               variant="outline"
               onClick={() => exportToCSV(orders as any, 'commandes', REGISTRY_COLUMNS)}
-              className="h-11 px-5 rounded-2xl text-xs font-bold border-slate-200 hover:bg-slate-50 transition-all text-slate-700 bg-white shadow-xs"
+              className="w-full sm:w-auto h-10 sm:h-11 px-4 sm:px-5 rounded-xl sm:rounded-2xl text-xs font-bold border-slate-200 hover:bg-slate-50 transition-all text-slate-700 bg-white shadow-xs justify-center"
             >
-              <Download className="mr-2 size-4 text-slate-500" /> Exporter CSV
+              <Download className="mr-2 size-3.5 sm:size-4 text-slate-500" /> Exporter CSV
             </Button>
             <Button
               onClick={() => setIsCreatingOrder(true)}
-              className="h-11 px-6 rounded-2xl text-xs font-black bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-md shadow-blue-100 transition-all flex items-center border-none"
+              className="w-full sm:w-auto h-10 sm:h-11 px-5 sm:px-6 rounded-xl sm:rounded-2xl text-xs font-black bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-md shadow-blue-100 transition-all flex items-center justify-center border-none"
             >
-              <Plus className="mr-2 size-4" /> Nouvelle commande
+              <Plus className="mr-2 size-3.5 sm:size-4" /> Nouvelle commande
             </Button>
           </div>
         </div>
 
         {/* Store Analytics Overview Section */}
-        <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-4 sm:p-6 lg:p-7 shadow-sm space-y-4 sm:space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3 sm:pb-4">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs shrink-0">
-                <BarChart3 className="size-5 text-[#4b7bec]" />
+              <div className="size-9 sm:size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs shrink-0">
+                <BarChart3 className="size-4 sm:size-5 text-[#4b7bec]" />
               </div>
               <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                <h2 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
                   Performances par Boutique
                 </h2>
-                <p className="text-xs text-slate-400">Analyse de conversion et de rentabilité en temps réel</p>
+                <p className="text-[10px] sm:text-xs text-slate-400">Analyse de conversion et de rentabilité en temps réel</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs overflow-x-auto no-scrollbar w-full sm:w-auto">
                 {PERIODS.map(p => (
                   <button
                     key={p.value}
                     type="button"
                     onClick={() => applyPeriodPreset(p.value)}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap",
+                      "px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap",
                       analyticsPeriod === p.value 
                         ? "bg-white text-slate-900 shadow-xs font-black" 
                         : "text-slate-500 hover:text-slate-700"
@@ -1228,7 +1228,7 @@ const [timeLeft, setTimeLeft] = useState('');
                 value={analyticsProductId || "ALL"}
                 onValueChange={(v) => setAnalyticsProductId(v === "ALL" ? "" : v)}
               >
-                <SelectTrigger className="h-9 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold w-[160px]">
+                <SelectTrigger className="h-8 sm:h-9 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[150px]">
                   <SelectValue placeholder="Tous les produits" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1340,20 +1340,20 @@ const [timeLeft, setTimeLeft] = useState('');
                     </div>
                   </div>
 
-                  <div className="pt-3 mt-3 border-t border-slate-100/80 flex items-center justify-between gap-1 text-[9px] font-mono font-bold text-slate-500">
-                    <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100/60">
-                      Attente: <strong>{pendingCount}</strong>
+                  <div className="pt-3 mt-3 border-t border-slate-100/80 grid grid-cols-3 sm:grid-cols-5 gap-1 text-[9px] font-mono font-bold text-slate-500 text-center">
+                    <span className="flex items-center justify-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100/60 truncate">
+                      Att: <strong>{pendingCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-[#4b7bec] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/60">
+                    <span className="flex items-center justify-center gap-1 text-[#4b7bec] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/60 truncate">
                       Conf: <strong>{confirmedCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100/60">
+                    <span className="flex items-center justify-center gap-1 text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100/60 truncate">
                       Expé: <strong>{shippedCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/60">
+                    <span className="flex items-center justify-center gap-1 text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/60 truncate">
                       Livr: <strong>{deliveredCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100/60">
+                    <span className="flex items-center justify-center gap-1 text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100/60 truncate">
                       Ann: <strong>{cancelledCount}</strong>
                     </span>
                   </div>
@@ -1481,9 +1481,9 @@ const [timeLeft, setTimeLeft] = useState('');
         )}
 
         {/* Tactical Filter Rack */}
-        <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/95">
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 min-w-0">
-            <div className="relative w-full md:w-auto md:flex-1 md:min-w-[240px] shrink-0">
+        <div className="bg-white rounded-2xl sm:rounded-[24px] border border-slate-100 p-3 sm:p-4 lg:p-5 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3 sm:gap-4 shadow-sm sticky top-2 sm:top-4 z-20 backdrop-blur-md bg-white/95">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
+            <div className="relative w-full sm:flex-1 sm:min-w-[200px] shrink-0">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
               <Input
                 placeholder="Rechercher client, téléphone ou ID..."
@@ -1500,12 +1500,12 @@ const [timeLeft, setTimeLeft] = useState('');
             
             <div className="hidden md:block h-6 w-px bg-slate-200" />
             
-            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full sm:w-auto">
               <Select
                 value={viewMode}
                 onValueChange={(v) => handleModeChange(v)}
               >
-                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[200px]">
+                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[170px] truncate">
                   <SelectValue placeholder="Filtrer par statut" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1544,7 +1544,7 @@ const [timeLeft, setTimeLeft] = useState('');
                 value={filterProductId || "ALL"}
                 onValueChange={(v) => setFilterProductId(v === "ALL" ? "" : v)}
               >
-                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[180px] truncate">
+                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[160px] truncate">
                   <SelectValue placeholder="Tous les produits" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1559,7 +1559,7 @@ const [timeLeft, setTimeLeft] = useState('');
             </div>
           </div>
           
-          <div className="flex items-center gap-2 sm:gap-2.5 justify-end flex-wrap sm:flex-nowrap w-full md:w-auto">
+          <div className="flex items-center gap-2 sm:gap-2.5 justify-between sm:justify-end flex-wrap sm:flex-nowrap w-full xl:w-auto">
             {/* Quick date presets buttons */}
             <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs hidden 2xl:flex">
               {[
@@ -1583,43 +1583,45 @@ const [timeLeft, setTimeLeft] = useState('');
               ))}
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5">
-               <Calendar className="size-3.5 text-slate-400" />
-               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[11px] font-mono font-bold text-slate-700 outline-none w-[95px]" />
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-2 py-1.5 max-w-full overflow-hidden">
+               <Calendar className="size-3.5 text-slate-400 shrink-0" />
+               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[10px] sm:text-[11px] font-mono font-bold text-slate-700 outline-none w-[88px] sm:w-[95px]" />
                <span className="text-slate-300">-</span>
-               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[11px] font-mono font-bold text-slate-700 outline-none w-[95px]" />
+               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[10px] sm:text-[11px] font-mono font-bold text-slate-700 outline-none w-[88px] sm:w-[95px]" />
             </div>
 
-            <button onClick={() => setAdvancedFiltersOpen(true)}
-               className={cn("p-2.5 rounded-xl border transition-all shadow-xs", advancedFiltersOpen ? "border-[#4b7bec] text-[#4b7bec] bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50 text-slate-500")}
-               title="Filtres avancés"
-            >
-               <Filter className="size-4" />
-            </button>
-
-            {(filterWilaya || filterSource || filterProductId || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
-              <button
-                onClick={() => { clearAllFilters(); setFilterProductId(''); }}
-                className="flex items-center gap-1 px-2.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 transition-all text-rose-700 font-black text-[10px] font-mono shadow-xs shrink-0"
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setAdvancedFiltersOpen(true)}
+                 className={cn("p-2.5 rounded-xl border transition-all shadow-xs shrink-0", advancedFiltersOpen ? "border-[#4b7bec] text-[#4b7bec] bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50 text-slate-500")}
+                 title="Filtres avancés"
               >
-                <X className="size-3" />
-                Effacer ({[filterWilaya, filterSource, filterProductId, startDate, endDate, searchQuery].filter(Boolean).length})
+                 <Filter className="size-4" />
               </button>
-            )}
 
-            <button onClick={() => ordersQuery.refetch()} className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-xs transition-all text-slate-500" title="Actualiser">
-               <RefreshCw className={cn("size-4", ordersQuery.isFetching && "animate-spin text-[#4b7bec]")} />
-            </button>
-
-            {/* View switcher */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60">
-              {([['LIST', 'Liste'], ['KANBAN', 'Kanban'], ['MAP', 'Carte']] as const).map(([id, label]) => (
-                <button key={id} onClick={() => setListViewMode(id)}
-                  className={cn('px-2.5 py-1 rounded-lg text-[11px] font-black transition-all',
-                    listViewMode === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800')}>
-                  {label}
+              {(filterWilaya || filterSource || filterProductId || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
+                <button
+                  onClick={() => { clearAllFilters(); setFilterProductId(''); }}
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 transition-all text-rose-700 font-black text-[10px] font-mono shadow-xs shrink-0"
+                >
+                  <X className="size-3" />
+                  Effacer
                 </button>
-              ))}
+              )}
+
+              <button onClick={() => ordersQuery.refetch()} className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-xs transition-all text-slate-500 shrink-0" title="Actualiser">
+                 <RefreshCw className={cn("size-4", ordersQuery.isFetching && "animate-spin text-[#4b7bec]")} />
+              </button>
+
+              {/* View switcher */}
+              <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl border border-slate-200/60 shrink-0">
+                {([['LIST', 'Liste'], ['KANBAN', 'Kanban'], ['MAP', 'Carte']] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => setListViewMode(id)}
+                    className={cn('px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition-all',
+                      listViewMode === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800')}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1671,9 +1673,9 @@ const [timeLeft, setTimeLeft] = useState('');
         ) : (
         <>
         {/* Performance Ledger Table */}
-        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="hidden md:block">
-            <table className="w-full text-left table-fixed">
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="hidden lg:block overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left table-fixed min-w-[980px]">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-100">
                   <th className="px-3 xl:px-4 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
@@ -2074,7 +2076,7 @@ const [timeLeft, setTimeLeft] = useState('');
           </div>
 
           {/* Mobile Card View */}
-          <div className="block md:hidden divide-y divide-slate-100">
+          <div className="block lg:hidden divide-y divide-slate-100">
             {ordersQuery.isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="p-5 space-y-4 animate-pulse">
@@ -2094,40 +2096,48 @@ const [timeLeft, setTimeLeft] = useState('');
             ) : (
               displayOrders.map((order) => (
                 <div key={order.id} className="p-5 space-y-4 hover:bg-slate-50/50 transition-colors group">
-                  {/* Top Bar: Checkbox + Order Number + Source */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
+                  {/* Top Bar: Checkbox + Order Number + Source + Date */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5">
                       <Checkbox checked={selectedIds.has(order.id)} onCheckedChange={() => toggleSelect(order.id)} className="rounded-md" />
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-black text-slate-900">{formatOrderRef(order, 'admin')}</span>
-                          {order.status === 'NEW' && (
-                            <span className="px-2 py-0.5 text-[9px] font-black text-white bg-rose-500 rounded-full animate-pulse">
-                              Nouveau
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[9px] font-medium text-slate-400">Ref: {order.id.split('-')[0]}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-1 rounded-lg bg-slate-900 text-white text-xs font-black font-mono tabular-nums">
+                          {formatOrderRef(order, 'admin')}
+                        </span>
+                        {order.status === 'NEW' && (
+                          <span className="size-2 bg-rose-500 rounded-full animate-pulse" title="Nouveau" />
+                        )}
+                        <span className="text-[10px] font-mono text-slate-400">ID: {order.id.split('-')[0]}</span>
                       </div>
                     </div>
-                    <div>
+                    <div className="flex items-center gap-1.5">
                       {order.source === 'MANUAL' ? (
-                        <Badge className="bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-bold shadow-none">
+                        <Badge className="bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-[9px] font-black shadow-none uppercase">
                           Manuel
                         </Badge>
-                      ) : (
-                        <Badge className="bg-slate-100 text-slate-600 rounded-lg text-[9px] font-bold shadow-none border-none">
-                          {order.source === 'FACEBOOK' ? 'Meta Ads' : order.source === 'landing_page' ? 'Landing Page' : order.source}
+                      ) : order.source === 'FACEBOOK' ? (
+                        <Badge className="bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[9px] font-black shadow-none uppercase">
+                          Meta Ads
                         </Badge>
+                      ) : (
+                        <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-[9px] font-black shadow-none uppercase">
+                          {order.source === 'landing_page' ? 'Landing Page' : (order.source || 'Standard')}
+                        </Badge>
+                      )}
+                      {order.created_at && (
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {new Date(order.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} {new Date(order.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       )}
                     </div>
                   </div>
 
                   {/* Customer Information & Amount */}
                   <div className="flex justify-between items-start gap-4">
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-800">{order.customer_name}</span>
+                    <div className="space-y-1.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-black text-slate-900 truncate">{order.customer_name}</span>
+                        <OrderTypeBadge order={order} size="xs" short />
                         {(order.is_duplicate || isDuplicatePhone(order.customer_phone) || (order.duplicate_count ?? 0) > 0) && (
                           <>
                             <DuplicatePopover
@@ -2145,34 +2155,58 @@ const [timeLeft, setTimeLeft] = useState('');
                           </>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 flex items-center gap-2">
-                        <Phone className="size-3.5 text-slate-400 shrink-0" />
-                        <span className="font-semibold">{order.customer_phone}</span>
-                      </p>
-                      <p className="text-xs text-slate-500 flex items-center gap-2">
-                        <MapPin className="size-3.5 text-slate-400 shrink-0" />
-                        <span>{order.customer_wilaya}</span>
-                      </p>
+
+                      <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
+                        <a href={`tel:${order.customer_phone}`} className="font-bold text-[#4b7bec] hover:underline flex items-center gap-1 font-mono">
+                          <Phone className="size-3.5 shrink-0" />
+                          {order.customer_phone}
+                        </a>
+                        <span className="flex items-center gap-1 text-slate-500 font-medium">
+                          <MapPin className="size-3.5 text-slate-400 shrink-0" />
+                          {order.customer_wilaya}{order.customer_commune ? ` (${order.customer_commune})` : ''}
+                        </span>
+                      </div>
+
+                      {/* Products preview */}
+                      {order.items && order.items.length > 0 && (
+                        <div className="pt-1 text-xs text-slate-700 font-bold space-y-0.5">
+                          {order.items.map((it: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-1.5 text-slate-800 truncate">
+                              <span className="text-slate-400 font-mono text-[10px]">{it.quantity}x</span>
+                              <span className="truncate">{it.product_name}</span>
+                              {it.variant_name && <span className="text-[10px] text-slate-400">({it.variant_name})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       {order.notes && (
-                        <div className="text-[9px] font-bold text-amber-800 bg-amber-50/70 border border-amber-100/70 rounded px-1.5 py-0.5 mt-1.5 w-fit uppercase tracking-wide">
+                        <div className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5 mt-1 w-fit uppercase tracking-wide">
                           Note: {order.notes}
                         </div>
                       )}
                       {!!order.duplicate_count && order.duplicate_count > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); setSelectedDuplicateOrder(order); toggleExpandMerged(order.id); }}
-                          className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1.5 w-fit focus:outline-none cursor-pointer"
-                          title="Voir l'historique et le détail des commandes fusionnées"
+                          className="inline-flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5 text-[10px] font-black shadow-sm transition-all mt-1 w-fit focus:outline-none cursor-pointer"
                         >
                           <span className="size-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''} — voir l'historique
+                          {order.duplicate_count} {order.duplicate_count > 1 ? 'doublons' : 'doublon'}{order.last_duplicate_at ? ` · dernier le ${formatDupTime(order.last_duplicate_at)}` : ''}
                         </button>
                       )}
                     </div>
-                    <div className="text-right space-y-1">
-                      <span className="text-base font-black text-slate-900 tabular-nums">{formatPrice(order.total)}</span>
+
+                    <div className="text-right space-y-0.5 shrink-0">
+                      <span className="text-sm font-black font-mono text-slate-900 tabular-nums block">
+                        {formatPrice(order.total || 0)}
+                      </span>
+                      {order.delivery_fee > 0 && (
+                        <span className="text-[9px] font-mono text-slate-400 block">
+                          Liv: {formatPrice(order.delivery_fee)}
+                        </span>
+                      )}
                       {order.promo_code && order.discount > 0 && (
-                        <div className="text-[9px] font-black text-[#6C5CE7] bg-[#F0EDFF] px-1.5 py-0.5 rounded-full w-fit ml-auto tabular-nums">
+                        <div className="text-[9px] font-black font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 w-fit ml-auto tabular-nums">
                           {order.promo_code} (-{formatPrice(order.discount)})
                         </div>
                       )}
