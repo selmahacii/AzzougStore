@@ -983,39 +983,21 @@ const [timeLeft, setTimeLeft] = useState('');
 
   // ─── Micro-detail order type filters (client-side, over the loaded page) ───
   const ORDER_TYPE_FILTERS: { id: string; label: string; color: string; match: (o: Order) => boolean }[] = [
-    { id: 'ALL',       label: 'Toutes',            color: 'bg-slate-100 text-slate-700 border-slate-200',      match: () => true },
-    // "Normales" = reçues via un canal réel (landing page, Meta Ads, storefront...),
-    // JAMAIS les commandes saisies manuellement par un agent — ce sont deux
-    // catégories distinctes (voir le filtre "Manuelle" ci-dessous), une
-    // commande manuelle ne doit jamais compter dans les deux à la fois.
-    { id: 'NORMAL',    label: 'Normales',        color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && o.source !== 'MARKETPLACE' && !(o as any).is_marketplace_upsell && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
-    { id: 'MANUAL',    label: 'Manuelle',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' && !(o as any).is_marketplace_upsell },
-    { id: 'MARKETPLACE', label: 'Marketplace (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => (o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE' },
-    { id: 'ABANDONED', label: 'Paniers Aband.',  color: 'bg-orange-50 text-orange-700 border-orange-200',    match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
-    { id: 'RECOVERED', label: 'Récupérés',       color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
-    // Deux catégories d'annulation, jamais confondues : une commande NORMALE
-    // annulée (vraie commande passée puis annulée) n'a rien à voir, côté
-    // diagnostic, avec un simple PANIER ABANDONNÉ jamais confirmé — les
-    // mélanger masquait le vrai taux d'annulation des ventes réelles.
-    { id: 'CANCELLED_NORMAL',   label: 'Annulée (Normale)',           color: 'bg-red-50 text-red-700 border-red-200',     match: (o) => o.status === 'CANCELLED' && !o.is_abandoned_cart },
-    { id: 'CANCELLED_ABANDONED', label: 'Annulée (Panier Aband.)',  color: 'bg-orange-50 text-red-700 border-orange-200', match: (o) => o.status === 'CANCELLED' && !!o.is_abandoned_cart },
-    // Matches orders that ABSORBED at least one duplicate (duplicate_count
-    // attached by GET /orders, see orders.py) — was previously matching
-    // is_duplicate/isDuplicatePhone, which flags the MERGED CHILD, not the
-    // parent — and MERGED children are excluded from the default listing
-    // entirely, so this filter almost always showed zero results even with
-    // real duplicates in the store. This is what actually answers "why does
-    // Meta Ads show more orders than the ERP" — click it to see exactly
-    // which orders absorbed a resubmit, and how many.
-    { id: 'DUPLICATE', label: 'Doublons',        color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => (o.duplicate_count ?? 0) > 0 },
-    { id: 'NRP',       label: 'NRP',             color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
-    { id: 'UPSELL',    label: 'Upsell',          color: 'bg-green-50 text-green-700 border-green-200',       match: (o) => !!o.is_upsell },
-    { id: 'PACK',      label: 'Packs',           color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
-    { id: 'TRACKED',   label: 'NOEST / Transporteur', color: 'bg-cyan-50 text-cyan-700 border-cyan-200',       match: (o) => !!o.tracking_number },
-    { id: 'INTERNAL',  label: 'Livraison interne',  color: 'bg-sky-50 text-sky-700 border-sky-200',          match: (o) => !!o.livreur_id },
+    { id: 'ALL',       label: 'Toutes',            color: 'bg-slate-100 text-slate-800 border-slate-200',      match: () => true },
+    { id: 'NORMAL',    label: 'Normales',          color: 'bg-blue-50 text-blue-700 border-blue-200',          match: (o) => o.source !== 'MANUAL' && !o.is_abandoned_cart && !o.is_upsell && !o.is_pack && !(o.is_duplicate || isDuplicatePhone(o.customer_phone)) },
+    { id: 'MANUAL',    label: 'Manuelle',          color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => o.source === 'MANUAL' },
+    { id: 'ABANDONED', label: 'Paniers Abandonnés', color: 'bg-amber-50 text-amber-700 border-amber-200',     match: (o) => !!o.is_abandoned_cart && !o.recovered_at && !['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status) },
+    { id: 'RECOVERED', label: 'Paniers Récupérés',  color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_abandoned_cart && (!!o.recovered_at || ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(o.status)) },
+    { id: 'CANCELLED_NORMAL',   label: 'Annulée (Normale)',          color: 'bg-rose-50 text-rose-700 border-rose-200',     match: (o) => o.status === 'CANCELLED' && !o.is_abandoned_cart },
+    { id: 'CANCELLED_ABANDONED', label: 'Annulée (Panier Aband.)', color: 'bg-amber-50 text-rose-700 border-amber-200', match: (o) => o.status === 'CANCELLED' && !!o.is_abandoned_cart },
+    { id: 'DUPLICATE', label: 'Doublons',          color: 'bg-purple-50 text-purple-700 border-purple-200',    match: (o) => (o.duplicate_count ?? 0) > 0 },
+    { id: 'NRP',       label: 'NRP (Injoignable)', color: 'bg-rose-50 text-rose-700 border-rose-200',          match: (o) => (o.nrp_count || 0) > 0 },
+    { id: 'UPSELL',    label: 'Upsell',            color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => !!o.is_upsell },
+    { id: 'PACK',      label: 'Packs',             color: 'bg-cyan-50 text-cyan-700 border-cyan-200',          match: (o) => !!o.is_pack },
+    { id: 'TRACKED',   label: 'NOEST / Transporteur', color: 'bg-sky-50 text-sky-700 border-sky-200',         match: (o) => !!o.tracking_number },
+    { id: 'INTERNAL',  label: 'Livraison Interne', color: 'bg-blue-50 text-blue-700 border-blue-200',         match: (o) => !!o.livreur_id },
     { id: 'INTERNAL_DELIVERED', label: 'Interne Livrées', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => o.status === 'DELIVERED' && !!o.livreur_id && !o.tracking_number },
-    { id: 'MARKETPLACE_DELIVERED', label: 'Marketplace Livrées (50 DA)', color: 'bg-pink-50 text-pink-700 border-pink-200', match: (o) => o.status === 'DELIVERED' && ((o as any).is_marketplace_upsell === true || o.source === 'MARKETPLACE') },
-    { id: 'PROMO',     label: 'Avec promo',      color: 'bg-pink-50 text-pink-700 border-pink-200',          match: (o) => !!o.promo_code },
+    { id: 'PROMO',     label: 'Code Promo',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => !!o.promo_code },
   ];
   const displayOrders = typeFilter === 'ALL'
     ? orders
@@ -1172,50 +1154,70 @@ const [timeLeft, setTimeLeft] = useState('');
     <div className="flex flex-col min-h-screen bg-[#F8F9FC] animate-in fade-in duration-500">
       <div className="p-8 space-y-8 max-w-[1600px] mx-auto w-full">
         {/* Main Header */}
-        <div className="bg-white rounded-3xl sm:rounded-[40px] border px-6 sm:px-10 py-6 sm:py-8 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden" style={{ borderColor: C.border }}>
-          <div className="absolute top-0 right-0 p-10 opacity-[0.03] text-[#4b7bec] pointer-events-none"><ShoppingBag className="size-48" /></div>
-          <div className="flex items-center gap-4 sm:gap-6 relative z-10">
-            <div className="size-12 sm:size-16 rounded-2xl sm:rounded-3xl flex items-center justify-center bg-[#F0F5FF] text-[#4b7bec] shadow-inner shrink-0">
-              <Package className="size-6 sm:size-8" />
+        <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative overflow-hidden">
+          <div className="flex items-center gap-4 sm:gap-5 relative z-10">
+            <div className="size-12 rounded-2xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center text-xl shadow-xs shrink-0">
+              <Package className="size-6 text-[#4b7bec]" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{VIEW_LABELS[viewMode] || 'Gestion des ventes'}</h1>
-              <p className="text-[11px] sm:text-sm font-medium text-slate-400 mt-1">Gérez vos flux de commandes et expéditions</p>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  {VIEW_LABELS[viewMode] || 'Archive des Commandes'}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-indigo-50 text-[#4b7bec] border border-indigo-100">
+                  {activeStore?.name || 'Boutique'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Gérez vos flux de commandes, réconciliations, confirmations et expéditions logistiques
+              </p>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto relative z-10">
-            <Button variant="outline" onClick={() => exportToCSV(orders as any, 'commandes', REGISTRY_COLUMNS)} className="h-10 sm:h-12 px-4 sm:px-6 rounded-xl sm:rounded-2xl text-xs font-bold border hover:bg-slate-50 transition-all text-slate-600 bg-white" style={{ borderColor: C.border }}>
-              <Download className="mr-2 size-4" /> Exporter CSV
+
+          <div className="flex items-center gap-3 w-full lg:w-auto relative z-10 flex-wrap sm:flex-nowrap">
+            <Button
+              variant="outline"
+              onClick={() => exportToCSV(orders as any, 'commandes', REGISTRY_COLUMNS)}
+              className="h-11 px-5 rounded-2xl text-xs font-bold border-slate-200 hover:bg-slate-50 transition-all text-slate-700 bg-white shadow-xs"
+            >
+              <Download className="mr-2 size-4 text-slate-500" /> Exporter CSV
             </Button>
-            <Button onClick={() => setIsCreatingOrder(true)} className="h-10 sm:h-12 px-6 sm:px-8 rounded-xl sm:rounded-2xl text-[12px] sm:text-sm font-bold bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-lg shadow-indigo-100 transition-all flex items-center border-none">
-              <Plus className="mr-2 size-4 sm:size-5" /> Nouvelle commande
+            <Button
+              onClick={() => setIsCreatingOrder(true)}
+              className="h-11 px-6 rounded-2xl text-xs font-black bg-[#4b7bec] hover:bg-[#3867d6] text-white shadow-md shadow-blue-100 transition-all flex items-center border-none"
+            >
+              <Plus className="mr-2 size-4" /> Nouvelle commande
             </Button>
           </div>
         </div>
 
         {/* Store Analytics Overview Section */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+        <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs shrink-0">
                 <BarChart3 className="size-5 text-[#4b7bec]" />
-                Performances par Boutique
-              </h2>
-              <p className="text-xs font-bold text-slate-400">Analyse de conversion et de rentabilité en temps réel</p>
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                  Performances par Boutique
+                </h2>
+                <p className="text-xs text-slate-400">Analyse de conversion et de rentabilité en temps réel</p>
+              </div>
             </div>
             
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-white border rounded-2xl p-1 shadow-sm w-fit overflow-x-auto no-scrollbar" style={{ borderColor: C.border }}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs">
                 {PERIODS.map(p => (
                   <button
                     key={p.value}
                     type="button"
                     onClick={() => applyPeriodPreset(p.value)}
                     className={cn(
-                      "px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap",
+                      "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap",
                       analyticsPeriod === p.value 
-                        ? "bg-[#4b7bec] text-white shadow-md shadow-indigo-100" 
-                        : "text-slate-500 hover:bg-slate-50"
+                        ? "bg-white text-slate-900 shadow-xs font-black" 
+                        : "text-slate-500 hover:text-slate-700"
                     )}
                   >
                     {p.label}
@@ -1226,7 +1228,7 @@ const [timeLeft, setTimeLeft] = useState('');
                 value={analyticsProductId || "ALL"}
                 onValueChange={(v) => setAnalyticsProductId(v === "ALL" ? "" : v)}
               >
-                <SelectTrigger className="h-10 bg-white border-slate-200 rounded-2xl text-xs font-bold w-[160px] shadow-sm">
+                <SelectTrigger className="h-9 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold w-[160px]">
                   <SelectValue placeholder="Tous les produits" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1241,16 +1243,14 @@ const [timeLeft, setTimeLeft] = useState('');
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {storesAnalyticsQuery.isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="bg-white rounded-3xl p-6 border space-y-4 h-[220px]" style={{ borderColor: C.border }}>
-                  <Skeleton className="h-6 w-1/3 rounded-lg" />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Skeleton className="h-12 rounded-xl" />
-                    <Skeleton className="h-12 rounded-xl" />
-                    <Skeleton className="h-12 rounded-xl" />
-                    <Skeleton className="h-12 rounded-xl" />
+                <div key={i} className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100 space-y-4 h-[200px] animate-pulse">
+                  <div className="h-6 bg-slate-200 rounded-lg w-1/3" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="h-10 bg-slate-200 rounded-xl" />
+                    <div className="h-10 bg-slate-200 rounded-xl" />
                   </div>
                 </div>
               ))
@@ -1272,33 +1272,35 @@ const [timeLeft, setTimeLeft] = useState('');
               const deliveredCount = (activeOrders.length > 0 && (!store.delivered_orders || store.delivered_orders === 0)) ? activeOrders.filter((o: any) => o.status === 'DELIVERED').length : (store.delivered_orders ?? 0);
               const cancelledCount = (activeOrders.length > 0 && (!store.cancelled_orders || store.cancelled_orders === 0)) ? activeOrders.filter((o: any) => ['CANCELLED', 'RETURNED', 'REFUSED'].includes(o.status)).length : (store.cancelled_orders ?? 0);
 
+              const isStoreActive = activeStore?.id === store.store_id;
+
               return (
                 <div 
                   key={store.store_id} 
                   className={cn(
-                    "bg-white rounded-[32px] p-6 border shadow-sm transition-all hover:shadow-md hover:scale-[1.01] duration-300 relative overflow-hidden flex flex-col justify-between",
-                    activeStore?.id === store.store_id ? "border-[#4b7bec] ring-1 ring-[#4b7bec]/20" : ""
+                    "rounded-2xl p-5 border shadow-2xs transition-all flex flex-col justify-between relative",
+                    isStoreActive ? "bg-white border-[#4b7bec] ring-2 ring-[#4b7bec]/10 shadow-xs" : "bg-slate-50/60 border-slate-100 hover:bg-white hover:border-slate-200"
                   )}
-                  style={{ borderColor: activeStore?.id === store.store_id ? '#4b7bec' : C.border }}
                 >
-                  {activeStore?.id === store.store_id && (
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-indigo-500/10 to-transparent rounded-bl-full pointer-events-none" />
-                  )}
-
-                  <div className="space-y-4">
+                  <div className="space-y-3.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="size-9 rounded-xl flex items-center justify-center bg-indigo-50 text-[#4b7bec] font-black shadow-inner shrink-0">
+                        <div className={cn(
+                          "size-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0",
+                          isStoreActive ? "bg-indigo-50 text-[#4b7bec]" : "bg-slate-200 text-slate-600"
+                        )}>
                           {store.store_name?.substring(0,2).toUpperCase()}
                         </div>
                         <div>
-                          <h3 className="text-sm font-black text-slate-800 tracking-tight">{store.store_name}</h3>
-                          <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">ID: {store.store_id?.split('-')[0]}</span>
+                          <h3 className="text-xs font-black text-slate-900 tracking-tight">{store.store_name}</h3>
+                          <span className="text-[9px] font-mono text-slate-400">ID: {store.store_id?.split('-')[0]}</span>
                         </div>
                       </div>
                       
-                      {activeStore?.id === store.store_id ? (
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-[#4b7bec] border border-indigo-100">Boutique Active</span>
+                      {isStoreActive ? (
+                        <span className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase font-mono bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Boutique Active
+                        </span>
                       ) : (
                         <button 
                           type="button"
@@ -1306,58 +1308,53 @@ const [timeLeft, setTimeLeft] = useState('');
                             const found = allStores.find(st => st.id === store.store_id);
                             if (found) switchToStore(found.id);
                           }}
-                          className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-slate-400 hover:text-[#4b7bec] hover:bg-indigo-50/50 transition-colors"
+                          className="px-2 py-0.5 rounded-lg text-[9px] font-black uppercase font-mono text-slate-500 hover:text-[#4b7bec] hover:bg-indigo-50/60 border border-transparent hover:border-indigo-100 transition-colors"
                         >
                           Sélectionner
                         </button>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 pt-2">
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Chiffre d'Affaires</span>
-                        <span className="text-base font-black text-slate-900 font-mono">{revenue.toLocaleString('fr-FR')} DA</span>
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 space-y-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Chiffre d&apos;Affaires</span>
+                        <span className="text-sm font-black text-slate-900 font-mono tabular-nums">{formatPrice(revenue)}</span>
                       </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Cde. Livrées</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-black text-[#4b7bec]">{conversionRate}%</span>
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 space-y-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Cde. Livrées</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black font-mono text-emerald-700">{conversionRate}%</span>
                           <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#4b7bec] rounded-full" style={{ width: `${Math.min(100, conversionRate)}%` }} />
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, conversionRate)}%` }} />
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Commandes Totales</span>
-                        <span className="text-sm font-black text-slate-800">{totalOrders} commandes</span>
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 space-y-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Commandes Totales</span>
+                        <span className="text-xs font-black text-slate-800 font-mono">{totalOrders}</span>
                       </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Panier Moyen</span>
-                        <span className="text-sm font-black text-slate-800 font-mono">{averageBasket.toLocaleString('fr-FR')} DA</span>
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 space-y-0.5">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Panier Moyen</span>
+                        <span className="text-xs font-black text-slate-800 font-mono tabular-nums">{formatPrice(averageBasket)}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500">
-                    <span className="flex items-center gap-1 text-amber-600">
-                      <span className="size-1.5 rounded-full bg-amber-400" />
-                      Attente: <strong className="text-slate-800">{pendingCount}</strong>
+                  <div className="pt-3 mt-3 border-t border-slate-100/80 flex items-center justify-between gap-1 text-[9px] font-mono font-bold text-slate-500">
+                    <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100/60">
+                      Attente: <strong>{pendingCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-[#4b7bec]">
-                      <span className="size-1.5 rounded-full bg-[#4b7bec]" />
-                      Conf: <strong className="text-slate-800">{confirmedCount}</strong>
+                    <span className="flex items-center gap-1 text-[#4b7bec] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100/60">
+                      Conf: <strong>{confirmedCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-indigo-600">
-                      <span className="size-1.5 rounded-full bg-indigo-500" />
-                      Expé: <strong className="text-slate-800">{shippedCount}</strong>
+                    <span className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100/60">
+                      Expé: <strong>{shippedCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-emerald-600">
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
-                      Livr: <strong className="text-slate-800">{deliveredCount}</strong>
+                    <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/60">
+                      Livr: <strong>{deliveredCount}</strong>
                     </span>
-                    <span className="flex items-center gap-1 text-rose-600">
-                      <span className="size-1.5 rounded-full bg-rose-500" />
-                      Ann: <strong className="text-slate-800">{cancelledCount}</strong>
+                    <span className="flex items-center gap-1 text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100/60">
+                      Ann: <strong>{cancelledCount}</strong>
                     </span>
                   </div>
                 </div>
@@ -1484,33 +1481,31 @@ const [timeLeft, setTimeLeft] = useState('');
         )}
 
         {/* Tactical Filter Rack */}
-        <div className="bg-white rounded-2xl sm:rounded-[32px] border px-4 sm:px-8 py-4 sm:py-6 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 sm:gap-6 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/90" style={{ borderColor: C.border }}>
-          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 sm:gap-6 flex-1 min-w-0">
-            {/* min-w on the input itself (not just its wrapper) so it can never
-                get squeezed to near-zero width by the tab list next to it — that
-                was the actual "search bar isn't visible" bug on medium/laptop
-                viewports where both siblings shared flex-1 with no floor. */}
-            <div className="relative w-full md:w-auto md:flex-1 md:min-w-[220px] shrink-0">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+        <div className="bg-white rounded-[24px] border border-slate-100 p-4 sm:p-5 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 shadow-sm sticky top-4 z-20 backdrop-blur-md bg-white/95">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 min-w-0">
+            <div className="relative w-full md:w-auto md:flex-1 md:min-w-[240px] shrink-0">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
               <Input
                 placeholder="Rechercher client, téléphone ou ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-11 h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-medium focus-visible:ring-[#4b7bec] w-full"
+                className="pl-10 h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-medium focus-visible:ring-[#4b7bec] w-full"
               />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
             
-            <div className="hidden md:block h-8 w-px bg-slate-100" />
+            <div className="hidden md:block h-6 w-px bg-slate-200" />
             
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              {/* Onglets de statut convertis en dropdown — la rangée horizontale
-                  scrollable (Nouvelles/En Cours/.../Tous) prenait trop de place
-                  et nécessitait un défilement latéral même sur un écran normal. */}
+            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
               <Select
                 value={viewMode}
                 onValueChange={(v) => handleModeChange(v)}
               >
-                <SelectTrigger className="h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold w-full sm:w-[220px]">
+                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[200px]">
                   <SelectValue placeholder="Filtrer par statut" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1522,32 +1517,21 @@ const [timeLeft, setTimeLeft] = useState('');
                     { id: 'COMPLETED',  label: 'Terminées',  statusKey: 'DELIVERED' },
                     { id: 'CANCELLED',  label: 'Annulées & Retours', statusKey: 'CANCELLED' },
                     { id: 'ABANDONED',  label: 'Abandonnés', statusKey: 'ABANDONED' },
-                    { id: 'ALL',        label: 'Tous',       statusKey: 'ALL' },
+                    { id: 'ALL',        label: 'Toutes',     statusKey: 'ALL' },
                   ].map(tab => {
                     const count = tab.statusKey === 'ALL'
                       ? Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)
-                      // CANCELLED tab is also RETURNED's home (see MODE_TO_STATUS →
-                      // 'ARCHIVED') — its badge count must include both or it
-                      // undercounts vs. what the tab actually displays when clicked.
                       : tab.statusKey === 'CANCELLED'
                       ? (tabCounts['CANCELLED'] ?? 0) + (tabCounts['RETURNED'] ?? 0)
-                      // "En Cours" (EN ATTENTE) is the shared home for
-                      // ASSIGNED/CALLED/IN_PROGRESS/RESCHEDULED (see
-                      // STATUS_TO_MODE above) — the badge was hardcoded to
-                      // ASSIGNED alone, showing e.g. "2" while the KPI grid's
-                      // own "En cours" card (IN_PROGRESS) showed "38" for the
-                      // SAME French label, and clicking any of the 4 statuses
-                      // lands on this exact tab. Sum all 4 so the badge
-                      // matches what the tab actually displays.
                       : tab.statusKey === 'ASSIGNED'
                       ? (tabCounts['ASSIGNED'] ?? 0) + (tabCounts['CALLED'] ?? 0) + (tabCounts['IN_PROGRESS'] ?? 0) + (tabCounts['RESCHEDULED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
                     return (
                       <SelectItem key={tab.id} value={tab.id} className="text-xs font-bold">
-                        <span className="flex items-center gap-2">
-                          {tab.label}
+                        <span className="flex items-center justify-between w-full gap-2">
+                          <span>{tab.label}</span>
                           {count !== undefined && count > 0 && (
-                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-100 text-slate-500">{count}</span>
+                            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono font-black bg-slate-100 text-slate-600">{count}</span>
                           )}
                         </span>
                       </SelectItem>
@@ -1560,7 +1544,7 @@ const [timeLeft, setTimeLeft] = useState('');
                 value={filterProductId || "ALL"}
                 onValueChange={(v) => setFilterProductId(v === "ALL" ? "" : v)}
               >
-                <SelectTrigger className="h-10 sm:h-12 bg-slate-50/50 border-slate-100 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold w-full sm:w-[220px] truncate">
+                <SelectTrigger className="h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold w-full sm:w-[180px] truncate">
                   <SelectValue placeholder="Tous les produits" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1575,9 +1559,9 @@ const [timeLeft, setTimeLeft] = useState('');
             </div>
           </div>
           
-          <div className="flex items-center gap-2 sm:gap-3 justify-end flex-wrap sm:flex-nowrap w-full md:w-auto mt-4 md:mt-0">
-            {/* Quick date presets dropdown/buttons */}
-            <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-xl p-1 shadow-xs hidden xl:flex">
+          <div className="flex items-center gap-2 sm:gap-2.5 justify-end flex-wrap sm:flex-nowrap w-full md:w-auto">
+            {/* Quick date presets buttons */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs hidden 2xl:flex">
               {[
                 { id: '30d', label: '30j' },
                 { id: '7d', label: '7j' },
@@ -1590,8 +1574,8 @@ const [timeLeft, setTimeLeft] = useState('');
                   type="button"
                   onClick={() => applyPeriodPreset(p.id)}
                   className={cn(
-                    "px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap",
-                    analyticsPeriod === p.id ? "bg-[#4b7bec] text-white shadow-xs" : "text-slate-500 hover:bg-slate-200/60"
+                    "px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-all cursor-pointer whitespace-nowrap",
+                    analyticsPeriod === p.id ? "bg-white text-slate-900 shadow-xs font-black" : "text-slate-500 hover:text-slate-800"
                   )}
                 >
                   {p.label}
@@ -1599,37 +1583,44 @@ const [timeLeft, setTimeLeft] = useState('');
               ))}
             </div>
 
-            <div className="flex items-center gap-2 bg-white border border-slate-100 rounded-xl px-3 py-1.5 shadow-sm">
-               <Calendar className="size-4 text-slate-400" />
-               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5">
+               <Calendar className="size-3.5 text-slate-400" />
+               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[11px] font-mono font-bold text-slate-700 outline-none w-[95px]" />
                <span className="text-slate-300">-</span>
-               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-xs font-bold text-slate-600 outline-none w-[110px]" />
+               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setAnalyticsPeriod('custom'); }} className="bg-transparent text-[11px] font-mono font-bold text-slate-700 outline-none w-[95px]" />
             </div>
+
             <button onClick={() => setAdvancedFiltersOpen(true)}
-               className={cn("p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border transition-all text-slate-400 bg-white shadow-sm", advancedFiltersOpen ? "border-[#4b7bec] text-[#4b7bec] bg-indigo-50/50" : "border-slate-100 hover:bg-slate-50")}
+               className={cn("p-2.5 rounded-xl border transition-all shadow-xs", advancedFiltersOpen ? "border-[#4b7bec] text-[#4b7bec] bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50 text-slate-500")}
+               title="Filtres avancés"
             >
-               <Filter className="size-4 sm:size-5" />
+               <Filter className="size-4" />
             </button>
-            {filterProductId && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-[#4b7bec]/10 border border-[#4b7bec]/20 text-[#4b7bec] font-bold text-xs shadow-sm">
-                <span className="max-w-[120px] truncate" title={productsQuery.data?.data?.find((p: any) => p.id === filterProductId)?.name || 'Produit'}>
-                  {productsQuery.data?.data?.find((p: any) => p.id === filterProductId)?.name || 'Produit'}
-                </span>
-                <button onClick={() => setFilterProductId('')} className="hover:bg-[#4b7bec]/20 p-1 rounded-lg transition-colors"><X className="size-3" /></button>
-              </div>
-            )}
+
             {(filterWilaya || filterSource || filterProductId || startDate || endDate || searchQuery || analyticsPeriod !== '30d') && (
               <button
                 onClick={() => { clearAllFilters(); setFilterProductId(''); }}
-                className="flex items-center gap-1.5 px-3 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-rose-100 bg-rose-50 hover:bg-rose-100 transition-all text-rose-600 font-bold text-xs shadow-sm shrink-0"
+                className="flex items-center gap-1 px-2.5 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 transition-all text-rose-700 font-black text-[10px] font-mono shadow-xs shrink-0"
               >
-                <X className="size-4" />
+                <X className="size-3" />
                 Effacer ({[filterWilaya, filterSource, filterProductId, startDate, endDate, searchQuery].filter(Boolean).length})
               </button>
             )}
-            <button onClick={() => ordersQuery.refetch()} className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-100 bg-white hover:bg-slate-50 shadow-sm transition-all text-slate-400">
-               <RefreshCw className={cn("size-4 sm:size-5", ordersQuery.isFetching && "animate-spin")} />
+
+            <button onClick={() => ordersQuery.refetch()} className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-xs transition-all text-slate-500" title="Actualiser">
+               <RefreshCw className={cn("size-4", ordersQuery.isFetching && "animate-spin text-[#4b7bec]")} />
             </button>
+
+            {/* View switcher */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60">
+              {([['LIST', 'Liste'], ['KANBAN', 'Kanban'], ['MAP', 'Carte']] as const).map(([id, label]) => (
+                <button key={id} onClick={() => setListViewMode(id)}
+                  className={cn('px-2.5 py-1 rounded-lg text-[11px] font-black transition-all',
+                    listViewMode === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800')}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1673,17 +1664,6 @@ const [timeLeft, setTimeLeft] = useState('');
           )}
         </div>
 
-        {/* Sélecteur de vue — Liste / Kanban / Carte des livraisons */}
-        <div className="flex items-center gap-1.5 bg-white rounded-2xl border p-1.5 w-fit" style={{ borderColor: C.border }}>
-          {([['LIST', 'Liste'], ['KANBAN', 'Kanban'], ['MAP', 'Carte livraisons']] as const).map(([id, label]) => (
-            <button key={id} onClick={() => setListViewMode(id)}
-              className={cn('px-3.5 py-2 rounded-xl text-xs font-bold transition-all',
-                listViewMode === id ? 'bg-[#4b7bec] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50')}>
-              {label}
-            </button>
-          ))}
-        </div>
-
         {listViewMode === 'KANBAN' ? (
           <OrdersKanbanView orders={displayOrders} onOpenOrder={handleDetailClick} />
         ) : listViewMode === 'MAP' ? (
@@ -1691,19 +1671,19 @@ const [timeLeft, setTimeLeft] = useState('');
         ) : (
         <>
         {/* Performance Ledger Table */}
-        <div className="bg-white rounded-[32px] border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
+        <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
           <div className="hidden md:block">
             <table className="w-full text-left table-fixed">
               <thead>
-                <tr className="border-b" style={{ borderColor: C.border, backgroundColor: '#FAFBFD' }}>
+                <tr className="bg-slate-50/80 border-b border-slate-100">
                   <th className="px-3 xl:px-4 py-5 w-12"><Checkbox checked={selectedIds.size === orders.length && orders.length > 0} onCheckedChange={toggleSelectAll} /></th>
                   {REGISTRY_COLUMNS.map(col => (
-                    <th key={col.key} className={cn("px-3 xl:px-4 py-5 text-xs font-bold text-slate-500 truncate", col.hideBelow && HIDE_BELOW_CLASS[col.hideBelow])}>{col.label}</th>
+                    <th key={col.key} className={cn("px-4 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider truncate", col.hideBelow && HIDE_BELOW_CLASS[col.hideBelow])}>{col.label}</th>
                   ))}
-                  <th className="px-3 xl:px-4 py-5 text-right text-xs font-bold text-slate-500 w-32">Actions</th>
+                  <th className="px-4 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider w-32">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y" style={{ borderColor: C.border }}>
+              <tbody className="divide-y divide-slate-100">
                 {ordersQuery.isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <tr key={i}><td colSpan={10} className="px-10 py-5"><Skeleton className="h-14 w-full rounded-2xl" /></td></tr>
@@ -1910,23 +1890,25 @@ const [timeLeft, setTimeLeft] = useState('');
                         )}
                       </div>
                     </td>
-                    <td className="px-3 xl:px-4 py-6">
+                    <td className="px-4 py-5">
                       {(() => {
                         const subtotal = order.subtotal || Math.max(0, (order.total || 0) - (order.delivery_fee || 0));
                         const fee = order.delivery_fee || 0;
                         const grandTotal = subtotal - (order.discount || 0) + fee;
 
                         return (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-black text-slate-900 tabular-nums">{formatPrice(subtotal)}</span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest tabular-nums">
-                              LIVRAISON: {fee > 0 ? formatPrice(fee) : 'GRATUITE'}
+                          <div className="flex flex-col space-y-0.5">
+                            <span className="text-xs font-bold text-slate-600 font-mono tabular-nums">{formatPrice(subtotal)}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Livraison: {fee > 0 ? formatPrice(fee) : 'Gratuite'}
                             </span>
-                            <span className="text-xs font-black text-emerald-600 font-mono tabular-nums pt-1 border-t border-dashed border-slate-200 mt-1">
-                              TOTAL À ENCAISSER: {formatPrice(grandTotal)}
-                            </span>
+                            <div className="pt-1 mt-1 border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-sm font-black font-mono text-slate-900 tabular-nums">
+                                {formatPrice(grandTotal)}
+                              </span>
+                            </div>
                             {order.promo_code && order.discount > 0 && (
-                              <span className="text-[9px] font-black text-[#6C5CE7] bg-[#F0EDFF] px-1.5 py-0.5 rounded-full w-fit tabular-nums mt-1 border border-[#6C5CE7]/20">
+                              <span className="text-[9px] font-black font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 w-fit tabular-nums">
                                 {order.promo_code} (-{formatPrice(order.discount)})
                               </span>
                             )}
