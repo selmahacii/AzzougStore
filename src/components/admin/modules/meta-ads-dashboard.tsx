@@ -1230,180 +1230,343 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* ─── TAB: ENTONNOIR DE CONVERSION ─── */}
-      {activeTab === 'funnel' && (
-        <div className="space-y-6">
-          {/* Funnel header banner */}
-          <div className="flex items-start gap-3 p-5 bg-[#F0EDFF] border border-[#6C5CE7]/15 rounded-3xl">
-            <Activity className="size-5 text-[#6C5CE7] mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm font-black text-[#6C5CE7]">Entonnoir de Conversion & Efficacité Publicitaire</p>
-              <p className="text-xs text-[#636E72] mt-1 leading-relaxed">
-                Suivez la déperdition des utilisateurs à chaque étape clé du processus de vente. Cet entonnoir croise les signaux Meta Ads (Impressions, Clics) avec l'activité réelle de votre boutique (Vues de page, Paiements initiés, Achats) pour vous donner une vision claire de votre taux d'attribution et de conversion.
-              </p>
+      {/* ─── TAB: ENTONNOIR DE CONVERSION & RENTABILITÉ CROSS-MODULE (FUSIONNÉ) ─── */}
+      {activeTab === 'funnel_integration' && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          
+          {/* En-tête Unifié de Traçabilité */}
+          <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs">
+                  <TrendingUp className="size-5 text-[#4b7bec]" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                    Entonnoir de Conversion & Rentabilité Cross-Module
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Croisement direct : Meta Ads (Trafic) → Comportement Boutique (Paniers) → Commandes ERP (COD) → Charges & Finance
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-xl text-[10px] font-black uppercase font-mono bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Traçabilité Active
+                </span>
+              </div>
+            </div>
+
+            {/* 4 KPIs Financiers Majeurs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Dépenses Pub (DZD)</span>
+                  <DollarSign className="size-3.5 text-slate-400" />
+                </div>
+                <p className="text-xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(intMetaAds.total_spend_dzd || 0)}</p>
+                <p className="text-[10px] text-slate-500 font-medium">{intMetaAds.campaigns_count || 0} campagne{(intMetaAds.campaigns_count || 0) > 1 ? 's' : ''} actives</p>
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Charges Synchronisées</span>
+                  <Receipt className="size-3.5 text-slate-400" />
+                </div>
+                <p className="text-xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(intCharges.advertising_expenses_total || 0)}</p>
+                <p className="text-[10px] text-slate-500 font-medium">{intCharges.advertising_expenses_count || 0} dépense{(intCharges.advertising_expenses_count || 0) > 1 ? 's' : ''} inscrite{(intCharges.advertising_expenses_count || 0) > 1 ? 's' : ''}</p>
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sorties Trésorerie Finance</span>
+                  <CreditCard className="size-3.5 text-slate-400" />
+                </div>
+                <p className="text-xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(intFinance.ad_transactions_total || 0)}</p>
+                <p className="text-[10px] text-slate-500 font-medium">{intFinance.ad_transactions_count || 0} transaction{(intFinance.ad_transactions_count || 0) > 1 ? 's' : ''} décaissée{(intFinance.ad_transactions_count || 0) > 1 ? 's' : ''}</p>
+              </div>
+
+              <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Profit Net Réel Ads</span>
+                  <TrendingUp className="size-3.5 text-emerald-600" />
+                </div>
+                <p className={cn(
+                  "text-xl font-black font-mono tabular-nums",
+                  (intRevenue.net_profit_after_ads || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
+                )}>
+                  {(intRevenue.net_profit_after_ads || 0) >= 0 ? '+' : ''}{formatPrice(intRevenue.net_profit_after_ads || 0)}
+                </p>
+                <p className="text-[10px] text-slate-500 font-medium">ROAS Global : <strong>{intRevenue.global_roas || 0}x</strong></p>
+              </div>
+            </div>
+
+            {/* Barre d'Attribution Directe */}
+            <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <span className="font-black uppercase tracking-wider text-slate-300 text-[10px]">
+                  Bilan Attribution Revenus (UTM → Commandes Livrées → Finance)
+                </span>
+                <span className="font-mono text-slate-300 text-[11px]">
+                  {intRevenue.ads_revenue_ratio || 0}% du chiffre d&apos;affaires généré via les campagnes
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono pt-1">
+                <div>
+                  <span className="text-[9px] uppercase text-slate-400 block font-sans">CA via UTM</span>
+                  <span className="font-bold text-white text-sm">{formatPrice(intRevenue.utm_revenue || 0)}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase text-slate-400 block font-sans">Budget Pub Dépensé</span>
+                  <span className="font-bold text-rose-400 text-sm">−{formatPrice(intMetaAds.total_spend_dzd || 0)}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase text-slate-400 block font-sans">Profit Net Pub</span>
+                  <span className={cn("font-bold text-sm", (intRevenue.net_profit_after_ads || 0) >= 0 ? "text-emerald-400" : "text-rose-400")}>
+                    {(intRevenue.net_profit_after_ads || 0) >= 0 ? '+' : ''}{formatPrice(intRevenue.net_profit_after_ads || 0)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase text-slate-400 block font-sans">Multiplicateur (ROAS)</span>
+                  <span className="font-bold text-blue-400 text-sm">{intRevenue.global_roas || 0}x</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          {isLoadingFunnel ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-100 shadow-sm">
-              <RefreshCw className="size-8 text-[#6C5CE7] animate-spin" />
-              <p className="text-xs text-slate-400 mt-3 font-bold">Calcul de l'entonnoir en cours...</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Funnel visualization */}
-              <div className="lg:col-span-2 bg-white rounded-3xl border p-6 shadow-sm flex flex-col justify-between">
+          {/* Section Entonnoir de Conversion Multi-Étapes */}
+          <div className="bg-white rounded-[32px] border border-slate-100 p-6 sm:p-7 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="size-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shadow-xs">
+                  <Activity className="size-5 text-[#4b7bec]" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-1.5 mb-6 text-[#2D3436]">
-                    <Layers className="size-4 text-[#6C5CE7]" /> Visualisation de l'entonnoir
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                    Visualisation de l&apos;Entonnoir de Vente & Déperdition
                   </h3>
-                  <div className="space-y-4">
-                    {funnelData?.stages?.map((stage: any, idx: number) => {
-                      // Width percentage for visual presentation
-                      const prevStageCount = idx > 0 ? funnelData.stages[idx - 1].count : stage.count;
-                      const ratioOfPrevious = idx === 0 ? 100 : (prevStageCount > 0 ? (stage.count / prevStageCount) * 100 : 0);
-                      const ratioOfTotal = funnelData.stages[0].count > 0 ? (stage.count / funnelData.stages[0].count) * 100 : 0;
-                      
-                      // Funnel block style
-                      const funnelWidths = [100, 90, 80, 70, 60, 50, 40];
-                      const currentWidth = funnelWidths[idx] || 35;
-                      
-                      // Gradients for stages
-                      const gradients = [
-                        "from-[#1877F2] to-[#3b5998]", // Impressions (Facebook blue)
-                        "from-[#0984E3] to-[#74b9ff]", // Clics
-                        "from-[#6C5CE7] to-[#a29bfe]", // Vues
-                        "from-[#E84393] to-[#fd79a8]", // Checkout
-                        "from-[#00B894] to-[#55efc4]", // Purchase
-                        "from-[#F1C40F] to-[#FFEAA7]", // Recovered
-                        "from-[#00CEC9] to-[#81ECEC]"  // Delivered
-                      ];
-                      
-                      return (
-                        <div key={idx} className="flex items-center gap-4">
-                          <div className="w-40 shrink-0 text-left">
-                            <p className="text-xs font-black text-slate-700 leading-tight">{stage.name}</p>
-                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{stage.count.toLocaleString()}</p>
-                          </div>
-                          
-                          <div className="flex-1">
-                            <div className="h-9 w-full bg-slate-50 rounded-xl relative overflow-hidden flex items-center">
-                              {/* Colored Funnel Segment */}
-                              <div
-                                style={{ width: `${currentWidth}%` }}
-                                className={cn(
-                                  "h-full rounded-r-xl bg-gradient-to-r flex items-center justify-end pr-4 transition-all duration-500",
-                                  gradients[idx] || "from-slate-400 to-slate-500"
-                                )}
-                              >
-                                {stage.count > 0 && (
-                                  <span className="text-[10px] font-black text-white font-mono">
-                                    {ratioOfTotal.toFixed(1)}%
-                                  </span>
-                                )}
-                              </div>
+                  <p className="text-xs text-slate-400">
+                    Mesure des volumes et des ratios de passage à chaque étape (30 derniers jours)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {isLoadingFunnel ? (
+              <div className="rounded-2xl border bg-slate-50 p-8 text-center text-xs font-bold text-slate-400">
+                <RefreshCw className="size-4 animate-spin mx-auto text-[#4b7bec] mb-2" />
+                Calcul de l&apos;entonnoir en cours…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Visualisation Barre Entonnoir */}
+                <div className="lg:col-span-2 space-y-3.5">
+                  {funnelData?.stages?.map((stage: any, idx: number) => {
+                    const prevStageCount = idx > 0 ? funnelData.stages[idx - 1].count : stage.count;
+                    const ratioOfPrevious = idx === 0 ? 100 : (prevStageCount > 0 ? (stage.count / prevStageCount) * 100 : 0);
+                    const ratioOfTotal = funnelData.stages[0].count > 0 ? (stage.count / funnelData.stages[0].count) * 100 : 0;
+                    
+                    const funnelWidths = [100, 90, 80, 70, 60, 50, 40];
+                    const currentWidth = funnelWidths[idx] || 35;
+                    
+                    return (
+                      <div key={idx} className="flex items-center gap-3">
+                        <div className="w-36 sm:w-44 shrink-0 text-left">
+                          <p className="text-xs font-black text-slate-800 leading-tight">{stage.name}</p>
+                          <p className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">{stage.count.toLocaleString()}</p>
+                        </div>
+                        
+                        <div className="flex-1">
+                          <div className="h-8 w-full bg-slate-100 rounded-xl relative overflow-hidden flex items-center">
+                            <div
+                              style={{ width: `${currentWidth}%` }}
+                              className="h-full rounded-r-xl bg-slate-900 flex items-center justify-end pr-3 transition-all duration-500"
+                            >
+                              {stage.count > 0 && (
+                                <span className="text-[10px] font-black text-white font-mono">
+                                  {ratioOfTotal.toFixed(1)}%
+                                </span>
+                              )}
                             </div>
                           </div>
-                          
-                          <div className="w-20 shrink-0 text-right font-mono">
-                            {idx > 0 && (
-                              <div className="text-xs font-black text-slate-600">
-                                {ratioOfPrevious.toFixed(1)}%
-                                <p className="text-[8px] font-black uppercase text-slate-400">vs préc.</p>
-                              </div>
-                            )}
-                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        
+                        <div className="w-16 sm:w-20 shrink-0 text-right font-mono">
+                          {idx > 0 && (
+                            <div className="text-xs font-black text-slate-700">
+                              {ratioOfPrevious.toFixed(1)}%
+                              <p className="text-[8px] font-black uppercase text-slate-400">vs préc.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="mt-6 pt-4 border-t flex items-center justify-between text-[10px] text-slate-400 font-bold">
-                  <span className="flex items-center gap-1"><AlertCircle className="size-3 text-amber-500" /> Taux calculés sur la base des 30 derniers jours d'activité.</span>
+                {/* 4 Ratios Opérationnels Clés */}
+                <div className="space-y-3">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de Clic (CTR)</p>
+                      <p className="text-lg font-black text-slate-900 font-mono mt-0.5">{funnelData?.summary?.ctr}%</p>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-lg text-[10px] font-black font-mono border",
+                      (funnelData?.summary?.ctr || 0) >= 2 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                    )}>
+                      {(funnelData?.summary?.ctr || 0) >= 2 ? "Optimal" : "À surveiller"}
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de Conversion (CR)</p>
+                      <p className="text-lg font-black text-slate-900 font-mono mt-0.5">{funnelData?.summary?.cr}%</p>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-lg text-[10px] font-black font-mono border",
+                      (funnelData?.summary?.cr || 0) >= 3 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                    )}>
+                      {(funnelData?.summary?.cr || 0) >= 3 ? "Rentable" : "Moyen"}
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de Livraison (COD)</p>
+                      <p className="text-lg font-black text-slate-900 font-mono mt-0.5">{funnelData?.summary?.delivery_rate}%</p>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-lg text-[10px] font-black font-mono border",
+                      (funnelData?.summary?.delivery_rate || 0) >= 70 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                    )}>
+                      {(funnelData?.summary?.delivery_rate || 0) >= 70 ? "Conforme" : "Faible"}
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Qualité Trafic / Vitesse</p>
+                      <p className="text-lg font-black text-slate-900 font-mono mt-0.5">{funnelData?.summary?.qualite_site_pct != null ? `${funnelData.summary.qualite_site_pct}%` : '—'}</p>
+                    </div>
+                    {funnelData?.summary?.qualite_site_pct != null && (
+                      <span className={cn(
+                        "px-2.5 py-1 rounded-lg text-[10px] font-black font-mono border",
+                        funnelData.summary.qualite_site_pct >= 70 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                      )}>
+                        {funnelData.summary.qualite_site_pct >= 70 ? "Rapide" : "Ralenti"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
 
-              {/* Conversion Statistics & Recommendations */}
-              <div className="space-y-6">
-                {/* Funnel Metrics */}
-                <div className="bg-white rounded-3xl border p-6 shadow-sm space-y-4">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-[#2D3436]">Statistiques Clés</h3>
-                  
-                  <div className="space-y-3">
-                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de clic (CTR)</p>
-                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.ctr}%</p>
-                      </div>
-                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
-                        (funnelData?.summary?.ctr || 0) >= 2 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                      )}>
-                        {(funnelData?.summary?.ctr || 0) >= 2 ? "Excellent" : "Améliorer"}
-                      </Badge>
+          {/* Section Traçabilité Charges & Portefeuilles (Double Panneau) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Panneau Charges Publicitaires */}
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <Receipt className="size-4 text-slate-700" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    Charges Publicitaires Inscrites (Module Charges)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg">
+                  {intCharges.recent_ad_expenses?.length || 0} lignes
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto custom-scrollbar">
+                {isLoadingIntegration ? (
+                  <div className="p-6 text-center text-slate-400 text-xs font-bold">Chargement…</div>
+                ) : (intCharges.recent_ad_expenses || []).length === 0 ? (
+                  <div className="p-8 text-center text-xs font-medium text-slate-400">
+                    Aucune charge publicitaire enregistrée sur la période.
+                  </div>
+                ) : (intCharges.recent_ad_expenses || []).map((exp: any) => (
+                  <div 
+                    key={exp.id} 
+                    onClick={() => setSelectedExpense(exp)}
+                    className="py-3 px-1 flex items-center justify-between hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <div>
+                      <p className="text-xs font-black text-slate-900 truncate max-w-[200px]">{exp.label}</p>
+                      <p className="text-[10px] text-slate-400 font-mono font-bold">{exp.date || '—'}</p>
                     </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de conversion (CR)</p>
-                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.cr}%</p>
-                      </div>
-                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
-                        (funnelData?.summary?.cr || 0) >= 3 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                      )}>
-                        {(funnelData?.summary?.cr || 0) >= 3 ? "Rentable" : "Améliorer"}
-                      </Badge>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Taux de livraison (Delivered)</p>
-                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.delivery_rate}%</p>
-                      </div>
-                      <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
-                        (funnelData?.summary?.delivery_rate || 0) >= 70 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                      )}>
-                        {(funnelData?.summary?.delivery_rate || 0) >= 70 ? "Excellente" : "Améliorer"}
-                      </Badge>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between"
-                      title="Vues de page de destination ÷ Clics sur un lien (définition standard Meta) — mesure la vitesse/fiabilité réelle du site, pas la conversion. Absent si aucun clic Meta sur la période.">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Qualité du site</p>
-                        <p className="text-lg font-black text-[#2D3436] mt-0.5 font-mono">{funnelData?.summary?.qualite_site_pct != null ? `${funnelData.summary.qualite_site_pct}%` : '—'}</p>
-                      </div>
-                      {funnelData?.summary?.qualite_site_pct != null && (
-                        <Badge className={cn("border-none rounded-md px-2 py-0.5 text-[10px] font-black",
-                          funnelData.summary.qualite_site_pct >= 70 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                        )}>
-                          {funnelData.summary.qualite_site_pct >= 70 ? "Bonne" : "Améliorer"}
-                        </Badge>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black font-mono text-slate-900">{formatPrice(exp.amount)}</span>
+                      <span className="px-2 py-0.5 rounded-md text-[9px] font-black font-mono bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {exp.status}
+                      </span>
                     </div>
                   </div>
-                </div>
+                ))}
+              </div>
 
-                {/* Recommendations */}
-                <div className="bg-[#FAF9F5] border border-amber-200 rounded-3xl p-6 space-y-4">
-                  <h4 className="text-xs font-black uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="size-3.5" /> Recommandations d'Attribution
-                  </h4>
-                  <ul className="space-y-3">
-                    <li className="text-[10px] text-amber-900 leading-relaxed">
-                      <strong>Optimisation CAPI :</strong> Vos événements Pixel et CAPI sont liés à 100% via le paramètre <code>event_id</code>, garantissant une déduplication parfaite.
-                    </li>
-                    <li className="text-[10px] text-amber-900 leading-relaxed">
-                      <strong>Qualité du pixel :</strong> Envoyez le maximum de données clients autorisées (téléphone sans le <code>+</code>, pays <code>co</code> de deux lettres en minuscules) pour optimiser le matching publicitaire.
-                    </li>
-                    <li className="text-[10px] text-amber-900 leading-relaxed">
-                      <strong>Taux de déperdition :</strong> Si le passage de <em>Clics</em> à <em>Vues de Page</em> est inférieur à 70%, vérifiez le temps de chargement de la boutique ou les redirections.
-                    </li>
-                  </ul>
-                </div>
+              <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs font-bold">
+                <span className="text-[10px] uppercase text-slate-400">Total Charges Pub</span>
+                <span className="font-mono text-slate-900 font-black">{formatPrice(intCharges.advertising_expenses_total || 0)}</span>
               </div>
             </div>
-          )}
+
+            {/* Panneau Portefeuilles & Trésorerie */}
+            <div className="bg-white rounded-[32px] border border-slate-100 p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <Wallet className="size-4 text-slate-700" />
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    Impact Portefeuilles & Finance (Trésorerie)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-lg">
+                  Module Finance
+                </span>
+              </div>
+
+              {/* Liste des portefeuilles */}
+              <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar">
+                {(intFinance.wallets || []).map((w: any) => (
+                  <div key={w.id} className="flex items-center justify-between bg-slate-50 rounded-2xl p-3.5 border border-slate-100">
+                    <div>
+                      <p className="text-xs font-black text-slate-900">{w.name}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-mono font-bold">{w.type}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-black text-slate-900 font-mono">{formatPrice(w.balance)}</p>
+                      <p className="text-[9px] text-rose-600 font-bold font-mono">−{formatPrice(w.total_out)} sortie pub</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Transactions récentes */}
+              <div className="pt-2 border-t border-slate-100">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
+                  Dernières Transactions de Paiement Pub
+                </span>
+                <div className="divide-y divide-slate-100 max-h-[120px] overflow-y-auto custom-scrollbar">
+                  {(intFinance.recent_ad_transactions || []).slice(0, 4).map((tx: any) => (
+                    <div key={tx.id} className="py-2 flex items-center justify-between text-xs font-mono">
+                      <div>
+                        <span className="font-bold text-slate-800 text-[11px] block">{tx.reference}</span>
+                        <span className="text-[9px] text-slate-400">{tx.date?.split('T')[0] || '—'}</span>
+                      </div>
+                      <span className="font-bold text-rose-600">−{formatPrice(tx.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-xs font-bold">
+                <span className="text-[10px] uppercase text-slate-400">Total Sortie Finance Ads</span>
+                <span className="font-mono text-slate-900 font-black">{formatPrice(intFinance.ad_transactions_total || 0)}</span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2266,330 +2429,6 @@ export default function MetaAdsDashboard() {
               )}
             </DialogContent>
           </Dialog>
-        </div>
-      )}
-
-      {/* ─── TAB: CROSS-MODULE INTEGRATION ─── */}
-      {activeTab === 'integration' && (
-        <div className="space-y-4">
-          
-          {/* Integration Status Banner */}
-          <div className="bg-gradient-to-r from-[#1877F2] via-[#6C5CE7] to-[#00B894] p-px rounded-2xl shadow-md">
-            <div className="bg-white rounded-2xl p-5 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-gradient-to-br from-[#1877F2] to-[#6C5CE7] flex items-center justify-center text-white shadow">
-                  <Zap className="size-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-[#2D3436]">Intégration Cross-Module Active</h3>
-                  <p className="text-[10px] font-bold text-[#636E72] mt-0.5">Meta Ads → Charges (Dépenses) → Finance (Portefeuilles) · Traçabilité complète</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge className="bg-[#E6FFF8] text-[#00B894] border-none font-black text-[10px] px-2.5 py-1 rounded-md">
-                  <Activity className="size-3 mr-1 inline" /> ACTIF
-                </Badge>
-              </div>
-            </div>
-          </div>
-
-          {/* KPI Row: Cross-module metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
-            {/* Total Ad Spend linked */}
-            <div className="bg-white p-5 rounded-2xl border shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Dépenses Pub (DZD)</span>
-                <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-500">
-                  <DollarSign className="size-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-black text-[#2D3436] tabular-nums">{formatPrice(intMetaAds.total_spend_dzd || 0)}</p>
-              <p className="text-[10px] font-bold text-[#636E72] mt-1">{intMetaAds.campaigns_count || 0} campagnes · Converti en DZD</p>
-            </div>
-
-            {/* Linked Expenses */}
-            <div className="bg-white p-5 rounded-2xl border shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Charges Liées</span>
-                <div className="size-8 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-red-500">
-                  <Receipt className="size-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-black text-[#2D3436] tabular-nums">{formatPrice(intCharges.advertising_expenses_total || 0)}</p>
-              <p className="text-[10px] font-bold text-[#636E72] mt-1">{intCharges.advertising_expenses_count || 0} dépenses pub synchronisées</p>
-            </div>
-
-            {/* Finance Transactions */}
-            <div className="bg-white p-5 rounded-2xl border shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Transactions Finance</span>
-                <div className="size-8 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-500">
-                  <CreditCard className="size-4" />
-                </div>
-              </div>
-              <p className="text-2xl font-black text-[#2D3436] tabular-nums">{formatPrice(intFinance.ad_transactions_total || 0)}</p>
-              <p className="text-[10px] font-bold text-[#636E72] mt-1">{intFinance.ad_transactions_count || 0} transactions portefeuille</p>
-            </div>
-
-            {/* Net Profit after Ads */}
-            <div className="bg-white p-5 rounded-2xl border shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#B2BEC3]">Profit Net (après pub)</span>
-                <div className={cn(
-                  "size-8 rounded-lg border flex items-center justify-center",
-                  (intRevenue.net_profit_after_ads || 0) >= 0 
-                    ? "bg-green-50 border-green-100 text-green-500" 
-                    : "bg-red-50 border-red-100 text-red-500"
-                )}>
-                  {(intRevenue.net_profit_after_ads || 0) >= 0 
-                    ? <TrendingUp className="size-4" /> 
-                    : <TrendingDown className="size-4" />}
-                </div>
-              </div>
-              <p className={cn(
-                "text-2xl font-black tabular-nums",
-                (intRevenue.net_profit_after_ads || 0) >= 0 ? "text-[#00B894]" : "text-[#E17055]"
-              )}>
-                {(intRevenue.net_profit_after_ads || 0) >= 0 ? '+' : ''}{formatPrice(intRevenue.net_profit_after_ads || 0)}
-              </p>
-              <p className="text-[10px] font-bold text-[#636E72] mt-1">CA UTM − Budget pub total</p>
-            </div>
-          </div>
-
-          {/* Two-column detail */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-            {/* Linked Expenses Panel */}
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-              <div className="p-5 border-b flex items-center justify-between">
-                <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-                  <Receipt className="size-4 text-[#E17055]" /> Charges Publicitaires Liées
-                </h4>
-                <Badge className="bg-[#FFEDE9] text-[#E17055] border-none text-[10px] font-black rounded-md px-2.5">
-                  Module Charges
-                </Badge>
-              </div>
-              <div className="divide-y divide-[#F1F2F4]">
-                {isLoadingIntegration ? (
-                  <div className="p-6 text-center text-[#B2BEC3] text-xs font-bold animate-pulse">Chargement...</div>
-                ) : (intCharges.recent_ad_expenses || []).length === 0 ? (
-                  <div className="p-8 text-center">
-                    <Receipt className="size-8 text-[#B2BEC3] mx-auto mb-2" />
-                    <p className="text-xs font-bold text-[#B2BEC3] uppercase">Aucune charge publicitaire liée</p>
-                    <p className="text-[10px] text-[#B2BEC3] mt-1">Synchronisez Meta Ads pour créer automatiquement les charges</p>
-                  </div>
-                ) : (intCharges.recent_ad_expenses || []).map((exp: any) => (
-                  <div 
-                    key={exp.id} 
-                    onClick={() => setSelectedExpense(exp)}
-                    className="px-5 py-3.5 flex items-center justify-between hover:bg-[#FAFBFD] transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="size-8 rounded-lg bg-[#FFEDE9] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                        <Facebook className="size-3.5 text-[#E17055]" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-[#2D3436] truncate max-w-[180px] group-hover:text-[#E17055] transition-colors">{exp.label}</p>
-                        <p className="text-[10px] text-[#B2BEC3] font-bold">{exp.date || '—'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-sm font-black font-mono text-[#E17055]">{formatPrice(exp.amount)}</span>
-                      <Badge className={cn(
-                        "border-none text-[9px] font-black rounded-md px-1.5",
-                        exp.status === 'PAID' ? "bg-[#E6FFF8] text-[#00B894]" : "bg-[#FFF8E6] text-[#FDCB6E]"
-                      )}>
-                        {exp.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Total footer */}
-              <div className="p-4 bg-[#FAFBFD] border-t flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase text-[#B2BEC3]">Total charges pub</span>
-                <span className="text-sm font-black text-[#E17055] font-mono">{formatPrice(intCharges.advertising_expenses_total || 0)}</span>
-              </div>
-            </div>
-
-            {/* Finance Wallet Panel */}
-            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-              <div className="p-5 border-b flex items-center justify-between">
-                <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-                  <Wallet className="size-4 text-[#6C5CE7]" /> Impact Portefeuilles & Finance
-                </h4>
-                <Badge className="bg-[#F0EDFF] text-[#6C5CE7] border-none text-[10px] font-black rounded-md px-2.5">
-                  Module Finance
-                </Badge>
-              </div>
-
-              {/* Wallets */}
-              <div className="p-4 space-y-2">
-                <p className="text-[10px] font-black uppercase text-[#B2BEC3] tracking-widest mb-3">Portefeuilles actifs</p>
-                {isLoadingIntegration ? (
-                  <div className="text-xs font-bold text-[#B2BEC3] animate-pulse">Chargement...</div>
-                ) : (intFinance.wallets || []).length === 0 ? (
-                  <div className="text-center py-4">
-                    <Wallet className="size-7 text-[#B2BEC3] mx-auto mb-1" />
-                    <p className="text-xs font-bold text-[#B2BEC3]">Aucun portefeuille configuré</p>
-                    <p className="text-[10px] text-[#B2BEC3]">Créez un portefeuille dans le module Finance</p>
-                  </div>
-                ) : (intFinance.wallets || []).map((w: any) => (
-                  <div key={w.id} className="flex items-center justify-between bg-[#F8F9FC] rounded-xl px-4 py-3 border border-[#E9ECF0]">
-                    <div className="flex items-center gap-2.5">
-                      <div className="size-8 rounded-lg bg-[#F0EDFF] border border-[#6C5CE7]/10 flex items-center justify-center">
-                        <Wallet className="size-4 text-[#6C5CE7]" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-[#2D3436]">{w.name}</p>
-                        <p className="text-[10px] text-[#B2BEC3] font-bold uppercase">{w.type}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-[#2D3436] font-mono tabular-nums">{formatPrice(w.balance)}</p>
-                      <p className="text-[9px] text-[#E17055] font-bold font-mono">−{formatPrice(w.total_out)} sortie pub</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Recent transactions */}
-              <div className="border-t">
-                <div className="px-4 pt-4 pb-2">
-                  <p className="text-[10px] font-black uppercase text-[#B2BEC3] tracking-widest">Transactions pub récentes</p>
-                </div>
-                <div className="divide-y divide-[#F1F2F4]">
-                  {(intFinance.recent_ad_transactions || []).length === 0 ? (
-                    <div className="px-4 py-4 text-center">
-                      <p className="text-[10px] font-bold text-[#B2BEC3]">Aucune transaction pub enregistrée</p>
-                    </div>
-                  ) : (intFinance.recent_ad_transactions || []).slice(0, 4).map((tx: any) => (
-                    <div key={tx.id} className="px-4 py-3 flex items-center justify-between hover:bg-[#FAFBFD] transition-colors">
-                      <div className="flex items-center gap-2">
-                        <div className="size-7 rounded-lg bg-[#FFEDE9] flex items-center justify-center flex-shrink-0">
-                          <ArrowDownRight className="size-3.5 text-[#E17055]" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black text-[#2D3436] font-mono">{tx.reference}</p>
-                          <p className="text-[9px] text-[#B2BEC3] font-bold">{tx.date?.split('T')[0] || '—'}</p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-black text-[#E17055] font-mono tabular-nums">−{formatPrice(tx.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-4 bg-[#FAFBFD] border-t flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase text-[#B2BEC3]">Total sortie finance ads</span>
-                <span className="text-sm font-black text-[#6C5CE7] font-mono">{formatPrice(intFinance.ad_transactions_total || 0)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Expenses breakdown by category */}
-          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-            <div className="p-5 border-b flex items-center justify-between">
-              <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
-                <Package className="size-4 text-[#0984E3]" /> Répartition Totale des Charges par Catégorie
-              </h4>
-              <Badge className="bg-[#E8F4FE] text-[#0984E3] border-none text-[10px] font-black rounded-md px-2.5">
-                {intCharges.by_category?.length || 0} catégories
-              </Badge>
-            </div>
-            <div className="p-5">
-              {isLoadingIntegration ? (
-                <div className="text-xs text-[#B2BEC3] animate-pulse font-bold">Chargement...</div>
-              ) : (intCharges.by_category || []).length === 0 ? (
-                <p className="text-xs text-[#B2BEC3] font-bold text-center py-4">Aucune charge enregistrée</p>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {(intCharges.by_category || []).map((cat: any) => {
-                    const isAds = cat.category === 'ADVERTISING' || cat.category === 'MARKETING';
-                    const pct = intCharges.all_expenses_total > 0
-                      ? Math.round((cat.total / intCharges.all_expenses_total) * 100)
-                      : 0;
-                    return (
-                      <div key={cat.category} className={cn(
-                        "p-4 rounded-xl border relative overflow-hidden",
-                        isAds ? "bg-[#FFEDE9] border-[#FFD4CC]" : "bg-[#F8F9FC] border-[#E9ECF0]"
-                      )}>
-                        {isAds && (
-                          <div className="absolute top-2 right-2">
-                            <Facebook className="size-3.5 text-[#E17055] opacity-60" />
-                          </div>
-                        )}
-                        <p className={cn(
-                          "text-[10px] font-black uppercase tracking-widest mb-1",
-                          isAds ? "text-[#E17055]" : "text-[#B2BEC3]"
-                        )}>{cat.category}</p>
-                        <p className={cn(
-                          "text-lg font-black font-mono tabular-nums",
-                          isAds ? "text-[#E17055]" : "text-[#2D3436]"
-                        )}>{formatPrice(cat.total)}</p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-[9px] font-bold text-[#B2BEC3]">{cat.count} dép.</span>
-                          <span className={cn(
-                            "text-[9px] font-black rounded px-1.5 py-0.5",
-                            isAds ? "bg-[#E17055]/20 text-[#E17055]" : "bg-[#E9ECF0] text-[#636E72]"
-                          )}>{pct}%</span>
-                        </div>
-                        {/* Thin progress bar */}
-                        <div className="mt-2 h-1 rounded-full bg-black/5 overflow-hidden">
-                          <div 
-                            className={cn("h-full rounded-full transition-all", isAds ? "bg-[#E17055]" : "bg-[#6C5CE7]")}
-                            style={{ width: `${pct}%` }} 
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Revenue attribution summary */}
-          <div className="bg-gradient-to-br from-[#1877F2]/5 via-white to-[#00B894]/5 rounded-2xl border shadow-sm p-6">
-            <h4 className="text-sm font-black uppercase tracking-wider flex items-center gap-2 mb-5">
-              <TrendingUp className="size-4 text-[#1877F2]" /> Attribution des Revenus (UTM → Commandes → Finance)
-            </h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-black font-mono tabular-nums text-[#2D3436]">{formatPrice(intRevenue.utm_revenue || 0)}</div>
-                <div className="text-[10px] font-black text-[#B2BEC3] uppercase mt-1">CA via UTM</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-black font-mono tabular-nums text-[#E17055]">−{formatPrice(intMetaAds.total_spend_dzd || 0)}</div>
-                <div className="text-[10px] font-black text-[#B2BEC3] uppercase mt-1">Budget Pub</div>
-              </div>
-              <div className="text-center">
-                <div className={cn(
-                  "text-2xl font-black font-mono tabular-nums",
-                  (intRevenue.net_profit_after_ads || 0) >= 0 ? "text-[#00B894]" : "text-[#E17055]"
-                )}>
-                  {(intRevenue.net_profit_after_ads || 0) >= 0 ? '+' : ''}{formatPrice(intRevenue.net_profit_after_ads || 0)}
-                </div>
-                <div className="text-[10px] font-black text-[#B2BEC3] uppercase mt-1">Profit Net Ads</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-black font-mono tabular-nums text-[#6C5CE7]">{intRevenue.global_roas || 0}x</div>
-                <div className="text-[10px] font-black text-[#B2BEC3] uppercase mt-1">ROAS Global</div>
-              </div>
-            </div>
-            <div className="mt-4 h-2 bg-[#E9ECF0] rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-[#1877F2] to-[#00B894] rounded-full transition-all"
-                style={{ width: `${Math.min(intRevenue.ads_revenue_ratio || 0, 100)}%` }}
-              />
-            </div>
-            <div className="flex justify-between mt-1.5">
-              <span className="text-[9px] font-black text-[#B2BEC3] uppercase">Budget Pub</span>
-              <span className="text-[9px] font-black text-[#00B894] uppercase">{intRevenue.ads_revenue_ratio || 0}% revenu attributable aux pubs</span>
-            </div>
-          </div>
-
         </div>
       )}
 
