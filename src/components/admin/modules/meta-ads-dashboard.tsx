@@ -698,81 +698,122 @@ export default function MetaAdsDashboard() {
         </div>
       )}
 
-      {/* ─── METRIC CARDS GRID ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        
-        {/* Ad Spend */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">Budget Dépensé</span>
-            <h2 className="text-xl font-black text-[#2D3436] tabular-nums">{formatPrice(summary.total_spend || 0)}</h2>
-            <span className="text-[9px] font-bold text-[#636E72] block">Total pub Meta</span>
+      {/* ─── METRIC CARDS GRID (VUE GLOBALE COMPLÈTE & RENTABILITÉ) ─── */}
+      <div className="space-y-3">
+        {/* Ligne 1 : Les 4 Indicateurs Financiers Majeurs */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* 1. CA Généré */}
+          <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Chiffre d&apos;Affaires Pub</span>
+              <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(summary.total_revenue || 0)}</h2>
+              <p className="text-[10px] text-slate-500 font-medium">
+                <strong>{summary.total_orders || 0}</strong> commandes · Panier moy. {formatPrice(summary.global_aov || 0)}
+              </p>
+            </div>
+            <div className="size-11 rounded-2xl bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-[#4b7bec] shrink-0">
+              <ShoppingBag className="size-5" />
+            </div>
           </div>
-          <div className="size-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-500 shrink-0">
-            <DollarSign className="size-4" />
+
+          {/* 2. Budget Dépensé */}
+          <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Budget Investi Meta</span>
+              <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{formatPrice(summary.total_spend || 0)}</h2>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Dépenses publicitaires totales (DZD)
+              </p>
+            </div>
+            <div className="size-11 rounded-2xl bg-amber-50 border border-amber-100/80 flex items-center justify-center text-amber-600 shrink-0">
+              <DollarSign className="size-5" />
+            </div>
+          </div>
+
+          {/* 3. Bénéfice Net Pub */}
+          <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Profit Net Publicitaire</span>
+              <h2 className={cn(
+                "text-2xl font-black font-mono tabular-nums",
+                (summary.global_profit || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
+              )}>
+                {(summary.global_profit || 0) >= 0 ? '+' : ''}{formatPrice(summary.global_profit || 0)}
+              </h2>
+              <p className="text-[10px] text-slate-500 font-medium">
+                CA Pub − Budget investi
+              </p>
+            </div>
+            <div className="size-11 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0">
+              <TrendingUp className="size-5" />
+            </div>
+          </div>
+
+          {/* 4. ROAS Global */}
+          <div className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-xs flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">ROAS Global (Rendement)</span>
+              <h2 className="text-2xl font-black text-slate-900 font-mono tabular-nums">{(summary.global_roas || 0).toFixed(2)}x</h2>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Rendement multiplicateur sur investissement
+              </p>
+            </div>
+            <div className="size-11 rounded-2xl bg-blue-50 border border-blue-100/80 flex items-center justify-center text-[#4b7bec] shrink-0">
+              <Sparkles className="size-5" />
+            </div>
           </div>
         </div>
 
-        {/* CPM */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">CPM (Exposition)</span>
-            <h2 className="text-xl font-black text-slate-800 tabular-nums">{formatPrice(summary.global_cpm || 0)}</h2>
-            <span className="text-[9px] font-bold text-slate-400 block">Coût pour 1 000 vues</span>
+        {/* Ligne 2 : Les 4 Indicateurs Opérationnels & Coûts Publicitaires */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* CPA (Coût par commande) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">CPA (Coût / Commande)</span>
+              <p className="text-lg font-black text-slate-900 font-mono tabular-nums">{summary.global_cost_per_order ? formatPrice(summary.global_cost_per_order) : '—'}</p>
+              <span className="text-[10px] text-slate-500 block font-medium">Taux conv. : <strong>{(summary.global_conversion_rate || 0).toFixed(2)}%</strong></span>
+            </div>
+            <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+              <Target className="size-4 text-[#4b7bec]" />
+            </div>
           </div>
-          <div className="size-10 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-            <Eye className="size-4" />
+
+          {/* CPC (Coût par clic) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">CPC (Coût / Clic)</span>
+              <p className="text-lg font-black text-slate-900 font-mono tabular-nums">{formatPrice(summary.global_cpc || 0)}</p>
+              <span className="text-[10px] text-slate-500 block font-mono">{(summary.total_clicks || 0).toLocaleString()} clics entrants</span>
+            </div>
+            <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+              <MousePointer className="size-4 text-[#4b7bec]" />
+            </div>
+          </div>
+
+          {/* CTR (Taux d'accroche) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">CTR (Taux d&apos;Accroche)</span>
+              <p className="text-lg font-black text-slate-900 font-mono tabular-nums">{(summary.global_ctr || 0).toFixed(2)} %</p>
+              <span className="text-[10px] text-slate-500 block font-medium">Clics ÷ Impressions</span>
+            </div>
+            <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+              <Activity className="size-4 text-[#4b7bec]" />
+            </div>
+          </div>
+
+          {/* CPM (Coût exposition) */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-2xs flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">CPM (Exposition)</span>
+              <p className="text-lg font-black text-slate-900 font-mono tabular-nums">{formatPrice(summary.global_cpm || 0)}</p>
+              <span className="text-[10px] text-slate-500 block font-mono">{(summary.total_impressions || 0).toLocaleString()} impressions (Reach: {(summary.total_reach || 0).toLocaleString()})</span>
+            </div>
+            <div className="size-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+              <Eye className="size-4 text-[#4b7bec]" />
+            </div>
           </div>
         </div>
-
-        {/* CTR */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">CTR (Accroche)</span>
-            <h2 className="text-xl font-black text-slate-800 tabular-nums">{(summary.global_ctr || 0).toFixed(2)} %</h2>
-            <span className="text-[9px] font-bold text-slate-400 block">Qualité du visuel/texte</span>
-          </div>
-          <div className="size-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-500 shrink-0">
-            <MousePointer className="size-4" />
-          </div>
-        </div>
-
-        {/* CPC */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">CPC (Trafic)</span>
-            <h2 className="text-xl font-black text-slate-800 tabular-nums">{formatPrice(summary.global_cpc || 0)}</h2>
-            <span className="text-[9px] font-bold text-slate-400 block">Coût par clic entrant</span>
-          </div>
-          <div className="size-10 rounded-xl bg-cyan-50 border border-cyan-100 flex items-center justify-center text-cyan-600 shrink-0">
-            <ExternalLink className="size-4" />
-          </div>
-        </div>
-
-        {/* CPA / Coût par commande */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">CPA (Résultat)</span>
-            <h2 className="text-xl font-black text-emerald-600 tabular-nums">{summary.global_cost_per_order ? formatPrice(summary.global_cost_per_order) : '—'}</h2>
-            <span className="text-[9px] font-bold text-slate-400 block">{summary.total_orders || 0} commandes vaines</span>
-          </div>
-          <div className="size-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-            <ShoppingBag className="size-4" />
-          </div>
-        </div>
-
-        {/* Global ROAS */}
-        <div className="bg-white p-4 rounded-2xl border shadow-xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-[9px] font-black uppercase tracking-widest text-[#B2BEC3]">ROAS Global</span>
-            <h2 className="text-2xl font-black text-[#6C5CE7] tabular-nums">{(summary.global_roas || 0).toFixed(2)}x</h2>
-            <span className="text-[9px] font-bold text-[#636E72] block">Rendement publicitaire</span>
-          </div>
-          <div className="size-10 rounded-xl bg-[#F0EDFF] border border-[#6C5CE7]/10 flex items-center justify-center text-[#6C5CE7] shrink-0">
-            <TrendingUp className="size-4" />
-          </div>
-        </div>
-
       </div>
 
       {/* ─── TAB NAVIGATION ─── */}
