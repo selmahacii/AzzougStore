@@ -31,6 +31,7 @@ import {
    Banknote,
    ShieldCheck,
    Check,
+   CheckCircle,
    X,
    Calendar,
    Trash,
