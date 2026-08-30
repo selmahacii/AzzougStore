@@ -97,7 +97,7 @@ export async function middleware(request: NextRequest) {
   ) {
     const potentialSlug = segments[0];
     const reservedWords = [
-      'admin', 'api', 'login', 'register', 'dashboard', 
+      'admin', 'api', 'env', 'login', 'register', 'dashboard', 
       'static', 'assets', '_next', 'lp', 'theme', 
       'uploads', 'images', 'favicon.ico'
     ];
@@ -129,6 +129,7 @@ export async function middleware(request: NextRequest) {
 
       if (
         !pathname.startsWith('/api') &&
+        !pathname.startsWith('/env') &&
         !pathname.startsWith('/_next') &&
         !pathname.includes('.') &&
         !pathname.startsWith(`/${storeMatch.storeSlug}`)
