@@ -1,102 +1,142 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- * /api/env — Migration & Environment Variables Detector
+ * /api/env — Vercel Environment Variables Detector & Health Probe
  * ─────────────────────────────────────────────────────────────
- * Detects and exports all environment variables required by the
- * AzzougShop Next.js frontend for Vercel deployment.
+ * Detects, validates and logs all 7 core Vercel environment variables:
+ * - BACKEND_URL
+ * - DATABASE_URL
+ * - DIRECT_URL
+ * - INTERNAL_API_KEY
+ * - NEXT_PUBLIC_API_URL
+ * - UPSTASH_REDIS_REST_TOKEN
+ * - UPSTASH_REDIS_REST_URL
  * ═══════════════════════════════════════════════════════════════
  */
 import { NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const backendUrl = process.env.BACKEND_URL || 'https://azconfort.azghub.com';
   const publicApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://azconfort.azghub.com';
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://azzougshop.vercel.app';
+  const databaseUrl = process.env.DATABASE_URL || null;
+  const directUrl = process.env.DIRECT_URL || null;
   const internalKey = process.env.INTERNAL_API_KEY || null;
+  const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN || null;
+  const upstashUrl = process.env.UPSTASH_REDIS_REST_URL || null;
   const secretKey = process.env.SECRET_KEY || process.env.JWT_SECRET || null;
-  const redisUrl = process.env.REDIS_URL || null;
-  const noestToken = process.env.NOEST_API_TOKEN || null;
 
-  // Mask secret keys for safe display while showing status
-  const maskSecret = (val: string | null) => {
-    if (!val) return null;
-    if (val.length <= 8) return '********';
-    return val.substring(0, 4) + '...' + val.substring(val.length - 4);
+  // Safe masking for secrets
+  const maskSecret = (val: string | null, head = 4, tail = 4) => {
+    if (!val) return 'non_définie';
+    if (val.length <= head + tail) return '***';
+    return `${val.substring(0, head)}...${val.substring(val.length - tail)} (taille: ${val.length})`;
   };
 
-  const requiredVars = [
+  const detectedVars = [
     {
       key: 'BACKEND_URL',
-      value: backendUrl,
+      value: process.env.BACKEND_URL ? maskSecret(process.env.BACKEND_URL, 12, 6) : 'fallback: https://azconfort.azghub.com',
       isSet: !!process.env.BACKEND_URL,
-      required: true,
+      length: process.env.BACKEND_URL?.length || 0,
+      status: !!process.env.BACKEND_URL ? 'CONFIGURÉ' : 'MANQUANT_AVEC_FALLBACK',
       description: 'URL principale du backend FastAPI en production'
     },
     {
+      key: 'DATABASE_URL',
+      value: databaseUrl ? maskSecret(databaseUrl, 12, 6) : 'non_définie',
+      isSet: !!databaseUrl,
+      length: databaseUrl?.length || 0,
+      status: !!databaseUrl ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'Chaîne de connexion PostgreSQL (Prisma / Pooled DB)'
+    },
+    {
+      key: 'DIRECT_URL',
+      value: directUrl ? maskSecret(directUrl, 12, 6) : 'non_définie',
+      isSet: !!directUrl,
+      length: directUrl?.length || 0,
+      status: !!directUrl ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'Connexion directe PostgreSQL (Migrations Prisma & DDL)'
+    },
+    {
+      key: 'INTERNAL_API_KEY',
+      value: internalKey ? maskSecret(internalKey, 4, 4) : 'non_définie',
+      isSet: !!internalKey,
+      length: internalKey?.length || 0,
+      status: !!internalKey ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'Clé secrète de communication sécurisée entre Next.js et FastAPI'
+    },
+    {
       key: 'NEXT_PUBLIC_API_URL',
-      value: publicApiUrl,
+      value: process.env.NEXT_PUBLIC_API_URL ? maskSecret(process.env.NEXT_PUBLIC_API_URL, 12, 6) : 'fallback: https://azconfort.azghub.com',
       isSet: !!process.env.NEXT_PUBLIC_API_URL,
-      required: true,
-      description: 'URL publique du backend FastAPI (accessible côté navigateur)'
+      length: process.env.NEXT_PUBLIC_API_URL?.length || 0,
+      status: !!process.env.NEXT_PUBLIC_API_URL ? 'CONFIGURÉ' : 'MANQUANT_AVEC_FALLBACK',
+      description: 'URL publique du backend FastAPI (côté navigateur)'
+    },
+    {
+      key: 'UPSTASH_REDIS_REST_TOKEN',
+      value: upstashToken ? maskSecret(upstashToken, 4, 4) : 'non_définie',
+      isSet: !!upstashToken,
+      length: upstashToken?.length || 0,
+      status: !!upstashToken ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'Jeton REST Upstash Redis pour le cache haute vitesse'
+    },
+    {
+      key: 'UPSTASH_REDIS_REST_URL',
+      value: upstashUrl ? maskSecret(upstashUrl, 10, 6) : 'non_définie',
+      isSet: !!upstashUrl,
+      length: upstashUrl?.length || 0,
+      status: !!upstashUrl ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'URL de point de terminaison REST Upstash Redis'
     },
     {
       key: 'NEXT_PUBLIC_APP_URL',
       value: appUrl,
       isSet: !!process.env.NEXT_PUBLIC_APP_URL || !!process.env.APP_URL,
-      required: true,
+      length: appUrl.length,
+      status: (!!process.env.NEXT_PUBLIC_APP_URL || !!process.env.APP_URL) ? 'CONFIGURÉ' : 'PAR_DÉFAUT',
       description: 'URL canonique de votre application Vercel Frontend'
     },
     {
-      key: 'INTERNAL_API_KEY',
-      value: internalKey ? maskSecret(internalKey) : 'non_definie (utilise fallback dev)',
-      raw_value: internalKey,
-      isSet: !!process.env.INTERNAL_API_KEY,
-      required: true,
-      description: 'Clé secrète de communication sécurisée entre Next.js et FastAPI'
-    },
-    {
       key: 'SECRET_KEY',
-      value: secretKey ? maskSecret(secretKey) : 'non_definie',
-      raw_value: secretKey,
-      isSet: !!process.env.SECRET_KEY || !!process.env.JWT_SECRET,
-      required: false,
-      description: 'Clé secrète JWT pour la vérification des sessions de la boutique'
-    },
-    {
-      key: 'NOEST_API_TOKEN',
-      value: noestToken ? maskSecret(noestToken) : 'utilise_valeur_par_defaut',
-      isSet: !!process.env.NOEST_API_TOKEN,
-      required: false,
-      description: 'Jeton d\'accès optionnel pour l\'intégration directe Noest'
+      value: secretKey ? maskSecret(secretKey, 4, 4) : 'non_définie',
+      isSet: !!secretKey,
+      length: secretKey?.length || 0,
+      status: !!secretKey ? 'CONFIGURÉ' : 'NON_DÉTECTÉ',
+      description: 'Clé secrète JWT pour la vérification des sessions'
     }
   ];
 
-  // Format as copy-pasteable .env text block for Vercel Import
-  const envFileContent = [
-    `# ═══════════════════════════════════════════════════════════════`,
-    `# AZZOUGSHOP — VERCEL FRONTEND ENVIRONMENT VARIABLES`,
-    `# Copiez-collez ces variables dans votre nouveau projet Vercel`,
-    `# ═══════════════════════════════════════════════════════════════`,
-    `BACKEND_URL="${backendUrl}"`,
-    `NEXT_PUBLIC_API_URL="${publicApiUrl}"`,
-    `NEXT_PUBLIC_APP_URL="${appUrl}"`,
-    `INTERNAL_API_KEY="${internalKey || 'azzougshop_internal_secure_key_2026'}"`,
-    `SECRET_KEY="${secretKey || ''}"`,
-    `NODE_ENV="production"`
-  ].join('\n');
+  // Output structured logs in Vercel Function logs
+  console.log(`[API /api/env] Diagnostic Vercel Env:`, {
+    timestamp: new Date().toISOString(),
+    node_env: process.env.NODE_ENV,
+    vercel_env: process.env.VERCEL_ENV,
+    vercel_url: process.env.VERCEL_URL,
+    total_detected: detectedVars.filter(v => v.isSet).length,
+    variables_status: detectedVars.map(v => `${v.key}: ${v.status} (len: ${v.length})`)
+  });
 
   return NextResponse.json(
     {
       success: true,
-      message: 'Détection des variables d\'environnement pour migration Vercel',
+      timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || 'production',
-      vercel_url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
-      summary: {
-        total_detected: requiredVars.filter(v => v.isSet).length,
-        total_recommended: requiredVars.length
+      vercel: {
+        env: process.env.VERCEL_ENV || 'custom',
+        url: process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+        region: process.env.VERCEL_REGION || null,
+        commit_sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
       },
-      variables: requiredVars,
-      vercel_copy_paste: envFileContent
+      summary: {
+        total_requested: 7,
+        total_detected: detectedVars.filter(v => v.isSet).length,
+        core_7_detected: detectedVars.slice(0, 7).filter(v => v.isSet).length,
+        missing_vars: detectedVars.slice(0, 7).filter(v => !v.isSet).map(v => v.key),
+      },
+      variables: detectedVars,
     },
     {
       headers: {
