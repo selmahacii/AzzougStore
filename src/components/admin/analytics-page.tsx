@@ -201,6 +201,12 @@ export default function AnalyticsPage() {
       queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=revenue&period=${period}`),
    });
 
+   const metaAdsQuery = useQuery<{ success: boolean; data: any }>({
+      queryKey: ['analytics', 'meta-ads-summary', storeId],
+      queryFn: () => apiFetch(`/api/v1/meta-ads/integration-summary?store_id=${storeId}`),
+      enabled: !!storeId,
+   });
+
    const genericQuery = useQuery<ApiResponse<any>>({
       queryKey: ['analytics', activeTab, storeId, period],
       queryFn: () => apiFetch(`/api/v1/analytics?store_id=${storeId}&type=${activeTab}&period=${period}`),
@@ -223,12 +229,56 @@ export default function AnalyticsPage() {
       color: '#2D3436',
    };
 
+   const metaSummary = metaAdsQuery.data?.data;
+   const metaSpendDzd = metaSummary?.total_spend_dzd || 0;
+
+   const totalOrdersCount = kpi?.totalOrders || 0;
+   const confirmedOrdersCount = kpi?.confirmedOrders || 0;
+   const deliveredOrdersCount = kpi?.deliveredOrders || 0;
+   const returnedOrdersCount = kpi?.returnedOrders || 0;
+
+   // Confirmation performance fallback
+   const calculatedConfirmation = (kpi?.confirmationPerformance && kpi.confirmationPerformance > 0)
+      ? kpi.confirmationPerformance
+      : (totalOrdersCount > 0 ? Math.round((confirmedOrdersCount / totalOrdersCount) * 100) : 0);
+
+   // Delivery performance fallback
+   const calculatedDelivery = (kpi?.deliveryPerformance && kpi.deliveryPerformance > 0)
+      ? kpi.deliveryPerformance
+      : (confirmedOrdersCount > 0 ? Math.round((deliveredOrdersCount / confirmedOrdersCount) * 100) : (totalOrdersCount > 0 ? Math.round((deliveredOrdersCount / totalOrdersCount) * 100) : 0));
+
+   // Return rate fallback
+   const calculatedReturn = (kpi?.returnRate && kpi.returnRate > 0)
+      ? kpi.returnRate
+      : (totalOrdersCount > 0 ? Math.round((returnedOrdersCount / totalOrdersCount) * 100) : 0);
+
+   // Profit & Margins
    const calculatedProfit = kpi?.totalProfit 
       ? kpi.totalProfit 
       : (kpi?.profitPerOrder && kpi?.deliveredOrders ? (kpi.profitPerOrder * kpi.deliveredOrders) : 0);
    const profitMarginPct = kpi?.totalRevenue && kpi.totalRevenue > 0 && calculatedProfit > 0
       ? ((calculatedProfit / kpi.totalRevenue) * 100).toFixed(1)
       : '0.0';
+
+   // Dynamic CAC
+   const calculatedCac = (kpi?.cac && kpi.cac > 0)
+      ? kpi.cac
+      : (metaSpendDzd > 0 && deliveredOrdersCount > 0
+         ? Math.round(metaSpendDzd / deliveredOrdersCount)
+         : (metaSpendDzd > 0 && totalOrdersCount > 0 ? Math.round(metaSpendDzd / totalOrdersCount) : 0));
+
+   // Dynamic ROI / ROAS
+   const calculatedRoas = (kpi?.roas && kpi.roas > 0)
+      ? `${kpi.roas}%`
+      : (metaSpendDzd > 0 && (kpi?.totalRevenue || 0) > 0
+         ? `${((kpi!.totalRevenue / metaSpendDzd) * 100).toFixed(0)}%`
+         : (profitMarginPct !== '0.0' ? `+${profitMarginPct}%` : '0%'));
+
+   // Sales chart metrics
+   const totalChartRevenue = (revenueQuery.data?.data ?? []).reduce((acc, d) => acc + (d.orderRevenue || 0) + (d.posRevenue || 0), 0);
+   const bestDayRevenue = (revenueQuery.data?.data ?? []).reduce((max, d) => Math.max(max, (d.orderRevenue || 0) + (d.posRevenue || 0)), 0);
+   const daysCount = (revenueQuery.data?.data ?? []).length;
+   const dailyAverage = daysCount > 0 ? Math.round(totalChartRevenue / daysCount) : 0;
 
    return (
       <div className="p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto w-full pb-28 animate-in fade-in duration-500">
@@ -316,11 +366,16 @@ export default function AnalyticsPage() {
                      </div>
 
                      <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Rentabilité / ROI Global</span>
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Rentabilité / ROI Global</span>
+                           <span className="text-[9px] font-mono text-slate-400 font-bold">Obj &gt; 200%</span>
+                        </div>
                         <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-mono tabular-nums">
-                           {kpi?.roas ? `${kpi.roas}%` : '0%'}
+                           {calculatedRoas}
                         </h2>
-                        <span className="text-[10px] text-slate-400 block font-medium">Objectif cible : &gt; 200%</span>
+                        <span className="text-[10px] text-slate-400 block font-medium">
+                           {metaSpendDzd > 0 ? `Sur ${formatPrice(metaSpendDzd)} de pub` : 'Marge commerciale nette'}
+                        </span>
                      </div>
                   </div>
 
@@ -338,12 +393,12 @@ export default function AnalyticsPage() {
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux Confirmation</span>
                         <div className="flex items-center justify-between">
                            <h3 className="text-base sm:text-lg font-black text-[#4b7bec] font-mono tabular-nums">
-                              {kpi?.confirmationPerformance || 0}%
+                              {calculatedConfirmation}%
                            </h3>
                            <span className="text-[9px] font-mono text-slate-400">Obj &gt; 70%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                           <div className="h-full bg-[#4b7bec] rounded-full" style={{ width: `${Math.min(100, kpi?.confirmationPerformance || 0)}%` }} />
+                           <div className="h-full bg-[#4b7bec] rounded-full" style={{ width: `${Math.min(100, calculatedConfirmation)}%` }} />
                         </div>
                      </div>
 
@@ -351,12 +406,12 @@ export default function AnalyticsPage() {
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux Livraison</span>
                         <div className="flex items-center justify-between">
                            <h3 className="text-base sm:text-lg font-black text-emerald-600 font-mono tabular-nums">
-                              {kpi?.deliveryPerformance || 0}%
+                              {calculatedDelivery}%
                            </h3>
                            <span className="text-[9px] font-mono text-slate-400">Obj &gt; 80%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                           <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, kpi?.deliveryPerformance || 0)}%` }} />
+                           <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, calculatedDelivery)}%` }} />
                         </div>
                      </div>
 
@@ -364,12 +419,12 @@ export default function AnalyticsPage() {
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Taux de Retour</span>
                         <div className="flex items-center justify-between">
                            <h3 className="text-base sm:text-lg font-black text-rose-600 font-mono tabular-nums">
-                              {kpi?.returnRate || 0}%
+                              {calculatedReturn}%
                            </h3>
                            <span className="text-[9px] font-mono text-slate-400">Obj &lt; 15%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                           <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(100, kpi?.returnRate || 0)}%` }} />
+                           <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(100, calculatedReturn)}%` }} />
                         </div>
                      </div>
                   </div>
@@ -382,7 +437,7 @@ export default function AnalyticsPage() {
                         <MetricRow label="Ventes Brutes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Total des ventes avant déductions (Chiffre d'Affaires Brut)" />
                         <MetricRow label="Revenus Nets" value={kpi?.netRevenue ? formatPrice(kpi.netRevenue) : '0'} description="Montant net encaissé après annulations (CA Net)" />
                         <MetricRow label="Bénéfices Réels" value={calculatedProfit ? formatPrice(calculatedProfit) : '0'} badge={profitMarginPct !== '0.0' ? `+${profitMarginPct}%` : undefined} description="Profit net généré après soustraction de tous les coûts" />
-                        <MetricRow label="ROI Global" value={`${kpi?.roas || 0}%`} suffix="" description="Retour sur investissement global (Objectif: > 200%)" />
+                        <MetricRow label="ROI Global" value={calculatedRoas} suffix="" description="Retour sur investissement global (Objectif: > 200%)" />
                         <MetricRow label="Capital / Ventes" value={kpi?.totalRevenue ? formatPrice(kpi.totalRevenue) : '0'} description="Fonds de roulement et liquidités disponibles" />
                      </div>
                   </SectionPanel>
@@ -390,18 +445,23 @@ export default function AnalyticsPage() {
                   <SectionPanel title="Dépenses & Frais" icon={CreditCard} iconColor="#FD7014">
                      <div className="space-y-0.5">
                         <MetricRow label="Frais de livraison" value={kpi?.shippingFeeGap ? formatPrice(Math.abs(kpi.shippingFeeGap)) : '0'} description="Dépenses payées aux sociétés de transport" />
-                        <MetricRow label="CAC (Acquisition)" value={kpi?.cac ? formatPrice(kpi.cac) : '0'} description="Coût moyen d'Acquisition d'un Client via les pubs" />
-                        <MetricRow label="LTV (Valeur Client)" value={kpi?.ltv ? formatPrice(kpi.ltv) : '0'} description="Valeur à vie moyenne d'un client (Lifetime Value)" />
-                        <MetricRow label="Coût Marchandises" value="Indisponible" description="Coût d'achat de la marchandise vendue (COGS)" />
+                        <MetricRow 
+                           label="CAC (Acquisition)" 
+                           value={calculatedCac > 0 ? formatPrice(calculatedCac) : (metaSpendDzd > 0 ? formatPrice(metaSpendDzd) : '0')} 
+                           badge={calculatedCac > 0 ? 'Par commande' : (metaSpendDzd === 0 ? 'Trafic Organique' : undefined)}
+                           description="Coût moyen d'Acquisition d'un Client via les pubs" 
+                        />
+                        <MetricRow label="LTV (Valeur Client)" value={kpi?.ltv ? formatPrice(kpi.ltv) : (totalOrdersCount > 0 && kpi?.totalRevenue ? formatPrice(Math.round(kpi.totalRevenue / totalOrdersCount)) : '0')} description="Valeur à vie moyenne d'un client (Lifetime Value)" />
+                        <MetricRow label="Coût Marchandises" value="Inclus dans marge" description="Coût d'achat de la marchandise vendue (COGS)" />
                      </div>
                   </SectionPanel>
 
                   <SectionPanel title="Efficacité Opérationnelle" icon={Target} iconColor="#00B894">
                      <div className="grid grid-cols-2 gap-3 place-items-center py-1">
-                        <PerformanceGauge label="Confirmation" value={kpi?.confirmationPerformance || 0} color="#4b7bec" description="Validées au tel (Obj: > 70%)" />
-                        <PerformanceGauge label="Livraison" value={kpi?.deliveryPerformance || 0} color="#00B894" description="Arrivées client (Obj: > 80%)" />
+                        <PerformanceGauge label="Confirmation" value={calculatedConfirmation} color="#4b7bec" description="Validées au tel (Obj: > 70%)" />
+                        <PerformanceGauge label="Livraison" value={calculatedDelivery} color="#00B894" description="Arrivées client (Obj: > 80%)" />
                         <PerformanceGauge label="Conversion" value={kpi?.conversionRate || 0} color="#FD7014" description="Visites devenues achats (Obj: > 3%)" />
-                        <PerformanceGauge label="Retour" value={kpi?.returnRate || 0} color="#E17055" description="Refusées / retours (Obj: < 15%)" />
+                        <PerformanceGauge label="Retour" value={calculatedReturn} color="#E17055" description="Refusées / retours (Obj: < 15%)" />
                      </div>
                   </SectionPanel>
                </div>
@@ -409,15 +469,34 @@ export default function AnalyticsPage() {
                {/* ── Charts: Sales Evolution & Channels ── */}
                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                   <div className="lg:col-span-2 bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-5 sm:p-6 shadow-sm overflow-hidden space-y-4">
-                     <div className="flex items-center gap-3 border-b border-slate-100 pb-3.5">
-                        <div className="size-8 sm:size-9 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center shadow-2xs shrink-0">
-                           <TrendingUp className="size-4" />
+                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                        <div className="flex items-center gap-3">
+                           <div className="size-8 sm:size-9 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center shadow-2xs shrink-0">
+                              <TrendingUp className="size-4" />
+                           </div>
+                           <div>
+                              <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Évolution des ventes (Multi-Canal)</h3>
+                              <p className="text-[10px] text-slate-400">Chronologie journalière du chiffre d&apos;affaires généré</p>
+                           </div>
                         </div>
-                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Évolution des ventes (Multi-Canal)</h3>
+
+                        <div className="flex items-center gap-3 text-[10px] font-mono font-bold text-slate-500 flex-wrap">
+                           <span className="bg-slate-50 px-2 py-1 rounded-lg border border-slate-200/60">
+                              Moyenne : <strong>{formatPrice(dailyAverage)}</strong>/j
+                           </span>
+                           <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-100">
+                              Pic : <strong>{formatPrice(bestDayRevenue)}</strong>
+                           </span>
+                        </div>
                      </div>
+
                      <div className="h-[320px] w-full">
                         {revenueQuery.isLoading ? (
                            <Skeleton className="h-full w-full rounded-2xl bg-slate-100" />
+                        ) : chartData.length === 0 ? (
+                           <div className="h-full flex items-center justify-center text-slate-400 text-xs font-medium">
+                              Aucune donnée de ventes disponible sur cette période
+                           </div>
                         ) : (
                            <ResponsiveContainer width="100%" height="100%">
                               <AreaChart data={chartData}>
@@ -435,9 +514,12 @@ export default function AnalyticsPage() {
                                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} axisLine={false} tickLine={false} />
                                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8', fontWeight: 600 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}K`} />
-                                 <RechartsTooltip contentStyle={tooltipStyle} />
-                                 <Area name="E-commerce" type="monotone" dataKey="orderRevenue" stroke="#4b7bec" strokeWidth={2.5} fillOpacity={1} fill="url(#orderGrad)" stackId="1" />
-                                 <Area name="POS (Magasin)" type="monotone" dataKey="posRevenue" stroke="#0984E3" strokeWidth={2.5} fillOpacity={1} fill="url(#posGrad)" stackId="1" />
+                                 <RechartsTooltip 
+                                    contentStyle={tooltipStyle} 
+                                    formatter={(v: number, name: string) => [`${formatPrice(v)}`, name]}
+                                 />
+                                 <Area name="E-commerce (Web)" type="monotone" dataKey="orderRevenue" stroke="#4b7bec" strokeWidth={2.5} fillOpacity={1} fill="url(#orderGrad)" stackId="1" />
+                                 <Area name="POS (Point de Vente)" type="monotone" dataKey="posRevenue" stroke="#0984E3" strokeWidth={2.5} fillOpacity={1} fill="url(#posGrad)" stackId="1" />
                               </AreaChart>
                            </ResponsiveContainer>
                         )}
@@ -445,13 +527,13 @@ export default function AnalyticsPage() {
                   </div>
 
                   <SectionPanel title="Répartition par Canal" icon={Share2} iconColor="#0984E3">
-                     <div className="h-[240px] w-full">
+                     <div className="h-[220px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                            <PieChart>
                               <Pie
                                  data={[
-                                    { name: 'E-commerce', value: kpi?.orderRevenue || 0 },
-                                    { name: 'POS (Magasin)', value: kpi?.posRevenue || 0 }
+                                    { name: 'E-commerce (Boutique)', value: (kpi?.orderRevenue || kpi?.totalRevenue || 0) },
+                                    { name: 'POS (Point de vente)', value: (kpi?.posRevenue || 0) }
                                  ].filter(d => d.value > 0)}
                                  innerRadius={55}
                                  outerRadius={75}
@@ -466,15 +548,19 @@ export default function AnalyticsPage() {
                            </PieChart>
                         </ResponsiveContainer>
                      </div>
-                     <div className="space-y-2 pt-2 border-t border-slate-100">
+                     <div className="space-y-3 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between text-xs font-bold">
-                           <span className="text-slate-500">Contribution Digitale</span>
+                           <span className="text-slate-500">Contribution E-commerce</span>
                            <span className="text-[#4b7bec] font-mono">
-                              {kpi?.totalRevenue ? ((kpi.orderRevenue / kpi.totalRevenue) * 100).toFixed(1) : '100'}%
+                              {kpi?.totalRevenue ? (((kpi.orderRevenue || kpi.totalRevenue) / kpi.totalRevenue) * 100).toFixed(1) : '100'}%
                            </span>
                         </div>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                           <div className="h-full bg-[#4b7bec]" style={{ width: kpi?.totalRevenue ? `${(kpi.orderRevenue / kpi.totalRevenue) * 100}%` : '100%' }} />
+                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                           <div className="h-full bg-[#4b7bec]" style={{ width: kpi?.totalRevenue ? `${((kpi.orderRevenue || kpi.totalRevenue) / kpi.totalRevenue) * 100}%` : '100%' }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1">
+                           <span>Total digital : {formatPrice(kpi?.orderRevenue || kpi?.totalRevenue || 0)}</span>
+                           <span>{(kpi?.posRevenue || 0) > 0 ? `POS : ${formatPrice(kpi!.posRevenue)}` : '100% canal digital'}</span>
                         </div>
                      </div>
                   </SectionPanel>
