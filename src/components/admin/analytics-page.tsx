@@ -585,7 +585,7 @@ export default function AnalyticsPage() {
             const statusRows = [
                {
                   status: 'Nouvelles / En Attente',
-                  desc: 'Commandes brutes en attente d'appel de confirmation',
+                  desc: "Commandes brutes en attente d'appel de confirmation",
                   count: pendingOrders,
                   share: totalOrders > 0 ? ((pendingOrders / totalOrders) * 100).toFixed(1) : '0.0',
                   color: '#F59E0B',
@@ -597,7 +597,7 @@ export default function AnalyticsPage() {
                },
                {
                   status: 'Confirmées & Validées',
-                  desc: 'Commandes validées au téléphone prêtes à l'expédition',
+                  desc: "Commandes validées au téléphone prêtes à l'expédition",
                   count: confirmedOrders,
                   share: totalOrders > 0 ? ((confirmedOrders / totalOrders) * 100).toFixed(1) : '0.0',
                   color: '#4b7bec',
