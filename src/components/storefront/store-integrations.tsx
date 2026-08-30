@@ -18,11 +18,10 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!config?.store_id) return;
     
     captureAttribution();
     setMetaPixelId(pixelId, config?.store_id, config?.currency, config?.exchange_rate);
-
-
 
     const initialize = async () => {
       try {

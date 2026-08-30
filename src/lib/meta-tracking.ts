@@ -415,7 +415,7 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     eventPayload.pixel_event_fired = true;
   }
 
-  if (options.shouldSendToServer !== false) {
+  if (options.shouldSendToServer !== false && storeId) {
     const body = JSON.stringify(eventPayload);
     // sendBeacon is purpose-built for exactly this — "fire this request even
     // if the page is about to unload" — and the browser guarantees delivery
