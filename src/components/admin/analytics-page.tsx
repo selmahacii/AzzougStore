@@ -482,53 +482,254 @@ export default function AnalyticsPage() {
             </>
          )}
 
-         {/* ─── Orders Analytics ──────────────────────── */}
-         {activeTab === 'orders' && (
-            <div className="space-y-6">
-               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                  {[
-                     { l: 'TOTAL', v: kpi?.totalOrders || 0, c: C.primary },
-                     { l: 'NOUVELLES', v: kpi?.pendingOrders || 0, c: C.warning },
-                     { l: 'CONFIRMÉES', v: kpi?.confirmedOrders || 0, c: C.success },
-                     { l: 'LIVRÉES', v: kpi?.deliveredOrders || 0, c: C.success },
-                     { l: 'RETOURNÉES', v: kpi?.returnedOrders || 0, c: C.danger },
-                  ].map((k, i) => (
-                     <div key={i} className="bg-white rounded-xl border p-3 flex flex-col justify-between h-24" style={{ borderColor: C.border }}>
-                        <span className="text-[9px] font-black uppercase tracking-tight text-[#B2BEC3] leading-tight">{k.l}</span>
-                        <div className="mt-auto">
-                           <span className="text-xl font-black text-[#2D3436] tracking-tighter">{k.v}</span>
+         {/* ─── Orders Analytics (Meta Ads Executive Template) ─── */}
+         {activeTab === 'orders' && (() => {
+            const totalOrders = kpi?.totalOrders || 0;
+            const pendingOrders = kpi?.pendingOrders || 0;
+            const confirmedOrders = kpi?.confirmedOrders || 0;
+            const deliveredOrders = kpi?.deliveredOrders || 0;
+            const returnedOrders = kpi?.returnedOrders || 0;
+
+            const confRate = totalOrders > 0 ? ((confirmedOrders / totalOrders) * 100).toFixed(1) : '0.0';
+            const delivRate = confirmedOrders > 0 ? ((deliveredOrders / confirmedOrders) * 100).toFixed(1) : (totalOrders > 0 ? ((deliveredOrders / totalOrders) * 100).toFixed(1) : '0.0');
+            const returnRate = totalOrders > 0 ? ((returnedOrders / totalOrders) * 100).toFixed(1) : '0.0';
+
+            const avgValue = kpi?.avgOrderValue || (totalOrders > 0 && kpi?.totalRevenue ? Math.round(kpi.totalRevenue / totalOrders) : 0);
+
+            const statusRows = [
+               {
+                  status: 'Nouvelles / En Attente',
+                  desc: 'Commandes brutes en attente d'appel de confirmation',
+                  count: pendingOrders,
+                  share: totalOrders > 0 ? ((pendingOrders / totalOrders) * 100).toFixed(1) : '0.0',
+                  color: '#F59E0B',
+                  bgColor: 'bg-amber-50',
+                  textColor: 'text-amber-700',
+                  borderColor: 'border-amber-200',
+                  estimatedValue: pendingOrders * avgValue,
+                  badge: 'Pipeline Entrant',
+               },
+               {
+                  status: 'Confirmées & Validées',
+                  desc: 'Commandes validées au téléphone prêtes à l'expédition',
+                  count: confirmedOrders,
+                  share: totalOrders > 0 ? ((confirmedOrders / totalOrders) * 100).toFixed(1) : '0.0',
+                  color: '#4b7bec',
+                  bgColor: 'bg-blue-50',
+                  textColor: 'text-[#4b7bec]',
+                  borderColor: 'border-blue-200',
+                  estimatedValue: confirmedOrders * avgValue,
+                  badge: `${confRate}% Conversion`,
+               },
+               {
+                  status: 'Livrées avec Succès',
+                  desc: 'Colis réceptionnés par les clients et fonds encaissés',
+                  count: deliveredOrders,
+                  share: totalOrders > 0 ? ((deliveredOrders / totalOrders) * 100).toFixed(1) : '0.0',
+                  color: '#10B981',
+                  bgColor: 'bg-emerald-50',
+                  textColor: 'text-emerald-700',
+                  borderColor: 'border-emerald-200',
+                  estimatedValue: kpi?.netRevenue || (deliveredOrders * avgValue),
+                  badge: `${delivRate}% Succès`,
+               },
+               {
+                  status: 'Retournées & Refusées',
+                  desc: 'Colis refusés, injoignables ou retournés en entrepôt',
+                  count: returnedOrders,
+                  share: totalOrders > 0 ? ((returnedOrders / totalOrders) * 100).toFixed(1) : '0.0',
+                  color: '#EF4444',
+                  bgColor: 'bg-rose-50',
+                  textColor: 'text-rose-700',
+                  borderColor: 'border-rose-200',
+                  estimatedValue: returnedOrders * avgValue,
+                  badge: `${returnRate}% Échec`,
+               },
+            ];
+
+            return (
+               <div className="space-y-4 sm:space-y-6">
+                  {/* 5 Top Executive KPI Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Total Commandes</span>
+                        <h2 className="text-xl sm:text-2xl font-black text-slate-900 font-mono tabular-nums">
+                           {totalOrders}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Volume global période</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Nouvelles</span>
+                           <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              En attente
+                           </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-amber-600 font-mono tabular-nums">
+                           {pendingOrders}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">À confirmer</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Confirmées</span>
+                           <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-blue-50 text-[#4b7bec] border border-blue-200">
+                              {confRate}%
+                           </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-[#4b7bec] font-mono tabular-nums">
+                           {confirmedOrders}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Validées par agents</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Livrées</span>
+                           <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              {delivRate}%
+                           </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-emerald-600 font-mono tabular-nums">
+                           {deliveredOrders}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Encaissées avec succès</span>
+                     </div>
+
+                     <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                           <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Retournées</span>
+                           <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                              {returnRate}%
+                           </span>
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-black text-rose-600 font-mono tabular-nums">
+                           {returnedOrders}
+                        </h2>
+                        <span className="text-[10px] text-slate-400 block font-medium">Refus / Non aboutis</span>
+                     </div>
+                  </div>
+
+                  {/* Funnel Progress Conversion Bar */}
+                  <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-5 sm:p-6 shadow-sm space-y-4">
+                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                           <div className="size-8 rounded-xl bg-indigo-50 text-[#4b7bec] flex items-center justify-center shadow-2xs">
+                              <Target className="size-4" />
+                           </div>
+                           <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Entonnoir de Conversion des Commandes</h3>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 font-bold">Panier moyen : {formatPrice(avgValue)}</span>
+                     </div>
+
+                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                        <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">1. Total Reçues</span>
+                           <span className="text-base font-black font-mono text-slate-900">{totalOrders} cmds</span>
+                           <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                              <div className="h-full bg-slate-800 rounded-full w-full" />
+                           </div>
+                        </div>
+
+                        <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">2. Confirmées</span>
+                              <span className="text-[9px] font-mono text-[#4b7bec] font-black">{confRate}%</span>
+                           </div>
+                           <span className="text-base font-black font-mono text-[#4b7bec]">{confirmedOrders} cmds</span>
+                           <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                              <div className="h-full bg-[#4b7bec] rounded-full" style={{ width: `${confRate}%` }} />
+                           </div>
+                        </div>
+
+                        <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">3. Livrées</span>
+                              <span className="text-[9px] font-mono text-emerald-600 font-black">{delivRate}%</span>
+                           </div>
+                           <span className="text-base font-black font-mono text-emerald-600">{deliveredOrders} cmds</span>
+                           <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${delivRate}%` }} />
+                           </div>
+                        </div>
+
+                        <div className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-100 space-y-1">
+                           <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">4. Retours</span>
+                              <span className="text-[9px] font-mono text-rose-600 font-black">{returnRate}%</span>
+                           </div>
+                           <span className="text-base font-black font-mono text-rose-600">{returnedOrders} cmds</span>
+                           <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-1">
+                              <div className="h-full bg-rose-500 rounded-full" style={{ width: `${returnRate}%` }} />
+                           </div>
                         </div>
                      </div>
-                  ))}
-               </div>
+                  </div>
 
-               <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                     <table className="w-full text-left">
-                        <thead>
-                           <tr className="border-b bg-[#F8F9FC]" style={{ borderColor: C.border }}>
-                              <th className="px-5 py-4 text-xs font-bold text-[#636E72]">Statut de la Commande</th>
-                              <th className="px-5 py-4 text-xs font-bold text-[#636E72] text-center">Quantité</th>
-                           </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                           {[
-                              { s: 'Nouvelles', v: kpi?.pendingOrders || 0 },
-                              { s: 'Confirmées', v: kpi?.confirmedOrders || 0 },
-                              { s: 'Livrées', v: kpi?.deliveredOrders || 0 },
-                              { s: 'Retournées', v: kpi?.returnedOrders || 0 },
-                           ].map((r, i) => (
-                              <tr key={i} className="hover:bg-[#FAFBFD] transition-colors">
-                                 <td className="px-5 py-4 text-[11px] font-bold text-[#2D3436]">{r.s}</td>
-                                 <td className="px-5 py-4 text-xs font-extrabold text-[#2D3436] text-center">{r.v}</td>
+                  {/* High-Density Pipeline Ledger Table */}
+                  <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
+                     <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                           <ShoppingCart className="size-4 text-[#4b7bec]" />
+                           <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">Détail par Statut & Valeur Marchande</h3>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 font-bold">4 flux surveillés</span>
+                     </div>
+                     <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-left min-w-[650px]">
+                           <thead>
+                              <tr className="border-b border-slate-100 bg-slate-50/40">
+                                 <th className="px-5 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">Statut du Flux</th>
+                                 <th className="px-5 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Quantité</th>
+                                 <th className="px-5 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Part du Volume</th>
+                                 <th className="px-5 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Performance</th>
+                                 <th className="px-5 py-3.5 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Valeur Estimée</th>
                               </tr>
-                           ))}
-                        </tbody>
-                     </table>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100">
+                              {statusRows.map((r, i) => (
+                                 <tr key={i} className="hover:bg-slate-50/60 transition-colors">
+                                    <td className="px-5 py-4">
+                                       <div className="flex items-center gap-3">
+                                          <div className="size-3 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                                          <div>
+                                             <span className="text-xs font-black text-slate-900 block">{r.status}</span>
+                                             <span className="text-[10px] text-slate-400 leading-tight block">{r.desc}</span>
+                                          </div>
+                                       </div>
+                                    </td>
+                                    <td className="px-5 py-4 text-center">
+                                       <span className="text-sm font-black font-mono text-slate-900 tabular-nums">{r.count}</span>
+                                    </td>
+                                    <td className="px-5 py-4 text-center">
+                                       <div className="flex flex-col items-center gap-1">
+                                          <span className="text-[10px] font-black font-mono text-slate-700">{r.share}%</span>
+                                          <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                             <div className="h-full rounded-full" style={{ width: `${r.share}%`, backgroundColor: r.color }} />
+                                          </div>
+                                       </div>
+                                    </td>
+                                    <td className="px-5 py-4 text-center">
+                                       <span className={cn("px-2 py-0.5 rounded-lg text-[9px] font-black font-mono border", r.bgColor, r.textColor, r.borderColor)}>
+                                          {r.badge}
+                                       </span>
+                                    </td>
+                                    <td className="px-5 py-4 text-right">
+                                       <span className="text-xs sm:text-sm font-black font-mono text-slate-900 tabular-nums">
+                                          {formatPrice(r.estimatedValue)}
+                                       </span>
+                                    </td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
                   </div>
                </div>
-            </div>
-         )}
+            );
+         })()}
 
          {/* ─── Shipping Analytics ──────────────────────── */}
          {activeTab === 'shipping' && (
