@@ -229,7 +229,7 @@ function AthleticHero({
   );
 }
 
-// ─── MINIMALIST / CLEAN hero ──────────────────────────────────
+// ─── MINIMALIST / CLEAN hero (Overhauled with Meta Ads Template) ────────────────
 function CleanHero({
   store, products, heroTag, onShop, onScroll,
 }: { store: Store; products: Product[]; loading: boolean; heroTag: string; onShop: () => void; onScroll: () => void }) {
@@ -243,81 +243,82 @@ function CleanHero({
   const headline = (tc.heroHeadline as string | undefined) ?? store.name;
   const subtitle  = (tc.heroSubtitle  as string | undefined) ?? store.description ?? t('heroSubtitleDefault');
   const cta       = (tc.heroCta       as string | undefined) ?? t('viewCollection');
-  // Was hardcoded to t('seeAll') at both call sites below — never
-  // configurable per store, unlike the primary CTA.
   const cta2      = (tc.heroCta2      as string | undefined) ?? t('seeAll');
   const isFullLayout = tc.heroLayout === 'full';
 
-  // Elegant Google Font override based on store settings
   const fontStyle = {
     fontFamily: locale === 'ar'
       ? "'Cairo', 'Tajawal', 'Outfit', sans-serif"
       : store.theme_config?.fontFamily
         ? `"${store.theme_config.fontFamily}", sans-serif`
-        : '"Playfair Display", "Didot", serif'
+        : '"Plus Jakarta Sans", "Inter", sans-serif'
   };
 
   if (isFullLayout) {
     return (
-      <section className="relative w-full min-h-[75vh] flex items-center justify-center overflow-hidden bg-neutral-950 py-16">
-        {/* Background Media */}
+      <section className="relative w-full min-h-[75vh] flex items-center justify-center overflow-hidden bg-slate-950 py-16 px-4">
         {bannerImg ? (
           <div className="absolute inset-0 z-0">
             {isVideo ? (
               <video 
                 src={bannerImg} 
-                className="h-full w-full object-cover opacity-100" 
+                className="h-full w-full object-cover opacity-85" 
                 muted loop autoPlay playsInline
               />
             ) : (
               <motion.img
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 1.5 }}
+                transition={{ duration: 1.2 }}
                 src={bannerImg} alt={store.name}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover opacity-85"
               />
             )}
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/40" />
           </div>
         ) : (
-          /* Subtle premium mesh gradient fallback */
-          <div className="absolute inset-0 bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 z-0 opacity-90" />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 z-0 opacity-95" />
         )}
         
         <div className="relative z-20 w-full max-w-5xl mx-auto px-6 text-center">
           <motion.div
             initial={{ opacity: 0, y: 25 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-            className="max-w-4xl mx-auto"
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="max-w-3xl mx-auto space-y-6"
           >
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
+              <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                {heroTag || 'Sélection Officielle 2026'}
+              </span>
+            </div>
+
             <h1
-              className={cn("text-4xl sm:text-6xl lg:text-7xl text-white tracking-tight leading-[1.05] mb-6 drop-shadow-lg", locale === 'ar' ? 'font-black' : 'font-extralight')}
+              className={cn("text-4xl sm:text-6xl lg:text-7xl text-white tracking-tight leading-[1.08]", locale === 'ar' ? 'font-black' : 'font-black')}
               style={fontStyle}
             >
               {headline}
             </h1>
-            <p
-              className="text-xs sm:text-sm text-white font-medium max-w-xl mx-auto leading-relaxed tracking-wide mt-4 mb-10 drop-shadow-md"
-            >
+
+            <p className="text-sm sm:text-base text-white/80 font-medium max-w-xl mx-auto leading-relaxed">
               {subtitle}
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+              <button
                 onClick={onShop}
-                className="w-full sm:w-auto px-10 py-4 text-[10px] font-semibold uppercase tracking-[0.25em] text-neutral-900 bg-white hover:bg-neutral-900 hover:text-white transition-all duration-300 rounded-none flex items-center justify-center gap-2"
+                className="w-full sm:w-auto h-12 px-8 rounded-2xl text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
+                style={{ backgroundColor: primary }}
               >
-                {cta} <ArrowRight className="size-3.5" />
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.01 }}
+                {cta} <ArrowRight className="size-4" />
+              </button>
+              <button
                 onClick={onScroll}
-                className="text-[10px] font-semibold uppercase tracking-[0.25em] text-white/80 hover:text-white border-b border-white/20 hover:border-white pb-1.5 transition-all duration-300 flex items-center gap-2"
+                className="w-full sm:w-auto h-12 px-7 rounded-2xl text-xs font-bold uppercase tracking-wider text-white/90 bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md transition-all duration-200 flex items-center justify-center gap-2"
               >
-                {cta2} <ChevronDown className="size-3" />
-              </motion.button>
+                {cta2} <ChevronDown className="size-4" />
+              </button>
             </div>
           </motion.div>
         </div>
@@ -326,65 +327,80 @@ function CleanHero({
   }
 
   return (
-    <section className="w-full min-h-[75vh] flex items-center bg-white py-12 lg:py-0 overflow-hidden relative">
-      <div className="container mx-auto px-6 sm:px-12 lg:px-20 xl:px-24">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
-          {/* Text content - asymmetric layout */}
+    <section className="w-full bg-[#F8F9FC] py-10 sm:py-16 overflow-hidden relative border-b border-slate-100">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+          
+          {/* Left Text content */}
           <div className="lg:col-span-6 flex flex-col justify-center order-2 lg:order-1">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-              className="max-w-xl w-full"
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              className="max-w-xl w-full space-y-6"
             >
-              <div className="flex items-center gap-2 mb-4">
-                {heroTag && (
-                  <span className="text-[9px] font-medium uppercase tracking-[0.4em] text-neutral-400">{heroTag}</span>
-                )}
+              {/* Badge Tag */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 text-[#4b7bec] border border-blue-100 shadow-2xs">
+                <span className="size-2 rounded-full bg-[#4b7bec] animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider">
+                  {heroTag || 'Vitrine Officielle · Sélection Premium'}
+                </span>
               </div>
               
               <h1 
-                className={cn("text-4xl sm:text-5xl lg:text-6xl xl:text-7xl text-neutral-900 tracking-tight leading-[1.05] mb-8 uppercase", locale === 'ar' ? 'font-black' : 'font-extralight')}
+                className={cn("text-3xl sm:text-5xl lg:text-6xl text-slate-900 tracking-tight leading-[1.08]", locale === 'ar' ? 'font-black' : 'font-black')}
                 style={fontStyle}
               >
                 {headline}
               </h1>
               
-              <p className="text-xs sm:text-sm text-neutral-500 leading-relaxed mb-10 max-w-md font-light">
+              <p className="text-sm sm:text-base text-slate-500 leading-relaxed font-normal">
                 {subtitle}
               </p>
               
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 pt-2">
+                <button
                   onClick={onShop}
-                  className="px-9 py-4.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-white hover:bg-neutral-900 transition-all duration-300 rounded-none flex items-center justify-center gap-2"
+                  className="h-12 px-7 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
                   style={{ backgroundColor: primary }}
                 >
-                  {cta} <ArrowRight className="size-3.5" />
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
+                  {cta} <ArrowRight className="size-4" />
+                </button>
+                <button
                   onClick={onScroll}
-                  className="px-9 py-4.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-neutral-800 bg-transparent border border-neutral-200 hover:border-neutral-900 transition-all duration-300 rounded-none flex items-center justify-center"
+                  className="h-12 px-6 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-2xs"
                 >
                   {cta2}
-                </motion.button>
+                </button>
+              </div>
+
+              {/* Trust assurance mini-pills */}
+              <div className="grid grid-cols-3 gap-2.5 pt-4 border-t border-slate-200/80">
+                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
+                  <p className="text-[11px] font-black text-slate-900 font-mono">58 Wilayas</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">Livraison Rapide</p>
+                </div>
+                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
+                  <p className="text-[11px] font-black text-slate-900 font-mono">Paiement Cash</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">À la réception</p>
+                </div>
+                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
+                  <p className="text-[11px] font-black text-slate-900 font-mono">100% Garanti</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase">Échange facile</p>
+                </div>
               </div>
             </motion.div>
           </div>
 
-          {/* Media visual - asymmetric split */}
+          {/* Right Visual frame */}
           <div className="lg:col-span-6 order-1 lg:order-2 flex justify-center lg:justify-end">
-            <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] lg:aspect-[4/5] max-w-xl group">
+            <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] lg:aspect-[4/3] max-w-lg group">
               {bannerImg ? (
                 <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 1 }}
-                  className="relative h-full w-full overflow-hidden rounded-none shadow-[0_24px_50px_-16px_rgba(0,0,0,0.06)] border border-neutral-100 bg-neutral-50"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.7 }}
+                  className="relative h-full w-full overflow-hidden rounded-[28px] shadow-xl border border-slate-200/80 bg-slate-100"
                 >
                   {isVideo ? (
                     <video 
@@ -399,23 +415,49 @@ function CleanHero({
                       className="h-full w-full object-cover" 
                     />
                   )}
+                  
+                  {/* Floating product card highlight */}
+                  {products[0] && (
+                    <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 border border-slate-200/80 shadow-lg flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {products[0].main_image && (
+                          <div className="size-11 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">
+                            <img src={products[0].main_image} alt={products[0].name} className="size-full object-cover" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-blue-50 text-[#4b7bec]">
+                            Produit Vedette
+                          </span>
+                          <p className="text-xs font-black text-slate-900 truncate mt-0.5">{products[0].name}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={onShop}
+                        className="h-9 px-3.5 rounded-xl text-xs font-black text-white shrink-0 shadow-sm"
+                        style={{ backgroundColor: primary }}
+                      >
+                        Voir
+                      </button>
+                    </div>
+                  )}
                 </motion.div>
               ) : (
-                /* Fallback */
-                <div className="h-full w-full rounded-none bg-neutral-50 flex flex-col items-center justify-center border border-neutral-200/60 shadow-sm">
-                  <Package className="size-16 text-neutral-300 stroke-[1] mb-3 animate-pulse" />
-                  <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-neutral-400">{t('minimalistConcept')}</span>
+                <div className="h-full w-full rounded-[28px] bg-white flex flex-col items-center justify-center border border-slate-200 shadow-sm p-8 text-center">
+                  <Package className="size-16 text-slate-300 stroke-[1.5] mb-3" />
+                  <span className="text-xs font-bold text-slate-500">{store.name}</span>
+                  <span className="text-[10px] text-slate-400 mt-1">Catalogue en ligne disponible</span>
                 </div>
               )}
-
-
             </div>
           </div>
+
         </div>
       </div>
     </section>
   );
 }
+
 
 // ─── LUXE hero ────────────────────────────────────────────────
 function LuxeMediaBg({ bannerImg, isVideo, storeName }: {

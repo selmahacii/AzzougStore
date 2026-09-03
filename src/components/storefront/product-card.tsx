@@ -72,7 +72,7 @@ function useCardData(product: Product) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CLEAN — structured minimalist: crisp grid, editorial, premium
+// CLEAN — Meta Ads Template Minimalist Storefront Card
 // ─────────────────────────────────────────────────────────────
 function CleanCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
@@ -87,91 +87,109 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       initial={{ opacity: 0, y: 15 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white cursor-pointer transition-all duration-300 pb-2 hover:shadow-[0_12px_30px_rgba(0,0,0,0.03)]"
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="group relative flex flex-col bg-white rounded-[24px] border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
       onClick={() => onQuickView(product.slug)}
     >
-      {/* Image container — aspect-[4/5] with slight padding/whitespace */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-neutral-50 border border-neutral-100/50">
+      {/* Image container */}
+      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-2xl border border-slate-100/60">
         <img
-          src={img1} alt={product.name}
-          className={`h-full w-full object-cover transition-all duration-1000 ease-out will-change-transform group-hover:scale-[1.03] ${img2 ? 'group-hover:opacity-0' : ''}`}
+          src={img1} 
+          alt={product.name}
+          className={cn(
+            "h-full w-full object-cover transition-all duration-700 ease-out group-hover:scale-105",
+            img2 ? "group-hover:opacity-0" : ""
+          )}
         />
         {img2 && (
           <img
-            src={img2} alt={product.name}
-            className="absolute inset-0 h-full w-full object-cover opacity-0 transition-all duration-1000 ease-out group-hover:opacity-100 group-hover:scale-[1.03]"
+            src={img2} 
+            alt={product.name}
+            className="absolute inset-0 h-full w-full object-cover opacity-0 transition-all duration-700 ease-out group-hover:opacity-100 group-hover:scale-105"
           />
         )}
 
-        {/* Wishlist */}
+        {/* Wishlist button */}
         <button
-          onClick={e => { e.stopPropagation(); toggleWishlist(product.id); toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); }}
-          className="absolute top-3 right-3 z-20 size-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-sm border border-neutral-100/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+          onClick={e => { 
+            e.stopPropagation(); 
+            toggleWishlist(product.id); 
+            toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); 
+          }}
+          className="absolute top-2.5 right-2.5 z-20 size-8 rounded-xl bg-white/90 backdrop-blur-md flex items-center justify-center shadow-xs border border-slate-200/60 hover:scale-110 transition-all"
         >
-          <Heart className={`size-3.5 transition-colors ${isInWishlist ? 'fill-rose-500 text-rose-500' : 'text-neutral-400'}`} />
+          <Heart className={cn("size-3.5 transition-colors", isInWishlist ? "fill-rose-500 text-rose-500" : "text-slate-400")} />
         </button>
 
-        {/* Badge */}
-        {discount > 0 ? (
-          <span
-            className="absolute top-3 left-3 z-20 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.2em] text-white"
-            style={{ backgroundColor: primary }}
-          >
-            -{discount}%
-          </span>
-        ) : product.featured ? (
-          <span className="absolute top-3 left-3 z-20 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.2em] bg-neutral-900 text-white">
-            Best Seller
-          </span>
-        ) : null}
-
-        {/* Glassmorphic Add to Cart Panel */}
-        {!isOutOfStock ? (
-          <div className="absolute inset-x-3 bottom-3 z-10 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300 ease-out">
-            <button
-              onClick={e => { e.stopPropagation(); onAddToCart(product); }}
-              className="w-full py-3 backdrop-blur-md bg-white/85 border border-neutral-200/50 text-neutral-900 text-[9px] font-semibold uppercase tracking-[0.3em] flex items-center justify-center gap-1.5 hover:bg-neutral-900 hover:text-white transition-all duration-300"
+        {/* Badges */}
+        <div className="absolute top-2.5 left-2.5 z-20 flex flex-col gap-1">
+          {discount > 0 ? (
+            <span
+              className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white rounded-lg shadow-xs"
+              style={{ backgroundColor: primary }}
             >
-              <ShoppingCart className="size-3" />
-              Ajouter
-            </button>
-          </div>
-        ) : (
-          <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center">
-            <span className="text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-400 border border-neutral-200 bg-white/95 px-4 py-2">
+              -{discount}%
+            </span>
+          ) : product.featured ? (
+            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-lg shadow-xs">
+              Vedette
+            </span>
+          ) : null}
+        </div>
+
+        {/* Out of stock overlay */}
+        {isOutOfStock && (
+          <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
               Épuisé
             </span>
           </div>
         )}
       </div>
 
-      {/* Info */}
-      <div className="pt-4 pb-2 px-1">
-        {product.category && (
-          <p className="text-[8px] font-semibold uppercase tracking-[0.4em] text-neutral-400 mb-1.5">{product.category}</p>
-        )}
-        <h3 className="text-xs font-medium text-neutral-800 leading-relaxed line-clamp-2 group-hover:text-neutral-500 transition-colors">
-          {product.name}
-        </h3>
-        {product.description && (
-          <p className="mt-1 text-[11px] text-neutral-400 font-light leading-relaxed line-clamp-2">{product.description}</p>
-        )}
-        {colors.length > 0 && (
-          <div className="mt-2.5 flex gap-1.5">
-            {colors.map((c, i) => (
-              <div key={i} className="size-2 rounded-full border border-neutral-100" style={{ backgroundColor: c }} />
-            ))}
-          </div>
-        )}
-        <div className="mt-2.5 flex items-baseline gap-2">
-          <span className="text-xs font-semibold text-neutral-900">
-            {formatPrice(product.price)}
-          </span>
-          {product.compare_price !== null && product.compare_price > product.price && (
-            <span className="text-[10px] font-light text-neutral-300 line-through">
-              {formatPrice(product.compare_price)}
+      {/* Info Block */}
+      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
+        <div className="space-y-1">
+          {product.category && (
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{product.category}</p>
+          )}
+          <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors">
+            {product.name}
+          </h3>
+          {colors.length > 0 && (
+            <div className="flex gap-1 pt-0.5">
+              {colors.map((c, i) => (
+                <div key={i} className="size-2.5 rounded-full border border-slate-200" style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Price & Action Row */}
+        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-black text-slate-900 font-mono">
+              {formatPrice(product.price)}
             </span>
+            {product.compare_price !== null && product.compare_price > product.price && (
+              <span className="text-[11px] font-bold text-slate-400 font-mono line-through">
+                {formatPrice(product.compare_price)}
+              </span>
+            )}
+          </div>
+
+          {!isOutOfStock && (
+            <button
+              onClick={e => { 
+                e.stopPropagation(); 
+                onAddToCart(product); 
+              }}
+              className="w-full h-9 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 transition-all shadow-xs hover:opacity-95 active:scale-[0.98]"
+              style={{ backgroundColor: primary }}
+            >
+              <ShoppingCart className="size-3.5" />
+              Ajouter au panier
+            </button>
           )}
         </div>
       </div>

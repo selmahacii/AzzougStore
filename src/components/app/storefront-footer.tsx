@@ -131,33 +131,38 @@ export function StorefrontFooter() {
 
   if (tpl === 'clean') {
     return (
-      <footer className="w-full bg-neutral-50/50 border-t border-neutral-100">
-        <div className="mx-auto max-w-[1600px] px-6 sm:px-12 py-12 sm:pt-24 sm:pb-12">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-16 mb-12 sm:mb-20">
-            <div className="sm:col-span-2 lg:col-span-1 space-y-6">
-              <div className="flex flex-col gap-2">
+      <footer className="w-full bg-white border-t border-slate-100">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-12 mb-12">
+            
+            {/* Store Brand & Description */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
                 {logoUrl ? (
-                  <img src={logoUrl} alt={storeName} className="h-10 w-auto object-contain self-start" />
+                  <img src={logoUrl} alt={storeName} className="h-9 w-auto object-contain" />
                 ) : (
-                  <span className="text-xl font-light uppercase tracking-[0.2em] text-neutral-900" style={{ fontFamily: '"Plus Jakarta Sans", sans-serif' }}>
+                  <span className="text-lg font-black uppercase tracking-tight text-slate-900">
                     {storeName}
                   </span>
                 )}
               </div>
-              {tagline && <p className="text-xs text-neutral-500 leading-relaxed max-w-xs font-light">{tagline}</p>}
-              <div className="flex gap-3 pt-2">
+              <p className="text-xs text-slate-400 leading-relaxed max-w-xs font-medium">
+                {tagline || "Votre vitrine e-commerce de référence. Qualité certifiée et livraison rapide partout en Algérie."}
+              </p>
+              <div className="pt-2">
                 <SocialLinks social={social} color={primary} isClean />
               </div>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Catalogue</h4>
-              <ul className="space-y-3">
+            {/* Catalog */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Catalogue</h4>
+              <ul className="space-y-2.5">
                 {shopLinks.length > 0 ? shopLinks.map(l => (
                   <li key={l}>
                     <button 
                       onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
+                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
                     >
                       {l}
                     </button>
@@ -166,23 +171,24 @@ export function StorefrontFooter() {
                   <li>
                     <button 
                       onClick={() => setStorefrontView('shop')} 
-                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
+                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
                     >
-                      Voir le catalogue
+                      Voir toute la collection
                     </button>
                   </li>
                 )}
               </ul>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Support Client</h4>
-              <ul className="space-y-3">
+            {/* Support & Links */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Service Client</h4>
+              <ul className="space-y-2.5">
                 {HELP_LINKS.map(l => (
                   <li key={l.label}>
                     <button 
                       onClick={() => handleHelpAction(l.label)} 
-                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
+                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
                     >
                       {l.label}
                     </button>
@@ -191,26 +197,26 @@ export function StorefrontFooter() {
               </ul>
             </div>
 
-            <div className="space-y-6">
-              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Nous Contacter</h4>
-              <ContactBlock contact={contact} color={primary} isClean />
+            {/* Contact Card */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Coordonnées</h4>
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                <ContactBlock contact={contact} color={primary} isClean />
+              </div>
             </div>
           </div>
 
-          <div className="pt-10 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
-              <p className="text-[10px] font-light tracking-wider text-neutral-400">
-                {copyright}
-              </p>
-              <div className="flex gap-6">
-                <button className="text-[10px] font-light tracking-wider text-neutral-400 hover:text-neutral-900 hover:underline underline-offset-4 transition-colors">Confidentialité</button>
-                <button className="text-[10px] font-light tracking-wider text-neutral-400 hover:text-neutral-900 hover:underline underline-offset-4 transition-colors">CGV</button>
-              </div>
-            </div>
+          {/* Bottom Bar */}
+          <div className="pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-[11px] font-medium text-slate-400 text-center sm:text-left">
+              {copyright}
+            </p>
 
-            <div className="flex items-center gap-2.5 px-4 py-2 bg-neutral-50 rounded-none border border-neutral-200/60">
-               <ShieldCheck className="size-3.5 text-neutral-400" />
-               <span className="text-[9px] font-medium uppercase tracking-[0.15em] text-neutral-500">Paiement 100% Sécurisé</span>
+            <div className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200/60 shadow-2xs">
+               <ShieldCheck className="size-3.5 text-emerald-600" />
+               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
+                 Paiement Sécurisé à la Livraison
+               </span>
             </div>
           </div>
         </div>

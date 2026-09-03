@@ -165,18 +165,16 @@ function Pagination({ page, totalPages, onPage, primary, dark }: {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// CLEAN GRID — Shopify Dawn / Template Minimaliste
+// CLEAN GRID — Meta Ads Template Minimalist Catalog
 // ══════════════════════════════════════════════════════════════════
 function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; primary: string; setStorefrontView: (v: any) => void }) {
   const d = useProductData(storeId);
   const addItem = useCartStore(s => s.addItem);
   const openCart = useCartStore(s => s.openCart);
   const setSelectedProductSlug = useAppStore(s => s.setSelectedProductSlug);
-  const [newsletterEmail, setNewsletterEmail] = useState('');
 
   const go = (p: number) => { d.setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
-  // Local state for the dual range price inputs (string for the input)
   const [localMin, setLocalMin] = useState('');
   const [localMax, setLocalMax] = useState('');
 
@@ -188,59 +186,78 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
   };
 
   return (
-    <div className="bg-white min-h-screen">
-      <div className="max-w-[1600px] mx-auto px-6 sm:px-12 py-12 lg:py-20">
+    <div className="bg-[#F8F9FC] min-h-screen">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-8 lg:py-12 space-y-6">
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-[8px] font-semibold uppercase tracking-[0.4em] text-neutral-300 mb-10">
-          <button onClick={() => setStorefrontView('home')} className="hover:text-neutral-600 transition-colors">Accueil</button>
-          <ChevronRight className="size-3" />
-          <span className="text-neutral-900">Collections</span>
-        </div>
-
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-16 pb-8 border-b border-neutral-100">
+        {/* Top Header Card (Meta Ads Style) */}
+        <div className="bg-white rounded-2xl sm:rounded-[28px] border border-slate-100 p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-extralight tracking-tight text-neutral-900 uppercase">
-              {d.selectedCategory === 'all' ? 'La Collection' : d.selectedCategory}
-            </h1>
-            <p className="mt-2.5 text-[9px] text-neutral-400 font-semibold uppercase tracking-[0.3em]">{d.total} pièces</p>
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+              <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors">Accueil</button>
+              <ChevronRight className="size-3 text-slate-300" />
+              <span className="text-slate-800">Catalogue</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
+                {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
+                {d.total} article{d.total > 1 ? 's' : ''}
+              </span>
+            </div>
           </div>
-          {/* Sort */}
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="size-3.5 text-neutral-400" />
-            <select value={d.sortBy} onChange={e => d.setSortBy(e.target.value as SortOption)}
-              className="text-[9px] font-semibold uppercase tracking-[0.25em] text-neutral-500 bg-transparent border-none outline-none cursor-pointer">
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 shadow-2xs">
+            <SlidersHorizontal className="size-3.5 text-slate-400" />
+            <select 
+              value={d.sortBy} 
+              onChange={e => d.setSortBy(e.target.value as SortOption)}
+              className="text-xs font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer"
+            >
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-16">
-          {/* Sidebar — w-64, sticky */}
-          <aside className="hidden lg:flex flex-col w-64 shrink-0 gap-12 sticky top-28 h-fit">
-            {/* Search */}
-            <div className="space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Recherche</p>
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar Filters */}
+          <aside className="hidden lg:flex flex-col w-72 shrink-0 gap-5 sticky top-28 h-fit">
+            
+            {/* Search Card */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Recherche directe</label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-neutral-300" />
-                <input type="text" value={d.search} onChange={e => d.setSearch(e.target.value)}
-                  placeholder="Chercher..." className="w-full h-10 pl-9 pr-4 text-xs font-light rounded-none border border-neutral-200 bg-transparent focus:outline-none focus:border-neutral-900 transition-colors" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <input 
+                  type="text" 
+                  value={d.search} 
+                  onChange={e => d.setSearch(e.target.value)}
+                  placeholder="Chercher un produit..." 
+                  className="w-full h-10 pl-9 pr-3 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all" 
+                />
               </div>
             </div>
 
-            {/* Categories with sleek textual underlines */}
-            <div className="space-y-4">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Catégories</p>
-              <div className="flex flex-col gap-2">
-                {[{ id: 'all', label: 'Tous' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-                  <button key={cat.id} onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                    className={`flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.2em] text-left py-2 transition-all duration-300 border-b ${d.selectedCategory === cat.id ? 'text-neutral-900 border-neutral-900' : 'text-neutral-400 border-transparent hover:text-neutral-900'}`}
+            {/* Categories Card */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
+              <div className="flex flex-col gap-1.5">
+                {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
+                  <button 
+                    key={cat.id} 
+                    onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                    className={cn(
+                      "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all",
+                      d.selectedCategory === cat.id 
+                        ? "bg-blue-50 text-[#4b7bec] font-black shadow-2xs" 
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    )}
                   >
                     <span>{cat.label}</span>
                     {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                      <span className="text-[8px] font-semibold ml-2">
-                        ({d.categoryCounts[cat.id]})
+                      <span className="text-[10px] font-mono font-bold text-slate-400">
+                        {d.categoryCounts[cat.id]}
                       </span>
                     )}
                   </button>
@@ -248,134 +265,141 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               </div>
             </div>
 
-            {/* Prix — dual range inputs */}
-            <div className="space-y-4">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Prix</p>
-              {(d.minPrice !== null || d.maxPrice !== null) && (
-                <p className="text-[10px] font-semibold text-neutral-500">
-                  {d.minPrice !== null ? `${d.minPrice.toLocaleString('fr-DZ')} DA` : '0 DA'}
-                  {' — '}
-                  {d.maxPrice !== null ? `${d.maxPrice.toLocaleString('fr-DZ')} DA` : '∞'}
-                </p>
-              )}
-              <div className="flex items-center gap-2">
-                <input type="number" value={localMin} onChange={e => setLocalMin(e.target.value)} placeholder="Min"
-                  className="w-full h-9 px-3 text-xs font-light border border-neutral-200 rounded-none focus:outline-none focus:border-neutral-900 bg-transparent" />
-                <span className="text-neutral-300 text-xs">—</span>
-                <input type="number" value={localMax} onChange={e => setLocalMax(e.target.value)} placeholder="Max"
-                  className="w-full h-9 px-3 text-xs font-light border border-neutral-200 rounded-none focus:outline-none focus:border-neutral-900 bg-transparent" />
+            {/* Price Filter Card */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Tranche de Prix (DA)</label>
+              <div className="grid grid-cols-2 gap-2">
+                <input 
+                  type="number" 
+                  value={localMin} 
+                  onChange={e => setLocalMin(e.target.value)} 
+                  placeholder="Min DA"
+                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
+                />
+                <input 
+                  type="number" 
+                  value={localMax} 
+                  onChange={e => setLocalMax(e.target.value)} 
+                  placeholder="Max DA"
+                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
+                />
               </div>
-              <button onClick={applyPrice}
-                className="w-full h-9 text-[9px] font-semibold uppercase tracking-widest text-white rounded-none bg-neutral-900 hover:bg-neutral-800 transition-all duration-300"
+              <button 
+                onClick={applyPrice}
+                className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs transition-all hover:opacity-95"
+                style={{ backgroundColor: primary }}
               >
-                Appliquer
+                Filtrer
               </button>
             </div>
 
-            {/* Disponibilité — checkboxes */}
-            <div className="space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Disponibilité</p>
-              <div className="flex flex-col gap-2.5">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={d.inStockOnly} onChange={e => d.setInStockOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">En stock</span>
+            {/* Availability Checks */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilité</label>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+                  <input 
+                    type="checkbox" 
+                    checked={d.inStockOnly} 
+                    onChange={e => d.setInStockOnly(e.target.checked)}
+                    className="size-4 rounded accent-[#4b7bec]" 
+                  />
+                  En stock uniquement
                 </label>
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={d.preorderOnly} onChange={e => d.setPreorderOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">Pré-commande</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={d.promoOnly} onChange={e => d.setPromoOnly(e.target.checked)}
-                    className="size-3.5 accent-neutral-900 rounded-none border-neutral-200" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-neutral-400 group-hover:text-neutral-900 transition-colors">En promotion</span>
+                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+                  <input 
+                    type="checkbox" 
+                    checked={d.promoOnly} 
+                    onChange={e => d.setPromoOnly(e.target.checked)}
+                    className="size-4 rounded accent-[#4b7bec]" 
+                  />
+                  En promotion
                 </label>
               </div>
             </div>
 
             {d.hasActiveFilters && (
-              <button onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
-                className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400 hover:text-neutral-900 transition-colors flex items-center gap-1.5">
-                <X className="size-3"/> Réinitialiser
+              <button 
+                onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
+                className="h-10 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors flex items-center justify-center gap-1.5 border border-rose-100"
+              >
+                <X className="size-3.5"/> Réinitialiser les filtres
               </button>
             )}
-
-            {/* Newsletter widget */}
-            <div className="mt-2 pt-6 border-t border-neutral-100 space-y-3">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-neutral-300">Rejoignez-nous</p>
-              <p className="text-[11px] text-neutral-400 font-light leading-relaxed">Recevez nos offres exclusives en avant-première.</p>
-              <div className="flex gap-1.5">
-                <input type="email" value={newsletterEmail} onChange={e => setNewsletterEmail(e.target.value)}
-                  placeholder="Votre e-mail"
-                  className="flex-1 h-9 px-3 text-xs font-light border border-neutral-200 rounded-none bg-transparent focus:outline-none focus:border-neutral-900 min-w-0" />
-                <button onClick={() => { if (newsletterEmail) { setNewsletterEmail(''); } }}
-                  className="h-9 w-9 flex items-center justify-center text-white bg-neutral-900 hover:bg-neutral-800 rounded-none shrink-0 transition-all"
-                >
-                  →
-                </button>
-              </div>
-            </div>
           </aside>
 
-          {/* Mobile filter bar */}
-          <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar">
+          {/* Mobile Filter Chips */}
+          <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar w-full">
             {['all', ...d.normalizedCategories].map(cat => (
-              <button key={cat} onClick={() => { d.setSelectedCategory(cat); d.setSelectedCategoryStore(cat === 'all' ? null : cat); }}
-                className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
-                style={d.selectedCategory === cat ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
-                {cat === 'all' ? 'Tous' : cat}
+              <button 
+                key={cat} 
+                onClick={() => { d.setSelectedCategory(cat); d.setSelectedCategoryStore(cat === 'all' ? null : cat); }}
+                className={cn(
+                  "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap",
+                  d.selectedCategory === cat 
+                    ? "bg-[#4b7bec] text-white border-[#4b7bec]" 
+                    : "bg-white text-slate-600 border-slate-200"
+                )}
+              >
+                {cat === 'all' ? 'Toutes' : cat}
               </button>
             ))}
-            <button onClick={() => d.setInStockOnly(!d.inStockOnly)}
-              className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
-              style={d.inStockOnly ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
-              En stock
-            </button>
-            <button onClick={() => d.setPromoOnly(!d.promoOnly)}
-              className="shrink-0 px-5 py-2.5 text-[9px] font-semibold uppercase tracking-widest rounded-none border transition-all"
-              style={d.promoOnly ? { backgroundColor: primary, borderColor: primary, color: '#fff' } : { borderColor: '#e5e7eb', color: '#9ca3af' }}>
-              Promo
-            </button>
           </div>
 
-
-          {/* Grid — 3 columns on desktop */}
+          {/* Main Grid */}
           <div className="flex-1 min-w-0">
             {d.loading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="aspect-[4/5] bg-slate-100" />)}
+              <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <Skeleton key={i} className="aspect-[4/5] bg-white rounded-[24px] border border-slate-100 shadow-sm" />
+                ))}
               </div>
             ) : d.products.length === 0 ? (
-              <div className="py-32 flex flex-col items-center gap-6 text-center">
-                <div className="size-20 rounded-full bg-slate-50 flex items-center justify-center">
-                  <Package className="size-8 text-slate-200" />
+              <div className="bg-white rounded-[32px] border border-slate-100 p-16 flex flex-col items-center justify-center gap-4 text-center shadow-sm">
+                <div className="size-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                  <Package className="size-7" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-600">Aucun produit trouvé</p>
-                  <p className="text-xs text-slate-400 mt-1">Essayez d'autres filtres</p>
-                </div>
-                <button onClick={d.clearFilters} className="px-8 py-3 text-[11px] font-black uppercase tracking-widest text-white rounded-xl transition-all hover:brightness-110"
-                  style={{ backgroundColor: primary }}>
-                  Réinitialiser
-                </button>
+                <h3 className="text-base font-black text-slate-900">Aucun produit disponible</h3>
+                <p className="text-xs text-slate-400 max-w-sm">
+                  {d.hasActiveFilters ? 'Aucun produit ne correspond à vos filtres sélectionnés.' : 'Le catalogue de cette boutique sera bientôt complété.'}
+                </p>
+                {d.hasActiveFilters && (
+                  <button 
+                    onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
+                    className="mt-2 h-10 px-5 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all"
+                  >
+                    Effacer les filtres
+                  </button>
+                )}
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
-                  <AnimatePresence mode="popLayout">
-                    {d.products.map(p => (
-                      <ProductCard key={p.id} product={p}
-                        onQuickView={slug => setSelectedProductSlug(slug)}
-                        onAddToCart={p => { addItem(p, 1); openCart(); }} />
-                    ))}
-                  </AnimatePresence>
+                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                  {d.products.map(product => (
+                    <ProductCard 
+                      key={product.id} 
+                      product={product}
+                      onQuickView={(slug) => { 
+                        setSelectedProductSlug(slug); 
+                        setStorefrontView('product'); 
+                      }}
+                      onAddToCart={(p) => { addItem(p, 1); openCart(); }}
+                    />
+                  ))}
                 </div>
-                <Pagination page={d.page} totalPages={d.totalPages} onPage={go} primary={primary} />
+
+                <Pagination 
+                  page={d.page} 
+                  totalPages={d.totalPages} 
+                  onPage={go} 
+                  primary={primary} 
+                />
               </>
             )}
           </div>
+
         </div>
+
       </div>
     </div>
   );
