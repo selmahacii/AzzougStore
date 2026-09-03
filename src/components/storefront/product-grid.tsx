@@ -191,54 +191,84 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-8 lg:py-12 space-y-6">
 
         {/* Top Header Card (Meta Ads Style) */}
-        <div className="bg-white rounded-2xl sm:rounded-[28px] border border-slate-100 p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
               <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors">Accueil</button>
               <ChevronRight className="size-3 text-slate-300" />
               <span className="text-slate-800">Catalogue</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
                 {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
               </h1>
               <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
-                {d.total} article{d.total > 1 ? 's' : ''}
+                {d.total} article{d.total > 1 ? 's' : ''} disponible{d.total > 1 ? 's' : ''}
               </span>
             </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Parcourez notre sélection exclusive avec livraison rapide disponible sur les 58 Wilayas.
+            </p>
           </div>
 
-          {/* Sort Selector */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2 shadow-2xs">
-            <SlidersHorizontal className="size-3.5 text-slate-400" />
-            <select 
-              value={d.sortBy} 
-              onChange={e => d.setSortBy(e.target.value as SortOption)}
-              className="text-xs font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer"
-            >
-              {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+          {/* Quick Tactical Actions: Search & Sort */}
+          <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+              <input
+                type="text"
+                value={d.search}
+                onChange={e => d.setSearch(e.target.value)}
+                placeholder="Recherche rapide..."
+                className="w-full h-11 pl-9 pr-3 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all"
+              />
+              {d.search && (
+                <button onClick={() => d.setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 h-11 shadow-2xs shrink-0">
+              <SlidersHorizontal className="size-3.5 text-slate-400" />
+              <select 
+                value={d.sortBy} 
+                onChange={e => d.setSortBy(e.target.value as SortOption)}
+                className="text-xs font-bold text-slate-700 bg-transparent border-none outline-none cursor-pointer"
+              >
+                {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Global Catalog Highlights Row (Meta Ads KPI Style) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Catalogue Actif</span>
+            <p className="text-lg font-black text-slate-900 font-mono">{d.total} Références</p>
+            <p className="text-[10px] font-bold text-emerald-600">Produits certifiés</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Expédition</span>
+            <p className="text-lg font-black text-slate-900 font-mono">58 Wilayas</p>
+            <p className="text-[10px] font-bold text-slate-400">Livraison à domicile & relais</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Paiement</span>
+            <p className="text-lg font-black text-slate-900 font-mono">Cash (COD)</p>
+            <p className="text-[10px] font-bold text-emerald-600">À la réception du colis</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Assistance</span>
+            <p className="text-lg font-black text-slate-900 font-mono">7j / 7</p>
+            <p className="text-[10px] font-bold text-slate-400">Service client réactif</p>
           </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar Filters */}
           <aside className="hidden lg:flex flex-col w-72 shrink-0 gap-5 sticky top-28 h-fit">
-            
-            {/* Search Card */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Recherche directe</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  value={d.search} 
-                  onChange={e => d.setSearch(e.target.value)}
-                  placeholder="Chercher un produit..." 
-                  className="w-full h-10 pl-9 pr-3 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all" 
-                />
-              </div>
-            </div>
 
             {/* Categories Card */}
             <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
@@ -249,7 +279,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                     key={cat.id} 
                     onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
                     className={cn(
-                      "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all",
+                      "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all",
                       d.selectedCategory === cat.id 
                         ? "bg-blue-50 text-[#4b7bec] font-black shadow-2xs" 
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -290,14 +320,14 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                 className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs transition-all hover:opacity-95"
                 style={{ backgroundColor: primary }}
               >
-                Filtrer
+                Appliquer le filtre
               </button>
             </div>
 
             {/* Availability Checks */}
             <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilité</label>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
                   <input 
                     type="checkbox" 

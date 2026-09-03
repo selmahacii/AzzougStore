@@ -335,19 +335,27 @@ function CleanDetail() {
   };
 
   if (d.loading) return (
-    <div className="bg-white min-h-screen">
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-8">
-        <div className="flex flex-col lg:flex-row gap-10 lg:gap-16">
-          <div className="flex-1 space-y-4">
-            <Skeleton className="aspect-square w-full rounded-2xl bg-neutral-100" />
-            <div className="grid grid-cols-4 gap-3">{[0,1,2,3].map(i=><Skeleton key={i} className="aspect-square rounded-xl bg-neutral-100"/>)}</div>
-          </div>
-          <div className="lg:w-[480px] space-y-6">
-            <Skeleton className="h-8 w-2/3 bg-neutral-100 rounded-xl"/>
-            <Skeleton className="h-12 w-full bg-neutral-100 rounded-xl"/>
-            <Skeleton className="h-6 w-1/3 bg-neutral-100 rounded-xl"/>
-            <Skeleton className="h-32 w-full bg-neutral-100 rounded-xl"/>
-            <Skeleton className="h-14 w-full bg-neutral-100 rounded-xl"/>
+    <div className="bg-[#F8F9FC] min-h-screen py-10 sm:py-16">
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-8">
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
+            <div className="lg:col-span-6 space-y-4">
+              <Skeleton className="aspect-square w-full rounded-2xl sm:rounded-[24px] bg-slate-100" />
+              <div className="grid grid-cols-5 gap-3">
+                {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="aspect-square rounded-xl bg-slate-100" />)}
+              </div>
+            </div>
+            <div className="lg:col-span-6 space-y-6">
+              <Skeleton className="h-6 w-1/4 rounded-lg bg-slate-100" />
+              <Skeleton className="h-10 w-3/4 rounded-xl bg-slate-100" />
+              <Skeleton className="h-8 w-1/3 rounded-xl bg-slate-100" />
+              <Skeleton className="h-24 w-full rounded-2xl bg-slate-100" />
+              <Skeleton className="h-12 w-full rounded-xl bg-slate-100" />
+              <div className="grid grid-cols-2 gap-4">
+                <Skeleton className="h-14 rounded-xl bg-slate-100" />
+                <Skeleton className="h-14 rounded-xl bg-slate-100" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -355,210 +363,376 @@ function CleanDetail() {
   );
 
   if (!p) return (
-    <div className="bg-white min-h-screen flex flex-col items-center justify-center gap-6">
-      <div className="size-20 bg-neutral-100 rounded-2xl flex items-center justify-center">
-        <AlertTriangle className="size-8 text-neutral-400"/>
+    <div className="bg-[#F8F9FC] min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-12 max-w-md w-full text-center shadow-sm space-y-4">
+        <div className="size-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto text-slate-400">
+          <AlertTriangle className="size-8 text-amber-500" />
+        </div>
+        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{t('productNotFound')}</h3>
+        <p className="text-xs text-slate-400">Ce produit n\'est plus disponible ou a été déplacé.</p>
+        <button 
+          onClick={d.handleBack} 
+          className="mt-2 h-11 px-6 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 transition-all inline-flex items-center gap-2"
+        >
+          <ArrowLeft className="size-4" /> {t('backToShop')}
+        </button>
       </div>
-      <p className="text-lg font-semibold text-neutral-700">{t('productNotFound')}</p>
-      <button onClick={d.handleBack} className="text-sm font-medium text-neutral-500 hover:text-neutral-900 flex items-center gap-2 transition-colors">
-        <ArrowLeft className="size-4"/> {t('backToShop')}
-      </button>
     </div>
   );
 
+  const savingsAmount = p.compare_price && p.compare_price > p.price ? p.compare_price - p.price : 0;
+
   return (
-    <div className="bg-white min-h-screen" dir={dir}>
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-10">
-        <nav className="flex items-center gap-1.5 text-xs text-neutral-400 mb-8 flex-wrap">
-          <button onClick={d.handleBack} className="hover:text-neutral-700 transition-colors uppercase tracking-widest font-bold">{d.activeStore?.name ?? 'Boutique'}</button>
-          <ChevronRight className="size-3.5"/>
-          {p.category && <><button onClick={d.handleBack} className="hover:text-neutral-700 transition-colors uppercase tracking-widest font-bold">{p.category}</button><ChevronRight className="size-3.5"/></>}
-          <span className="text-neutral-700 font-bold uppercase tracking-widest line-clamp-1">{p.name}</span>
-        </nav>
+    <div className="bg-[#F8F9FC] min-h-screen py-8 sm:py-12" dir={dir}>
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-8 space-y-8">
 
-        <div className="flex flex-col lg:flex-row gap-10 lg:gap-16">
-          {/* Gallery — sharp rectangular corners */}
-          <div className="flex-1 flex flex-col gap-4">
-            <motion.div key={d.activeImage} initial={{ opacity: 0.7 }} animate={{ opacity: 1 }}
-              className="relative aspect-square bg-neutral-50 overflow-hidden border border-slate-100">
-              {d.allImages[d.activeImage]
-                ? <img src={d.allImages[d.activeImage]} alt={p.name} className="h-full w-full object-cover"/>
-                : <div className="h-full w-full flex items-center justify-center"><Package className="size-20 text-neutral-200"/></div>}
-              {d.discount > 0 && <div className="absolute top-4 start-4 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 shadow-lg" style={{ backgroundColor: primary }}>-{d.discount}%</div>}
-              {isOOS && <div className="absolute inset-0 bg-white/70 flex items-center justify-center backdrop-blur-sm"><span className="text-xs font-black uppercase tracking-widest text-neutral-600 bg-white px-6 py-3 border shadow-xl">{t('outOfStock')}</span></div>}
-            </motion.div>
-            {d.allImages.length > 1 && (
-              <div className="grid grid-cols-5 gap-2">
-                {d.allImages.slice(0, 5).map((img, i) => (
-                  <button key={i} onClick={() => d.setActiveImage(i)}
-                    className={`aspect-square overflow-hidden border-2 transition-all ${d.activeImage === i ? 'opacity-100' : 'border-neutral-100 hover:border-neutral-300 opacity-50 hover:opacity-80'}`}
-                    style={d.activeImage === i ? { borderColor: primary } : {}}>
-                    <img src={img} alt={`Vue ${i+1}`} className="h-full w-full object-cover"/>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Info */}
-          <div className="lg:w-[520px] shrink-0 space-y-8">
+        {/* Top Breadcrumbs & Back Navigation (Meta Ads Style) */}
+        <div className="bg-white rounded-2xl sm:rounded-[24px] border border-slate-100 px-6 py-4 shadow-sm flex items-center justify-between gap-4 flex-wrap">
+          <nav className="flex items-center gap-2 text-xs font-bold text-slate-400 flex-wrap">
+            <button onClick={d.handleBack} className="hover:text-slate-900 transition-colors uppercase tracking-wider font-bold">
+              {d.activeStore?.name ?? 'Boutique'}
+            </button>
+            <ChevronRight className="size-3.5 text-slate-300" />
             {p.category && (
-              <span className="inline-block text-[10px] font-black text-white uppercase tracking-[0.2em] px-3 py-1.5"
-                style={{ backgroundColor: primary }}>
-                {p.category}
-              </span>
+              <>
+                <button onClick={d.handleBack} className="hover:text-slate-900 transition-colors uppercase tracking-wider font-bold">
+                  {p.category}
+                </button>
+                <ChevronRight className="size-3.5 text-slate-300" />
+              </>
             )}
-            <h1 className="text-3xl sm:text-4xl font-black text-neutral-900 leading-[1.1] tracking-tight">{p.name}</h1>
-            <div className="flex items-center gap-5">
-              <span className="text-4xl font-black text-neutral-900 tracking-tighter">{formatPrice(p.price)}</span>
-              {p.compare_price !== null && p.compare_price > p.price && <span className="text-xl text-neutral-300 line-through font-bold">{formatPrice(p.compare_price)}</span>}
-            </div>
-            {p.description && <p className="text-sm text-neutral-500 leading-relaxed font-medium">{p.description}</p>}
-            <div className="h-px bg-slate-100 w-full"/>
+            <span className="text-slate-900 font-black uppercase tracking-wider line-clamp-1">{p.name}</span>
+          </nav>
+
+          <button 
+            onClick={d.handleBack} 
+            className="flex items-center gap-1.5 text-xs font-black text-slate-600 hover:text-slate-900 transition-colors uppercase tracking-wider"
+          >
+            <ArrowLeft className="size-3.5" /> Retour au catalogue
+          </button>
+        </div>
+
+        {/* Main Product Box */}
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 lg:p-12 shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
             
-            {p.variants && p.variants.length > 0 && (
-              <div className="space-y-6">
-                {colorVariants.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-black text-neutral-900 uppercase tracking-widest">
-                      {t('color')} : <span className="text-neutral-500 normal-case font-bold">{p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color ? activeVariantVal : ''}</span>
-                    </p>
-                    <div className="flex flex-wrap gap-2.5">
-                      {colorVariants.map(v => {
-                        const isSelected = activeVariantVal === v.value;
-                        return (
-                          <button
-                            key={v.value}
-                            type="button"
-                            onClick={() => handleSelectVariant(v.value)}
-                            className={cn(
-                              "relative size-9 rounded-full border transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                              isSelected ? "border-neutral-950 ring-2 ring-offset-2 ring-neutral-950" : "border-slate-200"
-                            )}
-                            style={{ backgroundColor: v.color }}
-                            title={v.value}
-                          />
-                        );
-                      })}
-                    </div>
+            {/* Gallery Column */}
+            <div className="lg:col-span-6 flex flex-col gap-4">
+              <motion.div 
+                key={d.activeImage} 
+                initial={{ opacity: 0.8 }} 
+                animate={{ opacity: 1 }}
+                className="relative aspect-square bg-slate-50 rounded-2xl sm:rounded-[28px] overflow-hidden border border-slate-100 shadow-2xs"
+              >
+                {d.allImages[d.activeImage] ? (
+                  <img src={d.allImages[d.activeImage]} alt={p.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center">
+                    <Package className="size-20 text-slate-300" />
+                  </div>
+                )}
+                
+                {d.discount > 0 && (
+                  <div className="absolute top-4 start-4 bg-rose-500 text-white text-[11px] font-black uppercase font-mono px-3 py-1.5 rounded-xl shadow-xs">
+                    -{d.discount}%
+                  </div>
+                )}
+                
+                {isOOS && (
+                  <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-600 bg-white px-6 py-3 rounded-2xl border border-rose-100 shadow-lg">
+                      {t('outOfStock')}
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+
+              {d.allImages.length > 1 && (
+                <div className="grid grid-cols-5 gap-3">
+                  {d.allImages.slice(0, 5).map((img, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => d.setActiveImage(i)}
+                      className={cn(
+                        "aspect-square rounded-xl overflow-hidden border-2 transition-all bg-white",
+                        d.activeImage === i ? "border-[#4b7bec] ring-2 ring-blue-100" : "border-slate-100 opacity-60 hover:opacity-100 hover:border-slate-300"
+                      )}
+                      style={d.activeImage === i ? { borderColor: primary } : {}}
+                    >
+                      <img src={img} alt={`Vue ${i+1}`} className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Product Purchase Column */}
+            <div className="lg:col-span-6 flex flex-col justify-between space-y-6">
+              <div className="space-y-5">
+                {/* Header Pills */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {p.category && (
+                    <span className="px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
+                      {p.category}
+                    </span>
+                  )}
+                  <span className={cn(
+                    "px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono border",
+                    isOOS 
+                      ? "bg-rose-50 text-rose-600 border-rose-100" 
+                      : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                  )}>
+                    {isOOS ? 'Rupture temporaire' : 'En stock - Expédition immédiate'}
+                  </span>
+                </div>
+
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight leading-tight">
+                  {p.name}
+                </h1>
+
+                {/* Price Section */}
+                <div className="flex items-center gap-4 flex-wrap bg-slate-50/80 rounded-2xl p-4 border border-slate-100">
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-3xl sm:text-4xl font-black text-slate-900 font-mono tracking-tight">
+                      {formatPrice(p.price)}
+                    </span>
+                    {p.compare_price !== null && p.compare_price > p.price && (
+                      <span className="text-lg text-slate-400 font-mono line-through font-bold">
+                        {formatPrice(p.compare_price)}
+                      </span>
+                    )}
+                  </div>
+                  {savingsAmount > 0 && (
+                    <span className="px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono bg-emerald-50 text-emerald-600 border border-emerald-100">
+                      Économisez {formatPrice(savingsAmount)}
+                    </span>
+                  )}
+                </div>
+
+                {p.description && (
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
+                    {p.description}
+                  </p>
+                )}
+
+                <div className="h-px bg-slate-100 w-full" />
+
+                {/* Variants Selection */}
+                {p.variants && p.variants.length > 0 && (
+                  <div className="space-y-5">
+                    {colorVariants.length > 0 && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                          {t('color')} : <span className="text-slate-900 font-black">{p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color ? activeVariantVal : ''}</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2.5">
+                          {colorVariants.map(v => {
+                            const isSelected = activeVariantVal === v.value;
+                            return (
+                              <button
+                                key={v.value}
+                                type="button"
+                                onClick={() => handleSelectVariant(v.value)}
+                                className={cn(
+                                  "relative size-9 rounded-full border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
+                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900" : "border-slate-200"
+                                )}
+                                style={{ backgroundColor: v.color }}
+                                title={v.value}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {textVariants.length > 0 && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                          {t('optionSize')} : <span className="text-slate-900 font-black">{!(p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color) ? activeVariantVal : ''}</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {textVariants.map(v => {
+                            const isSelected = activeVariantVal === v.value;
+                            return (
+                              <button
+                                key={v.value}
+                                type="button"
+                                onClick={() => handleSelectVariant(v.value)}
+                                className={cn(
+                                  "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95",
+                                  isSelected 
+                                    ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
+                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
+                                )}
+                              >
+                                {v.value}
+                                {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {textVariants.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-black text-neutral-900 uppercase tracking-widest">
-                      {t('optionSize')} : <span className="text-neutral-500 normal-case font-bold">{!(p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color) ? activeVariantVal : ''}</span>
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {textVariants.map(v => {
-                        const isSelected = activeVariantVal === v.value;
-                        return (
-                          <button
-                            key={v.value}
-                            type="button"
-                            onClick={() => handleSelectVariant(v.value)}
-                            className={cn(
-                              "px-4 py-2.5 text-xs font-black uppercase tracking-wider border transition-all active:scale-95",
-                              isSelected 
-                                ? "bg-neutral-950 border-neutral-950 text-white" 
-                                : "bg-white border-slate-200 text-neutral-800 hover:border-slate-400"
-                            )}
-                          >
-                            {v.value}
-                            {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
-                          </button>
-                        );
-                      })}
+                {/* Quantity & Actions */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center bg-slate-50 border border-slate-200/80 rounded-xl p-1 shadow-2xs">
+                      <button 
+                        type="button" 
+                        onClick={() => handleQuantityChange(Math.max(1, quantity - 1))} 
+                        className="size-11 flex items-center justify-center hover:bg-white rounded-lg transition-all text-slate-600"
+                      >
+                        <Minus className="size-4" />
+                      </button>
+                      <span className="w-12 text-center text-sm font-black font-mono text-slate-900">{quantity}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => handleQuantityChange(quantity + 1)} 
+                        className="size-11 flex items-center justify-center hover:bg-white rounded-lg transition-all text-slate-600"
+                      >
+                        <Plus className="size-4" />
+                      </button>
                     </div>
+
+                    <button 
+                      type="button" 
+                      onClick={d.handleToggleWishlist} 
+                      className={cn(
+                        "size-13 rounded-xl border flex items-center justify-center transition-all active:scale-95 shadow-2xs",
+                        wishlisted 
+                          ? "border-rose-200 bg-rose-50 text-rose-500" 
+                          : "border-slate-200 bg-white text-slate-400 hover:text-slate-600 hover:border-slate-300"
+                      )}
+                    >
+                      <Heart className="size-5" fill={wishlisted ? 'currentColor' : 'none'} />
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
 
+                  {/* Dual CTA Buttons */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {!isOOS ? (
+                      <button 
+                        onClick={d.handleBuyNow}
+                        className="h-13 rounded-xl flex items-center justify-center gap-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xs transition-all hover:opacity-95 active:scale-[0.98]"
+                        style={{ backgroundColor: primary }}
+                      >
+                        <Zap className="size-4" /> {t('buyNow')}
+                      </button>
+                    ) : null}
+                    
+                    <button 
+                      disabled={isOOS} 
+                      onClick={d.handleAddToCart}
+                      className="h-13 rounded-xl flex items-center justify-center gap-2.5 text-xs font-black uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2 hover:bg-slate-50 active:scale-[0.98]"
+                      style={{ borderColor: primary, color: primary }}
+                    >
+                      {d.addedToCart ? (
+                        <><CheckCircle className="size-4" /> {t('added')}</>
+                      ) : (
+                        <><ShoppingCart className="size-4" /> {t('addToCart')}</>
+                      )}
+                    </button>
+                  </div>
+                </div>
 
-            {/* Quantity Selector & Wishlist */}
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center bg-slate-50 border border-slate-100 p-1">
-                  <button type="button" onClick={() => handleQuantityChange(Math.max(1, quantity - 1))} className="size-12 flex items-center justify-center hover:bg-white transition-all text-neutral-600"><Minus className="size-4"/></button>
-                  <span className="w-12 text-center text-sm font-black tabular-nums">{quantity}</span>
-                  <button type="button" onClick={() => handleQuantityChange(quantity + 1)} className="size-12 flex items-center justify-center hover:bg-white transition-all text-neutral-600"><Plus className="size-4"/></button>
-                </div>
-                <button type="button" onClick={d.handleToggleWishlist} className={`size-14 flex items-center justify-center border-2 transition-all active:scale-95 ${wishlisted ? 'border-red-100 bg-red-50 text-red-500' : 'border-slate-100 text-neutral-300 hover:border-slate-300 hover:text-neutral-500'}`}>
-                  <Heart className="size-6" fill={wishlisted ? 'currentColor' : 'none'}/>
-                </button>
               </div>
+
+              {/* 4 Reassurance Cards (Meta Ads KPI style) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-slate-100">
+                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
+                  <Truck className="size-4 text-[#4b7bec]" />
+                  <p className="text-[10px] font-black uppercase text-slate-800">58 Wilayas</p>
+                  <p className="text-[9px] text-slate-400 font-medium">Livraison Express</p>
+                </div>
+                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
+                  <ShieldCheck className="size-4 text-emerald-600" />
+                  <p className="text-[10px] font-black uppercase text-slate-800">Paiement COD</p>
+                  <p className="text-[9px] text-slate-400 font-medium">À la réception</p>
+                </div>
+                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
+                  <CheckCircle className="size-4 text-blue-600" />
+                  <p className="text-[10px] font-black uppercase text-slate-800">Garantie</p>
+                  <p className="text-[9px] text-slate-400 font-medium">100% Conforme</p>
+                </div>
+                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
+                  <Zap className="size-4 text-amber-500" />
+                  <p className="text-[10px] font-black uppercase text-slate-800">Service 7j/7</p>
+                  <p className="text-[9px] text-slate-400 font-medium">Support rapide</p>
+                </div>
+              </div>
+
             </div>
-            {/* CTAs: Ajouter au panier (outline) + Commander maintenant (filled) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button disabled={isOOS} onClick={d.handleAddToCart}
-                  className="h-16 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.2em] transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2 hover:bg-slate-50 active:scale-[0.98]"
-                  style={{ borderColor: primary, color: primary }}>
-                  {d.addedToCart ? <><CheckCircle className="size-4"/>{t('added')}</> : <><ShoppingCart className="size-4"/>{t('addToCart')}</>}
-                </button>
-                {!isOOS && (
-                  <button onClick={d.handleBuyNow}
-                    className="h-16 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-[0.2em] text-white transition-all hover:brightness-110 active:scale-[0.98]"
-                    style={{ backgroundColor: primary }}>
-                    <Zap className="size-4"/> {t('buyNow')}
-                  </button>
-                )}
-              </div>
-              {/* Trust badges */}
-              <div className="flex items-center gap-6 pt-2">
-                <div className="flex items-center gap-2 text-neutral-500">
-                  <Truck className="size-4 shrink-0" style={{ color: primary }}/>
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t('shippingPromoClean')}</span>
-                </div>
-                <div className="flex items-center gap-2 text-neutral-500">
-                  <ShieldCheck className="size-4 shrink-0" style={{ color: primary }}/>
-                  <span className="text-[10px] font-bold uppercase tracking-wider">{t('securePaymentSSL')}</span>
-                </div>
-              </div>
-            </div>
+
           </div>
+        </div>
 
-
-        {/* Fiche technique / Specifications */}
+        {/* Technical Specifications */}
         {(p as any).attributes && Object.keys((p as any).attributes).length > 0 && (
-          <section className="mt-16 border-t border-neutral-100 pt-12">
-            <h2 className="text-xl font-black text-neutral-900 uppercase tracking-tight mb-6">{t('specification')}</h2>
-            <table className="w-full max-w-2xl text-sm border-collapse">
-              <tbody>
-                {Object.entries((p as any).attributes as Record<string, string>).map(([key, val]) => (
-                  <tr key={key} className="border-b border-slate-100">
-                    <td className="py-3 pr-6 font-bold text-neutral-500 uppercase tracking-wider text-[11px] w-40">{key}</td>
-                    <td className="py-3 text-neutral-800 font-medium">{val}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        )}
-
-        <div className="mt-16 border-t border-neutral-100 pt-12"><ProductReviews productId={p.id}/></div>
-        {d.relatedProducts.length > 0 && (
-          <section className="mt-16 border-t border-neutral-100 pt-12">
-            <div className="flex items-end justify-between mb-8">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: primary }}>{t('exclusiveSelection')}</p>
-                <h2 className="text-2xl font-bold text-neutral-900">{t('relatedProductsHeading')}</h2>
-              </div>
-              <button onClick={d.handleBack} className="text-sm font-medium text-neutral-500 hover:text-neutral-900 flex items-center gap-1 transition-colors">{t('seeAll')} <ChevronRight className="size-4"/></button>
-            </div>
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
-              {d.relatedProducts.map((rp) => (
-                <ProductCard key={rp.id} product={rp}
-                  onQuickView={(slug) => { d.setSelectedProductSlug(slug); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}/>
+          <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 shadow-sm space-y-6">
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
+              {t('specification')}
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
+              {Object.entries((p as any).attributes as Record<string, string>).map(([key, val]) => (
+                <div key={key} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/70 border border-slate-100 text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider">{key}</span>
+                  <span className="font-black text-slate-800">{val}</span>
+                </div>
               ))}
             </div>
-          </section>
+          </div>
         )}
+
+        {/* Reviews Section */}
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 shadow-sm">
+          <ProductReviews productId={p.id} />
+        </div>
+
+        {/* Related Products Section */}
+        {d.relatedProducts.length > 0 && (
+          <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 sm:p-10 shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-[#4b7bec]">
+                  {t('exclusiveSelection')}
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
+                  {t('relatedProductsHeading')}
+                </h2>
+              </div>
+              <button 
+                onClick={d.handleBack} 
+                className="text-xs font-black uppercase tracking-wider text-slate-500 hover:text-slate-900 flex items-center gap-1 transition-colors"
+              >
+                {t('seeAll')} <ChevronRight className="size-4" />
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              {d.relatedProducts.map((rp) => (
+                <ProductCard 
+                  key={rp.id} 
+                  product={rp}
+                  onQuickView={(slug) => { 
+                    d.setSelectedProductSlug(slug); 
+                    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+                  }}
+                  onAddToCart={(pr) => { d.addItem(pr, 1); d.openCart(); }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 }
+
 
 /* ─────────────────────────────── ATHLETIC ─────────────────────────────── */
 function AthleticDetail() {
@@ -770,7 +944,7 @@ function AthleticDetail() {
                   </button>
                   <button disabled={isOOS} onClick={d.handleAddToCart}
                     className="w-full h-12 text-[10px] font-black uppercase tracking-[0.3em] text-white/60 border border-white/10 hover:border-white/30 hover:text-white transition-all active:scale-[0.98]">
-                    {d.addedToCart ? `✓ ${t('added')}` : t('addToCart')}
+                    {d.addedToCart ? <><CheckCircle className="size-3.5 inline mr-1" />{t('added')}</> : t('addToCart')}
                   </button>
                 </>
               ) : (
@@ -1025,7 +1199,7 @@ function LuxeDetail() {
                   </button>
                   <button disabled={isOOS} onClick={d.handleAddToCart}
                     className="w-full h-12 text-[10px] tracking-[0.25em] uppercase font-light text-white/40 border border-white/10 hover:border-white/20 hover:text-white/70 transition-all">
-                    {d.addedToCart ? `✓ ${t('added')}` : t('addToCart')}
+                    {d.addedToCart ? <><CheckCircle className="size-3 inline mr-1" />{t('added')}</> : t('addToCart')}
                   </button>
                 </>
               ) : (
