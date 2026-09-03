@@ -122,6 +122,8 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Affectées (Attente)', view: 'orders', subView: 'EN ATTENTE' },
                { label: 'Confirmées (Attente Expédition)', view: 'orders', subView: 'CONFIRMED' },
                { label: 'En Cours de Livraison', view: 'orders', subView: 'FOLLOWUP' },
+               { label: 'En Cours Point de Vente', view: 'orders', subView: 'POS_IN_TRANSIT' },
+               { label: 'Livrées Point de Vente', view: 'orders', subView: 'POS_DELIVERED' },
                { label: 'Livrées & Terminées', view: 'orders', subView: 'COMPLETED' },
                { label: 'Annulées & Retours', view: 'orders', subView: 'CANCELLED' },
                { label: 'Toutes les Commandes', view: 'orders', subView: 'ALL' },

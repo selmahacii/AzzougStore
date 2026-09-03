@@ -1144,6 +1144,14 @@ def get_agent_counts(
                 Order.livreur_id.isnot(None),
                 or_(Order.is_marketplace_upsell == True, Order.source == "MARKETPLACE"),
             ).label("marketplace_internal_delivered"),
+            _sum(
+                Order.status == "DELIVERED",
+                or_(Order.delivery_type.in_(["STORE_PICKUP", "POINT_DE_VENTE", "STORE", "RETRAIT_MAGASIN", "MANUAL", "POS", "OFFICE"]), Order.source == "POS"),
+            ).label("pos_delivered"),
+            _sum(
+                Order.status.notin_(["DELIVERED", "CANCELLED", "RETURNED", "MERGED"]),
+                or_(Order.delivery_type.in_(["STORE_PICKUP", "POINT_DE_VENTE", "STORE", "RETRAIT_MAGASIN", "MANUAL", "POS", "OFFICE"]), Order.source == "POS"),
+            ).label("pos_in_transit"),
             _sum(Order.status.in_(["CANCELLED", "RETURNED"])).label("archived"),
             # "Commandes Manuelles" sidebar badge — store-wide like shipped/
             # delivered/returned above, not scoped to the confirmatrice's own
@@ -1615,13 +1623,24 @@ def list_orders(
                 Order.livreur_id.isnot(None),
                 _or_id(Order.tracking_number.is_(None), Order.tracking_number == ""),
             )
-        elif status.upper() == "MARKETPLACE_DELIVERED":
-            from sqlalchemy import or_ as _or_mpd
+        elif status.upper() in ("POS_DELIVERED", "STORE_PICKUP_DELIVERED"):
+            from sqlalchemy import or_ as _or_pos_d
+            _pos_types = ["STORE_PICKUP", "POINT_DE_VENTE", "STORE", "RETRAIT_MAGASIN", "MANUAL", "POS", "OFFICE"]
             query = query.filter(
                 Order.status == "DELIVERED",
-                _or_mpd(
-                    Order.is_marketplace_upsell == True,
-                    Order.source == "MARKETPLACE",
+                _or_pos_d(
+                    Order.delivery_type.in_(_pos_types),
+                    Order.source == "POS",
+                )
+            )
+        elif status.upper() in ("POS_IN_TRANSIT", "POS_DELIVERY", "STORE_PICKUP_IN_PROGRESS", "POS_SHIPPED"):
+            from sqlalchemy import or_ as _or_pos_t
+            _pos_types = ["STORE_PICKUP", "POINT_DE_VENTE", "STORE", "RETRAIT_MAGASIN", "MANUAL", "POS", "OFFICE"]
+            query = query.filter(
+                Order.status.notin_(["DELIVERED", "CANCELLED", "RETURNED", "MERGED"]),
+                _or_pos_t(
+                    Order.delivery_type.in_(_pos_types),
+                    Order.source == "POS",
                 )
             )
         else:
