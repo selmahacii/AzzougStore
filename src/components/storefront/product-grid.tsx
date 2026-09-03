@@ -10,6 +10,7 @@ import { useCartStore } from '@/store/cart-store';
 import type { Product } from '@/lib/types';
 import { ProductCard } from './product-card';
 import { apiFetch } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 
 type SortOption = 'popular' | 'newest' | 'price-asc' | 'price-desc';
 
