@@ -3,9 +3,27 @@
 import { useState, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Store as StoreIcon, ChevronRight, ChevronLeft, Check, Globe,
-  Sparkles, Zap, Loader2, X,
-  Upload, Video, FileImage, Type, Copyright, Palette, LayoutTemplate,
+  Store as StoreIcon, 
+  ChevronRight, 
+  ChevronLeft, 
+  Check, 
+  Globe,
+  Sparkles, 
+  Zap, 
+  Loader2, 
+  X,
+  Upload, 
+  Video, 
+  FileImage, 
+  Type, 
+  Copyright, 
+  Palette, 
+  LayoutTemplate,
+  ShieldCheck,
+  CheckCircle2,
+  Users,
+  Eye,
+  Crown
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -20,21 +38,33 @@ import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
 export const STORE_TEMPLATES = [
   {
     id: 'minimalist',
-    name: 'MINIMALIST',
-    tagline: 'Boutique épurée — Grille produits & Navigation rapide',
+    name: 'MINIMALIST STORE',
+    tagline: 'Vitesse, clarté & conversion optimale — Grille produits & navigation rapide',
     badge: 'Recommandé',
     badgeColor: '#4b7bec',
     badgeText: '#FFFFFF',
     icon: Sparkles,
-    accent: '#111827',
-    bg: '#FFFFFF',
+    accent: '#4b7bec',
+    bg: '#111827',
     text: '#111827',
-    description: 'Layout blanc, aéré et orienté produit. Grille multi-catégories, filtres avancés, panier rapide. Idéal pour toute boutique e-commerce.',
-    features: ['Grille produits multi-colonnes', 'Filtres & recherche avancés', 'Hero image/vidéo', 'Navigation rapide', 'Panier slide-out'],
+    description: 'Structure épurée et aérée orientée conversion directe. Grille responsive multi-colonnes, recherche dynamique, filtres avancés et panier instantané.',
+    features: ['Grille produits multi-colonnes', 'Filtres & recherche instantanés', 'Hero image / vidéo responsive', 'Panier rapide slide-out', 'Optimisé mobile'],
+  },
+  {
+    id: 'landing',
+    name: 'LANDING PAGE CONVERSION',
+    tagline: 'Architecture orientée publicité Meta / TikTok avec sections storytelling & CTA',
+    badge: 'Haute Conversion',
+    badgeColor: '#6C5CE7',
+    badgeText: '#FFFFFF',
+    icon: Crown,
+    accent: '#6C5CE7',
+    bg: '#1E1B4B',
+    text: '#1E1B4B',
+    description: 'Conçu pour les campagnes publicitaires directes avec Hero grand format, mise en avant des arguments clés, preuves sociales et formulaires de commande rapide.',
+    features: ['Hero plein écran avec CTA percutant', 'Arguments & bénéfices détaillés', 'Témoignages & preuve sociale', 'Formulaire express intégré'],
   },
 ];
-
-
 
 // ─── MEDIA UPLOAD HELPER ─────────────────────────────────────
 async function uploadMedia(file: File, endpoint: 'image' | 'media'): Promise<string> {
@@ -54,7 +84,7 @@ async function uploadMedia(file: File, endpoint: 'image' | 'media'): Promise<str
   return data.url as string;
 }
 
-// ─── STEP COMPONENTS ────────────────────────────────────────
+// ─── FORM DATA INTERFACE ────────────────────────────────────
 interface FormData {
   name: string;
   slug: string;
@@ -95,8 +125,8 @@ const DEFAULT_FORM: FormData = {
   banner_url: '',
   banner_is_video: false,
   template_id: 'minimalist',
-  primaryColor: '#111827',
-  accentColor: '#1F2937',
+  primaryColor: '#4b7bec',
+  accentColor: '#3867d6',
   domain: '',
   facebook: '',
   instagram: '',
@@ -104,11 +134,11 @@ const DEFAULT_FORM: FormData = {
   phone: '',
   email: '',
   address: '',
-  footer_tagline: "L'excellence à chaque instant.",
+  footer_tagline: "L'excellence et la qualité au quotidien.",
   footer_copyright: '',
   hero_layout: 'side',
   hero_headline: "L'Élégance Épurée",
-  hero_subtitle: "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.",
+  hero_subtitle: "Découvrez notre sélection de produits exclusifs alliant design contemporain et qualité supérieure.",
   hero_cta: "Explorer le catalogue",
   hero_cta2: '',
   hero_tag: '',
@@ -119,7 +149,6 @@ const DEFAULT_FORM: FormData = {
   assignment_logic: 'MANUAL',
 };
 
-
 // ─── MAIN WIZARD ─────────────────────────────────────────────
 interface StoreWizardProps {
   open: boolean;
@@ -128,7 +157,7 @@ interface StoreWizardProps {
   initialData?: any;
 }
 
-const STEPS = ['Template', 'Identité', 'Design', 'Sections', 'Assignation', 'Aperçu & Lancer'];
+const STEPS = ['Template', 'Identité', 'Design', 'Sections', 'Assignation', 'Déploiement'];
 
 const SECTION_LABELS: Record<string, string> = {
   bestSellers: 'Meilleures ventes',
@@ -159,8 +188,8 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           banner_url: initialData.banner_url || '',
           banner_is_video: initialData.theme_config?.bannerIsVideo || false,
           template_id: initialData.template_id || 'minimalist',
-          primaryColor: initialData.theme_config?.primaryColor || '#111827',
-          accentColor: initialData.theme_config?.accentColor || '#1F2937',
+          primaryColor: initialData.theme_config?.primaryColor || '#4b7bec',
+          accentColor: initialData.theme_config?.accentColor || '#3867d6',
           domain: initialData.domain || '',
           facebook: initialData.social_links?.facebook || '',
           instagram: initialData.social_links?.instagram || '',
@@ -194,6 +223,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
     try {
       const url = await uploadMedia(file, 'image');
       setForm(f => ({ ...f, logo_url: url }));
+      toast.success('Logo uploadé avec succès');
     } catch (e: any) {
       toast.error(e.message ?? 'Erreur upload logo');
     } finally {
@@ -207,6 +237,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
       const isVideo = file.type.startsWith('video/');
       const url = await uploadMedia(file, 'media');
       setForm(f => ({ ...f, banner_url: url, banner_is_video: isVideo }));
+      toast.success('Média Hero uploadé avec succès');
     } catch (e: any) {
       toast.error(e.message ?? 'Erreur upload bannière');
     } finally {
@@ -222,7 +253,8 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
       : apiFetch('/api/v1/stores', { method: 'POST', body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['stores'] });
-      toast.success(isEdit ? 'Boutique modifiée avec succès !' : 'Boutique déployée avec succès !');
+      qc.invalidateQueries({ queryKey: ['stores-revenue'] });
+      toast.success(isEdit ? 'Boutique modifiée avec succès' : 'Boutique créée et déployée avec succès');
       onOpenChange(false);
       setStep(0);
       setForm(DEFAULT_FORM);
@@ -232,7 +264,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
   });
 
   const handleCreate = () => {
-    if (!form.name || !form.slug) return toast.error('Nom et slug requis');
+    if (!form.name || !form.slug) return toast.error('Le nom et le slug URL sont obligatoires');
     mutation.mutate({
       name: form.name,
       slug: form.slug,
@@ -245,9 +277,8 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         templateId: form.template_id,
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        fontFamily: form.template_id === 'luxe' ? 'Playfair Display' : 'Inter',
-        borderRadius: form.template_id === 'luxe' ? '4px' : form.template_id === 'landing' ? '8px' : '12px',
-        darkMode: form.template_id === 'landing' || form.template_id === 'athletic' || form.template_id === 'luxe',
+        fontFamily: 'Inter',
+        borderRadius: '12px',
         bannerIsVideo: form.banner_is_video,
         heroLayout: form.hero_layout,
         heroHeadline: form.hero_headline || null,
@@ -293,821 +324,605 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { setStep(0); setForm(DEFAULT_FORM); } onOpenChange(o); }}>
-      <DialogContent className="max-w-2xl w-[95vw] h-[85vh] p-0 overflow-hidden rounded-[40px] border-none shadow-2xl flex flex-col gap-0">
-        <DialogTitle className="sr-only">Créer une nouvelle boutique</DialogTitle>
+      <DialogContent className="max-w-3xl w-[95vw] h-[88vh] p-0 overflow-hidden rounded-[32px] border-none shadow-2xl flex flex-col gap-0 bg-white">
+        <DialogTitle className="sr-only">{isEdit ? 'Modifier la boutique' : 'Créer une nouvelle boutique'}</DialogTitle>
 
-        {/* ── TOP BAR ── */}
-        <div className="flex items-center gap-4 px-8 py-5 border-b border-slate-100 bg-white shrink-0">
-          <div className="size-10 rounded-2xl flex items-center justify-center text-white shadow-lg" style={{ backgroundColor: selectedTemplate.accent }}>
-            <StoreIcon className="size-5" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-base font-black text-slate-900 uppercase tracking-tight">{isEdit ? 'Modifier la boutique' : 'Créer une nouvelle boutique'}</h2>
-            <div className="flex items-center gap-1 mt-1">
-              {STEPS.map((s, i) => (
-                <div key={i} className="flex items-center gap-1">
-                  <button
-                    onClick={() => i <= step && setStep(i)}
-                    className={cn(
-                      "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md transition-all",
-                      i === step ? "text-white" : i < step ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-default"
-                    )}
-                    style={i === step ? { backgroundColor: selectedTemplate.accent, color: selectedTemplate.badgeText } : {}}
-                  >
-                    {i < step ? <Check className="size-3 inline mr-0.5" /> : null}{s}
-                  </button>
-                  {i < STEPS.length - 1 && <ChevronRight className="size-3 text-slate-200" />}
+        {/* ─── MODAL HEADER (Meta Ads Template) ─── */}
+        <div className="bg-[#1877F2] px-6 sm:px-8 py-5 text-white shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="size-11 rounded-2xl bg-white/15 flex items-center justify-center text-white backdrop-blur-md shadow-xs shrink-0">
+                <StoreIcon className="size-5.5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
+                    {isEdit ? 'Modifier la boutique' : 'Créer une nouvelle boutique'}
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-white/20 text-white font-mono">
+                    {form.name || 'Nouveau Site'}
+                  </span>
                 </div>
-              ))}
+                <p className="text-[11px] text-white/80 font-medium mt-0.5">
+                  Configuration et déploiement de votre vitrine e-commerce multi-tenant
+                </p>
+              </div>
             </div>
+
+            <button 
+              onClick={() => onOpenChange(false)} 
+              className="size-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <X className="size-4" />
+            </button>
           </div>
-          <button onClick={() => onOpenChange(false)} className="size-9 rounded-xl border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-50 transition-all">
-            <X className="size-4" />
-          </button>
+
+          {/* Stepper Navigation Bar */}
+          <div className="flex items-center gap-1 sm:gap-2 mt-4 pt-3 border-t border-white/15 overflow-x-auto no-scrollbar">
+            {STEPS.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => i <= step && setStep(i)}
+                className={cn(
+                  "px-2.5 sm:px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-1.5",
+                  i === step 
+                    ? "bg-white text-[#1877F2] shadow-xs font-black" 
+                    : i < step 
+                    ? "bg-white/20 text-white hover:bg-white/30" 
+                    : "text-white/50 cursor-default"
+                )}
+              >
+                <span className={cn(
+                  "size-4 rounded-full flex items-center justify-center text-[9px] font-black",
+                  i === step ? "bg-[#1877F2] text-white" : i < step ? "bg-white/30 text-white" : "bg-white/10 text-white/50"
+                )}>
+                  {i < step ? <Check className="size-2.5" /> : (i + 1)}
+                </span>
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* ── BODY ── */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* ─── MODAL BODY ─── */}
+        <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 bg-white">
 
-          {/* LEFT PANEL — form */}
-          <div className="w-full flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+          {/* STEP 0 — Template */}
+          {step === 0 && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">01. Architecture & Modèle de Vitrine</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Sélectionnez le style de présentation adapté à votre activité commerciale.</p>
+              </div>
 
-              {/* STEP 0 — Template */}
-              {step === 0 && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">Choisissez votre template</h3>
-                    <p className="text-sm text-slate-400 font-medium">Chaque template est un univers visuel complet. Vous pourrez personnaliser les couleurs à l'étape suivante.</p>
-                  </div>
-                  <div className="space-y-3">
-                    {STORE_TEMPLATES.map(t => {
-                      const Icon = t.icon;
-                      const active = form.template_id === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={() => setForm(f => {
-                            const isMin = t.id === 'minimalist';
-                            return {
-                              ...f,
-                              template_id: t.id,
-                              primaryColor: t.accent,
-                              accentColor: isMin ? '#1F2937' : '#D63031',
-                              hero_headline: isMin ? "L'Élégance Épurée" : "Performance & Style",
-                              hero_subtitle: isMin 
-                                ? "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception."
-                                : "Le produit révolutionnaire conçu pour dépasser toutes vos attentes au quotidien. Commandez le vôtre dès aujourd'hui.",
-                              hero_cta: isMin ? "Explorer le catalogue" : "Profiter de l'offre",
-                              hero_layout: isMin ? 'side' : 'full',
-                              footer_tagline: isMin ? "L'excellence à chaque instant." : "L'efficacité sans compromis."
-                            };
-                          })}
-                          className={cn("w-full text-left p-4 rounded-2xl border-2 transition-all", active ? "shadow-lg" : "border-slate-100 bg-white hover:border-slate-200")}
-                          style={active ? { borderColor: t.accent, backgroundColor: `${t.bg}08` } : {}}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="size-11 rounded-xl flex items-center justify-center shrink-0 text-white" style={{ backgroundColor: t.bg }}>
-                              <Icon className="size-5" style={{ color: t.accent }} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-black text-slate-900">{t.name}</span>
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded-full" style={{ backgroundColor: t.badgeColor, color: t.badgeText }}>{t.badge}</span>
-                              </div>
-                              <p className="text-[10px] text-slate-400 font-medium leading-snug">{t.tagline}</p>
-                              <div className="flex flex-wrap gap-1 mt-2">
-                                {t.features.slice(0, 3).map(f => (
-                                  <span key={f} className="text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 uppercase tracking-wider">{f}</span>
-                                ))}
-                              </div>
-                            </div>
-                            {active && <div className="size-5 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: t.accent }}><Check className="size-3 text-white" /></div>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 1 — Identité */}
-              {step === 1 && (
-                <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">Identité de votre boutique</h3>
-                    <p className="text-sm text-slate-400 font-medium">Ces informations définissent votre marque. Prenez le temps d'être précis.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom de la boutique *</label>
-                    <Input
-                      placeholder="Ex: Azzoug Sport, La Belle Maison..."
-                      value={form.name}
-                      onChange={e => {
-                        const name = e.target.value;
-                        setForm(f => ({ ...f, name, slug: f.slug || slugify(name) }));
-                      }}
-                      className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 text-sm font-bold px-5 focus-visible:ring-2"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Slug URL *</label>
-                    <div className="flex overflow-hidden rounded-2xl border border-slate-100">
-                      <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100 whitespace-nowrap">azghub.com/</span>
-                      <Input
-                        placeholder="ma-boutique"
-                        value={form.slug}
-                        onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
-                        className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Domaine personnalisé</label>
-                    <div className="flex overflow-hidden rounded-2xl border border-slate-100">
-                      <span className="px-4 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-100">https://</span>
-                      <Input
-                        placeholder="maboutique.dz (optionnel)"
-                        value={form.domain}
-                        onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
-                        className="h-12 border-0 font-mono text-sm bg-white rounded-none flex-1 focus-visible:ring-0"
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-400 ml-1">En dev, un domaine test sera auto-généré: <span className="font-mono font-bold">{form.slug || 'slug'}.azghub.com</span></p>
-                  </div>
-
-                  {/* Logo upload */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo de la boutique</label>
-                    <input
-                      ref={logoInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                      className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); }}
-                    />
-                    {form.logo_url ? (
-                      <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div className="size-16 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
-                          <img src={form.logo_url} alt="logo" className="size-full object-contain" />
+              <div className="space-y-3">
+                {STORE_TEMPLATES.map(t => {
+                  const Icon = t.icon;
+                  const active = form.template_id === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => setForm(f => ({ ...f, template_id: t.id }))}
+                      className={cn(
+                        "p-5 rounded-2xl border-2 transition-all cursor-pointer relative",
+                        active 
+                          ? "border-[#4b7bec] bg-blue-50/20 shadow-sm" 
+                          : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/40"
+                      )}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className={cn(
+                          "size-12 rounded-xl flex items-center justify-center shrink-0 shadow-xs",
+                          active ? "bg-[#4b7bec] text-white" : "bg-slate-100 text-slate-600"
+                        )}>
+                          <Icon className="size-6" />
                         </div>
+
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-700 truncate">Logo uploadé</p>
-                          <p className="text-[10px] text-slate-400 truncate font-mono">{form.logo_url.split('/').pop()}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => logoInputRef.current?.click()}
-                            className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border border-slate-200 rounded-xl hover:bg-slate-100 transition-all"
-                          >
-                            Changer
-                          </button>
-                          <button
-                            onClick={() => setForm(f => ({ ...f, logo_url: '' }))}
-                            className="size-7 rounded-xl border border-rose-100 hover:bg-rose-50 transition-all flex items-center justify-center text-rose-400"
-                          >
-                            <X className="size-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => logoInputRef.current?.click()}
-                        disabled={uploadingLogo}
-                        className="w-full h-20 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-1.5 group"
-                      >
-                        {uploadingLogo ? (
-                          <Loader2 className="size-5 animate-spin text-slate-400" />
-                        ) : (
-                          <>
-                            <div className="size-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                              <Upload className="size-4 text-slate-400" />
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400">Cliquer pour uploader le logo</span>
-                            <span className="text-[9px] text-slate-300">PNG, JPG, WebP · max 10 MB</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Banner / Hero media */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image ou vidéo Hero (bannière)</label>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${selectedTemplate.accent}20`, color: selectedTemplate.accent }}>Grande section</span>
-                    </div>
-                    <input
-                      ref={bannerInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
-                      className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleBannerUpload(f); }}
-                    />
-                    {form.banner_url ? (
-                      <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900">
-                        {form.banner_is_video ? (
-                          <video src={form.banner_url} className="w-full h-36 object-cover" muted loop autoPlay />
-                        ) : (
-                          <img src={form.banner_url} alt="banner" className="w-full h-36 object-cover" />
-                        )}
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-all">
-                          <button
-                            onClick={() => bannerInputRef.current?.click()}
-                            className="px-4 py-2 text-[10px] font-black uppercase tracking-wider bg-white text-slate-900 rounded-xl hover:bg-slate-100 transition-all"
-                          >
-                            Changer
-                          </button>
-                          <button
-                            onClick={() => setForm(f => ({ ...f, banner_url: '', banner_is_video: false }))}
-                            className="size-8 rounded-xl bg-rose-500 text-white flex items-center justify-center"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                        <div className="absolute top-2 right-2">
-                          <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/60 text-white text-[9px] font-bold">
-                            {form.banner_is_video ? <Video className="size-2.5" /> : <FileImage className="size-2.5" />}
-                            {form.banner_is_video ? 'Vidéo' : 'Image'}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => bannerInputRef.current?.click()}
-                        disabled={uploadingBanner}
-                        className="w-full h-32 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-2 group"
-                      >
-                        {uploadingBanner ? (
-                          <Loader2 className="size-5 animate-spin text-slate-400" />
-                        ) : (
-                          <>
-                            <div className="flex gap-2">
-                              <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                <FileImage className="size-4 text-slate-400" />
-                              </div>
-                              <div className="size-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                <Video className="size-4 text-slate-400" />
-                              </div>
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400">Photo ou vidéo hero</span>
-                            <span className="text-[9px] text-slate-300">JPG, PNG, MP4, WebM · Image 10 MB · Vidéo 100 MB</span>
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Description</label>
-                    <textarea
-                      value={form.description}
-                      onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                      placeholder="Décrivez votre boutique en 2-3 phrases..."
-                      className="w-full min-h-[80px] p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-sm font-medium resize-none outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
-                    />
-                  </div>
-
-                  {/* Contact */}
-                  <div className="space-y-3 pt-2 border-t border-slate-100">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contact & Réseaux</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input placeholder="Téléphone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                      <Input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                    </div>
-                    <Input placeholder="Adresse physique" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm" />
-                    <div className="grid grid-cols-3 gap-3">
-                      <Input placeholder="Facebook URL" value={form.facebook} onChange={e => setForm(f => ({ ...f, facebook: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                      <Input placeholder="Instagram @" value={form.instagram} onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                      <Input placeholder="TikTok @" value={form.tiktok} onChange={e => setForm(f => ({ ...f, tiktok: e.target.value }))} className="h-10 rounded-xl border-slate-100 bg-slate-50/50 text-xs" />
-                    </div>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="space-y-3 pt-2 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pied de page (Footer)</label>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Type className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-300" />
-                        <Input
-                          placeholder="Slogan ou accroche du footer..."
-                          value={form.footer_tagline}
-                          onChange={e => setForm(f => ({ ...f, footer_tagline: e.target.value }))}
-                          className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm pl-9"
-                        />
-                      </div>
-                      <div className="relative">
-                        <Copyright className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-300" />
-                        <Input
-                          placeholder={`© ${new Date().getFullYear()} ${form.name || 'Votre boutique'}. Tous droits réservés.`}
-                          value={form.footer_copyright}
-                          onChange={e => setForm(f => ({ ...f, footer_copyright: e.target.value }))}
-                          className="h-11 rounded-xl border-slate-100 bg-slate-50/50 text-sm pl-9"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2 — Design & Apparence */}
-              {step === 2 && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">Design & Apparence</h3>
-                    <p className="text-sm text-slate-400 font-medium">Personnalisez les couleurs et la structure visuelle de votre boutique. L'aperçu se met à jour en temps réel.</p>
-                  </div>
-
-                  <div className="space-y-6">
-                    {/* CARD 1: COULEURS */}
-                    <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-6 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                        <Palette className="w-24 h-24" />
-                      </div>
-                      <div className="relative">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-4 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500" /> Palette de couleurs
-                        </h4>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur principale</label>
-                            <div className="flex items-center gap-4 p-3 bg-slate-50/50 rounded-2xl border border-slate-100 transition-all hover:bg-slate-50">
-                              <div className="relative shrink-0">
-                                <div className="size-12 rounded-xl border-4 border-white shadow-sm cursor-pointer" style={{ backgroundColor: form.primaryColor }} />
-                                <input
-                                  type="color"
-                                  value={form.primaryColor}
-                                  onChange={e => setForm(f => ({ ...f, primaryColor: e.target.value }))}
-                                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-mono text-xs font-bold text-slate-700 mb-1">{form.primaryColor.toUpperCase()}</div>
-                                <div className="flex gap-0.5">
-                                  {[1, 0.75, 0.5, 0.25, 0.1].map((op, i) => (
-                                    <div key={i} className="h-3 flex-1 rounded-sm" style={{ backgroundColor: form.primaryColor, opacity: op }} />
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-black text-slate-900 tracking-tight">{t.name}</span>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-50 text-[#4b7bec] border border-blue-200/60">
+                              {t.badge}
+                            </span>
                           </div>
-
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur secondaire</label>
-                            <div className="flex items-center gap-4 p-3 bg-slate-50/50 rounded-2xl border border-slate-100 transition-all hover:bg-slate-50">
-                              <div className="relative shrink-0">
-                                <div className="size-12 rounded-xl border-4 border-white shadow-sm cursor-pointer" style={{ backgroundColor: form.accentColor }} />
-                                <input
-                                  type="color"
-                                  value={form.accentColor}
-                                  onChange={e => setForm(f => ({ ...f, accentColor: e.target.value }))}
-                                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-mono text-xs font-bold text-slate-700 mb-1">{form.accentColor.toUpperCase()}</div>
-                                <div className="flex gap-0.5">
-                                  {[1, 0.75, 0.5, 0.25, 0.1].map((op, i) => (
-                                    <div key={i} className="h-3 flex-1 rounded-sm" style={{ backgroundColor: form.accentColor, opacity: op }} />
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Quick presets */}
-                        <div className="space-y-2 pt-2 border-t border-slate-100">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-2 block">Palettes rapides pré-configurées</label>
-                          <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
-                            {[
-                              { label: 'Indigo', p: '#4b7bec', a: '#3867d6' },
-                              { label: 'Lime', p: '#C5F135', a: '#a3cc1a' },
-                              { label: 'Gold', p: '#C9A84C', a: '#a87c2a' },
-                              { label: 'Rouge', p: '#eb4d4b', a: '#c0392b' },
-                              { label: 'Émeraude', p: '#20bf6b', a: '#00a854' },
-                              { label: 'Violet', p: '#6C5CE7', a: '#5641c2' },
-                              { label: 'Coral', p: '#ff6b6b', a: '#ee5a24' },
-                              { label: 'Navy', p: '#0C0F1A', a: '#1a1f35' },
-                            ].map(preset => (
-                              <button
-                                key={preset.label}
-                                onClick={() => setForm(f => ({ ...f, primaryColor: preset.p, accentColor: preset.a }))}
-                                className="flex flex-col items-center gap-1.5 p-2 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all group"
-                              >
-                                <div className="size-6 rounded-md border border-slate-200 shadow-sm" style={{ backgroundColor: preset.p }} />
-                                <span className="text-[8px] font-bold text-slate-400 group-hover:text-slate-700 transition-colors">{preset.label}</span>
-                              </button>
+                          <p className="text-xs text-slate-500 font-medium leading-relaxed">{t.description}</p>
+                          <div className="flex flex-wrap gap-1.5 mt-3">
+                            {t.features.map(f => (
+                              <span key={f} className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 uppercase tracking-wider">
+                                {f}
+                              </span>
                             ))}
                           </div>
                         </div>
+
+                        {active && (
+                          <div className="size-6 rounded-full bg-[#4b7bec] text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <Check className="size-3.5" />
+                          </div>
+                        )}
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-                    {/* CARD 2: HERO CONFIGURATION */}
-                    <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-6 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                        <LayoutTemplate className="w-24 h-24" />
-                      </div>
-                      <div className="relative">
-                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500" /> Section d'en-tête (Hero)
-                        </h4>
+          {/* STEP 1 — Identité */}
+          {step === 1 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">02. Identité & Coordonnées de la Boutique</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Définissez les informations de base et l'adresse web de votre vitrine.</p>
+              </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                          {/* Layout toggle */}
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Mise en page de l'en-tête</label>
-                            <div className="grid grid-cols-1 gap-2">
-                              {([
-                                { value: 'side', label: 'Côte à côte', desc: 'Texte à gauche, image à droite' },
-                                { value: 'full', label: 'Plein écran', desc: 'Image en fond avec texte par-dessus' },
-                              ] as const).map(opt => (
-                                <button
-                                  key={opt.value}
-                                  onClick={() => setForm(f => ({ ...f, hero_layout: opt.value }))}
-                                  className={cn(
-                                    'p-3 rounded-xl border-2 text-left transition-all flex flex-col',
-                                    form.hero_layout === opt.value
-                                      ? 'shadow-sm'
-                                      : 'border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200'
-                                  )}
-                                  style={form.hero_layout === opt.value ? { borderColor: form.primaryColor, backgroundColor: `${form.primaryColor}08` } : {}}
-                                >
-                                  <span className="text-[11px] font-black text-slate-800">{opt.label}</span>
-                                  <span className="text-[9px] text-slate-400 mt-0.5 font-medium">{opt.desc}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nom de la boutique *</label>
+                  <Input
+                    placeholder="Ex: AZ Confort, Chic Outfit..."
+                    value={form.name}
+                    onChange={e => {
+                      const name = e.target.value;
+                      setForm(f => ({ ...f, name, slug: f.slug || slugify(name) }));
+                    }}
+                    className="h-11 rounded-xl border-slate-200 bg-slate-50 text-sm font-bold focus-visible:bg-white"
+                  />
+                </div>
 
-                          {/* Font style */}
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Style de police du grand titre</label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {([
-                                { value: 'bold', label: 'Moderne Gras', preview: 'font-black' },
-                                { value: 'normal', label: 'Standard', preview: 'font-semibold' },
-                                { value: 'light', label: 'Épuré Fin', preview: 'font-thin' },
-                                { value: 'serif', label: 'Classique Serif', preview: 'font-serif' },
-                              ] as const).map(opt => (
-                                <button
-                                  key={opt.value}
-                                  onClick={() => setForm(f => ({ ...f, hero_font: opt.value }))}
-                                  className={cn(
-                                    'py-3 px-2 rounded-xl border-2 text-center transition-all',
-                                    form.hero_font === opt.value ? 'shadow-sm' : 'border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200'
-                                  )}
-                                  style={form.hero_font === opt.value ? { borderColor: form.primaryColor, backgroundColor: `${form.primaryColor}08` } : {}}
-                                >
-                                  <span className={`text-base ${opt.preview} text-slate-800 block leading-none mb-1`}>Aa</span>
-                                  <span className="text-[9px] font-bold text-slate-400 block">{opt.label}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Texts */}
-                        <div className="space-y-4 pt-6 border-t border-slate-100">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Headline */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Titre principal</label>
-                              <Input
-                                placeholder={form.name || 'Ex: La Nouvelle Collection'}
-                                value={form.hero_headline}
-                                onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
-                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
-                              />
-                              <p className="text-[9px] text-slate-400 mt-1 font-medium">Laissez vide pour afficher automatiquement le nom de votre boutique.</p>
-                            </div>
-
-                            {/* CTA */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Texte du bouton principal (CTA)</label>
-                              <Input
-                                placeholder="Ex: Découvrir le catalogue"
-                                value={form.hero_cta}
-                                onChange={e => setForm(f => ({ ...f, hero_cta: e.target.value }))}
-                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Subtitle */}
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Sous-titre / Accroche</label>
-                            <textarea
-                              placeholder={form.description || 'Ex: Découvrez nos produits exceptionnels pour un style de vie unique.'}
-                              value={form.hero_subtitle}
-                              onChange={e => setForm(f => ({ ...f, hero_subtitle: e.target.value }))}
-                              className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50/50 text-sm font-medium resize-none outline-none focus:ring-2 focus:ring-slate-300 shadow-inner focus:bg-white transition-all min-h-[70px]"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Tag */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Badge / Étiquette (optionnel)</label>
-                              <Input
-                                placeholder="Ex: Nouvelle Collection"
-                                value={form.hero_tag}
-                                onChange={e => setForm(f => ({ ...f, hero_tag: e.target.value }))}
-                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
-                              />
-                            </div>
-
-                            {/* Secondary CTA */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Texte du bouton secondaire</label>
-                              <Input
-                                placeholder="Ex: Voir tout"
-                                value={form.hero_cta2}
-                                onChange={e => setForm(f => ({ ...f, hero_cta2: e.target.value }))}
-                                className="h-11 rounded-xl border-slate-200 bg-slate-50/50 text-sm font-bold shadow-inner focus-visible:bg-white"
-                              />
-                              <p className="text-[9px] text-slate-400 mt-1 font-medium">Laissez vide pour le texte par défaut ("Voir tout").</p>
-                            </div>
-                          </div>
-
-                          {/* Stats — repeatable label/value pairs, max 4 */}
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Statistiques affichées (optionnel, max 4)</label>
-                              {form.hero_stats.length < 4 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setForm(f => ({ ...f, hero_stats: [...f.hero_stats, { label: '', value: '' }] }))}
-                                  className="text-[10px] font-black uppercase tracking-wider text-[#4b7bec] hover:text-[#3867d6]"
-                                >
-                                  + Ajouter
-                                </button>
-                              )}
-                            </div>
-                            {form.hero_stats.length === 0 ? (
-                              <p className="text-[9px] text-slate-400 font-medium">Ex: "500+" Clients satisfaits, "24h" Livraison express — masqué si aucune n'est renseignée.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {form.hero_stats.map((stat, i) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <Input
-                                      placeholder="Valeur (ex: 500+)"
-                                      value={stat.value}
-                                      onChange={e => setForm(f => ({ ...f, hero_stats: f.hero_stats.map((s, idx) => idx === i ? { ...s, value: e.target.value } : s) }))}
-                                      className="h-10 rounded-lg border-slate-200 bg-slate-50/50 text-xs font-bold shadow-inner focus-visible:bg-white w-1/3"
-                                    />
-                                    <Input
-                                      placeholder="Libellé (ex: Clients satisfaits)"
-                                      value={stat.label}
-                                      onChange={e => setForm(f => ({ ...f, hero_stats: f.hero_stats.map((s, idx) => idx === i ? { ...s, label: e.target.value } : s) }))}
-                                      className="h-10 rounded-lg border-slate-200 bg-slate-50/50 text-xs font-bold shadow-inner focus-visible:bg-white flex-1"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setForm(f => ({ ...f, hero_stats: f.hero_stats.filter((_, idx) => idx !== i) }))}
-                                      className="size-10 shrink-0 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                                    >
-                                      <X className="size-4" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-domaine AZGHUB *</label>
+                  <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                    <Input
+                      placeholder="azconfort"
+                      value={form.slug}
+                      onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                      className="h-11 border-0 font-mono text-xs font-bold bg-transparent rounded-none flex-1 focus-visible:ring-0 px-3"
+                    />
+                    <span className="px-3 bg-slate-100 flex items-center text-[10px] font-black text-slate-500 border-l border-slate-200">
+                      .azghub.com
+                    </span>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {/* STEP 3 — Sections (activer/désactiver + réordonner) */}
-              {step === 3 && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">Sections de la page d'accueil</h3>
-                    <p className="text-sm text-slate-400 font-medium">Activez, désactivez et réordonnez les sections affichées sous le Hero de votre boutique.</p>
-                  </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Domaine personnalisé (Optionnel)</label>
+                <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <span className="px-3 bg-slate-100 flex items-center text-[11px] font-bold text-slate-400 border-r border-slate-200">
+                    https://
+                  </span>
+                  <Input
+                    placeholder="www.maboutique.com"
+                    value={form.domain}
+                    onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
+                    className="h-11 border-0 font-mono text-xs font-bold bg-transparent rounded-none flex-1 focus-visible:ring-0 px-3"
+                  />
+                </div>
+              </div>
 
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-3">
-                    {form.sections_config.map((section, i) => (
-                      <div
-                        key={section.key}
-                        className={cn(
-                          "flex items-center gap-4 p-4 rounded-2xl border transition-all",
-                          section.enabled ? "bg-slate-50/50 border-slate-100" : "bg-slate-50/20 border-slate-100 opacity-50"
-                        )}
-                      >
-                        <div className="flex flex-col gap-1 shrink-0">
-                          <button
-                            type="button"
-                            disabled={i === 0}
-                            onClick={() => setForm(f => {
-                              const next = [...f.sections_config];
-                              [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                              return { ...f, sections_config: next };
-                            })}
-                            className="size-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
-                          >
-                            <ChevronLeft className="size-3.5 rotate-90" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={i === form.sections_config.length - 1}
-                            onClick={() => setForm(f => {
-                              const next = [...f.sections_config];
-                              [next[i], next[i + 1]] = [next[i + 1], next[i]];
-                              return { ...f, sections_config: next };
-                            })}
-                            className="size-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-white disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
-                          >
-                            <ChevronRight className="size-3.5 rotate-90" />
-                          </button>
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-black text-slate-800">{SECTION_LABELS[section.key]}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">Position {i + 1}</p>
-                        </div>
+              {/* Logo & Hero Upload Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                {/* Logo */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logo Officiel</label>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); }}
+                  />
+                  {form.logo_url ? (
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                      <div className="size-12 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 flex items-center justify-center p-1">
+                        <img src={form.logo_url} alt="logo" className="size-full object-contain" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">Logo importé</p>
+                        <p className="text-[10px] text-emerald-600 font-bold">Actif sur la boutique</p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setForm(f => ({ ...f, sections_config: f.sections_config.map(s => s.key === section.key ? { ...s, enabled: !s.enabled } : s) }))}
-                          className={cn(
-                            "relative w-11 h-6 rounded-full transition-colors shrink-0",
-                            section.enabled ? "bg-[#4b7bec]" : "bg-slate-200"
-                          )}
+                          onClick={() => logoInputRef.current?.click()}
+                          className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider border border-slate-200 bg-white rounded-lg hover:bg-slate-100 transition-all"
                         >
-                          <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform", section.enabled ? "translate-x-5" : "translate-x-0.5")} />
+                          Changer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, logo_url: '' }))}
+                          className="size-7 rounded-lg border border-rose-100 bg-rose-50 text-rose-500 hover:bg-rose-100 flex items-center justify-center transition-all"
+                        >
+                          <X className="size-3" />
                         </button>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={uploadingLogo}
+                      className="w-full h-24 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-1.5"
+                    >
+                      {uploadingLogo ? (
+                        <Loader2 className="size-5 animate-spin text-[#4b7bec]" />
+                      ) : (
+                        <>
+                          <Upload className="size-4 text-slate-400" />
+                          <span className="text-[10px] font-bold text-slate-600">Importer le logo</span>
+                          <span className="text-[9px] text-slate-400">PNG, JPG, WebP</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-              )}
 
-              {/* STEP 4 — Assignation */}
-              {step === 4 && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">Assignation & Équipe</h3>
-                    <p className="text-sm text-slate-400 font-medium">Configurez comment les commandes seront automatiquement assignées aux membres de votre équipe.</p>
-                  </div>
-
-                  <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500" /> Assignation Automatique
-                        </h4>
-                        <p className="text-[10px] text-slate-400 mt-1">Activer ou désactiver l'assignation automatique des nouvelles commandes.</p>
+                {/* Banner */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bannière / Image Hero</label>
+                  <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,video/mp4"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleBannerUpload(f); }}
+                  />
+                  {form.banner_url ? (
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 h-24">
+                      {form.banner_is_video ? (
+                        <video src={form.banner_url} className="w-full h-full object-cover" muted loop autoPlay />
+                      ) : (
+                        <img src={form.banner_url} alt="banner" className="w-full h-full object-cover" />
+                      )}
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center gap-2 opacity-0 hover:opacity-100 transition-all">
+                        <button
+                          type="button"
+                          onClick={() => bannerInputRef.current?.click()}
+                          className="px-3 py-1 text-[10px] font-black uppercase tracking-wider bg-white text-slate-900 rounded-lg"
+                        >
+                          Changer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, banner_url: '', banner_is_video: false }))}
+                          className="size-7 rounded-lg bg-rose-600 text-white flex items-center justify-center"
+                        >
+                          <X className="size-3" />
+                        </button>
                       </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploadingBanner}
+                      className="w-full h-24 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-1.5"
+                    >
+                      {uploadingBanner ? (
+                        <Loader2 className="size-5 animate-spin text-[#4b7bec]" />
+                      ) : (
+                        <>
+                          <FileImage className="size-4 text-slate-400" />
+                          <span className="text-[10px] font-bold text-slate-600">Importer bannière hero</span>
+                          <span className="text-[9px] text-slate-400">JPG, PNG, WebP ou MP4</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Description & Contact */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Description de la boutique</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="Courte présentation de vos offres et produits..."
+                  className="w-full min-h-[70px] p-3 border border-slate-200 rounded-xl bg-slate-50 text-xs font-medium resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#4b7bec]/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Téléphone contact</label>
+                  <Input placeholder="0550 00 00 00" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="h-10 rounded-xl text-xs bg-slate-50" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Email commercial</label>
+                  <Input placeholder="contact@maboutique.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="h-10 rounded-xl text-xs bg-slate-50" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Adresse / Siège</label>
+                  <Input placeholder="Alger, Algérie" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="h-10 rounded-xl text-xs bg-slate-50" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2 — Design & Apparence */}
+          {step === 2 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">03. Palette de Couleurs & Personnalisation Hero</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Ajustez la charte graphique et l'accroche promotionnelle.</p>
+              </div>
+
+              {/* Color Presets */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Palettes de marque pré-configurées</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    { label: 'Denim Blue', p: '#4b7bec', a: '#3867d6' },
+                    { label: 'Luxury Noir', p: '#1E293B', a: '#F59E0B' },
+                    { label: 'Emerald Fresh', p: '#10B981', a: '#059669' },
+                    { label: 'Royal Violet', p: '#6C5CE7', a: '#5B4BC4' },
+                    { label: 'Ruby Red', p: '#EF4444', a: '#B91C1C' },
+                    { label: 'Ocean Teal', p: '#0EA5E9', a: '#0284C7' },
+                    { label: 'Amber Gold', p: '#F59E0B', a: '#D97706' },
+                    { label: 'Deep Navy', p: '#0F172A', a: '#1E293B' },
+                  ].map(preset => {
+                    const active = form.primaryColor.toLowerCase() === preset.p.toLowerCase();
+                    return (
                       <button
-                        onClick={() => setForm(f => ({ ...f, assignment_active: !f.assignment_active }))}
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, primaryColor: preset.p, accentColor: preset.a }))}
                         className={cn(
-                          "w-12 h-6 rounded-full transition-colors relative",
-                          form.assignment_active ? "bg-emerald-500" : "bg-slate-200"
+                          "p-3 rounded-xl border transition-all flex items-center gap-2.5 text-left",
+                          active ? "border-[#4b7bec] bg-blue-50/30 ring-2 ring-[#4b7bec]/20" : "border-slate-100 bg-slate-50/60 hover:bg-white hover:border-slate-200"
                         )}
                       >
-                        <div className={cn(
-                          "size-5 rounded-full bg-white absolute top-0.5 transition-all shadow-sm",
-                          form.assignment_active ? "left-6" : "left-0.5"
-                        )} />
+                        <div className="size-6 rounded-lg shadow-2xs shrink-0 border border-white" style={{ backgroundColor: preset.p }} />
+                        <span className="text-[11px] font-bold text-slate-800 truncate">{preset.label}</span>
                       </button>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    {form.assignment_active && (
-                      <div className="space-y-4 pt-4 border-t border-slate-100">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Règle de distribution</label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {([
-                            { id: 'ROUND_ROBIN', label: 'Tour de rôle (Round Robin)', desc: 'Distribue équitablement chaque commande à l\'agent suivant.', icon: Zap },
-                            { id: 'LEAST_LOADED', label: 'Moins chargé (Least Loaded)', desc: 'Assigne à l\'agent ayant le moins de commandes en cours.', icon: Check },
-                          ] as const).map(logic => {
-                            const active = form.assignment_logic === logic.id;
-                            const Icon = logic.icon;
-                            return (
-                              <button
-                                key={logic.id}
-                                onClick={() => setForm(f => ({ ...f, assignment_logic: logic.id }))}
-                                className={cn(
-                                  "text-left p-4 rounded-2xl border-2 transition-all group",
-                                  active ? "border-indigo-500 bg-indigo-50/20 shadow-sm" : "border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200"
-                                )}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div className={cn(
-                                    "size-8 rounded-xl flex items-center justify-center shrink-0 transition-colors",
-                                    active ? "bg-indigo-500 text-white" : "bg-white border border-slate-200 text-slate-400 group-hover:text-slate-600"
-                                  )}>
-                                    <Icon className="size-4" />
-                                  </div>
-                                  <div>
-                                    <h5 className={cn("text-[11px] font-black", active ? "text-indigo-900" : "text-slate-800")}>{logic.label}</h5>
-                                    <p className="text-[10px] font-medium text-slate-400 mt-0.5 leading-snug">{logic.desc}</p>
-                                  </div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+              {/* Custom Color Pickers */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Principale (Hex)</label>
+                  <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <input
+                      type="color"
+                      value={form.primaryColor}
+                      onChange={e => setForm(f => ({ ...f, primaryColor: e.target.value }))}
+                      className="size-8 rounded-lg cursor-pointer border-0 bg-transparent"
+                    />
+                    <Input
+                      value={form.primaryColor}
+                      onChange={e => setForm(f => ({ ...f, primaryColor: e.target.value }))}
+                      className="h-9 border-0 bg-transparent font-mono text-xs font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Secondaire (Hex)</label>
+                  <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <input
+                      type="color"
+                      value={form.accentColor}
+                      onChange={e => setForm(f => ({ ...f, accentColor: e.target.value }))}
+                      className="size-8 rounded-lg cursor-pointer border-0 bg-transparent"
+                    />
+                    <Input
+                      value={form.accentColor}
+                      onChange={e => setForm(f => ({ ...f, accentColor: e.target.value }))}
+                      className="h-9 border-0 bg-transparent font-mono text-xs font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Hero Headline & CTA */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre Principal Hero</label>
+                  <Input
+                    placeholder="L'Élégance Épurée"
+                    value={form.hero_headline}
+                    onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
+                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bouton d'Action (CTA)</label>
+                  <Input
+                    placeholder="Commander maintenant"
+                    value={form.hero_cta}
+                    onChange={e => setForm(f => ({ ...f, hero_cta: e.target.value }))}
+                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3 — Sections */}
+          {step === 3 && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">04. Sections de la Page d'Accueil</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Activez ou désactivez les blocs affichés sur votre page d'accueil.</p>
+              </div>
+
+              <div className="space-y-3">
+                {form.sections_config.map((section, i) => (
+                  <div
+                    key={section.key}
+                    className={cn(
+                      "flex items-center justify-between p-4 rounded-2xl border transition-all",
+                      section.enabled ? "bg-white border-slate-200 shadow-2xs" : "bg-slate-50/50 border-slate-100 opacity-60"
                     )}
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 5 — Review */}
-              {step === 5 && (
-                <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 mb-1">{isEdit ? 'Prêt à modifier !' : 'Prêt à déployer !'}</h3>
-                    <p className="text-sm text-slate-400 font-medium">Vérifiez les informations avant de {isEdit ? 'sauvegarder les modifications' : 'lancer votre boutique'}.</p>
-                  </div>
-
-                  <div className="space-y-3">
-                    {[
-                      { label: 'Nom', value: form.name || '—' },
-                      { label: 'Domaine', value: form.domain || `${form.slug}.azghub.com` },
-                      { label: 'Template', value: selectedTemplate.name },
-                      { label: 'Couleur', value: form.primaryColor.toUpperCase(), color: form.primaryColor },
-                      { label: 'Logo', value: form.logo_url ? 'Uploadé ✓' : 'Non défini' },
-                      { label: 'Bannière', value: form.banner_url ? (form.banner_is_video ? 'Vidéo ✓' : 'Image ✓') : 'Non définie' },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-center justify-between py-3 border-b border-slate-50">
-                        <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{item.label}</span>
-                        <div className="flex items-center gap-2">
-                          {item.color && <div className="size-4 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: item.color }} />}
-                          <span className="text-sm font-bold text-slate-900">{item.value}</span>
-                        </div>
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "size-9 rounded-xl flex items-center justify-center font-black text-xs",
+                        section.enabled ? "bg-indigo-50 text-[#4b7bec]" : "bg-slate-100 text-slate-400"
+                      )}>
+                        {i + 1}
                       </div>
-                    ))}
-                  </div>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">{SECTION_LABELS[section.key] || section.key}</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Position #{i + 1} dans la structure</p>
+                      </div>
+                    </div>
 
-                  {/* Banner preview in review */}
-                  {form.banner_url && (
-                    <div className="rounded-2xl overflow-hidden border border-slate-100">
-                      {form.banner_is_video ? (
-                        <video src={form.banner_url} className="w-full h-24 object-cover" muted loop autoPlay />
-                      ) : (
-                        <img src={form.banner_url} alt="banner preview" className="w-full h-24 object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        sections_config: f.sections_config.map(s => s.key === section.key ? { ...s, enabled: !s.enabled } : s)
+                      }))}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border",
+                        section.enabled 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                          : "bg-slate-100 text-slate-500 border-slate-200"
                       )}
-                    </div>
-                  )}
-
-                  <div className="p-5 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 text-center">
-                    <Globe className="size-8 mx-auto text-slate-300 mb-3" />
-                    <p className="text-sm font-black text-slate-700">La boutique sera accessible à:</p>
-                    <p className="text-base font-black mt-1 font-mono" style={{ color: form.primaryColor }}>
-                      {form.domain || `${form.slug || 'ma-boutique'}.azghub.com`}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-2 font-medium">En mode dev, cette URL est simulée localement.</p>
+                    >
+                      {section.enabled ? 'Activé' : 'Désactivé'}
+                    </button>
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-                  <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-3">
-                    <Check className="size-5 text-emerald-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-bold text-emerald-800">La boutique sera immédiatement disponible</p>
-                      <p className="text-xs text-emerald-600 font-medium mt-0.5">Elle apparaîtra dans votre dashboard admin et sera gérable depuis le panneau de contrôle.</p>
-                    </div>
+          {/* STEP 4 — Assignation */}
+          {step === 4 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">05. Règles d'Assignation des Commandes</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Automatisez l'attribution des commandes de cette boutique aux membres de votre équipe.</p>
+              </div>
+
+              <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">Distribution Automatique</h4>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">Assigner les nouvelles commandes aux confirmatrices en temps réel</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, assignment_active: !f.assignment_active }))}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border",
+                      form.assignment_active 
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                        : "bg-slate-200 text-slate-600 border-slate-300"
+                    )}
+                  >
+                    {form.assignment_active ? 'Actif' : 'Inactif'}
+                  </button>
                 </div>
-              )}
+
+                {form.assignment_active && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200">
+                    {[
+                      { id: 'ROUND_ROBIN', label: 'Tour de rôle (Round Robin)', desc: 'Distribue équitablement chaque commande à l\'agent suivant.' },
+                      { id: 'LEAST_LOADED', label: 'Moins chargé (Least Loaded)', desc: 'Assigne en priorité à l\'agent ayant le moins de commandes en cours.' },
+                    ].map(logic => {
+                      const active = form.assignment_logic === logic.id;
+                      return (
+                        <div
+                          key={logic.id}
+                          onClick={() => setForm(f => ({ ...f, assignment_logic: logic.id as any }))}
+                          className={cn(
+                            "p-3.5 rounded-xl border transition-all cursor-pointer",
+                            active ? "border-[#4b7bec] bg-blue-50/40 ring-1 ring-[#4b7bec]" : "border-slate-200 bg-white hover:border-slate-300"
+                          )}
+                        >
+                          <p className="text-xs font-black text-slate-900">{logic.label}</p>
+                          <p className="text-[10px] text-slate-400 mt-1 leading-snug font-medium">{logic.desc}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
+          )}
 
-            {/* NAV BUTTONS */}
-            <div className="shrink-0 px-8 py-5 border-t border-slate-100 flex items-center justify-between bg-white">
-              <Button variant="ghost" onClick={() => setStep(s => Math.max(0, s - 1))} disabled={step === 0} className="text-slate-400 font-bold h-12 px-6 rounded-2xl">
-                <ChevronLeft className="size-4 mr-1" /> Précédent
-              </Button>
-              {step < STEPS.length - 1 ? (
-                <Button
-                  onClick={() => setStep(s => s + 1)}
-                  disabled={!canProceed}
-                  className="h-12 px-8 rounded-2xl font-black uppercase tracking-widest text-[11px] text-white shadow-lg"
-                  style={{ backgroundColor: form.primaryColor }}
-                >
-                  Suivant <ChevronRight className="size-4 ml-1" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={handleCreate}
-                  disabled={mutation.isPending || !form.name || !form.slug}
-                  className="h-12 px-8 rounded-2xl font-black uppercase tracking-widest text-[11px] text-white shadow-xl"
-                  style={{ backgroundColor: form.primaryColor }}
-                >
-                  {mutation.isPending ? <Loader2 className="size-5 animate-spin" /> : (isEdit ? '✓ Enregistrer' : '🚀 Déployer la boutique')}
-                </Button>
-              )}
+          {/* STEP 5 — Déploiement */}
+          {step === 5 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">06. Récapitulatif & Déploiement</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Vérifiez les paramètres avant la mise en ligne.</p>
+              </div>
+
+              <div className="bg-slate-50/70 rounded-2xl p-5 border border-slate-100 space-y-3">
+                {[
+                  { label: 'Nom de la Boutique', value: form.name || '—' },
+                  { label: 'URL Principale', value: `${form.slug || 'slug'}.azghub.com` },
+                  { label: 'Domaine Personnalisé', value: form.domain || 'Non configuré' },
+                  { label: 'Template Vitrine', value: selectedTemplate.name },
+                  { label: 'Couleur de Marque', value: form.primaryColor.toUpperCase(), color: form.primaryColor },
+                  { label: 'Logo', value: form.logo_url ? 'Configuré' : 'Non défini' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-b-0">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{item.label}</span>
+                    <div className="flex items-center gap-2">
+                      {item.color && <div className="size-3.5 rounded-full border border-white shadow-2xs" style={{ backgroundColor: item.color }} />}
+                      <span className="font-bold text-slate-900 font-mono">{item.value}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                <CheckCircle2 className="size-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-emerald-900">Prêt pour la mise en ligne immédiate</p>
+                  <p className="text-[10px] text-emerald-700/80 font-medium mt-0.5">
+                    La boutique sera immédiatement disponible dans le réseau multi-tenant et accessible via son sous-domaine.
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
 
+        {/* ─── MODAL FOOTER ─── */}
+        <div className="shrink-0 px-6 sm:px-8 py-4 border-t border-slate-100 flex items-center justify-between bg-white">
+          <Button 
+            variant="outline" 
+            onClick={() => setStep(s => Math.max(0, s - 1))} 
+            disabled={step === 0} 
+            className="text-slate-600 font-bold h-11 px-5 rounded-xl text-xs border-slate-200 hover:bg-slate-50"
+          >
+            <ChevronLeft className="size-3.5 mr-1" /> Précédent
+          </Button>
 
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            Étape {step + 1} / {STEPS.length}
+          </span>
+
+          {step < STEPS.length - 1 ? (
+            <Button
+              onClick={() => setStep(s => s + 1)}
+              disabled={!canProceed}
+              className="h-11 px-6 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#1877F2] hover:bg-[#166fe5] shadow-sm flex items-center gap-1.5"
+            >
+              Suivant <ChevronRight className="size-3.5" />
+            </Button>
+          ) : (
+            <Button
+              onClick={handleCreate}
+              disabled={mutation.isPending || !form.name || !form.slug}
+              className="h-11 px-7 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#00B894] hover:bg-[#00a884] shadow-md shadow-emerald-100 flex items-center gap-2"
+            >
+              {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : (isEdit ? 'Enregistrer les modifications' : 'Déployer la boutique')}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
