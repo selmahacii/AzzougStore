@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe } from 'lucide-react';
+import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe, Home, ShoppingBag, Flame, LogOut } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { LoginDialog } from '@/components/auth/login-dialog';
@@ -444,115 +444,250 @@ export function StorefrontHeader() {
         })()}
       </motion.header>
 
-      {/* ─── Mobile Menu ─── */}
+      {/* ─── Mobile Menu Drawer (Meta Ads Template) ─── */}
       <AnimatePresence>
         {menuOpen && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 lg:hidden">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
+          <div className="fixed inset-0 z-50 lg:hidden flex">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs" 
+              onClick={() => setMenuOpen(false)} 
+            />
+            
+            {/* Drawer */}
             <motion.div
-              initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="absolute inset-y-0 left-0 w-[85vw] max-w-sm flex flex-col shadow-2xl"
-              style={{ backgroundColor: T.mobileBg }}
+              initial={{ x: '-100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+              className="relative w-[88vw] max-w-sm bg-[#F8F9FC] h-full shadow-2xl flex flex-col z-10 overflow-hidden border-r border-slate-200/80"
             >
-              {/* Header */}
-              <div className="flex h-20 items-center justify-between px-6 border-b" style={{ borderColor: T.mobileBorder }}>
-                <div className="flex items-center gap-3">
-                  {logoSrc ? (
-                    <div className="size-9 rounded-lg overflow-hidden bg-black/10 flex items-center justify-center">
-                      <img src={logoSrc} alt={storeName} className="h-full w-full object-contain p-1" />
+              {/* Top Header Card */}
+              <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="size-11 rounded-xl overflow-hidden bg-white border border-slate-200/80 p-0.5 flex items-center justify-center shrink-0 shadow-2xs">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt={storeName} className="h-full w-full object-contain" />
+                    ) : (
+                      <span className="text-xs font-black text-white size-full flex items-center justify-center rounded-lg" style={{ backgroundColor: T.primary }}>
+                        {storeName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black uppercase tracking-tight text-slate-900 truncate">{storeName}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 font-mono">Boutique Active</span>
                     </div>
-                  ) : (
-                    <div className="size-9 rounded-lg flex items-center justify-center text-xs font-black text-white" style={{ backgroundColor: T.primary }}>
-                      {storeName.charAt(0)}
-                    </div>
-                  )}
-                  <span className="text-sm font-black uppercase tracking-wide" style={{ color: T.mobileText }}>{storeName}</span>
+                  </div>
                 </div>
-                <button onClick={() => setMenuOpen(false)} className="p-2 rounded-xl hover:bg-black/5 transition-colors">
-                  <X className="size-5" style={{ color: T.mobileText }} />
+
+                <button 
+                  onClick={() => setMenuOpen(false)} 
+                  className="size-9 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all active:scale-95"
+                >
+                  <X className="size-4" />
                 </button>
               </div>
 
-              {/* Links */}
-              <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
-                {[
-                  { label: t('home'), view: 'home' },
-                  { label: t('allProducts'), view: 'shop' },
-                  { label: t('ourBestSellers'), view: 'home', hash: '#best-sellers' },
-                  { label: t('trackOrder'), view: 'order-tracking' },
-                ].map(link => (
-                  <button key={link.label} onClick={() => handleNav(link.view, link.hash)}
-                    className="flex w-full items-center justify-between px-4 py-3.5 rounded-2xl text-sm font-black uppercase tracking-tight transition-colors hover:bg-black/5"
-                    style={{ color: T.mobileText }}>
-                    {link.label}
-                  </button>
-                ))}
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
 
-                {/* Mobile categories */}
-                {categories.length > 0 && (
-                  <div className="pt-4">
-                    <p className="px-4 text-[10px] font-black uppercase tracking-[0.3em] mb-2 opacity-40" style={{ color: T.mobileText }}>
-                      {t('categories')}
-                    </p>
-                    {categories.map(cat => (
-                      <button key={cat} onClick={() => handleNav('shop', undefined, cat)}
-                        className="flex w-full items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-colors hover:bg-black/5"
-                        style={{ color: T.mobileText }}>
-                        <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: T.mobileAccent }} />
-                        {cat}
+                {/* Quick Search Input Card */}
+                <div className="bg-white rounded-2xl border border-slate-100 p-2 shadow-2xs flex items-center gap-2">
+                  <Search className="size-4 text-slate-400 ml-2 shrink-0" />
+                  <input 
+                    type="text" 
+                    placeholder="Rechercher un produit..." 
+                    className="flex-1 bg-transparent text-xs font-medium text-slate-800 placeholder-slate-400 outline-none pr-2 h-8"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value;
+                        if (val.trim()) {
+                          setSelectedCategory(null);
+                          setStorefrontView('shop' as any);
+                          setMenuOpen(false);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Primary Nav Links Card */}
+                <div className="bg-white rounded-2xl border border-slate-100 p-2 shadow-2xs space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 px-3 pt-1 block">Navigation</label>
+                  {[
+                    { label: t('home'), view: 'home', icon: Home },
+                    { label: 'Tout le catalogue', view: 'shop', icon: ShoppingBag, badge: '58 Wilayas' },
+                    { label: t('ourBestSellers'), view: 'home', hash: '#best-sellers', icon: Flame },
+                    { label: t('trackOrder'), view: 'order-tracking', icon: Truck },
+                  ].map(item => {
+                    const IconComp = item.icon;
+                    return (
+                      <button
+                        key={item.label}
+                        onClick={() => handleNav(item.view, item.hash)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="size-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600">
+                            <IconComp className="size-3.5" />
+                          </div>
+                          <span>{item.label}</span>
+                        </div>
+                        {item.badge && (
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-black uppercase bg-blue-50 text-[#4b7bec] border border-blue-100">
+                            {item.badge}
+                          </span>
+                        )}
                       </button>
-                    ))}
+                    );
+                  })}
+                </div>
+
+                {/* Collections / Categories Card */}
+                {categories.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-slate-100 p-3 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-slate-400">Collections</label>
+                      <button 
+                        onClick={() => handleNav('shop')} 
+                        className="text-[9px] font-black uppercase tracking-wider text-[#4b7bec] hover:underline"
+                      >
+                        Voir tout
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {categories.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => handleNav('shop', undefined, cat)}
+                          className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="size-1.5 rounded-full" style={{ backgroundColor: T.primary }} />
+                            <span>{cat}</span>
+                          </div>
+                          <ChevronDown className="size-3 text-slate-300 -rotate-90" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {/* Contact */}
+                {/* Reassurance Mini Box */}
+                <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/50 rounded-2xl border border-blue-100/70 p-3.5 space-y-2 shadow-2xs">
+                  <div className="flex items-center gap-2 text-[#4b7bec]">
+                    <ShieldCheck className="size-4 shrink-0" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">Garantie & Service</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-700">
+                    <div className="flex items-center gap-1.5">
+                      <Truck className="size-3 text-[#4b7bec]" />
+                      <span>58 Wilayas COD</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Check className="size-3 text-emerald-600" />
+                      <span>Paiement Réception</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customer & Staff Space Card */}
+                <div className="bg-white rounded-2xl border border-slate-100 p-3 shadow-2xs space-y-2">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 px-1">Espace Utilisateur</label>
+                  {isAuthenticated && user ? (
+                    <div className="space-y-2">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-black text-slate-900">{user.full_name || user.email}</p>
+                          <span className="text-[9px] font-mono font-bold text-slate-400">{user.role}</span>
+                        </div>
+                        {['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role) && (
+                          <button
+                            onClick={() => { setAppView('admin'); setMenuOpen(false); }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-bold"
+                          >
+                            Espace Pro
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => { setShowAccountPanel(true); setMenuOpen(false); }}
+                          className="flex-1 h-9 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          Mon Compte
+                        </button>
+                        <button 
+                          onClick={handleLogout}
+                          className="h-9 px-3 rounded-xl border border-rose-100 bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100 flex items-center gap-1"
+                        >
+                          <LogOut className="size-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setShowLoginDialog(true); setMenuOpen(false); }}
+                      className="w-full h-10 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider shadow-xs hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                    >
+                      <User className="size-3.5" /> Se Connecter / S'inscrire
+                    </button>
+                  )}
+                </div>
+
+                {/* Contact Details */}
                 {(contact?.phone || contact?.email) && (
-                  <div className="pt-6 border-t mt-4 space-y-3 px-1" style={{ borderColor: T.mobileBorder }}>
-                    <p className="px-3 text-[10px] font-black uppercase tracking-[0.3em] opacity-40" style={{ color: T.mobileText }}>{t('contact')}</p>
+                  <div className="bg-white rounded-2xl border border-slate-100 p-3 shadow-2xs space-y-2">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-400 px-1">Service Client</label>
                     {contact?.phone && (
-                      <a href={`tel:${contact.phone}`} className="flex items-center gap-3 px-3 py-2 text-sm font-bold rounded-xl" style={{ color: T.mobileText }}>
-                        <Phone className="size-4 shrink-0" style={{ color: T.mobileAccent }} /> {contact.phone}
+                      <a 
+                        href={`tel:${contact.phone}`} 
+                        className="flex items-center gap-2.5 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        <Phone className="size-3.5 text-[#4b7bec]" />
+                        <span>{contact.phone}</span>
                       </a>
                     )}
                     {contact?.email && (
-                      <a href={`mailto:${contact.email}`} className="flex items-center gap-3 px-3 py-2 text-sm font-bold rounded-xl" style={{ color: T.mobileText }}>
-                        <Mail className="size-4 shrink-0" style={{ color: T.mobileAccent }} /> {contact.email}
+                      <a 
+                        href={`mailto:${contact.email}`} 
+                        className="flex items-center gap-2.5 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        <Mail className="size-3.5 text-[#4b7bec]" />
+                        <span className="truncate">{contact.email}</span>
                       </a>
                     )}
                   </div>
                 )}
+
               </div>
 
-              {/* Bottom CTA */}
-              <div className="p-4 border-t space-y-3" style={{ borderColor: T.mobileBorder }}>
-                {/* Mobile Language switcher */}
-                <div className="px-4 py-2 flex items-center justify-between border-b" style={{ borderColor: T.mobileBorder }}>
-                  <span className="text-xs font-bold" style={{ color: T.mobileText }}>Langue / Language</span>
+              {/* Drawer Footer */}
+              <div className="p-4 bg-white border-t border-slate-100 space-y-3">
+                {/* Language Switcher Bar */}
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Langue</span>
                   <LanguageSwitcher T={T} />
                 </div>
 
-                {isAuthenticated ? (
-                  <button onClick={() => { setAppView('admin'); setMenuOpen(false); }}
-                    className="w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-white"
-                    style={{ backgroundColor: T.mobileAccent }}>
-                    <LayoutDashboard className="size-4" /> {t('myAdminSpace')}
-                  </button>
-                ) : (
-                  <button onClick={() => { setShowLoginDialog(true); setMenuOpen(false); }}
-                    className="w-full py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest text-white"
-                    style={{ backgroundColor: T.mobileAccent }}>
-                    {t('login')}
-                  </button>
-                )}
-                <button onClick={() => { toggleCart(); setMenuOpen(false); }}
-                  className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest border"
-                  style={{ color: T.mobileText, borderColor: T.mobileBorder }}>
-                  <ShoppingCart className="size-4" /> {t('cart')} {cartCount > 0 && `(${cartCount})`}
+                {/* Cart CTA Button */}
+                <button 
+                  onClick={() => { toggleCart(); setMenuOpen(false); }}
+                  className="w-full h-12 rounded-xl text-xs font-black uppercase tracking-wider text-white shadow-xs transition-all flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
+                  style={{ backgroundColor: T.primary }}
+                >
+                  <ShoppingCart className="size-4" /> Voir mon panier {cartCount > 0 && `(${cartCount})`}
                 </button>
               </div>
+
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

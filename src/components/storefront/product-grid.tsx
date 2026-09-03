@@ -166,7 +166,7 @@ function Pagination({ page, totalPages, onPage, primary, dark }: {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// CLEAN GRID — Meta Ads Template Minimalist Catalog
+// CLEAN GRID — Meta Ads Template Minimalist Catalog (100% Responsive)
 // ══════════════════════════════════════════════════════════════════
 function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; primary: string; setStorefrontView: (v: any) => void }) {
   const d = useProductData(storeId);
@@ -174,10 +174,11 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
   const openCart = useCartStore(s => s.openCart);
   const setSelectedProductSlug = useAppStore(s => s.setSelectedProductSlug);
 
-  const go = (p: number) => { d.setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [localMin, setLocalMin] = useState('');
   const [localMax, setLocalMax] = useState('');
+
+  const go = (p: number) => { d.setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const applyPrice = () => {
     const mn = localMin !== '' ? parseFloat(localMin) : null;
@@ -186,51 +187,76 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
     d.setMaxPrice(mx);
   };
 
+  const activeFilterCount = (d.selectedCategory !== 'all' && d.selectedCategory !== null ? 1 : 0) +
+    (d.minPrice !== null || d.maxPrice !== null ? 1 : 0) +
+    (d.inStockOnly ? 1 : 0) +
+    (d.promoOnly ? 1 : 0);
+
   return (
     <div className="bg-[#F8F9FC] min-h-screen">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-8 lg:py-12 space-y-6">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-12 py-5 sm:py-8 lg:py-12 space-y-4 sm:space-y-6">
 
-        {/* Top Header Card (Meta Ads Style) */}
-        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+        {/* Top Header Card (Meta Ads Style — 100% Responsive) */}
+        <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-4 sm:p-6 lg:p-7 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 sm:gap-6">
+          <div className="w-full lg:w-auto">
+            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
               <button onClick={() => setStorefrontView('home')} className="hover:text-slate-900 transition-colors">Accueil</button>
               <ChevronRight className="size-3 text-slate-300" />
               <span className="text-slate-800">Catalogue</span>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-lg sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
                 {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
               </h1>
               <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
-                {d.total} article{d.total > 1 ? 's' : ''} disponible{d.total > 1 ? 's' : ''}
+                {d.total} article{d.total > 1 ? 's' : ''}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Parcourez notre sélection exclusive avec livraison rapide disponible sur les 58 Wilayas.
+            <p className="text-xs text-slate-400 mt-0.5 sm:mt-1 hidden sm:block">
+              Parcourez notre catalogue officiel avec livraison rapide sur les 58 Wilayas et paiement cash à la livraison.
             </p>
           </div>
 
-          {/* Quick Tactical Actions: Search & Sort */}
-          <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap sm:flex-nowrap">
+          {/* Quick Tactical Actions: Search, Filter Toggle, Sort */}
+          <div className="flex items-center gap-2 sm:gap-3 w-full lg:w-auto">
             <div className="relative flex-1 sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
               <input
                 type="text"
                 value={d.search}
                 onChange={e => d.setSearch(e.target.value)}
-                placeholder="Recherche rapide..."
-                className="w-full h-11 pl-9 pr-3 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all"
+                placeholder="Rechercher..."
+                className="w-full h-11 pl-9 pr-8 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all"
               />
               {d.search && (
-                <button onClick={() => d.setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button onClick={() => d.setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   <X className="size-3.5" />
                 </button>
               )}
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 h-11 shadow-2xs shrink-0">
-              <SlidersHorizontal className="size-3.5 text-slate-400" />
+            {/* Mobile Filter Button (Visible on mobile/tablet < lg) */}
+            <button
+              onClick={() => setMobileFilterOpen(true)}
+              className={cn(
+                "lg:hidden size-11 rounded-xl border flex items-center justify-center relative shrink-0 transition-all active:scale-95 shadow-2xs",
+                activeFilterCount > 0 
+                  ? "bg-slate-900 border-slate-900 text-white" 
+                  : "bg-slate-50 border-slate-200/80 text-slate-700 hover:bg-slate-100"
+              )}
+              title="Filtres"
+            >
+              <Filter className="size-4" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 size-4 rounded-full bg-[#4b7bec] text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Sort Selector */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 h-11 shadow-2xs shrink-0">
+              <SlidersHorizontal className="size-3.5 text-slate-400 shrink-0" />
               <select 
                 value={d.sortBy} 
                 onChange={e => d.setSortBy(e.target.value as SortOption)}
@@ -242,32 +268,53 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
           </div>
         </div>
 
-        {/* Global Catalog Highlights Row (Meta Ads KPI Style) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Catalogue Actif</span>
-            <p className="text-lg font-black text-slate-900 font-mono">{d.total} Références</p>
-            <p className="text-[10px] font-bold text-emerald-600">Produits certifiés</p>
+        {/* Global Catalog Highlights Row (Meta Ads KPI Style — Fully Responsive) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
+            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Catalogue Actif</span>
+            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">{d.total} Références</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 truncate">Produits certifiés</p>
           </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Expédition</span>
-            <p className="text-lg font-black text-slate-900 font-mono">58 Wilayas</p>
-            <p className="text-[10px] font-bold text-slate-400">Livraison à domicile & relais</p>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
+            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Expédition</span>
+            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">58 Wilayas</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">Domicile & Relais</p>
           </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Paiement</span>
-            <p className="text-lg font-black text-slate-900 font-mono">Cash (COD)</p>
-            <p className="text-[10px] font-bold text-emerald-600">À la réception du colis</p>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
+            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Paiement</span>
+            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">Cash (COD)</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 truncate">À la réception</p>
           </div>
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Assistance</span>
-            <p className="text-lg font-black text-slate-900 font-mono">7j / 7</p>
-            <p className="text-[10px] font-bold text-slate-400">Service client réactif</p>
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
+            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Assistance</span>
+            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">7j / 7</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">Support client réactif</p>
           </div>
         </div>
 
+        {/* Mobile Filter Chips Row */}
+        <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full">
+          {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
+            <button 
+              key={cat.id} 
+              onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+              className={cn(
+                "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap shadow-2xs",
+                d.selectedCategory === cat.id 
+                  ? "bg-slate-900 text-white border-slate-900 font-black shadow-xs" 
+                  : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50"
+              )}
+            >
+              {cat.label}
+              {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                <span className="ml-1.5 opacity-60 font-mono text-[10px]">{d.categoryCounts[cat.id]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar Filters */}
+          {/* Desktop Sidebar Filters */}
           <aside className="hidden lg:flex flex-col w-72 shrink-0 gap-5 sticky top-28 h-fit">
 
             {/* Categories Card */}
@@ -359,34 +406,16 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
             )}
           </aside>
 
-          {/* Mobile Filter Chips */}
-          <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar w-full">
-            {['all', ...d.normalizedCategories].map(cat => (
-              <button 
-                key={cat} 
-                onClick={() => { d.setSelectedCategory(cat); d.setSelectedCategoryStore(cat === 'all' ? null : cat); }}
-                className={cn(
-                  "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap",
-                  d.selectedCategory === cat 
-                    ? "bg-[#4b7bec] text-white border-[#4b7bec]" 
-                    : "bg-white text-slate-600 border-slate-200"
-                )}
-              >
-                {cat === 'all' ? 'Toutes' : cat}
-              </button>
-            ))}
-          </div>
-
-          {/* Main Grid */}
+          {/* Main Product Grid (Adaptive Columns for all devices) */}
           <div className="flex-1 min-w-0">
             {d.loading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-                {Array.from({ length: 9 }).map((_, i) => (
-                  <Skeleton key={i} className="aspect-[4/5] bg-white rounded-[24px] border border-slate-100 shadow-sm" />
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-6">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="aspect-[4/5] bg-white rounded-2xl sm:rounded-[24px] border border-slate-100 shadow-sm" />
                 ))}
               </div>
             ) : d.products.length === 0 ? (
-              <div className="bg-white rounded-[32px] border border-slate-100 p-16 flex flex-col items-center justify-center gap-4 text-center shadow-sm">
+              <div className="bg-white rounded-2xl sm:rounded-[32px] border border-slate-100 p-10 sm:p-16 flex flex-col items-center justify-center gap-4 text-center shadow-sm">
                 <div className="size-14 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
                   <Package className="size-7" />
                 </div>
@@ -405,7 +434,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-6">
                   {d.products.map(product => (
                     <ProductCard 
                       key={product.id} 
@@ -432,9 +461,150 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
         </div>
 
       </div>
+
+      {/* Mobile Filter Drawer Modal */}
+      <AnimatePresence>
+        {mobileFilterOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden flex justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              className="absolute inset-0 bg-black/50 backdrop-blur-xs" 
+              onClick={() => setMobileFilterOpen(false)} 
+            />
+            <motion.div 
+              initial={{ x: '100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '100%' }} 
+              transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+              className="relative w-full max-w-xs sm:max-w-sm bg-white h-full shadow-2xl flex flex-col z-10"
+            >
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between p-5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <SlidersHorizontal className="size-4 text-slate-900" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Filtres du catalogue</h3>
+                </div>
+                <button 
+                  onClick={() => setMobileFilterOpen(false)} 
+                  className="size-8 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-500 hover:text-slate-900 flex items-center justify-center"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                {/* Categories */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
+                  <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+                    {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
+                      <button 
+                        key={cat.id} 
+                        onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                        className={cn(
+                          "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all",
+                          d.selectedCategory === cat.id 
+                            ? "bg-slate-900 text-white font-black" 
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        <span>{cat.label}</span>
+                        {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                          <span className={cn(
+                            "text-[10px] font-mono",
+                            d.selectedCategory === cat.id ? "text-slate-300" : "text-slate-400"
+                          )}>
+                            {d.categoryCounts[cat.id]}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Price Range */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Prix (DA)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="number" 
+                      value={localMin} 
+                      onChange={e => setLocalMin(e.target.value)} 
+                      placeholder="Min DA"
+                      className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
+                    />
+                    <input 
+                      type="number" 
+                      value={localMax} 
+                      onChange={e => setLocalMax(e.target.value)} 
+                      placeholder="Max DA"
+                      className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
+                    />
+                  </div>
+                  <button 
+                    onClick={applyPrice}
+                    className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs"
+                    style={{ backgroundColor: primary }}
+                  >
+                    Appliquer le prix
+                  </button>
+                </div>
+
+                {/* Availability */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Disponibilité</label>
+                  <div className="space-y-2.5">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+                      <input 
+                        type="checkbox" 
+                        checked={d.inStockOnly} 
+                        onChange={e => d.setInStockOnly(e.target.checked)}
+                        className="size-4 rounded accent-[#4b7bec]" 
+                      />
+                      En stock uniquement
+                    </label>
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-bold text-slate-700">
+                      <input 
+                        type="checkbox" 
+                        checked={d.promoOnly} 
+                        onChange={e => d.setPromoOnly(e.target.checked)}
+                        className="size-4 rounded accent-[#4b7bec]" 
+                      />
+                      En promotion
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-4 border-t border-slate-100 flex gap-2">
+                {d.hasActiveFilters && (
+                  <button 
+                    onClick={() => { d.clearFilters(); setLocalMin(''); setLocalMax(''); }}
+                    className="flex-1 h-11 text-xs font-bold text-rose-600 bg-rose-50 rounded-xl border border-rose-100"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+                <button 
+                  onClick={() => setMobileFilterOpen(false)}
+                  className="flex-1 h-11 text-xs font-black uppercase tracking-wider text-white bg-slate-900 rounded-xl shadow-xs"
+                >
+                  Voir {d.total} produits
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
+
 
 // ══════════════════════════════════════════════════════════════════
 // ATHLETIC GRID — Gymshark/Nike: black, dense, pill categories
