@@ -207,16 +207,49 @@ function useProductDetailData() {
     // Append variant images if any
     if (product.variants && Array.isArray(product.variants)) {
       product.variants.forEach((v: any) => {
-        if (v.image && !imgs.includes(v.image)) {
-          imgs.push(v.image);
+        const vImg = v.image || v.image_url || v.imageUrl || v.photo || v.img;
+        if (vImg && typeof vImg === 'string' && vImg.trim() && !imgs.includes(vImg.trim())) {
+          imgs.push(vImg.trim());
+        }
+        if (v.sub_variants && Array.isArray(v.sub_variants)) {
+          v.sub_variants.forEach((sv: any) => {
+            const svImg = sv.image || sv.image_url || sv.imageUrl || sv.photo || sv.img;
+            if (svImg && typeof svImg === 'string' && svImg.trim() && !imgs.includes(svImg.trim())) {
+              imgs.push(svImg.trim());
+            }
+          });
         }
       });
     }
-    // 1200 covers the largest slot this page renders (full-bleed main
-    // viewer) without shipping the original multi-megapixel upload —
-    // same fix as landing-page-renderer.tsx / product-card.tsx.
     return imgs.filter(Boolean).map(img => optimizeCloudinaryUrl(img, 1200));
   }, [product]);
+
+  const setActiveVariantImage = useCallback((vImg: string | undefined) => {
+    if (!vImg || typeof vImg !== 'string' || !vImg.trim()) return;
+    const clean = vImg.trim();
+    const opt = optimizeCloudinaryUrl(clean, 1200);
+
+    const getFilename = (u: string) => {
+      try {
+        const noQuery = u.split('?')[0];
+        return noQuery.substring(noQuery.lastIndexOf('/') + 1);
+      } catch {
+        return u;
+      }
+    };
+    const targetFile = getFilename(clean);
+
+    const idx = allImages.findIndex(img => {
+      if (img === opt || img === clean) return true;
+      if (img.includes(clean) || clean.includes(img)) return true;
+      const f = getFilename(img);
+      return Boolean(f && targetFile && f === targetFile);
+    });
+
+    if (idx !== -1) {
+      setActiveImage(idx);
+    }
+  }, [allImages]);
 
   const discount = useMemo(() => {
     if (!product?.compare_price || product.compare_price <= product.price) return 0;
@@ -278,7 +311,7 @@ function useProductDetailData() {
 
   return {
     activeStore, product, relatedProducts, loading, selections, updateSelection,
-    addedToCart, activeImage, setActiveImage,
+    addedToCart, activeImage, setActiveImage, setActiveVariantImage,
     allImages, discount,
     handleAddToCart, handleBuyNow, handleToggleWishlist, handleBack,
     isInWishlist, addItem, openCart, setSelectedProductSlug,
@@ -309,10 +342,14 @@ function CleanDetail() {
       p.variants.forEach(v => {
         d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
       });
+      const firstImg = p.variants[0].image || (p.variants[0] as any)?.image_url || (p.variants[0] as any)?.imageUrl;
+      if (firstImg) {
+        d.setActiveVariantImage(firstImg);
+      }
     } else {
       d.updateSelection('default', 'quantity', 1);
     }
-  }, [p?.variants]);
+  }, [p?.variants, d.setActiveVariantImage]);
 
   const handleSelectVariant = (val: string) => {
     setActiveVariantVal(val);
@@ -320,8 +357,9 @@ function CleanDetail() {
       d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
     });
     const vObj = p?.variants?.find(x => x.value === val);
-    if (vObj && vObj.image) {
-      d.setActiveImage(d.allImages.indexOf(vObj.image));
+    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl || (vObj as any)?.photo || (vObj as any)?.img;
+    if (vImg) {
+      d.setActiveVariantImage(vImg);
     }
   };
 
@@ -341,8 +379,8 @@ function CleanDetail() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14">
             <div className="lg:col-span-6 space-y-4">
               <Skeleton className="aspect-square w-full rounded-2xl sm:rounded-[24px] bg-slate-100" />
-              <div className="grid grid-cols-5 gap-3">
-                {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="aspect-square rounded-xl bg-slate-100" />)}
+              <div className="flex gap-3 overflow-hidden">
+                {[0, 1, 2, 3, 4].map(i => <Skeleton key={i} className="size-16 sm:size-20 rounded-xl shrink-0 bg-slate-100" />)}
               </div>
             </div>
             <div className="lg:col-span-6 space-y-6">
@@ -447,15 +485,18 @@ function CleanDetail() {
                 )}
               </motion.div>
 
+              {/* Responsive gallery thumbnail strip (all images accessible) */}
               {d.allImages.length > 1 && (
-                <div className="grid grid-cols-5 gap-3">
-                  {d.allImages.slice(0, 5).map((img, i) => (
+                <div className="flex items-center gap-3 overflow-x-auto pb-1 no-scrollbar">
+                  {d.allImages.map((img, i) => (
                     <button 
                       key={i} 
                       onClick={() => d.setActiveImage(i)}
                       className={cn(
-                        "aspect-square rounded-xl overflow-hidden border-2 transition-all bg-white",
-                        d.activeImage === i ? "border-[#4b7bec] ring-2 ring-blue-100" : "border-slate-100 opacity-60 hover:opacity-100 hover:border-slate-300"
+                        "size-16 sm:size-20 rounded-xl overflow-hidden border-2 shrink-0 transition-all bg-white",
+                        d.activeImage === i 
+                          ? "border-[#4b7bec] ring-2 ring-blue-100 shadow-xs scale-105" 
+                          : "border-slate-100 opacity-60 hover:opacity-100 hover:border-slate-300"
                       )}
                       style={d.activeImage === i ? { borderColor: primary } : {}}
                     >
@@ -469,21 +510,18 @@ function CleanDetail() {
             {/* Product Purchase Column */}
             <div className="lg:col-span-6 flex flex-col justify-between space-y-6">
               <div className="space-y-5">
-                {/* Header Pills */}
+                {/* Header Pills (Badge "En stock - Expédition immédiate" removed) */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {p.category && (
                     <span className="px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
                       {p.category}
                     </span>
                   )}
-                  <span className={cn(
-                    "px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono border",
-                    isOOS 
-                      ? "bg-rose-50 text-rose-600 border-rose-100" 
-                      : "bg-emerald-50 text-emerald-600 border-emerald-100"
-                  )}>
-                    {isOOS ? 'Rupture temporaire' : 'En stock - Expédition immédiate'}
-                  </span>
+                  {isOOS && (
+                    <span className="px-3 py-1 rounded-lg text-[10px] font-black uppercase font-mono bg-rose-50 text-rose-600 border border-rose-100">
+                      Rupture de stock
+                    </span>
+                  )}
                 </div>
 
                 <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight leading-tight">
@@ -517,7 +555,7 @@ function CleanDetail() {
 
                 <div className="h-px bg-slate-100 w-full" />
 
-                {/* Variants Selection */}
+                {/* Variants Selection with visual thumbnails */}
                 {p.variants && p.variants.length > 0 && (
                   <div className="space-y-5">
                     {colorVariants.length > 0 && (
@@ -528,18 +566,27 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2.5">
                           {colorVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
+                            const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "relative size-9 rounded-full border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900" : "border-slate-200"
+                                  "relative size-11 rounded-xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs",
+                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400"
                                 )}
-                                style={{ backgroundColor: v.color }}
+                                style={!vImg && v.color ? { backgroundColor: v.color } : {}}
                                 title={v.value}
-                              />
+                              >
+                                {vImg ? (
+                                  <img src={optimizeCloudinaryUrl(vImg, 120)} alt={v.value} className="size-full object-cover" />
+                                ) : v.color ? (
+                                  <span className="size-full" style={{ backgroundColor: v.color }} />
+                                ) : (
+                                  <span className="text-[10px] font-black text-slate-800 uppercase">{v.value.slice(0, 3)}</span>
+                                )}
+                              </button>
                             );
                           })}
                         </div>
@@ -554,19 +601,23 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2">
                           {textVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
+                            const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95",
+                                  "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2",
                                   isSelected 
                                     ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
                                     : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
                                 )}
                               >
-                                {v.value}
+                                {vImg && (
+                                  <img src={optimizeCloudinaryUrl(vImg, 80)} alt={v.value} className="size-5 rounded-md object-cover" />
+                                )}
+                                <span>{v.value}</span>
                                 {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
                               </button>
                             );
@@ -620,7 +671,7 @@ function CleanDetail() {
                         className="h-13 rounded-xl flex items-center justify-center gap-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xs transition-all hover:opacity-95 active:scale-[0.98]"
                         style={{ backgroundColor: primary }}
                       >
-                        <Zap className="size-4" /> {t('buyNow')}
+                        <Zap className="size-4" /> {t('buyNow')} (COD)
                       </button>
                     ) : null}
                     
@@ -733,7 +784,6 @@ function CleanDetail() {
   );
 }
 
-
 /* ─────────────────────────────── ATHLETIC ─────────────────────────────── */
 function AthleticDetail() {
   const d = useProductDetailData();
@@ -769,8 +819,9 @@ function AthleticDetail() {
       d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
     });
     const vObj = p?.variants?.find(x => x.value === val);
-    if (vObj && vObj.image) {
-      d.setActiveImage(d.allImages.indexOf(vObj.image));
+    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
+    if (vImg) {
+      d.setActiveVariantImage(vImg);
     }
   };
 
@@ -1020,8 +1071,9 @@ function LuxeDetail() {
       d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
     });
     const vObj = p?.variants?.find(x => x.value === val);
-    if (vObj && vObj.image) {
-      d.setActiveImage(d.allImages.indexOf(vObj.image));
+    const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
+    if (vImg) {
+      d.setActiveVariantImage(vImg);
     }
   };
 
