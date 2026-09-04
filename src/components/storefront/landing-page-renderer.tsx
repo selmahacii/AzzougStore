@@ -13,7 +13,6 @@ import { CheckoutForm } from '@/components/storefront/checkout-form';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
-import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import { captureAttribution } from '@/lib/attribution';
@@ -459,7 +458,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
-      <FloatingLanguageSwitcher primaryColor={primary} />
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(

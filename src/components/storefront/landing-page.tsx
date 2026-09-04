@@ -12,7 +12,6 @@ import { motion, useInView } from 'framer-motion';
 import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { useTranslation } from '@/hooks/use-translation';
-import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 // ─── Animated counter ─────────────────────────────────────────
@@ -127,7 +126,6 @@ export function LandingPage() {
 
   return (
     <div className="bg-[#080808] min-h-screen text-white" dir={dir}>
-      <FloatingLanguageSwitcher primaryColor={primary} />
 
       {/* ── TOP BAR ─────────────────────────────────────────────── */}
       {phone && (
