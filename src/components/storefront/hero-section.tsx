@@ -240,10 +240,11 @@ function CleanHero({
   const isVideo = store.theme_config?.bannerIsVideo as boolean | undefined;
 
   const tc = store.theme_config ?? ({} as any);
-  const headline = (tc.heroHeadline as string | undefined) ?? store.name;
-  const subtitle  = (tc.heroSubtitle  as string | undefined) ?? store.description ?? t('heroSubtitleDefault');
-  const cta       = (tc.heroCta       as string | undefined) ?? t('viewCollection');
-  const cta2      = (tc.heroCta2      as string | undefined) ?? t('seeAll');
+  const resolvedTag = (tc.heroTag as string | undefined) || heroTag || 'Sélection Officielle 2026';
+  const headline = (tc.heroHeadline as string | undefined) || store.name;
+  const subtitle  = (tc.heroSubtitle  as string | undefined) || store.description || "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.";
+  const cta       = (tc.heroCta       as string | undefined) || "Explorer le catalogue";
+  const cta2      = (tc.heroCta2      as string | undefined) || "Tout voir";
   const isFullLayout = tc.heroLayout === 'full';
 
   const fontStyle = {
@@ -290,7 +291,7 @@ function CleanHero({
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
               <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest">
-                {heroTag || 'Sélection Officielle 2026'}
+                {resolvedTag}
               </span>
             </div>
 
@@ -343,7 +344,7 @@ function CleanHero({
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 text-[#4b7bec] border border-blue-100 shadow-2xs">
                 <span className="size-2 rounded-full bg-[#4b7bec] animate-pulse" />
                 <span className="text-[10px] font-black uppercase tracking-wider">
-                  {heroTag || 'Vitrine Officielle · Sélection Premium'}
+                  {resolvedTag}
                 </span>
               </div>
               

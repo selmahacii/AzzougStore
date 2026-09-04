@@ -138,10 +138,10 @@ const DEFAULT_FORM: FormData = {
   footer_copyright: '',
   hero_layout: 'side',
   hero_headline: "L'Élégance Épurée",
-  hero_subtitle: "Découvrez notre sélection de produits exclusifs alliant design contemporain et qualité supérieure.",
+  hero_subtitle: "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.",
   hero_cta: "Explorer le catalogue",
-  hero_cta2: '',
-  hero_tag: '',
+  hero_cta2: "Tout voir",
+  hero_tag: "Sélection Officielle 2026",
   hero_stats: [],
   hero_font: 'bold',
   sections_config: DEFAULT_HOME_SECTIONS,
@@ -721,25 +721,64 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                 </div>
               </div>
 
-              {/* Hero Headline & CTA */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+              {/* Hero Customization Section */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personnalisation du Hero (Bannière d'accueil)</label>
+                  <span className="text-[9px] font-bold text-slate-400">Visible sur la page principale</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Badge / Tag Supérieur</label>
+                    <Input
+                      placeholder="Sélection Officielle 2026"
+                      value={form.hero_tag}
+                      onChange={e => setForm(f => ({ ...f, hero_tag: e.target.value }))}
+                      className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre Principal Hero</label>
+                    <Input
+                      placeholder="L'Élégance Épurée"
+                      value={form.hero_headline}
+                      onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
+                      className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre Principal Hero</label>
-                  <Input
-                    placeholder="L'Élégance Épurée"
-                    value={form.hero_headline}
-                    onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
-                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre / Message descriptif</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception."
+                    value={form.hero_subtitle}
+                    onChange={e => setForm(f => ({ ...f, hero_subtitle: e.target.value }))}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-medium resize-none outline-none focus:bg-white focus:ring-2 focus:ring-[#4b7bec]/20"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bouton d'Action (CTA)</label>
-                  <Input
-                    placeholder="Commander maintenant"
-                    value={form.hero_cta}
-                    onChange={e => setForm(f => ({ ...f, hero_cta: e.target.value }))}
-                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bouton d'Action Principal (CTA 1)</label>
+                    <Input
+                      placeholder="Explorer le catalogue"
+                      value={form.hero_cta}
+                      onChange={e => setForm(f => ({ ...f, hero_cta: e.target.value }))}
+                      className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bouton Secondaire (CTA 2)</label>
+                    <Input
+                      placeholder="Tout voir"
+                      value={form.hero_cta2}
+                      onChange={e => setForm(f => ({ ...f, hero_cta2: e.target.value }))}
+                      className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

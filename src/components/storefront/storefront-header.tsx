@@ -28,66 +28,7 @@ function getTheme(store: Store | null) {
 }
 
 
-function LanguageSwitcher({ T }: { T: any }) {
-  const { locale, setLocale, t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function handle(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, []);
-
-  const languages = [
-    { code: 'fr', label: 'FR' },
-    { code: 'en', label: 'EN' },
-    { code: 'ar', label: 'AR' },
-  ];
-
-  const current = languages.find(l => l.code === locale) || languages[0];
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-2 py-1 rounded-xl hover:bg-black/5 transition-colors text-xs font-black uppercase tracking-wider"
-        style={{ color: T.icon }}
-      >
-        <Globe className="size-4 opacity-75" />
-        <span>{current.label}</span>
-        <ChevronDown className="size-3 opacity-50" />
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 min-w-[130px] rounded-2xl border shadow-2xl overflow-hidden z-50 py-1.5"
-            style={{ backgroundColor: T.dropBg, borderColor: T.border }}
-          >
-            {languages.map(lang => (
-              <button
-                key={lang.code}
-                onClick={() => { setLocale(lang.code); setOpen(false); }}
-                className="w-full text-left px-4 py-2 text-xs font-bold transition-colors flex items-center justify-between"
-                style={{ color: locale === lang.code ? T.primary : T.dropText }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.dropHover)}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-              >
-                <span>{lang.code === 'ar' ? 'العربية (AR)' : lang.code === 'en' ? 'English (EN)' : 'Français (FR)'}</span>
-                {locale === lang.code && <Check className="size-3.5" style={{ color: T.primary }} />}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 // ─── Category dropdown ────────────────────────────────────────
 function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll }: {
@@ -379,9 +320,6 @@ export function StorefrontHeader() {
               )}
             </button>
 
-            {/* Language Switcher */}
-            <LanguageSwitcher T={T} />
-
             {/* Direct Staff / Livreur Space Button */}
             {isAuthenticated && user && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role) && (
               <button
@@ -669,13 +607,7 @@ export function StorefrontHeader() {
               </div>
 
               {/* Drawer Footer */}
-              <div className="p-4 bg-white border-t border-slate-100 space-y-3">
-                {/* Language Switcher Bar */}
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Langue</span>
-                  <LanguageSwitcher T={T} />
-                </div>
-
+              <div className="p-4 bg-white border-t border-slate-100">
                 {/* Cart CTA Button */}
                 <button 
                   onClick={() => { toggleCart(); setMenuOpen(false); }}

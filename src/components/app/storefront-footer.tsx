@@ -129,96 +129,132 @@ export function StorefrontFooter() {
     toast.info(messages[label] || 'Information bientôt disponible');
   };
 
-  if (tpl === 'clean') {
+  if (tpl === 'clean' || tpl === 'minimalist') {
     return (
-      <footer className="w-full bg-white border-t border-slate-100">
+      <footer className="w-full bg-[#F8F9FC] border-t border-slate-200/80">
         <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-12 mb-12">
+          
+          {/* Main Footer Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
             
-            {/* Store Brand & Description */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                {logoUrl ? (
-                  <img src={logoUrl} alt={storeName} className="h-9 w-auto object-contain" />
-                ) : (
-                  <span className="text-lg font-black uppercase tracking-tight text-slate-900">
-                    {storeName}
-                  </span>
-                )}
+            {/* Store Brand Card (4 cols) */}
+            <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between space-y-5">
+              <div className="space-y-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="size-11 rounded-xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
+                    ) : (
+                      <span className="text-sm font-black text-white size-full rounded-lg flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
+                        {storeName.charAt(0)}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900">{storeName}</h3>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 font-mono">Boutique Officielle</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                  {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions artisanales et expédition rapide dans les 58 wilayas."}
+                </p>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-xs font-medium">
-                {tagline || "Votre vitrine e-commerce de référence. Qualité certifiée et livraison rapide partout en Algérie."}
-              </p>
-              <div className="pt-2">
-                <SocialLinks social={social} color={primary} isClean />
+
+              {/* Social Links */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Réseaux</span>
+                <SocialLinks social={social} color={primary} />
               </div>
             </div>
 
-            {/* Catalog */}
-            <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Catalogue</h4>
-              <ul className="space-y-2.5">
+            {/* Catalog Collections Card (3 cols) */}
+            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Collections</h4>
+                <button 
+                  onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }}
+                  className="text-[9px] font-black uppercase tracking-wider text-[#4b7bec] hover:underline"
+                >
+                  Tout voir
+                </button>
+              </div>
+              <ul className="space-y-2">
                 {shopLinks.length > 0 ? shopLinks.map(l => (
                   <li key={l}>
                     <button 
                       onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
+                      className="w-full flex items-center justify-between py-1 text-xs font-bold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left"
                     >
-                      {l}
+                      <span>{l}</span>
+                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
                     </button>
                   </li>
                 )) : (
                   <li>
                     <button 
-                      onClick={() => setStorefrontView('shop')} 
-                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
+                      onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
+                      className="w-full flex items-center justify-between py-1 text-xs font-bold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left"
                     >
-                      Voir toute la collection
+                      <span>Voir le catalogue complet</span>
+                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
                     </button>
                   </li>
                 )}
               </ul>
             </div>
 
-            {/* Support & Links */}
-            <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Service Client</h4>
-              <ul className="space-y-2.5">
+            {/* Customer Service Card (2 cols) */}
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Assistance</h4>
+              </div>
+              <ul className="space-y-2">
                 {HELP_LINKS.map(l => (
                   <li key={l.label}>
                     <button 
                       onClick={() => handleHelpAction(l.label)} 
-                      className="text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
+                      className="w-full flex items-center gap-2 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors text-left"
                     >
-                      {l.label}
+                      <l.icon className="size-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">{l.label}</span>
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* Contact Card */}
-            <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Coordonnées</h4>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                <ContactBlock contact={contact} color={primary} isClean />
+            {/* Contact Card (3 cols) */}
+            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Coordonnées</h4>
+              </div>
+              <ContactBlock contact={contact} color={primary} />
+            </div>
+
+          </div>
+
+          {/* Bottom Bar (Meta Ads Style) */}
+          <div className="pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-[11px] font-bold text-slate-400 text-center sm:text-left">
+              {copyright}
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-slate-200/80 text-[10px] font-bold text-slate-600 shadow-2xs">
+                <Truck className="size-3 text-[#4b7bec]" />
+                <span>58 Wilayas</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200/80 text-[10px] font-black uppercase tracking-wider text-emerald-800 shadow-2xs">
+                <ShieldCheck className="size-3 text-emerald-600" />
+                <span>Paiement à la réception</span>
               </div>
             </div>
           </div>
 
-          {/* Bottom Bar */}
-          <div className="pt-8 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-[11px] font-medium text-slate-400 text-center sm:text-left">
-              {copyright}
-            </p>
-
-            <div className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200/60 shadow-2xs">
-               <ShieldCheck className="size-3.5 text-emerald-600" />
-               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
-                 Paiement Sécurisé à la Livraison
-               </span>
-            </div>
-          </div>
         </div>
       </footer>
     );

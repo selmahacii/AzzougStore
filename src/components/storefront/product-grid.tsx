@@ -268,30 +268,6 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
           </div>
         </div>
 
-        {/* Global Catalog Highlights Row (Meta Ads KPI Style — Fully Responsive) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
-            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Catalogue Actif</span>
-            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">{d.total} Références</p>
-            <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 truncate">Produits certifiés</p>
-          </div>
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
-            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Expédition</span>
-            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">58 Wilayas</p>
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">Domicile & Relais</p>
-          </div>
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
-            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Paiement</span>
-            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">Cash (COD)</p>
-            <p className="text-[9px] sm:text-[10px] font-bold text-emerald-600 truncate">À la réception</p>
-          </div>
-          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 p-3 sm:p-4 shadow-sm space-y-0.5">
-            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider text-slate-400">Assistance</span>
-            <p className="text-sm sm:text-lg font-black text-slate-900 font-mono">7j / 7</p>
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 truncate">Support client réactif</p>
-          </div>
-        </div>
-
         {/* Mobile Filter Chips Row */}
         <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full">
           {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
