@@ -604,7 +604,7 @@ export function StorefrontHeader() {
                     <div className="space-y-2">
                       <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-black text-slate-900">{user.full_name || user.email}</p>
+                          <p className="text-xs font-black text-slate-900">{user.name || (user as any).full_name || user.email}</p>
                           <span className="text-[9px] font-mono font-bold text-slate-400">{user.role}</span>
                         </div>
                         {['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role) && (
