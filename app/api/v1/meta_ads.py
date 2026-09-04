@@ -10,6 +10,7 @@ import random
 import logging
 import hashlib
 import json
+import re
 
 logger = logging.getLogger(__name__)
 
