@@ -246,11 +246,7 @@ export function StorefrontFooter() {
             <div className="flex flex-wrap items-center justify-center gap-3">
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-slate-200/80 text-[10px] font-bold text-slate-600 shadow-2xs">
                 <Truck className="size-3 text-[#4b7bec]" />
-                <span>58 Wilayas</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200/80 text-[10px] font-black uppercase tracking-wider text-emerald-800 shadow-2xs">
-                <ShieldCheck className="size-3 text-emerald-600" />
-                <span>Paiement à la réception</span>
+                <span>Expédition 58 Wilayas</span>
               </div>
             </div>
           </div>
@@ -295,12 +291,6 @@ export function StorefrontFooter() {
           </div>
           <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/20">{copyright}</p>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/5">
-                 <ShieldCheck className="size-4" style={{ color: 'white' }} />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-white/30">Paiement Sécurisé</span>
-              </div>
-            </div>
           </div>
         </div>
       </footer>
@@ -341,10 +331,6 @@ export function StorefrontFooter() {
         </div>
         <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-[10px] font-black uppercase tracking-widest text-white/30">{copyright}</p>
-          <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest text-white/40">
-            <ShieldCheck className="size-3.5" style={{ color: 'white' }} />
-            Paiement sécurisé
-          </div>
         </div>
       </div>
     </footer>

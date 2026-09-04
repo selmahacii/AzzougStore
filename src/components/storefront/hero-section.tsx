@@ -374,22 +374,6 @@ function CleanHero({
                   {cta2}
                 </button>
               </div>
-
-              {/* Trust assurance mini-pills */}
-              <div className="grid grid-cols-3 gap-2.5 pt-4 border-t border-slate-200/80">
-                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
-                  <p className="text-[11px] font-black text-slate-900 font-mono">58 Wilayas</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Livraison Rapide</p>
-                </div>
-                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
-                  <p className="text-[11px] font-black text-slate-900 font-mono">Paiement Cash</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">À la réception</p>
-                </div>
-                <div className="bg-white rounded-xl p-2.5 border border-slate-100 text-center shadow-2xs">
-                  <p className="text-[11px] font-black text-slate-900 font-mono">100% Garanti</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase">Échange facile</p>
-                </div>
-              </div>
             </motion.div>
           </div>
 

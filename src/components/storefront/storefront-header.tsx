@@ -521,16 +521,16 @@ export function StorefrontHeader() {
                 <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/50 rounded-2xl border border-blue-100/70 p-3.5 space-y-2 shadow-2xs">
                   <div className="flex items-center gap-2 text-[#4b7bec]">
                     <ShieldCheck className="size-4 shrink-0" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">Garantie & Service</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider">Service & Expédition</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-700">
                     <div className="flex items-center gap-1.5">
                       <Truck className="size-3 text-[#4b7bec]" />
-                      <span>58 Wilayas COD</span>
+                      <span>58 Wilayas</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Check className="size-3 text-emerald-600" />
-                      <span>Paiement Réception</span>
+                      <span>Expédition Rapide</span>
                     </div>
                   </div>
                 </div>
