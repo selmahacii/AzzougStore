@@ -53,6 +53,13 @@ interface NoestStats {
   orders?: TrackedOrder[];
 }
 
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function NoestRealtimeWidget() {
   const queryClient = useQueryClient();
   const { activeStore } = useAppStore();
@@ -81,29 +88,32 @@ export function NoestRealtimeWidget() {
     queryFn: () => {
       let url = `/api/v1/noest/stats?store_id=${storeId}`;
       if (filterProductId) url += `&product_id=${filterProductId}`;
-      if (datePeriod === 'CUSTOM' && startDate && endDate) {
-        url += `&start_date=${startDate}&end_date=${endDate}`;
+      if (datePeriod === 'CUSTOM') {
+        if (startDate) url += `&start_date=${startDate}`;
+        if (endDate) url += `&end_date=${endDate}`;
       } else if (datePeriod === 'TODAY') {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = toLocalYMD(new Date());
         url += `&start_date=${today}&end_date=${today}`;
       } else if (datePeriod === 'THIS_MONTH') {
         const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-        const today = now.toISOString().slice(0, 10);
+        const firstDay = toLocalYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+        const today = toLocalYMD(now);
         url += `&start_date=${firstDay}&end_date=${today}`;
       } else if (datePeriod === 'LAST_MONTH') {
         const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
-        const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+        const firstDay = toLocalYMD(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+        const lastDay = toLocalYMD(new Date(now.getFullYear(), now.getMonth(), 0));
         url += `&start_date=${firstDay}&end_date=${lastDay}`;
       } else if (datePeriod === '7D') {
-        const d = new Date();
-        d.setDate(d.getDate() - 7);
-        url += `&start_date=${d.toISOString().slice(0, 10)}`;
+        const now = new Date();
+        const past = new Date();
+        past.setDate(past.getDate() - 7);
+        url += `&start_date=${toLocalYMD(past)}&end_date=${toLocalYMD(now)}`;
       } else if (datePeriod === '30D') {
-        const d = new Date();
-        d.setDate(d.getDate() - 30);
-        url += `&start_date=${d.toISOString().slice(0, 10)}`;
+        const now = new Date();
+        const past = new Date();
+        past.setDate(past.getDate() - 30);
+        url += `&start_date=${toLocalYMD(past)}&end_date=${toLocalYMD(now)}`;
       }
       return apiFetch<NoestStats>(url);
     },
