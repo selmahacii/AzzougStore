@@ -671,7 +671,7 @@ function CleanDetail() {
                         className="h-13 rounded-xl flex items-center justify-center gap-2.5 text-xs font-black uppercase tracking-wider text-white shadow-xs transition-all hover:opacity-95 active:scale-[0.98]"
                         style={{ backgroundColor: primary }}
                       >
-                        <Zap className="size-4" /> {t('buyNow')} (COD)
+                        <Zap className="size-4" /> Passer une commande
                       </button>
                     ) : null}
                     
@@ -690,30 +690,6 @@ function CleanDetail() {
                   </div>
                 </div>
 
-              </div>
-
-              {/* 4 Reassurance Cards (Meta Ads KPI style) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-slate-100">
-                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
-                  <Truck className="size-4 text-[#4b7bec]" />
-                  <p className="text-[10px] font-black uppercase text-slate-800">58 Wilayas</p>
-                  <p className="text-[9px] text-slate-400 font-medium">Livraison Express</p>
-                </div>
-                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
-                  <ShieldCheck className="size-4 text-emerald-600" />
-                  <p className="text-[10px] font-black uppercase text-slate-800">Paiement COD</p>
-                  <p className="text-[9px] text-slate-400 font-medium">À la réception</p>
-                </div>
-                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
-                  <CheckCircle className="size-4 text-blue-600" />
-                  <p className="text-[10px] font-black uppercase text-slate-800">Garantie</p>
-                  <p className="text-[9px] text-slate-400 font-medium">100% Conforme</p>
-                </div>
-                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/80 space-y-1">
-                  <Zap className="size-4 text-amber-500" />
-                  <p className="text-[10px] font-black uppercase text-slate-800">Service 7j/7</p>
-                  <p className="text-[9px] text-slate-400 font-medium">Support rapide</p>
-                </div>
               </div>
 
             </div>
