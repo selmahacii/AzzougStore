@@ -311,7 +311,7 @@ function CleanHero({
             <div className="flex flex-col sm:flex-row items-center gap-4 pt-4">
               <button
                 onClick={onShop}
-                className="w-full sm:w-auto h-12 px-8 text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
+                className="w-full sm:w-auto h-12 px-8 text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
                 style={{ backgroundColor: buttonColor, borderRadius: buttonRadius }}
               >
                 {cta} <ArrowRight className="size-4" />
@@ -365,7 +365,7 @@ function CleanHero({
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 pt-2">
                 <button
                   onClick={onShop}
-                  className="h-12 px-7 text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
+                  className="h-12 px-7 text-xs font-black uppercase tracking-wider text-white transition-all flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
                   style={{ backgroundColor: buttonColor, borderRadius: buttonRadius }}
                 >
                   {cta} <ArrowRight className="size-4" />
