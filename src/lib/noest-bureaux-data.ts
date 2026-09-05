@@ -59,6 +59,7 @@ export const NOEST_BUREAUX: NoestBureau[] = [
   { code: '20A', name: 'Saïda', address: 'Cité Riad en face Maison de l\'Environnement', phones: ['0550428481', '0560421128'], wilayaId: 20 },
   { code: '21A', name: 'Skikda', address: 'Rue du Chahid Meziane Salah (Route Bouyali, Immeuble Guerza) شارع الشهيد مزيان صالح (طريق بويعلى,عمارة ڨرزة)', phones: ['0770773555', '0561759686'], wilayaId: 21 },
   { code: '21B', name: 'Skikda « Azzaba »', address: 'Cite mefrouche  dahmane', phones: ['0560316523'], wilayaId: 21 },
+  { code: '21C', name: 'Skikda « Collo »', address: 'Bureau Collo', phones: [], wilayaId: 21 },
   { code: '22A', name: 'Sidi bel abbès', address: 'Rue CPR , En face Masjid El Ansar - حي بني عامر ، مقابل مسجد الانصار', phones: ['0770610413', '0560419987'], wilayaId: 22 },
   { code: '23A', name: 'Annaba', address: 'Rue Djemila, Saint Claud (À côté de la mosqué Badr)', phones: ['0561623524', '0770582366', '0770582331', '0770610699'], wilayaId: 23 },
   { code: '23B', name: 'Annaba «EL BOUNI»', address: 'Fractionnement de la Bouni 2, zone urbaine n° 43, rez-de-chaussée, section 40, groupe de propriété 02, Bouni', phones: ['0770932016', '0560777653'], wilayaId: 23 },
