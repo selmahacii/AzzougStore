@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
-  ShoppingCart, CheckCircle, ArrowRight, Package, Zap, ChevronDown,
+  ShoppingCart, ShoppingBag, CheckCircle, ArrowRight, Package, Zap, ChevronDown,
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
