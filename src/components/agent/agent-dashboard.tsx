@@ -2926,7 +2926,10 @@ export default function AgentDashboard() {
 
   const searchResults = globalSearchQuery.data || [];
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, trackingNumber?: string | null) => {
+    if (trackingNumber && ['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'CONFIRMED'].includes(status)) {
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">📦 En livraison</span>;
+    }
     switch (status) {
       case 'NEW':
         return <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">🟡 Nouvelle</span>;
@@ -3019,7 +3022,7 @@ export default function AgentDashboard() {
                       {ord.order_number} {ord.store_sequence_number ? `(N°${ord.store_sequence_number})` : ''}
                     </span>
                     {getOrderTypeBadge(ord)}
-                    {getStatusBadge(ord.status)}
+                    {getStatusBadge(ord.status, ord.tracking_number)}
                     {ord.store?.name && (
                       <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
                         {ord.store.name}

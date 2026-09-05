@@ -3738,6 +3738,20 @@ def update_order_info(
     for field, value in data.items():
         if field == "items":
             continue
+        if field == "tracking_number" and value and not order.tracking_number:
+            if order.status in ("NEW", "ASSIGNED", "CALLED", "RESCHEDULED", "IN_PROGRESS", "CONFIRMED"):
+                if order.status != "CONFIRMED":
+                    from app.services.order_service import update_order_status
+                    update_order_status(db, order_id=order.id, new_status="CONFIRMED", actor_id=current_user.id)
+                    db.refresh(order)
+                order.status = "SHIPPED"
+                from app.models.events import OrderEvent
+                import uuid
+                db.add(OrderEvent(
+                    id=str(uuid.uuid4()), order_id=order.id, actor_id=current_user.id,
+                    from_status="CONFIRMED", to_status="SHIPPED",
+                    note=f"Tracking number added manually : {value}"
+                ))
         if field == "created_at" and value is not None:
             if isinstance(value, str):
                 from datetime import datetime as _dt_p
