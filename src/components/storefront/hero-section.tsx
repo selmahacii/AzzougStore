@@ -245,15 +245,17 @@ function CleanHero({
   const subtitle  = (tc.heroSubtitle  as string | undefined) || store.description || "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.";
   const cta       = (tc.heroCta       as string | undefined) || "Explorer le catalogue";
   const cta2      = (tc.heroCta2      as string | undefined) || "Tout voir";
-  const isFullLayout = tc.heroLayout === 'full';
+  const isFullLayout = tc.heroFullscreen !== false && (tc.heroLayout === 'full' || tc.heroFullscreen === true);
+  const textAlign = (tc.heroTextAlign as 'left' | 'center' | 'right') || 'center';
+  const buttonColor = (tc.buttonColor as string) || primary;
+  const buttonRadius = (tc.buttonRadius as string) || '12px';
+  const fontFamily = (tc.fontFamily as string) || (locale === 'ar' ? 'Cairo' : 'Inter');
 
   const fontStyle = {
-    fontFamily: locale === 'ar'
-      ? "'Cairo', 'Tajawal', 'Outfit', sans-serif"
-      : store.theme_config?.fontFamily
-        ? `"${store.theme_config.fontFamily}", sans-serif`
-        : '"Plus Jakarta Sans", "Inter", sans-serif'
+    fontFamily: `'${fontFamily}', sans-serif`
   };
+
+  const alignClasses = textAlign === 'left' ? 'text-left items-start mr-auto ml-0' : textAlign === 'right' ? 'text-right items-end ml-auto mr-0' : 'text-center items-center mx-auto';
 
   if (isFullLayout) {
     return (
@@ -281,14 +283,14 @@ function CleanHero({
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 z-0 opacity-95" />
         )}
         
-        <div className="relative z-20 w-full max-w-5xl mx-auto px-6 text-center">
+        <div className={cn("relative z-20 w-full max-w-5xl mx-auto px-6", alignClasses)}>
           <motion.div
             initial={{ opacity: 0, y: 25 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="max-w-3xl mx-auto space-y-6"
+            className={cn("max-w-3xl space-y-6 flex flex-col", alignClasses)}
           >
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm">
               <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest">
                 {resolvedTag}
@@ -302,21 +304,22 @@ function CleanHero({
               {headline}
             </h1>
 
-            <p className="text-sm sm:text-base text-white/80 font-medium max-w-xl mx-auto leading-relaxed">
+            <p className="text-sm sm:text-base text-white/80 font-medium max-w-xl leading-relaxed">
               {subtitle}
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+            <div className="flex flex-col sm:flex-row items-center gap-4 pt-4">
               <button
                 onClick={onShop}
-                className="w-full sm:w-auto h-12 px-8 rounded-2xl text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
-                style={{ backgroundColor: primary }}
+                className="w-full sm:w-auto h-12 px-8 text-xs font-black uppercase tracking-wider text-white transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 hover:opacity-95 active:scale-[0.98]"
+                style={{ backgroundColor: buttonColor, borderRadius: buttonRadius }}
               >
                 {cta} <ArrowRight className="size-4" />
               </button>
               <button
                 onClick={onScroll}
-                className="w-full sm:w-auto h-12 px-7 rounded-2xl text-xs font-bold uppercase tracking-wider text-white/90 bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md transition-all duration-200 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto h-12 px-7 text-xs font-bold uppercase tracking-wider text-white/90 bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md transition-all duration-200 flex items-center justify-center gap-2"
+                style={{ borderRadius: buttonRadius }}
               >
                 {cta2} <ChevronDown className="size-4" />
               </button>
@@ -362,14 +365,15 @@ function CleanHero({
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5 pt-2">
                 <button
                   onClick={onShop}
-                  className="h-12 px-7 rounded-xl text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
-                  style={{ backgroundColor: primary }}
+                  className="h-12 px-7 text-xs font-black uppercase tracking-wider text-white transition-all shadow-md shadow-blue-100 flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98]"
+                  style={{ backgroundColor: buttonColor, borderRadius: buttonRadius }}
                 >
                   {cta} <ArrowRight className="size-4" />
                 </button>
                 <button
                   onClick={onScroll}
-                  className="h-12 px-6 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-2xs"
+                  className="h-12 px-6 text-xs font-bold uppercase tracking-wider text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-2xs"
+                  style={{ borderRadius: buttonRadius }}
                 >
                   {cta2}
                 </button>
