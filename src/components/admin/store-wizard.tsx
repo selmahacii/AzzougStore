@@ -271,9 +271,14 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
     mutationFn: (data: any) => isEdit
       ? apiFetch(`/api/v1/stores/${initialData.id}`, { method: 'PUT', body: JSON.stringify(data) })
       : apiFetch('/api/v1/stores', { method: 'POST', body: JSON.stringify(data) }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
+      const updatedStore = res?.data || res;
+      if (updatedStore && updatedStore.id) {
+        useAppStore.getState().setActiveStore(updatedStore);
+      }
       qc.invalidateQueries({ queryKey: ['stores'] });
       qc.invalidateQueries({ queryKey: ['stores-revenue'] });
+      qc.invalidateQueries({ queryKey: ['active-store'] });
       toast.success(isEdit ? 'Boutique modifiée avec succès' : 'Boutique créée et déployée avec succès');
       onOpenChange(false);
       setStep(0);
@@ -285,10 +290,19 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
 
   const handleCreate = () => {
     if (!form.name || !form.slug) return toast.error('Le nom et le slug URL sont obligatoires');
+    
+    const catList = typeof form.categories === 'string'
+      ? form.categories.split(',').map(c => c.trim()).filter(Boolean)
+      : Array.isArray(form.categories) ? form.categories : [];
+
+    const statsList = Array.isArray(form.hero_stats)
+      ? form.hero_stats.filter(s => s && s.label && s.value && s.label.trim() && s.value.trim())
+      : [];
+
     mutation.mutate({
       name: form.name,
       slug: form.slug,
-      description: form.description,
+      description: form.description || '',
       logo_url: form.logo_url || null,
       banner_url: form.banner_url || null,
       domain: form.domain || `${form.slug}.azghub.com`,
@@ -297,10 +311,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         templateId: form.template_id,
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        fontFamily: form.font_family,
-        borderRadius: form.button_radius,
-        buttonColor: form.button_color,
-        buttonRadius: form.button_radius,
+        fontFamily: form.font_family || 'Inter',
+        borderRadius: form.button_radius || '12px',
+        buttonColor: form.button_color || form.primaryColor,
+        buttonRadius: form.button_radius || '12px',
         bannerIsVideo: form.banner_is_video,
         heroLayout: form.hero_layout,
         heroHeadline: form.hero_headline || null,
@@ -310,10 +324,8 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         heroTag: form.hero_tag || null,
         heroFullscreen: form.hero_fullscreen,
         heroTextAlign: form.hero_text_align,
-        categories: form.categories.split(',').map(c => c.trim()).filter(Boolean),
-        heroStats: form.hero_stats.filter(s => s.label.trim() && s.value.trim()).length > 0
-          ? form.hero_stats.filter(s => s.label.trim() && s.value.trim())
-          : null,
+        categories: catList,
+        heroStats: statsList.length > 0 ? statsList : null,
         heroFont: form.hero_font,
         sectionsConfig: form.sections_config,
         footerTagline: form.footer_tagline || null,
@@ -1070,23 +1082,38 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
             Étape {step + 1} / {STEPS.length}
           </span>
 
-          {step < STEPS.length - 1 ? (
-            <Button
-              onClick={() => setStep(s => s + 1)}
-              disabled={!canProceed}
-              className="h-11 px-6 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#1877F2] hover:bg-[#166fe5] shadow-sm flex items-center gap-1.5"
-            >
-              Suivant <ChevronRight className="size-3.5" />
-            </Button>
-          ) : (
-            <Button
-              onClick={handleCreate}
-              disabled={mutation.isPending || !form.name || !form.slug}
-              className="h-11 px-7 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#00B894] hover:bg-[#00a884] shadow-md shadow-emerald-100 flex items-center gap-2"
-            >
-              {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : (isEdit ? 'Enregistrer les modifications' : 'Déployer la boutique')}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {isEdit && (
+              <Button
+                type="button"
+                onClick={handleCreate}
+                disabled={mutation.isPending || !form.name || !form.slug}
+                className="h-11 px-5 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#00B894] hover:bg-[#00a884] shadow-md shadow-emerald-100 flex items-center gap-1.5"
+              >
+                {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Enregistrer les modifications'}
+              </Button>
+            )}
+
+            {step < STEPS.length - 1 ? (
+              <Button
+                type="button"
+                onClick={() => setStep(s => s + 1)}
+                disabled={!canProceed}
+                className="h-11 px-6 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#1877F2] hover:bg-[#166fe5] shadow-sm flex items-center gap-1.5"
+              >
+                Suivant <ChevronRight className="size-3.5" />
+              </Button>
+            ) : !isEdit ? (
+              <Button
+                type="button"
+                onClick={handleCreate}
+                disabled={mutation.isPending || !form.name || !form.slug}
+                className="h-11 px-7 rounded-xl font-black uppercase tracking-wider text-xs text-white bg-[#00B894] hover:bg-[#00a884] shadow-md shadow-emerald-100 flex items-center gap-2"
+              >
+                {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Déployer la boutique'}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
