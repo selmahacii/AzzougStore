@@ -4910,10 +4910,20 @@ def list_returned_orders(
         except ValueError:
             pass
 
+    from app.models.order_event import OrderEvent
+
+    ret_subq = (
+        db.query(OrderEvent.order_id, sqlfunc.max(OrderEvent.created_at).label("ret_at"))
+        .filter(OrderEvent.to_status == "RETURNED")
+        .group_by(OrderEvent.order_id)
+        .subquery()
+    )
+    
+    q = q.outerjoin(ret_subq, Order.id == ret_subq.c.order_id)
     total = q.with_entities(sqlfunc.count(Order.id)).scalar() or 0
     orders = (
         q.options(joinedload(Order.items), joinedload(Order.livreur))
-        .order_by(Order.updated_at.desc())
+        .order_by(sqlfunc.coalesce(ret_subq.c.ret_at, Order.updated_at).desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
