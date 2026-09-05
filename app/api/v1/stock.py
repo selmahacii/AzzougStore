@@ -809,6 +809,8 @@ def get_returns_by_variant(
 @router.get("/product/{product_id}/breakdown", response_model=dict)
 def get_product_stock_breakdown(
     product_id: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -837,9 +839,27 @@ def get_product_stock_breakdown(
         .scalar() or 0
     )
 
-    retourne = db.query(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).filter(
+    retourne_query = db.query(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).filter(
         StockMovement.product_id == product_id, StockMovement.type == "RETURN_RESTOCK"
-    ).scalar() or 0
+    )
+    livree_query = db.query(sqlfunc.coalesce(sqlfunc.sum(-StockMovement.quantity), 0)).filter(
+        StockMovement.product_id == product_id, StockMovement.type == "OUT_FULFILLMENT"
+    )
+    
+    from app.core.dates import parse_local_date_filter
+    if date_from:
+        start_dt, _ = parse_local_date_filter(date_from, None)
+        if start_dt:
+            retourne_query = retourne_query.filter(StockMovement.created_at >= start_dt)
+            livree_query = livree_query.filter(StockMovement.created_at >= start_dt)
+    if date_to:
+        _, end_dt = parse_local_date_filter(None, date_to)
+        if end_dt:
+            retourne_query = retourne_query.filter(StockMovement.created_at <= end_dt)
+            livree_query = livree_query.filter(StockMovement.created_at <= end_dt)
+            
+    retourne = retourne_query.scalar() or 0
+    livree = livree_query.scalar() or 0
 
     en_transfert = db.query(sqlfunc.coalesce(sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)), 0)).filter(
         StockMovement.product_id == product_id, StockMovement.type.in_(("TRANSFER_OUT", "TRANSFER_IN")),
@@ -861,6 +881,7 @@ def get_product_stock_breakdown(
             "stock_disponible": disponible,
             "stock_en_commande": int(en_commande),
             "stock_retourne": int(retourne),
+            "stock_livree": int(livree),
             "stock_en_transfert": int(en_transfert),
             "stock_minimum": p.low_stock_threshold or 5,
             "valeur": physique * (p.cost_price or 0),

@@ -146,6 +146,8 @@ export function ProductDetailSheet({ product, storeId, onClose }: { product: any
    const [editingPrice, setEditingPrice] = useState(false);
    const [priceInput, setPriceInput] = useState(String(product.price || 0));
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+   const [dateFrom, setDateFrom] = useState<string>('');
+   const [dateTo, setDateTo] = useState<string>('');
 
    const priceMutation = useMutation({
       mutationFn: () => apiFetch(`/api/v1/products/${product.id}`, {
@@ -161,11 +163,18 @@ export function ProductDetailSheet({ product, storeId, onClose }: { product: any
    });
 
    const movementsQuery = useQuery({
-      queryKey: ['product-movements', product.id],
-      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/stock/?product_id=${product.id}&pageSize=15`),
+      queryKey: ['product-movements', product.id, dateFrom, dateTo],
+      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/stock/?product_id=${product.id}&pageSize=50${dateFrom ? `&date_from=${dateFrom}` : ''}${dateTo ? `&date_to=${dateTo}` : ''}`),
       enabled: !!product.id,
    });
    const movements = movementsQuery.data?.data || [];
+   
+   const breakdownQuery = useQuery({
+      queryKey: ['product-breakdown', product.id, dateFrom, dateTo],
+      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/stock/product/${product.id}/breakdown?${dateFrom ? `date_from=${dateFrom}&` : ''}${dateTo ? `date_to=${dateTo}` : ''}`),
+      enabled: !!product.id,
+   });
+   const breakdown = breakdownQuery.data?.data;
 
    const variantItems = (() => {
       if (!product.variants || product.variants.length === 0) return [];
@@ -257,7 +266,28 @@ export function ProductDetailSheet({ product, storeId, onClose }: { product: any
                   )}
 
                   <div>
-                     <p className="text-[10px] font-black text-[#B2BEC3] uppercase tracking-widest mb-2">Historique récent de ce produit (cliquer pour voir la commande)</p>
+                     <div className="flex items-center justify-between mb-3">
+                         <p className="text-[10px] font-black text-[#B2BEC3] uppercase tracking-widest">Historique & Performances</p>
+                         <div className="flex items-center gap-2">
+                             <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 text-xs w-auto" />
+                             <span className="text-[#B2BEC3] text-xs">à</span>
+                             <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-8 text-xs w-auto" />
+                         </div>
+                     </div>
+                     
+                     {breakdown && (
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 flex justify-between items-center">
+                              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Livrée</span>
+                              <span className="text-sm font-black text-emerald-700">{breakdown.stock_livree || 0} pcs</span>
+                           </div>
+                           <div className="p-3 rounded-xl bg-rose-50 border border-rose-100 flex justify-between items-center">
+                              <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Retournée</span>
+                              <span className="text-sm font-black text-rose-700">{breakdown.stock_retourne || 0} pcs</span>
+                           </div>
+                        </div>
+                     )}
+
                      <div className="border rounded-xl divide-y max-h-[280px] overflow-y-auto" style={{ borderColor: C.border }}>
                         {movementsQuery.isLoading ? (
                            <div className="p-6 flex justify-center"><Loader2 className="size-5 animate-spin text-[#6C5CE7]" /></div>
