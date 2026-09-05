@@ -13,6 +13,7 @@ import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { useTranslation } from '@/hooks/use-translation';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
+import { cn } from '@/lib/utils';
 
 // ─── Animated counter ─────────────────────────────────────────
 function Counter({ target, suffix = '' }: { target: number; suffix?: string }) {
