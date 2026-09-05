@@ -13,6 +13,11 @@ export interface ThemeConfig {
   contact?: { phone?: string; email?: string; address?: string } | null;
   // Hero customization
   heroLayout?: 'full' | 'side';
+  heroFullscreen?: boolean;
+  heroTextAlign?: 'left' | 'center' | 'right';
+  buttonColor?: string;
+  buttonRadius?: string;
+  categories?: string[];
   heroHeadline?: string | null;
   heroSubtitle?: string | null;
   heroCta?: string | null;

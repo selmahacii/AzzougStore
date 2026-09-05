@@ -839,27 +839,53 @@ def get_product_stock_breakdown(
         .scalar() or 0
     )
 
-    retourne_query = db.query(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).filter(
-        StockMovement.product_id == product_id, StockMovement.type == "RETURN_RESTOCK"
+    from app.models.order import Order, OrderItem
+
+    retourne_query = (
+        db.query(sqlfunc.coalesce(sqlfunc.sum(OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            OrderItem.product_id == product_id,
+            Order.status == "RETURNED",
+            Order.is_deleted == False,
+        )
     )
-    livree_query = db.query(sqlfunc.coalesce(sqlfunc.sum(-StockMovement.quantity), 0)).filter(
-        StockMovement.product_id == product_id, StockMovement.type == "OUT_FULFILLMENT"
+    livree_query = (
+        db.query(sqlfunc.coalesce(sqlfunc.sum(OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            OrderItem.product_id == product_id,
+            Order.status == "DELIVERED",
+            Order.is_deleted == False,
+        )
+    )
+    marge_query = (
+        db.query(sqlfunc.coalesce(sqlfunc.sum((OrderItem.unit_price - (p.cost_price or 0)) * OrderItem.quantity), 0))
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(
+            OrderItem.product_id == product_id,
+            Order.status == "DELIVERED",
+            Order.is_deleted == False,
+        )
     )
     
     from app.core.dates import parse_local_date_filter
     if date_from:
         start_dt, _ = parse_local_date_filter(date_from, None)
         if start_dt:
-            retourne_query = retourne_query.filter(StockMovement.created_at >= start_dt)
-            livree_query = livree_query.filter(StockMovement.created_at >= start_dt)
+            retourne_query = retourne_query.filter(Order.created_at >= start_dt)
+            livree_query = livree_query.filter(Order.created_at >= start_dt)
+            marge_query = marge_query.filter(Order.created_at >= start_dt)
     if date_to:
         _, end_dt = parse_local_date_filter(None, date_to)
         if end_dt:
-            retourne_query = retourne_query.filter(StockMovement.created_at <= end_dt)
-            livree_query = livree_query.filter(StockMovement.created_at <= end_dt)
+            retourne_query = retourne_query.filter(Order.created_at <= end_dt)
+            livree_query = livree_query.filter(Order.created_at <= end_dt)
+            marge_query = marge_query.filter(Order.created_at <= end_dt)
             
-    retourne = retourne_query.scalar() or 0
-    livree = livree_query.scalar() or 0
+    retourne = int(retourne_query.scalar() or 0)
+    livree = int(livree_query.scalar() or 0)
+    marge_generee = float(marge_query.scalar() or 0)
 
     en_transfert = db.query(sqlfunc.coalesce(sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)), 0)).filter(
         StockMovement.product_id == product_id, StockMovement.type.in_(("TRANSFER_OUT", "TRANSFER_IN")),
@@ -882,6 +908,7 @@ def get_product_stock_breakdown(
             "stock_en_commande": int(en_commande),
             "stock_retourne": int(retourne),
             "stock_livree": int(livree),
+            "marge_generee": marge_generee,
             "stock_en_transfert": int(en_transfert),
             "stock_minimum": p.low_stock_threshold or 5,
             "valeur": physique * (p.cost_price or 0),

@@ -112,6 +112,12 @@ interface FormData {
   hero_tag: string;
   hero_stats: Array<{ label: string; value: string }>;
   hero_font: 'bold' | 'normal' | 'light' | 'serif';
+  hero_fullscreen: boolean;
+  hero_text_align: 'left' | 'center' | 'right';
+  font_family: string;
+  button_color: string;
+  button_radius: string;
+  categories: string;
   sections_config: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }>;
   assignment_active: boolean;
   assignment_logic: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
@@ -144,6 +150,12 @@ const DEFAULT_FORM: FormData = {
   hero_tag: "Sélection Officielle 2026",
   hero_stats: [],
   hero_font: 'bold',
+  hero_fullscreen: true,
+  hero_text_align: 'center',
+  font_family: 'Inter',
+  button_color: '#4b7bec',
+  button_radius: '12px',
+  categories: 'Nouveautés, Meilleures Ventes, Promo, Collection 2026',
   sections_config: DEFAULT_HOME_SECTIONS,
   assignment_active: false,
   assignment_logic: 'MANUAL',
@@ -208,6 +220,14 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           hero_stats: initialData.theme_config?.heroStats || [],
           sections_config: initialData.theme_config?.sectionsConfig || DEFAULT_HOME_SECTIONS,
           hero_font: initialData.theme_config?.heroFont || 'bold',
+          hero_fullscreen: initialData.theme_config?.heroFullscreen !== false,
+          hero_text_align: initialData.theme_config?.heroTextAlign || 'center',
+          font_family: initialData.theme_config?.fontFamily || 'Inter',
+          button_color: initialData.theme_config?.buttonColor || initialData.theme_config?.primaryColor || '#4b7bec',
+          button_radius: initialData.theme_config?.buttonRadius || '12px',
+          categories: Array.isArray(initialData.theme_config?.categories)
+            ? initialData.theme_config.categories.join(', ')
+            : 'Nouveautés, Meilleures Ventes, Promo, Collection 2026',
           assignment_active: initialData.assignment_active || false,
           assignment_logic: initialData.assignment_logic || 'MANUAL',
         });
@@ -277,8 +297,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         templateId: form.template_id,
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        fontFamily: 'Inter',
-        borderRadius: '12px',
+        fontFamily: form.font_family,
+        borderRadius: form.button_radius,
+        buttonColor: form.button_color,
+        buttonRadius: form.button_radius,
         bannerIsVideo: form.banner_is_video,
         heroLayout: form.hero_layout,
         heroHeadline: form.hero_headline || null,
@@ -286,6 +308,9 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         heroCta: form.hero_cta || null,
         heroCta2: form.hero_cta2 || null,
         heroTag: form.hero_tag || null,
+        heroFullscreen: form.hero_fullscreen,
+        heroTextAlign: form.hero_text_align,
+        categories: form.categories.split(',').map(c => c.trim()).filter(Boolean),
         heroStats: form.hero_stats.filter(s => s.label.trim() && s.value.trim()).length > 0
           ? form.hero_stats.filter(s => s.label.trim() && s.value.trim())
           : null,
@@ -779,6 +804,106 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                       className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
                     />
                   </div>
+                </div>
+
+                {/* Hero Layout & Text Alignment Options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Format Héro Vidéo/Image</label>
+                    <div className="flex rounded-xl p-1 bg-slate-100 gap-1 border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, hero_fullscreen: true }))}
+                        className={cn("flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all", form.hero_fullscreen ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        🖥️ Plein écran (100vh)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, hero_fullscreen: false }))}
+                        className={cn("flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all", !form.hero_fullscreen ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                      >
+                        📱 Compact (60vh)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Alignement des Écritures</label>
+                    <div className="flex rounded-xl p-1 bg-slate-100 gap-1 border border-slate-200">
+                      {(['left', 'center', 'right'] as const).map((align) => (
+                        <button
+                          key={align}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, hero_text_align: align }))}
+                          className={cn("flex-1 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all capitalize", form.hero_text_align === align ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                        >
+                          {align === 'left' ? '⬅️ Gauche' : align === 'center' ? '↔️ Centré' : '➡️ Droite'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Typography & Button Styling */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Police de Caractères</label>
+                    <select
+                      value={form.font_family}
+                      onChange={e => setForm(f => ({ ...f, font_family: e.target.value }))}
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 outline-none focus:bg-white"
+                    >
+                      <option value="Inter">Inter (Moderne & Épuré)</option>
+                      <option value="Poppins">Poppins (Tendance & Arrondi)</option>
+                      <option value="Montserrat">Montserrat (Luxe & Édito)</option>
+                      <option value="Playfair Display">Playfair Display (Classique / Serif)</option>
+                      <option value="Tajawal">Tajawal (Arabe / Français Moderne)</option>
+                      <option value="Cairo">Cairo (Arabe / Français Élégant)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur des Boutons</label>
+                    <div className="flex items-center gap-2 p-1.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <input
+                        type="color"
+                        value={form.button_color}
+                        onChange={e => setForm(f => ({ ...f, button_color: e.target.value }))}
+                        className="size-7 rounded-lg cursor-pointer border-0 bg-transparent"
+                      />
+                      <Input
+                        value={form.button_color}
+                        onChange={e => setForm(f => ({ ...f, button_color: e.target.value }))}
+                        className="h-7 border-0 bg-transparent font-mono text-xs font-bold p-0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Forme des Boutons</label>
+                    <select
+                      value={form.button_radius}
+                      onChange={e => setForm(f => ({ ...f, button_radius: e.target.value }))}
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 outline-none focus:bg-white"
+                    >
+                      <option value="12px">Arrondi Élégant (12px)</option>
+                      <option value="9999px">Pill / Ovale (9999px)</option>
+                      <option value="4px">Carré Moderne (4px)</option>
+                      <option value="0px">Minimaliste Droit (0px)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Categories */}
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Catégories de Produits (séparées par virgules)</label>
+                  <Input
+                    placeholder="Nouveautés, Meilleures Ventes, Promo, Collection 2026"
+                    value={form.categories}
+                    onChange={e => setForm(f => ({ ...f, categories: e.target.value }))}
+                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                  />
                 </div>
               </div>
             </div>

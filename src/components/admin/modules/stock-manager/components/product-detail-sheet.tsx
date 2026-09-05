@@ -154,7 +154,7 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
    const retournee = breakdown?.stock_retourne || 0;
    const totalShipped = livree + retournee;
    const returnRate = totalShipped > 0 ? Math.round((retournee / totalShipped) * 100) : 0;
-   const marginGenerated = livree * margin;
+   const marginGenerated = breakdown?.marge_generee !== undefined ? breakdown.marge_generee : (livree * margin);
 
    const variantItems = (() => {
       if (!product.variants || product.variants.length === 0) return [];

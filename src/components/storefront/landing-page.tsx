@@ -69,6 +69,12 @@ export function LandingPage() {
   const isVideo   = tc.bannerIsVideo as boolean | undefined;
   const phone     = (tc.contact as any)?.phone || '';
 
+  const heroFullscreen = tc.heroFullscreen !== false;
+  const heroTextAlign = (tc.heroTextAlign as 'left' | 'center' | 'right') || 'center';
+  const buttonColor = (tc.buttonColor as string) || primary;
+  const buttonRadius = (tc.buttonRadius as string) || '0px';
+  const fontFamily = (tc.fontFamily as string) || 'Inter';
+
   const benefits = [
     { icon: Truck,       title: (tc.benefit1Title as string) || t('fastDelivery'), desc: (tc.benefit1Desc as string) || t('delivery48hDesc') },
     { icon: ShieldCheck, title: (tc.benefit2Title as string) || t('codFast'), desc: (tc.benefit2Desc as string) || t('securePaymentDesc') },
@@ -125,7 +131,7 @@ export function LandingPage() {
     : 0;
 
   return (
-    <div className="bg-[#080808] min-h-screen text-white" dir={dir}>
+    <div className="bg-[#080808] min-h-screen text-white" dir={dir} style={{ fontFamily: fontFamily ? `'${fontFamily}', sans-serif` : undefined }}>
 
       {/* ── TOP BAR ─────────────────────────────────────────────── */}
       {phone && (
@@ -137,7 +143,7 @@ export function LandingPage() {
       )}
 
       {/* ── HERO ────────────────────────────────────────────────── */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      <section className={cn("relative flex items-center justify-center overflow-hidden", heroFullscreen ? "min-h-screen" : "min-h-[60vh] py-20")}>
 
         {/* Background media */}
         {bannerUrl && !isVideo && (
@@ -157,7 +163,7 @@ export function LandingPage() {
           style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.9) 1px, transparent 1px)', backgroundSize: '32px 32px' }}/>
 
         {/* Hero content */}
-        <div className="relative z-10 max-w-3xl mx-auto px-6 text-center py-24">
+        <div className={cn("relative z-10 max-w-3xl mx-auto px-6 py-24", heroTextAlign === 'left' ? "text-left mr-auto ml-0" : heroTextAlign === 'right' ? "text-right ml-auto mr-0" : "text-center")}>
 
           {/* Flash badge */}
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -227,14 +233,15 @@ export function LandingPage() {
               <>
                 <button
                   onClick={() => handleOrderNow(hero)}
-                  className="w-full sm:w-auto px-10 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-black transition-all hover:brightness-110 active:scale-[0.98] shadow-2xl"
-                  style={{ backgroundColor: primary }}
+                  className="w-full sm:w-auto px-10 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-white transition-all hover:brightness-110 active:scale-[0.98] shadow-2xl"
+                  style={{ backgroundColor: buttonColor || primary, borderRadius: buttonRadius || '0px' }}
                 >
                   <ShoppingCart className="inline size-4 mr-2.5 -mt-0.5"/>{ctaLabel}
                 </button>
                 <button
                   onClick={() => handleAddToCart(hero)}
                   className="w-full sm:w-auto px-8 py-5 text-[11px] font-black uppercase tracking-widest text-white/60 border border-white/10 hover:border-white/30 hover:text-white transition-all"
+                  style={{ borderRadius: buttonRadius || '0px' }}
                 >
                   {addedId === hero.id ? <><CheckCircle className="inline size-4 mr-2 text-green-400"/>{t('added')} !</> : t('addToCart')}
                 </button>
@@ -242,10 +249,10 @@ export function LandingPage() {
             ) : (
               <button
                 onClick={() => setStorefrontView('shop')}
-                className="px-10 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-black"
-                style={{ backgroundColor: primary }}
+                className="w-full sm:w-auto px-10 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-white transition-all hover:brightness-110 active:scale-[0.98] shadow-2xl"
+                style={{ backgroundColor: buttonColor || primary, borderRadius: buttonRadius || '0px' }}
               >
-                {ctaLabel}
+                <ShoppingBag className="inline size-4 mr-2.5 -mt-0.5"/>{ctaLabel}
               </button>
             )}
           </motion.div>
