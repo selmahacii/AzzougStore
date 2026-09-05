@@ -27,6 +27,8 @@ export async function GET(req: Request) {
             fromStatus: order.status,
             toStatus: 'SHIPPED',
             note: 'Auto-fixed status to SHIPPED because tracking_number exists.',
+            createdAt: new Date(),
+            updatedAt: new Date(),
           }
         });
         count++;
