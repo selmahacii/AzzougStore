@@ -96,7 +96,7 @@ function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose:
                      
                      {/* Timeline */}
                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                        <OrderTrackingReport order={order} />
+                        <OrderTrackingReport orderId={order.id} />
                      </div>
                   </div>
                )}
