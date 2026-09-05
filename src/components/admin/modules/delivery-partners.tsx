@@ -254,7 +254,7 @@ function PartnerModal({
     setSyncing(true);
     try {
       const res: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/sync-fees`, { method: 'POST' });
-      toast.success(res?.message ?? 'Tarifs synchronisés depuis l'API');
+      toast.success(res?.message ?? "Tarifs synchronisés depuis l'API");
       
       setLoadingFees(true);
       const feesRes: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/fees`);
@@ -344,7 +344,7 @@ function PartnerModal({
   const handleSaveFees = async () => {
     const partnerId = savedPartnerId;
     if (!partnerId) {
-      toast.error('Enregistrez d'abord la configuration API.');
+      toast.error("Enregistrez d'abord la configuration API.");
       return;
     }
     const fees = Object.entries(wilayaFees)
@@ -774,7 +774,7 @@ function PartnerModal({
 const TAB_CONFIG = [
   { id: 'carriers', label: 'Carriers & API', desc: 'Gestion des transporteurs et intégrations API directes', icon: Truck },
   { id: 'tracking', label: 'Suivi Temps Réel', desc: 'Tableau de bord de suivi logistique interactif', icon: Activity },
-  { id: 'orders', label: 'Commandes en Transit', desc: 'Flux et liste des colis en cours d'acheminement', icon: Package },
+  { id: 'orders', label: 'Commandes en Transit', desc: "Flux et liste des colis en cours d'acheminement", icon: Package },
 ] as const;
 
 type TabId = typeof TAB_CONFIG[number]['id'];
@@ -975,7 +975,7 @@ function CustomCarrierModal({ open, onClose, storeId, onSaved }: { open: boolean
       onClose();
       setForm({ name: '', api_url: '', api_key: '', fee_home: '', fee_relay: '', notes: '' });
     } catch (e: any) {
-      toast.error(e?.message || 'Erreur lors de l'ajout');
+      toast.error(e?.message || "Erreur lors de l'ajout");
     } finally {
       setSaving(false);
     }
