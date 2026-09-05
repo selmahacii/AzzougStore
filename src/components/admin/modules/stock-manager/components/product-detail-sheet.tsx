@@ -48,7 +48,7 @@ function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose:
                         <div>
                            <div className="flex items-center gap-2 mb-2">
                               <h2 className="text-xl font-black text-slate-800">{order.customer_name}</h2>
-                              <OrderTypeBadge type={order.order_type} />
+                              <OrderTypeBadge order={order} />
                            </div>
                            <div className="flex flex-col gap-1.5 text-sm font-medium text-slate-600">
                               <span className="flex items-center gap-2"><Phone className="size-3.5 text-slate-400" /> <a href={`tel:${order.customer_phone}`} className="hover:text-indigo-600 hover:underline">{order.customer_phone}</a></span>
