@@ -4910,7 +4910,7 @@ def list_returned_orders(
         except ValueError:
             pass
 
-    from app.models.order_event import OrderEvent
+    from app.models.events import OrderEvent
 
     ret_subq = (
         db.query(OrderEvent.order_id, sqlfunc.max(OrderEvent.created_at).label("ret_at"))
