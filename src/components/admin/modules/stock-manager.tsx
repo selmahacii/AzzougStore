@@ -127,7 +127,7 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
        />
 
        {viewingProduct && (
-          <ProductDetailSheet product={viewingProduct} storeId={storeId} onClose={() => setViewingProduct(null)} />
+          <ProductDetailSheet product={viewingProduct} onClose={() => setViewingProduct(null)} />
        )}
 
        {adjustingProduct && (
