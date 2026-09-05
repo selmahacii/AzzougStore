@@ -29,11 +29,11 @@ const ALGERIAN_WILAYAS = [
   'Adrar', 'Chlef', 'Laghouat', 'Oum El Bouaghi', 'Batna', 'Béjaïa', 'Biskra', 'Béchar',
   'Blida', 'Bouira', 'Tamanrasset', 'Tébessa', 'Tlemcen', 'Tiaret', 'Tizi Ouzou', 'Alger',
   'Djelfa', 'Jijel', 'Sétif', 'Saïda', 'Skikda', 'Sidi Bel Abbès', 'Annaba', 'Guelma',
-  'Constantine', 'Médéa', 'Mostaganem', 'M\\'Sila', 'Mascara', 'Ouargla', 'Oran', 'El Bayadh',
+  'Constantine', 'Médéa', 'Mostaganem', "M'Sila", 'Mascara', 'Ouargla', 'Oran', 'El Bayadh',
   'Illizi', 'Bordj Bou Arréridj', 'Boumerdès', 'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued',
   'Khenchela', 'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
   'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Badji Mokhtar', 'Ouled Djellal', 'Béni Abbès',
-  'In Salah', 'In Guezzam', 'Touggourt', 'Djanet', 'El M\\'Ghair', 'El Meniaa',
+  'In Salah', 'In Guezzam', 'Touggourt', 'Djanet', "El M'Ghair", 'El Meniaa',
 ];
 
 // ─── KNOWN CARRIERS ───────────────────────────────────────────
@@ -254,7 +254,7 @@ function PartnerModal({
     setSyncing(true);
     try {
       const res: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/sync-fees`, { method: 'POST' });
-      toast.success(res?.message ?? 'Tarifs synchronisés depuis l\\'API');
+      toast.success(res?.message ?? 'Tarifs synchronisés depuis l'API');
       
       setLoadingFees(true);
       const feesRes: any = await apiFetch(`/api/v1/delivery-partners/${savedPartnerId}/fees`);
@@ -344,7 +344,7 @@ function PartnerModal({
   const handleSaveFees = async () => {
     const partnerId = savedPartnerId;
     if (!partnerId) {
-      toast.error('Enregistrez d\\'abord la configuration API.');
+      toast.error('Enregistrez d'abord la configuration API.');
       return;
     }
     const fees = Object.entries(wilayaFees)
@@ -460,7 +460,7 @@ function PartnerModal({
                 <div className="flex items-center justify-between p-4 bg-[#F8F9FC] rounded-2xl border border-[#E9ECF0]">
                   <div>
                     <p className="text-xs font-black uppercase tracking-wider text-slate-800">Mode Sandbox (Test)</p>
-                    <p className="text-[11px] text-[#636E72] font-medium mt-0.5">Activer pour pointer vers l\\'environnement de test du transporteur</p>
+                    <p className="text-[11px] text-[#636E72] font-medium mt-0.5">Activer pour pointer vers l'environnement de test du transporteur</p>
                   </div>
                   <button
                     onClick={() => setIsSandbox(s => !s)}
@@ -774,7 +774,7 @@ function PartnerModal({
 const TAB_CONFIG = [
   { id: 'carriers', label: 'Carriers & API', desc: 'Gestion des transporteurs et intégrations API directes', icon: Truck },
   { id: 'tracking', label: 'Suivi Temps Réel', desc: 'Tableau de bord de suivi logistique interactif', icon: Activity },
-  { id: 'orders', label: 'Commandes en Transit', desc: 'Flux et liste des colis en cours d\\'acheminement', icon: Package },
+  { id: 'orders', label: 'Commandes en Transit', desc: 'Flux et liste des colis en cours d'acheminement', icon: Package },
 ] as const;
 
 type TabId = typeof TAB_CONFIG[number]['id'];
@@ -879,7 +879,7 @@ function CarrierOrdersList({ storeId, partners }: { storeId: string; partners: D
               <tr>
                 <td colSpan={7} className="px-5 py-12 text-center text-slate-400">
                   <Package className="size-8 mx-auto mb-2 text-slate-300" />
-                  <p className="text-xs font-bold uppercase tracking-wider">Aucune commande en cours d\\'acheminement</p>
+                  <p className="text-xs font-bold uppercase tracking-wider">Aucune commande en cours d'acheminement</p>
                 </td>
               </tr>
             ) : orders.map((order: any) => {
@@ -975,7 +975,7 @@ function CustomCarrierModal({ open, onClose, storeId, onSaved }: { open: boolean
       onClose();
       setForm({ name: '', api_url: '', api_key: '', fee_home: '', fee_relay: '', notes: '' });
     } catch (e: any) {
-      toast.error(e?.message || 'Erreur lors de l\\'ajout');
+      toast.error(e?.message || 'Erreur lors de l'ajout');
     } finally {
       setSaving(false);
     }
@@ -987,7 +987,7 @@ function CustomCarrierModal({ open, onClose, storeId, onSaved }: { open: boolean
         <div className="bg-[#2D3436] p-6 text-white flex items-center justify-between">
           <div>
             <DialogTitle className="text-base font-black uppercase tracking-wider">Ajouter un Transporteur Personnalisé</DialogTitle>
-            <DialogDescription className="text-white/60 text-xs font-bold mt-0.5">Connectez n\\'importe quel transporteur avec ses identifiants API</DialogDescription>
+            <DialogDescription className="text-white/60 text-xs font-bold mt-0.5">Connectez n'importe quel transporteur avec ses identifiants API</DialogDescription>
           </div>
           <button onClick={onClose} className="size-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all cursor-pointer">
             <X className="size-4 text-white" />
@@ -1182,11 +1182,11 @@ export default function DeliveryPartners() {
                         Transporteur Personnalisé
                       </h3>
                       <p className="text-xs text-[#636E72] font-medium mt-1">
-                        Connectez n\\'importe quel transporteur avec son API REST ou webhook
+                        Connectez n'importe quel transporteur avec son API REST ou webhook
                       </p>
                     </div>
                     <span className="inline-flex items-center gap-1 text-[11px] font-black text-[#4b7bec] mt-1 group-hover:translate-x-0.5 transition-transform">
-                      Configurer l\\'intégration <ArrowUpRight className="size-3" />
+                      Configurer l'intégration <ArrowUpRight className="size-3" />
                     </span>
                   </div>
                 );
@@ -1568,7 +1568,7 @@ export default function DeliveryPartners() {
                       <span className="text-[#636E72]">{totalOrders} expédiés · {totalDelivered} livrés (COD) · {totalReturned} retours traités</span>
                     </div>
                     <div className="flex items-center gap-2 font-mono font-bold text-[#4b7bec]">
-                      <span>Taux d\\'Acheminement :</span>
+                      <span>Taux d'Acheminement :</span>
                       <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">{avgDeliveryRate != null ? `${avgDeliveryRate}%` : '0%'}</span>
                     </div>
                   </div>
