@@ -111,35 +111,33 @@ const MOVEMENT_TYPE_COLOR: Record<string, string> = {
 
 // ─── CODpilot Styling ─────────────────────────────────────
 const C = {
-   primary: '#6C5CE7', primaryBg: '#F0EDFF',
-   success: '#00B894', successBg: '#E6FFF8',
-   danger: '#E17055', dangerBg: '#FFEDE9',
-   warning: '#FDCB6E', warningBg: '#FFF8E6',
-   info: '#0984E3', infoBg: '#E8F4FE',
-   text: '#2D3436', textLight: '#636E72', textDim: '#B2BEC3', border: '#E9ECF0', bg: '#F8F9FC',
+   primary: '#4F46E5', primaryBg: '#EEF2FF',
+   success: '#10B981', successBg: '#ECFDF5',
+   danger: '#EF4444', dangerBg: '#FEF2F2',
+   warning: '#F59E0B', warningBg: '#FFFBEB',
+   info: '#3B82F6', infoBg: '#EFF6FF',
+   text: '#0F172A', textLight: '#475569', textDim: '#94A3B8', border: '#E2E8F0', bg: '#F8FAFC',
 };
 
 function KpiCard({ title, value, icon: Icon, color, bgColor, change, status }: any) {
    return (
-      <div className="bg-white rounded-xl border p-5 group hover:border-[#B2BEC3] transition-colors" style={{ borderColor: C.border }}>
-         <div className="flex items-center justify-between mb-4">
-            <p className="text-[11px] font-semibold text-[#636E72]">{title}</p>
-            <div className="size-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: bgColor }}>
-               <Icon className="size-4" style={{ color }} />
-            </div>
+      <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
+         <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{title}</p>
+            <Icon className="size-4 text-slate-400" />
          </div>
-         <p className="text-2xl font-extrabold text-[#2D3436] tabular-nums mb-1">{value}</p>
+         <p className="text-2xl font-black text-slate-800 tabular-nums">{value}</p>
          {change && (
             <div className="flex items-center gap-1.5 mt-2">
-               {change >= 0 ? <TrendingUp className="size-3 text-[#00B894]" /> : <TrendingDown className="size-3 text-[#E17055]" />}
-               <span className="text-[10px] font-bold" style={{ color: change >= 0 ? C.success : C.danger }}>{change >= 0 ? '+' : ''}{change}%</span>
-               <span className="text-[10px] font-semibold text-[#B2BEC3] ml-1">vs mois dernier</span>
+               {change >= 0 ? <TrendingUp className="size-3 text-emerald-600" /> : <TrendingDown className="size-3 text-rose-600" />}
+               <span className={cn("text-[10px] font-bold", change >= 0 ? "text-emerald-600" : "text-rose-600")}>{change >= 0 ? '+' : ''}{change}%</span>
+               <span className="text-[10px] text-slate-500 font-medium">vs mois dernier</span>
             </div>
          )}
          {status === 'nominal' && (
             <div className="flex items-center gap-1.5 mt-2">
-               <div className="size-1.5 rounded-full" style={{ backgroundColor: C.success }} />
-               <span className="text-[10px] font-bold" style={{ color: C.success }}>Opérationnel</span>
+               <div className="size-1.5 rounded-full bg-emerald-500" />
+               <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Opérationnel</span>
             </div>
          )}
       </div>
@@ -338,56 +336,58 @@ function ErpDashboardBlock() {
 
    return (
       <div className="space-y-6">
-         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
             {kpis.map(k => (
-               <div key={k.label} title={(k as any).untracked ? "Non tracké — aucun type de mouvement dédié n'existe encore pour distinguer ce cas d'un retour normal." : undefined}
-                  className={cn("p-3 rounded-xl border bg-white", (k as any).untracked && "opacity-50 border-dashed")} style={{ borderColor: k.color + '33' }}>
-                  <p className="text-sm font-black tabular-nums" style={{ color: k.color }}>{k.value}</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{k.label}</p>
+               <div key={k.label} title={(k as any).untracked ? "Non tracké" : undefined}
+                  className={cn("p-4 rounded-lg border border-slate-200 bg-white shadow-sm flex flex-col justify-between", (k as any).untracked && "opacity-50 border-dashed")}>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{k.label}</p>
+                  <p className="text-lg font-black tabular-nums text-slate-800">{k.value}</p>
                </div>
             ))}
          </div>
 
-         <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
                { label: "Aujourd'hui", v: d.evolution.aujourd_hui },
                { label: '7 jours', v: d.evolution.sept_jours },
                { label: '30 jours', v: d.evolution.trente_jours },
             ].map(e => (
-               <div key={e.label} className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{e.label}</p>
-                  <div className="flex items-center gap-4">
-                     <div><p className="text-sm font-black text-slate-800">{e.v.mouvements}</p><p className="text-[8px] text-slate-400 uppercase">Mouvements</p></div>
-                     <div><p className="text-sm font-black text-emerald-500">+{e.v.qty_entrees}</p><p className="text-[8px] text-slate-400 uppercase">Entrées</p></div>
-                     <div><p className="text-sm font-black text-rose-500">-{e.v.qty_sorties}</p><p className="text-[8px] text-slate-400 uppercase">Sorties</p></div>
+               <div key={e.label} className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">{e.label}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                     <div><p className="text-sm font-black text-slate-800">{e.v.mouvements}</p><p className="text-[9px] text-slate-400 uppercase mt-0.5">Mvts</p></div>
+                     <div><p className="text-sm font-black text-emerald-600">+{e.v.qty_entrees}</p><p className="text-[9px] text-slate-400 uppercase mt-0.5">In</p></div>
+                     <div><p className="text-sm font-black text-rose-600">-{e.v.qty_sorties}</p><p className="text-[9px] text-slate-400 uppercase mt-0.5">Out</p></div>
                   </div>
                </div>
             ))}
-            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Rotation moyenne (30j)</p>
-               <p className="text-lg font-black text-slate-800">{d.rotation_moyenne}×</p>
-               <p className="text-[8px] text-slate-400 uppercase mt-1">Qté vendue / stock actuel</p>
+            <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm flex flex-col justify-between">
+               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Rotation (30j)</p>
+               <div>
+                  <p className="text-2xl font-black text-slate-800">{d.rotation_moyenne}×</p>
+                  <p className="text-[9px] text-slate-400 uppercase mt-1">Qté vendue / stock actuel</p>
+               </div>
             </div>
          </div>
 
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des entrées (30j)</p>
-               <p className="text-base font-black text-emerald-500 mt-1">{formatPrice(d.valeur_entrees_30j)}</p>
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valeur des entrées (30j)</p>
+               <p className="text-lg font-black text-emerald-600">{formatPrice(d.valeur_entrees_30j)}</p>
             </div>
-            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des sorties (30j)</p>
-               <p className="text-base font-black text-rose-500 mt-1">{formatPrice(d.valeur_sorties_30j)}</p>
+            <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valeur des sorties (30j)</p>
+               <p className="text-lg font-black text-rose-600">{formatPrice(d.valeur_sorties_30j)}</p>
             </div>
-            <div className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valeur des retours (30j)</p>
-               <p className="text-base font-black text-amber-500 mt-1">{formatPrice(d.valeur_retours_30j)}</p>
+            <div className="p-4 rounded-lg border border-slate-200 bg-white shadow-sm">
+               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valeur des retours (30j)</p>
+               <p className="text-lg font-black text-amber-600">{formatPrice(d.valeur_retours_30j)}</p>
             </div>
          </div>
 
          {/* Graphique entrées/sorties/retours */}
-         <div className="p-6 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Entrées / Sorties / Retours — 30 derniers jours</p>
+         <div className="p-6 rounded-lg border border-slate-200 bg-white shadow-sm">
+            <p className="text-[11px] font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2"><BarChart2 className="size-4 text-indigo-500"/> Entrées / Sorties / Retours — 30 derniers jours</p>
             {d.chart_30j.length === 0 ? (
                <p className="text-[10px] font-bold text-slate-400 text-center py-10 uppercase">Aucun mouvement sur la période</p>
             ) : (
@@ -411,18 +411,18 @@ function ErpDashboardBlock() {
          </div>
 
          {/* Widgets top produits */}
-         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {widgetGroups.map(([title, items]) => (
-               <div key={title} className="p-4 rounded-xl border bg-white" style={{ borderColor: C.border }}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">{title}</p>
+               <div key={title} className="p-5 rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <p className="text-[11px] font-bold text-slate-800 uppercase tracking-wider mb-4">{title}</p>
                   {items.length === 0 ? (
-                     <p className="text-[10px] text-slate-400 text-center py-4">Aucune donnée</p>
+                     <p className="text-xs text-slate-400 text-center py-6">Aucune donnée</p>
                   ) : (
-                     <div className="space-y-1.5">
+                     <div className="space-y-3">
                         {items.map((it: any) => (
-                           <div key={it.product_id} className="flex items-center justify-between text-xs">
-                              <span className="text-slate-600 font-semibold truncate max-w-[180px]">{it.product_name}</span>
-                              <span className="font-black text-slate-800 tabular-nums">{it.quantity}</span>
+                           <div key={it.product_id} className="flex items-center justify-between group">
+                              <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 truncate pr-4">{it.product_name}</span>
+                              <span className="text-xs font-black text-slate-800 tabular-nums bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{it.quantity}</span>
                            </div>
                         ))}
                      </div>
@@ -458,16 +458,16 @@ function MonitorView() {
 
    return (
       <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-400">
-         <div className="bg-white rounded-xl border p-4 shadow-sm" style={{ borderColor: C.border }}>
-            <h3 className="text-xs font-bold text-[#2D3436] mb-3 uppercase tracking-wider flex items-center gap-2">
-               <Sliders className="size-4 text-[#6C5CE7]" /> Filtres Globaux de Surveillance
+         <div className="bg-white rounded-lg border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+               <Sliders className="size-4 text-indigo-500" /> Filtres Globaux
             </h3>
             <MovementFilterBar f={f} />
          </div>
          <ErpDashboardBlock />
 
          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
+            <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6 shadow-sm" style={{ borderColor: C.border }}>
                <h3 className="text-sm font-bold text-[#2D3436] mb-6 flex items-center gap-2">
                   <Activity className="size-4 text-[#6C5CE7]" />
                   Flux d'inventaire (30 derniers jours)
@@ -491,7 +491,7 @@ function MonitorView() {
                </div>
             </div>
 
-            <div className="bg-white rounded-xl border p-6" style={{ borderColor: C.border }}>
+            <div className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm" style={{ borderColor: C.border }}>
                <h3 className="text-sm font-bold text-[#2D3436] mb-6">Flux d'activité</h3>
                <div className="space-y-6">
                   {isLoading ? (
@@ -704,8 +704,8 @@ function HistoryView({ f }: { f: ReturnType<typeof useFilteredMovements> }) {
    };
 
    return (
-      <div className="bg-white border rounded-2xl overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
-         <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: C.border }}>
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
+         <div className="flex items-center justify-between p-6 border-b border-slate-200">
             <div>
                <h3 className="text-sm font-extrabold text-[#2D3436] uppercase tracking-wider">Journal d'Audit Opérationnel</h3>
                <p className="text-[10px] font-bold text-[#B2BEC3] uppercase tracking-widest mt-1">Traçabilité complète des flux — qui, quand, depuis quelle commande</p>
@@ -777,8 +777,8 @@ function TimelineView() {
    })();
 
    return (
-      <div className="bg-white border rounded-2xl overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
-         <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: C.border }}>
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm animate-in slide-in-from-bottom-2 duration-400" style={{ borderColor: C.border }}>
+         <div className="flex items-center justify-between p-6 border-b border-slate-200">
             <div>
                <h3 className="text-sm font-extrabold text-[#2D3436] uppercase tracking-wider flex items-center gap-2">
                   <GitBranch className="size-4 text-[#6C5CE7]" /> Timeline Chronologique
