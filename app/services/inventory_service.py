@@ -329,7 +329,12 @@ class InventoryService:
                     product_id, variant_str, quantity, order_id, matching_variant["reserved"]
                 )
             else:
-                logger.warning("Variant %s not found on product %s, falling back to product-level check", variant_str, product_id)
+                logger.error(
+                    "reserve_stock: variant '%s' NOT FOUND on product %s which HAS variants — "
+                    "falling back to product-level reservation. This can cause variant/aggregate "
+                    "stock drift. Check variant_details formatting for order %s.",
+                    variant_str, product_id, order_id,
+                )
                 available = product.stock - product.reserved_stock
                 if available < quantity:
                     logger.warning(
@@ -430,6 +435,7 @@ class InventoryService:
             actor_id=actor_id,
             reason=f"Vente confirmée pour commande {order_id} ({variant_str or 'Général'})",
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Stock confirmed: product=%s qty=%d order=%s (stock=%d, reserved=%d)",
             product_id, quantity, order_id, product.stock, product.reserved_stock,
@@ -501,12 +507,39 @@ class InventoryService:
     ) -> None:
         """
         Restock returned goods (CONFIRMED/SHIPPED/DELIVERED → RETURNED).
+
+        Idempotent: if a RETURN_RESTOCK movement already exists for this
+        (order_id, product_id) pair, the call is a safe no-op. This prevents
+        double-restocking on network retries, double-clicks, or accidental
+        repeated status transitions that would otherwise inflate stock.
         """
         if quantity <= 0:
             raise ValueError(f"Return restock quantity must be positive, got {quantity}")
 
+        # ── Idempotency guard ────────────────────────────────────────────
+        # Check BEFORE acquiring the row lock (the EXISTS query is read-only
+        # and cheap). If the movement is already there we skip completely —
+        # no lock, no write, no log noise beyond the warning below.
+        if order_id:
+            already_restocked = (
+                db.query(StockMovement.id)
+                .filter(
+                    StockMovement.order_id == order_id,
+                    StockMovement.product_id == product_id,
+                    StockMovement.type == "RETURN_RESTOCK",
+                )
+                .first()
+            )
+            if already_restocked:
+                logger.warning(
+                    "return_restock: RETURN_RESTOCK already exists for order=%s product=%s — "
+                    "skipping to prevent double-restock (idempotent no-op).",
+                    order_id, product_id,
+                )
+                return
+
         product = _lock_product(db, product_id)
-        
+
         variant_str = None
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
@@ -517,7 +550,7 @@ class InventoryService:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
                 flag_modified(product, "variants")
-                
+
                 # Recalculate total product stock
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -538,6 +571,7 @@ class InventoryService:
             actor_id=actor_id,
             reason=f"Retour marchandise pour commande {order_id} ({variant_str or 'Général'})",
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Return restocked: product=%s qty=%d order=%s (new stock=%d)",
             product_id, quantity, order_id, product.stock,
@@ -668,6 +702,7 @@ class InventoryService:
             actor_id=actor_id,
             reason=reason or f"Vente au comptoir ({variant_str or 'Général'})",
         )
+        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("POS sale: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
         return product
 
