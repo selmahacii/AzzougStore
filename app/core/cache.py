@@ -231,6 +231,25 @@ def invalidate(*keys: str) -> None:
     delete(*keys)
 
 
+def invalidate_prefix(prefix: str) -> None:
+    """Invalidate all keys matching prefix from L1 and L2 cache."""
+    to_pop = [k for k in _l1_store.keys() if k.startswith(prefix)]
+    for k in to_pop:
+        _l1_store.pop(k, None)
+    client = _get_client()
+    if client is not None:
+        try:
+            resp = client.post("/", json=["SCAN", 0, "MATCH", f"{prefix}*", "COUNT", 100])
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and "result" in data:
+                    keys = data["result"][1]
+                    if keys:
+                        delete(*keys)
+        except Exception as exc:
+            logger.debug("[Cache] invalidate_prefix(%s) failed: %s", prefix, exc)
+
+
 def get_metrics() -> dict:
     """
     Full observability snapshot — see GET /api/v1/internal/cache-metrics.

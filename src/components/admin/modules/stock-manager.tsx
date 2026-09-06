@@ -60,8 +60,8 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
     setFetchingProductId(p.id);
     try {
        const res = await apiFetch<any>(`/api/v1/products/${p.id}`);
-       if (res.success && res.data) {
-          const fetchedProduct = res.data;
+       const fetchedProduct = (res && (res.id || res.variants)) ? res : (res?.data || p);
+       if (fetchedProduct) {
           // Inject returns data dynamically for variants
           const productReturns = returnsByVariant[fetchedProduct.id] || {};
           if (fetchedProduct.variants) {

@@ -510,11 +510,14 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
 
    const productQuery = useQuery({
       queryKey: ['product-detail-live', initialProduct?.id],
-      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/products/${initialProduct?.id}`),
+      queryFn: () => apiFetch<any>(`/api/v1/products/${initialProduct?.id}`),
       enabled: !!initialProduct?.id,
-      refetchInterval: 15000,
+      refetchInterval: 5000,
    });
-   const product = productQuery.data?.data || initialProduct;
+   const liveData = productQuery.data as any;
+   const product = (liveData && (liveData.id || liveData.variants)) 
+      ? liveData 
+      : (liveData?.data || initialProduct);
 
    const [editingPrice, setEditingPrice] = useState(false);
    const [priceInput, setPriceInput] = useState(String(product.price || 0));
