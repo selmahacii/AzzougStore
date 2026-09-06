@@ -468,22 +468,22 @@ function VariantOrdersModal({
                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
                               {ord.reservedQty > 0 && (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
-                                    <Clock className="size-3 text-amber-500" /> Réservé : +{ord.reservedQty}
+                                    <Clock className="size-3 text-amber-500" /> Réservé : +{ord.reservedQty} {ord.reservedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
                               {ord.confirmedQty > 0 && (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
-                                    <CheckCircle2 className="size-3 text-rose-500" /> Confirmé : {ord.confirmedQty}
+                                    <CheckCircle2 className="size-3 text-rose-500" /> Confirmé : {ord.confirmedQty} {ord.confirmedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
                               {ord.releasedQty > 0 && (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200 flex items-center gap-1">
-                                    <RotateCcw className="size-3 text-sky-500" /> Libéré : {ord.releasedQty}
+                                    <RotateCcw className="size-3 text-sky-500" /> Libéré : {ord.releasedQty} {ord.releasedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
                               {ord.returnedQty > 0 && (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1">
-                                    <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty}
+                                    <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty} {ord.returnedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
                            </div>
@@ -703,7 +703,7 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
             };
          }
 
-         const qty = Math.abs(m.quantity || 0);
+         const qty = Math.abs(Number(m.quantity) || 0);
          if (m.order_id) {
             map[key].uniqueOrders.add(m.order_id);
             if (!map[key].ordersMap[m.order_id]) {
