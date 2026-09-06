@@ -1199,3 +1199,20 @@ def create_movement(
         if isinstance(e, (InsufficientStockError, ValidationError, ProductNotFoundError, PermissionError)):
             raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reconcile-all")
+def reconcile_all_stock_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Purges past duplicate stock movement logs, recalculates reservation counts,
+    and restores physical stock over-deducted by past duplicate updates.
+    """
+    if getattr(current_user, "role", "") not in {"ADMIN", "SUPERADMIN"}:
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs")
+    
+    stats = inventory_service.reconcile_and_fix_all_stock(db)
+    return {"success": True, "data": stats}
+

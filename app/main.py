@@ -176,6 +176,15 @@ def run_db_migrations():
     except Exception as e:
         print(f"[WARN] Failed to execute delivered orders migration script: {e}")
 
+    # Reconcile duplicate stock movements, restore physical stock, and refresh reservation counts
+    try:
+        from app.services.inventory_service import inventory_service
+        with SessionLocal() as db_session:
+            reconcile_stats = inventory_service.reconcile_and_fix_all_stock(db_session)
+            print(f"[OK] Automatic stock reconciliation on startup completed: {reconcile_stats}")
+    except Exception as e:
+        print(f"[WARN] Automatic stock reconciliation failed: {e}")
+
     print("[OK] Startup migrations finished — database connection is live.")
 
     try:

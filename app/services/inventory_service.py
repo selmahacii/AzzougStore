@@ -1073,6 +1073,110 @@ class InventoryService:
         )
         return product
 
+    def reconcile_and_fix_all_stock(self, db: Session) -> dict:
+        """
+        Scans all orders and stock movements to clean up past duplicate movements,
+        reconcile reserved stock, and restore over-deducted physical stock.
+        """
+        from app.models.stock import StockMovement
+        from app.models.product import Product
+        from app.models.order import Order, OrderItem
+        from sqlalchemy.orm import attributes
+
+        stats = {
+            "duplicate_movements_deleted": 0,
+            "stock_restored_units": 0,
+            "products_reconciled": 0,
+        }
+
+        db.info["skip_tenant_isolation"] = True
+
+        # 1. Clean duplicate movements per (order_id, product_id, type, reason)
+        movements = db.query(StockMovement).filter(StockMovement.order_id.isnot(None)).all()
+        grouped: dict = {}
+        for m in movements:
+            key = (m.order_id, m.product_id, m.type, m.reason or "")
+            grouped.setdefault(key, []).append(m)
+
+        for key, m_list in grouped.items():
+            if len(m_list) > 1:
+                # Keep earliest movement record, delete duplicates
+                m_list.sort(key=lambda x: x.created_at or "")
+                duplicates = m_list[1:]
+                for dup in duplicates:
+                    db.delete(dup)
+                    stats["duplicate_movements_deleted"] += 1
+
+                    # If this was a duplicate ORDER_CONFIRM movement that over-deducted physical stock,
+                    # restore the deducted physical stock back to product/variant!
+                    if dup.type == "ORDER_CONFIRM":
+                        product = db.query(Product).filter(Product.id == dup.product_id).first()
+                        if product:
+                            qty_to_restore = abs(dup.quantity or 0)
+                            if qty_to_restore > 0:
+                                stats["stock_restored_units"] += qty_to_restore
+                                variant_str = None
+                                if dup.reason and "(" in dup.reason and ")" in dup.reason:
+                                    variant_str = dup.reason.split("(")[-1].split(")")[0].strip()
+                                    if variant_str == "Général":
+                                        variant_str = None
+
+                                if variant_str and product.variants:
+                                    mv = _find_matching_variant(product.variants, variant_str)
+                                    if mv:
+                                        mv["stock"] = int(mv.get("stock") or 0) + qty_to_restore
+                                        _sync_sub_variants_stock(mv, qty_to_restore)
+                                        attributes.flag_modified(product, "variants")
+                                        _update_product_stock_from_variants(product)
+                                else:
+                                    product.stock = (product.stock or 0) + qty_to_restore
+
+        db.flush()
+
+        # 2. Recalculate reserved_stock for all products and variants based on actual pending orders
+        pending_statuses = {"NEW", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "PENDING"}
+        products = db.query(Product).all()
+
+        for product in products:
+            stats["products_reconciled"] += 1
+            pending_items = (
+                db.query(OrderItem)
+                .join(Order, OrderItem.order_id == Order.id)
+                .filter(OrderItem.product_id == product.id, Order.status.in_(pending_statuses), Order.is_deleted == False)
+                .all()
+            )
+
+            total_pending_qty = sum(item.quantity or 0 for item in pending_items)
+            product.reserved_stock = total_pending_qty
+
+            if product.variants and isinstance(product.variants, list):
+                for v in product.variants:
+                    if isinstance(v, dict):
+                        v["reserved"] = 0
+                        if v.get("sub_variants"):
+                            for sv in v["sub_variants"]:
+                                if isinstance(sv, dict):
+                                    sv["reserved"] = 0
+
+                for item in pending_items:
+                    v_str = None
+                    if item.variant_details and isinstance(item.variant_details, dict):
+                        v_str = item.variant_details.get("variant")
+
+                    if v_str:
+                        mv = _find_matching_variant(product.variants, v_str)
+                        if mv:
+                            mv["reserved"] = int(mv.get("reserved") or 0) + (item.quantity or 0)
+                            _sync_sub_variants_reserved(mv, item.quantity or 0)
+
+                attributes.flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
+
+            _sync_product_availability_and_invalidate_cache(db, product)
+
+        db.commit()
+        return stats
+
 
 # Singleton — import this in services and routers
 inventory_service = InventoryService()
