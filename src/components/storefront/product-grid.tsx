@@ -21,6 +21,41 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'price-desc', label: 'Prix ↓' },
 ];
 
+function hexToRgba(hex: string, alpha: number): string {
+  if (!hex || typeof hex !== 'string') return `rgba(75, 123, 236, ${alpha})`;
+  let c = hex.replace('#', '').trim();
+  if (c.length === 3) {
+    c = c.split('').map(x => x + x).join('');
+  }
+  if (c.length === 6) {
+    const num = parseInt(c, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (hex.startsWith('rgb')) {
+    return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+  }
+  return hex;
+}
+
+function getContrastingBadgeTextColor(color: string): string {
+  if (!color || typeof color !== 'string') return '#4b7bec';
+  let c = color.replace('#', '').trim();
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  if (c.length === 6) {
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    if (yiq > 180) {
+      return '#0f172a';
+    }
+    return color;
+  }
+  return color;
+}
 
 // ─── Shared data-fetching hook ──────────────────────────────────
 function useProductData(storeId: string | undefined) {
@@ -168,11 +203,26 @@ function Pagination({ page, totalPages, onPage, primary, dark }: {
 // ══════════════════════════════════════════════════════════════════
 // CLEAN GRID — Meta Ads Template Minimalist Catalog (100% Responsive)
 // ══════════════════════════════════════════════════════════════════
-function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; primary: string; setStorefrontView: (v: any) => void }) {
+function CleanGrid({ 
+  storeId, 
+  primary, 
+  buttonColor = primary, 
+  setStorefrontView 
+}: { 
+  storeId: string; 
+  primary: string; 
+  buttonColor?: string; 
+  setStorefrontView: (v: any) => void 
+}) {
   const d = useProductData(storeId);
   const addItem = useCartStore(s => s.addItem);
   const openCart = useCartStore(s => s.openCart);
   const setSelectedProductSlug = useAppStore(s => s.setSelectedProductSlug);
+
+  const brandButtonColor = buttonColor || primary || '#4b7bec';
+  const lightBg = hexToRgba(brandButtonColor, 0.12);
+  const lightBorder = hexToRgba(brandButtonColor, 0.22);
+  const badgeTextColor = getContrastingBadgeTextColor(brandButtonColor);
 
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [localMin, setLocalMin] = useState('');
@@ -208,7 +258,14 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
               <h1 className="text-lg sm:text-2xl font-black text-slate-900 uppercase tracking-tight">
                 {d.selectedCategory === 'all' ? 'Toutes les collections' : d.selectedCategory}
               </h1>
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono bg-blue-50 text-[#4b7bec] border border-blue-100">
+              <span 
+                className="px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono border transition-colors"
+                style={{
+                  backgroundColor: lightBg,
+                  color: badgeTextColor,
+                  borderColor: lightBorder,
+                }}
+              >
                 {d.total} article{d.total > 1 ? 's' : ''}
               </span>
             </div>
@@ -226,7 +283,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                 value={d.search}
                 onChange={e => d.setSearch(e.target.value)}
                 placeholder="Rechercher..."
-                className="w-full h-11 pl-9 pr-8 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white focus:border-[#4b7bec] transition-all"
+                className="w-full h-11 pl-9 pr-8 text-xs font-medium rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:bg-white transition-all"
               />
               {d.search && (
                 <button onClick={() => d.setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -248,7 +305,10 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
             >
               <Filter className="size-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 size-4 rounded-full bg-[#4b7bec] text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs">
+                <span 
+                  className="absolute -top-1 -right-1 size-4 rounded-full text-white text-[9px] font-mono font-black flex items-center justify-center shadow-xs"
+                  style={{ backgroundColor: brandButtonColor }}
+                >
                   {activeFilterCount}
                 </span>
               )}
@@ -270,23 +330,39 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
 
         {/* Mobile Filter Chips Row */}
         <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar w-full">
-          {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-            <button 
-              key={cat.id} 
-              onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-              className={cn(
-                "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap shadow-2xs",
-                d.selectedCategory === cat.id 
-                  ? "bg-slate-900 text-white border-slate-900 font-black shadow-xs" 
-                  : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50"
-              )}
-            >
-              {cat.label}
-              {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                <span className="ml-1.5 opacity-60 font-mono text-[10px]">{d.categoryCounts[cat.id]}</span>
-              )}
-            </button>
-          ))}
+          {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+            const isSelected = d.selectedCategory === cat.id;
+            return (
+              <button 
+                key={cat.id} 
+                onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                className={cn(
+                  "shrink-0 px-3.5 py-2 text-xs font-bold rounded-xl border transition-all whitespace-nowrap shadow-2xs",
+                  isSelected 
+                    ? "font-black shadow-xs" 
+                    : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50"
+                )}
+                style={isSelected ? {
+                  backgroundColor: lightBg,
+                  color: badgeTextColor,
+                  borderColor: lightBorder,
+                } : undefined}
+              >
+                {cat.label}
+                {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                  <span 
+                    className="ml-1.5 font-mono text-[10px]"
+                    style={{
+                      color: isSelected ? badgeTextColor : undefined,
+                      opacity: isSelected ? 0.75 : undefined,
+                    }}
+                  >
+                    {d.categoryCounts[cat.id]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
@@ -297,25 +373,39 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
             <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-3">
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
               <div className="flex flex-col gap-1.5">
-                {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-                  <button 
-                    key={cat.id} 
-                    onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                    className={cn(
-                      "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all",
-                      d.selectedCategory === cat.id 
-                        ? "bg-blue-50 text-[#4b7bec] font-black shadow-2xs" 
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                    )}
-                  >
-                    <span>{cat.label}</span>
-                    {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                      <span className="text-[10px] font-mono font-bold text-slate-400">
-                        {d.categoryCounts[cat.id]}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+                  const isSelected = d.selectedCategory === cat.id;
+                  return (
+                    <button 
+                      key={cat.id} 
+                      onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                      className={cn(
+                        "flex items-center justify-between text-xs font-bold text-left px-3.5 py-2.5 rounded-xl transition-all border",
+                        isSelected 
+                          ? "font-black shadow-2xs" 
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-transparent"
+                      )}
+                      style={isSelected ? {
+                        backgroundColor: lightBg,
+                        color: badgeTextColor,
+                        borderColor: lightBorder,
+                      } : undefined}
+                    >
+                      <span>{cat.label}</span>
+                      {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                        <span 
+                          className="text-[10px] font-mono font-bold"
+                          style={{
+                            color: isSelected ? badgeTextColor : undefined,
+                            opacity: isSelected ? 0.75 : undefined,
+                          }}
+                        >
+                          {d.categoryCounts[cat.id]}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -328,20 +418,20 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                   value={localMin} 
                   onChange={e => setLocalMin(e.target.value)} 
                   placeholder="Min DA"
-                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
+                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
                 />
                 <input 
                   type="number" 
                   value={localMax} 
                   onChange={e => setLocalMax(e.target.value)} 
                   placeholder="Max DA"
-                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-[#4b7bec]" 
+                  className="h-10 px-3 text-xs font-bold font-mono border border-slate-200 rounded-xl bg-slate-50 focus:bg-white" 
                 />
               </div>
               <button 
                 onClick={applyPrice}
                 className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs transition-all hover:opacity-95"
-                style={{ backgroundColor: primary }}
+                style={{ backgroundColor: brandButtonColor }}
               >
                 Appliquer le filtre
               </button>
@@ -356,7 +446,8 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                     type="checkbox" 
                     checked={d.inStockOnly} 
                     onChange={e => d.setInStockOnly(e.target.checked)}
-                    className="size-4 rounded accent-[#4b7bec]" 
+                    className="size-4 rounded cursor-pointer" 
+                    style={{ accentColor: brandButtonColor }}
                   />
                   En stock uniquement
                 </label>
@@ -365,7 +456,8 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                     type="checkbox" 
                     checked={d.promoOnly} 
                     onChange={e => d.setPromoOnly(e.target.checked)}
-                    className="size-4 rounded accent-[#4b7bec]" 
+                    className="size-4 rounded cursor-pointer" 
+                    style={{ accentColor: brandButtonColor }}
                   />
                   En promotion
                 </label>
@@ -428,7 +520,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                   page={d.page} 
                   totalPages={d.totalPages} 
                   onPage={go} 
-                  primary={primary} 
+                  primary={brandButtonColor} 
                 />
               </>
             )}
@@ -476,28 +568,39 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                 <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Catégories</label>
                   <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
-                    {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => (
-                      <button 
-                        key={cat.id} 
-                        onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
-                        className={cn(
-                          "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all",
-                          d.selectedCategory === cat.id 
-                            ? "bg-slate-900 text-white font-black" 
-                            : "text-slate-600 hover:bg-slate-50"
-                        )}
-                      >
-                        <span>{cat.label}</span>
-                        {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
-                          <span className={cn(
-                            "text-[10px] font-mono",
-                            d.selectedCategory === cat.id ? "text-slate-300" : "text-slate-400"
-                          )}>
-                            {d.categoryCounts[cat.id]}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                    {[{ id: 'all', label: 'Toutes les catégories' }, ...d.normalizedCategories.map(c => ({ id: c, label: c }))].map(cat => {
+                      const isSelected = d.selectedCategory === cat.id;
+                      return (
+                        <button 
+                          key={cat.id} 
+                          onClick={() => { d.setSelectedCategory(cat.id); d.setSelectedCategoryStore(cat.id === 'all' ? null : cat.id); }}
+                          className={cn(
+                            "flex items-center justify-between text-xs font-bold text-left px-3 py-2 rounded-xl transition-all border",
+                            isSelected 
+                              ? "font-black" 
+                              : "text-slate-600 hover:bg-slate-50 border-transparent"
+                          )}
+                          style={isSelected ? {
+                            backgroundColor: lightBg,
+                            color: badgeTextColor,
+                            borderColor: lightBorder,
+                          } : undefined}
+                        >
+                          <span>{cat.label}</span>
+                          {cat.id !== 'all' && d.categoryCounts[cat.id] !== undefined && (
+                            <span 
+                              className="text-[10px] font-mono"
+                              style={{
+                                color: isSelected ? badgeTextColor : undefined,
+                                opacity: isSelected ? 0.75 : undefined,
+                              }}
+                            >
+                              {d.categoryCounts[cat.id]}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -523,7 +626,7 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                   <button 
                     onClick={applyPrice}
                     className="w-full h-10 text-xs font-black uppercase tracking-wider text-white rounded-xl shadow-xs"
-                    style={{ backgroundColor: primary }}
+                    style={{ backgroundColor: brandButtonColor }}
                   >
                     Appliquer le prix
                   </button>
@@ -538,7 +641,8 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                         type="checkbox" 
                         checked={d.inStockOnly} 
                         onChange={e => d.setInStockOnly(e.target.checked)}
-                        className="size-4 rounded accent-[#4b7bec]" 
+                        className="size-4 rounded cursor-pointer" 
+                        style={{ accentColor: brandButtonColor }}
                       />
                       En stock uniquement
                     </label>
@@ -547,7 +651,8 @@ function CleanGrid({ storeId, primary, setStorefrontView }: { storeId: string; p
                         type="checkbox" 
                         checked={d.promoOnly} 
                         onChange={e => d.setPromoOnly(e.target.checked)}
-                        className="size-4 rounded accent-[#4b7bec]" 
+                        className="size-4 rounded cursor-pointer" 
+                        style={{ accentColor: brandButtonColor }}
                       />
                       En promotion
                     </label>
@@ -775,12 +880,14 @@ export function ProductGrid() {
   const setStorefrontView = useAppStore(s => s.setStorefrontView);
   const _raw = (activeStore?.template_id ?? 'clean') as string;
   const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
-  const primary = (activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
+  const tc = (activeStore?.theme_config ?? {}) as any;
+  const primary = (tc.primaryColor as string) || '#4b7bec';
+  const buttonColor = (tc.buttonColor as string) || primary;
   const storeId = activeStore?.id;
 
   if (!storeId) return null;
 
   if (tpl === 'athletic') return <AthleticGrid storeId={storeId} primary={primary} setStorefrontView={setStorefrontView} />;
   if (tpl === 'luxe') return <LuxeGrid storeId={storeId} primary={primary} setStorefrontView={setStorefrontView} />;
-  return <CleanGrid storeId={storeId} primary={primary} setStorefrontView={setStorefrontView} />;
+  return <CleanGrid storeId={storeId} primary={primary} buttonColor={buttonColor} setStorefrontView={setStorefrontView} />;
 }
