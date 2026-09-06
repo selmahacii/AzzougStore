@@ -1,8 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Box, X, Loader2, ExternalLink, User, Phone, MapPin, DollarSign, Package, TrendingUp, TrendingDown, BarChart2, Activity } from 'lucide-react';
+import { 
+   Box, X, Loader2, ExternalLink, User, Phone, MapPin, DollarSign, 
+   Package, TrendingUp, TrendingDown, BarChart2, Activity,
+   Calendar, CheckCircle2, RotateCcw, Clock, Tag, Layers, Filter
+} from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/lib/api-client';
@@ -49,6 +53,19 @@ const MOVEMENT_LABELS: Record<string, { label: string; badge: string }> = {
    POS_SALE: { label: 'Vente Directe POS', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
    MANUAL_ADJUSTMENT: { label: 'Ajustement Manuel', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
 };
+
+function extractVariantFromMovement(m: any): string {
+   if (m.variant_name && m.variant_name !== 'Général') {
+      return m.variant_name;
+   }
+   if (m.reason) {
+      const match = m.reason.match(/\(([^)]+)\)$/);
+      if (match && match[1] && match[1] !== 'Général') {
+         return match[1].trim();
+      }
+   }
+   return 'Article standard';
+}
 
 function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
    const { data: order, isLoading, isError } = useQuery<any>({
@@ -202,7 +219,7 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
 
    const movementsQuery = useQuery({
       queryKey: ['product-movements', product.id, dateFrom, dateTo],
-      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/stock/?product_id=${product.id}&pageSize=100${dateFrom ? `&date_from=${dateFrom}` : ''}${dateTo ? `&date_to=${dateTo}` : ''}`),
+      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/stock/?product_id=${product.id}&pageSize=300${dateFrom ? `&date_from=${dateFrom}` : ''}${dateTo ? `&date_to=${dateTo}` : ''}`),
       enabled: !!product.id,
    });
    const movements = movementsQuery.data?.data || [];
@@ -254,6 +271,123 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
       });
       return items;
    })();
+
+   const setToday = () => {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const str = `${yyyy}-${mm}-${dd}`;
+      setDateFrom(str);
+      setDateTo(str);
+   };
+   const setLast7Days = () => {
+      const now = new Date();
+      const d7 = new Date(now.getTime() - 7 * 86400000);
+      const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      setDateFrom(fmt(d7));
+      setDateTo(fmt(now));
+   };
+   const setLast30Days = () => {
+      const now = new Date();
+      const d30 = new Date(now.getTime() - 30 * 86400000);
+      const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      setDateFrom(fmt(d30));
+      setDateTo(fmt(now));
+   };
+   const setAllTime = () => {
+      setDateFrom('');
+      setDateTo('');
+   };
+
+   const globalStats = useMemo(() => {
+      let totalConfirmed = 0;
+      let totalReserved = 0;
+      let totalReleased = 0;
+      let totalReturned = 0;
+      const uniqueOrders = new Set<string>();
+
+      movements.forEach((m: any) => {
+         const qty = Math.abs(m.quantity || 0);
+         if (m.order_id) uniqueOrders.add(m.order_id);
+         if (m.type === 'ORDER_CONFIRM') totalConfirmed += qty;
+         else if (m.type === 'ORDER_RESERVE') totalReserved += qty;
+         else if (m.type === 'ORDER_RELEASE') totalReleased += qty;
+         else if (m.type === 'RETURN_RESTOCK') totalReturned += qty;
+      });
+
+      return {
+         totalConfirmed,
+         totalReserved,
+         totalReleased,
+         totalReturned,
+         ordersCount: uniqueOrders.size,
+         totalMovements: movements.length,
+      };
+   }, [movements]);
+
+   const variantStats = useMemo(() => {
+      const map: Record<string, {
+         name: string;
+         confirmed: number;
+         reserved: number;
+         released: number;
+         returned: number;
+         currentStock?: number;
+         currentReserved?: number;
+         uniqueOrders: Set<string>;
+      }> = {};
+
+      variantItems.forEach(vi => {
+         map[vi.variantStr] = {
+            name: vi.variantStr,
+            confirmed: 0,
+            reserved: 0,
+            released: 0,
+            returned: 0,
+            currentStock: vi.stock,
+            currentReserved: vi.reserved,
+            uniqueOrders: new Set<string>(),
+         };
+      });
+
+      movements.forEach((m: any) => {
+         const rawVariant = extractVariantFromMovement(m);
+         
+         let key = Object.keys(map).find(k => 
+            k.toLowerCase() === rawVariant.toLowerCase() ||
+            k.toLowerCase().includes(rawVariant.toLowerCase()) ||
+            rawVariant.toLowerCase().includes(k.toLowerCase())
+         );
+
+         if (!key) {
+            key = rawVariant;
+            map[key] = {
+               name: rawVariant,
+               confirmed: 0,
+               reserved: 0,
+               released: 0,
+               returned: 0,
+               uniqueOrders: new Set<string>(),
+            };
+         }
+
+         const qty = Math.abs(m.quantity || 0);
+         if (m.order_id) {
+            map[key].uniqueOrders.add(m.order_id);
+         }
+
+         if (m.type === 'ORDER_CONFIRM') map[key].confirmed += qty;
+         else if (m.type === 'ORDER_RESERVE') map[key].reserved += qty;
+         else if (m.type === 'ORDER_RELEASE') map[key].released += qty;
+         else if (m.type === 'RETURN_RESTOCK') map[key].returned += qty;
+      });
+
+      return Object.values(map).map(item => ({
+         ...item,
+         ordersCount: item.uniqueOrders.size,
+      }));
+   }, [movements, variantItems]);
 
    return (
       <>
@@ -408,73 +542,300 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
 
                   {/* TAB: HISTORY */}
                   {activeTab === 'history' && (
-                     <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-                        <div className="p-4 border-b bg-slate-50 flex items-center justify-between" style={{ borderColor: C.border }}>
-                           <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-                              <BarChart2 className="size-3.5" /> Historique des Mouvements ({movements.length})
-                           </h3>
-                           <div className="flex items-center gap-2 bg-white p-1 rounded-lg border shadow-sm" style={{ borderColor: C.border }}>
-                              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-7 text-xs w-auto bg-transparent border-none shadow-none focus-visible:ring-0" />
-                              <span className="text-slate-400 text-xs font-bold">à</span>
-                              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-7 text-xs w-auto bg-transparent border-none shadow-none focus-visible:ring-0" />
+                     <div className="space-y-6">
+                        {/* 1. FILTER & CONTROLS HEADER */}
+                        <div className="bg-white rounded-2xl border shadow-sm p-5" style={{ borderColor: C.border }}>
+                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div>
+                                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                                    <BarChart2 className="size-4 text-indigo-600" /> 
+                                    Historique des Mouvements ({movements.length})
+                                 </h3>
+                                 <p className="text-[11px] font-medium text-slate-500 mt-0.5">
+                                    Analyse dynamique des confirmations, réservations et retours par variante
+                                 </p>
+                              </div>
+
+                              {/* Date Filters & Presets */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                 <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                                    <button
+                                       type="button"
+                                       onClick={setAllTime}
+                                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all", !dateFrom && !dateTo ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                                    >
+                                       Tout
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={setToday}
+                                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all", dateFrom && dateFrom === dateTo ? "bg-white text-indigo-700 shadow-xs" : "text-slate-500 hover:text-slate-800")}
+                                    >
+                                       Aujourd'hui
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={setLast7Days}
+                                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all", "text-slate-500 hover:text-slate-800")}
+                                    >
+                                       7J
+                                    </button>
+                                    <button
+                                       type="button"
+                                       onClick={setLast30Days}
+                                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black uppercase transition-all", "text-slate-500 hover:text-slate-800")}
+                                    >
+                                       30J
+                                    </button>
+                                 </div>
+
+                                 <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border shadow-xs" style={{ borderColor: C.border }}>
+                                    <Calendar className="size-3.5 text-slate-400" />
+                                    <Input 
+                                       type="date" 
+                                       value={dateFrom} 
+                                       onChange={e => setDateFrom(e.target.value)} 
+                                       className="h-6 text-xs w-auto bg-transparent border-none shadow-none focus-visible:ring-0 p-0 text-slate-700 font-semibold" 
+                                    />
+                                    <span className="text-slate-400 text-xs font-bold">à</span>
+                                    <Input 
+                                       type="date" 
+                                       value={dateTo} 
+                                       onChange={e => setDateTo(e.target.value)} 
+                                       className="h-6 text-xs w-auto bg-transparent border-none shadow-none focus-visible:ring-0 p-0 text-slate-700 font-semibold" 
+                                    />
+                                 </div>
+                              </div>
+                           </div>
+
+                           {/* 2. GLOBAL KPI SUMMARY BAR */}
+                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-5 border-t" style={{ borderColor: C.border }}>
+                              <div className="p-3.5 rounded-xl bg-rose-50/70 border border-rose-100 flex items-center justify-between">
+                                 <div>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-rose-600 flex items-center gap-1">
+                                       <CheckCircle2 className="size-3" /> Confirmées
+                                    </p>
+                                    <p className="text-xl font-black text-rose-700 tabular-nums mt-0.5">{globalStats.totalConfirmed}</p>
+                                 </div>
+                                 <span className="text-[10px] font-bold text-rose-500">Sorties</span>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-100 flex items-center justify-between">
+                                 <div>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 flex items-center gap-1">
+                                       <Clock className="size-3" /> Réservées
+                                    </p>
+                                    <p className="text-xl font-black text-amber-700 tabular-nums mt-0.5">{globalStats.totalReserved}</p>
+                                 </div>
+                                 <span className="text-[10px] font-bold text-amber-500">En cours</span>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl bg-sky-50/70 border border-sky-100 flex items-center justify-between">
+                                 <div>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-sky-600 flex items-center gap-1">
+                                       <RotateCcw className="size-3" /> Libérées
+                                    </p>
+                                    <p className="text-xl font-black text-sky-700 tabular-nums mt-0.5">{globalStats.totalReleased}</p>
+                                 </div>
+                                 <span className="text-[10px] font-bold text-sky-500">Annulées</span>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-100 flex items-center justify-between">
+                                 <div>
+                                    <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600 flex items-center gap-1">
+                                       <Package className="size-3" /> Retours
+                                    </p>
+                                    <p className="text-xl font-black text-indigo-700 tabular-nums mt-0.5">{globalStats.totalReturned}</p>
+                                 </div>
+                                 <span className="text-[10px] font-bold text-indigo-500">Réintégrés</span>
+                              </div>
                            </div>
                         </div>
-                        
-                        <div className="divide-y" style={{ borderColor: C.border }}>
-                           {movementsQuery.isLoading ? (
-                              <div className="p-12 flex justify-center"><Loader2 className="size-6 animate-spin text-indigo-500" /></div>
-                           ) : movements.length === 0 ? (
-                              <p className="p-12 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">Aucun mouvement trouvé pour cette période</p>
-                           ) : movements.map((m: any) => {
-                              const hasOrder = !!m.order_id;
-                              const meta = MOVEMENT_LABELS[m.type] || {
-                                 label: m.type.replace(/_/g, ' '),
-                                 badge: 'bg-slate-50 text-slate-700 border-slate-200',
-                              };
-                              return (
-                                 <div
-                                    key={m.id}
-                                    onClick={() => { if (m.order_id) setSelectedOrderId(m.order_id); }}
-                                    className={cn(
-                                       "p-4 flex items-center justify-between transition-colors",
-                                       hasOrder ? "cursor-pointer hover:bg-slate-50 group" : ""
-                                    )}
-                                 >
-                                    <div className="space-y-1">
+
+                        {/* 3. SYNTHÈSE DES VARIANTES (CARTES PAR VARIANTE) */}
+                        <div className="bg-white rounded-2xl border shadow-sm p-5" style={{ borderColor: C.border }}>
+                           <div className="flex items-center justify-between mb-4">
+                              <div>
+                                 <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                                    <Layers className="size-3.5 text-indigo-600" />
+                                    Bilan par Variante sur la période filtrée ({variantStats.length})
+                                 </h4>
+                                 <p className="text-[11px] text-slate-500 font-medium">
+                                    Nombre d'unités confirmées, réservées et libérées pour chaque variante
+                                 </p>
+                              </div>
+                              {dateFrom || dateTo ? (
+                                 <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    Filtré : {dateFrom || '...'} au {dateTo || '...'}
+                                 </span>
+                              ) : (
+                                 <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600">
+                                    Toutes les dates
+                                 </span>
+                              )}
+                           </div>
+
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                              {variantStats.map((vs, idx) => (
+                                 <div key={idx} className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 hover:border-indigo-200 hover:bg-indigo-50/20 transition-all">
+                                    <div className="flex items-start justify-between gap-3 mb-3">
                                        <div className="flex items-center gap-2">
-                                          <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border", meta.badge)}>
-                                             {meta.label}
+                                          <span className="size-7 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+                                             <Tag className="size-3.5" />
                                           </span>
-                                          {hasOrder && (
-                                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
-                                                <ExternalLink className="size-2.5" /> #{m.order_number || m.order_id.slice(0, 8)}
-                                             </span>
-                                          )}
+                                          <div>
+                                             <p className="text-xs font-black text-slate-800">{vs.name}</p>
+                                             {vs.ordersCount > 0 && (
+                                                <p className="text-[10px] font-bold text-slate-400">
+                                                   {vs.ordersCount} commande{vs.ordersCount > 1 ? 's' : ''} associée{vs.ordersCount > 1 ? 's' : ''}
+                                                </p>
+                                             )}
+                                          </div>
                                        </div>
-                                       {m.reason && (
-                                          <p className="text-[11px] text-slate-500 font-medium line-clamp-1">
-                                             {m.reason}
-                                          </p>
+
+                                       {(vs.currentStock !== undefined || vs.currentReserved !== undefined) && (
+                                          <div className="flex items-center gap-2 text-[10px] font-bold bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                                             <span className="text-slate-500">Stock: <strong className="text-emerald-600">{vs.currentStock ?? 0}</strong></span>
+                                             <span className="text-slate-300">|</span>
+                                             <span className="text-slate-500">Résa: <strong className="text-amber-600">{vs.currentReserved ?? 0}</strong></span>
+                                          </div>
                                        )}
-                                       <div className="flex items-center gap-2">
-                                          <p className="text-[11px] text-slate-400 font-medium">
-                                             {new Date(m.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                          </p>
-                                          {m.actor?.name && (
-                                             <>
-                                                <span className="text-slate-300">•</span>
-                                                <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1"><User className="size-3" /> {m.actor.name}</span>
-                                             </>
-                                          )}
+                                    </div>
+
+                                    {/* Micro stats grid for this variant */}
+                                    <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-200/60">
+                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                          <p className="text-[9px] font-black uppercase text-rose-500">Confirmé</p>
+                                          <p className="text-sm font-black text-rose-700 tabular-nums">{vs.confirmed}</p>
+                                       </div>
+                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                          <p className="text-[9px] font-black uppercase text-amber-500">Réservé</p>
+                                          <p className="text-sm font-black text-amber-700 tabular-nums">{vs.reserved}</p>
+                                       </div>
+                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                          <p className="text-[9px] font-black uppercase text-sky-500">Libéré</p>
+                                          <p className="text-sm font-black text-sky-700 tabular-nums">{vs.released}</p>
+                                       </div>
+                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                          <p className="text-[9px] font-black uppercase text-indigo-500">Retour</p>
+                                          <p className="text-sm font-black text-indigo-700 tabular-nums">{vs.returned}</p>
                                        </div>
                                     </div>
-                                    <span className={cn("text-lg font-black tabular-nums shrink-0 ml-4", m.quantity >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                                       {m.quantity >= 0 ? '+' : ''}{m.quantity}
-                                    </span>
                                  </div>
-                              );
-                           })}
+                              ))}
+                           </div>
                         </div>
+
+                        {/* 4. LISTE DÉTAILLÉE DES MOUVEMENTS AVEC CARTES PAR VARIANTE */}
+                        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
+                           <div className="p-4 border-b bg-slate-50/80 flex items-center justify-between" style={{ borderColor: C.border }}>
+                              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                 Détail chronologique des mouvements ({movements.length})
+                              </h4>
+                              <span className="text-[10px] font-bold text-slate-400">Cliquez sur une commande pour ouvrir sa fiche</span>
+                           </div>
+
+                           <div className="divide-y" style={{ borderColor: C.border }}>
+                              {movementsQuery.isLoading ? (
+                                 <div className="p-12 flex justify-center"><Loader2 className="size-6 animate-spin text-indigo-500" /></div>
+                              ) : movements.length === 0 ? (
+                                 <p className="p-12 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">Aucun mouvement trouvé pour cette période</p>
+                              ) : movements.map((m: any) => {
+                                 const hasOrder = !!m.order_id;
+                                 const meta = MOVEMENT_LABELS[m.type] || {
+                                    label: m.type.replace(/_/g, ' '),
+                                    badge: 'bg-slate-50 text-slate-700 border-slate-200',
+                                 };
+                                 const variantName = extractVariantFromMovement(m);
+
+                                 return (
+                                    <div
+                                       key={m.id}
+                                       onClick={() => { if (m.order_id) setSelectedOrderId(m.order_id); }}
+                                       className={cn(
+                                          "p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors hover:bg-slate-50/70",
+                                          hasOrder ? "cursor-pointer group" : ""
+                                       )}
+                                    >
+                                       <div className="space-y-2 flex-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                             <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-2xs", meta.badge)}>
+                                                {meta.label}
+                                             </span>
+
+                                             {hasOrder && (
+                                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-700 group-hover:bg-indigo-100 group-hover:text-indigo-700 border border-slate-200/60 transition-colors">
+                                                 <ExternalLink className="size-2.5" /> #{m.order_number || m.order_id.slice(0, 8)}
+                                              </span>
+                                           )}
+
+                                           <div className="flex items-center gap-2 text-[11px] text-slate-400 font-medium ml-auto sm:ml-0">
+                                              <span>
+                                                 {new Date(m.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                              {m.actor?.name && (
+                                                 <>
+                                                    <span className="text-slate-300">•</span>
+                                                    <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1"><User className="size-3" /> {m.actor.name}</span>
+                                                 </>
+                                              )}
+                                           </div>
+                                        </div>
+
+                                        {/* CARTE DE LA VARIANTE & ACTION */}
+                                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 flex flex-wrap items-center justify-between gap-3">
+                                           <div className="flex items-center gap-2.5">
+                                              <span className="size-6 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                                                 <Layers className="size-3" />
+                                              </span>
+                                              <div>
+                                                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Variante concernée</span>
+                                                 <span className="text-xs font-black text-slate-800">{variantName}</span>
+                                              </div>
+                                           </div>
+
+                                           <div className="flex items-center gap-2">
+                                              {m.type === 'ORDER_RESERVE' && (
+                                                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
+                                                    Réservé : +{Math.abs(m.quantity)} unité{Math.abs(m.quantity) > 1 ? 's' : ''}
+                                                 </span>
+                                              )}
+                                              {m.type === 'ORDER_CONFIRM' && (
+                                                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200">
+                                                    Confirmé (Sortie) : -{Math.abs(m.quantity)} unité{Math.abs(m.quantity) > 1 ? 's' : ''}
+                                                 </span>
+                                              )}
+                                              {m.type === 'ORDER_RELEASE' && (
+                                                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-sky-50 text-sky-700 border border-sky-200">
+                                                    Libéré (Remis en vente) : +{Math.abs(m.quantity)} unité{Math.abs(m.quantity) > 1 ? 's' : ''}
+                                                 </span>
+                                              )}
+                                              {m.type === 'RETURN_RESTOCK' && (
+                                                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                    Réintégré : +{Math.abs(m.quantity)} unité{Math.abs(m.quantity) > 1 ? 's' : ''}
+                                                 </span>
+                                              )}
+                                           </div>
+                                        </div>
+
+                                        {m.reason && (
+                                           <p className="text-[11px] text-slate-500 font-medium line-clamp-1 px-1">
+                                              {m.reason}
+                                           </p>
+                                        )}
+                                     </div>
+
+                                     <div className="text-right shrink-0 self-end sm:self-center">
+                                        <span className={cn("text-xl font-black tabular-nums block", m.quantity >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                                           {m.quantity >= 0 ? '+' : ''}{m.quantity}
+                                        </span>
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Impact stock</span>
+                                     </div>
+                                  </div>
+                               );
+                            })}
+                         </div>
+                      </div>
                      </div>
                   )}
 

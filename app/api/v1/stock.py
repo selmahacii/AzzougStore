@@ -144,10 +144,15 @@ def list_movements(
     if product_ids:
         product_names = dict(db.query(Product.id, Product.name).filter(Product.id.in_(product_ids)).all())
 
+    import re
+    variant_pattern = re.compile(r"\(([^)]+)\)$")
+
     for m in movements:
         m.order_number = order_numbers.get(m.order_id)
         m.warehouse_name = warehouse_names.get(m.warehouse_id)
         m.product_name = product_names.get(m.product_id)
+        match = variant_pattern.search(m.reason or "")
+        m.variant_name = match.group(1).strip() if match else None
 
     return {
         "success": True,
@@ -623,6 +628,7 @@ def get_lot_history(
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                     "actor": m.actor.name if m.actor else None,
                     "order_number": orders.get(m.order_id),
+                    "variant_name": (re.search(r"\(([^)]+)\)$", m.reason).group(1).strip() if m.reason and re.search(r"\(([^)]+)\)$", m.reason) else None),
                 }
                 for m in movements
             ],
