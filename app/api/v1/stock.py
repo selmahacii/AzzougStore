@@ -41,6 +41,7 @@ _MANUAL_TYPES = {"RESTOCK", "MANUAL_ADJUSTMENT"}
 
 # ─── GET /stock/ — List movements ────────────────────────────────────────────
 
+@router.get("", response_model=MovementPagination, include_in_schema=False)
 @router.get("/", response_model=MovementPagination)
 def list_movements(
     store_id: Optional[str] = None,
@@ -54,7 +55,7 @@ def list_movements(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=100),
+    pageSize: int = Query(20, ge=1, le=2000),
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):

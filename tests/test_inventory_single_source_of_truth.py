@@ -535,3 +535,35 @@ def test_unallocated_restock_on_variant_product_syncs_variants_and_does_not_reve
         assert (product.stock - product.reserved_stock) == 23
     finally:
         db.close()
+
+
+def test_stock_movement_list_accepts_page_size_300_and_both_routes(scenario):
+    store_id = scenario.make_store()
+    product_id = scenario.make_product(store_id, stock=5)
+    user_id = scenario.make_user()
+    from app.core.security import create_access_token
+    token = create_access_token(subject=user_id)
+
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+
+    # Test /api/v1/stock/ with pageSize=300
+    res = client.get(
+        f"/api/v1/stock/?product_id={product_id}&pageSize=300",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["success"] is True
+    assert data["pageSize"] == 300
+
+    # Test /api/v1/stock without trailing slash with pageSize=300
+    res_no_slash = client.get(
+        f"/api/v1/stock?product_id={product_id}&pageSize=300",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_no_slash.status_code == 200, res_no_slash.text
+    data_no_slash = res_no_slash.json()
+    assert data_no_slash["success"] is True
+    assert data_no_slash["pageSize"] == 300

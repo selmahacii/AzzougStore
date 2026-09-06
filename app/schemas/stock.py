@@ -41,6 +41,7 @@ class StockMovement(StockMovementInDB):
     order_number: Optional[str] = None
     warehouse_name: Optional[str] = None
     product_name: Optional[str] = None
+    variant_name: Optional[str] = None
 
 class MovementPagination(BaseModel):
     success: bool
