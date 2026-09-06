@@ -616,32 +616,6 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
       setDateTo('');
    };
 
-   const globalStats = useMemo(() => {
-      let totalConfirmed = 0;
-      let totalReserved = 0;
-      let totalReleased = 0;
-      let totalReturned = 0;
-      const uniqueOrders = new Set<string>();
-
-      movements.forEach((m: any) => {
-         const qty = Math.abs(m.quantity || 0);
-         if (m.order_id) uniqueOrders.add(m.order_id);
-         if (m.type === 'ORDER_CONFIRM') totalConfirmed += qty;
-         else if (m.type === 'ORDER_RESERVE') totalReserved += qty;
-         else if (m.type === 'ORDER_RELEASE') totalReleased += qty;
-         else if (m.type === 'RETURN_RESTOCK') totalReturned += qty;
-      });
-
-      return {
-         totalConfirmed,
-         totalReserved,
-         totalReleased,
-         totalReturned,
-         ordersCount: uniqueOrders.size,
-         totalMovements: movements.length,
-      };
-   }, [movements]);
-
    const variantStats = useMemo(() => {
       const map: Record<string, {
          name: string;
@@ -736,23 +710,58 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
             else if (m.type === 'ORDER_RELEASE') ord.releasedQty = Math.max(ord.releasedQty, qty);
             else if (m.type === 'RETURN_RESTOCK') ord.returnedQty = Math.max(ord.returnedQty, qty);
          }
-
-         if (m.type === 'ORDER_CONFIRM') map[key].confirmed += qty;
-         else if (m.type === 'ORDER_RESERVE') map[key].reserved += qty;
-         else if (m.type === 'ORDER_RELEASE') map[key].released += qty;
-         else if (m.type === 'RETURN_RESTOCK') map[key].returned += qty;
       });
 
-      return Object.values(map).map((item: any) => ({
-         ...item,
-         ordersCount: item.uniqueOrders.size,
-         ordersList: Object.values(item.ordersMap).sort((a: any, b: any) => {
+      return Object.values(map).map((item: any) => {
+         const ordersList = Object.values(item.ordersMap).sort((a: any, b: any) => {
             const dateA = new Date(a.lastMovementDate || 0).getTime();
             const dateB = new Date(b.lastMovementDate || 0).getTime();
             return dateB - dateA;
-         }),
-      }));
+         });
+
+         const confirmed = ordersList.reduce((sum: number, o: any) => sum + (o.confirmedQty || 0), 0);
+         const reserved = ordersList.reduce((sum: number, o: any) => sum + (o.reservedQty || 0), 0);
+         const released = ordersList.reduce((sum: number, o: any) => sum + (o.releasedQty || 0), 0);
+         const returned = ordersList.reduce((sum: number, o: any) => sum + (o.returnedQty || 0), 0);
+
+         return {
+            ...item,
+            confirmed,
+            reserved,
+            released,
+            returned,
+            ordersCount: item.uniqueOrders.size,
+            ordersList,
+         };
+      });
    }, [movements, variantItems]);
+
+   const globalStats = useMemo(() => {
+      let totalConfirmed = 0;
+      let totalReserved = 0;
+      let totalReleased = 0;
+      let totalReturned = 0;
+      const uniqueOrders = new Set<string>();
+
+      variantStats.forEach((vs: any) => {
+         totalConfirmed += vs.confirmed || 0;
+         totalReserved += vs.reserved || 0;
+         totalReleased += vs.released || 0;
+         totalReturned += vs.returned || 0;
+         vs.ordersList?.forEach((o: any) => {
+            if (o.orderId) uniqueOrders.add(o.orderId);
+         });
+      });
+
+      return {
+         totalConfirmed,
+         totalReserved,
+         totalReleased,
+         totalReturned,
+         ordersCount: uniqueOrders.size,
+         totalMovements: movements.length,
+      };
+   }, [variantStats, movements.length]);
 
    const displayedMovements = useMemo(() => {
       if (!selectedVariantFilter) return movements;
