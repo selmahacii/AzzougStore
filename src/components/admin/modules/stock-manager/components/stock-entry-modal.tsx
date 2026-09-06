@@ -55,7 +55,7 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
             if (entries.length === 0) {
                throw new Error("Veuillez saisir au moins une quantité pour une variante.");
             }
-            const results = [];
+            const results: any[] = [];
             for (const [variantStr, qty] of entries) {
                const res = await apiFetch('/api/v1/stock/', {
                   method: 'POST',

@@ -53,7 +53,7 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
             if (entries.length === 0) {
                throw new Error("Veuillez saisir au moins une quantité à sortir.");
             }
-            const results = [];
+            const results: any[] = [];
             for (const [variantStr, qty] of entries) {
                const negativeQty = -Math.abs(qty);
                const res = await apiFetch('/api/v1/stock/', {
