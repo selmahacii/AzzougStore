@@ -740,10 +740,10 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
          else if (m.type === 'RETURN_RESTOCK') map[key].returned += qty;
       });
 
-      return Object.values(map).map(item => ({
+      return Object.values(map).map((item: any) => ({
          ...item,
          ordersCount: item.uniqueOrders.size,
-         ordersList: Object.values(item.ordersMap).sort((a, b) => {
+         ordersList: Object.values(item.ordersMap).sort((a: any, b: any) => {
             const dateA = new Date(a.lastMovementDate || 0).getTime();
             const dateB = new Date(b.lastMovementDate || 0).getTime();
             return dateB - dateA;

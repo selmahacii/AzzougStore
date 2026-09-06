@@ -189,7 +189,7 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
                            <Select value={selectedVariant} onValueChange={v => {
                               setSelectedVariant(v);
                               if (v === 'DETAILED') {
-                                 const total = Object.values(variantQuantities).reduce((a, b) => a + (b as number), 0);
+                                 const total = Object.values(variantQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
                                  setFormData(prev => ({ ...prev, quantity: total }));
                               }
                            }}>
@@ -225,9 +225,9 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
                                              value={variantQuantities[vi.variantStr] || ''}
                                              onChange={e => {
                                                 const val = Math.min(vi.stock, Math.max(0, parseInt(e.target.value) || 0));
-                                                const updated = { ...variantQuantities, [vi.variantStr]: val };
+                                                const updated: Record<string, number> = { ...variantQuantities, [vi.variantStr]: val };
                                                 setVariantQuantities(updated);
-                                                const total = Object.values(updated).reduce((a, b) => a + (b as number), 0);
+                                                const total = Object.values(updated).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
                                                 setFormData(prev => ({ ...prev, quantity: total }));
                                              }}
                                              placeholder="-0"
