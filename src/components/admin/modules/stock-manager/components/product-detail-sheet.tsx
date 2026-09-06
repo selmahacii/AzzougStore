@@ -486,6 +486,17 @@ function VariantOrdersModal({
                                     <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty} {ord.returnedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
+                              {ord.stockBefore !== undefined && ord.stockAfter !== undefined && ord.stockDelta !== 0 && (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-slate-900 text-white flex items-center gap-1.5 shadow-xs border border-slate-800">
+                                    <span>Stock variante :</span>
+                                    <span className="font-mono text-slate-300">{ord.stockBefore}</span>
+                                    <span className="text-amber-400">➔</span>
+                                    <span className="font-mono text-emerald-300 font-bold">{ord.stockAfter}</span>
+                                    <span className="text-rose-300 ml-0.5 font-semibold">
+                                       ({ord.stockDelta > 0 ? `+${ord.stockDelta}` : ord.stockDelta} {Math.abs(ord.stockDelta) > 1 ? 'pcs' : 'pc'})
+                                    </span>
+                                 </span>
+                              )}
                            </div>
                         </div>
 
@@ -713,10 +724,34 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
       });
 
       return Object.values(map).map((item: any) => {
-         const ordersList = Object.values(item.ordersMap).sort((a: any, b: any) => {
+         const sortedOrders = Object.values(item.ordersMap).sort((a: any, b: any) => {
             const dateA = new Date(a.lastMovementDate || 0).getTime();
             const dateB = new Date(b.lastMovementDate || 0).getTime();
             return dateB - dateA;
+         });
+
+         // Calculate stock evolution (Before -> After) stepping backwards from current stock
+         let runningStock = Number(item.currentStock) || 0;
+         const ordersList = sortedOrders.map((ord: any) => {
+            let delta = 0;
+            if (ord.confirmedQty > 0) {
+               delta = -ord.confirmedQty;
+            } else if (ord.returnedQty > 0) {
+               delta = +ord.returnedQty;
+            }
+
+            const stockAfter = runningStock;
+            const stockBefore = runningStock - delta;
+            if (delta !== 0) {
+               runningStock = stockBefore;
+            }
+
+            return {
+               ...ord,
+               stockBefore,
+               stockAfter,
+               stockDelta: delta,
+            };
          });
 
          const confirmed = ordersList.reduce((sum: number, o: any) => sum + (o.confirmedQty || 0), 0);
