@@ -131,10 +131,21 @@ def list_movements(
     warehouse_ids = {m.warehouse_id for m in movements if m.warehouse_id}
     product_ids = {m.product_id for m in movements if m.product_id}
 
-    order_numbers = {}
+    orders_info = {}
     if order_ids:
         from app.models.order import Order
-        order_numbers = dict(db.query(Order.id, Order.order_number).filter(Order.id.in_(order_ids)).all())
+        order_rows = db.query(
+            Order.id, Order.order_number, Order.customer_name, Order.customer_phone, Order.status
+        ).filter(Order.id.in_(order_ids)).all()
+        orders_info = {
+            r[0]: {
+                "order_number": r[1],
+                "customer_name": r[2],
+                "customer_phone": r[3],
+                "order_status": r[4],
+            }
+            for r in order_rows
+        }
 
     warehouse_names = {}
     if warehouse_ids:
@@ -149,7 +160,17 @@ def list_movements(
     variant_pattern = re.compile(r"\(([^)]+)\)$")
 
     for m in movements:
-        m.order_number = order_numbers.get(m.order_id)
+        ord_info = orders_info.get(m.order_id)
+        if ord_info:
+            m.order_number = ord_info["order_number"]
+            m.customer_name = ord_info["customer_name"]
+            m.customer_phone = ord_info["customer_phone"]
+            m.order_status = ord_info["order_status"]
+        else:
+            m.order_number = None
+            m.customer_name = None
+            m.customer_phone = None
+            m.order_status = None
         m.warehouse_name = warehouse_names.get(m.warehouse_id)
         m.product_name = product_names.get(m.product_id)
         match = variant_pattern.search(m.reason or "")

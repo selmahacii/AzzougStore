@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
    Box, X, Loader2, ExternalLink, User, Phone, MapPin, DollarSign, 
    Package, TrendingUp, TrendingDown, BarChart2, Activity,
-   Calendar, CheckCircle2, RotateCcw, Clock, Tag, Layers, Filter
+   Calendar, CheckCircle2, RotateCcw, Clock, Tag, Layers, Filter,
+   ArrowRight, Search, Eye
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -205,12 +206,311 @@ function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose:
    );
 }
 
+function VariantOrdersModal({
+   variant,
+   initialFilter = 'ALL',
+   onClose,
+   onSelectOrder,
+}: {
+   variant: any;
+   initialFilter?: 'ALL' | 'RESERVED' | 'CONFIRMED' | 'RELEASED' | 'RETURNED';
+   onClose: () => void;
+   onSelectOrder: (orderId: string) => void;
+}) {
+   const [activeFilter, setActiveFilter] = useState<'ALL' | 'RESERVED' | 'CONFIRMED' | 'RELEASED' | 'RETURNED'>(initialFilter);
+   const [searchQuery, setSearchQuery] = useState('');
+
+   const allOrders = (variant?.ordersList || []) as Array<{
+      orderId: string;
+      orderNumber?: string;
+      customerName?: string;
+      customerPhone?: string;
+      orderStatus?: string;
+      reservedQty: number;
+      confirmedQty: number;
+      releasedQty: number;
+      returnedQty: number;
+      lastMovementDate?: string;
+      movements: any[];
+   }>;
+
+   const filteredByTab = useMemo(() => {
+      if (activeFilter === 'RESERVED') return allOrders.filter(o => o.reservedQty > 0);
+      if (activeFilter === 'CONFIRMED') return allOrders.filter(o => o.confirmedQty > 0);
+      if (activeFilter === 'RELEASED') return allOrders.filter(o => o.releasedQty > 0);
+      if (activeFilter === 'RETURNED') return allOrders.filter(o => o.returnedQty > 0);
+      return allOrders;
+   }, [allOrders, activeFilter]);
+
+   const displayedOrders = useMemo(() => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return filteredByTab;
+      return filteredByTab.filter(o => 
+         (o.orderNumber || '').toLowerCase().includes(q) ||
+         (o.customerName || '').toLowerCase().includes(q) ||
+         (o.customerPhone || '').toLowerCase().includes(q) ||
+         (o.orderId || '').toLowerCase().includes(q)
+      );
+   }, [filteredByTab, searchQuery]);
+
+   const reservedCount = allOrders.filter(o => o.reservedQty > 0).length;
+   const confirmedCount = allOrders.filter(o => o.confirmedQty > 0).length;
+   const releasedCount = allOrders.filter(o => o.releasedQty > 0).length;
+   const returnedCount = allOrders.filter(o => o.returnedQty > 0).length;
+
+   return (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200" onClick={onClose}>
+         <div className="bg-white w-full max-w-4xl max-h-[92vh] flex flex-col rounded-3xl shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-200 text-slate-800 overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 p-6 text-white shrink-0 border-b border-indigo-800/40">
+               <div className="flex items-start justify-between gap-4">
+                  <div>
+                     <div className="flex items-center gap-2 mb-1.5">
+                        <span className="size-7 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-indigo-300">
+                           <Tag className="size-4" />
+                        </span>
+                        <h3 className="text-lg font-black tracking-tight">{variant.name}</h3>
+                     </div>
+                     <p className="text-xs text-indigo-200 font-medium">
+                        Commandes associées à cette variante ({allOrders.length} commande{allOrders.length > 1 ? 's' : ''} au total)
+                     </p>
+                  </div>
+                  <button onClick={onClose} className="size-8 bg-white/10 hover:bg-white/20 text-white/70 hover:text-white rounded-full flex items-center justify-center transition-colors">
+                     <X className="size-4" />
+                  </button>
+               </div>
+
+               {/* Micro KPI Bar in Header */}
+               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5">
+                  <div 
+                     onClick={() => setActiveFilter('CONFIRMED')}
+                     className={cn(
+                        "p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                        activeFilter === 'CONFIRMED' ? "bg-rose-500/30 border-rose-400" : "bg-white/10 border-white/10 hover:bg-white/15"
+                     )}
+                  >
+                     <span className="text-[10px] font-black uppercase tracking-wider text-rose-300 flex items-center gap-1">
+                        <CheckCircle2 className="size-3" /> Confirmé
+                     </span>
+                     <span className="text-base font-black text-white tabular-nums">{variant.confirmed}</span>
+                  </div>
+                  <div 
+                     onClick={() => setActiveFilter('RESERVED')}
+                     className={cn(
+                        "p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                        activeFilter === 'RESERVED' ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10 hover:bg-white/15"
+                     )}
+                  >
+                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 flex items-center gap-1">
+                        <Clock className="size-3" /> Réservé
+                     </span>
+                     <span className="text-base font-black text-white tabular-nums">{variant.reserved}</span>
+                  </div>
+                  <div 
+                     onClick={() => setActiveFilter('RELEASED')}
+                     className={cn(
+                        "p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                        activeFilter === 'RELEASED' ? "bg-sky-500/30 border-sky-400" : "bg-white/10 border-white/10 hover:bg-white/15"
+                     )}
+                  >
+                     <span className="text-[10px] font-black uppercase tracking-wider text-sky-300 flex items-center gap-1">
+                        <RotateCcw className="size-3" /> Libéré
+                     </span>
+                     <span className="text-base font-black text-white tabular-nums">{variant.released}</span>
+                  </div>
+                  <div 
+                     onClick={() => setActiveFilter('RETURNED')}
+                     className={cn(
+                        "p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between",
+                        activeFilter === 'RETURNED' ? "bg-indigo-500/30 border-indigo-400" : "bg-white/10 border-white/10 hover:bg-white/15"
+                     )}
+                  >
+                     <span className="text-[10px] font-black uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                        <Package className="size-3" /> Retour
+                     </span>
+                     <span className="text-base font-black text-white tabular-nums">{variant.returned}</span>
+                  </div>
+               </div>
+            </div>
+
+            {/* Sub-bar: Search & Filter Tabs */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+               {/* Filter Tabs */}
+               <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                     onClick={() => setActiveFilter('ALL')}
+                     className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all",
+                        activeFilter === 'ALL'
+                           ? "bg-indigo-600 text-white shadow-xs"
+                           : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                     )}
+                  >
+                     Toutes ({allOrders.length})
+                  </button>
+                  <button
+                     onClick={() => setActiveFilter('RESERVED')}
+                     className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1",
+                        activeFilter === 'RESERVED'
+                           ? "bg-amber-500 text-white shadow-xs"
+                           : "bg-white text-amber-700 border border-amber-200 hover:bg-amber-50"
+                     )}
+                  >
+                     <Clock className="size-3" /> Réservées ({reservedCount})
+                  </button>
+                  <button
+                     onClick={() => setActiveFilter('CONFIRMED')}
+                     className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1",
+                        activeFilter === 'CONFIRMED'
+                           ? "bg-rose-600 text-white shadow-xs"
+                           : "bg-white text-rose-700 border border-rose-200 hover:bg-rose-50"
+                     )}
+                  >
+                     <CheckCircle2 className="size-3" /> Confirmées ({confirmedCount})
+                  </button>
+                  <button
+                     onClick={() => setActiveFilter('RELEASED')}
+                     className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1",
+                        activeFilter === 'RELEASED'
+                           ? "bg-sky-600 text-white shadow-xs"
+                           : "bg-white text-sky-700 border border-sky-200 hover:bg-sky-50"
+                     )}
+                  >
+                     <RotateCcw className="size-3" /> Libérées ({releasedCount})
+                  </button>
+                  {returnedCount > 0 && (
+                     <button
+                        onClick={() => setActiveFilter('RETURNED')}
+                        className={cn(
+                           "px-3 py-1.5 rounded-xl text-xs font-black uppercase transition-all flex items-center gap-1",
+                           activeFilter === 'RETURNED'
+                              ? "bg-indigo-600 text-white shadow-xs"
+                              : "bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50"
+                        )}
+                     >
+                        <Package className="size-3" /> Retours ({returnedCount})
+                     </button>
+                  )}
+               </div>
+
+               {/* Search bar */}
+               <div className="relative min-w-[240px]">
+                  <Input
+                     type="text"
+                     placeholder="Rechercher (#ORD, client, tél...)"
+                     value={searchQuery}
+                     onChange={e => setSearchQuery(e.target.value)}
+                     className="h-8 text-xs bg-white pr-7 rounded-xl border-slate-200"
+                  />
+                  {searchQuery && (
+                     <button onClick={() => setSearchQuery('')} className="absolute right-2 top-2 text-slate-400 hover:text-slate-600">
+                        <X className="size-3.5" />
+                     </button>
+                  )}
+               </div>
+            </div>
+
+            {/* Orders List */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 custom-scrollbar bg-slate-100/50">
+               {displayedOrders.length === 0 ? (
+                  <div className="py-16 text-center">
+                     <Package className="size-10 text-slate-300 mx-auto mb-2" />
+                     <p className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                        Aucune commande trouvée
+                     </p>
+                  </div>
+               ) : (
+                  displayedOrders.map((ord, i) => (
+                     <div
+                        key={ord.orderId || i}
+                        onClick={() => onSelectOrder(ord.orderId)}
+                        className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group flex flex-col md:flex-row md:items-center justify-between gap-4"
+                     >
+                        <div className="space-y-1.5 flex-1">
+                           <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-sm font-black text-indigo-950 group-hover:text-indigo-600 transition-colors">
+                                 #{ord.orderNumber || ord.orderId.slice(0, 8)}
+                              </span>
+                              {ord.orderStatus && (
+                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                                    {ord.orderStatus}
+                                 </span>
+                              )}
+                              {ord.lastMovementDate && (
+                                 <span className="text-[11px] text-slate-400 font-medium">
+                                    • {new Date(ord.lastMovementDate).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                                 </span>
+                              )}
+                           </div>
+
+                           {/* Customer info */}
+                           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 font-medium">
+                              {ord.customerName && (
+                                 <span className="flex items-center gap-1 font-bold text-slate-800">
+                                    <User className="size-3.5 text-slate-400" /> {ord.customerName}
+                                 </span>
+                              )}
+                              {ord.customerPhone && (
+                                 <span className="flex items-center gap-1 text-slate-500">
+                                    <Phone className="size-3 text-slate-400" /> {ord.customerPhone}
+                                 </span>
+                              )}
+                           </div>
+
+                           {/* Quantities breakdown */}
+                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              {ord.reservedQty > 0 && (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                    <Clock className="size-3 text-amber-500" /> Réservé : +{ord.reservedQty}
+                                 </span>
+                              )}
+                              {ord.confirmedQty > 0 && (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-1">
+                                    <CheckCircle2 className="size-3 text-rose-500" /> Confirmé : {ord.confirmedQty}
+                                 </span>
+                              )}
+                              {ord.releasedQty > 0 && (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-sky-50 text-sky-800 border border-sky-200 flex items-center gap-1">
+                                    <RotateCcw className="size-3 text-sky-500" /> Libéré : {ord.releasedQty}
+                                 </span>
+                              )}
+                              {ord.returnedQty > 0 && (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1">
+                                    <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty}
+                                 </span>
+                              )}
+                           </div>
+                        </div>
+
+                        {/* CTA button */}
+                        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
+                           <span className="text-[11px] font-black text-indigo-600 group-hover:text-indigo-800 group-hover:translate-x-0.5 transition-all flex items-center gap-1 bg-indigo-50 group-hover:bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-200">
+                              Ouvrir la fiche <ExternalLink className="size-3" />
+                           </span>
+                        </div>
+                     </div>
+                  ))
+               )}
+            </div>
+         </div>
+      </div>
+   );
+}
+
 
 export function ProductDetailSheet({ product, onClose }: { product: any; onClose: () => void }) {
    const qc = useQueryClient();
    const [editingPrice, setEditingPrice] = useState(false);
    const [priceInput, setPriceInput] = useState(String(product.price || 0));
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+   const [activeVariantForOrders, setActiveVariantForOrders] = useState<{
+      variant: any;
+      initialFilter?: 'ALL' | 'RESERVED' | 'CONFIRMED' | 'RELEASED' | 'RETURNED';
+   } | null>(null);
+   const [selectedVariantFilter, setSelectedVariantFilter] = useState<string | null>(null);
    const [dateFrom, setDateFrom] = useState<string>('');
    const [dateTo, setDateTo] = useState<string>('');
    
@@ -336,6 +636,19 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
          currentStock?: number;
          currentReserved?: number;
          uniqueOrders: Set<string>;
+         ordersMap: Record<string, {
+            orderId: string;
+            orderNumber?: string;
+            customerName?: string;
+            customerPhone?: string;
+            orderStatus?: string;
+            reservedQty: number;
+            confirmedQty: number;
+            releasedQty: number;
+            returnedQty: number;
+            lastMovementDate?: string;
+            movements: any[];
+         }>;
       }> = {};
 
       variantItems.forEach(vi => {
@@ -348,6 +661,7 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
             currentStock: vi.stock,
             currentReserved: vi.reserved,
             uniqueOrders: new Set<string>(),
+            ordersMap: {},
          };
       });
 
@@ -369,12 +683,42 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                released: 0,
                returned: 0,
                uniqueOrders: new Set<string>(),
+               ordersMap: {},
             };
          }
 
          const qty = Math.abs(m.quantity || 0);
          if (m.order_id) {
             map[key].uniqueOrders.add(m.order_id);
+            if (!map[key].ordersMap[m.order_id]) {
+               map[key].ordersMap[m.order_id] = {
+                  orderId: m.order_id,
+                  orderNumber: m.order_number,
+                  customerName: m.customer_name,
+                  customerPhone: m.customer_phone,
+                  orderStatus: m.order_status,
+                  reservedQty: 0,
+                  confirmedQty: 0,
+                  releasedQty: 0,
+                  returnedQty: 0,
+                  lastMovementDate: m.created_at,
+                  movements: [],
+               };
+            }
+            const ord = map[key].ordersMap[m.order_id];
+            ord.movements.push(m);
+            if (m.order_number && !ord.orderNumber) ord.orderNumber = m.order_number;
+            if (m.customer_name && !ord.customerName) ord.customerName = m.customer_name;
+            if (m.customer_phone && !ord.customerPhone) ord.customerPhone = m.customer_phone;
+            if (m.order_status && !ord.orderStatus) ord.orderStatus = m.order_status;
+            if (m.created_at && (!ord.lastMovementDate || new Date(m.created_at) > new Date(ord.lastMovementDate))) {
+               ord.lastMovementDate = m.created_at;
+            }
+
+            if (m.type === 'ORDER_CONFIRM') ord.confirmedQty += qty;
+            else if (m.type === 'ORDER_RESERVE') ord.reservedQty += qty;
+            else if (m.type === 'ORDER_RELEASE') ord.releasedQty += qty;
+            else if (m.type === 'RETURN_RESTOCK') ord.returnedQty += qty;
          }
 
          if (m.type === 'ORDER_CONFIRM') map[key].confirmed += qty;
@@ -386,8 +730,25 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
       return Object.values(map).map(item => ({
          ...item,
          ordersCount: item.uniqueOrders.size,
+         ordersList: Object.values(item.ordersMap).sort((a, b) => {
+            const dateA = new Date(a.lastMovementDate || 0).getTime();
+            const dateB = new Date(b.lastMovementDate || 0).getTime();
+            return dateB - dateA;
+         }),
       }));
    }, [movements, variantItems]);
+
+   const displayedMovements = useMemo(() => {
+      if (!selectedVariantFilter) return movements;
+      return movements.filter((m: any) => {
+         const vName = extractVariantFromMovement(m);
+         return (
+            vName.toLowerCase() === selectedVariantFilter.toLowerCase() ||
+            vName.toLowerCase().includes(selectedVariantFilter.toLowerCase()) ||
+            selectedVariantFilter.toLowerCase().includes(vName.toLowerCase())
+         );
+      });
+   }, [movements, selectedVariantFilter]);
 
    return (
       <>
@@ -677,46 +1038,101 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
 
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                               {variantStats.map((vs, idx) => (
-                                 <div key={idx} className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 hover:border-indigo-200 hover:bg-indigo-50/20 transition-all">
-                                    <div className="flex items-start justify-between gap-3 mb-3">
-                                       <div className="flex items-center gap-2">
-                                          <span className="size-7 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
-                                             <Tag className="size-3.5" />
-                                          </span>
-                                          <div>
-                                             <p className="text-xs font-black text-slate-800">{vs.name}</p>
-                                             {vs.ordersCount > 0 && (
-                                                <p className="text-[10px] font-bold text-slate-400">
-                                                   {vs.ordersCount} commande{vs.ordersCount > 1 ? 's' : ''} associée{vs.ordersCount > 1 ? 's' : ''}
+                                 <div 
+                                    key={idx} 
+                                    onClick={() => setActiveVariantForOrders({ variant: vs, initialFilter: 'ALL' })}
+                                    className={cn(
+                                       "p-4 rounded-2xl border transition-all cursor-pointer group relative flex flex-col justify-between",
+                                       selectedVariantFilter === vs.name 
+                                          ? "bg-indigo-50/50 border-indigo-400 shadow-md ring-2 ring-indigo-500/20" 
+                                          : "bg-slate-50/70 border-slate-200/80 hover:border-indigo-300 hover:bg-indigo-50/20 hover:shadow-md"
+                                    )}
+                                 >
+                                    <div>
+                                       <div className="flex items-start justify-between gap-3 mb-2">
+                                          <div className="flex items-center gap-2">
+                                             <span className="size-8 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                                <Tag className="size-4" />
+                                             </span>
+                                             <div>
+                                                <p className="text-xs font-black text-slate-800 group-hover:text-indigo-900 transition-colors">{vs.name}</p>
+                                                <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                                                   {vs.ordersCount > 0 ? (
+                                                      <span className="text-indigo-600 font-black">{vs.ordersCount} commande{vs.ordersCount > 1 ? 's' : ''} associée{vs.ordersCount > 1 ? 's' : ''}</span>
+                                                   ) : (
+                                                      <span>Aucune commande</span>
+                                                   )}
                                                 </p>
+                                             </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-1.5">
+                                             {(vs.currentStock !== undefined || vs.currentReserved !== undefined) && (
+                                                <div className="flex items-center gap-2 text-[10px] font-bold bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                                                   <span className="text-slate-500">Stock: <strong className="text-emerald-600">{vs.currentStock ?? 0}</strong></span>
+                                                   <span className="text-slate-300">|</span>
+                                                   <span className="text-slate-500">Résa: <strong className="text-amber-600">{vs.currentReserved ?? 0}</strong></span>
+                                                </div>
                                              )}
+                                             <button
+                                                type="button"
+                                                title={selectedVariantFilter === vs.name ? "Retirer le filtre sur la timeline" : "Filtrer la timeline sur cette variante"}
+                                                onClick={(e) => {
+                                                   e.stopPropagation();
+                                                   setSelectedVariantFilter(selectedVariantFilter === vs.name ? null : vs.name);
+                                                }}
+                                                className={cn(
+                                                   "size-7 rounded-lg flex items-center justify-center transition-colors border",
+                                                   selectedVariantFilter === vs.name 
+                                                      ? "bg-indigo-600 text-white border-indigo-600" 
+                                                      : "bg-white text-slate-400 border-slate-200 hover:text-slate-700 hover:bg-slate-50"
+                                                )}
+                                             >
+                                                <Filter className="size-3.5" />
+                                             </button>
                                           </div>
                                        </div>
 
-                                       {(vs.currentStock !== undefined || vs.currentReserved !== undefined) && (
-                                          <div className="flex items-center gap-2 text-[10px] font-bold bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
-                                             <span className="text-slate-500">Stock: <strong className="text-emerald-600">{vs.currentStock ?? 0}</strong></span>
-                                             <span className="text-slate-300">|</span>
-                                             <span className="text-slate-500">Résa: <strong className="text-amber-600">{vs.currentReserved ?? 0}</strong></span>
-                                          </div>
-                                       )}
+                                       {/* Call to action prompt */}
+                                       <div className="flex items-center justify-between py-1 text-[10px] font-black text-indigo-600 group-hover:text-indigo-800">
+                                          <span className="flex items-center gap-1">
+                                             <Eye className="size-3" /> Voir la liste des commandes ({vs.ordersCount})
+                                          </span>
+                                          <ArrowRight className="size-3 transition-transform group-hover:translate-x-1" />
+                                       </div>
                                     </div>
 
                                     {/* Micro stats grid for this variant */}
-                                    <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-200/60">
-                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                    <div className="grid grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60">
+                                       <div 
+                                          onClick={(e) => { e.stopPropagation(); setActiveVariantForOrders({ variant: vs, initialFilter: 'CONFIRMED' }); }}
+                                          className="bg-white p-2 rounded-xl border border-slate-100 text-center hover:border-rose-300 hover:bg-rose-50/50 hover:shadow-2xs transition-all cursor-pointer"
+                                          title="Cliquez pour afficher les commandes confirmées"
+                                       >
                                           <p className="text-[9px] font-black uppercase text-rose-500">Confirmé</p>
                                           <p className="text-sm font-black text-rose-700 tabular-nums">{vs.confirmed}</p>
                                        </div>
-                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                       <div 
+                                          onClick={(e) => { e.stopPropagation(); setActiveVariantForOrders({ variant: vs, initialFilter: 'RESERVED' }); }}
+                                          className="bg-white p-2 rounded-xl border border-slate-100 text-center hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-2xs transition-all cursor-pointer"
+                                          title="Cliquez pour afficher les commandes réservées"
+                                       >
                                           <p className="text-[9px] font-black uppercase text-amber-500">Réservé</p>
                                           <p className="text-sm font-black text-amber-700 tabular-nums">{vs.reserved}</p>
                                        </div>
-                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                       <div 
+                                          onClick={(e) => { e.stopPropagation(); setActiveVariantForOrders({ variant: vs, initialFilter: 'RELEASED' }); }}
+                                          className="bg-white p-2 rounded-xl border border-slate-100 text-center hover:border-sky-300 hover:bg-sky-50/50 hover:shadow-2xs transition-all cursor-pointer"
+                                          title="Cliquez pour afficher les réservations libérées/annulées"
+                                       >
                                           <p className="text-[9px] font-black uppercase text-sky-500">Libéré</p>
                                           <p className="text-sm font-black text-sky-700 tabular-nums">{vs.released}</p>
                                        </div>
-                                       <div className="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                       <div 
+                                          onClick={(e) => { e.stopPropagation(); setActiveVariantForOrders({ variant: vs, initialFilter: 'RETURNED' }); }}
+                                          className="bg-white p-2 rounded-xl border border-slate-100 text-center hover:border-indigo-300 hover:bg-indigo-50/50 hover:shadow-2xs transition-all cursor-pointer"
+                                          title="Cliquez pour afficher les commandes retournées"
+                                       >
                                           <p className="text-[9px] font-black uppercase text-indigo-500">Retour</p>
                                           <p className="text-sm font-black text-indigo-700 tabular-nums">{vs.returned}</p>
                                        </div>
@@ -728,19 +1144,31 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
 
                         {/* 4. LISTE DÉTAILLÉE DES MOUVEMENTS AVEC CARTES PAR VARIANTE */}
                         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: C.border }}>
-                           <div className="p-4 border-b bg-slate-50/80 flex items-center justify-between" style={{ borderColor: C.border }}>
-                              <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                                 Détail chronologique des mouvements ({movements.length})
-                              </h4>
+                           <div className="p-4 border-b bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2" style={{ borderColor: C.border }}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                 <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                    Détail chronologique des mouvements ({displayedMovements.length})
+                                 </h4>
+                                 {selectedVariantFilter && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-1">
+                                       Filtre variante : {selectedVariantFilter}
+                                       <button onClick={() => setSelectedVariantFilter(null)} className="hover:text-indigo-950 ml-0.5">
+                                          <X className="size-3" />
+                                       </button>
+                                    </span>
+                                 )}
+                              </div>
                               <span className="text-[10px] font-bold text-slate-400">Cliquez sur une commande pour ouvrir sa fiche</span>
                            </div>
 
                            <div className="divide-y" style={{ borderColor: C.border }}>
                               {movementsQuery.isLoading ? (
                                  <div className="p-12 flex justify-center"><Loader2 className="size-6 animate-spin text-indigo-500" /></div>
-                              ) : movements.length === 0 ? (
-                                 <p className="p-12 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">Aucun mouvement trouvé pour cette période</p>
-                              ) : movements.map((m: any) => {
+                              ) : displayedMovements.length === 0 ? (
+                                 <p className="p-12 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                    {selectedVariantFilter ? `Aucun mouvement trouvé pour la variante "${selectedVariantFilter}"` : "Aucun mouvement trouvé pour cette période"}
+                                 </p>
+                              ) : displayedMovements.map((m: any) => {
                                  const hasOrder = !!m.order_id;
                                  const meta = MOVEMENT_LABELS[m.type] || {
                                     label: m.type.replace(/_/g, ' '),
@@ -766,6 +1194,19 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                                              {hasOrder && (
                                               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black bg-slate-100 text-slate-700 group-hover:bg-indigo-100 group-hover:text-indigo-700 border border-slate-200/60 transition-colors">
                                                  <ExternalLink className="size-2.5" /> #{m.order_number || m.order_id.slice(0, 8)}
+                                              </span>
+                                           )}
+
+                                           {m.customer_name && (
+                                              <span className="text-[10px] font-bold text-slate-700 flex items-center gap-1">
+                                                 <User className="size-2.5 text-slate-400" /> {m.customer_name}
+                                                 {m.customer_phone && <span className="text-slate-400 font-normal">({m.customer_phone})</span>}
+                                              </span>
+                                           )}
+
+                                           {m.order_status && (
+                                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 text-slate-600 border border-slate-200">
+                                                 {m.order_status}
                                               </span>
                                            )}
 
@@ -895,6 +1336,15 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                </div>
             </div>
          </div>
+
+         {activeVariantForOrders && (
+            <VariantOrdersModal
+               variant={activeVariantForOrders.variant}
+               initialFilter={activeVariantForOrders.initialFilter}
+               onClose={() => setActiveVariantForOrders(null)}
+               onSelectOrder={(orderId) => setSelectedOrderId(orderId)}
+            />
+         )}
 
          {selectedOrderId && (
             <OrderMicroDetailModal
