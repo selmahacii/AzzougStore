@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
+import { getProductVariantItems } from '../utils';
+
 export function StockExitModal({ open, onOpenChange, products, warehouses, storeId }: any) {
    const qc = useQueryClient();
    const [formData, setFormData] = useState({
@@ -26,9 +28,14 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
       shipping_agent: '',
       note: ''
    });
+   const [selectedVariant, setSelectedVariant] = useState<string>('ALL');
+   const [variantQuantities, setVariantQuantities] = useState<Record<string, number>>({});
+
+   const selectedProduct = products?.find((p: any) => p.id === formData.product_id);
+   const variantItems = getProductVariantItems(selectedProduct, {});
 
    const exitMutation = useMutation({
-      mutationFn: (data: any) => {
+      mutationFn: async (data: any) => {
          const richReason = [
             data.note.trim(),
             `--- SPECIFICATIONS D'EXPEDITION (BON DE SORTIE) ---`,
@@ -41,23 +48,48 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
             `• Agent Expéditeur : ${data.shipping_agent.trim() || 'Système'}`
          ].filter(Boolean).join('\n');
 
-         // Exit quantities MUST be negative for withdrawal!
-         const negativeQty = -Math.abs(data.quantity);
-
-         return apiFetch('/api/v1/stock/', {
-            method: 'POST',
-            body: JSON.stringify({
-               product_id: data.product_id,
-               warehouse_id: data.warehouse_id,
-               quantity: negativeQty,
-               type: 'MANUAL_ADJUSTMENT',
-               reason: richReason,
-               store_id: storeId
-            })
-         });
+         if (selectedVariant === 'DETAILED') {
+            const entries = Object.entries(variantQuantities).filter(([_, q]) => (q as number) > 0);
+            if (entries.length === 0) {
+               throw new Error("Veuillez saisir au moins une quantité à sortir.");
+            }
+            const results = [];
+            for (const [variantStr, qty] of entries) {
+               const negativeQty = -Math.abs(qty);
+               const res = await apiFetch('/api/v1/stock/', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                     product_id: data.product_id,
+                     warehouse_id: data.warehouse_id,
+                     quantity: negativeQty,
+                     type: 'MANUAL_ADJUSTMENT',
+                     reason: `${richReason}\n• Variante : ${variantStr}`,
+                     variant_details: { variant: variantStr },
+                     store_id: storeId
+                  })
+               });
+               results.push(res);
+            }
+            return results;
+         } else {
+            const negativeQty = -Math.abs(data.quantity);
+            return apiFetch('/api/v1/stock/', {
+               method: 'POST',
+               body: JSON.stringify({
+                  product_id: data.product_id,
+                  warehouse_id: data.warehouse_id,
+                  quantity: negativeQty,
+                  type: 'MANUAL_ADJUSTMENT',
+                  reason: selectedVariant !== 'ALL' ? `${richReason}\n• Variante : ${selectedVariant}` : richReason,
+                  variant_details: selectedVariant !== 'ALL' ? { variant: selectedVariant } : undefined,
+                  store_id: storeId
+               })
+            });
+         }
       },
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'movements'] });
          toast.success("Bon de Sortie validé avec succès ✓");
@@ -75,6 +107,8 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
             shipping_agent: '',
             note: ''
          });
+         setSelectedVariant('ALL');
+         setVariantQuantities({});
       },
       onError: (err: any) => toast.error(err.message || "Échec de validation du Bon de Sortie"),
    });
@@ -111,7 +145,11 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                      <div className="md:col-span-2 space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Produit à sortir *</label>
-                        <Select value={formData.product_id} onValueChange={v => setFormData({...formData, product_id: v})}>
+                        <Select value={formData.product_id} onValueChange={v => {
+                           setFormData({...formData, product_id: v, quantity: 0});
+                           setSelectedVariant('ALL');
+                           setVariantQuantities({});
+                        }}>
                            <SelectTrigger className="h-12 border-slate-100 bg-white rounded-xl px-4 text-xs font-bold shadow-sm">
                               <SelectValue placeholder="Sélectionner le produit" />
                            </SelectTrigger>
@@ -137,27 +175,117 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
                      </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                        <div className="flex items-center justify-between ml-1">
-                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Quantité à Sortir *</label>
-                           {selectedProduct && <span className="text-[9px] font-bold text-[#6C5CE7]">Max dispo : {selectedProduct.stock}</span>}
+                  {variantItems.length > 0 && (
+                     <div className="p-4 rounded-xl bg-rose-50/50 border border-rose-100/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                           <label className="text-[10px] font-black uppercase text-rose-800 tracking-wider">
+                              Variantes du Produit ({variantItems.length})
+                           </label>
+                           <span className="text-[9px] font-bold text-rose-600 bg-white px-2 py-0.5 rounded-md border border-rose-200">
+                              Retrait ciblé
+                           </span>
                         </div>
-                        <div className="relative">
-                           <Input 
-                              type="number"
-                              min={1}
-                              max={selectedProduct?.stock || undefined}
-                              value={formData.quantity || ''}
-                              onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
-                              placeholder="Nombre d'unités"
-                              className={`h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black ${excessStock ? 'text-rose-500 border-rose-200' : 'text-slate-800'}`}
-                           />
-                           <Package className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[#E17055]" />
-                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
+                        <div className="space-y-1">
+                           <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Variante à Déstocker</label>
+                           <Select value={selectedVariant} onValueChange={v => {
+                              setSelectedVariant(v);
+                              if (v === 'DETAILED') {
+                                 const total = Object.values(variantQuantities).reduce((a, b) => a + (b as number), 0);
+                                 setFormData(prev => ({ ...prev, quantity: total }));
+                              }
+                           }}>
+                              <SelectTrigger className="h-11 border-slate-200 bg-white rounded-xl px-3 text-xs font-bold">
+                                 <SelectValue placeholder="Choisir la variante" />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl max-h-[260px]">
+                                 <SelectItem value="ALL" className="font-bold text-xs">🌐 Toutes les variantes (Ventilation globale)</SelectItem>
+                                 <SelectItem value="DETAILED" className="font-bold text-xs">📋 Saisie détaillée par variante (Recommandé)</SelectItem>
+                                 {variantItems.map((vi: any) => (
+                                    <SelectItem key={vi.variantStr} value={vi.variantStr} className="font-bold text-xs">
+                                       🏷️ {vi.variantStr} (Dispo: {vi.stock})
+                                    </SelectItem>
+                                 ))}
+                              </SelectContent>
+                           </Select>
                         </div>
-                        {excessStock && <p className="text-[9px] font-bold text-rose-500 mt-1">La quantité demandée dépasse le stock disponible.</p>}
+
+                        {selectedVariant === 'DETAILED' && (
+                           <div className="space-y-2 pt-2 border-t border-rose-100/70">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                 {variantItems.map((vi: any) => (
+                                    <div key={vi.variantStr} className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                       <div className="flex flex-col pr-2">
+                                          <span className="text-xs font-bold text-slate-800 line-clamp-1">{vi.variantStr}</span>
+                                          <span className="text-[9px] font-bold text-slate-400">Max dispo : {vi.stock}</span>
+                                       </div>
+                                       <div className="w-24 shrink-0">
+                                          <Input
+                                             type="number"
+                                             min={0}
+                                             max={vi.stock}
+                                             value={variantQuantities[vi.variantStr] || ''}
+                                             onChange={e => {
+                                                const val = Math.min(vi.stock, Math.max(0, parseInt(e.target.value) || 0));
+                                                const updated = { ...variantQuantities, [vi.variantStr]: val };
+                                                setVariantQuantities(updated);
+                                                const total = Object.values(updated).reduce((a, b) => a + (b as number), 0);
+                                                setFormData(prev => ({ ...prev, quantity: total }));
+                                             }}
+                                             placeholder="-0"
+                                             className="h-8 text-xs font-bold text-center border-slate-200 text-rose-600"
+                                          />
+                                       </div>
+                                    </div>
+                                 ))}
+                              </div>
+                              <div className="flex justify-end pr-1 pt-1">
+                                 <span className="text-[10px] font-black uppercase text-rose-700 tracking-wider">
+                                    Total à sortir : {formData.quantity} unités
+                                 </span>
+                              </div>
+                           </div>
+                        )}
                      </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {selectedVariant !== 'DETAILED' ? (
+                        <div className="space-y-2">
+                           <div className="flex items-center justify-between ml-1">
+                              <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                 {selectedVariant !== 'ALL' ? `Quantité pour ${selectedVariant} *` : 'Quantité à Sortir *'}
+                              </label>
+                              {(() => {
+                                 const targetStock = selectedVariant !== 'ALL'
+                                    ? variantItems.find((v: any) => v.variantStr === selectedVariant)?.stock ?? selectedProduct?.stock ?? 0
+                                    : selectedProduct?.stock ?? 0;
+                                 return <span className="text-[9px] font-bold text-[#6C5CE7]">Max dispo : {targetStock}</span>;
+                              })()}
+                           </div>
+                           <div className="relative">
+                              <Input 
+                                 type="number"
+                                 min={1}
+                                 max={selectedVariant !== 'ALL' ? variantItems.find((v: any) => v.variantStr === selectedVariant)?.stock : selectedProduct?.stock || undefined}
+                                 value={formData.quantity || ''}
+                                 onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
+                                 placeholder="Nombre d'unités"
+                                 className={`h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black ${excessStock ? 'text-rose-500 border-rose-200' : 'text-slate-800'}`}
+                              />
+                              <Package className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[#E17055]" />
+                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
+                           </div>
+                           {excessStock && <p className="text-[9px] font-bold text-rose-500 mt-1">La quantité demandée dépasse le stock disponible.</p>}
+                        </div>
+                     ) : (
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Total Retrait</label>
+                           <div className="h-12 border border-rose-100 bg-rose-50/40 rounded-xl px-4 flex items-center justify-between">
+                              <span className="text-xs font-bold text-rose-800">Total cumulé à déstocker</span>
+                              <span className="text-sm font-black text-rose-600 tabular-nums">-{formData.quantity} UNITÉS</span>
+                           </div>
+                        </div>
+                     )}
                      <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">État des Colis *</label>
                         <Select value={formData.package_status} onValueChange={v => setFormData({...formData, package_status: v})}>

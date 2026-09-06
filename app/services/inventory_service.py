@@ -118,7 +118,7 @@ def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
 
 
 def _update_product_stock_from_variants(product: Product) -> None:
-    if product.variants:
+    if product.variants and isinstance(product.variants, list):
         total = 0
         total_reserved = 0
         for v in product.variants:
@@ -544,21 +544,42 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if variant_str and product.variants:
-            matching_variant = _find_matching_variant(product.variants, variant_str)
+        if product.variants and len(product.variants) > 0:
+            matching_variant = None
+            if variant_str:
+                matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
                 flag_modified(product, "variants")
-
-                # Recalculate total product stock
                 _update_product_stock_from_variants(product)
                 logger.info(
                     "Variant stock restocked: product=%s variant=%s qty=%d order=%s (new stock=%d)",
                     product_id, variant_str, quantity, order_id, matching_variant["stock"]
                 )
+            elif len(product.variants) == 1:
+                v = product.variants[0]
+                if isinstance(v, dict):
+                    v["stock"] = int(v.get("stock") or 0) + quantity
+                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                        sv0 = v["sub_variants"][0]
+                        if isinstance(sv0, dict):
+                            sv0["stock"] = int(sv0.get("stock") or 0) + quantity
+                    flag_modified(product, "variants")
+                    _update_product_stock_from_variants(product)
             else:
-                product.stock += quantity
+                per_v = quantity // len(product.variants)
+                rem = quantity % len(product.variants)
+                for idx, v in enumerate(product.variants):
+                    if isinstance(v, dict):
+                        v_qty = per_v + (1 if idx < rem else 0)
+                        v["stock"] = int(v.get("stock") or 0) + v_qty
+                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                            sv0 = v["sub_variants"][0]
+                            if isinstance(sv0, dict):
+                                sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
         else:
             product.stock += quantity
 
@@ -605,15 +626,39 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if variant_str and product.variants:
-            matching_variant = _find_matching_variant(product.variants, variant_str)
+        if product.variants and len(product.variants) > 0:
+            matching_variant = None
+            if variant_str:
+                matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
+            elif len(product.variants) == 1:
+                v = product.variants[0]
+                if isinstance(v, dict):
+                    v["stock"] = int(v.get("stock") or 0) + quantity
+                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                        sv0 = v["sub_variants"][0]
+                        if isinstance(sv0, dict):
+                            sv0["stock"] = int(sv0.get("stock") or 0) + quantity
+                    flag_modified(product, "variants")
+                    _update_product_stock_from_variants(product)
             else:
-                product.stock += quantity
+                # Distribute quantity evenly across variants so sub-stocks and aggregate stock remain 100% in sync
+                per_v = quantity // len(product.variants)
+                rem = quantity % len(product.variants)
+                for idx, v in enumerate(product.variants):
+                    if isinstance(v, dict):
+                        v_qty = per_v + (1 if idx < rem else 0)
+                        v["stock"] = int(v.get("stock") or 0) + v_qty
+                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                            sv0 = v["sub_variants"][0]
+                            if isinstance(sv0, dict):
+                                sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
         else:
             product.stock += quantity
 
@@ -730,8 +775,11 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if variant_str and product.variants:
-            matching_variant = _find_matching_variant(product.variants, variant_str)
+        if product.variants and len(product.variants) > 0:
+            matching_variant = None
+            if variant_str:
+                matching_variant = _find_matching_variant(product.variants, variant_str)
+
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 new_v_stock = v_stock + quantity
@@ -744,15 +792,55 @@ class InventoryService:
                 matching_variant["stock"] = max(0, new_v_stock)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
+            elif len(product.variants) == 1:
+                v = product.variants[0]
+                if isinstance(v, dict):
+                    v_stock = int(v.get("stock") or 0)
+                    new_v_stock = v_stock + quantity
+                    if quantity < 0 and new_v_stock < 0:
+                        raise InsufficientStockError(
+                            product_id=f"{product_id} ({v.get('value') or 'Défaut'})",
+                            requested=abs(quantity),
+                            available=max(0, v_stock),
+                        )
+                    v["stock"] = max(0, new_v_stock)
+                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                        sv0 = v["sub_variants"][0]
+                        if isinstance(sv0, dict):
+                            sv0["stock"] = max(0, int(sv0.get("stock") or 0) + quantity)
+                    flag_modified(product, "variants")
+                    _update_product_stock_from_variants(product)
             else:
-                new_stock = product.stock + quantity
-                if quantity < 0 and new_stock < 0:
-                    raise InsufficientStockError(
-                        product_id=product_id,
-                        requested=abs(quantity),
-                        available=max(0, product.stock),
-                    )
-                product.stock = max(0, new_stock)
+                if quantity > 0:
+                    per_v = quantity // len(product.variants)
+                    rem = quantity % len(product.variants)
+                    for idx, v in enumerate(product.variants):
+                        if isinstance(v, dict):
+                            v_qty = per_v + (1 if idx < rem else 0)
+                            v["stock"] = int(v.get("stock") or 0) + v_qty
+                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                                sv0 = v["sub_variants"][0]
+                                if isinstance(sv0, dict):
+                                    sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
+                else:
+                    needed = abs(quantity)
+                    total_avail = sum(max(0, int(v.get("stock") or 0)) for v in product.variants if isinstance(v, dict))
+                    if total_avail < needed:
+                        raise InsufficientStockError(product_id=product_id, requested=needed, available=total_avail)
+                    for v in product.variants:
+                        if needed <= 0:
+                            break
+                        if isinstance(v, dict):
+                            cur = int(v.get("stock") or 0)
+                            deduct = min(cur, needed)
+                            v["stock"] = cur - deduct
+                            needed -= deduct
+                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                                sv0 = v["sub_variants"][0]
+                                if isinstance(sv0, dict):
+                                    sv0["stock"] = max(0, int(sv0.get("stock") or 0) - deduct)
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
         else:
             new_stock = product.stock + quantity
             if quantity < 0 and new_stock < 0:
@@ -816,8 +904,11 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if variant_str and product.variants:
-            matching_variant = _find_matching_variant(product.variants, variant_str)
+        if product.variants and len(product.variants) > 0:
+            matching_variant = None
+            if variant_str:
+                matching_variant = _find_matching_variant(product.variants, variant_str)
+
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 v_reserved = int(matching_variant.get("reserved") or 0)
@@ -831,15 +922,56 @@ class InventoryService:
                 matching_variant["stock"] = new_v_stock
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
+            elif len(product.variants) == 1:
+                v = product.variants[0]
+                if isinstance(v, dict):
+                    v_stock = int(v.get("stock") or 0)
+                    v_reserved = int(v.get("reserved") or 0)
+                    new_v_stock = v_stock + quantity_delta
+                    if new_v_stock < 0 or (new_v_stock - v_reserved) < 0:
+                        raise InsufficientStockError(
+                            product_id=f"{product_id} ({v.get('value') or 'Défaut'})",
+                            requested=abs(quantity_delta),
+                            available=v_stock - v_reserved,
+                        )
+                    v["stock"] = new_v_stock
+                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                        sv0 = v["sub_variants"][0]
+                        if isinstance(sv0, dict):
+                            sv0["stock"] = new_v_stock
+                    flag_modified(product, "variants")
+                    _update_product_stock_from_variants(product)
             else:
-                new_stock = product.stock + quantity_delta
-                reserved = product.reserved_stock or 0
-                if new_stock < 0 or new_stock < reserved:
-                    raise InsufficientStockError(
-                        product_id=product_id, requested=abs(quantity_delta),
-                        available=max(0, product.stock - reserved),
-                    )
-                product.stock = new_stock
+                if quantity_delta > 0:
+                    per_v = quantity_delta // len(product.variants)
+                    rem = quantity_delta % len(product.variants)
+                    for idx, v in enumerate(product.variants):
+                        if isinstance(v, dict):
+                            v_qty = per_v + (1 if idx < rem else 0)
+                            v["stock"] = int(v.get("stock") or 0) + v_qty
+                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                                sv0 = v["sub_variants"][0]
+                                if isinstance(sv0, dict):
+                                    sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
+                else:
+                    needed = abs(quantity_delta)
+                    total_avail = sum(max(0, int(v.get("stock") or 0) - int(v.get("reserved") or 0)) for v in product.variants if isinstance(v, dict))
+                    if total_avail < needed:
+                        raise InsufficientStockError(product_id=product_id, requested=needed, available=total_avail)
+                    for v in product.variants:
+                        if needed <= 0:
+                            break
+                        if isinstance(v, dict):
+                            avail_v = max(0, int(v.get("stock") or 0) - int(v.get("reserved") or 0))
+                            deduct = min(avail_v, needed)
+                            v["stock"] = int(v.get("stock") or 0) - deduct
+                            needed -= deduct
+                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                                sv0 = v["sub_variants"][0]
+                                if isinstance(sv0, dict):
+                                    sv0["stock"] = max(0, int(sv0.get("stock") or 0) - deduct)
+                flag_modified(product, "variants")
+                _update_product_stock_from_variants(product)
         else:
             new_stock = product.stock + quantity_delta
             reserved = product.reserved_stock or 0
