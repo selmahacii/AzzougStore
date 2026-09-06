@@ -40,6 +40,16 @@ function parseVariantDetails(variantDetails: any): { label: string; value: strin
    return entries;
 }
 
+const MOVEMENT_LABELS: Record<string, { label: string; badge: string }> = {
+   RESTOCK: { label: 'Réapprovisionnement', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+   ORDER_CONFIRM: { label: 'Commande Confirmée (Sortie)', badge: 'bg-rose-50 text-rose-700 border-rose-200' },
+   ORDER_RESERVE: { label: 'Réservation Commande', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+   ORDER_RELEASE: { label: 'Libération Réservation (Annulée)', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
+   RETURN_RESTOCK: { label: 'Retour Client Réintégré', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+   POS_SALE: { label: 'Vente Directe POS', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
+   MANUAL_ADJUSTMENT: { label: 'Ajustement Manuel', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+};
+
 function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
    const { data: order, isLoading, isError } = useQuery<any>({
       queryKey: ['order-micro-detail', orderId],
@@ -417,6 +427,10 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                               <p className="p-12 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">Aucun mouvement trouvé pour cette période</p>
                            ) : movements.map((m: any) => {
                               const hasOrder = !!m.order_id;
+                              const meta = MOVEMENT_LABELS[m.type] || {
+                                 label: m.type.replace(/_/g, ' '),
+                                 badge: 'bg-slate-50 text-slate-700 border-slate-200',
+                              };
                               return (
                                  <div
                                     key={m.id}
@@ -426,17 +440,24 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                                        hasOrder ? "cursor-pointer hover:bg-slate-50 group" : ""
                                     )}
                                  >
-                                    <div>
+                                    <div className="space-y-1">
                                        <div className="flex items-center gap-2">
-                                          <p className="text-xs font-black text-slate-800 uppercase tracking-tight">{m.type.replace(/_/g, ' ')}</p>
+                                          <span className={cn("px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border", meta.badge)}>
+                                             {meta.label}
+                                          </span>
                                           {hasOrder && (
                                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-700 transition-colors">
                                                 <ExternalLink className="size-2.5" /> #{m.order_number || m.order_id.slice(0, 8)}
                                              </span>
                                           )}
                                        </div>
-                                       <div className="flex items-center gap-2 mt-1">
-                                          <p className="text-[11px] text-slate-500 font-medium">
+                                       {m.reason && (
+                                          <p className="text-[11px] text-slate-500 font-medium line-clamp-1">
+                                             {m.reason}
+                                          </p>
+                                       )}
+                                       <div className="flex items-center gap-2">
+                                          <p className="text-[11px] text-slate-400 font-medium">
                                              {new Date(m.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                           </p>
                                           {m.actor?.name && (
@@ -447,7 +468,7 @@ export function ProductDetailSheet({ product, onClose }: { product: any; onClose
                                           )}
                                        </div>
                                     </div>
-                                    <span className={cn("text-lg font-black tabular-nums shrink-0", m.quantity >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                                    <span className={cn("text-lg font-black tabular-nums shrink-0 ml-4", m.quantity >= 0 ? "text-emerald-600" : "text-rose-600")}>
                                        {m.quantity >= 0 ? '+' : ''}{m.quantity}
                                     </span>
                                  </div>

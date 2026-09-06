@@ -25,6 +25,16 @@ interface Lot {
    received_at: string | null; warehouse_name: string | null; etat: string;
 }
 
+const MOVEMENT_LABELS: Record<string, string> = {
+   RESTOCK: 'Réapprovisionnement',
+   ORDER_CONFIRM: 'Commande Confirmée (Sortie)',
+   ORDER_RESERVE: 'Réservation Commande',
+   ORDER_RELEASE: 'Libération Réservation (Annulée)',
+   RETURN_RESTOCK: 'Retour Client Réintégré',
+   POS_SALE: 'Vente Directe POS',
+   MANUAL_ADJUSTMENT: 'Ajustement Manuel',
+};
+
 export function LotsView() {
    const activeStore = useAppStore(s => s.activeStore);
    const [openLot, setOpenLot] = useState<string | null>(null);
@@ -106,15 +116,18 @@ export function LotsView() {
                            </div>
                         )}
                         <div className="space-y-2">
-                           {historyQuery.data?.data.movements.map(m => (
-                              <div key={m.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-[#F8F9FC]">
-                                 <div>
-                                    <p className="font-bold text-[#2D3436]">{m.type}</p>
-                                    <p className="text-[10px] text-[#B2BEC3]">{new Date(m.created_at).toLocaleString('fr-FR')} · {m.actor || 'Système'}{m.order_number ? ` · #${m.order_number}` : ''}</p>
+                           {historyQuery.data?.data.movements.map(m => {
+                              const label = MOVEMENT_LABELS[m.type] || m.type.replace(/_/g, ' ');
+                              return (
+                                 <div key={m.id} className="flex items-center justify-between text-xs p-2 rounded-lg bg-[#F8F9FC]">
+                                    <div>
+                                       <p className="font-bold text-[#2D3436]">{label}</p>
+                                       <p className="text-[10px] text-[#B2BEC3]">{new Date(m.created_at).toLocaleString('fr-FR')} · {m.actor || 'Système'}{m.order_number ? ` · #${m.order_number}` : ''}</p>
+                                    </div>
+                                    <span className={cn("font-black tabular-nums", m.quantity >= 0 ? "text-emerald-500" : "text-rose-500")}>{m.quantity >= 0 ? '+' : ''}{m.quantity}</span>
                                  </div>
-                                 <span className={cn("font-black tabular-nums", m.quantity >= 0 ? "text-emerald-500" : "text-rose-500")}>{m.quantity >= 0 ? '+' : ''}{m.quantity}</span>
-                              </div>
-                           ))}
+                              );
+                           })}
                         </div>
                      </>
                   )}

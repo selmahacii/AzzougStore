@@ -203,8 +203,12 @@ interface InventoryMovement {
 
 const MOVEMENT_LABELS: Record<string, string> = {
   RESTOCK: 'Réapprovisionnement',
-  ORDER_CONFIRM: 'Confirmation Commande',
-  POS_SALE: 'Vente au Comptant (POS)',
+  ORDER_CONFIRM: 'Commande Confirmée (Sortie)',
+  ORDER_RESERVE: 'Réservation Commande',
+  ORDER_RELEASE: 'Libération Réservation (Annulée)',
+  RETURN_RESTOCK: 'Retour Client Réintégré',
+  POS_SALE: 'Vente Directe POS',
+  MANUAL_ADJUSTMENT: 'Ajustement Manuel',
 };
 
 export function SimpleMovementsList() {
