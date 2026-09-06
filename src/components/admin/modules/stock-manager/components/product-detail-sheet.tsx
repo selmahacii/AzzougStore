@@ -13,6 +13,33 @@ import { C } from '../utils';
 import { OrderTrackingReport } from '@/components/admin/order-tracking-report';
 import { OrderTypeBadge } from '@/components/shared/order-type-badge';
 
+function parseVariantDetails(variantDetails: any): { label: string; value: string }[] {
+   if (!variantDetails) return [];
+   let data = variantDetails;
+   if (typeof data === 'string') {
+      try {
+         data = JSON.parse(data);
+      } catch {
+         return [{ label: 'Option', value: variantDetails }];
+      }
+   }
+   if (typeof data !== 'object' || data === null) {
+      return [{ label: 'Option', value: String(data) }];
+   }
+   const entries: { label: string; value: string }[] = [];
+   for (const [k, v] of Object.entries(data)) {
+      if (!v) continue;
+      if (k === 'variant' && typeof v === 'string') {
+         if (Object.keys(data).length === 1) {
+            return [{ label: 'Variante', value: v }];
+         }
+      } else if (typeof v === 'string' || typeof v === 'number') {
+         entries.push({ label: k, value: String(v) });
+      }
+   }
+   return entries;
+}
+
 function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose: () => void }) {
    const { data: order, isLoading, isError } = useQuery<any>({
       queryKey: ['order-micro-detail', orderId],
@@ -53,19 +80,44 @@ function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose:
                            <div className="flex flex-col gap-1.5 text-sm font-medium text-slate-600">
                               <span className="flex items-center gap-2"><Phone className="size-3.5 text-slate-400" /> <a href={`tel:${order.customer_phone}`} className="hover:text-indigo-600 hover:underline">{order.customer_phone}</a></span>
                               {order.customer_phone_2 && <span className="flex items-center gap-2"><Phone className="size-3.5 text-slate-400" /> <a href={`tel:${order.customer_phone_2}`} className="hover:text-indigo-600 hover:underline">{order.customer_phone_2}</a></span>}
-                              <span className="flex items-center gap-2"><MapPin className="size-3.5 text-slate-400" /> {order.wilaya} — {order.commune}</span>
+                              <span className="flex items-center gap-2"><MapPin className="size-3.5 text-slate-400" /> {order.wilaya || '—'} — {order.commune || '—'}</span>
+                              {order.delivery_address && <span className="text-xs text-slate-400 ml-5.5">{order.delivery_address}</span>}
+                              {order.tracking_number && <span className="text-xs font-mono text-slate-500 ml-5.5">Tracking: <span className="font-bold text-slate-700">{order.tracking_number}</span></span>}
                            </div>
                         </div>
-                        <div className="flex flex-col md:items-end gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                           <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</span>
-                              <span className="text-lg font-black text-emerald-600">{formatPrice(order.total_price)}</span>
-                           </div>
-                           <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Livraison</span>
-                              <span className="text-sm font-bold text-slate-600">{formatPrice(order.shipping_cost)}</span>
-                           </div>
-                        </div>
+                        {(() => {
+                           const calculatedItemsTotal = (order.items ?? []).reduce(
+                              (acc: number, item: any) => acc + ((item.unit_price ?? item.price ?? 0) * (item.quantity ?? 1)), 
+                              0
+                           );
+                           const shippingFee = Number(order.delivery_fee ?? order.shipping_cost ?? 0);
+                           const discountAmount = Number(order.discount ?? 0);
+                           const finalTotal = Number(order.total ?? order.total_price ?? (calculatedItemsTotal + shippingFee - discountAmount));
+                           const subtotalAmount = Number(order.subtotal ?? calculatedItemsTotal);
+
+                           return (
+                              <div className="flex flex-col md:items-end gap-1.5 bg-slate-50 p-4 rounded-2xl border border-slate-100 min-w-[220px]">
+                                 <div className="flex items-center justify-between w-full md:justify-end gap-4 text-xs">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sous-total</span>
+                                    <span className="font-bold text-slate-700">{formatPrice(subtotalAmount)}</span>
+                                 </div>
+                                 <div className="flex items-center justify-between w-full md:justify-end gap-4 text-xs">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Livraison</span>
+                                    <span className="font-bold text-slate-600">{formatPrice(shippingFee)}</span>
+                                 </div>
+                                 {discountAmount > 0 && (
+                                    <div className="flex items-center justify-between w-full md:justify-end gap-4 text-xs">
+                                       <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Réduction</span>
+                                       <span className="font-bold text-rose-600">-{formatPrice(discountAmount)}</span>
+                                    </div>
+                                 )}
+                                 <div className="flex items-center justify-between w-full md:justify-end gap-4 pt-2 border-t border-slate-200">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total</span>
+                                    <span className="text-lg font-black text-emerald-600">{formatPrice(finalTotal)}</span>
+                                 </div>
+                              </div>
+                           );
+                        })()}
                      </div>
                      
                      <div className="h-px w-full bg-slate-100" />
@@ -74,23 +126,43 @@ function OrderMicroDetailModal({ orderId, onClose }: { orderId: string; onClose:
                      <div>
                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Produits commandés ({order.items?.length || 0})</h4>
                         <div className="grid gap-2">
-                           {order.items?.map((item: any) => (
-                              <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 gap-3">
-                                 <div className="flex items-center gap-3">
-                                    <div className="size-10 bg-white border rounded-lg overflow-hidden shrink-0">
-                                       {item.product_image ? <img src={item.product_image} className="size-full object-cover" /> : <Package className="size-full p-2.5 opacity-20" />}
+                           {order.items?.map((item: any) => {
+                              const variants = parseVariantDetails(item.variant_details);
+                              const fallbackVariant = item.variant_string || item.variant_title || (typeof item.variant_details === 'string' ? item.variant_details : null);
+                              const itemImg = item.image_url || item.product_image;
+
+                              return (
+                                 <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                       <div className="size-12 bg-white border border-slate-100 rounded-xl overflow-hidden shrink-0 flex items-center justify-center">
+                                          {itemImg ? <img src={itemImg} alt="" className="size-full object-cover" /> : <Package className="size-5 text-slate-300" />}
+                                       </div>
+                                       <div className="min-w-0">
+                                          <p className="text-sm font-bold text-slate-800 truncate">{item.product_name}</p>
+                                          
+                                          {variants.length > 0 ? (
+                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                                {variants.map((v, vIdx) => (
+                                                   <span key={vIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100/80">
+                                                      <span className="text-indigo-400 font-semibold">{v.label} :</span>
+                                                      <span className="font-black">{v.value}</span>
+                                                   </span>
+                                                ))}
+                                             </div>
+                                          ) : fallbackVariant ? (
+                                             <p className="text-xs text-slate-500 font-semibold mt-0.5">{fallbackVariant}</p>
+                                          ) : null}
+
+                                          {item.sku && <p className="text-[10px] font-mono text-slate-400 mt-0.5">SKU: {item.sku}</p>}
+                                       </div>
                                     </div>
-                                    <div>
-                                       <p className="text-sm font-bold text-slate-800">{item.product_name}</p>
-                                       {item.variant_string && <p className="text-xs text-slate-500 mt-0.5">{item.variant_string}</p>}
+                                    <div className="flex items-center justify-between sm:justify-end gap-4 text-sm shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                                       <span className="font-bold text-slate-600 text-xs">{item.quantity} × {formatPrice(item.unit_price ?? item.price ?? 0)}</span>
+                                       <span className="font-black text-slate-900">{formatPrice((item.quantity ?? 1) * (item.unit_price ?? item.price ?? 0))}</span>
                                     </div>
                                  </div>
-                                 <div className="flex items-center gap-4 text-sm shrink-0">
-                                    <span className="font-bold text-slate-600">{item.quantity} × {formatPrice(item.unit_price)}</span>
-                                    <span className="font-black text-slate-800">{formatPrice(item.quantity * item.unit_price)}</span>
-                                 </div>
-                              </div>
-                           ))}
+                              );
+                           })}
                         </div>
                      </div>
                      

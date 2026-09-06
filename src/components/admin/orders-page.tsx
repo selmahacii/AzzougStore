@@ -2641,10 +2641,25 @@ const [timeLeft, setTimeLeft] = useState('');
                                               )}
                                               <div className="min-w-0">
                                                  <p className="text-sm font-bold text-slate-800 truncate">{item.product_name}</p>
-                                                 {item.variant_details?.variant && (
-                                                    <p className="text-xs text-slate-500 font-semibold mt-0.5">{item.variant_details.variant}</p>
-                                                 )}
-                                                 {item.sku && <p className="text-[10px] font-mono text-slate-400 mt-0.5">SKU: {item.sku}</p>}
+                                                 {item.variant_details && (
+                                                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                                        {typeof item.variant_details === 'string' ? (
+                                                           <p className="text-xs text-slate-500 font-semibold">{item.variant_details}</p>
+                                                        ) : item.variant_details.variant ? (
+                                                           <p className="text-xs text-slate-500 font-semibold">{item.variant_details.variant}</p>
+                                                        ) : (
+                                                           Object.entries(item.variant_details)
+                                                              .filter(([k, v]) => v && typeof v !== 'object')
+                                                              .map(([k, v], vIdx) => (
+                                                                 <span key={vIdx} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                                                                    <span className="text-slate-400">{k}:</span>
+                                                                    <span>{String(v)}</span>
+                                                                 </span>
+                                                              ))
+                                                        )}
+                                                     </div>
+                                                  )}
+                                                  {item.sku && <p className="text-[10px] font-mono text-slate-400 mt-0.5">SKU: {item.sku}</p>}
                                               </div>
                                            </div>
                                         </td>
