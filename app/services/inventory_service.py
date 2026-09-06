@@ -1075,8 +1075,10 @@ class InventoryService:
 
     def reconcile_and_fix_all_stock(self, db: Session) -> dict:
         """
-        Scans all orders and stock movements to clean up past duplicate movements,
-        reconcile reserved stock, and restore over-deducted physical stock.
+        Scans all orders and stock movements to:
+        1. Purge orphan/deleted order movements and duplicate logs.
+        2. Restore physical stock over-deducted by past duplicate updates.
+        3. Recalculate physical and reserved stock from real shipped & pending orders.
         """
         from app.models.stock import StockMovement
         from app.models.product import Product
@@ -1090,6 +1092,21 @@ class InventoryService:
         }
 
         db.info["skip_tenant_isolation"] = True
+
+        # 0. Purge orphan stock movements (order_id points to non-existent or deleted order)
+        valid_orders = db.query(Order.id, Order.status).filter((Order.is_deleted == False) | (Order.is_deleted.is_(None))).all()
+        valid_order_map = {r[0]: r[1] for r in valid_orders}
+        valid_order_ids = set(valid_order_map.keys())
+
+        orphan_movements = db.query(StockMovement).filter(
+            StockMovement.order_id.isnot(None),
+            ~StockMovement.order_id.in_(valid_order_ids)
+        ).all()
+        for om in orphan_movements:
+            db.delete(om)
+            stats["duplicate_movements_deleted"] += 1
+
+        db.flush()
 
         # 1. Clean duplicate movements per (order_id, product_id, type, reason)
         movements = db.query(StockMovement).filter(StockMovement.order_id.isnot(None)).all()
@@ -1133,19 +1150,22 @@ class InventoryService:
 
         db.flush()
 
-        # 2. Recalculate reserved_stock for all products and variants based on actual pending orders
+        # 2. Recalculate reserved_stock and verify physical stock against real order items
         pending_statuses = {"NEW", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "PENDING"}
+        confirmed_statuses = {"CONFIRMED", "SHIPPED", "DELIVERED", "COMPLETED", "PAID"}
+
         products = db.query(Product).all()
 
         for product in products:
             stats["products_reconciled"] += 1
+
+            # Real pending order items
             pending_items = (
                 db.query(OrderItem)
                 .join(Order, OrderItem.order_id == Order.id)
-                .filter(OrderItem.product_id == product.id, Order.status.in_(pending_statuses), Order.is_deleted == False)
+                .filter(OrderItem.product_id == product.id, Order.status.in_(pending_statuses), (Order.is_deleted == False) | (Order.is_deleted.is_(None)))
                 .all()
             )
-
             total_pending_qty = sum(item.quantity or 0 for item in pending_items)
             product.reserved_stock = total_pending_qty
 
