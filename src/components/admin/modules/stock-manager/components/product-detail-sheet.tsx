@@ -731,10 +731,10 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
                ord.lastMovementDate = m.created_at;
             }
 
-            if (m.type === 'ORDER_CONFIRM') ord.confirmedQty += qty;
-            else if (m.type === 'ORDER_RESERVE') ord.reservedQty += qty;
-            else if (m.type === 'ORDER_RELEASE') ord.releasedQty += qty;
-            else if (m.type === 'RETURN_RESTOCK') ord.returnedQty += qty;
+            if (m.type === 'ORDER_CONFIRM') ord.confirmedQty = Math.max(ord.confirmedQty, qty);
+            else if (m.type === 'ORDER_RESERVE') ord.reservedQty = Math.max(ord.reservedQty, qty);
+            else if (m.type === 'ORDER_RELEASE') ord.releasedQty = Math.max(ord.releasedQty, qty);
+            else if (m.type === 'RETURN_RESTOCK') ord.returnedQty = Math.max(ord.returnedQty, qty);
          }
 
          if (m.type === 'ORDER_CONFIRM') map[key].confirmed += qty;

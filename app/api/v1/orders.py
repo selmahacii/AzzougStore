@@ -3571,114 +3571,121 @@ def update_order_info(
         from app.services.inventory_service import InventoryService
         from app.models.order import OrderItem
         from app.services.order_service import expand_combined_variant_items, _expand_order_item
-        inv_svc = InventoryService()
 
-        # Commission upsell (250 DA/produit) : capturé AVANT toute suppression
-        # depuis l'état RÉEL de la commande en base — jamais depuis un flag
-        # envoyé par le frontend (is_upsell), qui reste vrai tant que le
-        # composant n'a pas rechargé originalProductIds et re-déclencherait
-        # une commission à chaque nouvelle sauvegarde de la même commande.
-        _previous_product_ids = {item.product_id for item in order.items}
-
-        # Release stock for old items. Expanded first: a legacy item can still
-        # carry a combined "P1: ... | P2: ..." variant string (e.g. absorbed
-        # from a merged duplicate before this was fixed there too) — releasing
-        # it as one unit would dump the whole quantity onto whichever variant
-        # _find_matching_variant happens to match first, leaving the other
-        # variant's reserved count stuck and permanently short.
-        for old_item in order.items:
-            for sub in _expand_order_item(old_item):
-                qty = int(sub.get("quantity") or 0)
-                if qty <= 0:
-                    continue
-                try:
-                    if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
-                        inv_svc.return_restock(
-                            db,
-                            product_id=sub["product_id"],
-                            quantity=qty,
-                            order_id=order.id,
-                            variant_details=sub.get("variant_details")
-                        )
-                    elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
-                        inv_svc.release_reservation(
-                            db,
-                            product_id=sub["product_id"],
-                            quantity=qty,
-                            order_id=order.id,
-                            variant_details=sub.get("variant_details")
-                        )
-                except Exception as exc:
-                    logger.warning(f"Could not release old stock/reservation for item {old_item.id}: {exc}")
-                
-        # Describe old items for traceability note
-        old_items_desc = ", ".join([
-            f"{oi.product_name} (x{oi.quantity}) {oi.unit_price} DA" + (f" [{oi.variant_details.get('variant')}]" if oi.variant_details and isinstance(oi.variant_details, dict) and oi.variant_details.get('variant') else "")
+        # Guard: check if items payload actually represents a change vs existing items in DB
+        _existing_sig = sorted([
+            (
+                oi.product_id,
+                int(oi.quantity or 0),
+                float(oi.unit_price or 0),
+                oi.variant_details.get("variant") if isinstance(oi.variant_details, dict) else None
+            )
             for oi in order.items
         ])
-        
-        # Delete old items
-        for old_item in order.items:
-            db.delete(old_item)
-        db.flush()
-        
-        # Clear relationship list
-        order.items = []
-        
-        # Create new items and reserve/deduct stock. Expanded first: the edit
-        # drawer sends one line per selected variant already, but this also
-        # guards a stray combined "P1: ... | P2: ..." payload (e.g. replayed
-        # from a merged duplicate's item) from ever being persisted as one
-        # OrderItem again.
-        total_amount = 0
-        new_items_desc = []
-        for item_data in expand_combined_variant_items(payload.items):
-            new_item = OrderItem(
-                id=str(uuid.uuid4()),
-                order_id=order.id,
-                **{k: v for k, v in item_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
+        _new_items_expanded = expand_combined_variant_items(payload.items)
+        _new_sig = sorted([
+            (
+                it_dict.get("product_id"),
+                int(it_dict.get("quantity") or 0),
+                float(it_dict.get("unit_price") or 0),
+                it_dict.get("variant_details", {}).get("variant") if isinstance(it_dict.get("variant_details"), dict) else None
             )
-            db.add(new_item)
-            order.items.append(new_item)
-            total_amount += new_item.quantity * new_item.unit_price
-            new_items_desc.append(
-                f"{new_item.product_name} (x{new_item.quantity}) {new_item.unit_price} DA" + (f" [{new_item.variant_details.get('variant')}]" if new_item.variant_details and isinstance(new_item.variant_details, dict) and new_item.variant_details.get('variant') else "")
-            )
+            for it_dict in _new_items_expanded
+        ])
+
+        if _existing_sig != _new_sig:
+            inv_svc = InventoryService()
+
+            # Commission upsell (250 DA/produit) : capturé AVANT toute suppression
+            _previous_product_ids = {item.product_id for item in order.items}
+
+            # Release stock for old items.
+            for old_item in order.items:
+                for sub in _expand_order_item(old_item):
+                    qty = int(sub.get("quantity") or 0)
+                    if qty <= 0:
+                        continue
+                    try:
+                        if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
+                            inv_svc.return_restock(
+                                db,
+                                product_id=sub["product_id"],
+                                quantity=qty,
+                                order_id=order.id,
+                                variant_details=sub.get("variant_details")
+                            )
+                        elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
+                            inv_svc.release_reservation(
+                                db,
+                                product_id=sub["product_id"],
+                                quantity=qty,
+                                order_id=order.id,
+                                variant_details=sub.get("variant_details")
+                            )
+                    except Exception as exc:
+                        logger.warning(f"Could not release old stock/reservation for item {old_item.id}: {exc}")
+                    
+            # Describe old items for traceability note
+            old_items_desc = ", ".join([
+                f"{oi.product_name} (x{oi.quantity}) {oi.unit_price} DA" + (f" [{oi.variant_details.get('variant')}]" if oi.variant_details and isinstance(oi.variant_details, dict) and oi.variant_details.get('variant') else "")
+                for oi in order.items
+            ])
             
-            try:
-                if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
-                    # reserve first (availability check + reserved +q) then
-                    # confirm (stock -q, reserved -q): net effect deducts the
-                    # physical stock WITHOUT eating someone else's reservation.
-                    inv_svc.reserve_stock(
-                        db,
-                        product_id=new_item.product_id,
-                        quantity=new_item.quantity,
-                        order_id=order.id,
-                        variant_details=new_item.variant_details
-                    )
-                    inv_svc.confirm_stock(
-                        db,
-                        product_id=new_item.product_id,
-                        quantity=new_item.quantity,
-                        order_id=order.id,
-                        variant_details=new_item.variant_details
-                    )
-                elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
-                    inv_svc.reserve_stock(
-                        db,
-                        product_id=new_item.product_id,
-                        quantity=new_item.quantity,
-                        order_id=order.id,
-                        variant_details=new_item.variant_details
-                    )
-            except Exception as exc:
-                logger.warning(f"Could not reserve/deduct stock for new item {new_item.product_id}: {exc}")
-                raise HTTPException(status_code=400, detail=f"Stock insuffisant pour {new_item.product_name}: {str(exc)}")
+            # Delete old items
+            for old_item in order.items:
+                db.delete(old_item)
+            db.flush()
+            
+            # Clear relationship list
+            order.items = []
+            
+            # Create new items and reserve/deduct stock.
+            total_amount = 0
+            new_items_desc = []
+            for item_data in _new_items_expanded:
+                new_item = OrderItem(
+                    id=str(uuid.uuid4()),
+                    order_id=order.id,
+                    **{k: v for k, v in item_data.items() if k in {"product_id", "product_name", "quantity", "unit_price", "variant_details", "image_url"}}
+                )
+                db.add(new_item)
+                order.items.append(new_item)
+                total_amount += new_item.quantity * new_item.unit_price
+                new_items_desc.append(
+                    f"{new_item.product_name} (x{new_item.quantity}) {new_item.unit_price} DA" + (f" [{new_item.variant_details.get('variant')}]" if new_item.variant_details and isinstance(new_item.variant_details, dict) and new_item.variant_details.get('variant') else "")
+                )
                 
-        if old_items_desc != ", ".join(new_items_desc) or order.subtotal != total_amount:
-            changed_fields.append(f"articles ({old_items_desc} -> {', '.join(new_items_desc)})")
-            order.subtotal = total_amount
+                try:
+                    if order.status in {"CONFIRMED", "SHIPPED", "DELIVERED"}:
+                        inv_svc.reserve_stock(
+                            db,
+                            product_id=new_item.product_id,
+                            quantity=new_item.quantity,
+                            order_id=order.id,
+                            variant_details=new_item.variant_details
+                        )
+                        inv_svc.confirm_stock(
+                            db,
+                            product_id=new_item.product_id,
+                            quantity=new_item.quantity,
+                            order_id=order.id,
+                            variant_details=new_item.variant_details
+                        )
+                    elif order.status in {"NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"}:
+                        inv_svc.reserve_stock(
+                            db,
+                            product_id=new_item.product_id,
+                            quantity=new_item.quantity,
+                            order_id=order.id,
+                            variant_details=new_item.variant_details
+                        )
+                except Exception as exc:
+                    logger.warning(f"Could not reserve/deduct stock for new item {new_item.product_id}: {exc}")
+                    raise HTTPException(status_code=400, detail=f"Stock insuffisant pour {new_item.product_name}: {str(exc)}")
+                    
+            if old_items_desc != ", ".join(new_items_desc) or order.subtotal != total_amount:
+                changed_fields.append(f"articles ({old_items_desc} -> {', '.join(new_items_desc)})")
+                order.subtotal = total_amount
 
         # Auto-flag as upsell if the order now contains ONLY upsell products
         _all_product_ids = {item.product_id for item in order.items if item.product_id}
