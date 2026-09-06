@@ -113,7 +113,6 @@ export function StockExitModal({ open, onOpenChange, products, warehouses, store
       onError: (err: any) => toast.error(err.message || "Échec de validation du Bon de Sortie"),
    });
 
-   const selectedProduct = products.find((p: any) => p.id === formData.product_id);
    const excessStock = selectedProduct ? formData.quantity > selectedProduct.stock : false;
 
    return (
