@@ -157,7 +157,7 @@ def list_movements(
         product_names = dict(db.query(Product.id, Product.name).filter(Product.id.in_(product_ids)).all())
 
     import re
-    variant_pattern = re.compile(r"\(([^)]+)\)$")
+    variant_pattern = re.compile(r"(?:\(([^)]+)\)$|•\s*Variante\s*:\s*([^\r\n]+)|Variante\s*:\s*([^\r\n]+))", re.IGNORECASE)
 
     for m in movements:
         ord_info = orders_info.get(m.order_id)
@@ -173,8 +173,12 @@ def list_movements(
             m.order_status = None
         m.warehouse_name = warehouse_names.get(m.warehouse_id)
         m.product_name = product_names.get(m.product_id)
-        match = variant_pattern.search(m.reason or "")
-        m.variant_name = match.group(1).strip() if match else None
+        v_name = None
+        if m.reason:
+            match = variant_pattern.search(m.reason)
+            if match:
+                v_name = (match.group(1) or match.group(2) or match.group(3) or "").strip()
+        m.variant_name = v_name if v_name and v_name != "Général" else None
 
     return {
         "success": True,

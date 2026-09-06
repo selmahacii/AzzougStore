@@ -60,9 +60,13 @@ function extractVariantFromMovement(m: any): string {
       return m.variant_name;
    }
    if (m.reason) {
-      const match = m.reason.match(/\(([^)]+)\)$/);
-      if (match && match[1] && match[1] !== 'Général') {
-         return match[1].trim();
+      const parenMatch = m.reason.match(/\(([^)]+)\)/);
+      if (parenMatch && parenMatch[1] && parenMatch[1] !== 'Général') {
+         return parenMatch[1].trim();
+      }
+      const bulletMatch = m.reason.match(/[•\-]?\s*Variante\s*:\s*([^\r\n]+)/i);
+      if (bulletMatch && bulletMatch[1] && bulletMatch[1] !== 'Général') {
+         return bulletMatch[1].trim();
       }
    }
    return 'Article standard';
@@ -501,8 +505,17 @@ function VariantOrdersModal({
 }
 
 
-export function ProductDetailSheet({ product, onClose }: { product: any; onClose: () => void }) {
+export function ProductDetailSheet({ product: initialProduct, onClose }: { product: any; onClose: () => void }) {
    const qc = useQueryClient();
+
+   const productQuery = useQuery({
+      queryKey: ['product-detail-live', initialProduct?.id],
+      queryFn: () => apiFetch<{ success: boolean; data: any }>(`/api/v1/products/${initialProduct?.id}`),
+      enabled: !!initialProduct?.id,
+      refetchInterval: 15000,
+   });
+   const product = productQuery.data?.data || initialProduct;
+
    const [editingPrice, setEditingPrice] = useState(false);
    const [priceInput, setPriceInput] = useState(String(product.price || 0));
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);

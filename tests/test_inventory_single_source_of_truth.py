@@ -567,3 +567,91 @@ def test_stock_movement_list_accepts_page_size_300_and_both_routes(scenario):
     data_no_slash = res_no_slash.json()
     assert data_no_slash["success"] is True
     assert data_no_slash["pageSize"] == 300
+
+
+def test_restock_variant_with_nested_sub_variants_does_not_wipe_out(scenario):
+    """
+    Direct regression test for user-reported bug:
+    Variant 'Couleur: Bordeaux' has stock=74 and reserved=6 with nested sub_variants.
+    Restocking 100 pieces must increase stock to 174 (not revert to 74).
+    Subsequent order reservations must keep stock at 174 and update sub_variants.
+    """
+    store_id = scenario.make_store()
+    variants_with_subs = [
+        {
+            "name": "Couleur",
+            "value": "Bordeaux",
+            "stock": 74,
+            "reserved": 6,
+            "sub_variants": [
+                {"name": "Taille", "value": "Standard", "stock": 74, "reserved": 6}
+            ]
+        },
+        {
+            "name": "Couleur",
+            "value": "Noir",
+            "stock": 0,
+            "reserved": 0,
+            "sub_variants": [
+                {"name": "Taille", "value": "Standard", "stock": 0, "reserved": 0}
+            ]
+        }
+    ]
+    product_id = scenario.make_product(store_id, variants=variants_with_subs, stock=74)
+    order_id = scenario.make_order(store_id)
+
+    db = SessionLocal()
+    try:
+        # Restock 100 units on Bordeaux
+        inventory_service.restock(
+            db,
+            product_id=product_id,
+            quantity=100,
+            actor_id=None,
+            variant_details={"variant": "Couleur: Bordeaux"},
+            reason="Bon d'entrée +100"
+        )
+        db.commit()
+
+        product = db.query(Product).filter(Product.id == product_id).first()
+        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
+        assert bordeaux["stock"] == 174
+        assert bordeaux["sub_variants"][0]["stock"] == 174
+        assert product.stock == 174
+
+        # Customer reserves 2 units
+        inventory_service.reserve_stock(
+            db,
+            product_id=product_id,
+            quantity=2,
+            order_id=order_id,
+            variant_details={"variant": "Couleur: Bordeaux"},
+        )
+        db.commit()
+
+        db.refresh(product)
+        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
+        assert bordeaux["stock"] == 174
+        assert bordeaux["reserved"] == 8
+        assert bordeaux["sub_variants"][0]["reserved"] == 8
+        assert product.stock == 174
+
+        # Confirm 2 units
+        inventory_service.confirm_stock(
+            db,
+            product_id=product_id,
+            quantity=2,
+            order_id=order_id,
+            variant_details={"variant": "Couleur: Bordeaux"},
+        )
+        db.commit()
+
+        db.refresh(product)
+        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
+        assert bordeaux["stock"] == 172
+        assert bordeaux["reserved"] == 6
+        assert bordeaux["sub_variants"][0]["stock"] == 172
+        assert bordeaux["sub_variants"][0]["reserved"] == 6
+        assert product.stock == 172
+    finally:
+        db.close()

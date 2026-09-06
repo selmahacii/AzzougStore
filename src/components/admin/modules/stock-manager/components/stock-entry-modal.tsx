@@ -64,7 +64,7 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
                      warehouse_id: data.warehouse_id,
                      quantity: qty,
                      type: 'RESTOCK',
-                     reason: `${richReason}\n• Variante : ${variantStr}`,
+                     reason: `${richReason}\n• Variante : ${variantStr} (${variantStr})`,
                      variant_details: { variant: variantStr },
                      store_id: storeId
                   })
@@ -80,7 +80,7 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
                   warehouse_id: data.warehouse_id,
                   quantity: data.quantity,
                   type: 'RESTOCK',
-                  reason: selectedVariant !== 'ALL' ? `${richReason}\n• Variante : ${selectedVariant}` : richReason,
+                  reason: selectedVariant !== 'ALL' ? `${richReason}\n• Variante : ${selectedVariant} (${selectedVariant})` : richReason,
                   variant_details: selectedVariant !== 'ALL' ? { variant: selectedVariant } : undefined,
                   store_id: storeId
                })
@@ -92,6 +92,8 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
          qc.invalidateQueries({ queryKey: ['admin-products'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'movements'] });
+         qc.invalidateQueries({ queryKey: ['product-movements'] });
+         qc.invalidateQueries({ queryKey: ['product-detail-live'] });
          toast.success("Bon d'Entrée validé avec succès ✓");
          onOpenChange(false);
          setFormData({

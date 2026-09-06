@@ -35,8 +35,14 @@ logger = logging.getLogger("app.inventory")
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
-def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
+def _find_matching_variant(variants: list, variant_str: Any) -> Optional[dict]:
     if not variants or not variant_str:
+        return None
+    
+    if isinstance(variant_str, dict):
+        variant_str = variant_str.get("variant") or variant_str.get("value") or str(variant_str)
+    variant_str = str(variant_str).strip()
+    if not variant_str:
         return None
     
     # Normalize the input variant_str (e.g. "Couleur: Vert Olive, Taille: 42" or "Vert Olive / 42")
@@ -115,6 +121,56 @@ def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
                 return sv
 
     return best_variant
+
+
+def _sync_sub_variants_stock(matching_variant: dict, delta: int) -> None:
+    """Keep nested sub_variants stock synchronized when parent variant stock is adjusted."""
+    if matching_variant.get("sub_variants") and len(matching_variant["sub_variants"]) > 0:
+        subs = [sv for sv in matching_variant["sub_variants"] if isinstance(sv, dict)]
+        if not subs:
+            return
+        if len(subs) == 1:
+            subs[0]["stock"] = max(0, int(subs[0].get("stock") or 0) + delta)
+        elif delta > 0:
+            per_sv = delta // len(subs)
+            rem_sv = delta % len(subs)
+            for s_idx, sv in enumerate(subs):
+                sv_qty = per_sv + (1 if s_idx < rem_sv else 0)
+                sv["stock"] = int(sv.get("stock") or 0) + sv_qty
+        else:
+            needed = abs(delta)
+            for sv in subs:
+                if needed <= 0:
+                    break
+                cur = int(sv.get("stock") or 0)
+                deduct = min(cur, needed)
+                sv["stock"] = max(0, cur - deduct)
+                needed -= deduct
+
+
+def _sync_sub_variants_reserved(matching_variant: dict, delta: int) -> None:
+    """Keep nested sub_variants reservations synchronized when parent variant reservations are adjusted."""
+    if matching_variant.get("sub_variants") and len(matching_variant["sub_variants"]) > 0:
+        subs = [sv for sv in matching_variant["sub_variants"] if isinstance(sv, dict)]
+        if not subs:
+            return
+        if len(subs) == 1:
+            subs[0]["reserved"] = max(0, int(subs[0].get("reserved") or 0) + delta)
+        elif delta > 0:
+            per_sv = delta // len(subs)
+            rem_sv = delta % len(subs)
+            for s_idx, sv in enumerate(subs):
+                sv_qty = per_sv + (1 if s_idx < rem_sv else 0)
+                sv["reserved"] = int(sv.get("reserved") or 0) + sv_qty
+        else:
+            needed = abs(delta)
+            for sv in subs:
+                if needed <= 0:
+                    break
+                cur = int(sv.get("reserved") or 0)
+                deduct = min(cur, needed)
+                sv["reserved"] = max(0, cur - deduct)
+                needed -= deduct
 
 
 def _update_product_stock_from_variants(product: Product) -> None:
@@ -322,6 +378,7 @@ class InventoryService:
                         )
                 
                 matching_variant["reserved"] = v_reserved + quantity
+                _sync_sub_variants_reserved(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -411,6 +468,8 @@ class InventoryService:
                 # Deduct variant physical stock & release reservation
                 matching_variant["stock"] = max(0, v_stock - quantity)
                 matching_variant["reserved"] = max(0, v_reserved - quantity)
+                _sync_sub_variants_stock(matching_variant, -quantity)
+                _sync_sub_variants_reserved(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 
                 # Recalculate total product stock
@@ -470,6 +529,7 @@ class InventoryService:
             if matching_variant:
                 v_reserved = int(matching_variant.get("reserved") or 0)
                 matching_variant["reserved"] = max(0, v_reserved - quantity)
+                _sync_sub_variants_reserved(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -551,6 +611,7 @@ class InventoryService:
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
+                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -633,6 +694,7 @@ class InventoryService:
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
+                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
             elif len(product.variants) == 1:
@@ -662,6 +724,10 @@ class InventoryService:
         else:
             product.stock += quantity
 
+        reason_text = reason or f"Réapprovisionnement manuel ({variant_str or 'Général'})"
+        if variant_str and f"({variant_str})" not in reason_text:
+            reason_text = f"{reason_text} ({variant_str})"
+
         _record_movement(
             db,
             product_id=product_id,
@@ -670,7 +736,7 @@ class InventoryService:
             order_id=None,
             actor_id=actor_id,
             warehouse_id=warehouse_id,
-            reason=reason or f"Réapprovisionnement manuel ({variant_str or 'Général'})",
+            reason=reason_text,
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("Manual restock: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
@@ -722,6 +788,7 @@ class InventoryService:
                         available=available,
                     )
                 matching_variant["stock"] = max(0, v_stock - quantity)
+                _sync_sub_variants_stock(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -790,6 +857,7 @@ class InventoryService:
                         available=max(0, v_stock),
                     )
                 matching_variant["stock"] = max(0, new_v_stock)
+                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
             elif len(product.variants) == 1:
@@ -851,13 +919,17 @@ class InventoryService:
                 )
             product.stock = max(0, new_stock)
 
+        reason_text = reason or f"Ajustement manuel ({variant_str or 'Général'})"
+        if variant_str and f"({variant_str})" not in reason_text:
+            reason_text = f"{reason_text} ({variant_str})"
+
         _record_movement(
             db,
             product_id=product_id,
             movement_type="MANUAL_ADJUSTMENT",
             quantity=quantity,
             actor_id=actor_id,
-            reason=reason,
+            reason=reason_text,
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
@@ -920,6 +992,7 @@ class InventoryService:
                         available=v_stock - v_reserved,
                     )
                 matching_variant["stock"] = new_v_stock
+                _sync_sub_variants_stock(matching_variant, quantity_delta)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
             elif len(product.variants) == 1:
@@ -982,9 +1055,13 @@ class InventoryService:
                 )
             product.stock = new_stock
 
+        reason_text = reason
+        if variant_str and f"({variant_str})" not in reason_text:
+            reason_text = f"{reason_text} ({variant_str})"
+
         _record_movement(
             db, product_id=product_id, movement_type=movement_type, quantity=quantity_delta,
-            order_id=order_id, actor_id=actor_id, reason=reason, warehouse_id=warehouse_id,
+            order_id=order_id, actor_id=actor_id, reason=reason_text, warehouse_id=warehouse_id,
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(

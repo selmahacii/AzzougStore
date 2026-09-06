@@ -31,7 +31,7 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
             const p = {
                product_id: data.product_id,
                type: 'MANUAL_ADJUSTMENT',
-               reason: data.reason,
+               reason: adj.variantStr ? `${data.reason} (${adj.variantStr})` : data.reason,
                store_id: data.store_id,
                quantity: adj.quantity,
                variant_details: adj.variantStr ? { variant: adj.variantStr } : {}
@@ -57,6 +57,8 @@ export function StockAdjustModal({ product, storeId, onClose }: { product: any; 
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
          qc.invalidateQueries({ queryKey: ['admin-products'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
+         qc.invalidateQueries({ queryKey: ['product-movements'] });
+         qc.invalidateQueries({ queryKey: ['product-detail-live'] });
          toast.success("Ajustement validé avec succès");
          onClose();
       },

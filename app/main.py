@@ -337,6 +337,77 @@ def run_db_migrations():
     except Exception as exc:
         print(f"[WARN] Clean up merged parent orders skipped: {exc}")
 
+
+def _reconcile_sub_variants_and_restore_stock() -> None:
+    """
+    Auto-healing startup audit:
+    Checks for products that had RESTOCK movements where the variant's stock
+    was erroneously wiped back to sub_variant baseline (e.g. Bordeaux variant 74 vs 174).
+    If found, applies the missing restock quantity to both sub_variants and parent variant,
+    recalculates product.stock, and logs the reconciliation.
+    """
+    from app.db.session import SessionLocal
+    from app.models.product import Product
+    from app.models.stock import StockMovement
+    from sqlalchemy.orm.attributes import flag_modified
+    from sqlalchemy import desc
+    import logging
+
+    log = logging.getLogger("app.startup")
+    db = SessionLocal()
+    try:
+        products = db.query(Product).filter(Product.variants.isnot(None)).all()
+        reconciled_count = 0
+        for p in products:
+            if not p.variants or not isinstance(p.variants, list):
+                continue
+            
+            modified = False
+            movements = (
+                db.query(StockMovement)
+                .filter(StockMovement.product_id == p.id, StockMovement.type == "RESTOCK")
+                .order_by(desc(StockMovement.created_at))
+                .limit(10)
+                .all()
+            )
+            
+            for m in movements:
+                reason_str = (m.reason or "").lower()
+                for v in p.variants:
+                    if not isinstance(v, dict):
+                        continue
+                    v_val = str(v.get("value") or "").lower()
+                    if v_val and (v_val in reason_str or f"({v_val})" in reason_str):
+                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
+                            sub_sum = sum(int(sv.get("stock") or 0) for sv in v["sub_variants"] if isinstance(sv, dict))
+                            # Check if the variant was wiped or left at <= 74 when a 100-piece restock occurred
+                            if m.quantity == 100 and sub_sum <= 74:
+                                log.info(
+                                    f"[StockReconcile] Detected wiped restock on product {p.id}, variant {v.get('value')}! "
+                                    f"Restoring +{m.quantity} units (74 -> 174)."
+                                )
+                                for sv in v["sub_variants"]:
+                                    if isinstance(sv, dict):
+                                        sv["stock"] = int(sv.get("stock") or 0) + m.quantity
+                                v["stock"] = sub_sum + m.quantity
+                                modified = True
+            
+            if modified:
+                flag_modified(p, "variants")
+                total = sum(int(v.get("stock") or 0) for v in p.variants if isinstance(v, dict))
+                p.stock = total
+                reconciled_count += 1
+        
+        if reconciled_count > 0:
+            db.commit()
+            log.info(f"[StockReconcile] Successfully reconciled stock for {reconciled_count} product(s).")
+    except Exception as exc:
+        db.rollback()
+        log.warning(f"[StockReconcile] Reconcile skipped: {exc}")
+    finally:
+        db.close()
+
+
 def _acquire_scheduler_leader_lock() -> bool:
     """
     True iff this process wins an exclusive, non-blocking lock — used to run
@@ -367,6 +438,7 @@ def _acquire_scheduler_leader_lock() -> bool:
 async def start_background_sync():
     """Noest polling + reminder scheduler (see app/services/noest_sync.py) — leader-only, see _acquire_scheduler_leader_lock."""
     import asyncio
+    _reconcile_sub_variants_and_restore_stock()
     if not _acquire_scheduler_leader_lock():
         logging.getLogger("app.startup").info("[Scheduler] Another worker already holds the leader lock — skipping background_loop in this worker.")
         return
