@@ -1579,6 +1579,11 @@ class OrderService:
                 except Exception as exc:
                     logger.warning("Could not push note update to Noest for order %s: %s", order.id, exc)
 
+        # If an order has a tracking number and its status is sitting at pre-SHIPPED
+        # (e.g. NEW, ASSIGNED, CALLED), automatically promote it to SHIPPED.
+        if order.tracking_number and not new_status and order.status in ("NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"):
+            new_status = "SHIPPED"
+
         if new_status and new_status != old_status:
             # Enforce state machine (SUPER_ADMIN, ADMIN, MANAGER, and AGENT_MANAGER are allowed to override state machine constraints)
             if actor_role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "AGENT_MANAGER") and not _is_valid_transition(old_status, new_status):

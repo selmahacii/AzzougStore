@@ -154,6 +154,7 @@ def run_db_migrations():
         "UPDATE orders SET subtotal = CASE WHEN (subtotal IS NULL OR subtotal = 0) THEN (total - COALESCE(delivery_fee, 0)) ELSE subtotal END, total = (CASE WHEN (subtotal IS NOT NULL AND subtotal > 0) THEN subtotal ELSE (total - COALESCE(delivery_fee, 0)) END) - COALESCE(discount, 0) + COALESCE(delivery_fee, 0) WHERE is_deleted IS FALSE OR is_deleted IS NULL",
         "UPDATE orders SET is_abandoned_cart = FALSE, status = 'NEW', order_number = REPLACE(order_number, 'ABN-', 'ORD-') WHERE (store_sequence_number IN (830, 831, 832, 833) OR order_number LIKE '%830%' OR order_number LIKE '%831%' OR order_number LIKE '%832%' OR order_number LIKE '%833%') AND status != 'CANCELLED'",
         "DELETE FROM stock_movements WHERE type IN ('ORDER_RESERVE', 'ORDER_RELEASE')",
+        "UPDATE orders SET status = 'SHIPPED' WHERE tracking_number IS NOT NULL AND TRIM(tracking_number) != '' AND status IN ('NEW', 'ASSIGNED', 'CALLED', 'ABANDONED', 'IN_PROGRESS', 'RESCHEDULED') AND (is_deleted IS FALSE OR is_deleted IS NULL)",
     ]
 
     for stmt in statements:
