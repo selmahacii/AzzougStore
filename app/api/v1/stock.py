@@ -903,13 +903,13 @@ def get_product_stock_breakdown(
     
     from app.core.dates import parse_local_date_filter
     if date_from:
-        start_dt, _ = parse_local_date_filter(date_from, None)
+        start_dt = parse_local_date_filter(date_from, is_end_of_day=False)
         if start_dt:
             retourne_query = retourne_query.filter(Order.created_at >= start_dt)
             livree_query = livree_query.filter(Order.created_at >= start_dt)
             marge_query = marge_query.filter(Order.created_at >= start_dt)
     if date_to:
-        _, end_dt = parse_local_date_filter(None, date_to)
+        end_dt = parse_local_date_filter(date_to, is_end_of_day=True)
         if end_dt:
             retourne_query = retourne_query.filter(Order.created_at <= end_dt)
             livree_query = livree_query.filter(Order.created_at <= end_dt)
