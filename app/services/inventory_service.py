@@ -423,15 +423,6 @@ class InventoryService:
 
         product.reserved_stock += quantity
 
-        _record_movement(
-            db,
-            product_id=product_id,
-            movement_type="ORDER_RESERVE",
-            quantity=quantity,
-            order_id=order_id,
-            actor_id=actor_id,
-            reason=f"Réservation stock pour commande {order_id} ({variant_str or 'Général'})",
-        )
         logger.info(
             "Stock reserved: product=%s qty=%d order=%s (new reserved_stock=%d)",
             product_id, quantity, order_id, product.reserved_stock,
@@ -542,15 +533,6 @@ class InventoryService:
 
         product.reserved_stock = max(0, product.reserved_stock - quantity)
 
-        _record_movement(
-            db,
-            product_id=product_id,
-            movement_type="ORDER_RELEASE",
-            quantity=quantity,
-            order_id=order_id,
-            actor_id=actor_id,
-            reason=f"Libération réservation pour commande {order_id} ({variant_str or 'Général'})",
-        )
         logger.info(
             "Reservation released: product=%s qty=%d order=%s (reserved=%d)",
             product_id, quantity, order_id, product.reserved_stock,
@@ -1093,7 +1075,14 @@ class InventoryService:
 
         db.info["skip_tenant_isolation"] = True
 
-        # 0. Purge orphan stock movements (order_id points to non-existent or deleted order)
+        # 0. Purge ORDER_RESERVE, ORDER_RELEASE, and orphan movements (only real CONFIRMED sales and RESTOCKS remain)
+        reserve_release_movements = db.query(StockMovement).filter(
+            StockMovement.type.in_(["ORDER_RESERVE", "ORDER_RELEASE"])
+        ).all()
+        for rrm in reserve_release_movements:
+            db.delete(rrm)
+            stats["duplicate_movements_deleted"] += 1
+
         valid_orders = db.query(Order.id, Order.status).filter((Order.is_deleted == False) | (Order.is_deleted.is_(None))).all()
         valid_order_map = {r[0]: r[1] for r in valid_orders}
         valid_order_ids = set(valid_order_map.keys())
