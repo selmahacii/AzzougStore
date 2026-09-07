@@ -462,21 +462,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
-        "w-full py-3 border-b flex items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
+        "w-full py-3 border-b sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-10">
-          {/* Left Side Placeholder */}
-          <div className="w-10 sm:w-20" />
-
-          {/* Logo Centered */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+        <div className="max-w-[1200px] w-full mx-auto px-4 flex items-center justify-between h-12">
+          {/* Logo */}
+          <div className="flex items-center shrink-0">
             {(data.store?.logo_url || activeStore?.logo_url) ? (
               <img
                 src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 150)}
                 alt={data.store?.name || activeStore?.name || 'Logo'}
-                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
+                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] transition-all" 
                 onError={(e) => { 
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -486,7 +483,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               />
             ) : null}
             <span 
-              className="text-lg font-black tracking-tight uppercase" 
+              className="text-base sm:text-lg font-black tracking-tight uppercase" 
               style={{ 
                 color: primary, 
                 display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
@@ -500,14 +497,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           <nav className="hidden md:flex items-center gap-6">
             <button 
               onClick={() => scrollToSection('presentation-section')}
-              className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
+              className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
             >
               {dir === 'rtl' ? 'المنتج' : (t('presentation') || 'Présentation')}
             </button>
             {data.testimonials && data.testimonials.length > 0 && (
               <button 
                 onClick={() => scrollToSection('testimonials-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
+                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
               >
                 {dir === 'rtl' ? 'آراء العملاء' : (t('customerReviews') || 'Avis')}
               </button>
@@ -515,25 +512,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {data.faq && data.faq.length > 0 && (
               <button 
                 onClick={() => scrollToSection('faq-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
+                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
               >
                 {dir === 'rtl' ? 'الأسئلة الشائعة' : (t('faqTitle') || 'FAQ')}
               </button>
             )}
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="text-xs font-black uppercase tracking-wider px-4 py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95"
+              className="text-xs font-black uppercase tracking-wider px-5 py-2.5 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
               style={{ backgroundColor: primary }}
             >
               {dir === 'rtl' ? 'اطلب الآن' : (t('buyNow') || 'Commander')}
             </button>
           </nav>
 
-          {/* Mobile Right Action or Secure Badge */}
-          <div className="flex items-center gap-3">
+          {/* Right Action / Mobile Button */}
+          <div className="flex items-center gap-3 shrink-0">
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="md:hidden text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-full text-white shadow-sm transition-all active:scale-95"
+              className="md:hidden text-[11px] font-black uppercase tracking-wider px-4 py-2 rounded-full text-white shadow-sm transition-all active:scale-95 cursor-pointer"
               style={{ backgroundColor: primary }}
             >
               {dir === 'rtl' ? 'طلب' : (t('buyNow') || 'Commander')}
@@ -1110,9 +1107,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         </div>
       </div>
 
-      <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
-        {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}
-      </footer>
+
 
       {/* Sticky Bottom CTA on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
