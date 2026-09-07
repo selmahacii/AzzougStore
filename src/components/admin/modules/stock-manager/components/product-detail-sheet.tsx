@@ -236,6 +236,9 @@ function VariantOrdersModal({
       returnedQty: number;
       lastMovementDate?: string;
       movements: any[];
+      stockBefore?: number;
+      stockAfter?: number;
+      stockDelta?: number;
    }>;
 
    const filteredByTab = useMemo(() => {
@@ -649,6 +652,9 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
             returnedQty: number;
             lastMovementDate?: string;
             movements: any[];
+            stockBefore?: number;
+            stockAfter?: number;
+            stockDelta?: number;
          }>;
       }> = {};
 
