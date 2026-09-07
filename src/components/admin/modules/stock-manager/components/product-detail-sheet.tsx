@@ -810,15 +810,33 @@ export function ProductDetailSheet({ product: initialProduct, onClose }: { produ
    }, [variantStats, movements.length]);
 
    const displayedMovements = useMemo(() => {
-      if (!selectedVariantFilter) return movements;
-      return movements.filter((m: any) => {
-         const vName = extractVariantFromMovement(m);
-         return (
-            vName.toLowerCase() === selectedVariantFilter.toLowerCase() ||
-            vName.toLowerCase().includes(selectedVariantFilter.toLowerCase()) ||
-            selectedVariantFilter.toLowerCase().includes(vName.toLowerCase())
-         );
+      let filtered = movements;
+      if (selectedVariantFilter) {
+         filtered = movements.filter((m: any) => {
+            const vName = extractVariantFromMovement(m);
+            return (
+               vName.toLowerCase() === selectedVariantFilter.toLowerCase() ||
+               vName.toLowerCase().includes(selectedVariantFilter.toLowerCase()) ||
+               selectedVariantFilter.toLowerCase().includes(vName.toLowerCase())
+            );
+         });
+      }
+
+      // Deduplicate timeline movement entries by (order_id, type, variant, quantity)
+      const seen = new Set<string>();
+      const deduplicated: any[] = [];
+
+      filtered.forEach((m: any) => {
+         if (m.order_id) {
+            const vName = extractVariantFromMovement(m);
+            const sig = `${m.order_id}_${m.type}_${vName}_${m.quantity}`;
+            if (seen.has(sig)) return;
+            seen.add(sig);
+         }
+         deduplicated.push(m);
       });
+
+      return deduplicated;
    }, [movements, selectedVariantFilter]);
 
    return (
