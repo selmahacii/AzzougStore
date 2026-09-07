@@ -489,7 +489,7 @@ function VariantOrdersModal({
                                     <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty} {ord.returnedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
-                              {ord.stockBefore !== undefined && ord.stockAfter !== undefined && ord.stockDelta !== undefined && ord.stockDelta !== 0 && (
+                              {ord.stockBefore !== undefined && ord.stockAfter !== undefined && ord.stockDelta !== undefined && ord.stockDelta !== 0 ? (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-slate-900 text-white flex items-center gap-1.5 shadow-xs border border-slate-800">
                                     <span>Stock variante :</span>
                                     <span className="font-mono text-slate-300">{ord.stockBefore}</span>
@@ -499,7 +499,12 @@ function VariantOrdersModal({
                                        ({ord.stockDelta > 0 ? `+${ord.stockDelta}` : ord.stockDelta} {Math.abs(ord.stockDelta) > 1 ? 'pcs' : 'pc'})
                                     </span>
                                  </span>
-                              )}
+                              ) : ord.releasedQty > 0 ? (
+                                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-sky-950 text-sky-100 flex items-center gap-1.5 shadow-xs border border-sky-800">
+                                    <RotateCcw className="size-3 text-sky-400" />
+                                    <span>Réservation libérée (+{ord.releasedQty} {ord.releasedQty > 1 ? 'pcs' : 'pc'})</span>
+                                 </span>
+                              ) : null}
                            </div>
                         </div>
 
