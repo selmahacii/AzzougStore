@@ -94,6 +94,8 @@ def list_movements(
         )
     if movement_type:
         query = query.filter(StockMovement.type == movement_type)
+    else:
+        query = query.filter(~StockMovement.type.in_(["ORDER_RESERVE", "ORDER_RELEASE"]))
     if warehouse_id:
         query = query.filter(StockMovement.warehouse_id == warehouse_id)
     if actor_id:
