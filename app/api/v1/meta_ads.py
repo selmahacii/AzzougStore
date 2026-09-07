@@ -1152,6 +1152,31 @@ def sync_meta_ads(
                         "action_values_raw": rc.get("action_values"),
                     })
                 logger.info(f"[Meta Ads Sync] Succès: {len(campaigns_data)} campagnes récupérées de Meta.")
+                if not campaigns_data:
+                    try:
+                        c_resp = _graph_get(f"{ad_account_id}/campaigns", {"fields": "id,name,status,effective_status"}, clean_token, timeout=10.0)
+                        if c_resp.status_code == 200:
+                            c_json = c_resp.json()
+                            for c_item in c_json.get("data", []):
+                                c_id = c_item.get("id")
+                                if c_id and not any(existing.get("campaign_id") == c_id for existing in campaigns_data):
+                                    campaigns_data.append({
+                                        "campaign_id": c_id,
+                                        "campaign_name": c_item.get("name", "Sans nom"),
+                                        "spend": 0.0,
+                                        "currency": ad_currency,
+                                        "impressions": 0,
+                                        "clicks": 0,
+                                        "reach": 0,
+                                        "meta_purchases": 0,
+                                        "meta_purchase_value": 0.0,
+                                        "actions_raw": None,
+                                        "action_values_raw": None,
+                                    })
+                            if campaigns_data:
+                                logger.info(f"[Meta Ads Sync] Récupéré {len(campaigns_data)} campagne(s) depuis l'endpoint /campaigns (dépense 0.00$).")
+                    except Exception as fallback_err:
+                        logger.warning(f"[Meta Ads Sync] Échec fallback /campaigns: {fallback_err}")
         except Exception as e:
             logger.error(f"[Meta Ads Sync] Exception lors de la récupération des insights: {e}")
             is_simulated = True
