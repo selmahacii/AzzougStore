@@ -332,31 +332,28 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
         _timing.record("ratelimit_total", (time.perf_counter() - _rl_t0) * 1000)
 
         # ── Pass through with rate limit headers ──────────────────
-        try:
-            response = await call_next(request)
-        except Exception as exc:
-            from starlette.exceptions import HTTPException as StarletteHTTPException
-            from app.core.error_handlers import unhandled_exception_handler, http_exception_handler
-            if isinstance(exc, StarletteHTTPException):
-                return await http_exception_handler(request, exc)
-            return await unhandled_exception_handler(request, exc)
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(ip_limit)
+        response.headers["X-RateLimit-Remaining"] = str(ip_result.remaining)
+        response.headers["X-RateLimit-Reset"] = str(ip_result.reset_at)
 
-        try:
-            response.headers["X-RateLimit-Limit"] = str(ip_limit)
-            response.headers["X-RateLimit-Remaining"] = str(ip_result.remaining)
-            response.headers["X-RateLimit-Reset"] = str(ip_result.reset_at)
-
-            server_timing = _timing.to_server_timing_header()
-            if server_timing:
-                response.headers["Server-Timing"] = server_timing
-
-            sql_ms, sql_count, redis_ms = _timing.get_summary()
-            response.headers["X-Internal-Sql-Ms"] = f"{sql_ms:.1f}"
-            response.headers["X-Internal-Sql-Count"] = str(sql_count)
-            response.headers["X-Internal-Redis-Ms"] = f"{redis_ms:.1f}"
-        except Exception as rl_err:
-            logger.warning("Error setting rate limit response headers: %s", rl_err)
-
+        # This is the outermost middleware — everything downstream (tenant,
+        # auth, database queries, Upstash cache calls, the handler itself)
+        # has already recorded into the timing bag by the time call_next()
+        # returns here, so this is the only correct place to emit the header.
+        server_timing = _timing.to_server_timing_header()
+        if server_timing:
+            response.headers["Server-Timing"] = server_timing
+        # Same reasoning, exposed as plain headers so RequestLoggingMiddleware
+        # (a DIFFERENT asyncio task per BaseHTTPMiddleware's own dispatch —
+        # see app/core/timing.py get_summary()) can log them without needing
+        # its own copy of the timing contextvar, which would always read
+        # empty. Internal-only — RequestLoggingMiddleware strips these
+        # before the response leaves the process.
+        sql_ms, sql_count, redis_ms = _timing.get_summary()
+        response.headers["X-Internal-Sql-Ms"] = f"{sql_ms:.1f}"
+        response.headers["X-Internal-Sql-Count"] = str(sql_count)
+        response.headers["X-Internal-Redis-Ms"] = f"{redis_ms:.1f}"
         return response
 
     @staticmethod

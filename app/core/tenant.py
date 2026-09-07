@@ -37,12 +37,6 @@ class TenantMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
-        except Exception as exc:
-            from starlette.exceptions import HTTPException as StarletteHTTPException
-            from app.core.error_handlers import unhandled_exception_handler, http_exception_handler
-            if isinstance(exc, StarletteHTTPException):
-                return await http_exception_handler(request, exc)
-            return await unhandled_exception_handler(request, exc)
         finally:
             tenant_store_id.reset(token)
 
