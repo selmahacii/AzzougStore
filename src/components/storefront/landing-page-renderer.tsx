@@ -606,7 +606,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               return (
                 <div className="space-y-4 w-full">
                   <div 
-                    className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"
+                    className="w-full relative rounded-2xl overflow-hidden shadow-md cursor-zoom-in group bg-slate-100/70 border border-slate-200/80 p-1.5"
                     onMouseMove={(e) => {
                       const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
                       const x = ((e.clientX - left) / width) * 100;
@@ -624,7 +624,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       loading="eager"
                       fetchPriority="high"
                       decoding="async"
-                      className="w-full h-auto transition-transform duration-100 ease-out"
+                      className="w-full h-auto rounded-xl object-contain transition-transform duration-100 ease-out"
                       style={{
                         transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                         transform: isZoomed ? 'scale(2)' : 'scale(1)'
