@@ -35,14 +35,8 @@ logger = logging.getLogger("app.inventory")
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
-def _find_matching_variant(variants: list, variant_str: Any) -> Optional[dict]:
+def _find_matching_variant(variants: list, variant_str: str) -> Optional[dict]:
     if not variants or not variant_str:
-        return None
-    
-    if isinstance(variant_str, dict):
-        variant_str = variant_str.get("variant") or variant_str.get("value") or str(variant_str)
-    variant_str = str(variant_str).strip()
-    if not variant_str:
         return None
     
     # Normalize the input variant_str (e.g. "Couleur: Vert Olive, Taille: 42" or "Vert Olive / 42")
@@ -123,58 +117,8 @@ def _find_matching_variant(variants: list, variant_str: Any) -> Optional[dict]:
     return best_variant
 
 
-def _sync_sub_variants_stock(matching_variant: dict, delta: int) -> None:
-    """Keep nested sub_variants stock synchronized when parent variant stock is adjusted."""
-    if matching_variant.get("sub_variants") and len(matching_variant["sub_variants"]) > 0:
-        subs = [sv for sv in matching_variant["sub_variants"] if isinstance(sv, dict)]
-        if not subs:
-            return
-        if len(subs) == 1:
-            subs[0]["stock"] = max(0, int(subs[0].get("stock") or 0) + delta)
-        elif delta > 0:
-            per_sv = delta // len(subs)
-            rem_sv = delta % len(subs)
-            for s_idx, sv in enumerate(subs):
-                sv_qty = per_sv + (1 if s_idx < rem_sv else 0)
-                sv["stock"] = int(sv.get("stock") or 0) + sv_qty
-        else:
-            needed = abs(delta)
-            for sv in subs:
-                if needed <= 0:
-                    break
-                cur = int(sv.get("stock") or 0)
-                deduct = min(cur, needed)
-                sv["stock"] = max(0, cur - deduct)
-                needed -= deduct
-
-
-def _sync_sub_variants_reserved(matching_variant: dict, delta: int) -> None:
-    """Keep nested sub_variants reservations synchronized when parent variant reservations are adjusted."""
-    if matching_variant.get("sub_variants") and len(matching_variant["sub_variants"]) > 0:
-        subs = [sv for sv in matching_variant["sub_variants"] if isinstance(sv, dict)]
-        if not subs:
-            return
-        if len(subs) == 1:
-            subs[0]["reserved"] = max(0, int(subs[0].get("reserved") or 0) + delta)
-        elif delta > 0:
-            per_sv = delta // len(subs)
-            rem_sv = delta % len(subs)
-            for s_idx, sv in enumerate(subs):
-                sv_qty = per_sv + (1 if s_idx < rem_sv else 0)
-                sv["reserved"] = int(sv.get("reserved") or 0) + sv_qty
-        else:
-            needed = abs(delta)
-            for sv in subs:
-                if needed <= 0:
-                    break
-                cur = int(sv.get("reserved") or 0)
-                deduct = min(cur, needed)
-                sv["reserved"] = max(0, cur - deduct)
-                needed -= deduct
-
-
 def _update_product_stock_from_variants(product: Product) -> None:
-    if product.variants and isinstance(product.variants, list):
+    if product.variants:
         total = 0
         total_reserved = 0
         for v in product.variants:
@@ -209,14 +153,11 @@ def _sync_product_availability_and_invalidate_cache(db: Session, product: Produc
 
     try:
         from app.models.landing_page import LandingPage
-        from app.core.cache import invalidate, invalidate_prefix
+        from app.core.cache import invalidate
         lps = db.query(LandingPage).filter(LandingPage.product_id == product.id).all()
         for lp in lps:
             invalidate(f"landing_page:{lp.store_id}:{lp.slug}")
         invalidate(f"product:{product.id}")
-        if getattr(product, "store_id", None):
-            invalidate_prefix(f"product_listing:{product.store_id}")
-        invalidate_prefix("product_listing:all")
     except Exception as exc:
         logger.warning(f"Failed to invalidate landing page cache for product {product.id}: {exc}")
 
@@ -381,7 +322,6 @@ class InventoryService:
                         )
                 
                 matching_variant["reserved"] = v_reserved + quantity
-                _sync_sub_variants_reserved(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -389,12 +329,7 @@ class InventoryService:
                     product_id, variant_str, quantity, order_id, matching_variant["reserved"]
                 )
             else:
-                logger.error(
-                    "reserve_stock: variant '%s' NOT FOUND on product %s which HAS variants — "
-                    "falling back to product-level reservation. This can cause variant/aggregate "
-                    "stock drift. Check variant_details formatting for order %s.",
-                    variant_str, product_id, order_id,
-                )
+                logger.warning("Variant %s not found on product %s, falling back to product-level check", variant_str, product_id)
                 available = product.stock - product.reserved_stock
                 if available < quantity:
                     logger.warning(
@@ -423,6 +358,15 @@ class InventoryService:
 
         product.reserved_stock += quantity
 
+        _record_movement(
+            db,
+            product_id=product_id,
+            movement_type="ORDER_RESERVE",
+            quantity=quantity,
+            order_id=order_id,
+            actor_id=actor_id,
+            reason=f"Réservation stock pour commande {order_id} ({variant_str or 'Général'})",
+        )
         logger.info(
             "Stock reserved: product=%s qty=%d order=%s (new reserved_stock=%d)",
             product_id, quantity, order_id, product.reserved_stock,
@@ -462,8 +406,6 @@ class InventoryService:
                 # Deduct variant physical stock & release reservation
                 matching_variant["stock"] = max(0, v_stock - quantity)
                 matching_variant["reserved"] = max(0, v_reserved - quantity)
-                _sync_sub_variants_stock(matching_variant, -quantity)
-                _sync_sub_variants_reserved(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 
                 # Recalculate total product stock
@@ -488,7 +430,6 @@ class InventoryService:
             actor_id=actor_id,
             reason=f"Vente confirmée pour commande {order_id} ({variant_str or 'Général'})",
         )
-        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Stock confirmed: product=%s qty=%d order=%s (stock=%d, reserved=%d)",
             product_id, quantity, order_id, product.stock, product.reserved_stock,
@@ -523,7 +464,6 @@ class InventoryService:
             if matching_variant:
                 v_reserved = int(matching_variant.get("reserved") or 0)
                 matching_variant["reserved"] = max(0, v_reserved - quantity)
-                _sync_sub_variants_reserved(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -533,6 +473,15 @@ class InventoryService:
 
         product.reserved_stock = max(0, product.reserved_stock - quantity)
 
+        _record_movement(
+            db,
+            product_id=product_id,
+            movement_type="ORDER_RELEASE",
+            quantity=quantity,
+            order_id=order_id,
+            actor_id=actor_id,
+            reason=f"Libération réservation pour commande {order_id} ({variant_str or 'Général'})",
+        )
         logger.info(
             "Reservation released: product=%s qty=%d order=%s (reserved=%d)",
             product_id, quantity, order_id, product.reserved_stock,
@@ -552,80 +501,31 @@ class InventoryService:
     ) -> None:
         """
         Restock returned goods (CONFIRMED/SHIPPED/DELIVERED → RETURNED).
-
-        Idempotent: if a RETURN_RESTOCK movement already exists for this
-        (order_id, product_id) pair, the call is a safe no-op. This prevents
-        double-restocking on network retries, double-clicks, or accidental
-        repeated status transitions that would otherwise inflate stock.
         """
         if quantity <= 0:
             raise ValueError(f"Return restock quantity must be positive, got {quantity}")
 
-        # ── Idempotency guard ────────────────────────────────────────────
-        # Check BEFORE acquiring the row lock (the EXISTS query is read-only
-        # and cheap). If the movement is already there we skip completely —
-        # no lock, no write, no log noise beyond the warning below.
-        if order_id:
-            already_restocked = (
-                db.query(StockMovement.id)
-                .filter(
-                    StockMovement.order_id == order_id,
-                    StockMovement.product_id == product_id,
-                    StockMovement.type == "RETURN_RESTOCK",
-                )
-                .first()
-            )
-            if already_restocked:
-                logger.warning(
-                    "return_restock: RETURN_RESTOCK already exists for order=%s product=%s — "
-                    "skipping to prevent double-restock (idempotent no-op).",
-                    order_id, product_id,
-                )
-                return
-
         product = _lock_product(db, product_id)
-
+        
         variant_str = None
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if product.variants and len(product.variants) > 0:
-            matching_variant = None
-            if variant_str:
-                matching_variant = _find_matching_variant(product.variants, variant_str)
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
-                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
+                
+                # Recalculate total product stock
                 _update_product_stock_from_variants(product)
                 logger.info(
                     "Variant stock restocked: product=%s variant=%s qty=%d order=%s (new stock=%d)",
                     product_id, variant_str, quantity, order_id, matching_variant["stock"]
                 )
-            elif len(product.variants) == 1:
-                v = product.variants[0]
-                if isinstance(v, dict):
-                    v["stock"] = int(v.get("stock") or 0) + quantity
-                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                        sv0 = v["sub_variants"][0]
-                        if isinstance(sv0, dict):
-                            sv0["stock"] = int(sv0.get("stock") or 0) + quantity
-                    flag_modified(product, "variants")
-                    _update_product_stock_from_variants(product)
             else:
-                per_v = quantity // len(product.variants)
-                rem = quantity % len(product.variants)
-                for idx, v in enumerate(product.variants):
-                    if isinstance(v, dict):
-                        v_qty = per_v + (1 if idx < rem else 0)
-                        v["stock"] = int(v.get("stock") or 0) + v_qty
-                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                            sv0 = v["sub_variants"][0]
-                            if isinstance(sv0, dict):
-                                sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
-                flag_modified(product, "variants")
-                _update_product_stock_from_variants(product)
+                product.stock += quantity
         else:
             product.stock += quantity
 
@@ -638,7 +538,6 @@ class InventoryService:
             actor_id=actor_id,
             reason=f"Retour marchandise pour commande {order_id} ({variant_str or 'Général'})",
         )
-        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
             "Return restocked: product=%s qty=%d order=%s (new stock=%d)",
             product_id, quantity, order_id, product.stock,
@@ -672,46 +571,17 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if product.variants and len(product.variants) > 0:
-            matching_variant = None
-            if variant_str:
-                matching_variant = _find_matching_variant(product.variants, variant_str)
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 matching_variant["stock"] = v_stock + quantity
-                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
-            elif len(product.variants) == 1:
-                v = product.variants[0]
-                if isinstance(v, dict):
-                    v["stock"] = int(v.get("stock") or 0) + quantity
-                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                        sv0 = v["sub_variants"][0]
-                        if isinstance(sv0, dict):
-                            sv0["stock"] = int(sv0.get("stock") or 0) + quantity
-                    flag_modified(product, "variants")
-                    _update_product_stock_from_variants(product)
             else:
-                # Distribute quantity evenly across variants so sub-stocks and aggregate stock remain 100% in sync
-                per_v = quantity // len(product.variants)
-                rem = quantity % len(product.variants)
-                for idx, v in enumerate(product.variants):
-                    if isinstance(v, dict):
-                        v_qty = per_v + (1 if idx < rem else 0)
-                        v["stock"] = int(v.get("stock") or 0) + v_qty
-                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                            sv0 = v["sub_variants"][0]
-                            if isinstance(sv0, dict):
-                                sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
-                flag_modified(product, "variants")
-                _update_product_stock_from_variants(product)
+                product.stock += quantity
         else:
             product.stock += quantity
-
-        reason_text = reason or f"Réapprovisionnement manuel ({variant_str or 'Général'})"
-        if variant_str and f"({variant_str})" not in reason_text:
-            reason_text = f"{reason_text} ({variant_str})"
 
         _record_movement(
             db,
@@ -721,7 +591,7 @@ class InventoryService:
             order_id=None,
             actor_id=actor_id,
             warehouse_id=warehouse_id,
-            reason=reason_text,
+            reason=reason or f"Réapprovisionnement manuel ({variant_str or 'Général'})",
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("Manual restock: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
@@ -773,7 +643,6 @@ class InventoryService:
                         available=available,
                     )
                 matching_variant["stock"] = max(0, v_stock - quantity)
-                _sync_sub_variants_stock(matching_variant, -quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
                 logger.info(
@@ -799,7 +668,6 @@ class InventoryService:
             actor_id=actor_id,
             reason=reason or f"Vente au comptoir ({variant_str or 'Général'})",
         )
-        _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("POS sale: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
         return product
 
@@ -827,11 +695,8 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if product.variants and len(product.variants) > 0:
-            matching_variant = None
-            if variant_str:
-                matching_variant = _find_matching_variant(product.variants, variant_str)
-
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 new_v_stock = v_stock + quantity
@@ -842,58 +707,17 @@ class InventoryService:
                         available=max(0, v_stock),
                     )
                 matching_variant["stock"] = max(0, new_v_stock)
-                _sync_sub_variants_stock(matching_variant, quantity)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
-            elif len(product.variants) == 1:
-                v = product.variants[0]
-                if isinstance(v, dict):
-                    v_stock = int(v.get("stock") or 0)
-                    new_v_stock = v_stock + quantity
-                    if quantity < 0 and new_v_stock < 0:
-                        raise InsufficientStockError(
-                            product_id=f"{product_id} ({v.get('value') or 'Défaut'})",
-                            requested=abs(quantity),
-                            available=max(0, v_stock),
-                        )
-                    v["stock"] = max(0, new_v_stock)
-                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                        sv0 = v["sub_variants"][0]
-                        if isinstance(sv0, dict):
-                            sv0["stock"] = max(0, int(sv0.get("stock") or 0) + quantity)
-                    flag_modified(product, "variants")
-                    _update_product_stock_from_variants(product)
             else:
-                if quantity > 0:
-                    per_v = quantity // len(product.variants)
-                    rem = quantity % len(product.variants)
-                    for idx, v in enumerate(product.variants):
-                        if isinstance(v, dict):
-                            v_qty = per_v + (1 if idx < rem else 0)
-                            v["stock"] = int(v.get("stock") or 0) + v_qty
-                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                                sv0 = v["sub_variants"][0]
-                                if isinstance(sv0, dict):
-                                    sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
-                else:
-                    needed = abs(quantity)
-                    total_avail = sum(max(0, int(v.get("stock") or 0)) for v in product.variants if isinstance(v, dict))
-                    if total_avail < needed:
-                        raise InsufficientStockError(product_id=product_id, requested=needed, available=total_avail)
-                    for v in product.variants:
-                        if needed <= 0:
-                            break
-                        if isinstance(v, dict):
-                            cur = int(v.get("stock") or 0)
-                            deduct = min(cur, needed)
-                            v["stock"] = cur - deduct
-                            needed -= deduct
-                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                                sv0 = v["sub_variants"][0]
-                                if isinstance(sv0, dict):
-                                    sv0["stock"] = max(0, int(sv0.get("stock") or 0) - deduct)
-                flag_modified(product, "variants")
-                _update_product_stock_from_variants(product)
+                new_stock = product.stock + quantity
+                if quantity < 0 and new_stock < 0:
+                    raise InsufficientStockError(
+                        product_id=product_id,
+                        requested=abs(quantity),
+                        available=max(0, product.stock),
+                    )
+                product.stock = max(0, new_stock)
         else:
             new_stock = product.stock + quantity
             if quantity < 0 and new_stock < 0:
@@ -904,17 +728,13 @@ class InventoryService:
                 )
             product.stock = max(0, new_stock)
 
-        reason_text = reason or f"Ajustement manuel ({variant_str or 'Général'})"
-        if variant_str and f"({variant_str})" not in reason_text:
-            reason_text = f"{reason_text} ({variant_str})"
-
         _record_movement(
             db,
             product_id=product_id,
             movement_type="MANUAL_ADJUSTMENT",
             quantity=quantity,
             actor_id=actor_id,
-            reason=reason_text,
+            reason=reason,
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
@@ -961,11 +781,8 @@ class InventoryService:
         if variant_details and isinstance(variant_details, dict):
             variant_str = variant_details.get("variant")
 
-        if product.variants and len(product.variants) > 0:
-            matching_variant = None
-            if variant_str:
-                matching_variant = _find_matching_variant(product.variants, variant_str)
-
+        if variant_str and product.variants:
+            matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
                 v_stock = int(matching_variant.get("stock") or 0)
                 v_reserved = int(matching_variant.get("reserved") or 0)
@@ -977,59 +794,17 @@ class InventoryService:
                         available=v_stock - v_reserved,
                     )
                 matching_variant["stock"] = new_v_stock
-                _sync_sub_variants_stock(matching_variant, quantity_delta)
                 flag_modified(product, "variants")
                 _update_product_stock_from_variants(product)
-            elif len(product.variants) == 1:
-                v = product.variants[0]
-                if isinstance(v, dict):
-                    v_stock = int(v.get("stock") or 0)
-                    v_reserved = int(v.get("reserved") or 0)
-                    new_v_stock = v_stock + quantity_delta
-                    if new_v_stock < 0 or (new_v_stock - v_reserved) < 0:
-                        raise InsufficientStockError(
-                            product_id=f"{product_id} ({v.get('value') or 'Défaut'})",
-                            requested=abs(quantity_delta),
-                            available=v_stock - v_reserved,
-                        )
-                    v["stock"] = new_v_stock
-                    if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                        sv0 = v["sub_variants"][0]
-                        if isinstance(sv0, dict):
-                            sv0["stock"] = new_v_stock
-                    flag_modified(product, "variants")
-                    _update_product_stock_from_variants(product)
             else:
-                if quantity_delta > 0:
-                    per_v = quantity_delta // len(product.variants)
-                    rem = quantity_delta % len(product.variants)
-                    for idx, v in enumerate(product.variants):
-                        if isinstance(v, dict):
-                            v_qty = per_v + (1 if idx < rem else 0)
-                            v["stock"] = int(v.get("stock") or 0) + v_qty
-                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                                sv0 = v["sub_variants"][0]
-                                if isinstance(sv0, dict):
-                                    sv0["stock"] = int(sv0.get("stock") or 0) + v_qty
-                else:
-                    needed = abs(quantity_delta)
-                    total_avail = sum(max(0, int(v.get("stock") or 0) - int(v.get("reserved") or 0)) for v in product.variants if isinstance(v, dict))
-                    if total_avail < needed:
-                        raise InsufficientStockError(product_id=product_id, requested=needed, available=total_avail)
-                    for v in product.variants:
-                        if needed <= 0:
-                            break
-                        if isinstance(v, dict):
-                            avail_v = max(0, int(v.get("stock") or 0) - int(v.get("reserved") or 0))
-                            deduct = min(avail_v, needed)
-                            v["stock"] = int(v.get("stock") or 0) - deduct
-                            needed -= deduct
-                            if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                                sv0 = v["sub_variants"][0]
-                                if isinstance(sv0, dict):
-                                    sv0["stock"] = max(0, int(sv0.get("stock") or 0) - deduct)
-                flag_modified(product, "variants")
-                _update_product_stock_from_variants(product)
+                new_stock = product.stock + quantity_delta
+                reserved = product.reserved_stock or 0
+                if new_stock < 0 or new_stock < reserved:
+                    raise InsufficientStockError(
+                        product_id=product_id, requested=abs(quantity_delta),
+                        available=max(0, product.stock - reserved),
+                    )
+                product.stock = new_stock
         else:
             new_stock = product.stock + quantity_delta
             reserved = product.reserved_stock or 0
@@ -1040,13 +815,9 @@ class InventoryService:
                 )
             product.stock = new_stock
 
-        reason_text = reason
-        if variant_str and f"({variant_str})" not in reason_text:
-            reason_text = f"{reason_text} ({variant_str})"
-
         _record_movement(
             db, product_id=product_id, movement_type=movement_type, quantity=quantity_delta,
-            order_id=order_id, actor_id=actor_id, reason=reason_text, warehouse_id=warehouse_id,
+            order_id=order_id, actor_id=actor_id, reason=reason, warehouse_id=warehouse_id,
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info(
@@ -1054,137 +825,6 @@ class InventoryService:
             product_id, movement_type, quantity_delta, product.stock,
         )
         return product
-
-    def reconcile_and_fix_all_stock(self, db: Session) -> dict:
-        """
-        Scans all orders and stock movements to:
-        1. Purge orphan/deleted order movements and duplicate logs.
-        2. Restore physical stock over-deducted by past duplicate updates.
-        3. Recalculate physical and reserved stock from real shipped & pending orders.
-        """
-        from app.models.stock import StockMovement
-        from app.models.product import Product
-        from app.models.order import Order, OrderItem
-        from sqlalchemy.orm import attributes
-
-        stats = {
-            "duplicate_movements_deleted": 0,
-            "stock_restored_units": 0,
-            "products_reconciled": 0,
-        }
-
-        db.info["skip_tenant_isolation"] = True
-
-        # 0. Purge ORDER_RESERVE, ORDER_RELEASE, and orphan movements (only real CONFIRMED sales and RESTOCKS remain)
-        reserve_release_movements = db.query(StockMovement).filter(
-            StockMovement.type.in_(["ORDER_RESERVE", "ORDER_RELEASE"])
-        ).all()
-        for rrm in reserve_release_movements:
-            db.delete(rrm)
-            stats["duplicate_movements_deleted"] += 1
-
-        valid_orders = db.query(Order.id, Order.status).filter((Order.is_deleted == False) | (Order.is_deleted.is_(None))).all()
-        valid_order_map = {r[0]: r[1] for r in valid_orders}
-        valid_order_ids = set(valid_order_map.keys())
-
-        orphan_movements = db.query(StockMovement).filter(
-            StockMovement.order_id.isnot(None),
-            ~StockMovement.order_id.in_(valid_order_ids)
-        ).all()
-        for om in orphan_movements:
-            db.delete(om)
-            stats["duplicate_movements_deleted"] += 1
-
-        db.flush()
-
-        # 1. Clean duplicate movements per (order_id, product_id, type, reason)
-        movements = db.query(StockMovement).filter(StockMovement.order_id.isnot(None)).all()
-        grouped: dict = {}
-        for m in movements:
-            key = (m.order_id, m.product_id, m.type, m.reason or "")
-            grouped.setdefault(key, []).append(m)
-
-        for key, m_list in grouped.items():
-            if len(m_list) > 1:
-                # Keep earliest movement record, delete duplicates
-                m_list.sort(key=lambda x: x.created_at or "")
-                duplicates = m_list[1:]
-                for dup in duplicates:
-                    db.delete(dup)
-                    stats["duplicate_movements_deleted"] += 1
-
-                    # If this was a duplicate ORDER_CONFIRM movement that over-deducted physical stock,
-                    # restore the deducted physical stock back to product/variant!
-                    if dup.type == "ORDER_CONFIRM":
-                        product = db.query(Product).filter(Product.id == dup.product_id).first()
-                        if product:
-                            qty_to_restore = abs(dup.quantity or 0)
-                            if qty_to_restore > 0:
-                                stats["stock_restored_units"] += qty_to_restore
-                                variant_str = None
-                                if dup.reason and "(" in dup.reason and ")" in dup.reason:
-                                    variant_str = dup.reason.split("(")[-1].split(")")[0].strip()
-                                    if variant_str == "Général":
-                                        variant_str = None
-
-                                if variant_str and product.variants:
-                                    mv = _find_matching_variant(product.variants, variant_str)
-                                    if mv:
-                                        mv["stock"] = int(mv.get("stock") or 0) + qty_to_restore
-                                        _sync_sub_variants_stock(mv, qty_to_restore)
-                                        attributes.flag_modified(product, "variants")
-                                        _update_product_stock_from_variants(product)
-                                else:
-                                    product.stock = (product.stock or 0) + qty_to_restore
-
-        db.flush()
-
-        # 2. Recalculate reserved_stock and verify physical stock against real order items
-        pending_statuses = {"NEW", "ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "PENDING"}
-        confirmed_statuses = {"CONFIRMED", "SHIPPED", "DELIVERED", "COMPLETED", "PAID"}
-
-        products = db.query(Product).all()
-
-        for product in products:
-            stats["products_reconciled"] += 1
-
-            # Real pending order items
-            pending_items = (
-                db.query(OrderItem)
-                .join(Order, OrderItem.order_id == Order.id)
-                .filter(OrderItem.product_id == product.id, Order.status.in_(pending_statuses), (Order.is_deleted == False) | (Order.is_deleted.is_(None)))
-                .all()
-            )
-            total_pending_qty = sum(item.quantity or 0 for item in pending_items)
-            product.reserved_stock = total_pending_qty
-
-            if product.variants and isinstance(product.variants, list):
-                for v in product.variants:
-                    if isinstance(v, dict):
-                        v["reserved"] = 0
-                        if v.get("sub_variants"):
-                            for sv in v["sub_variants"]:
-                                if isinstance(sv, dict):
-                                    sv["reserved"] = 0
-
-                for item in pending_items:
-                    v_str = None
-                    if item.variant_details and isinstance(item.variant_details, dict):
-                        v_str = item.variant_details.get("variant")
-
-                    if v_str:
-                        mv = _find_matching_variant(product.variants, v_str)
-                        if mv:
-                            mv["reserved"] = int(mv.get("reserved") or 0) + (item.quantity or 0)
-                            _sync_sub_variants_reserved(mv, item.quantity or 0)
-
-                attributes.flag_modified(product, "variants")
-                _update_product_stock_from_variants(product)
-
-            _sync_product_availability_and_invalidate_cache(db, product)
-
-        db.commit()
-        return stats
 
 
 # Singleton — import this in services and routers

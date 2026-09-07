@@ -153,8 +153,6 @@ def run_db_migrations():
         "UPDATE orders SET delivery_fee = CASE WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('16', 'alger') THEN 400 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('9', 'blida', '35', 'boumerdès', 'boumerdes', '42', 'tipaza') THEN 500 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('19', 'sétif', 'setif', '23', 'annaba', '25', 'constantine', '31', 'oran') THEN 600 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('3', 'laghouat', '30', 'ouargla', '32', 'el bayadh', '38', 'tissemsilt', '45', 'naâma', 'naama', '47', 'ghardaïa', 'ghardaia', '51', 'ouled djellal', '55', 'touggourt', '57', 'el m''ghair', 'el mghair', '58', 'el meniaa') THEN 950 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('1', 'adrar', '8', 'béchar', 'bechar', '11', 'tamanrasset', '33', 'illizi', '37', 'tindouf', '49', 'timimoun', '50', 'bordj badji mokhtar', '52', 'béni abbès', 'beni abbes', '53', 'in salah', '54', 'in guezzam', '56', 'djanet') THEN 1200 ELSE 800 END WHERE (delivery_fee IS NULL OR delivery_fee = 0) AND customer_wilaya IS NOT NULL AND TRIM(customer_wilaya) != ''",
         "UPDATE orders SET subtotal = CASE WHEN (subtotal IS NULL OR subtotal = 0) THEN (total - COALESCE(delivery_fee, 0)) ELSE subtotal END, total = (CASE WHEN (subtotal IS NOT NULL AND subtotal > 0) THEN subtotal ELSE (total - COALESCE(delivery_fee, 0)) END) - COALESCE(discount, 0) + COALESCE(delivery_fee, 0) WHERE is_deleted IS FALSE OR is_deleted IS NULL",
         "UPDATE orders SET is_abandoned_cart = FALSE, status = 'NEW', order_number = REPLACE(order_number, 'ABN-', 'ORD-') WHERE (store_sequence_number IN (830, 831, 832, 833) OR order_number LIKE '%830%' OR order_number LIKE '%831%' OR order_number LIKE '%832%' OR order_number LIKE '%833%') AND status != 'CANCELLED'",
-        "DELETE FROM stock_movements WHERE type IN ('ORDER_RESERVE', 'ORDER_RELEASE')",
-        "UPDATE orders SET status = 'SHIPPED' WHERE tracking_number IS NOT NULL AND TRIM(tracking_number) != '' AND status IN ('NEW', 'ASSIGNED', 'CALLED', 'ABANDONED', 'IN_PROGRESS', 'RESCHEDULED') AND (is_deleted IS FALSE OR is_deleted IS NULL)",
     ]
 
     for stmt in statements:
@@ -177,15 +175,6 @@ def run_db_migrations():
             print(f"[OK] Executed delivered orders batch migration script ({len(sql_commands)} statements).")
     except Exception as e:
         print(f"[WARN] Failed to execute delivered orders migration script: {e}")
-
-    # Reconcile duplicate stock movements, restore physical stock, and refresh reservation counts
-    try:
-        from app.services.inventory_service import inventory_service
-        with SessionLocal() as db_session:
-            reconcile_stats = inventory_service.reconcile_and_fix_all_stock(db_session)
-            print(f"[OK] Automatic stock reconciliation on startup completed: {reconcile_stats}")
-    except Exception as e:
-        print(f"[WARN] Automatic stock reconciliation failed: {e}")
 
     print("[OK] Startup migrations finished — database connection is live.")
 
@@ -348,77 +337,6 @@ def run_db_migrations():
     except Exception as exc:
         print(f"[WARN] Clean up merged parent orders skipped: {exc}")
 
-
-def _reconcile_sub_variants_and_restore_stock() -> None:
-    """
-    Auto-healing startup audit:
-    Checks for products that had RESTOCK movements where the variant's stock
-    was erroneously wiped back to sub_variant baseline (e.g. Bordeaux variant 74 vs 174).
-    If found, applies the missing restock quantity to both sub_variants and parent variant,
-    recalculates product.stock, and logs the reconciliation.
-    """
-    from app.db.session import SessionLocal
-    from app.models.product import Product
-    from app.models.stock import StockMovement
-    from sqlalchemy.orm.attributes import flag_modified
-    from sqlalchemy import desc
-    import logging
-
-    log = logging.getLogger("app.startup")
-    db = SessionLocal()
-    try:
-        products = db.query(Product).filter(Product.variants.isnot(None)).all()
-        reconciled_count = 0
-        for p in products:
-            if not p.variants or not isinstance(p.variants, list):
-                continue
-            
-            modified = False
-            movements = (
-                db.query(StockMovement)
-                .filter(StockMovement.product_id == p.id, StockMovement.type == "RESTOCK")
-                .order_by(desc(StockMovement.created_at))
-                .limit(10)
-                .all()
-            )
-            
-            for m in movements:
-                reason_str = (m.reason or "").lower()
-                for v in p.variants:
-                    if not isinstance(v, dict):
-                        continue
-                    v_val = str(v.get("value") or "").lower()
-                    if v_val and (v_val in reason_str or f"({v_val})" in reason_str):
-                        if v.get("sub_variants") and len(v["sub_variants"]) > 0:
-                            sub_sum = sum(int(sv.get("stock") or 0) for sv in v["sub_variants"] if isinstance(sv, dict))
-                            # Check if the variant was wiped or left at <= 74 when a 100-piece restock occurred
-                            if m.quantity == 100 and sub_sum <= 74:
-                                log.info(
-                                    f"[StockReconcile] Detected wiped restock on product {p.id}, variant {v.get('value')}! "
-                                    f"Restoring +{m.quantity} units (74 -> 174)."
-                                )
-                                for sv in v["sub_variants"]:
-                                    if isinstance(sv, dict):
-                                        sv["stock"] = int(sv.get("stock") or 0) + m.quantity
-                                v["stock"] = sub_sum + m.quantity
-                                modified = True
-            
-            if modified:
-                flag_modified(p, "variants")
-                total = sum(int(v.get("stock") or 0) for v in p.variants if isinstance(v, dict))
-                p.stock = total
-                reconciled_count += 1
-        
-        if reconciled_count > 0:
-            db.commit()
-            log.info(f"[StockReconcile] Successfully reconciled stock for {reconciled_count} product(s).")
-    except Exception as exc:
-        db.rollback()
-        log.warning(f"[StockReconcile] Reconcile skipped: {exc}")
-    finally:
-        db.close()
-
-
 def _acquire_scheduler_leader_lock() -> bool:
     """
     True iff this process wins an exclusive, non-blocking lock — used to run
@@ -449,7 +367,6 @@ def _acquire_scheduler_leader_lock() -> bool:
 async def start_background_sync():
     """Noest polling + reminder scheduler (see app/services/noest_sync.py) — leader-only, see _acquire_scheduler_leader_lock."""
     import asyncio
-    _reconcile_sub_variants_and_restore_stock()
     if not _acquire_scheduler_leader_lock():
         logging.getLogger("app.startup").info("[Scheduler] Another worker already holds the leader lock — skipping background_loop in this worker.")
         return
@@ -1038,8 +955,7 @@ except Exception as e:
     traceback.print_exc()
 
 # ─── Health & System Endpoints ───────────────────────────────
-@app.get("/", tags=["système"], operation_id="root_get")
-@app.head("/", tags=["système"], operation_id="root_head")
+@app.api_route("/", methods=["GET", "HEAD"], tags=["système"])
 async def root():
     return {
         "status": "online",
@@ -1049,8 +965,7 @@ async def root():
     }
 
 
-@app.get("/health", tags=["système"], operation_id="health_check_get")
-@app.head("/health", tags=["système"], operation_id="health_check_head")
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["système"])
 async def health_check():
     """Health check endpoint for load balancers and Docker healthcheck."""
     return {"status": "healthy", "version": settings.VERSION}

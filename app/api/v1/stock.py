@@ -41,7 +41,6 @@ _MANUAL_TYPES = {"RESTOCK", "MANUAL_ADJUSTMENT"}
 
 # ─── GET /stock/ — List movements ────────────────────────────────────────────
 
-@router.get("", response_model=MovementPagination, include_in_schema=False)
 @router.get("/", response_model=MovementPagination)
 def list_movements(
     store_id: Optional[str] = None,
@@ -55,7 +54,7 @@ def list_movements(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     page: int = Query(1, ge=1),
-    pageSize: int = Query(20, ge=1, le=2000),
+    pageSize: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -94,8 +93,6 @@ def list_movements(
         )
     if movement_type:
         query = query.filter(StockMovement.type == movement_type)
-    else:
-        query = query.filter(~StockMovement.type.in_(["ORDER_RESERVE", "ORDER_RELEASE"]))
     if warehouse_id:
         query = query.filter(StockMovement.warehouse_id == warehouse_id)
     if actor_id:
@@ -133,21 +130,10 @@ def list_movements(
     warehouse_ids = {m.warehouse_id for m in movements if m.warehouse_id}
     product_ids = {m.product_id for m in movements if m.product_id}
 
-    orders_info = {}
+    order_numbers = {}
     if order_ids:
         from app.models.order import Order
-        order_rows = db.query(
-            Order.id, Order.order_number, Order.customer_name, Order.customer_phone, Order.status
-        ).filter(Order.id.in_(order_ids)).all()
-        orders_info = {
-            r[0]: {
-                "order_number": r[1],
-                "customer_name": r[2],
-                "customer_phone": r[3],
-                "order_status": r[4],
-            }
-            for r in order_rows
-        }
+        order_numbers = dict(db.query(Order.id, Order.order_number).filter(Order.id.in_(order_ids)).all())
 
     warehouse_names = {}
     if warehouse_ids:
@@ -158,29 +144,10 @@ def list_movements(
     if product_ids:
         product_names = dict(db.query(Product.id, Product.name).filter(Product.id.in_(product_ids)).all())
 
-    import re
-    variant_pattern = re.compile(r"(?:\(([^)]+)\)$|•\s*Variante\s*:\s*([^\r\n]+)|Variante\s*:\s*([^\r\n]+))", re.IGNORECASE)
-
     for m in movements:
-        ord_info = orders_info.get(m.order_id)
-        if ord_info:
-            m.order_number = ord_info["order_number"]
-            m.customer_name = ord_info["customer_name"]
-            m.customer_phone = ord_info["customer_phone"]
-            m.order_status = ord_info["order_status"]
-        else:
-            m.order_number = None
-            m.customer_name = None
-            m.customer_phone = None
-            m.order_status = None
+        m.order_number = order_numbers.get(m.order_id)
         m.warehouse_name = warehouse_names.get(m.warehouse_id)
         m.product_name = product_names.get(m.product_id)
-        v_name = None
-        if m.reason:
-            match = variant_pattern.search(m.reason)
-            if match:
-                v_name = (match.group(1) or match.group(2) or match.group(3) or "").strip()
-        m.variant_name = v_name if v_name and v_name != "Général" else None
 
     return {
         "success": True,
@@ -656,7 +623,6 @@ def get_lot_history(
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                     "actor": m.actor.name if m.actor else None,
                     "order_number": orders.get(m.order_id),
-                    "variant_name": (re.search(r"\(([^)]+)\)$", m.reason).group(1).strip() if m.reason and re.search(r"\(([^)]+)\)$", m.reason) else None),
                 }
                 for m in movements
             ],
@@ -843,8 +809,6 @@ def get_returns_by_variant(
 @router.get("/product/{product_id}/breakdown", response_model=dict)
 def get_product_stock_breakdown(
     product_id: str,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -873,53 +837,9 @@ def get_product_stock_breakdown(
         .scalar() or 0
     )
 
-    from app.models.order import Order, OrderItem
-
-    retourne_query = (
-        db.query(sqlfunc.coalesce(sqlfunc.sum(OrderItem.quantity), 0))
-        .join(Order, Order.id == OrderItem.order_id)
-        .filter(
-            OrderItem.product_id == product_id,
-            Order.status == "RETURNED",
-            Order.is_deleted == False,
-        )
-    )
-    livree_query = (
-        db.query(sqlfunc.coalesce(sqlfunc.sum(OrderItem.quantity), 0))
-        .join(Order, Order.id == OrderItem.order_id)
-        .filter(
-            OrderItem.product_id == product_id,
-            Order.status == "DELIVERED",
-            Order.is_deleted == False,
-        )
-    )
-    marge_query = (
-        db.query(sqlfunc.coalesce(sqlfunc.sum((OrderItem.unit_price - (p.cost_price or 0)) * OrderItem.quantity), 0))
-        .join(Order, Order.id == OrderItem.order_id)
-        .filter(
-            OrderItem.product_id == product_id,
-            Order.status == "DELIVERED",
-            Order.is_deleted == False,
-        )
-    )
-    
-    from app.core.dates import parse_local_date_filter
-    if date_from:
-        start_dt = parse_local_date_filter(date_from, is_end_of_day=False)
-        if start_dt:
-            retourne_query = retourne_query.filter(Order.created_at >= start_dt)
-            livree_query = livree_query.filter(Order.created_at >= start_dt)
-            marge_query = marge_query.filter(Order.created_at >= start_dt)
-    if date_to:
-        end_dt = parse_local_date_filter(date_to, is_end_of_day=True)
-        if end_dt:
-            retourne_query = retourne_query.filter(Order.created_at <= end_dt)
-            livree_query = livree_query.filter(Order.created_at <= end_dt)
-            marge_query = marge_query.filter(Order.created_at <= end_dt)
-            
-    retourne = int(retourne_query.scalar() or 0)
-    livree = int(livree_query.scalar() or 0)
-    marge_generee = float(marge_query.scalar() or 0)
+    retourne = db.query(sqlfunc.coalesce(sqlfunc.sum(StockMovement.quantity), 0)).filter(
+        StockMovement.product_id == product_id, StockMovement.type == "RETURN_RESTOCK"
+    ).scalar() or 0
 
     en_transfert = db.query(sqlfunc.coalesce(sqlfunc.sum(sqlfunc.abs(StockMovement.quantity)), 0)).filter(
         StockMovement.product_id == product_id, StockMovement.type.in_(("TRANSFER_OUT", "TRANSFER_IN")),
@@ -941,8 +861,6 @@ def get_product_stock_breakdown(
             "stock_disponible": disponible,
             "stock_en_commande": int(en_commande),
             "stock_retourne": int(retourne),
-            "stock_livree": int(livree),
-            "marge_generee": marge_generee,
             "stock_en_transfert": int(en_transfert),
             "stock_minimum": p.low_stock_threshold or 5,
             "valeur": physique * (p.cost_price or 0),
@@ -1201,20 +1119,3 @@ def create_movement(
         if isinstance(e, (InsufficientStockError, ValidationError, ProductNotFoundError, PermissionError)):
             raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/reconcile-all")
-def reconcile_all_stock_endpoint(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-):
-    """
-    Purges past duplicate stock movement logs, recalculates reservation counts,
-    and restores physical stock over-deducted by past duplicate updates.
-    """
-    if getattr(current_user, "role", "") not in {"ADMIN", "SUPERADMIN"}:
-        raise HTTPException(status_code=403, detail="Réservé aux administrateurs")
-    
-    stats = inventory_service.reconcile_and_fix_all_stock(db)
-    return {"success": True, "data": stats}
-

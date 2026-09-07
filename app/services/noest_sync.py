@@ -258,12 +258,6 @@ async def _sync_partner(db: Session, partner: DeliveryPartner) -> int:
             continue
         new_status = _extract_terminal_status(parcel)
 
-        # If an order has a live carrier parcel but its status is still pre-SHIPPED
-        # (e.g. NEW, ASSIGNED, CALLED), automatically advance it to SHIPPED.
-        if order.status in ("NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED") and not new_status:
-            order.status = "SHIPPED"
-            db.add(order)
-
         # Write Noest's own granular stage on EVERY poll, terminal or not —
         # this is what lets a confirmatrice see real-time carrier progress
         # (fdr_activated → "En livraison", etc.) instead of only our own

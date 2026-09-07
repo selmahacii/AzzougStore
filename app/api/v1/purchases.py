@@ -231,34 +231,9 @@ def update_purchase(purchase_id: str, payload: PurchaseUpdate, db: Session = Dep
                 db.add(tx)
 
     if "reception_status" in update_data:
-        prev_reception_status = str(purchase.reception_status.value if hasattr(purchase.reception_status, "value") else purchase.reception_status)
         purchase.reception_status = update_data["reception_status"]
         if update_data["reception_status"] == "RECEIVED":
             purchase.received_at = datetime.now(timezone.utc).replace(tzinfo=None)  # type: ignore[assignment]
-            # Restock product stock for each received item — only on the first
-            # RECEIVED transition (guard: previous status was not already RECEIVED)
-            # to prevent double-restocking if this PATCH is called twice.
-            # Uses InventoryService (locking + variant-aware resolution +
-            # StockMovement recording), same as purchase_vouchers.py's validate
-            # endpoint — no direct product.stock mutation.
-            if prev_reception_status != "RECEIVED":
-                from app.models.product import Product as _Product
-                from app.services.inventory_service import inventory_service as _inv
-                for item in purchase.items:
-                    if not item.product_id:
-                        continue
-                    qty = getattr(item, "received_quantity", None) or item.quantity
-                    if not qty or qty <= 0:
-                        continue
-                    product_exists = db.query(_Product.id).filter(_Product.id == item.product_id).first() is not None
-                    if product_exists:
-                        _inv.restock(
-                            db,
-                            product_id=item.product_id,
-                            quantity=qty,
-                            warehouse_id=purchase.warehouse_id,
-                            reason=f"Réception commande fournisseur {purchase.reference}",
-                        )
 
     if "payment_status" in update_data:
         purchase.payment_status = update_data["payment_status"]

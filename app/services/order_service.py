@@ -1579,11 +1579,6 @@ class OrderService:
                 except Exception as exc:
                     logger.warning("Could not push note update to Noest for order %s: %s", order.id, exc)
 
-        # If an order has a tracking number and its status is sitting at pre-SHIPPED
-        # (e.g. NEW, ASSIGNED, CALLED), automatically promote it to SHIPPED.
-        if order.tracking_number and not new_status and order.status in ("NEW", "ASSIGNED", "CALLED", "ABANDONED", "IN_PROGRESS", "RESCHEDULED"):
-            new_status = "SHIPPED"
-
         if new_status and new_status != old_status:
             # Enforce state machine (SUPER_ADMIN, ADMIN, MANAGER, and AGENT_MANAGER are allowed to override state machine constraints)
             if actor_role not in ("SUPER_ADMIN", "ADMIN", "MANAGER", "AGENT_MANAGER") and not _is_valid_transition(old_status, new_status):
@@ -1618,16 +1613,6 @@ class OrderService:
 
             def _each_item(op, **extra):
                 for item in order.items:
-                    if not item.product_id:
-                        # OrderItem.product_id is SET NULL on product hard-delete.
-                        # Calling op(product_id=None) would raise ProductNotFoundError
-                        # and crash the whole transition — skip with a traceable log.
-                        logger.warning(
-                            "_each_item: skipping item %s on order %s — product_id is NULL "
-                            "(product was deleted after the order was placed).",
-                            item.id, order.id,
-                        )
-                        continue
                     op(
                         db,
                         product_id=item.product_id,
