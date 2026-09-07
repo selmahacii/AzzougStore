@@ -1041,42 +1041,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </div>
                 )}
 
-                {/* Inline Delivery Info / Trust Badges (Replaces the modal) */}
-                <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-600">
-                      <Truck className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('delivery58')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('delivery58Desc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
-                      <ShieldCheck className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('securePayment')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('securePaymentDesc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
-                      <RotateCcw className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('satisfiedOrRefunded')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('satisfiedOrRefundedDesc')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+
 
               </div>
             </div>
