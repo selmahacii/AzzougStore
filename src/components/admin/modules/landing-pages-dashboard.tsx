@@ -1171,8 +1171,42 @@ function LandingPageModal({
   const [prodCost, setProdCost] = useState('');
   const [prodPrice, setProdPrice] = useState('');
   const [prodComparePrice, setProdComparePrice] = useState('');
+  const [prodImages, setProdImages] = useState<string[]>([]);
   const [prodVariants, setProdVariants] = useState<Array<{ name: string; value: string; color?: string; sku: string; stock: number; cost?: number; image?: string; sub_variants?: any[] }>>([]);
   const [uploadingVariantIdx, setUploadingVariantIdx] = useState<number | null>(null);
+
+  const handleMultipleProductImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      const newUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const fd = new FormData();
+        fd.append('file', files[i]);
+        const res = await fetch('/api/v1/upload/image', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: fd,
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const url = json.secure_url || json.url || json.data?.url;
+          if (url) newUrls.push(url);
+        }
+      }
+      if (newUrls.length > 0) {
+        setProdImages(prev => [...prev, ...newUrls]);
+        if (!imageUrl) setImageUrl(newUrls[0]);
+        toast.success(`${newUrls.length} photo(s) ajoutée(s) !`);
+      }
+    } catch (err) {
+      toast.error("Erreur lors de l'upload des photos");
+    } finally {
+      setIsUploading(false);
+    }
+  };
   const [sizeRangeModal, setSizeRangeModal] = useState<{
     isOpen: boolean;
     variantIndex: number;
@@ -1231,6 +1265,8 @@ function LandingPageModal({
       setProdCost(targetProduct.cost_price?.toString() || targetProduct.costPrice?.toString() || '');
       setProdPrice(targetProduct.price?.toString() || '');
       setProdComparePrice(targetProduct.compare_price?.toString() || targetProduct.comparePrice?.toString() || '');
+      const existingImgs = targetProduct.images || (targetProduct.main_image ? [targetProduct.main_image] : []);
+      setProdImages(existingImgs);
       
       let vars = targetProduct.variants || [];
       if (typeof vars === 'string') {
@@ -1257,6 +1293,7 @@ function LandingPageModal({
       setProdCost('');
       setProdPrice('');
       setProdComparePrice('');
+      setProdImages([]);
       setProdVariants([]);
       setIsFreeShipping(false);
       setDeliveryFees({});
@@ -1503,6 +1540,7 @@ function LandingPageModal({
         const slug = headline.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         const sku = prodSku || `LP-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
         
+        const finalImages = prodImages.length > 0 ? prodImages : (imageUrl ? [imageUrl] : []);
         const pBody: any = {
           name: prodName || headline,
           slug,
@@ -1512,7 +1550,8 @@ function LandingPageModal({
           cost_price: parseInt(prodCost) || 0,
           stock: parseInt(prodStock) || 0,
           store_id: storeId,
-          main_image: imageUrl || null,
+          main_image: finalImages[0] || imageUrl || null,
+          images: finalImages,
           description: prodDesc || subtitle || '',
           is_active: true,
           is_featured: true,
@@ -1536,8 +1575,9 @@ function LandingPageModal({
         finalProductId = newP.id || newP.data?.id;
         toast.success('Produit ERP créé !');
       } else if (finalProductId) {
-        // Update product details including variants and delivery fees
+        // Update product details including variants, images, and delivery fees
         const sku = prodSku || `LP-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+        const finalImages = prodImages.length > 0 ? prodImages : (imageUrl ? [imageUrl] : []);
         await apiFetch(`/api/v1/products/${finalProductId}`, {
           method: 'PUT',
           body: JSON.stringify({
@@ -1548,6 +1588,8 @@ function LandingPageModal({
             cost_price: parseInt(prodCost) || 0,
             stock: parseInt(prodStock) || 0,
             sku,
+            main_image: finalImages[0] || imageUrl || null,
+            images: finalImages,
             variants: prodVariants.map((v, index) => ({
               ...v,
               sku: v.sku?.trim() || `${sku}-${v.value.toUpperCase().replace(/[^A-Z0-9]/g, '') || index}`
@@ -1818,6 +1860,40 @@ function LandingPageModal({
                             </div>
                             {isUploading && <Loader2 className="size-5 animate-spin text-[#6C5CE7]" />}
                           </div>
+                        </div>
+
+                        {/* Multi-Photo Product Gallery */}
+                        <div className="sm:col-span-2 space-y-2 border-t border-slate-100 pt-4">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            Photos complémentaires du produit (Galerie sans variante)
+                          </label>
+                          <div className="flex flex-wrap gap-3 items-center">
+                            {prodImages.map((url, idx) => (
+                              <div key={idx} className="relative size-16 rounded-xl overflow-hidden border border-slate-200 group bg-white shadow-sm">
+                                <img src={url} alt="" className="size-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => setProdImages(prev => prev.filter((_, i) => i !== idx))}
+                                  className="absolute top-1 right-1 p-1 bg-white/90 rounded-md hover:bg-white text-rose-500 transition-all opacity-0 group-hover:opacity-100 z-10"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                            <label className="size-16 rounded-xl border border-dashed border-slate-300 hover:border-purple-400 bg-slate-50 flex flex-col items-center justify-center cursor-pointer text-slate-400 hover:text-purple-600 transition-all relative">
+                              <Plus className="size-5" />
+                              <span className="text-[9px] font-bold mt-0.5">Ajouter</span>
+                              <input
+                                type="file"
+                                multiple
+                                accept="image/jpeg, image/png, image/webp, image/gif"
+                                onChange={handleMultipleProductImagesUpload}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                                disabled={isUploading}
+                              />
+                            </label>
+                          </div>
+                          <p className="text-[10px] font-medium text-slate-400">Ces photos s'afficheront en galerie interactive sur la landing page (cliquables sous l'image principale).</p>
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bouton secondaire (optionnel)</label>

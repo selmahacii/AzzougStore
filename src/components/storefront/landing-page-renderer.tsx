@@ -300,11 +300,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }
   }, [data]);
 
+  const [activeHeroImage, setActiveHeroImage] = useState<string | null>(null);
   const primary = data.primary_color || '#e84393';
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const heroImage = data.image_url || data.product?.main_image;
+  const heroImage = activeHeroImage || data.image_url || data.product?.main_image || (data.product?.images && data.product.images[0]);
   const price = data.price ?? data.product?.price ?? null;
   const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
   const productName = data.product_name || data.product?.name || data.headline;
@@ -687,36 +688,36 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
             {/* Description or Gallery if needed */}
 
-            {/* Gallery Miniatures - Uniquement si une galerie explicite différente des variantes est configurée */}
+            {/* Galerie de miniatures multi-photos (pour produit principal avec ou sans variantes) */}
             {(() => {
-              const hasVariantThumbnails = data.product?.variants && data.product.variants.some((v: any) => v.image);
-              const explicitGallery = (data.gallery && data.gallery.length > 0) ? data.gallery : [];
-              
-              // Si pas de galerie explicite ET que des miniatures de variantes sont déjà affichées, éviter la ligne en doublon
-              if (hasVariantThumbnails && explicitGallery.length === 0) return null;
+              const allImages: string[] = (data.gallery && data.gallery.length > 0)
+                ? data.gallery
+                : (data.product?.images && data.product.images.length > 0)
+                  ? data.product.images
+                  : (heroImage ? [heroImage] : []);
 
-              const displayedVariantImages = new Set(
-                (data.product?.variants || []).map((v: any) => v.image).filter(Boolean)
-              );
-              if (heroImage) displayedVariantImages.add(heroImage);
-
-              const extraGallery = (explicitGallery.length > 0 ? explicitGallery : (data.product?.images || []))
-                .filter((url: string) => url && !displayedVariantImages.has(url));
-
-              if (extraGallery.length === 0) return null;
+              if (allImages.length <= 1) return null;
 
               return (
-                <div className="mt-8">
-                  <div className="flex gap-2 justify-center overflow-x-auto py-2">
-                    {extraGallery.slice(0, 4).map((url: string, i: number) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
-                      >
-                        <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
-                      </button>
-                    ))}
+                <div className="mt-4">
+                  <div className="flex gap-2 justify-center flex-wrap py-2 px-1">
+                    {allImages.map((url: string, i: number) => {
+                      const isCurrent = (activeHeroImage || heroImage) === url;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveHeroImage(url)}
+                          className={cn(
+                            "size-16 sm:size-20 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all hover:scale-105 active:scale-95 cursor-pointer",
+                            isCurrent ? "shadow-md ring-2 ring-offset-1" : "border-slate-200 opacity-70 hover:opacity-100"
+                          )}
+                          style={{ borderColor: isCurrent ? primary : undefined }}
+                        >
+                          <img src={optimizeCloudinaryUrl(url, 200)} className="size-full object-cover" alt={`Photo ${i + 1}`} />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               );

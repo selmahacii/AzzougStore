@@ -116,14 +116,10 @@ def read_stores(
     query = db.query(Store).filter(Store.is_deleted == False)
 
     if current_user:
-        # A delivery driver manages inventory/products across the company
-        # (like a manager would) — never restricted to a single store here.
-        if current_user.role not in ["SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR"]:
-            scope = getattr(current_user, "assigned_store_scope", "ALL")
-            if scope == "SPECIFIC":
-                raw_stores = getattr(current_user, "assigned_store_ids", None)
-                scoped_stores = raw_stores if isinstance(raw_stores, list) else []
-                query = query.filter(Store.id.in_(scoped_stores))
+        from app.core.store_access import user_accessible_store_ids
+        accessible = user_accessible_store_ids(current_user)
+        if accessible is not None:
+            query = query.filter(Store.id.in_(list(accessible)))
     else:
         # Guests can only see active stores
         query = query.filter(Store.is_active == True)

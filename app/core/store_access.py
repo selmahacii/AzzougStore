@@ -33,18 +33,24 @@ from app.models.user import User
 
 def user_accessible_store_ids(user: User) -> Optional[set]:
     """
-    The set of store_ids this user may access, or None meaning
-    "unrestricted" (SUPER_ADMIN/ADMIN — cross-store by design).
-
-    LIVREUR is ALSO unrestricted here, matching the existing, deliberate
-    design already documented at every other cross-store LIVREUR carve-out
-    in this codebase (app/api/v1/products.py:26, stock.py's manual-movement
-    endpoint): a single delivery agent serves every store in this
-    deployment and must be able to see/restock any of them, not just
-    their own employee_store_id.
+    The set of store_ids this user may access, or None meaning "unrestricted".
+    If assigned_store_scope is 'SPECIFIC', the user is restricted to their
+    assigned_store_ids regardless of whether their role is SUPER_ADMIN or ADMIN.
     """
+    scope = getattr(user, "assigned_store_scope", "ALL")
+    if scope == "SPECIFIC":
+        stores: set = set()
+        employee_store_id = getattr(user, "employee_store_id", None)
+        if employee_store_id:
+            stores.add(employee_store_id)
+        raw = getattr(user, "assigned_store_ids", None)
+        if isinstance(raw, list):
+            stores.update(raw)
+        return stores
+
     if user.role in ("SUPER_ADMIN", "ADMIN", "LIVREUR"):
         return None
+
     stores: set = set()
     employee_store_id = getattr(user, "employee_store_id", None)
     if employee_store_id:
