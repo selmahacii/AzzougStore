@@ -68,7 +68,7 @@ function DialogContent({
         )}
         {...props}
       >
-        {title != null && <DialogTitle className="sr-only">{title}</DialogTitle>}
+        <DialogTitle className="sr-only">{title || "Dialogue"}</DialogTitle>
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
