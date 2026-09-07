@@ -489,7 +489,7 @@ function VariantOrdersModal({
                                     <Package className="size-3 text-indigo-500" /> Retour : +{ord.returnedQty} {ord.returnedQty > 1 ? 'unités' : 'unité'}
                                  </span>
                               )}
-                              {ord.stockBefore !== undefined && ord.stockAfter !== undefined && ord.stockDelta !== 0 && (
+                              {ord.stockBefore !== undefined && ord.stockAfter !== undefined && ord.stockDelta !== undefined && ord.stockDelta !== 0 && (
                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black bg-slate-900 text-white flex items-center gap-1.5 shadow-xs border border-slate-800">
                                     <span>Stock variante :</span>
                                     <span className="font-mono text-slate-300">{ord.stockBefore}</span>
