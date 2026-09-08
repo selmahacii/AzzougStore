@@ -175,14 +175,20 @@ def get_analytics(
     start_date = start_date_obj
     end_date = end_date_obj
 
-    # Base Filter
-    # A MERGED order is a duplicate submission absorbed into its parent
-    # (order_service.py's auto-merge) — nothing is deleted, items/timeline
-    # stay on the child, but it must never be counted as a separate order
-    # again: every count/KPI/cost-per-order metric below was still adding
-    # one per duplicate on top of the real total.
+    from app.core.store_access import user_accessible_store_ids, assert_store_access
+    accessible = user_accessible_store_ids(_auth)
+
     filters = [Order.is_deleted == False, Order.status != "MERGED"]
-    if store_id:
+    if accessible is not None:
+        if store_id:
+            assert_store_access(_auth, store_id)
+            filters.append(Order.store_id == store_id)
+        elif len(accessible) == 1:
+            store_id = list(accessible)[0]
+            filters.append(Order.store_id == store_id)
+        else:
+            filters.append(Order.store_id.in_(list(accessible)))
+    elif store_id:
         filters.append(Order.store_id == store_id)
 
     if type == "kpi":
@@ -640,6 +646,9 @@ def get_analytics(
     if type == "stores-dashboard":
         # ─── Store Performance Dashboard (Orders Page) ───
         from app.models.store import Store
+        from app.core.store_access import user_accessible_store_ids
+        
+        accessible = user_accessible_store_ids(_auth)
         
         # Base filter for orders
         base_filters = [
@@ -647,6 +656,8 @@ def get_analytics(
             Order.created_at >= start_date_obj,
             Order.created_at <= end_date_obj
         ]
+        if accessible is not None:
+            base_filters.append(Order.store_id.in_(list(accessible)))
         
         if product_id and product_id != "ALL":
             # Filter orders that contain this product
@@ -668,7 +679,10 @@ def get_analytics(
             func.sum(case((and_(Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"]), func.coalesce(Order.source, "") != "MANUAL"), 1), else_=0)).label("non_manual_valid")
         ).filter(and_(*base_filters)).group_by(Order.store_id).all()
         
-        stores = db.query(Store).filter(Store.is_active == True).all()
+        stores_q = db.query(Store).filter(Store.is_active == True, Store.is_deleted == False)
+        if accessible is not None:
+            stores_q = stores_q.filter(Store.id.in_(list(accessible)))
+        stores = stores_q.all()
         default_store_id = stores[0].id if stores else None
         
         # Group stats by store_id, assigning None store_id orders to default store
