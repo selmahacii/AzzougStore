@@ -31,36 +31,35 @@ export function AppBootstrap() {
 
   const initialize = useCallback(async (signal?: AbortSignal) => {
     try {
-      // Storefront/admin pages already fetch stores (and the user, when
-      // logged in) server-side and seed them via HydrateStore before this
-      // effect runs. Re-fetching here on every mount duplicated that work —
-      // a second full Function invocation through the /api proxy for data
-      // we already have. Only hit the network when SSR didn't provide it
-      // (backend was unreachable at render time, or a client-side nav).
-      const hydratedStores = useAppStore.getState().allStores;
-      if (hydratedStores.length > 0) {
-        const hydratedUser = useAppStore.getState().user;
-        if (!hydratedUser) {
-          try {
-            const meRes = await fetch('/api/v1/auth/me', {
-              signal,
-              credentials: 'include',
-              headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            if (meRes.ok) {
-              const meData = await meRes.json();
-              if (meData.success && meData.data) setUser(meData.data as User);
+      // 1. Restore current user session FIRST if not present
+      let currentUser = useAppStore.getState().user;
+      if (!currentUser) {
+        try {
+          console.log('[AppBootstrap] Restoring session via /api/v1/auth/me...');
+          const meRes = await fetch('/api/v1/auth/me', {
+            signal,
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData.success && meData.data) {
+              setUser(meData.data as User);
+              currentUser = meData.data as User;
             }
-          } catch (meError) {
-            console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
           }
+        } catch (meError) {
+          console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
         }
-        setIsReady(true);
-        return;
       }
 
+      // 2. Fetch stores WITH credentials so backend scopes stores by authenticated user
       console.log('[AppBootstrap] Fetching /api/v1/stores...');
-      const storesRes = await fetch('/api/v1/stores', { signal });
+      const storesRes = await fetch('/api/v1/stores', {
+        signal,
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
       console.log(`[AppBootstrap] /api/v1/stores response status: ${storesRes.status}`);
       
       if (!storesRes.ok) {
@@ -83,29 +82,6 @@ export function AppBootstrap() {
       if (stores.length > 0) {
         setAllStores(stores);
         
-        // Final check for user if not hydrated
-        let currentUser = useAppStore.getState().user;
-        if (!currentUser) {
-          try {
-            console.log('[AppBootstrap] Fetching current user /api/v1/auth/me...');
-            const meRes = await fetch('/api/v1/auth/me', {
-              signal,
-              credentials: 'include',
-              headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            console.log(`[AppBootstrap] /api/v1/auth/me response status: ${meRes.status}`);
-            if (meRes.ok) {
-              const meData = await meRes.json();
-              if (meData.success && meData.data) {
-                setUser(meData.data as User);
-                currentUser = meData.data as User;
-              }
-            }
-          } catch (meError) {
-            console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
-          }
-        }
-
         // Determine which store to activate
         const currentCachedStore = useAppStore.getState().activeStore;
         const isValidCached = currentCachedStore && stores.some(s => s.id === currentCachedStore.id);
