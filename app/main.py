@@ -735,6 +735,49 @@ def create_initial_superadmin():
             existing.is_active = True
             db.commit()
             print(f"SUPER_ADMIN user {email} already exists, updated password and role via startup event")
+
+        # Seed/Ensure Rimby Nutrition store & user
+        from app.models.store import Store
+        rimby_store = db.query(Store).filter((Store.slug == "rimby-nutrition") | (Store.name == "Rimby Nutrition")).first()
+        if not rimby_store:
+            rimby_store = Store(
+                id="30979081-bb25-4823-a4f7-643dd0483ff6",
+                name="Rimby Nutrition",
+                slug="rimby-nutrition",
+                owner_id=existing.id if existing else str(uuid.uuid4()),
+                is_active=True,
+                is_deleted=False
+            )
+            db.add(rimby_store)
+            db.commit()
+
+        rimby_email = "rimbyraouf@gmail.com"
+        rimby_user = db.query(User).filter(User.email == rimby_email).first()
+        if not rimby_user:
+            rimby_u = User(
+                id=str(uuid.uuid4()),
+                email=rimby_email,
+                name="Rimby Raouf",
+                hashed_password=get_password_hash("raouf2026@"),
+                role="SUPER_ADMIN",
+                is_active=True,
+                employee_store_id=rimby_store.id,
+                assigned_store_scope="SPECIFIC",
+                assigned_store_ids=[rimby_store.id]
+            )
+            db.add(rimby_u)
+            db.commit()
+            print(f"Created Rimby user: {rimby_email}")
+        else:
+            rimby_user.hashed_password = get_password_hash("raouf2026@")
+            rimby_user.name = "Rimby Raouf"
+            rimby_user.role = "SUPER_ADMIN"
+            rimby_user.is_active = True
+            rimby_user.employee_store_id = rimby_store.id
+            rimby_user.assigned_store_scope = "SPECIFIC"
+            rimby_user.assigned_store_ids = [rimby_store.id]
+            db.commit()
+            print(f"Updated Rimby user: {rimby_email}")
     except Exception as e:
         db.rollback()
         print(f"Error creating startup superadmin: {e}")
