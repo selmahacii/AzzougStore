@@ -563,7 +563,7 @@ export default function AdminSidebar() {
          {/* ─── Store Selector ──────────────────────────── */}
          {!sidebarCollapsed && activeStore && (
             <div className="px-3 py-3 border-b lg:hidden" style={{ borderColor: S.border }}>
-               {currentUser?.role === 'SUPER_ADMIN' && allStores.length > 1 ? (
+               {allStores.length > 1 ? (
                   <DropdownMenu>
                      <DropdownMenuTrigger asChild>
                         <button className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-[#F8F9FC] border border-[#E9ECF0] hover:border-[#B2BEC3] transition-colors">

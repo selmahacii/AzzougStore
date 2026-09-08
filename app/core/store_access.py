@@ -34,30 +34,24 @@ from app.models.user import User
 def user_accessible_store_ids(user: User) -> Optional[set]:
     """
     The set of store_ids this user may access, or None meaning "unrestricted".
-    If assigned_store_scope is 'SPECIFIC', the user is restricted to their
-    assigned_store_ids regardless of whether their role is SUPER_ADMIN or ADMIN.
+    If assigned_store_scope is 'SPECIFIC', or if the user has assigned_store_ids / employee_store_id set,
+    the user is restricted to their assigned store(s) regardless of whether their role is SUPER_ADMIN or ADMIN.
     """
+    stores: set = set()
+    employee_store_id = getattr(user, "employee_store_id", None)
+    if employee_store_id:
+        stores.add(str(employee_store_id))
+    raw = getattr(user, "assigned_store_ids", None)
+    if isinstance(raw, list):
+        stores.update([str(s) for s in raw if s])
+
     scope = getattr(user, "assigned_store_scope", "ALL")
-    if scope == "SPECIFIC":
-        stores: set = set()
-        employee_store_id = getattr(user, "employee_store_id", None)
-        if employee_store_id:
-            stores.add(employee_store_id)
-        raw = getattr(user, "assigned_store_ids", None)
-        if isinstance(raw, list):
-            stores.update(raw)
+    if scope == "SPECIFIC" or stores:
         return stores
 
     if user.role in ("SUPER_ADMIN", "ADMIN", "LIVREUR"):
         return None
 
-    stores: set = set()
-    employee_store_id = getattr(user, "employee_store_id", None)
-    if employee_store_id:
-        stores.add(employee_store_id)
-    raw = getattr(user, "assigned_store_ids", None)
-    if isinstance(raw, list):
-        stores.update(raw)
     return stores
 
 

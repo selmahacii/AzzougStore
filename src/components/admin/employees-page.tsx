@@ -1800,9 +1800,19 @@ function EmployeeFormDialog({ open, onOpenChange, editingEmployee, storeId, crea
          payday: formData.payday ? Number(formData.payday) : null,
       };
 
-      const storePayload = formData.assigned_store_scope === 'SPECIFIC'
-         ? { assigned_store_ids: formData.assigned_store_ids }
-         : { assigned_store_ids: [] };
+      const isSpecificStore = formData.assigned_store_scope === 'SPECIFIC' || (formData.assigned_store_ids && formData.assigned_store_ids.length > 0);
+
+      const storePayload = isSpecificStore
+         ? {
+             assigned_store_scope: 'SPECIFIC',
+             assigned_store_ids: formData.assigned_store_ids || [],
+             employee_store_id: (formData.assigned_store_ids && formData.assigned_store_ids.length > 0) ? formData.assigned_store_ids[0] : (storeId || null)
+           }
+         : {
+             assigned_store_scope: 'ALL',
+             assigned_store_ids: [],
+             employee_store_id: null
+           };
 
       const productsPayload = { assigned_product_ids: formData.assigned_product_ids };
       const accessPayload = { permissions: formData.permissions || [], module_visibility: formData.module_visibility || {} };

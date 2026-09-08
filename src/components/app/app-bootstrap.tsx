@@ -110,22 +110,21 @@ export function AppBootstrap() {
         const currentCachedStore = useAppStore.getState().activeStore;
         const isValidCached = currentCachedStore && stores.some(s => s.id === currentCachedStore.id);
         
-        // Prioritize employee_store_id if they are an employee (CONFIRMATEUR, MANAGER, etc)
-        // This prevents an employee from getting stuck in a store they shouldn't focus on
-        // just because the admin previously had it cached in the browser.
         let defaultStore = stores[0];
-        if (currentUser && currentUser.employee_store_id) {
-           const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
+        const userAssignedStoreId = currentUser?.employee_store_id || (currentUser?.assigned_store_ids && currentUser.assigned_store_ids[0]);
+        if (currentUser && userAssignedStoreId) {
+           const assignedStore = stores.find(s => s.id === userAssignedStoreId);
            if (assignedStore) defaultStore = assignedStore;
         }
 
         if (!isValidCached) {
           setActiveStore(defaultStore);
-        } else if (currentUser && currentUser.role !== 'SUPER_ADMIN' && currentUser.employee_store_id) {
-           // For non-super-admins, force them into their assigned store initially to avoid confusion
-           // if the cached store is from a different session
-           if (currentCachedStore.id !== currentUser.employee_store_id) {
-               const assignedStore = stores.find(s => s.id === currentUser!.employee_store_id);
+        } else if (currentUser && userAssignedStoreId) {
+           // For any user with assigned store(s), force them into an accessible store initially
+           if (stores.length === 1 && currentCachedStore.id !== stores[0].id) {
+               setActiveStore(stores[0]);
+           } else if (!stores.some(s => s.id === currentCachedStore.id)) {
+               const assignedStore = stores.find(s => s.id === userAssignedStoreId) || stores[0];
                if (assignedStore) setActiveStore(assignedStore);
            }
         }

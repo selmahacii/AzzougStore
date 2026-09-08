@@ -235,7 +235,7 @@ export default function SuperAdminSidebar() {
         {/* ── Store Selector (Mobile Only) ──────────────── */}
         {!sidebarCollapsed && activeStore && (
            <div className="px-3 py-3 border-b lg:hidden border-slate-100">
-              {currentUser?.role === 'SUPER_ADMIN' && allStores.length > 1 ? (
+              {allStores.length > 1 ? (
                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                        <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 hover:border-slate-350 transition-colors">

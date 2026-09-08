@@ -331,15 +331,13 @@ def _confirmateur_scope_criterion(user: User, db: Optional[Session] = None):
     if products:
         crits.append(Order.items.any(OrderItem.product_id.in_(products)))
 
-    if not crits:
-        if scope == "ALL" or not scope:
-            broad_match = true()
+    if stores or products or scope == "SPECIFIC":
+        if crits:
+            broad_match = or_(*crits) if len(crits) > 1 else crits[0]
         else:
-            return False  # nothing configured and scope is SPECIFIC → no unassigned visibility
+            return False  # scope is SPECIFIC but no stores/products assigned → no unassigned visibility
     else:
-        broad_match = or_(*crits) if len(crits) > 1 else crits[0]
-        if scope == "ALL" or not scope:
-            broad_match = true()
+        broad_match = true()
 
     return and_(broad_match, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
 

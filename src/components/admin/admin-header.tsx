@@ -75,7 +75,7 @@ const PAGE_TITLES: Record<AdminView, string> = {
 function StoreSwitcher() {
    const { activeStore, allStores, switchToStore, user: currentUser } = useAppStore();
    
-   if (!activeStore || currentUser?.role !== 'SUPER_ADMIN' || allStores.length <= 1) {
+   if (!activeStore || allStores.length <= 1) {
       return null;
    }
 
