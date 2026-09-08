@@ -331,13 +331,15 @@ def _confirmateur_scope_criterion(user: User, db: Optional[Session] = None):
     if products:
         crits.append(Order.items.any(OrderItem.product_id.in_(products)))
 
-    if stores or products or scope == "SPECIFIC":
-        if crits:
-            broad_match = or_(*crits) if len(crits) > 1 else crits[0]
+    if not crits:
+        if scope == "ALL" or not scope:
+            broad_match = true()
         else:
-            return False  # scope is SPECIFIC but no stores/products assigned → no unassigned visibility
+            return False  # nothing configured and scope is SPECIFIC → no unassigned visibility
     else:
-        broad_match = true()
+        broad_match = or_(*crits) if len(crits) > 1 else crits[0]
+        if scope == "ALL" or not scope:
+            broad_match = true()
 
     return and_(broad_match, ~_order_claimed_by_other_confirmatrice_criterion(user, db))
 
@@ -842,9 +844,6 @@ def get_order_counts(
     into" today's view. MERGED excluded for the same reason it's excluded
     everywhere else (a duplicate absorbed into its parent isn't an order).
     """
-    from app.core.store_access import assert_store_access
-    assert_store_access(_, store_id)
-
     q = (
         db.query(Order.status, sqlfunc.count(Order.id).label("cnt"))
         .filter(Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED")
@@ -973,16 +972,7 @@ def get_agent_counts(
     # per request, so this never leaks across requests.
     db.info["skip_tenant_isolation"] = True
 
-    from app.core.store_access import user_accessible_store_ids, assert_store_access
-    accessible = user_accessible_store_ids(current_user)
-    if accessible is not None:
-        if store_id:
-            assert_store_access(current_user, store_id)
-            base_query = base_query.filter(Order.store_id == store_id)
-        else:
-            base_query = base_query.filter(Order.store_id.in_(list(accessible)))
-    elif store_id:
-        base_query = base_query.filter(Order.store_id == store_id)
+    base_query = db.query(Order).filter(Order.is_deleted == False, Order.status != "MERGED")
 
     # Same RBAC scoping as list_orders for confirmatrices (union store/product
     # scope). Two variants: `base` (her personal queue — assigned to her, or
@@ -1370,19 +1360,8 @@ def list_orders(
             raise HTTPException(status_code=401, detail="Authentication required for general listing")
         query = query.filter(Order.customer_phone == customer_phone, Order.store_id == store_id)
     else:
-        from app.core.store_access import user_accessible_store_ids, assert_store_access
-        accessible = user_accessible_store_ids(current_user)
-        if accessible is not None:
-            if store_id:
-                assert_store_access(current_user, store_id)
-                query = query.filter(Order.store_id == store_id)
-            else:
-                query = query.filter(Order.store_id.in_(list(accessible)))
-        elif store_id:
-            query = query.filter(Order.store_id == store_id)
-
         if current_user.role in ("SUPER_ADMIN", "ADMIN"):
-            pass  # admins manage all orders within their accessible store(s)
+            pass  # unrestricted — admins manage every order
         elif current_user.role == "CONFIRMATEUR":
             from sqlalchemy import and_, or_
 

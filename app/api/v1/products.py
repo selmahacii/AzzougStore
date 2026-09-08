@@ -31,11 +31,17 @@ _STAFF_ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "LIVREUR", "CONFIRMATEUR", "A
 
 def _confirmateur_product_scope_criterion(user):
     """
-    Mirrors orders.py's _confirmateur_scope_criterion: a user (including SUPER_ADMIN/ADMIN)
+    Mirrors orders.py's _confirmateur_scope_criterion: a confirmatrice
     with a configured scope (assigned_store_ids/employee_store_id and/or
-    assigned_product_ids) must only ever see products from their assigned
-    store(s), PLUS individually-assigned products from other stores.
+    assigned_product_ids) must only ever see products from her assigned
+    store(s), PLUS her individually-assigned products from other stores —
+    never the whole catalogue. Unconfigured (no store, no product) or scope="ALL"
+    means no restriction — falls through to full visibility.
     """
+    scope = getattr(user, "assigned_store_scope", "ALL")
+    if scope == "ALL":
+        return None
+
     from sqlalchemy import or_
 
     raw_stores = getattr(user, "assigned_store_ids", None)
@@ -47,17 +53,15 @@ def _confirmateur_product_scope_criterion(user):
     raw_products = getattr(user, "assigned_product_ids", None)
     products = [str(p) for p in raw_products] if isinstance(raw_products, list) else []
 
-    scope = getattr(user, "assigned_store_scope", "ALL")
-    if stores or products or scope == "SPECIFIC":
-        crits = []
-        if stores:
-            crits.append(Product.store_id.in_(stores))
-        if products:
-            crits.append(Product.id.in_(products))
-        if crits:
-            return or_(*crits) if len(crits) > 1 else crits[0]
+    if not stores and not products:
+        return None  # nothing configured — no restriction (existing behavior)
 
-    return None
+    crits = []
+    if stores:
+        crits.append(Product.store_id.in_(stores))
+    if products:
+        crits.append(Product.id.in_(products))
+    return or_(*crits) if len(crits) > 1 else crits[0]
 
 
 def _generate_slug(name: str) -> str:

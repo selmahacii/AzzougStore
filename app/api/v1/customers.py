@@ -41,16 +41,8 @@ def get_customers(
     query = db.query(Customer)
 
     # Role-based scope
-    from app.core.store_access import user_accessible_store_ids, assert_store_access
-    accessible = user_accessible_store_ids(current_user)
-    if accessible is not None:
-        if store_id:
-            assert_store_access(current_user, store_id)
-            query = query.filter(Customer.store_id == store_id)
-        elif len(accessible) == 1:
-            query = query.filter(Customer.store_id == list(accessible)[0])
-        else:
-            query = query.filter(Customer.store_id.in_(list(accessible)))
+    if current_user.role == "MANAGER" and current_user.employee_store_id:
+        query = query.filter(Customer.store_id == current_user.employee_store_id)
     elif store_id:
         query = query.filter(Customer.store_id == store_id)
 
