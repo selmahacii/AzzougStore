@@ -97,29 +97,36 @@ async def get_noest_stats(
     from app.core.dates import parse_local_date_filter
     from app.core.tenant import tenant_store_id
     from sqlalchemy.orm import joinedload
-    from sqlalchemy import and_
+    from sqlalchemy import and_, or_
 
     tenant_store_id.set("SUPER_ADMIN_MODE")
     db.info["skip_tenant_isolation"] = True
 
     filters = [
-        Order.tracking_number.isnot(None),
-        Order.tracking_number != "",
         Order.is_deleted == False,
     ]
     if store_id and store_id not in ("ALL", "undefined", "null"):
         filters.append(Order.store_id == store_id)
 
+    filters.append(
+        or_(
+            and_(Order.tracking_number.isnot(None), Order.tracking_number != ""),
+            Order.status.in_(["SHIPPED", "DELIVERED", "RETURNED"]),
+            Order.carrier_stage.isnot(None),
+            Order.livreur_id.isnot(None),
+        )
+    )
+
     q = db.query(Order).filter(and_(*filters))
 
     if start_date:
         try:
-            q = q.filter(Order.created_at >= parse_local_date_filter(start_date))
+            q = q.filter(Order.created_at >= parse_local_date_filter(start_date, is_end_of_day=False))
         except ValueError:
             pass
     if end_date:
         try:
-            q = q.filter(Order.created_at <= parse_local_date_filter(end_date))
+            q = q.filter(Order.created_at <= parse_local_date_filter(end_date, is_end_of_day=True))
         except ValueError:
             pass
     if product_id:
@@ -133,7 +140,7 @@ async def get_noest_stats(
 
     total_tracked = len(orders)
     shipped = sum(1 for o in orders if str(o.status) == "SHIPPED")
-    out_for_delivery = sum(1 for o in orders if str(o.status) == "SHIPPED" and (o.carrier_stage in ("fdr_activated", "en livraison") or "livraison" in str(o.carrier_stage_label or "").lower()))
+    out_for_delivery = sum(1 for o in orders if (str(o.status) == "SHIPPED" and (o.carrier_stage in ("fdr_activated", "en livraison") or "livraison" in str(o.carrier_stage_label or "").lower())) or (bool(o.livreur_id) and str(o.status) == "SHIPPED"))
     delivered = sum(1 for o in orders if str(o.status) == "DELIVERED")
     returned = sum(1 for o in orders if str(o.status) == "RETURNED")
 
@@ -146,7 +153,7 @@ async def get_noest_stats(
             "customer_phone": o.customer_phone,
             "customer_wilaya": o.customer_wilaya,
             "customer_commune": o.customer_commune,
-            "tracking_number": o.tracking_number,
+            "tracking_number": o.tracking_number or "",
             "status": str(o.status),
             "carrier_stage": o.carrier_stage,
             "carrier_stage_label": o.carrier_stage_label or (
@@ -158,6 +165,9 @@ async def get_noest_stats(
             "total": o.total,
             "created_at": o.created_at.isoformat() if o.created_at else None,
             "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+            "livreur_id": o.livreur_id,
+            "source": o.source,
+            "is_marketplace_upsell": bool(getattr(o, "is_marketplace_upsell", False)),
             "items": [
                 {
                     "id": item.id,
