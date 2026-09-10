@@ -119,7 +119,6 @@ export const useAppStore = create<AppState>()(
       logout: () => set({
         user: null,
         activeStore: null,
-        allStores: [],
         isAuthenticated: false,
         appView: 'storefront',
         storefrontView: 'home',

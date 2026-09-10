@@ -60,8 +60,8 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
     setFetchingProductId(p.id);
     try {
        const res = await apiFetch<any>(`/api/v1/products/${p.id}`);
-       const fetchedProduct = (res && (res.id || res.variants)) ? res : (res?.data || p);
-       if (fetchedProduct) {
+       if (res.success && res.data) {
+          const fetchedProduct = res.data;
           // Inject returns data dynamically for variants
           const productReturns = returnsByVariant[fetchedProduct.id] || {};
           if (fetchedProduct.variants) {
@@ -127,7 +127,7 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
        />
 
        {viewingProduct && (
-          <ProductDetailSheet product={viewingProduct} onClose={() => setViewingProduct(null)} />
+          <ProductDetailSheet product={viewingProduct} storeId={storeId} onClose={() => setViewingProduct(null)} />
        )}
 
        {adjustingProduct && (

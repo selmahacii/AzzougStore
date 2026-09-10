@@ -13,6 +13,7 @@ import { CheckoutForm } from '@/components/storefront/checkout-form';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
+import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import { captureAttribution } from '@/lib/attribution';
@@ -300,12 +301,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }
   }, [data]);
 
-  const [activeHeroImage, setActiveHeroImage] = useState<string | null>(null);
   const primary = data.primary_color || '#e84393';
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const heroImage = activeHeroImage || data.image_url || data.product?.main_image || (data.product?.images && data.product.images[0]);
+  const heroImage = data.image_url || data.product?.main_image;
   const price = data.price ?? data.product?.price ?? null;
   const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
   const productName = data.product_name || data.product?.name || data.headline;
@@ -459,21 +459,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
+      <FloatingLanguageSwitcher primaryColor={primary} />
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
-        "w-full py-3 border-b sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
+        "w-full py-3 border-b flex items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        <div className="max-w-[1200px] w-full mx-auto px-4 flex items-center justify-between h-12 relative">
-          {/* Logo */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 md:static md:translate-x-0 md:translate-y-0 flex items-center shrink-0">
+        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-10">
+          {/* Left Side Placeholder */}
+          <div className="w-10 sm:w-20" />
+
+          {/* Logo Centered */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || activeStore?.logo_url) ? (
               <img
                 src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 150)}
                 alt={data.store?.name || activeStore?.name || 'Logo'}
-                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] transition-all" 
+                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
                 onError={(e) => { 
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -483,7 +487,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               />
             ) : null}
             <span 
-              className="text-base sm:text-lg font-black tracking-tight uppercase" 
+              className="text-lg font-black tracking-tight uppercase" 
               style={{ 
                 color: primary, 
                 display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
@@ -497,14 +501,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           <nav className="hidden md:flex items-center gap-6">
             <button 
               onClick={() => scrollToSection('presentation-section')}
-              className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
+              className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
             >
               {dir === 'rtl' ? 'المنتج' : (t('presentation') || 'Présentation')}
             </button>
             {data.testimonials && data.testimonials.length > 0 && (
               <button 
                 onClick={() => scrollToSection('testimonials-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
+                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
               >
                 {dir === 'rtl' ? 'آراء العملاء' : (t('customerReviews') || 'Avis')}
               </button>
@@ -512,25 +516,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {data.faq && data.faq.length > 0 && (
               <button 
                 onClick={() => scrollToSection('faq-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-75 cursor-pointer", isDark ? "text-white" : "text-slate-700")}
+                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
               >
                 {dir === 'rtl' ? 'الأسئلة الشائعة' : (t('faqTitle') || 'FAQ')}
               </button>
             )}
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="text-xs font-black uppercase tracking-wider px-5 py-2.5 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              className="text-xs font-black uppercase tracking-wider px-4 py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95"
               style={{ backgroundColor: primary }}
             >
               {dir === 'rtl' ? 'اطلب الآن' : (t('buyNow') || 'Commander')}
             </button>
           </nav>
 
-          {/* Right Action / Mobile Button */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Mobile Right Action or Secure Badge */}
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="md:hidden text-[11px] font-black uppercase tracking-wider px-4 py-2 rounded-full text-white shadow-sm transition-all active:scale-95 cursor-pointer"
+              className="md:hidden text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-full text-white shadow-sm transition-all active:scale-95"
               style={{ backgroundColor: primary }}
             >
               {dir === 'rtl' ? 'طلب' : (t('buyNow') || 'Commander')}
@@ -604,7 +608,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               return (
                 <div className="space-y-4 w-full">
                   <div 
-                    className="w-full relative rounded-2xl overflow-hidden shadow-md cursor-zoom-in group bg-slate-100/70 border border-slate-200/80 p-1.5"
+                    className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"
                     onMouseMove={(e) => {
                       const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
                       const x = ((e.clientX - left) / width) * 100;
@@ -622,7 +626,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       loading="eager"
                       fetchPriority="high"
                       decoding="async"
-                      className="w-full h-auto rounded-xl object-contain transition-transform duration-100 ease-out"
+                      className="w-full h-auto transition-transform duration-100 ease-out"
                       style={{
                         transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                         transform: isZoomed ? 'scale(2)' : 'scale(1)'
@@ -685,36 +689,36 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
             {/* Description or Gallery if needed */}
 
-            {/* Galerie de miniatures multi-photos (pour produit principal avec ou sans variantes) */}
+            {/* Gallery Miniatures - Uniquement si une galerie explicite différente des variantes est configurée */}
             {(() => {
-              const allImages: string[] = (data.gallery && data.gallery.length > 0)
-                ? data.gallery
-                : (data.product?.images && data.product.images.length > 0)
-                  ? data.product.images
-                  : (heroImage ? [heroImage] : []);
+              const hasVariantThumbnails = data.product?.variants && data.product.variants.some((v: any) => v.image);
+              const explicitGallery = (data.gallery && data.gallery.length > 0) ? data.gallery : [];
+              
+              // Si pas de galerie explicite ET que des miniatures de variantes sont déjà affichées, éviter la ligne en doublon
+              if (hasVariantThumbnails && explicitGallery.length === 0) return null;
 
-              if (allImages.length <= 1) return null;
+              const displayedVariantImages = new Set(
+                (data.product?.variants || []).map((v: any) => v.image).filter(Boolean)
+              );
+              if (heroImage) displayedVariantImages.add(heroImage);
+
+              const extraGallery = (explicitGallery.length > 0 ? explicitGallery : (data.product?.images || []))
+                .filter((url: string) => url && !displayedVariantImages.has(url));
+
+              if (extraGallery.length === 0) return null;
 
               return (
-                <div className="mt-4">
-                  <div className="flex gap-2 justify-center flex-wrap py-2 px-1">
-                    {allImages.map((url: string, i: number) => {
-                      const isCurrent = (activeHeroImage || heroImage) === url;
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setActiveHeroImage(url)}
-                          className={cn(
-                            "size-16 sm:size-20 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all hover:scale-105 active:scale-95 cursor-pointer",
-                            isCurrent ? "shadow-md ring-2 ring-offset-1" : "border-slate-200 opacity-70 hover:opacity-100"
-                          )}
-                          style={{ borderColor: isCurrent ? primary : undefined }}
-                        >
-                          <img src={optimizeCloudinaryUrl(url, 200)} className="size-full object-cover" alt={`Photo ${i + 1}`} />
-                        </button>
-                      );
-                    })}
+                <div className="mt-8">
+                  <div className="flex gap-2 justify-center overflow-x-auto py-2">
+                    {extraGallery.slice(0, 4).map((url: string, i: number) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
+                      >
+                        <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
+                      </button>
+                    ))}
                   </div>
                 </div>
               );
@@ -1039,7 +1043,42 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </div>
                 )}
 
-
+                {/* Inline Delivery Info / Trust Badges (Replaces the modal) */}
+                <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="size-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-600">
+                      <Truck className="size-4" />
+                    </div>
+                    <div>
+                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('delivery58')}</p>
+                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
+                        {t('delivery58Desc')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="size-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
+                      <ShieldCheck className="size-4" />
+                    </div>
+                    <div>
+                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('securePayment')}</p>
+                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
+                        {t('securePaymentDesc')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="size-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
+                      <RotateCcw className="size-4" />
+                    </div>
+                    <div>
+                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('satisfiedOrRefunded')}</p>
+                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
+                        {t('satisfiedOrRefundedDesc')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
 
               </div>
             </div>
@@ -1049,67 +1088,67 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       </div>
 
       {/* REVIEWS & FAQ SECTION (Optional, Minimalist style) */}
-      {((data.testimonials && data.testimonials.length > 0) || (data.faq && data.faq.length > 0)) && (
-        <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
-          <div className="max-w-[800px] mx-auto px-4 py-16">
-            
-            {/* Testimonials */}
-            {data.testimonials && data.testimonials.length > 0 && (
-              <div id="testimonials-section" className="mb-20">
-                 <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
-                 <div className="space-y-6">
-                   {data.testimonials.map((t, i) => (
-                     <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
-                       <div className="flex gap-1 mb-3">
-                         {Array.from({ length: t.stars }).map((_, j) => (
-                           <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
-                         ))}
+      <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
+        <div className="max-w-[800px] mx-auto px-4 py-16">
+          
+          {/* Testimonials */}
+          {data.testimonials && data.testimonials.length > 0 && (
+            <div id="testimonials-section" className="mb-20">
+               <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
+               <div className="space-y-6">
+                 {data.testimonials.map((t, i) => (
+                   <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
+                     <div className="flex gap-1 mb-3">
+                       {Array.from({ length: t.stars }).map((_, j) => (
+                         <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
+                       ))}
+                     </div>
+                     <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
+                     <div className="flex items-center gap-3">
+                       <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
+                         {t.name.charAt(0)}
                        </div>
-                       <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
-                       <div className="flex items-center gap-3">
-                         <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
-                           {t.name.charAt(0)}
-                         </div>
-                         <div>
-                           <p className="text-xs font-bold">{t.name}</p>
-                           <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
-                         </div>
+                       <div>
+                         <p className="text-xs font-bold">{t.name}</p>
+                         <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
                        </div>
                      </div>
-                   ))}
-                 </div>
-              </div>
-            )}
+                   </div>
+                 ))}
+               </div>
+            </div>
+          )}
 
-            {/* FAQ */}
-            {data.faq && data.faq.length > 0 && (
-              <div id="faq-section">
-                <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
-                <div className="space-y-3">
-                  {data.faq.map((item, i) => (
-                    <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
-                      <button
-                        onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                        className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
-                      >
-                        <span>{item.question}</span>
-                        {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                      </button>
-                      {openFaq === i && (
-                        <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
-                          {item.answer}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+          {/* FAQ */}
+          {data.faq && data.faq.length > 0 && (
+            <div id="faq-section">
+              <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
+              <div className="space-y-3">
+                {data.faq.map((item, i) => (
+                  <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
+                    <button
+                      onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                      className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
+                    >
+                      <span>{item.question}</span>
+                      {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                    </button>
+                    {openFaq === i && (
+                      <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
+                        {item.answer}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-
+      <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
+        {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}
+      </footer>
 
       {/* Sticky Bottom CTA on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">

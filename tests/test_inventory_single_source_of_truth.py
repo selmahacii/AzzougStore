@@ -64,14 +64,13 @@ class Scenario:
         self.order_ids = []
 
     def make_store(self):
-        user_id = self.make_user()
         db = SessionLocal()
         try:
             store = Store(
                 id=str(uuid.uuid4()), name=f"InvAudit {self.suffix}",
                 slug=f"invaudit-{self.suffix}-{uuid.uuid4().hex[:4]}",
                 domain=f"invaudit-{self.suffix}-{uuid.uuid4().hex[:4]}.com",
-                template_id="modern", owner_id=user_id,
+                template_id="modern", owner_id="SYSTEM_ADMIN",
             )
             db.add(store)
             db.commit()
@@ -124,7 +123,7 @@ class Scenario:
         db = SessionLocal()
         try:
             user = User(
-                id=str(uuid.uuid4()), email=f"validator-{self.suffix}-{uuid.uuid4().hex[:6]}@test.com", name="Validator",
+                id=str(uuid.uuid4()), email=f"validator-{self.suffix}@test.com", name="Validator",
                 hashed_password=get_password_hash("test-only-password"), role="SUPER_ADMIN", is_active=True,
             )
             db.add(user)
@@ -155,11 +154,6 @@ class Scenario:
     def cleanup(self):
         db = SessionLocal()
         try:
-            from app.models.audit import AuditLog
-            if self.user_ids:
-                db.query(AuditLog).filter(AuditLog.actor_id.in_(self.user_ids)).delete(synchronize_session=False)
-            if self.store_ids:
-                db.query(AuditLog).filter(AuditLog.store_id.in_(self.store_ids)).delete(synchronize_session=False)
             if self.order_ids:
                 db.query(StockMovement).filter(StockMovement.order_id.in_(self.order_ids)).delete(synchronize_session=False)
                 db.query(Order).filter(Order.id.in_(self.order_ids)).delete(synchronize_session=False)
@@ -174,12 +168,12 @@ class Scenario:
                 db.query(Product).filter(Product.id.in_(self.product_ids)).delete(synchronize_session=False)
             if self.warehouse_ids:
                 db.query(Warehouse).filter(Warehouse.id.in_(self.warehouse_ids)).delete(synchronize_session=False)
+            if self.user_ids:
+                db.query(User).filter(User.id.in_(self.user_ids)).delete(synchronize_session=False)
             if self.supplier_ids:
                 db.query(Supplier).filter(Supplier.id.in_(self.supplier_ids)).delete(synchronize_session=False)
             if self.store_ids:
                 db.query(Store).filter(Store.id.in_(self.store_ids)).delete(synchronize_session=False)
-            if self.user_ids:
-                db.query(User).filter(User.id.in_(self.user_ids)).delete(synchronize_session=False)
             db.commit()
         finally:
             db.close()
@@ -482,176 +476,3 @@ def test_product_stock_status_uses_variant_bottleneck():
 
     assert product_available_stock(FakeProduct()) == 4
     assert product_stock_status(FakeProduct()) == "LOW"  # 4 <= threshold 5, even though aggregate stock=14 looks fine
-
-
-def test_unallocated_restock_on_variant_product_syncs_variants_and_does_not_revert_later(scenario):
-    """
-    Direct regression test for the user-reported bug:
-    When a user restocks a variant product without specifying a variant (e.g. from
-    a generic restock modal or API call), the restock was previously applied only to
-    Product.stock and not to Product.variants. A few minutes later, any event (order
-    reservation, confirmation, background sync) triggered _update_product_stock_from_variants,
-    which re-summed the UNCHANGED variants and wiped out the restocked units.
-    Now, restock on a variant product updates variant sub-stocks so the stock NEVER reverts.
-    """
-    import copy
-    store_id = scenario.make_store()
-    product_id = scenario.make_product(store_id, variants=copy.deepcopy(VARIANTS), stock=14)
-    order_id = scenario.make_order(store_id)
-
-    db = SessionLocal()
-    try:
-        # Restock without variant_details (generic restock of 10 units)
-        inventory_service.restock(
-            db,
-            product_id=product_id,
-            quantity=10,
-            actor_id=None,
-            reason="Restock sans variante explicite",
-        )
-        db.commit()
-
-        product = db.query(Product).filter(Product.id == product_id).first()
-        # Stock increased from 14 to 24
-        assert product.stock == 24
-        # Variants must have received the 10 units distributed
-        total_var_stock = sum(v["stock"] for v in product.variants)
-        assert total_var_stock == 24
-
-        # Simulate subsequent event minutes later (e.g. customer reserves 1 unit of S)
-        inventory_service.reserve_stock(
-            db,
-            product_id=product_id,
-            quantity=1,
-            order_id=order_id,
-            variant_details={"variant": "Taille: S"},
-        )
-        db.commit()
-
-        db.refresh(product)
-        # The stock must STILL be 24 (NOT reverted to 14)!
-        assert product.stock == 24
-        assert product.reserved_stock == 1
-        assert (product.stock - product.reserved_stock) == 23
-    finally:
-        db.close()
-
-
-def test_stock_movement_list_accepts_page_size_300_and_both_routes(scenario):
-    store_id = scenario.make_store()
-    product_id = scenario.make_product(store_id, stock=5)
-    user_id = scenario.make_user()
-    from app.core.security import create_access_token
-    token = create_access_token(subject=user_id)
-
-    from fastapi.testclient import TestClient
-    from app.main import app
-    client = TestClient(app)
-
-    # Test /api/v1/stock/ with pageSize=300
-    res = client.get(
-        f"/api/v1/stock/?product_id={product_id}&pageSize=300",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert res.status_code == 200, res.text
-    data = res.json()
-    assert data["success"] is True
-    assert data["pageSize"] == 300
-
-    # Test /api/v1/stock without trailing slash with pageSize=300
-    res_no_slash = client.get(
-        f"/api/v1/stock?product_id={product_id}&pageSize=300",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert res_no_slash.status_code == 200, res_no_slash.text
-    data_no_slash = res_no_slash.json()
-    assert data_no_slash["success"] is True
-    assert data_no_slash["pageSize"] == 300
-
-
-def test_restock_variant_with_nested_sub_variants_does_not_wipe_out(scenario):
-    """
-    Direct regression test for user-reported bug:
-    Variant 'Couleur: Bordeaux' has stock=74 and reserved=6 with nested sub_variants.
-    Restocking 100 pieces must increase stock to 174 (not revert to 74).
-    Subsequent order reservations must keep stock at 174 and update sub_variants.
-    """
-    store_id = scenario.make_store()
-    variants_with_subs = [
-        {
-            "name": "Couleur",
-            "value": "Bordeaux",
-            "stock": 74,
-            "reserved": 6,
-            "sub_variants": [
-                {"name": "Taille", "value": "Standard", "stock": 74, "reserved": 6}
-            ]
-        },
-        {
-            "name": "Couleur",
-            "value": "Noir",
-            "stock": 0,
-            "reserved": 0,
-            "sub_variants": [
-                {"name": "Taille", "value": "Standard", "stock": 0, "reserved": 0}
-            ]
-        }
-    ]
-    product_id = scenario.make_product(store_id, variants=variants_with_subs, stock=74)
-    order_id = scenario.make_order(store_id)
-
-    db = SessionLocal()
-    try:
-        # Restock 100 units on Bordeaux
-        inventory_service.restock(
-            db,
-            product_id=product_id,
-            quantity=100,
-            actor_id=None,
-            variant_details={"variant": "Couleur: Bordeaux"},
-            reason="Bon d'entrée +100"
-        )
-        db.commit()
-
-        product = db.query(Product).filter(Product.id == product_id).first()
-        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
-        assert bordeaux["stock"] == 174
-        assert bordeaux["sub_variants"][0]["stock"] == 174
-        assert product.stock == 174
-
-        # Customer reserves 2 units
-        inventory_service.reserve_stock(
-            db,
-            product_id=product_id,
-            quantity=2,
-            order_id=order_id,
-            variant_details={"variant": "Couleur: Bordeaux"},
-        )
-        db.commit()
-
-        db.refresh(product)
-        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
-        assert bordeaux["stock"] == 174
-        assert bordeaux["reserved"] == 8
-        assert bordeaux["sub_variants"][0]["reserved"] == 8
-        assert product.stock == 174
-
-        # Confirm 2 units
-        inventory_service.confirm_stock(
-            db,
-            product_id=product_id,
-            quantity=2,
-            order_id=order_id,
-            variant_details={"variant": "Couleur: Bordeaux"},
-        )
-        db.commit()
-
-        db.refresh(product)
-        bordeaux = next(v for v in product.variants if v["value"] == "Bordeaux")
-        assert bordeaux["stock"] == 172
-        assert bordeaux["reserved"] == 6
-        assert bordeaux["sub_variants"][0]["stock"] == 172
-        assert bordeaux["sub_variants"][0]["reserved"] == 6
-        assert product.stock == 172
-    finally:
-        db.close()

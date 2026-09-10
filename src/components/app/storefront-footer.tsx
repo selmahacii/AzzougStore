@@ -129,128 +129,90 @@ export function StorefrontFooter() {
     toast.info(messages[label] || 'Information bientôt disponible');
   };
 
-  if (tpl === 'clean' || tpl === 'minimalist') {
+  if (tpl === 'clean') {
     return (
-      <footer className="w-full bg-[#F8F9FC] border-t border-slate-200/80">
-        <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
-          
-          {/* Main Footer Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
-            
-            {/* Store Brand Card (4 cols) */}
-            <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs flex flex-col justify-between space-y-5">
-              <div className="space-y-3.5">
-                <div className="flex items-center gap-3">
-                  <div className="size-11 rounded-xl bg-white border border-slate-200/80 p-1 flex items-center justify-center shrink-0 shadow-2xs">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
-                    ) : (
-                      <span className="text-sm font-black text-white size-full rounded-lg flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
-                        {storeName.charAt(0)}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900">{storeName}</h3>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 font-mono">Boutique Officielle</span>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                  {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions artisanales et expédition rapide dans les 58 wilayas."}
-                </p>
+      <footer className="w-full bg-neutral-50/50 border-t border-neutral-100">
+        <div className="mx-auto max-w-[1600px] px-6 sm:px-12 py-12 sm:pt-24 sm:pb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-16 mb-12 sm:mb-20">
+            <div className="sm:col-span-2 lg:col-span-1 space-y-6">
+              <div className="flex flex-col gap-2">
+                {logoUrl ? (
+                  <img src={logoUrl} alt={storeName} className="h-10 w-auto object-contain self-start" />
+                ) : (
+                  <span className="text-xl font-light uppercase tracking-[0.2em] text-neutral-900" style={{ fontFamily: '"Plus Jakarta Sans", sans-serif' }}>
+                    {storeName}
+                  </span>
+                )}
               </div>
-
-              {/* Social Links */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Réseaux</span>
-                <SocialLinks social={social} color={primary} />
+              {tagline && <p className="text-xs text-neutral-500 leading-relaxed max-w-xs font-light">{tagline}</p>}
+              <div className="flex gap-3 pt-2">
+                <SocialLinks social={social} color={primary} isClean />
               </div>
             </div>
 
-            {/* Catalog Collections Card (3 cols) */}
-            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Collections</h4>
-                <button 
-                  onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }}
-                  className="text-[9px] font-black uppercase tracking-wider text-[#4b7bec] hover:underline"
-                >
-                  Tout voir
-                </button>
-              </div>
-              <ul className="space-y-2">
+            <div className="space-y-6">
+              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Catalogue</h4>
+              <ul className="space-y-3">
                 {shopLinks.length > 0 ? shopLinks.map(l => (
                   <li key={l}>
                     <button 
                       onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
-                      className="w-full flex items-center justify-between py-1 text-xs font-bold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left"
+                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
                     >
-                      <span>{l}</span>
-                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
+                      {l}
                     </button>
                   </li>
                 )) : (
                   <li>
                     <button 
-                      onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
-                      className="w-full flex items-center justify-between py-1 text-xs font-bold text-slate-600 hover:text-[#4b7bec] transition-colors group text-left"
+                      onClick={() => setStorefrontView('shop')} 
+                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
                     >
-                      <span>Voir le catalogue complet</span>
-                      <span className="text-slate-300 group-hover:text-[#4b7bec] transition-colors">›</span>
+                      Voir le catalogue
                     </button>
                   </li>
                 )}
               </ul>
             </div>
 
-            {/* Customer Service Card (2 cols) */}
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
-              <div className="border-b border-slate-100 pb-3">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Assistance</h4>
-              </div>
-              <ul className="space-y-2">
+            <div className="space-y-6">
+              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Support Client</h4>
+              <ul className="space-y-3">
                 {HELP_LINKS.map(l => (
                   <li key={l.label}>
                     <button 
                       onClick={() => handleHelpAction(l.label)} 
-                      className="w-full flex items-center gap-2 py-1 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors text-left"
+                      className="text-xs font-light text-neutral-500 hover:text-neutral-900 hover:underline underline-offset-4 transition-all duration-300"
                     >
-                      <l.icon className="size-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{l.label}</span>
+                      {l.label}
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* Contact Card (3 cols) */}
-            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-100 p-6 shadow-xs space-y-4">
-              <div className="border-b border-slate-100 pb-3">
-                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-900">Coordonnées</h4>
-              </div>
-              <ContactBlock contact={contact} color={primary} />
-            </div>
-
-          </div>
-
-          {/* Bottom Bar (Meta Ads Style) */}
-          <div className="pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-[11px] font-bold text-slate-400 text-center sm:text-left">
-              {copyright}
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white rounded-xl border border-slate-200/80 text-[10px] font-bold text-slate-600 shadow-2xs">
-                <Truck className="size-3 text-[#4b7bec]" />
-                <span>Expédition 58 Wilayas</span>
-              </div>
+            <div className="space-y-6">
+              <h4 className="text-[10px] font-semibold uppercase tracking-[0.3em] text-neutral-900">Nous Contacter</h4>
+              <ContactBlock contact={contact} color={primary} isClean />
             </div>
           </div>
 
+          <div className="pt-10 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
+              <p className="text-[10px] font-light tracking-wider text-neutral-400">
+                {copyright}
+              </p>
+              <div className="flex gap-6">
+                <button className="text-[10px] font-light tracking-wider text-neutral-400 hover:text-neutral-900 hover:underline underline-offset-4 transition-colors">Confidentialité</button>
+                <button className="text-[10px] font-light tracking-wider text-neutral-400 hover:text-neutral-900 hover:underline underline-offset-4 transition-colors">CGV</button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 px-4 py-2 bg-neutral-50 rounded-none border border-neutral-200/60">
+               <ShieldCheck className="size-3.5 text-neutral-400" />
+               <span className="text-[9px] font-medium uppercase tracking-[0.15em] text-neutral-500">Paiement 100% Sécurisé</span>
+            </div>
+          </div>
         </div>
       </footer>
     );
@@ -291,6 +253,12 @@ export function StorefrontFooter() {
           </div>
           <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-6">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/20">{copyright}</p>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/5">
+                 <ShieldCheck className="size-4" style={{ color: 'white' }} />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-white/30">Paiement Sécurisé</span>
+              </div>
+            </div>
           </div>
         </div>
       </footer>
@@ -331,6 +299,10 @@ export function StorefrontFooter() {
         </div>
         <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-[10px] font-black uppercase tracking-widest text-white/30">{copyright}</p>
+          <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest text-white/40">
+            <ShieldCheck className="size-3.5" style={{ color: 'white' }} />
+            Paiement sécurisé
+          </div>
         </div>
       </div>
     </footer>

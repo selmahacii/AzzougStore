@@ -122,8 +122,6 @@ const NAV_SECTIONS: NavSection[] = [
                { label: 'Affectées (Attente)', view: 'orders', subView: 'EN ATTENTE' },
                { label: 'Confirmées (Attente Expédition)', view: 'orders', subView: 'CONFIRMED' },
                { label: 'En Cours de Livraison', view: 'orders', subView: 'FOLLOWUP' },
-               { label: 'En Cours Point de Vente', view: 'orders', subView: 'POS_IN_TRANSIT' },
-               { label: 'Livrées Point de Vente', view: 'orders', subView: 'POS_DELIVERED' },
                { label: 'Livrées & Terminées', view: 'orders', subView: 'COMPLETED' },
                { label: 'Annulées & Retours', view: 'orders', subView: 'CANCELLED' },
                { label: 'Toutes les Commandes', view: 'orders', subView: 'ALL' },
@@ -563,7 +561,7 @@ export default function AdminSidebar() {
          {/* ─── Store Selector ──────────────────────────── */}
          {!sidebarCollapsed && activeStore && (
             <div className="px-3 py-3 border-b lg:hidden" style={{ borderColor: S.border }}>
-               {allStores.length > 1 ? (
+               {currentUser?.role === 'SUPER_ADMIN' && allStores.length > 1 ? (
                   <DropdownMenu>
                      <DropdownMenuTrigger asChild>
                         <button className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-[#F8F9FC] border border-[#E9ECF0] hover:border-[#B2BEC3] transition-colors">

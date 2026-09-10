@@ -24,15 +24,12 @@ export function safeDivide(numerator: number, denominator: number): number {
  * Format a price in Algerian Dinar (DA).
  * Expects an integer DA value (no cents/subunits).
  */
-export function formatPrice(amount: number | null | undefined): string {
-  const num = typeof amount === 'number' && !isNaN(amount)
-    ? amount
-    : (amount !== null && amount !== undefined && !isNaN(Number(amount)) ? Number(amount) : 0);
+export function formatPrice(amount: number): string {
   return new Intl.NumberFormat('fr-DZ', {
     style: 'decimal',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(Math.round(num)) + ' DA';
+  }).format(Math.round(amount)) + ' DA';
 }
 
 /**

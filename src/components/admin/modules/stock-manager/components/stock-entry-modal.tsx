@@ -11,8 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiFetch } from '@/lib/api-client';
 import { toast } from 'sonner';
 
-import { getProductVariantItems } from '../utils';
-
 export function StockEntryModal({ open, onOpenChange, products, warehouses, storeId }: any) {
    const qc = useQueryClient();
    const [formData, setFormData] = useState({
@@ -29,14 +27,9 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
       receiving_agent: '',
       note: ''
    });
-   const [selectedVariant, setSelectedVariant] = useState<string>('ALL');
-   const [variantQuantities, setVariantQuantities] = useState<Record<string, number>>({});
-
-   const selectedProduct = products?.find((p: any) => p.id === formData.product_id);
-   const variantItems = getProductVariantItems(selectedProduct, {});
 
    const entryMutation = useMutation({
-      mutationFn: async (data: any) => {
+      mutationFn: (data: any) => {
          const richReason = [
             data.note.trim(),
             `--- SPECIFICATIONS DE RECEPTION (BON D'ENTREE) ---`,
@@ -50,50 +43,22 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
             `• Agent Réceptionnaire : ${data.receiving_agent.trim() || 'Système'}`
          ].filter(Boolean).join('\n');
 
-         if (selectedVariant === 'DETAILED') {
-            const entries = Object.entries(variantQuantities).filter(([_, q]) => (q as number) > 0);
-            if (entries.length === 0) {
-               throw new Error("Veuillez saisir au moins une quantité pour une variante.");
-            }
-            const results: any[] = [];
-            for (const [variantStr, qty] of entries) {
-               const res = await apiFetch('/api/v1/stock/', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                     product_id: data.product_id,
-                     warehouse_id: data.warehouse_id,
-                     quantity: qty,
-                     type: 'RESTOCK',
-                     reason: `${richReason}\n• Variante : ${variantStr} (${variantStr})`,
-                     variant_details: { variant: variantStr },
-                     store_id: storeId
-                  })
-               });
-               results.push(res);
-            }
-            return results;
-         } else {
-            return apiFetch('/api/v1/stock/', {
-               method: 'POST',
-               body: JSON.stringify({
-                  product_id: data.product_id,
-                  warehouse_id: data.warehouse_id,
-                  quantity: data.quantity,
-                  type: 'RESTOCK',
-                  reason: selectedVariant !== 'ALL' ? `${richReason}\n• Variante : ${selectedVariant} (${selectedVariant})` : richReason,
-                  variant_details: selectedVariant !== 'ALL' ? { variant: selectedVariant } : undefined,
-                  store_id: storeId
-               })
-            });
-         }
+         return apiFetch('/api/v1/stock/', {
+            method: 'POST',
+            body: JSON.stringify({
+               product_id: data.product_id,
+               warehouse_id: data.warehouse_id,
+               quantity: data.quantity,
+               type: 'RESTOCK',
+               reason: richReason,
+               store_id: storeId
+            })
+         });
       },
       onSuccess: () => {
          qc.invalidateQueries({ queryKey: ['admin-products-stock'] });
-         qc.invalidateQueries({ queryKey: ['admin-products'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'summary'] });
          qc.invalidateQueries({ queryKey: ['inventory', 'movements'] });
-         qc.invalidateQueries({ queryKey: ['product-movements'] });
-         qc.invalidateQueries({ queryKey: ['product-detail-live'] });
          toast.success("Bon d'Entrée validé avec succès ✓");
          onOpenChange(false);
          setFormData({
@@ -110,8 +75,6 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
             receiving_agent: '',
             note: ''
          });
-         setSelectedVariant('ALL');
-         setVariantQuantities({});
       },
       onError: (err: any) => toast.error(err.message || "Échec de validation du Bon d'Entrée"),
    });
@@ -145,11 +108,7 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                      <div className="md:col-span-2 space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Produit *</label>
-                        <Select value={formData.product_id} onValueChange={v => {
-                           setFormData({...formData, product_id: v, quantity: 0});
-                           setSelectedVariant('ALL');
-                           setVariantQuantities({});
-                        }}>
+                        <Select value={formData.product_id} onValueChange={v => setFormData({...formData, product_id: v})}>
                            <SelectTrigger className="h-12 border-slate-100 bg-white rounded-xl px-4 text-xs font-bold shadow-sm">
                               <SelectValue placeholder="Sélectionner le produit" />
                            </SelectTrigger>
@@ -175,106 +134,22 @@ export function StockEntryModal({ open, onOpenChange, products, warehouses, stor
                      </div>
                   </div>
 
-                  {variantItems.length > 0 && (
-                     <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100/80 space-y-3">
-                        <div className="flex items-center justify-between">
-                           <label className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">
-                              Variantes du Produit ({variantItems.length})
-                           </label>
-                           <span className="text-[9px] font-bold text-emerald-600 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
-                              Traçabilité multi-variante
-                           </span>
-                        </div>
-                        <div className="space-y-1">
-                           <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Cible Réception</label>
-                           <Select value={selectedVariant} onValueChange={v => {
-                              setSelectedVariant(v);
-                              if (v === 'DETAILED') {
-                                 const total = Object.values(variantQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-                                 setFormData(prev => ({ ...prev, quantity: total }));
-                              }
-                           }}>
-                              <SelectTrigger className="h-11 border-slate-200 bg-white rounded-xl px-3 text-xs font-bold">
-                                 <SelectValue placeholder="Choisir la variante" />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl max-h-[260px]">
-                                 <SelectItem value="ALL" className="font-bold text-xs">🌐 Toutes les variantes (Ventilation globale)</SelectItem>
-                                 <SelectItem value="DETAILED" className="font-bold text-xs">📋 Saisie détaillée par variante (Recommandé)</SelectItem>
-                                 {variantItems.map((vi: any) => (
-                                    <SelectItem key={vi.variantStr} value={vi.variantStr} className="font-bold text-xs">
-                                       🏷️ {vi.variantStr} (Stock: {vi.stock})
-                                    </SelectItem>
-                                 ))}
-                              </SelectContent>
-                           </Select>
-                        </div>
-
-                        {selectedVariant === 'DETAILED' && (
-                           <div className="space-y-2 pt-2 border-t border-emerald-100/70">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                 {variantItems.map((vi: any) => (
-                                    <div key={vi.variantStr} className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm">
-                                       <div className="flex flex-col pr-2">
-                                          <span className="text-xs font-bold text-slate-800 line-clamp-1">{vi.variantStr}</span>
-                                          <span className="text-[9px] font-bold text-slate-400">Stock actuel : {vi.stock}</span>
-                                       </div>
-                                       <div className="w-24 shrink-0">
-                                          <Input
-                                             type="number"
-                                             min={0}
-                                             value={variantQuantities[vi.variantStr] || ''}
-                                             onChange={e => {
-                                                const val = Math.max(0, parseInt(e.target.value) || 0);
-                                                const updated: Record<string, number> = { ...variantQuantities, [vi.variantStr]: val };
-                                                setVariantQuantities(updated);
-                                                const total = Object.values(updated).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-                                                setFormData(prev => ({ ...prev, quantity: total }));
-                                             }}
-                                             placeholder="+0"
-                                             className="h-8 text-xs font-bold text-center border-slate-200"
-                                          />
-                                       </div>
-                                    </div>
-                                 ))}
-                              </div>
-                              <div className="flex justify-end pr-1 pt-1">
-                                 <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider">
-                                    Total calculé : {formData.quantity} unités
-                                 </span>
-                              </div>
-                           </div>
-                        )}
-                     </div>
-                  )}
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     {selectedVariant !== 'DETAILED' ? (
-                        <div className="space-y-2">
-                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">
-                              {selectedVariant !== 'ALL' ? `Quantité pour ${selectedVariant} *` : 'Quantité à Entrer *'}
-                           </label>
-                           <div className="relative">
-                              <Input 
-                                 type="number"
-                                 min={1}
-                                 value={formData.quantity || ''}
-                                 onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
-                                 placeholder="Nombre d'unités"
-                                 className="h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black text-slate-800"
-                              />
-                              <Box className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-emerald-400" />
-                              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
-                           </div>
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Quantité à Entrer *</label>
+                        <div className="relative">
+                           <Input 
+                              type="number"
+                              min={1}
+                              value={formData.quantity || ''}
+                              onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
+                              placeholder="Nombre d'unités"
+                              className="h-12 border-slate-100 bg-white rounded-xl pl-10 pr-12 text-xs font-black text-slate-800"
+                           />
+                           <Box className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-emerald-400" />
+                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-300">UNITÉS</span>
                         </div>
-                     ) : (
-                        <div className="space-y-2">
-                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Total Unités Sélectionnées</label>
-                           <div className="h-12 border border-emerald-100 bg-emerald-50/40 rounded-xl px-4 flex items-center justify-between">
-                              <span className="text-xs font-bold text-emerald-800">Total cumulé des variantes</span>
-                              <span className="text-sm font-black text-emerald-700 tabular-nums">{formData.quantity} UNITÉS</span>
-                           </div>
-                        </div>
-                     )}
+                     </div>
                      <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">État de Qualité *</label>
                         <Select value={formData.quality_status} onValueChange={v => setFormData({...formData, quality_status: v})}>

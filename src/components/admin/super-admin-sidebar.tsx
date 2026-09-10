@@ -91,8 +91,6 @@ const NAV: NavSection[] = [
           { label: 'Affectées',           view: 'orders', subView: 'EN ATTENTE' },
           { label: 'Confirmées',          view: 'orders', subView: 'CONFIRMED' },
           { label: 'En livraison',        view: 'orders', subView: 'FOLLOWUP' },
-          { label: 'En cours Point de Vente', view: 'orders', subView: 'POS_IN_TRANSIT' },
-          { label: 'Livrées Point de Vente',  view: 'orders', subView: 'POS_DELIVERED' },
           { label: 'Livrées',             view: 'orders', subView: 'COMPLETED' },
           { label: 'Annulées & Retours',  view: 'orders', subView: 'CANCELLED' },
           { label: 'Toutes',              view: 'orders', subView: 'ALL' },
@@ -235,7 +233,7 @@ export default function SuperAdminSidebar() {
         {/* ── Store Selector (Mobile Only) ──────────────── */}
         {!sidebarCollapsed && activeStore && (
            <div className="px-3 py-3 border-b lg:hidden border-slate-100">
-              {allStores.length > 1 ? (
+              {currentUser?.role === 'SUPER_ADMIN' && allStores.length > 1 ? (
                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                        <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 hover:border-slate-350 transition-colors">
