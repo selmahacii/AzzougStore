@@ -234,6 +234,8 @@ const [timeLeft, setTimeLeft] = useState('');
     const m: Record<string, string> = {
       NEW: 'NEW', 'EN ATTENTE': 'ASSIGNED', CONFIRMED: 'CONFIRMED',
       FOLLOWUP: 'SHIPPED', COMPLETED: 'DELIVERED',
+      POS_IN_TRANSIT: 'POS_IN_TRANSIT',
+      POS_DELIVERED: 'POS_DELIVERED',
       // 'CANCELLED' tab is labeled "Annulations & Retours" — it must include
       // RETURNED orders too, not just CANCELLED, or returned orders are
       // invisible everywhere in the ERP despite the tab claiming to show them.
@@ -316,7 +318,8 @@ const [timeLeft, setTimeLeft] = useState('');
   // several duplicates and still be "1 order with a duplicate problem").
   const storeWideDuplicateCount = duplicateStatsQuery.data?.data?.duplicate_groups ?? 0;
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
-  const [viewMode, setViewMode] = useState<'NEW' | 'EN ATTENTE' | 'CONFIRMED' | 'FOLLOWUP' | 'COMPLETED' | 'CANCELLED' | 'ABANDONED' | 'ALL'>((adminSubView as any) || 'NEW');
+  const [createAutoDispatch, setCreateAutoDispatch] = useState(false);
+  const [viewMode, setViewMode] = useState<'NEW' | 'EN ATTENTE' | 'CONFIRMED' | 'FOLLOWUP' | 'POS_IN_TRANSIT' | 'POS_DELIVERED' | 'COMPLETED' | 'CANCELLED' | 'ABANDONED' | 'ALL'>((adminSubView as any) || 'NEW');
   // Edit order modal
   const [editOrderOpen, setEditOrderOpen] = useState(false);
   const [editOrderData, setEditOrderData] = useState<any>(null);
@@ -627,6 +630,8 @@ const [timeLeft, setTimeLeft] = useState('');
     'EN ATTENTE': 'WORKING',
     CONFIRMED: 'CONFIRMED',
     FOLLOWUP: 'SHIPPED',
+    POS_IN_TRANSIT: 'POS_IN_TRANSIT',
+    POS_DELIVERED: 'POS_DELIVERED',
     COMPLETED: 'DELIVERED',
     // Same reasoning as the statusFilter initializer above: this tab shows
     // both cancelled AND returned orders, so it must request the backend's
@@ -662,6 +667,8 @@ const [timeLeft, setTimeLeft] = useState('');
     RESCHEDULED: 'EN ATTENTE',
     CONFIRMED: 'CONFIRMED',
     SHIPPED: 'FOLLOWUP',
+    POS_IN_TRANSIT: 'POS_IN_TRANSIT',
+    POS_DELIVERED: 'POS_DELIVERED',
     DELIVERED: 'COMPLETED',
     CANCELLED: 'CANCELLED',
     RETURNED: 'CANCELLED',
@@ -778,14 +785,37 @@ const [timeLeft, setTimeLeft] = useState('');
    });
 
    const createOrderMutation = useMutation({
-     mutationFn: (data: any) => apiFetch('/api/v1/orders/', {
-       method: 'POST',
-       body: JSON.stringify(data),
-     }),
-     onSuccess: () => {
+     mutationFn: async (data: any) => {
+       const created: any = await apiFetch('/api/v1/orders/', {
+         method: 'POST',
+         body: JSON.stringify(data),
+       });
+       if (createAutoDispatch && created?.id && data.carrier_id) {
+         try {
+           const dispatchRes = await apiFetch<any>(`/api/v1/orders/${created.id}/dispatch`, {
+             method: 'POST',
+           });
+           return { ...created, dispatched: true, tracking: dispatchRes.tracking_number || dispatchRes.tracking };
+         } catch (e) {
+           console.error('Auto-dispatch carrier error:', e);
+         }
+       }
+       return created;
+     },
+     onSuccess: (res: any) => {
        queryClient.invalidateQueries({ queryKey: ['orders'] });
-       toast.success('Dossier commande déployé avec succès');
+       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+       queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
+       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+       queryClient.invalidateQueries({ queryKey: ['stats'] });
+       if (res?.dispatched) {
+         toast.success(`Commande créée et expédiée avec succès — Suivi : ${res.tracking || 'Généré'}`);
+       } else {
+         toast.success('Dossier commande déployé avec succès');
+       }
        setIsCreatingOrder(false);
+       setCreateAutoDispatch(false);
        setNewOrderItems([]);
        setCustomerData({ name: '', phone: '', wilaya: '', address: '' });
        setSelectedOrderProduct(null);
@@ -1141,6 +1171,8 @@ const [timeLeft, setTimeLeft] = useState('');
     'EN ATTENTE': 'Commandes Assignées',
     CONFIRMED: 'Commandes Confirmées',
     FOLLOWUP: 'Suivi de Livraison',
+    POS_IN_TRANSIT: 'En cours Point de Vente',
+    POS_DELIVERED: 'Livrées Point de Vente',
     COMPLETED: 'Commandes Terminées',
     CANCELLED: 'Annulations & Retours',
     ABANDONED: 'Paniers Abandonnés',
@@ -1510,14 +1542,16 @@ const [timeLeft, setTimeLeft] = useState('');
                 </SelectTrigger>
                 <SelectContent>
                   {[
-                    { id: 'NEW',        label: 'Nouvelles',  statusKey: 'NEW' },
-                    { id: 'EN ATTENTE', label: 'En Cours',   statusKey: 'ASSIGNED' },
-                    { id: 'CONFIRMED',  label: 'Confirmées', statusKey: 'CONFIRMED' },
-                    { id: 'FOLLOWUP',   label: 'Suivi',      statusKey: 'SHIPPED' },
-                    { id: 'COMPLETED',  label: 'Terminées',  statusKey: 'DELIVERED' },
-                    { id: 'CANCELLED',  label: 'Annulées & Retours', statusKey: 'CANCELLED' },
-                    { id: 'ABANDONED',  label: 'Abandonnés', statusKey: 'ABANDONED' },
-                    { id: 'ALL',        label: 'Toutes',     statusKey: 'ALL' },
+                    { id: 'NEW',            label: 'Nouvelles',  statusKey: 'NEW' },
+                    { id: 'EN ATTENTE',     label: 'En Cours',   statusKey: 'ASSIGNED' },
+                    { id: 'CONFIRMED',      label: 'Confirmées', statusKey: 'CONFIRMED' },
+                    { id: 'FOLLOWUP',       label: 'Suivi',      statusKey: 'SHIPPED' },
+                    { id: 'POS_IN_TRANSIT', label: 'En cours PDV', statusKey: 'POS_IN_TRANSIT' },
+                    { id: 'POS_DELIVERED',  label: 'Livrées PDV', statusKey: 'POS_DELIVERED' },
+                    { id: 'COMPLETED',      label: 'Terminées',  statusKey: 'DELIVERED' },
+                    { id: 'CANCELLED',      label: 'Annulées & Retours', statusKey: 'CANCELLED' },
+                    { id: 'ABANDONED',      label: 'Abandonnés', statusKey: 'ABANDONED' },
+                    { id: 'ALL',            label: 'Toutes',     statusKey: 'ALL' },
                   ].map(tab => {
                     const count = tab.statusKey === 'ALL'
                       ? Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)
@@ -3182,21 +3216,33 @@ const [timeLeft, setTimeLeft] = useState('');
                 </div>
              </div>
 
-             <div className="pt-8 border-t flex items-center justify-between bg-white">
-                <div className="space-y-1">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
-                   <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
-                      {formatPrice(Math.max(0, (orderPrice * orderQty) + deliveryFee - orderDiscount))}
-                   </div>
-                   <p className="text-[10px] text-neutral-400 font-bold">
-                     {orderQty > 1 && <>{orderQty} × {formatPrice(orderPrice)} · </>}
-                     + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
-                   </p>
-                </div>
-                <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 bg-[#6C5CE7] hover:bg-[#5B4BC4] text-[12px] font-bold uppercase tracking-widest text-white shadow-xl shadow-[#6C5CE7]/20 group rounded-xl">
-                   {createOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : <>Enregistrer la Commande <ArrowRightLeft className="ml-3 size-4 group-hover:translate-x-1 transition-transform" /></>}
-                </Button>
-             </div>
+             <div className="pt-6 border-t flex flex-col md:flex-row items-center justify-between gap-4 bg-white">
+                 <div className="flex items-center gap-3 p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
+                   <input
+                     type="checkbox"
+                     id="createAutoDispatch"
+                     checked={createAutoDispatch}
+                     onChange={(e) => setCreateAutoDispatch(e.target.checked)}
+                     className="size-4 text-[#6C5CE7] rounded focus:ring-[#6C5CE7] border-slate-300 cursor-pointer"
+                   />
+                   <label htmlFor="createAutoDispatch" className="text-xs font-bold text-indigo-900 cursor-pointer">
+                     Expédier et créer immédiatement chez le transporteur
+                   </label>
+                 </div>
+                 <div className="space-y-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total à encaisser</p>
+                    <div className="text-3xl font-black text-[#2D3436] font-mono tabular-nums">
+                       {formatPrice(Math.max(0, (orderPrice * orderQty) + deliveryFee - orderDiscount))}
+                    </div>
+                    <p className="text-[10px] text-neutral-400 font-bold">
+                      {orderQty > 1 && <>{orderQty} × {formatPrice(orderPrice)} · </>}
+                      + {formatPrice(deliveryFee)} (livraison) · - {formatPrice(orderDiscount)} (remise)
+                    </p>
+                 </div>
+                 <Button type="submit" disabled={createOrderMutation.isPending} className="h-14 px-10 bg-[#6C5CE7] hover:bg-[#5B4BC4] text-[12px] font-bold uppercase tracking-widest text-white shadow-xl shadow-[#6C5CE7]/20 group rounded-xl cursor-pointer">
+                    {createOrderMutation.isPending ? <Loader2 className="size-5 animate-spin" /> : <>Enregistrer la Commande <ArrowRightLeft className="ml-3 size-4 group-hover:translate-x-1 transition-transform" /></>}
+                 </Button>
+              </div>
            </form>
          </DialogContent>
       </Dialog>

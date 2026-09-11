@@ -113,26 +113,27 @@ export function HomeSections() {
         id="best-sellers"
         className={cn(
           tpl === 'clean' 
-            ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
+            ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24' 
             : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
         )}
       >
         <div className={cn(
-          "flex items-end justify-between mb-12 sm:mb-16",
-          tpl === 'clean' && "border-b border-neutral-100 pb-6"
+          "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14",
+          tpl === 'clean' && "border-b border-slate-100 pb-5"
         )}>
           <div>
-            <p className={cn(
-              "text-[9px] uppercase tracking-[0.4em] mb-2.5",
-              tpl === 'clean' ? 'font-semibold text-neutral-400' : 
-              tpl === 'luxe' ? 'font-light text-amber-500/80' : 
-              'font-black'
-            )} style={tpl !== 'clean' && tpl !== 'luxe' ? { color: primary } : {}}>
-              {bestSellersTag}
-            </p>
+            <div className={cn(
+              "inline-flex items-center gap-2 mb-2",
+              tpl === 'clean' && "px-3 py-1 rounded-lg bg-blue-50 text-[#4b7bec] border border-blue-100"
+            )}>
+              <span className="size-1.5 rounded-full bg-[#4b7bec]" />
+              <span className="text-[9px] font-black uppercase tracking-wider">
+                {bestSellersTag}
+              </span>
+            </div>
             <h2 className={cn(
-              "text-4xl sm:text-5xl tracking-tight leading-none uppercase",
-              tpl === 'clean' ? 'font-extralight text-neutral-900' :
+              "text-2xl sm:text-4xl tracking-tight uppercase",
+              tpl === 'clean' ? 'font-black text-slate-900' :
               tpl === 'luxe' ? 'font-thin text-white' :
               'font-black text-white tracking-tighter'
             )}>
@@ -142,27 +143,27 @@ export function HomeSections() {
           <button 
             onClick={() => setStorefrontView('shop')}
             className={cn(
-              "hidden sm:flex items-center gap-2.5 text-[9px] font-semibold uppercase tracking-[0.25em] transition-colors group",
-              tpl === 'clean' ? 'text-neutral-400 hover:text-neutral-900' :
+              "hidden sm:flex items-center gap-2 text-xs font-black uppercase tracking-wider transition-all",
+              tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-2xs hover:bg-slate-50' :
               tpl === 'luxe' ? 'text-white/40 hover:text-white border-b border-white/10 pb-1.5' :
               'text-white/40 hover:text-white'
             )}
           >
             {t('exploreAll')} 
-            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1"/>
+            <ArrowRight className="size-3.5"/>
           </button>
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="aspect-[4/5] bg-gray-50/10 animate-pulse rounded-none" />
+              <div key={i} className="aspect-[4/5] bg-slate-100 animate-pulse rounded-2xl" />
             ))}
           </div>
         ) : featured.length > 0 ? (
           <div className={cn(
             "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-x-8 gap-y-16 lg:gap-x-10 lg:gap-y-20" : "gap-4 lg:gap-8"
+            tpl === 'clean' ? "gap-4 sm:gap-6" : "gap-4 lg:gap-8"
           )}>
             {featured.map(product => (
               <ProductCard 
@@ -178,28 +179,18 @@ export function HomeSections() {
           </div>
         ) : (
           <div className={cn(
-            "flex flex-col items-center justify-center gap-6 py-32 border border-dashed",
-            tpl === 'clean' ? 'bg-neutral-50/50 border-neutral-200 rounded-none' :
+            "flex flex-col items-center justify-center gap-4 py-20 border border-dashed text-center",
+            tpl === 'clean' ? 'bg-slate-50/50 border-slate-200 rounded-[24px]' :
             tpl === 'luxe' ? 'bg-[#12172A] border-white/5 rounded-none' :
             'bg-gray-50 border-gray-200 rounded-3xl'
           )}>
-            <p className={cn(
-              "text-[10px] uppercase tracking-widest",
-              tpl === 'clean' ? 'text-neutral-400 font-medium' :
-              tpl === 'luxe' ? 'text-white/40 font-light' :
-              'text-gray-400 font-medium'
-            )}>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               {t('collectionComingSoon')}
             </p>
             <button 
               onClick={() => setStorefrontView('shop')}
-              className={cn(
-                "text-[9px] font-semibold uppercase tracking-[0.25em] px-9 py-4 transition-all duration-300",
-                tpl === 'clean' ? 'text-white bg-neutral-900 hover:bg-neutral-800 rounded-none' :
-                tpl === 'luxe' ? 'text-neutral-950 rounded-none bg-white' :
-                'text-white shadow-xl hover:brightness-110 active:scale-[0.98]'
-              )}
-              style={tpl !== 'clean' && tpl !== 'luxe' ? { backgroundColor: primary } : {}}
+              className="text-xs font-black uppercase tracking-wider px-6 py-3 rounded-xl text-white shadow-md shadow-blue-100"
+              style={{ backgroundColor: primary }}
             >
               {t('viewCatalog')}
             </button>
@@ -208,31 +199,33 @@ export function HomeSections() {
       </section>
   );
 
+
   const newArrivalsSection = newArrivals.length > 0 ? (
         <section
           key="newArrivals"
           className={cn(
             tpl === 'clean' 
-              ? 'max-w-[1600px] mx-auto px-6 sm:px-12 py-24 sm:py-36' 
+              ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24' 
               : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
           )}
         >
           <div className={cn(
-            "flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12 sm:mb-16",
-            tpl === 'clean' && "border-b border-neutral-100 pb-6"
+            "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14",
+            tpl === 'clean' && "border-b border-slate-100 pb-5"
           )}>
             <div>
-              <p className={cn(
-                "text-[9px] uppercase tracking-[0.4em] mb-2.5",
-                tpl === 'clean' ? 'font-semibold text-neutral-400' :
-                tpl === 'luxe' ? 'font-light text-amber-500/80' :
-                'font-black'
-              )} style={tpl !== 'clean' && tpl !== 'luxe' ? { color: primary } : {}}>
-                {newArrivalsTag}
-              </p>
+              <div className={cn(
+                "inline-flex items-center gap-2 mb-2",
+                tpl === 'clean' && "px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100"
+              )}>
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                <span className="text-[9px] font-black uppercase tracking-wider">
+                  {newArrivalsTag}
+                </span>
+              </div>
               <h2 className={cn(
-                "text-4xl sm:text-5xl tracking-tight leading-none uppercase",
-                tpl === 'clean' ? 'font-extralight text-neutral-900' :
+                "text-2xl sm:text-4xl tracking-tight uppercase",
+                tpl === 'clean' ? 'font-black text-slate-900' :
                 tpl === 'luxe' ? 'font-thin text-white' :
                 'font-black text-white tracking-tighter'
               )}>
@@ -242,18 +235,19 @@ export function HomeSections() {
             <button 
               onClick={() => setStorefrontView('shop')}
               className={cn(
-                "text-[9px] font-semibold uppercase tracking-[0.25em] border-b pb-1.5 transition-colors",
-                tpl === 'clean' ? 'text-neutral-400 border-neutral-200 hover:text-neutral-900 hover:border-neutral-900' :
-                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white hover:border-white' :
+                "text-xs font-black uppercase tracking-wider transition-all",
+                tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-2xs hover:bg-slate-50 flex items-center gap-2' :
+                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white' :
                 'text-gray-500 border-gray-200 hover:border-gray-900'
               )}
             >
               {t('viewCollection')}
+              <ArrowRight className="size-3.5" />
             </button>
           </div>
           <div className={cn(
             "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-x-8 gap-y-16 lg:gap-x-10 lg:gap-y-20" : "gap-4 lg:gap-8"
+            tpl === 'clean' ? "gap-4 sm:gap-6" : "gap-4 lg:gap-8"
           )}>
             {newArrivals.map(product => (
               <ProductCard 
@@ -269,6 +263,7 @@ export function HomeSections() {
           </div>
         </section>
   ) : null;
+
 
   // Testimonials — only shown if real API reviews exist AND the config
   // enables the section (tpl==='clean' has never shown this section by

@@ -8,7 +8,6 @@ import { CheckoutForm } from '@/components/storefront/checkout-form';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
-import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 interface DzCodRendererProps {
@@ -283,7 +282,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-12" dir={dir}>
-      <FloatingLanguageSwitcher primaryColor={primary} />
       {/* ── TOP RED BANNER ── */}
       <div className="w-full text-center py-2.5 text-sm font-bold text-white shadow-sm flex items-center justify-center gap-2" style={{ backgroundColor: primary }}>
         <span>{t('fastDelivery')}</span>
