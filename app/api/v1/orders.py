@@ -3738,20 +3738,6 @@ def update_order_info(
     for field, value in data.items():
         if field == "items":
             continue
-        if field == "tracking_number" and value and not order.tracking_number:
-            if order.status in ("NEW", "ASSIGNED", "CALLED", "RESCHEDULED", "IN_PROGRESS", "CONFIRMED"):
-                if order.status != "CONFIRMED":
-                    from app.services.order_service import update_order_status
-                    update_order_status(db, order_id=order.id, new_status="CONFIRMED", actor_id=current_user.id)
-                    db.refresh(order)
-                order.status = "SHIPPED"
-                from app.models.events import OrderEvent
-                import uuid
-                db.add(OrderEvent(
-                    id=str(uuid.uuid4()), order_id=order.id, actor_id=current_user.id,
-                    from_status="CONFIRMED", to_status="SHIPPED",
-                    note=f"Tracking number added manually : {value}"
-                ))
         if field == "created_at" and value is not None:
             if isinstance(value, str):
                 from datetime import datetime as _dt_p
@@ -4924,20 +4910,10 @@ def list_returned_orders(
         except ValueError:
             pass
 
-    from app.models.events import OrderEvent
-
-    ret_subq = (
-        db.query(OrderEvent.order_id, sqlfunc.max(OrderEvent.created_at).label("ret_at"))
-        .filter(OrderEvent.to_status == "RETURNED")
-        .group_by(OrderEvent.order_id)
-        .subquery()
-    )
-    
-    q = q.outerjoin(ret_subq, Order.id == ret_subq.c.order_id)
     total = q.with_entities(sqlfunc.count(Order.id)).scalar() or 0
     orders = (
         q.options(joinedload(Order.items), joinedload(Order.livreur))
-        .order_by(sqlfunc.coalesce(ret_subq.c.ret_at, Order.updated_at).desc())
+        .order_by(Order.updated_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
