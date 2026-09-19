@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
@@ -364,28 +364,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }
   }, [offers, hasRealOffers, selectedOfferIndex]);
 
-  const currentOffer = hasRealOffers
-    ? (offers[selectedOfferIndex] || offers[0])
-    : {
-        quantity,
-        price: (price ?? 0) * quantity,
-        compare_price: (comparePrice ?? 0) * quantity,
-        name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
-      };
+  const currentOffer = useMemo(() => {
+    return hasRealOffers
+      ? (offers[selectedOfferIndex] || offers[0])
+      : {
+          quantity,
+          price: (price ?? 0) * quantity,
+          compare_price: (comparePrice ?? 0) * quantity,
+          name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
+        };
+  }, [hasRealOffers, offers, selectedOfferIndex, quantity, price, comparePrice, t]);
+
+  const selectedVariantsSerialized = JSON.stringify(selectedVariants);
 
   useEffect(() => {
-    // Le stepper +/- n'est pas le SEUL moyen de fixer la quantité — un
-    // palier d'offre configuré côté admin (ex: "pack de 30") la fixe
-    // directement via selectedOfferIndex, en contournant totalement le
-    // plafond du stepper. Un seul point de vérité : quelle que soit la
-    // source, la quantité ajoutée au panier ne dépasse jamais le stock
-    // disponible (bug confirmé en prod : un palier configuré au-delà du
-    // stock réel restait commandable).
+    if (!mounted) return;
     const qty = maxOrderableQuantity !== undefined
       ? Math.min(currentOffer.quantity, maxOrderableQuantity)
       : currentOffer.quantity;
 
-    // ── Case 1: Landing page WITH a linked product ────────────────────────────
     if (data.product) {
       let variantDetails: string | undefined = undefined;
       if (selectedVariants.length > 0) {
@@ -398,7 +395,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         }).filter(Boolean).join(' | ');
       }
       const offerPrice = currentOffer.price;
-      const unitPrice = Math.round(offerPrice / qty);
+      const unitPrice = Math.round(offerPrice / (qty || 1));
       const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
       const pImage = (selectedVarWithImg as any)?.image || heroImage || data.product.main_image;
       const cartItems = useCartStore.getState().items;
@@ -417,8 +414,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       return;
     }
 
-    // ── Case 2: Standalone landing page (no linked product) ──────────────────
-    const unitPrice = Math.round(currentOffer.price / qty);
+    const unitPrice = Math.round(currentOffer.price / (qty || 1));
     const syntheticProduct = {
       id: data.id,
       name: data.product_name || data.headline || 'Produit',
@@ -440,7 +436,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
+  }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   if (!mounted) {
     return (
