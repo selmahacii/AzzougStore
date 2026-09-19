@@ -204,7 +204,7 @@ export function WarehouseTransferPanel() {
    });
    const { data: prodData } = useQuery({
       queryKey: ['admin-products-light', activeStore?.id],
-      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&limit=200`),
+      queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&pageSize=50&minimal=true`),
       enabled: !!activeStore?.id,
    });
    const warehouses = whData?.data || [];

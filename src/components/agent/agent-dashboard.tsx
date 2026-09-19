@@ -666,7 +666,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&include_upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&pageSize=100&include_upsell_only=true&minimal=true`, { headers: { 'X-Store-Id': order.store_id } }),
   });
   const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
     (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
@@ -2801,7 +2801,7 @@ export default function AgentDashboard() {
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [dateByMode, setDateByMode] = useState<'created_at' | 'delivered_at'>('created_at');
+  const [dateByMode, setDateByMode] = useState<'created_at' | 'delivered_at'>('delivered_at');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isAutoRotate, setIsAutoRotate] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);

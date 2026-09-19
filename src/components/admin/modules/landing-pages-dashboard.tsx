@@ -1382,40 +1382,41 @@ function LandingPageModal({
     }
   };
 
+  const getBannerUrls = (str: string) => str ? str.split(',').map(s => s.trim()).filter(Boolean) : [];
+
   const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Type non supporté. Utilisez JPEG, PNG, WebP, GIF ou AVIF.');
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      toast.error('Image trop volumineuse. Limite: 20 MB.');
+    const valid = files.filter(f => allowedTypes.includes(f.type) && f.size <= 20 * 1024 * 1024);
+    if (valid.length === 0) {
+      toast.error('Aucune image valide (JPEG, PNG, WebP, max 20 MB)');
       return;
     }
 
     setIsUploadingBanner(true);
+    const newUrls: string[] = [];
     try {
-      const form = new FormData();
-      form.append('file', file);
-      if (bannerImageUrl) form.append('old_url', bannerImageUrl);
-      const res = await fetch('/api/v1/upload/image', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        body: form,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.detail || 'Échec du téléversement');
-      }
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
-      if (!data.url) throw new Error("Le serveur n'a pas renvoyé d'URL d'image");
-      setBannerImageUrl(data.url);
-      toast.success('Bannière publicitaire téléversée avec succès');
+      await Promise.all(valid.map(async (file) => {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/v1/upload/image', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: form,
+        });
+        if (res.ok) {
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          if (data.url) newUrls.push(data.url);
+        }
+      }));
+      const existingUrls = getBannerUrls(bannerImageUrl);
+      const combined = [...existingUrls, ...newUrls];
+      setBannerImageUrl(combined.join(','));
+      toast.success(`${newUrls.length} photo(s) de bannière ajoutée(s)`);
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors du téléversement');
     } finally {
@@ -1829,40 +1830,60 @@ function LandingPageModal({
                         </div>
                       </div>
 
-                      <div className="border-t border-slate-100 pt-4 space-y-1.5 col-span-1 sm:col-span-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo Panneau Publicitaire (Bannière de publicité tout en bas de la page de la landing page)</label>
-                        <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-slate-50 relative group hover:border-[#6C5CE7]/50 transition-all">
-                          {bannerImageUrl ? (
-                            <div className="relative size-16 shrink-0 rounded-xl overflow-hidden border border-slate-200">
-                              <img src={bannerImageUrl} alt="" className="size-full object-cover" />
-                              <button type="button" onClick={() => setBannerImageUrl('')} className="absolute top-1 right-1 p-1 bg-white/80 rounded-lg hover:bg-white text-rose-500 transition-all z-10">
-                                <X className="size-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="size-16 shrink-0 rounded-xl bg-white flex items-center justify-center border border-slate-200">
-                              <ImageIcon className="size-6 text-slate-300" />
-                            </div>
+                      <div className="border-t border-slate-100 pt-4 space-y-3 col-span-1 sm:col-span-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photos Bannières Publicitaires (Multiples - Bas de page)</label>
+                          {getBannerUrls(bannerImageUrl).length > 0 && (
+                            <span className="text-[10px] font-bold text-slate-400">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
                           )}
+                        </div>
+                        
+                        {/* Grid of banner thumbnails */}
+                        {getBannerUrls(bannerImageUrl).length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {getBannerUrls(bannerImageUrl).map((url, i) => (
+                              <div key={i} className="relative group aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                <img src={url} alt={`Bannière ${i + 1}`} className="size-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const urls = getBannerUrls(bannerImageUrl).filter((_, idx) => idx !== i);
+                                    setBannerImageUrl(urls.join(','));
+                                  }}
+                                  className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow z-10"
+                                  title="Supprimer cette bannière"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-slate-50 relative group hover:border-[#6C5CE7]/50 transition-all">
+                          <div className="size-12 shrink-0 rounded-xl bg-white flex items-center justify-center border border-slate-200">
+                            <ImageIcon className="size-5 text-slate-400" />
+                          </div>
                           <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                               <p className="text-sm font-bold text-slate-700">
-                                {isUploadingBanner ? 'Téléversement en cours...' : 'Bannière publicitaire de bas de page'}
+                                {isUploadingBanner ? 'Téléversement en cours...' : 'Ajouter des bannières publicitaires'}
                               </p>
-                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Format JPG, PNG, WebP (max 20 Mo)</p>
+                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Ces photos s'afficheront empilées en bas de la landing page (JPG, PNG, WebP, max 20 Mo)</p>
                             </div>
                             <div className="relative shrink-0">
                               <Button type="button" variant="outline" className="h-10 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 relative">
                                 <Upload className="size-4 text-slate-500" />
-                                {isUploadingBanner ? 'Téléchargement...' : 'Choisir un fichier'}
+                                {isUploadingBanner ? 'Téléchargement...' : 'Ajouter des bannières'}
                               </Button>
                               <input
                                  type="file"
                                  accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
+                                 multiple
                                  onChange={handleBannerImageUpload}
                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
                                  disabled={isUploadingBanner}
-                                 title="Cliquez pour uploader la bannière"
+                                 title="Cliquez pour uploader des bannières"
                               />
                             </div>
                           </div>
@@ -2740,40 +2761,60 @@ function LandingPageModal({
                         <Textarea value={ctaSubtitle} onChange={e => setCtaSubtitle(e.target.value)} placeholder="Ex: Le confort d'un nuage, partout avec vous." rows={3} className="rounded-2xl border-slate-200 text-sm font-medium resize-none" />
                       </div>
 
-                      <div className="border-t border-slate-200 pt-4 space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo Panneau Publicitaire (Bannière de publicité tout en bas de la page)</label>
-                        <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-white relative group hover:border-[#6C5CE7]/50 transition-all">
-                          {bannerImageUrl ? (
-                            <div className="relative size-16 shrink-0 rounded-xl overflow-hidden border border-slate-200">
-                              <img src={bannerImageUrl} alt="" className="size-full object-cover" />
-                              <button type="button" onClick={() => setBannerImageUrl('')} className="absolute top-1 right-1 p-1 bg-white/80 rounded-lg hover:bg-white text-rose-500 transition-all z-10">
-                                <X className="size-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="size-16 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
-                              <ImageIcon className="size-6 text-slate-300" />
-                            </div>
+                      <div className="border-t border-slate-200 pt-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photos Bannières Publicitaires (Multiples - Bas de page)</label>
+                          {getBannerUrls(bannerImageUrl).length > 0 && (
+                            <span className="text-[10px] font-bold text-slate-400">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
                           )}
+                        </div>
+                        
+                        {/* Grid of banner thumbnails */}
+                        {getBannerUrls(bannerImageUrl).length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {getBannerUrls(bannerImageUrl).map((url, i) => (
+                              <div key={i} className="relative group aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                <img src={url} alt={`Bannière ${i + 1}`} className="size-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const urls = getBannerUrls(bannerImageUrl).filter((_, idx) => idx !== i);
+                                    setBannerImageUrl(urls.join(','));
+                                  }}
+                                  className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow z-10"
+                                  title="Supprimer cette bannière"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-white relative group hover:border-[#6C5CE7]/50 transition-all">
+                          <div className="size-12 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
+                            <ImageIcon className="size-5 text-slate-400" />
+                          </div>
                           <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                               <p className="text-sm font-bold text-slate-700">
-                                {isUploadingBanner ? 'Téléversement en cours...' : 'Bannière publicitaire de bas de page'}
+                                {isUploadingBanner ? 'Téléversement en cours...' : 'Ajouter des bannières publicitaires'}
                               </p>
-                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Format JPG, PNG, WebP (max 20 Mo)</p>
+                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Ces photos s'afficheront empilées en bas de la landing page (JPG, PNG, WebP, max 20 Mo)</p>
                             </div>
                             <div className="relative shrink-0">
                               <Button type="button" variant="outline" className="h-10 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 relative">
                                 <Upload className="size-4 text-slate-500" />
-                                {isUploadingBanner ? 'Téléchargement...' : 'Choisir un fichier'}
+                                {isUploadingBanner ? 'Téléchargement...' : 'Ajouter des bannières'}
                               </Button>
                               <input
                                  type="file"
                                  accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
+                                 multiple
                                  onChange={handleBannerImageUpload}
                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
                                  disabled={isUploadingBanner}
-                                 title="Cliquez pour uploader la bannière"
+                                 title="Cliquez pour uploader des bannières"
                               />
                             </div>
                           </div>

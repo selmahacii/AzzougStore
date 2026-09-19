@@ -18,6 +18,17 @@ import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import { captureAttribution } from '@/lib/attribution';
 
+const parseBannerImages = (urlStr: string | null | undefined): string[] => {
+  if (!urlStr) return [];
+  if (urlStr.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(urlStr);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (e) {}
+  }
+  return urlStr.split(',').map(s => s.trim()).filter(Boolean);
+};
+
 interface LpData {
   id: string;
   store_id: string;
@@ -1143,8 +1154,23 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               </div>
             </div>
           )}
-        </div>
-      </div>
+      {/* Publicity Banners (Multiple - Seamless Stack without gap) */}
+      {(() => {
+        const banners = parseBannerImages(data.banner_image_url);
+        if (banners.length === 0) return null;
+        return (
+          <div className="max-w-[700px] mx-auto px-4 mt-8 mb-8 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
+            {banners.map((url, i) => (
+              <img
+                key={i}
+                src={optimizeCloudinaryUrl(url, 1600)}
+                alt={`Bannière publicitaire ${i + 1}`}
+                className="w-full h-auto block m-0 p-0"
+              />
+            ))}
+          </div>
+        );
+      })()}
 
       <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
         {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}

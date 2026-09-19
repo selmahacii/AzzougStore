@@ -644,8 +644,8 @@ export default function ProductsPage() {
          is_active: form.is_active,
          is_upsell_only: form.is_upsell_only,
          store_id: form.store_id || storeId,
-         main_image: form.main_image.trim(),
-         images: form.images,
+         main_image: form.main_image.trim() || (form.images[0] || ''),
+         images: form.main_image.trim() && !form.images.includes(form.main_image.trim()) ? [form.main_image.trim(), ...form.images] : form.images,
          tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
          variants: form.variants,
          shipping_model: form.production_source === 'local' ? 'local_production' : 'imported',
@@ -1740,55 +1740,80 @@ export default function ProductsPage() {
                               </div>
                            </div>
 
-                           {/* ── Galerie (only if no variants) ── */}
-                           {form.variants.length === 0 && (
-                              <div className="space-y-4 pt-8 border-t border-slate-100">
-                                 <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Galerie de photos (Multiples)</label>
-                                    {form.images.length > 0 && (
-                                       <span className="text-[10px] font-bold text-slate-400">{form.images.length} photo(s)</span>
-                                    )}
-                                 </div>
+                            {/* ── Galerie de Photos Produit (Multiples) ── */}
+                            <div className="space-y-4 pt-8 border-t border-slate-100">
+                               <div className="flex items-center justify-between">
+                                  <div>
+                                     <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Galerie de photos (Multiples)</label>
+                                     <p className="text-[10px] text-slate-400 ml-1 mt-0.5">Ces photos s'afficheront sous forme de carrousel de miniatures sous la photo principale du produit.</p>
+                                  </div>
+                                  {form.images.length > 0 && (
+                                     <span className="text-[10px] font-bold text-slate-400">{form.images.length} photo(s)</span>
+                                  )}
+                               </div>
 
-                                 {/* Thumbnails grid */}
-                                 {form.images.length > 0 && (
-                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                                       {form.images.map((url, i) => (
-                                          <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                                             <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
-                                             <button
-                                                type="button"
-                                                onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
-                                                className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
-                                             >
-                                                <X className="size-3" />
-                                             </button>
-                                          </div>
-                                       ))}
-                                    </div>
-                                 )}
+                               {/* Thumbnails grid */}
+                               {form.images.length > 0 && (
+                                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                                     {form.images.map((url, i) => {
+                                        const isMain = form.main_image === url;
+                                        return (
+                                           <div key={i} className={cn("relative group aspect-square rounded-2xl overflow-hidden border-2 bg-slate-50 transition-all", isMain ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200 hover:border-indigo-400")}>
+                                              <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
+                                              
+                                              {/* Main image badge */}
+                                              {isMain ? (
+                                                 <span className="absolute bottom-1 left-1 right-1 text-center text-[8px] font-black uppercase tracking-widest bg-emerald-500 text-white rounded-md py-0.5 shadow">
+                                                    Principale
+                                                 </span>
+                                              ) : (
+                                                 <button
+                                                    type="button"
+                                                    onClick={() => setF({ main_image: url })}
+                                                    className="absolute inset-x-1 bottom-1 text-[8px] font-black uppercase tracking-wider bg-slate-900/80 hover:bg-emerald-600 text-white rounded-md py-0.5 opacity-0 group-hover:opacity-100 transition-all text-center shadow"
+                                                 >
+                                                    Principale
+                                                 </button>
+                                              )}
 
-                                 {/* Upload zone */}
-                                 <label className={cn(
-                                    'flex flex-col items-center justify-center w-full h-28 rounded-[20px] border-2 border-dashed cursor-pointer transition-all',
-                                    isUploadingGallery ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/40'
-                                 )}>
-                                    {isUploadingGallery ? (
-                                       <><Loader2 className="size-6 animate-spin text-indigo-400 mb-2" /><span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">Téléversement en cours...</span></>
-                                    ) : (
-                                       <><Upload className="size-6 text-slate-300 mb-2" /><span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ajouter des photos supplémentaires</span><span className="text-[10px] text-slate-300 mt-1">Plusieurs fichiers acceptés · JPEG, PNG, WebP, AVIF</span></>
-                                    )}
-                                    <input
-                                       type="file"
-                                       accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                                       multiple
-                                       className="sr-only"
-                                       disabled={isUploadingGallery}
-                                       onChange={e => { handleGalleryUpload(e.target.files); e.target.value = ''; }}
-                                    />
-                                 </label>
-                              </div>
-                           )}
+                                              {/* Delete button */}
+                                              <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                    const next = form.images.filter((_, idx) => idx !== i);
+                                                    setF({ images: next, main_image: isMain ? (next[0] || '') : form.main_image });
+                                                 }}
+                                                 className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
+                                                 title="Supprimer cette photo"
+                                              >
+                                                 <X className="size-3" />
+                                              </button>
+                                           </div>
+                                        );
+                                     })}
+                                  </div>
+                               )}
+
+                               {/* Upload zone */}
+                               <label className={cn(
+                                  'flex flex-col items-center justify-center w-full h-28 rounded-[20px] border-2 border-dashed cursor-pointer transition-all',
+                                  isUploadingGallery ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/40'
+                               )}>
+                                  {isUploadingGallery ? (
+                                     <><Loader2 className="size-6 animate-spin text-indigo-400 mb-2" /><span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">Téléversement en cours...</span></>
+                                  ) : (
+                                     <><Upload className="size-6 text-slate-300 mb-2" /><span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ajouter plusieurs photos de produit</span><span className="text-[10px] text-slate-300 mt-1">Sélectionnez un ou plusieurs fichiers · JPEG, PNG, WebP, AVIF</span></>
+                                  )}
+                                  <input
+                                     type="file"
+                                     accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                                     multiple
+                                     className="sr-only"
+                                     disabled={isUploadingGallery}
+                                     onChange={e => { handleGalleryUpload(e.target.files); e.target.value = ''; }}
+                                  />
+                               </label>
+                            </div>
                         </TabsContent>
 
                         <TabsContent value="pricing" forceMount className="mt-0 space-y-6 sm:space-y-8 data-[state=inactive]:hidden">

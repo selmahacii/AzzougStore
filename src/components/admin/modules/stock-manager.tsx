@@ -44,7 +44,7 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
        if (variant === 'alerts') params.append('low_stock_only', 'true');
        return apiFetch<{ success: boolean; data: any[]; total: number }>(`/api/v1/products/?${params.toString()}`);
     },
-    refetchInterval: 60000,
+    refetchInterval: 300000,
   });
   const products = productsQuery.data?.data ?? [];
 
@@ -52,7 +52,7 @@ export default function StockManager({ variant = 'all' }: { variant?: 'all' | 'a
      queryKey: ['returns-by-variant', storeId],
      queryFn: () => apiFetch<{ data: Record<string, Record<string, number>> }>(`/api/v1/stock/returns-by-variant?store_id=${storeId}`),
      enabled: !!storeId,
-     refetchInterval: 120000,
+     refetchInterval: 300000,
   });
   const returnsByVariant = returnsQuery.data?.data || {};
 

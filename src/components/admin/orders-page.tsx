@@ -687,7 +687,7 @@ const [timeLeft, setTimeLeft] = useState('');
   // les doublons des 20 lignes visibles), quand UN filtre-type est actif on
   // charge tout le jeu statut+période en une fois (jusqu'à FILTER_MODE_CAP) et
   // on masque la pagination classique au profit d'un compteur exact.
-  const FILTER_MODE_CAP = 500;
+  const FILTER_MODE_CAP = 100;
   const isTypeFiltered = typeFilter !== 'ALL';
   const effectivePageSize = isTypeFiltered ? FILTER_MODE_CAP : pageSize;
   const effectivePage = isTypeFiltered ? 1 : page;

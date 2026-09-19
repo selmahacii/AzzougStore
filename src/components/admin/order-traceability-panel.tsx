@@ -276,7 +276,7 @@ export function OrderTraceabilityPanel({ orderId }: OrderTraceabilityPanelProps)
       }
       return failureCount < 2;
     },
-    refetchInterval: (query) => (query.state.error ? false : 30000),
+    refetchInterval: (query) => (query.state.error ? false : 180000),
     refetchIntervalInBackground: false,
     enabled: !!orderId,
   });
