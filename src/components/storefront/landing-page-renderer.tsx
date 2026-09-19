@@ -487,7 +487,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 alt={data.store?.name || activeStore?.name || 'Logo'}
                 className="h-9 sm:h-10 w-auto object-contain max-h-[40px] transition-all" 
                 onError={(e) => { 
-                  const target = e.target as HTMLImageElement;
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.onerror = null;
                   target.style.display = 'none';
                   const sibling = target.nextElementSibling as HTMLElement;
                   if (sibling) sibling.style.display = 'block';

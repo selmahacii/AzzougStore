@@ -1742,7 +1742,7 @@ export default function ProductsPage() {
                                         const isMain = form.main_image === url;
                                         return (
                                            <div key={i} className={cn("relative group aspect-square rounded-2xl overflow-hidden border-2 bg-slate-50 transition-all", isMain ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200 hover:border-indigo-400")}>
-                                              <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
+                                              <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { e.currentTarget.onerror = null; (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                                               
                                               {/* Main image badge */}
                                               {isMain ? (
