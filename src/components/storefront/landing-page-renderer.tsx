@@ -1067,63 +1067,66 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       </div>
 
       {/* REVIEWS & FAQ SECTION (Optional, Minimalist style) */}
-      <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
-        <div className="max-w-[800px] mx-auto px-4 py-16">
-          
-          {/* Testimonials */}
-          {data.testimonials && data.testimonials.length > 0 && (
-            <div id="testimonials-section" className="mb-20">
-               <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
-               <div className="space-y-6">
-                 {data.testimonials.map((t, i) => (
-                   <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
-                     <div className="flex gap-1 mb-3">
-                       {Array.from({ length: t.stars }).map((_, j) => (
-                         <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
-                       ))}
-                     </div>
-                     <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
-                     <div className="flex items-center gap-3">
-                       <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
-                         {t.name.charAt(0)}
+      {/* REVIEWS & FAQ SECTION (Optional, Only if testimonials or faq present) */}
+      {((data.testimonials && data.testimonials.length > 0) || (data.faq && data.faq.length > 0)) && (
+        <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
+          <div className="max-w-[800px] mx-auto px-4 py-16">
+            
+            {/* Testimonials */}
+            {data.testimonials && data.testimonials.length > 0 && (
+              <div id="testimonials-section" className={cn(data.faq && data.faq.length > 0 ? "mb-20" : "")}>
+                 <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
+                 <div className="space-y-6">
+                   {data.testimonials.map((t, i) => (
+                     <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
+                       <div className="flex gap-1 mb-3">
+                         {Array.from({ length: t.stars }).map((_, j) => (
+                           <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
+                         ))}
                        </div>
-                       <div>
-                         <p className="text-xs font-bold">{t.name}</p>
-                         <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
+                       <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
+                       <div className="flex items-center gap-3">
+                         <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
+                           {t.name.charAt(0)}
+                         </div>
+                         <div>
+                           <p className="text-xs font-bold">{t.name}</p>
+                           <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
+                         </div>
                        </div>
                      </div>
-                   </div>
-                 ))}
-               </div>
-            </div>
-          )}
-
-          {/* FAQ */}
-          {data.faq && data.faq.length > 0 && (
-            <div id="faq-section">
-              <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
-              <div className="space-y-3">
-                {data.faq.map((item, i) => (
-                  <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
-                    <button
-                      onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                      className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
-                    >
-                      <span>{item.question}</span>
-                      {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                    </button>
-                    {openFaq === i && (
-                      <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
-                        {item.answer}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                   ))}
+                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* FAQ */}
+            {data.faq && data.faq.length > 0 && (
+              <div id="faq-section">
+                <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
+                <div className="space-y-3">
+                  {data.faq.map((item, i) => (
+                    <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
+                      <button
+                        onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                        className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
+                      >
+                        <span>{item.question}</span>
+                        {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                      </button>
+                      {openFaq === i && (
+                        <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
+                          {item.answer}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
 
       <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
