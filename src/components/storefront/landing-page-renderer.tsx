@@ -688,7 +688,15 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               style={{ borderColor: (isActive || isVariantSelected) ? primary : undefined }}
                               title={item.label}
                             >
-                              <img src={optimizeCloudinaryUrl(item.url, 160)} alt={item.label} className="size-full object-cover" />
+                              <img 
+                                src={optimizeCloudinaryUrl(item.url, 160)} 
+                                alt={item.label} 
+                                className="size-full object-cover" 
+                                onError={(e) => {
+                                  const btn = e.currentTarget.closest('button');
+                                  if (btn) btn.style.setProperty('display', 'none', 'important');
+                                }}
+                              />
                             </button>
                           );
                         })}

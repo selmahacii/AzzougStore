@@ -445,7 +445,15 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     title={item.label || ''}
                   >
                     {item.url ? (
-                      <img src={optimizeCloudinaryUrl(item.url, 100)} className="size-full rounded-full object-cover" alt={item.label || 'Thumbnail'} />
+                      <img 
+                        src={optimizeCloudinaryUrl(item.url, 100)} 
+                        className="size-full rounded-full object-cover" 
+                        alt={item.label || 'Thumbnail'} 
+                        onError={(e) => {
+                          const btn = e.currentTarget.closest('button');
+                          if (btn) btn.style.setProperty('display', 'none', 'important');
+                        }}
+                      />
                     ) : (
                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
                     )}
