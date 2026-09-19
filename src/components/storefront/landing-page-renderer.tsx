@@ -1039,57 +1039,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </CheckoutForm>
                 </div>
 
-                {/* Publicity Banner */}
-                {data.banner_image_url && (
-                  <div className="mt-6 min-h-[120px]">
-                    <img
-                      src={optimizeCloudinaryUrl(data.banner_image_url, 800)}
-                      alt="Bannière publicitaire"
-                      width={800}
-                      height={300}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-auto rounded-2xl shadow-md"
-                    />
-                  </div>
-                )}
-
-                {/* Inline Delivery Info / Trust Badges (Replaces the modal) */}
-                <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-600">
-                      <Truck className="size-4" />
+                {/* Publicity Banners (Multiple - Seamless Stack without gap under Checkout Button) */}
+                {(() => {
+                  const banners = parseBannerImages(data.banner_image_url);
+                  if (banners.length === 0) return null;
+                  return (
+                    <div className="mt-6 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
+                      {banners.map((url, i) => (
+                        <img
+                          key={i}
+                          src={optimizeCloudinaryUrl(url, 1200)}
+                          alt={`Bannière publicitaire ${i + 1}`}
+                          className="w-full h-auto block m-0 p-0"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ))}
                     </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('delivery58')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('delivery58Desc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
-                      <ShieldCheck className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('securePayment')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('securePaymentDesc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
-                      <RotateCcw className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('satisfiedOrRefunded')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('satisfiedOrRefundedDesc')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
               </div>
             </div>
@@ -1156,23 +1124,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           )}
         </div>
       </div>
-      {/* Publicity Banners (Multiple - Seamless Stack without gap) */}
-      {(() => {
-        const banners = parseBannerImages(data.banner_image_url);
-        if (banners.length === 0) return null;
-        return (
-          <div className="max-w-[700px] mx-auto px-4 mt-8 mb-8 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
-            {banners.map((url, i) => (
-              <img
-                key={i}
-                src={optimizeCloudinaryUrl(url, 1600)}
-                alt={`Bannière publicitaire ${i + 1}`}
-                className="w-full h-auto block m-0 p-0"
-              />
-            ))}
-          </div>
-        );
-      })()}
+
 
       <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
         {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}
