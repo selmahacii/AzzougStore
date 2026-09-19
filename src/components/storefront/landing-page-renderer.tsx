@@ -475,36 +475,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between gap-4 h-10">
-          {/* Logo (Start side) */}
-          <div className="flex items-center gap-2 shrink-0 max-w-[50%] sm:max-w-[30%]">
-            {(data.store?.logo_url || activeStore?.logo_url) ? (
-              <img
-                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 150)}
-                alt={data.store?.name || activeStore?.name || 'Logo'}
-                className="h-9 sm:h-10 w-auto object-contain max-h-[40px] transition-all" 
-                onError={(e) => { 
-                  const target = e.currentTarget as HTMLImageElement;
-                  target.onerror = null;
-                  target.style.display = 'none';
-                  const sibling = target.nextElementSibling as HTMLElement;
-                  if (sibling) sibling.style.display = 'block';
-                }}
-              />
-            ) : null}
-            <span 
-              className="text-sm sm:text-base font-black tracking-tight uppercase truncate" 
-              style={{ 
-                color: primary, 
-                display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
-              }}
-            >
-              {data.store?.name || activeStore?.name || 'Boutique'}
-            </span>
-          </div>
-
-          {/* Navigation Links in Center (Desktop) */}
-          <nav className="hidden md:flex items-center gap-6">
+        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
+          {/* Start Side: Nav links on Desktop */}
+          <nav className="hidden md:flex items-center gap-6 z-10">
             <button 
               onClick={() => scrollToSection('presentation-section')}
               className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
@@ -529,8 +502,38 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             )}
           </nav>
 
-          {/* End Side Action Button & Secure Badge */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Start Side Placeholder for Mobile balance */}
+          <div className="md:hidden w-12 shrink-0" />
+
+          {/* CENTERED LOGO (Mobile & Desktop) */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center max-w-[45%] sm:max-w-[35%] pointer-events-auto z-10">
+            {(data.store?.logo_url || activeStore?.logo_url) ? (
+              <img
+                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 200)}
+                alt={data.store?.name || activeStore?.name || 'Logo'}
+                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] transition-all" 
+                onError={(e) => { 
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.onerror = null;
+                  target.style.display = 'none';
+                  const sibling = target.nextElementSibling as HTMLElement;
+                  if (sibling) sibling.style.display = 'block';
+                }}
+              />
+            ) : null}
+            <span 
+              className="text-sm sm:text-base font-black tracking-tight uppercase truncate" 
+              style={{ 
+                color: primary, 
+                display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
+              }}
+            >
+              {data.store?.name || activeStore?.name || 'Boutique'}
+            </span>
+          </div>
+
+          {/* End Side: Action Button & Secure Badge */}
+          <div className="flex items-center gap-3 z-10 shrink-0">
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
               className="text-[11px] sm:text-xs font-black uppercase tracking-wider px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
