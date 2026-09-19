@@ -1154,6 +1154,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               </div>
             </div>
           )}
+        </div>
+      </div>
       {/* Publicity Banners (Multiple - Seamless Stack without gap) */}
       {(() => {
         const banners = parseBannerImages(data.banner_image_url);

@@ -456,20 +456,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           );
         })()}
 
-                    {isSelected && (
-                      <div 
-                        className="absolute -top-1 -right-1 size-5 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-sm border border-white"
-                        style={{ backgroundColor: primary }}
-                      >
-                        ✓
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()}
 
         <div className="p-4 sm:p-6 lg:p-8">
           {/* Title & Price */}
