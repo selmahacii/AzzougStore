@@ -148,6 +148,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const { t, dir, setLocale } = useTranslation();
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
+  const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -605,7 +606,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {/* Main Image with Zoom */}
             {heroImage && (() => {
               const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-              const mainImgSrc = (selectedVarWithImg as any)?.image || heroImage;
+              const mainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
 
               return (
                 <div className="space-y-4 w-full">
@@ -636,92 +637,68 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     />
                   </div>
 
-                  {/* Galerie de miniatures des variantes — toute variante avec
-                      une photo (Couleur, Motif, Modèle…) apparaît ici en
-                      grand format sous la photo de couverture. Cliquer une
-                      miniature sélectionne cette variante ET change la photo principale.
-                      Dédoublonnée par URL d'image pour éviter la répétition sur les sous-variantes. */}
+                  {/* Galerie multi-photos unifiée (Photos principales du produit + photos des variantes) */}
                   {(() => {
-                    const variantImages: any[] = [];
+                    const allPhotos: Array<{ url: string; label: string; variant?: any }> = [];
                     const seen = new Set<string>();
+
+                    // 1. Photos principales du produit
+                    const mainImgs = [
+                      data.product?.main_image,
+                      ...(data.product?.images || []),
+                      ...(data.gallery || []),
+                      heroImage
+                    ].filter(Boolean) as string[];
+
+                    mainImgs.forEach((url, i) => {
+                      if (!seen.has(url)) {
+                        seen.add(url);
+                        allPhotos.push({ url, label: `Photo ${i + 1}` });
+                      }
+                    });
+
+                    // 2. Photos des variantes
                     if (data.product?.variants) {
                       data.product.variants.forEach((v: any) => {
                         if (v.image && !seen.has(v.image)) {
                           seen.add(v.image);
-                          variantImages.push(v);
+                          allPhotos.push({ url: v.image, label: v.value || v.name, variant: v });
                         }
                       });
                     }
-                    if (variantImages.length === 0) return null;
+
+                    if (allPhotos.length <= 1) return null;
 
                     return (
-                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                        {variantImages.map((v: any, i: number) => {
-                          const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value && val?.name === v.name);
+                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 justify-start">
+                        {allPhotos.map((item, i) => {
+                          const isActive = mainImgSrc === item.url;
+                          const isVariantSelected = item.variant && Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === item.variant.value && val?.name === item.variant.name);
+                          
                           return (
                             <button
                               key={`thumb-${i}`}
                               type="button"
-                              onClick={() => handleSelectVariant(v)}
+                              onClick={() => {
+                                setSelectedActiveImage(item.url);
+                                if (item.variant) {
+                                  handleSelectVariant(item.variant);
+                                }
+                              }}
                               className={cn(
-                                "relative shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95",
-                                isSelected ? "shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                                "relative shrink-0 size-16 sm:size-20 rounded-2xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95 bg-white shadow-sm",
+                                (isActive || isVariantSelected) ? "ring-2 ring-offset-1 shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
                               )}
-                              style={{ borderColor: isSelected ? primary : undefined }}
-                              title={v.value}
+                              style={{ borderColor: (isActive || isVariantSelected) ? primary : undefined }}
+                              title={item.label}
                             >
-                              <img src={optimizeCloudinaryUrl(v.image, 160)} alt={v.value} className="size-full object-cover" />
+                              <img src={optimizeCloudinaryUrl(item.url, 160)} alt={item.label} className="size-full object-cover" />
                             </button>
                           );
                         })}
                       </div>
                     );
                   })()}
-
-                  {/* Le bloc "Variant Selector" (couleurs en cercles + options
-                      en boutons) a été entièrement retiré — doublon exact de :
-                      1. la galerie de miniatures juste au-dessus (photos des
-                         variantes, sous la photo principale) ;
-                      2. le sélecteur "اختر خيارك" du formulaire de commande.
-                      Sous la photo principale, on ne garde donc QUE la galerie
-                      de miniatures, puis directement le container d'infos/détails. */}
-                </div>
-              );
-            })()}
-
-            {/* Description or Gallery if needed */}
-
-            {/* Gallery Miniatures - Uniquement si une galerie explicite différente des variantes est configurée */}
-            {(() => {
-              const hasVariantThumbnails = data.product?.variants && data.product.variants.some((v: any) => v.image);
-              const explicitGallery = (data.gallery && data.gallery.length > 0) ? data.gallery : [];
-              
-              // Si pas de galerie explicite ET que des miniatures de variantes sont déjà affichées, éviter la ligne en doublon
-              if (hasVariantThumbnails && explicitGallery.length === 0) return null;
-
-              const displayedVariantImages = new Set(
-                (data.product?.variants || []).map((v: any) => v.image).filter(Boolean)
-              );
-              if (heroImage) displayedVariantImages.add(heroImage);
-
-              const extraGallery = (explicitGallery.length > 0 ? explicitGallery : (data.product?.images || []))
-                .filter((url: string) => url && !displayedVariantImages.has(url));
-
-              if (extraGallery.length === 0) return null;
-
-              return (
-                <div className="mt-8">
-                  <div className="flex gap-2 justify-center overflow-x-auto py-2">
-                    {extraGallery.slice(0, 4).map((url: string, i: number) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
-                      >
-                        <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
-                      </button>
-                    ))}
-                  </div>
                 </div>
               );
             })()}
