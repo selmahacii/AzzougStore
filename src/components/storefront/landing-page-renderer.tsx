@@ -317,11 +317,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const heroImage = data.image_url || data.product?.main_image;
-  const price = data.price ?? data.product?.price ?? null;
-  const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
-  const productName = data.product_name || data.product?.name || data.headline;
-  const productDesc = data.product_desc || data.product?.description;
+  const heroImage = data.product?.main_image || data.image_url;
+  const price = data.product?.price ?? data.price ?? null;
+  const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
+  const productName = data.product?.name || data.product_name || data.headline;
+  const productDesc = data.product?.description || data.product_desc;
   const discount = comparePrice && price ? Math.round((1 - price / comparePrice) * 100) : 0;
 
   // Une landing page n'a pas TOUJOURS d'offre par palier configurée — quand
