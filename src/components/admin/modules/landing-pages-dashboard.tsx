@@ -184,7 +184,8 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
     queryKey: ['lp-performance-center', lp.id, dStart, dEnd, comparePrevious],
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z&compare_previous=${comparePrevious}`),
-    staleTime: 60 * 1000,
+    staleTime: 0,
+    refetchInterval: 10000,
     refetchOnWindowFocus: true,
   });
 
@@ -193,7 +194,8 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/reconciliation-events?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
     enabled: showReconciliationModal,
-    staleTime: 30 * 1000,
+    staleTime: 0,
+    refetchInterval: 10000,
   });
 
   const data = analyticsQuery.data?.data;
@@ -248,6 +250,16 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
 
             {/* Health Score Badge & Quick Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => analyticsQuery.refetch()}
+                disabled={analyticsQuery.isFetching}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all shadow-xs"
+                title="Rafraîchir immédiatement les données analytiques en temps réel"
+              >
+                <RefreshCw className={cn("size-3.5", analyticsQuery.isFetching && "animate-spin text-indigo-500")} />
+                <span>{analyticsQuery.isFetching ? 'Actualisation...' : 'En temps réel (10s)'}</span>
+              </button>
               {health.score != null && (
                 <div className="relative">
                   <button
@@ -2951,11 +2963,8 @@ export default function LandingPagesDashboard() {
       return apiFetch<any>(`/api/v1/landing-pages?${buildQueryStr()}`);
     },
     enabled:  !!storeId,
-    // Vues/Ordres/Conv. only refreshed on manual reload or after an edit —
-    // a landing page taking live traffic could sit on stale numbers for as
-    // long as the admin kept the tab open. Poll so the cards stay current
-    // without her having to refresh the page herself.
-    refetchInterval: 2 * 60 * 60 * 1000,
+    staleTime: 0,
+    refetchInterval: 30 * 1000,
     refetchIntervalInBackground: false,
   });
 
