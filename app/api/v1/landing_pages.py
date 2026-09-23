@@ -465,9 +465,7 @@ def get_landing_page_analytics(
     Aggregates first-party ERP orders, unified funnel, Meta Ads Insights,
     health score, smart alerts, and reconciliation.
     """
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    response.headers["Cache-Control"] = "public, s-maxage=120, stale-while-revalidate=300"
 
     from app.services.landing_page_analytics_service import LandingPageAnalyticsService
 
@@ -481,42 +479,27 @@ def get_landing_page_analytics(
         )
     except ValueError as val_err:
         raise HTTPException(404, str(val_err))
-    except Exception as exc:
-        logger.error(f"[LP Analytics] Error in get_performance_center for lp_id={lp_id}: {exc}", exc_info=True)
-        raise HTTPException(500, f"Erreur lors du calcul des analytiques: {exc}")
-
-    kpis = data.get("kpis", {})
-    health = data.get("health_score", {})
-    meta = data.get("meta_performance", {})
-    lp_info = data.get("landing_page", {})
-
-    orders_kpi = kpis.get("orders", {}) if isinstance(kpis.get("orders"), dict) else {}
-    deliv_kpi = kpis.get("delivered", {}) if isinstance(kpis.get("delivered"), dict) else {}
-    ret_kpi = kpis.get("returned", {}) if isinstance(kpis.get("returned"), dict) else {}
-    shipped_kpi = kpis.get("shipped", {}) if isinstance(kpis.get("shipped"), dict) else {}
-    rec_kpi = kpis.get("recovered_carts", {}) if isinstance(kpis.get("recovered_carts"), dict) else {}
-    conv_kpi = kpis.get("conversion_rate", {}) if isinstance(kpis.get("conversion_rate"), dict) else {}
 
     # Add legacy compatibility fields so existing widgets never break
     legacy_daily = data.get("diagnostic_table", [])
     legacy_totals = {
-        "orders": orders_kpi.get("value", 0),
-        "delivered": deliv_kpi.get("value", 0),
-        "returned": ret_kpi.get("value", 0),
-        "shipped": shipped_kpi.get("shipped_count", 0),
-        "with_tracking": shipped_kpi.get("with_tracking_count", 0),
-        "recovered": rec_kpi.get("recovered_count", 0),
-        "abandoned": rec_kpi.get("abandoned_count", 0),
-        "meta_impressions": meta.get("impressions", 0),
-        "meta_clicks": meta.get("clicks", 0),
-        "meta_purchases": meta.get("purchases", 0),
-        "meta_spend": meta.get("spend_dzd", 0.0),
-        "meta_raw_spend": meta.get("spend_raw", 0.0),
-        "meta_currency": meta.get("currency", "DZD"),
-        "taux_conversion_pct": conv_kpi.get("value_pct"),
-        "health_score": health.get("score", 100),
-        "health_badge": health.get("badge", "Optimal"),
-        "health_color": health.get("color", "#10B981"),
+        "orders": data["kpis"]["orders"]["value"],
+        "delivered": data["kpis"]["delivered"]["value"],
+        "returned": data["kpis"]["returned"]["value"],
+        "shipped": data["kpis"]["shipped"]["shipped_count"],
+        "with_tracking": data["kpis"]["shipped"]["with_tracking_count"],
+        "recovered": data["kpis"]["recovered_carts"]["recovered_count"],
+        "abandoned": data["kpis"]["recovered_carts"]["abandoned_count"],
+        "meta_impressions": data["meta_performance"].get("impressions", 0),
+        "meta_clicks": data["meta_performance"].get("clicks", 0),
+        "meta_purchases": data["meta_performance"].get("purchases", 0),
+        "meta_spend": data["meta_performance"].get("spend_dzd", 0.0),
+        "meta_raw_spend": data["meta_performance"].get("spend_raw", 0.0),
+        "meta_currency": data["meta_performance"].get("currency", "DZD"),
+        "taux_conversion_pct": data["kpis"]["conversion_rate"]["value_pct"],
+        "health_score": data["health_score"]["score"],
+        "health_badge": data["health_score"]["badge"],
+        "health_color": data["health_score"]["color"],
     }
 
     return {
@@ -525,8 +508,8 @@ def get_landing_page_analytics(
             **data,
             "daily": legacy_daily,
             "totals": legacy_totals,
-            "created_at": lp_info.get("created_at"),
-            "views": conv_kpi.get("sessions_count", 0),
+            "created_at": data["landing_page"]["created_at"],
+            "views": data["kpis"]["conversion_rate"]["sessions_count"],
         },
     }
 
@@ -534,7 +517,6 @@ def get_landing_page_analytics(
 @router.get("/{lp_id}/reconciliation-events")
 def get_landing_page_reconciliation_events(
     lp_id: str,
-    response: Response,
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -544,9 +526,6 @@ def get_landing_page_reconciliation_events(
     Returns the granular list of orders and their Meta CAPI tracking status
     for the selected Landing Page and date range to inspect discrepancies.
     """
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
     from app.core.dates import parse_local_date_filter
     from app.models.order import Order, OrderItem
     from app.models.marketing import MetaCapiLog
