@@ -184,8 +184,8 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
     queryKey: ['lp-performance-center', lp.id, dStart, dEnd, comparePrevious],
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z&compare_previous=${comparePrevious}`),
-    staleTime: 0,
-    refetchInterval: 10000,
+    staleTime: 10 * 1000,
+    refetchInterval: 15000,
     refetchOnWindowFocus: true,
   });
 
@@ -194,8 +194,8 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/reconciliation-events?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
     enabled: showReconciliationModal,
-    staleTime: 0,
-    refetchInterval: 10000,
+    staleTime: 10 * 1000,
+    refetchInterval: 15000,
   });
 
   const data = analyticsQuery.data?.data;
@@ -2963,7 +2963,7 @@ export default function LandingPagesDashboard() {
       return apiFetch<any>(`/api/v1/landing-pages?${buildQueryStr()}`);
     },
     enabled:  !!storeId,
-    staleTime: 0,
+    staleTime: 15 * 1000,
     refetchInterval: 30 * 1000,
     refetchIntervalInBackground: false,
   });
