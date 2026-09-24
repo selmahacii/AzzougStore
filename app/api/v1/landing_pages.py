@@ -483,27 +483,37 @@ def get_landing_page_analytics(
         )
     except ValueError as val_err:
         raise HTTPException(404, str(val_err))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to calculate landing page analytics for %s: %s", lp_id, exc)
+        raise HTTPException(500, f"Error generating analytics: {exc}")
 
     # Add legacy compatibility fields so existing widgets never break
+    kpis = data.get("kpis", {})
+    meta_perf = data.get("meta_performance", {})
+    health = data.get("health_score", {})
+    lp_meta = data.get("landing_page", {})
+
     legacy_daily = data.get("diagnostic_table", [])
     legacy_totals = {
-        "orders": data["kpis"]["orders"]["value"],
-        "delivered": data["kpis"]["delivered"]["value"],
-        "returned": data["kpis"]["returned"]["value"],
-        "shipped": data["kpis"]["shipped"]["shipped_count"],
-        "with_tracking": data["kpis"]["shipped"]["with_tracking_count"],
-        "recovered": data["kpis"]["recovered_carts"]["recovered_count"],
-        "abandoned": data["kpis"]["recovered_carts"]["abandoned_count"],
-        "meta_impressions": data["meta_performance"].get("impressions", 0),
-        "meta_clicks": data["meta_performance"].get("clicks", 0),
-        "meta_purchases": data["meta_performance"].get("purchases", 0),
-        "meta_spend": data["meta_performance"].get("spend_dzd", 0.0),
-        "meta_raw_spend": data["meta_performance"].get("spend_raw", 0.0),
-        "meta_currency": data["meta_performance"].get("currency", "DZD"),
-        "taux_conversion_pct": data["kpis"]["conversion_rate"]["value_pct"],
-        "health_score": data["health_score"]["score"],
-        "health_badge": data["health_score"]["badge"],
-        "health_color": data["health_score"]["color"],
+        "orders": kpis.get("orders", {}).get("value", 0),
+        "delivered": kpis.get("delivered", {}).get("value", 0),
+        "returned": kpis.get("returned", {}).get("value", 0),
+        "shipped": kpis.get("shipped", {}).get("shipped_count", 0),
+        "with_tracking": kpis.get("shipped", {}).get("with_tracking_count", 0),
+        "recovered": kpis.get("recovered_carts", {}).get("recovered_count", 0),
+        "abandoned": kpis.get("recovered_carts", {}).get("abandoned_count", 0),
+        "meta_impressions": meta_perf.get("impressions", 0),
+        "meta_clicks": meta_perf.get("clicks", 0),
+        "meta_purchases": meta_perf.get("purchases", 0),
+        "meta_spend": meta_perf.get("spend_dzd", 0.0),
+        "meta_raw_spend": meta_perf.get("spend_raw", 0.0),
+        "meta_currency": meta_perf.get("currency", "DZD"),
+        "taux_conversion_pct": kpis.get("conversion_rate", {}).get("value_pct", 0.0),
+        "health_score": health.get("score", 0),
+        "health_badge": health.get("badge", "UNKNOWN"),
+        "health_color": health.get("color", "gray"),
     }
 
     return {
@@ -512,8 +522,8 @@ def get_landing_page_analytics(
             **data,
             "daily": legacy_daily,
             "totals": legacy_totals,
-            "created_at": data["landing_page"]["created_at"],
-            "views": data["kpis"]["conversion_rate"]["sessions_count"],
+            "created_at": lp_meta.get("created_at"),
+            "views": kpis.get("conversion_rate", {}).get("sessions_count", 0),
         },
     }
 
