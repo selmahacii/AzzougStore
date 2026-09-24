@@ -372,20 +372,25 @@ def list_landing_pages(
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
     from app.core.cache import get_or_set
 
+    clean_store_id = (store_id or "").strip()
+
     def _compute():
-        lp = db.query(LandingPage).filter(
+        q = db.query(LandingPage).filter(
             LandingPage.slug == slug,
-            LandingPage.store_id == store_id,
             LandingPage.is_active == True,
-        ).first()
+        )
+        if clean_store_id:
+            q = q.filter(LandingPage.store_id == clean_store_id)
+        lp = q.first()
         return _serialize(lp) if lp else None
 
-    data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
+    cache_key = f"landing_page:{clean_store_id or 'all'}:{slug}"
+    data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 
@@ -426,10 +431,16 @@ def get_by_slug(
     # View counting stays real-time on every request, cache hit or not — a
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
     try:
-        db.execute(
-            text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-            {"slug": slug, "store_id": store_id},
-        )
+        if clean_store_id:
+            db.execute(
+                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
+                {"slug": slug, "store_id": clean_store_id},
+            )
+        else:
+            db.execute(
+                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug"),
+                {"slug": slug},
+            )
         db.commit()
     except Exception as view_err:
         db.rollback()
