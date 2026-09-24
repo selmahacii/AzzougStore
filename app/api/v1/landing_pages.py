@@ -425,11 +425,15 @@ def get_by_slug(
 
     # View counting stays real-time on every request, cache hit or not — a
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
-    db.execute(
-        text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-        {"slug": slug, "store_id": store_id},
-    )
-    db.commit()
+    try:
+        db.execute(
+            text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
+            {"slug": slug, "store_id": store_id},
+        )
+        db.commit()
+    except Exception as view_err:
+        db.rollback()
+        logger.debug("Failed to increment views for slug %s: %s", slug, view_err)
 
     return {"success": True, "data": data}
 
