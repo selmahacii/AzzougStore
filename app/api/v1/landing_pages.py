@@ -375,21 +375,38 @@ def get_by_slug(
     store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
+    import urllib.parse
     from app.core.cache import get_or_set
+    from sqlalchemy import func, or_
 
+    raw_slug = (slug or "").strip()
+    decoded_slug = urllib.parse.unquote(raw_slug).strip()
     clean_store_id = (store_id or "").strip()
 
     def _compute():
-        q = db.query(LandingPage).filter(
-            LandingPage.slug == slug,
-            LandingPage.is_active == True,
-        )
+        slug_filters = [
+            LandingPage.slug == raw_slug,
+            LandingPage.slug == decoded_slug,
+            func.lower(LandingPage.slug) == raw_slug.lower(),
+            func.lower(LandingPage.slug) == decoded_slug.lower(),
+        ]
+
         if clean_store_id:
-            q = q.filter(LandingPage.store_id == clean_store_id)
-        lp = q.first()
+            lp = db.query(LandingPage).filter(
+                or_(*slug_filters),
+                LandingPage.store_id == clean_store_id,
+                LandingPage.is_active == True,
+            ).first()
+            if lp:
+                return _serialize(lp)
+
+        lp = db.query(LandingPage).filter(
+            or_(*slug_filters),
+            LandingPage.is_active == True,
+        ).first()
         return _serialize(lp) if lp else None
 
-    cache_key = f"landing_page:{clean_store_id or 'all'}:{slug}"
+    cache_key = f"landing_page:{clean_store_id or 'all'}:{decoded_slug}"
     data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")

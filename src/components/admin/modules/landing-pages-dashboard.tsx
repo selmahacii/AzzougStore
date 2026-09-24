@@ -129,7 +129,7 @@ function toLocalYYYYMMDD(d: Date): string {
 }
 
 // ─── LP Analytics & Performance Center ─────────────────────────────────────────
-function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; onClose: () => void; onEdit?: () => void }) {
+function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { lp: LandingPage; allStores?: any[]; onClose: () => void; onEdit?: () => void }) {
   const [periodPreset, setPeriodPreset] = useState<string>('this_month');
   const [dStart, setDStart] = useState(() => {
     const now = new Date();
@@ -143,6 +143,25 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
   const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isVariantsOpen, setIsVariantsOpen] = useState(false);
+
+  const matchingStore = allStores.find(s => s.id === lp.store_id);
+  const lpStoreSlug = matchingStore?.slug || '';
+  const storeDomain = matchingStore?.domain || (lpStoreSlug ? `${lpStoreSlug}.azghub.com` : '');
+  const isLocal = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.includes('hf.space') ||
+    window.location.hostname.includes('vercel.app') ||
+    window.location.hostname.includes('huggingface.co')
+  );
+  const lpUrl = isLocal || !storeDomain
+    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/lp/${lp.slug}?store=${lpStoreSlug}&store_id=${lp.store_id}`
+    : `https://${storeDomain}/lp/${lp.slug}`;
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(lpUrl);
+    toast.success('URL copiée dans le presse-papier !');
+  };
 
   const applyPreset = (preset: string) => {
     setPeriodPreset(preset);
@@ -213,11 +232,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
   const totalDeliveredVariants = variantsList.reduce((acc: number, v: any) => acc + (v.delivered || 0), 0);
   const totalOrderedVariants = variantsList.reduce((acc: number, v: any) => acc + (v.total_ordered || 0), 0);
 
-  const copyUrl = () => {
-    const url = `${window.location.origin}/lp/${lp.slug}`;
-    navigator.clipboard.writeText(url);
-    toast.success('URL copiée dans le presse-papier !');
-  };
+
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -328,7 +343,7 @@ function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; 
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-white dark:bg-slate-900 hover:bg-slate-100"
-                onClick={() => window.open(`/lp/${lp.slug}`, '_blank')}
+                onClick={() => window.open(lpUrl, '_blank')}
               >
                 <ExternalLink className="size-3.5" /> Aperçu
               </Button>
@@ -3001,10 +3016,11 @@ export default function LandingPagesDashboard() {
       window.location.hostname === 'localhost' || 
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname.includes('hf.space') ||
+      window.location.hostname.includes('vercel.app') ||
       window.location.hostname.includes('huggingface.co')
     );
-    const url = isLocal 
-      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}`
+    const url = isLocal || !storeDomain
+      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}&store_id=${lp?.store_id || ''}`
       : `https://${storeDomain}/lp/${slug}`;
     navigator.clipboard.writeText(url).then(() => toast.success('Lien copié !'));
   };
@@ -3182,7 +3198,7 @@ export default function LandingPagesDashboard() {
       )}
       
       {analyticsLP && (
-        <LandingPageAnalyticsDialog lp={analyticsLP} onClose={() => setAnalyticsLP(null)} />
+        <LandingPageAnalyticsDialog lp={analyticsLP} allStores={allStores} onClose={() => setAnalyticsLP(null)} />
       )}
 
       <AlertDialog open={!!deletingLP} onOpenChange={(open) => !open && setDeletingLP(null)}>
