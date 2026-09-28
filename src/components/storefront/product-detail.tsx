@@ -1123,9 +1123,10 @@ function AthleticDetail() {
                             )}
                           </button>
                         );
-                      </div>
+                      })}
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Sub-variants (Pointures/Tailles) */}
                 {(() => {
@@ -1483,9 +1484,10 @@ function LuxeDetail() {
                             )}
                           </button>
                         );
-                      </div>
+                      })}
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Sub-variants (Pointures/Tailles) */}
                 {(() => {
