@@ -479,11 +479,7 @@ def read_product(
 ) -> Any:
     """Get product by ID. Public storefront access is restricted to store tenant and hides secret cost/production fields."""
     is_staff = current_user is not None and getattr(current_user, "role", None) in _STAFF_ROLES
-    # Staff browse across the stores they serve, so bypass the SELECT tenant
-    # auto-filter (it otherwise 404'd the product when X-Store-Id didn't match
-    # the store the livreur just switched to). Public traffic stays isolated.
-    if is_staff:
-        db.info["skip_tenant_isolation"] = True
+    db.info["skip_tenant_isolation"] = True
 
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
