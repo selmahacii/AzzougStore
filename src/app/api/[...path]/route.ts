@@ -103,6 +103,10 @@ async function handleProxy(request: NextRequest, { path }: { path: string[] }) {
     let response: Response;
     try {
       response = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
+      if (request.method === 'GET' && (response.status === 502 || response.status === 503)) {
+        await new Promise((r) => setTimeout(r, 250));
+        response = await fetch(targetUrl, { ...fetchOptions, signal: controller.signal });
+      }
     } finally {
       clearTimeout(timeoutId);
     }
