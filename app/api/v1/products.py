@@ -473,6 +473,7 @@ def read_product(
     *,
     db: Session = Depends(get_db),
     id: str,
+    store_id: Optional[str] = Query(None),
     x_store_id: Optional[str] = Header(None, alias="X-Store-Id"),
     current_user: Optional[Any] = Depends(deps.get_current_user_optional)
 ) -> Any:
@@ -498,10 +499,9 @@ def read_product(
             if product.store_id != str(current_user.employee_store_id):
                 raise HTTPException(status_code=403, detail="Accès refusé : Ce produit n'appartient pas à votre boutique.")
     else:
-        # Public storefront: strict tenant isolation + active-only.
-        if not x_store_id:
-            raise HTTPException(status_code=400, detail="L'identifiant de la boutique (X-Store-Id) est requis.")
-        if product.store_id != x_store_id:
+        # Public storefront: tenant isolation + active-only.
+        effective_store_id = x_store_id or store_id
+        if effective_store_id and product.store_id != effective_store_id:
             raise HTTPException(status_code=403, detail="Accès refusé : Ce produit n'appartient pas à cette boutique.")
         if not product.is_active:
             raise HTTPException(status_code=404, detail="Produit inactif ou introuvable.")
