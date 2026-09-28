@@ -216,6 +216,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const isVarAvailable = (v: any) => {
+    if (!v) return false;
+    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
+    return ((v.stock || 0) - (v.reserved || 0)) > 0;
+  };
+
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -235,12 +241,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           }
         }
       });
-
-      const isVarAvailable = (v: any) => {
-        if (!v) return false;
-        if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-        return ((v.stock || 0) - (v.reserved || 0)) > 0;
-      };
 
       const rawOffers = (data as any).offers;
       const targetQty = rawOffers && rawOffers.length > 0 && rawOffers[selectedOfferIndex] ? rawOffers[selectedOfferIndex].quantity : quantity;

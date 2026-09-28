@@ -157,6 +157,12 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     setQuantity(capped);
   }, [selectedOfferIndex, offers, maxOrderableQuantity]);
 
+  const isVarAvailable = (v: any) => {
+    if (!v) return false;
+    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
+    return ((v.stock || 0) - (v.reserved || 0)) > 0;
+  };
+
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -176,12 +182,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           }
         }
       });
-
-      const isVarAvailable = (v: any) => {
-        if (!v) return false;
-        if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-        return ((v.stock || 0) - (v.reserved || 0)) > 0;
-      };
 
       const targetQty = (offers && offers.length > 0 && offers[selectedOfferIndex]) ? offers[selectedOfferIndex].quantity : quantity;
       setSelectedVariants(prev => {
