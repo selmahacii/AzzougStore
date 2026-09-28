@@ -341,7 +341,7 @@ function CleanDetail() {
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = p ? (p.stock === 0 || (p.variants && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))) : false;
+  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
@@ -629,7 +629,7 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2.5">
                           {colorVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
-                            const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                            const isOutOfStock = !isVariantAvailable(v);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
@@ -672,7 +672,7 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2">
                           {textVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
-                            const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                            const isOutOfStock = !isVariantAvailable(v);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
@@ -717,7 +717,7 @@ function CleanDetail() {
                           <div className="flex flex-wrap gap-2">
                             {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
                               const isSelected = activeSubVariantVal === sv.value;
-                              const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
+                              const isOutOfStock = !isSubVariantAvailable(sv);
                               return (
                                 <button
                                   key={sv.value || svIdx}
@@ -884,7 +884,7 @@ function AthleticDetail() {
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#ef4444';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = p ? (p.stock === 0 || (p.variants && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))) : false;
+  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
@@ -1065,7 +1065,7 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
@@ -1100,7 +1100,7 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
@@ -1141,7 +1141,7 @@ function AthleticDetail() {
                       <div className="flex flex-wrap gap-2">
                         {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
                           const isSelected = activeSubVariantVal === sv.value;
-                          const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
+                          const isOutOfStock = !isSubVariantAvailable(sv);
                           return (
                             <button
                               key={sv.value || svIdx}
@@ -1241,7 +1241,7 @@ function LuxeDetail() {
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#b8964e';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = p ? (p.stock === 0 || (p.variants && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))) : false;
+  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
@@ -1426,7 +1426,7 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-3">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
@@ -1461,7 +1461,7 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
@@ -1502,7 +1502,7 @@ function LuxeDetail() {
                       <div className="flex flex-wrap gap-2.5">
                         {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
                           const isSelected = activeSubVariantVal === sv.value;
-                          const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
+                          const isOutOfStock = !isSubVariantAvailable(sv);
                           return (
                             <button
                               key={sv.value || svIdx}
