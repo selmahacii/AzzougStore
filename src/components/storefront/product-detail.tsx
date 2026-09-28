@@ -702,6 +702,8 @@ function CleanDetail() {
                           })}
                         </div>
                       </div>
+                    )}
+
                     {/* Sub-variants (Pointures/Tailles) */}
                     {(() => {
                       const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
@@ -1121,8 +1123,10 @@ function AthleticDetail() {
                             )}
                           </button>
                         );
-                      })}
+                      </div>
                     </div>
+                  )}
+
                 {/* Sub-variants (Pointures/Tailles) */}
                 {(() => {
                   const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
@@ -1479,8 +1483,10 @@ function LuxeDetail() {
                             )}
                           </button>
                         );
-                      })}
+                      </div>
                     </div>
+                  )}
+
                 {/* Sub-variants (Pointures/Tailles) */}
                 {(() => {
                   const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
