@@ -461,8 +461,9 @@ def create_product(
     db.commit()
     db.refresh(product)
 
-    from app.core.cache import invalidate as cache_delete
+    from app.core.cache import invalidate as cache_delete, invalidate_prefix
     cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
+    invalidate_prefix(f"product_listing:{product.store_id}:", "product_listing:all:")
 
     return product
 
@@ -587,13 +588,15 @@ def update_product(
     db.commit()
     db.refresh(product)
 
-    from app.core.cache import invalidate as cache_delete
+    from app.core.cache import invalidate as cache_delete, invalidate_prefix
     cache_delete(f"product_categories:{product.store_id}", "product_categories:all", f"product:{product.id}")
+    invalidate_prefix(f"product_listing:{product.store_id}:", "product_listing:all:")
+    invalidate_prefix(f"landing_page:{product.store_id}:", "landing_page:all:")
     try:
         from app.models.landing_page import LandingPage
         lps = db.query(LandingPage).filter(LandingPage.product_id == product.id).all()
         for lp in lps:
-            cache_delete(f"landing_page:{lp.store_id}:{lp.slug}")
+            cache_delete(f"landing_page:{lp.store_id}:{lp.slug}", f"landing_page:all:{lp.slug}")
     except Exception:
         pass
 
@@ -619,6 +622,12 @@ def toggle_product(
 
     product.is_active = not bool(product.is_active)  # type: ignore[assignment]
     db.commit()
+
+    from app.core.cache import invalidate as cache_delete, invalidate_prefix
+    cache_delete(f"product_categories:{product.store_id}", "product_categories:all", f"product:{product.id}")
+    invalidate_prefix(f"product_listing:{product.store_id}:", "product_listing:all:")
+    invalidate_prefix(f"landing_page:{product.store_id}:", "landing_page:all:")
+
     return {
         "success": True,
         "is_active": product.is_active,
@@ -797,12 +806,14 @@ def delete_product(
 
     # If the product has order history, soft-delete (deactivate) to preserve records
     has_orders = db.query(OrderItem).filter(OrderItem.product_id == id).first() is not None
-    from app.core.cache import invalidate as cache_delete
+    from app.core.cache import invalidate as cache_delete, invalidate_prefix
 
     if has_orders:
         product.is_active = False  # type: ignore[assignment]
         db.commit()
-        cache_delete(f"product_categories:{product.store_id}", "product_categories:all")
+        cache_delete(f"product_categories:{product.store_id}", "product_categories:all", f"product:{product.id}")
+        invalidate_prefix(f"product_listing:{product.store_id}:", "product_listing:all:")
+        invalidate_prefix(f"landing_page:{product.store_id}:", "landing_page:all:")
         return {"success": True, "id": id, "soft": True, "message": "Produit désactivé (historique de commandes conservé)."}
 
     # No order history — safe to hard-delete after clearing other FK refs
@@ -814,7 +825,9 @@ def delete_product(
     store_id_for_cache = product.store_id
     db.delete(product)
     db.commit()
-    cache_delete(f"product_categories:{store_id_for_cache}", "product_categories:all")
+    cache_delete(f"product_categories:{store_id_for_cache}", "product_categories:all", f"product:{id}")
+    invalidate_prefix(f"product_listing:{store_id_for_cache}:", "product_listing:all:")
+    invalidate_prefix(f"landing_page:{store_id_for_cache}:", "landing_page:all:")
     return {"success": True, "id": id, "soft": False, "message": "Produit supprimé définitivement."}
 
 
