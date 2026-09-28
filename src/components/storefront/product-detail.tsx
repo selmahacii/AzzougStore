@@ -336,13 +336,15 @@ function CleanDetail() {
 
   useEffect(() => {
     if (p?.variants && p.variants.length > 0) {
-      const firstVal = p.variants[0].value;
+      const isVarAvailable = (v: any) => !v ? false : (v.is_available !== false && v.out_of_stock !== true && v.is_active !== false && (((v.stock || 0) - (v.reserved || 0)) > 0));
+      const firstAvailable = p.variants.find(isVarAvailable) || p.variants[0];
+      const firstVal = firstAvailable.value;
       setActiveVariantVal(firstVal);
       setQuantity(1);
       p.variants.forEach(v => {
         d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
       });
-      const firstImg = p.variants[0].image || (p.variants[0] as any)?.image_url || (p.variants[0] as any)?.imageUrl;
+      const firstImg = firstAvailable.image || (firstAvailable as any)?.image_url || (firstAvailable as any)?.imageUrl;
       if (firstImg) {
         d.setActiveVariantImage(firstImg);
       }
@@ -566,15 +568,18 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2.5">
                           {colorVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
+                            const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
+                                disabled={isOutOfStock}
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
                                   "relative size-11 rounded-xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs",
-                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400"
+                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400",
+                                  isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
                                 )}
                                 style={!vImg && v.color ? { backgroundColor: v.color } : {}}
                                 title={v.value}
@@ -585,6 +590,11 @@ function CleanDetail() {
                                   <span className="size-full" style={{ backgroundColor: v.color }} />
                                 ) : (
                                   <span className="text-[10px] font-black text-slate-800 uppercase">{v.value.slice(0, 3)}</span>
+                                )}
+                                {isOutOfStock && (
+                                  <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                                    <span className="text-red-500 font-bold text-xs">✕</span>
+                                  </div>
                                 )}
                               </button>
                             );
@@ -601,24 +611,31 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2">
                           {textVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
+                            const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
+                                disabled={isOutOfStock}
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
                                   "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2",
                                   isSelected 
                                     ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
-                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
+                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400",
+                                  isOutOfStock && "opacity-40 cursor-not-allowed line-through"
                                 )}
                               >
                                 {vImg && (
                                   <img src={optimizeCloudinaryUrl(vImg, 80)} alt={v.value} className="size-5 rounded-md object-cover" />
                                 )}
                                 <span>{v.value}</span>
-                                {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
+                                {isOutOfStock ? (
+                                  <span className="text-[10px] text-rose-500 font-bold ml-1">({t('outOfStock') || 'Rupture'})</span>
+                                ) : (
+                                  (v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
+                                )}
                               </button>
                             );
                           })}
@@ -778,7 +795,9 @@ function AthleticDetail() {
 
   useEffect(() => {
     if (p?.variants && p.variants.length > 0) {
-      const firstVal = p.variants[0].value;
+      const isVarAvailable = (v: any) => !v ? false : (v.is_available !== false && v.out_of_stock !== true && v.is_active !== false && (((v.stock || 0) - (v.reserved || 0)) > 0));
+      const firstAvailable = p.variants.find(isVarAvailable) || p.variants[0];
+      const firstVal = firstAvailable.value;
       setActiveVariantVal(firstVal);
       setQuantity(1);
       p.variants.forEach(v => {
@@ -898,18 +917,27 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
+                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                         return (
                           <button
                             key={v.value}
                             type="button"
+                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "relative size-9 rounded-full border transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                              isSelected ? "border-white ring-2 ring-offset-2 ring-offset-[#111] ring-white" : "border-white/10"
+                              isSelected ? "border-white ring-2 ring-offset-2 ring-offset-[#111] ring-white" : "border-white/10",
+                              isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
                             )}
                             style={{ backgroundColor: v.color }}
                             title={v.value}
-                          />
+                          >
+                            {isOutOfStock && (
+                              <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
+                                <span className="text-red-500 font-bold text-xs">✕</span>
+                              </div>
+                            )}
+                          </button>
                         );
                       })}
                     </div>
@@ -924,20 +952,27 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
+                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                         return (
                           <button
                             key={v.value}
                             type="button"
+                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "px-4 py-2.5 text-xs font-black uppercase tracking-[0.1em] border transition-all active:scale-95",
                               isSelected 
                                 ? "bg-white border-white text-black" 
-                                : "bg-transparent border-white/10 text-white/60 hover:border-white/30 hover:text-white"
+                                : "bg-transparent border-white/10 text-white/60 hover:border-white/30 hover:text-white",
+                              isOutOfStock && "opacity-40 cursor-not-allowed line-through"
                             )}
                           >
                             {v.value}
-                            {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
+                            {isOutOfStock ? (
+                              <span className="text-[9px] text-red-400 ml-1">({t('outOfStock') || 'Rupture'})</span>
+                            ) : (
+                              (v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
+                            )}
                           </button>
                         );
                       })}
@@ -1154,18 +1189,27 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-3">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
+                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                         return (
                           <button
                             key={v.value}
                             type="button"
+                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "relative size-8 rounded-full border transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                              isSelected ? "border-[#b8964e] ring-1 ring-offset-2 ring-offset-[#0C0F1A] ring-[#b8964e]" : "border-white/10"
+                              isSelected ? "border-[#b8964e] ring-1 ring-offset-2 ring-offset-[#0C0F1A] ring-[#b8964e]" : "border-white/10",
+                              isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
                             )}
                             style={{ backgroundColor: v.color }}
                             title={v.value}
-                          />
+                          >
+                            {isOutOfStock && (
+                              <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
+                                <span className="text-red-500 font-bold text-xs">✕</span>
+                              </div>
+                            )}
+                          </button>
                         );
                       })}
                     </div>
@@ -1180,20 +1224,27 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
+                        const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                         return (
                           <button
                             key={v.value}
                             type="button"
+                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "px-5 py-2 text-[10px] tracking-[0.15em] uppercase border transition-all active:scale-95 font-light",
                               isSelected 
                                 ? "bg-white border-white text-black font-normal" 
-                                : "bg-transparent border-white/10 text-white/40 hover:border-white/30 hover:text-white"
+                                : "bg-transparent border-white/10 text-white/40 hover:border-white/30 hover:text-white",
+                              isOutOfStock && "opacity-40 cursor-not-allowed line-through"
                             )}
                           >
                             {v.value}
-                            {(v.priceModifier ?? 0) > 0 && <span className="text-[9px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
+                            {isOutOfStock ? (
+                              <span className="text-[9px] text-[#b8964e]/60 ml-1">({t('outOfStock') || 'Rupture'})</span>
+                            ) : (
+                              (v.priceModifier ?? 0) > 0 && <span className="text-[9px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
+                            )}
                           </button>
                         );
                       })}

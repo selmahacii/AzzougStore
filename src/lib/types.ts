@@ -107,6 +107,10 @@ export interface ProductVariant {
   image?: string;    // Specific image for this variant
   color?: string;    // Hex code for color swatches
   priceModifier?: number; // Kept for backwards compatibility
+  is_available?: boolean; // Manual availability toggle
+  out_of_stock?: boolean; // Explicit out-of-stock flag
+  is_active?: boolean;    // Active status
+  sub_variants?: ProductVariant[];
 }
 
 export interface Product {
