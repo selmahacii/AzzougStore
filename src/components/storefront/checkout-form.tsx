@@ -431,6 +431,8 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
             };
           });
 
+        if (orderItems.length === 0) return;
+
         const payload = {
           abandoned_cart_id: abandonedCartId,
           store_id: activeStore.id,
