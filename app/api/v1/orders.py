@@ -4216,16 +4216,10 @@ async def dispatch_order(
     from sqlalchemy.orm import joinedload
     # See get_order for why this is redundant/harmful here.
     db.info["skip_tenant_isolation"] = True
-    # Serialize dispatches on the same order with nowait: concurrent double clicks
-    # immediately return 409 Conflict instead of holding DB locks until timeout.
-    from sqlalchemy.exc import OperationalError
-    try:
-        db.query(Order.id).filter(Order.id == id).with_for_update(nowait=True).first()
-    except OperationalError:
-        raise HTTPException(
-            status_code=409,
-            detail="Une expédition est déjà en cours de traitement pour cette commande. Veuillez patienter.",
-        )
+    # Serialize dispatches on the same order: two concurrent clicks must not
+    # create two parcels at the carrier. The second transaction waits here,
+    # then sees the tracking number already set.
+    db.query(Order.id).filter(Order.id == id).with_for_update().first()
     order = (
         db.query(Order)
         .options(joinedload(Order.items))
