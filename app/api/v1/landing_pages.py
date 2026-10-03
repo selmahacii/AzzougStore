@@ -372,42 +372,20 @@ def list_landing_pages(
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
-    store_id: Optional[str] = Query(None),
+    store_id: str = Query(...),
     db: Session = Depends(get_db),
 ) -> Any:
-    import urllib.parse
     from app.core.cache import get_or_set
-    from sqlalchemy import func, or_
-
-    raw_slug = (slug or "").strip()
-    decoded_slug = urllib.parse.unquote(raw_slug).strip()
-    clean_store_id = (store_id or "").strip()
 
     def _compute():
-        slug_filters = [
-            LandingPage.slug == raw_slug,
-            LandingPage.slug == decoded_slug,
-            func.lower(LandingPage.slug) == raw_slug.lower(),
-            func.lower(LandingPage.slug) == decoded_slug.lower(),
-        ]
-
-        if clean_store_id:
-            lp = db.query(LandingPage).filter(
-                or_(*slug_filters),
-                LandingPage.store_id == clean_store_id,
-                LandingPage.is_active == True,
-            ).first()
-            if lp:
-                return _serialize(lp)
-
         lp = db.query(LandingPage).filter(
-            or_(*slug_filters),
+            LandingPage.slug == slug,
+            LandingPage.store_id == store_id,
             LandingPage.is_active == True,
         ).first()
         return _serialize(lp) if lp else None
 
-    cache_key = f"landing_page:{clean_store_id or 'all'}:{decoded_slug}"
-    data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
+    data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 
@@ -422,36 +400,15 @@ def get_by_slug(
             total_variant_available = 0
             for v in variants:
                 if isinstance(v, dict):
-                    is_v_available = (v.get("is_available") is not False) and (v.get("out_of_stock") is not True) and (v.get("is_active") is not False)
-                    sub_vars = v.get("sub_variants")
-                    if sub_vars and isinstance(sub_vars, list) and len(sub_vars) > 0:
-                        sub_available_sum = 0
-                        has_any_sub_avail = False
-                        for sv in sub_vars:
-                            if isinstance(sv, dict):
-                                sv_is_avail = (sv.get("is_available") is not False) and (sv.get("out_of_stock") is not True) and (sv.get("is_active") is not False)
-                                try:
-                                    sv_s = int(sv.get("stock") or 0)
-                                    sv_r = int(sv.get("reserved") or 0)
-                                except (TypeError, ValueError):
-                                    sv_s, sv_r = 0, 0
-                                sv_rem = max(0, sv_s - sv_r) if sv_is_avail else 0
-                                sub_available_sum += sv_rem
-                                if sv_is_avail and sv_rem > 0:
-                                    has_any_sub_avail = True
-                        if is_v_available and has_any_sub_avail:
-                            in_stock += 1
-                            total_variant_available += sub_available_sum
-                    else:
-                        try:
-                            s = int(v.get("stock") or 0)
-                            r = int(v.get("reserved") or 0)
-                        except (TypeError, ValueError):
-                            s, r = 0, 0
-                        available = max(0, s - r) if is_v_available else 0
-                        total_variant_available += available
-                        if is_v_available and available > 0:
-                            in_stock += 1
+                    try:
+                        s = int(v.get("stock") or 0)
+                        r = int(v.get("reserved") or 0)
+                    except (TypeError, ValueError):
+                        s, r = 0, 0
+                    available = max(0, s - r)
+                    total_variant_available += available
+                    if available > 0:
+                        in_stock += 1
             product_available = total_variant_available if variants else max(0, int(live_p.stock or 0) - int(live_p.reserved_stock or 0))
             
             data["stock_detail"] = {
@@ -468,21 +425,11 @@ def get_by_slug(
 
     # View counting stays real-time on every request, cache hit or not — a
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
-    try:
-        if clean_store_id:
-            db.execute(
-                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-                {"slug": slug, "store_id": clean_store_id},
-            )
-        else:
-            db.execute(
-                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug"),
-                {"slug": slug},
-            )
-        db.commit()
-    except Exception as view_err:
-        db.rollback()
-        logger.debug("Failed to increment views for slug %s: %s", slug, view_err)
+    db.execute(
+        text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
+        {"slug": slug, "store_id": store_id},
+    )
+    db.commit()
 
     return {"success": True, "data": data}
 
@@ -532,37 +479,27 @@ def get_landing_page_analytics(
         )
     except ValueError as val_err:
         raise HTTPException(404, str(val_err))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Failed to calculate landing page analytics for %s: %s", lp_id, exc)
-        raise HTTPException(500, f"Error generating analytics: {exc}")
 
     # Add legacy compatibility fields so existing widgets never break
-    kpis = data.get("kpis", {})
-    meta_perf = data.get("meta_performance", {})
-    health = data.get("health_score", {})
-    lp_meta = data.get("landing_page", {})
-
     legacy_daily = data.get("diagnostic_table", [])
     legacy_totals = {
-        "orders": kpis.get("orders", {}).get("value", 0),
-        "delivered": kpis.get("delivered", {}).get("value", 0),
-        "returned": kpis.get("returned", {}).get("value", 0),
-        "shipped": kpis.get("shipped", {}).get("shipped_count", 0),
-        "with_tracking": kpis.get("shipped", {}).get("with_tracking_count", 0),
-        "recovered": kpis.get("recovered_carts", {}).get("recovered_count", 0),
-        "abandoned": kpis.get("recovered_carts", {}).get("abandoned_count", 0),
-        "meta_impressions": meta_perf.get("impressions", 0),
-        "meta_clicks": meta_perf.get("clicks", 0),
-        "meta_purchases": meta_perf.get("purchases", 0),
-        "meta_spend": meta_perf.get("spend_dzd", 0.0),
-        "meta_raw_spend": meta_perf.get("spend_raw", 0.0),
-        "meta_currency": meta_perf.get("currency", "DZD"),
-        "taux_conversion_pct": kpis.get("conversion_rate", {}).get("value_pct", 0.0),
-        "health_score": health.get("score", 0),
-        "health_badge": health.get("badge", "UNKNOWN"),
-        "health_color": health.get("color", "gray"),
+        "orders": data["kpis"]["orders"]["value"],
+        "delivered": data["kpis"]["delivered"]["value"],
+        "returned": data["kpis"]["returned"]["value"],
+        "shipped": data["kpis"]["shipped"]["shipped_count"],
+        "with_tracking": data["kpis"]["shipped"]["with_tracking_count"],
+        "recovered": data["kpis"]["recovered_carts"]["recovered_count"],
+        "abandoned": data["kpis"]["recovered_carts"]["abandoned_count"],
+        "meta_impressions": data["meta_performance"].get("impressions", 0),
+        "meta_clicks": data["meta_performance"].get("clicks", 0),
+        "meta_purchases": data["meta_performance"].get("purchases", 0),
+        "meta_spend": data["meta_performance"].get("spend_dzd", 0.0),
+        "meta_raw_spend": data["meta_performance"].get("spend_raw", 0.0),
+        "meta_currency": data["meta_performance"].get("currency", "DZD"),
+        "taux_conversion_pct": data["kpis"]["conversion_rate"]["value_pct"],
+        "health_score": data["health_score"]["score"],
+        "health_badge": data["health_score"]["badge"],
+        "health_color": data["health_score"]["color"],
     }
 
     return {
@@ -571,8 +508,8 @@ def get_landing_page_analytics(
             **data,
             "daily": legacy_daily,
             "totals": legacy_totals,
-            "created_at": lp_meta.get("created_at"),
-            "views": kpis.get("conversion_rate", {}).get("sessions_count", 0),
+            "created_at": data["landing_page"]["created_at"],
+            "views": data["kpis"]["conversion_rate"]["sessions_count"],
         },
     }
 
