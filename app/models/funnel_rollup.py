@@ -29,7 +29,7 @@ class FunnelRollup(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
-    lp_id = Column(String, ForeignKey("landing_pages.id"), nullable=True, index=True)
+    lp_id = Column(String, nullable=True, index=True)
     product_id = Column(String, nullable=True, index=True)
     campaign_id = Column(String, nullable=True)
     adset_id = Column(String, nullable=True)

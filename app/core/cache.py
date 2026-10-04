@@ -203,20 +203,34 @@ def get_or_set(key: str, compute: Callable[[], Any], l1_ttl: int = 45, l2_ttl: i
         now = t_start
         l1 = _l1_store.get(key)
         if l1 is not None and l1[1] > now:
-            _metrics["l1_hits"] += 1
-            return l1[0]
+            # If cached L1 value is not a miss object
+            if not (isinstance(l1[0], dict) and l1[0].get("__miss__")):
+                _metrics["l1_hits"] += 1
+                return l1[0]
 
         l2_value = get_json(key)
         if l2_value is not None:
-            _metrics["l2_hits"] += 1
-            _l1_store[key] = (l2_value, now + l1_ttl)
-            _l1_sweep_if_due(now)
-            return l2_value
+            # If L2 value is a stale miss object, delete it rather than serving a broken 404
+            if isinstance(l2_value, dict) and l2_value.get("__miss__"):
+                delete(key)
+            else:
+                _metrics["l2_hits"] += 1
+                _l1_store[key] = (l2_value, now + l1_ttl)
+                _l1_sweep_if_due(now)
+                return l2_value
 
         _metrics["misses"] += 1
         value = compute()
-        set_json(key, value, l2_ttl)
-        _l1_store[key] = (value, now + l1_ttl)
+
+        # Don't poison long-lived L2 cache with miss indicators or None!
+        is_miss = (value is None) or (isinstance(value, dict) and value.get("__miss__"))
+        if not is_miss:
+            set_json(key, value, l2_ttl)
+            _l1_store[key] = (value, now + l1_ttl)
+        else:
+            # Cache locally in memory only for at most 3 seconds
+            _l1_store[key] = (value, now + min(l1_ttl, 3))
+
         _l1_sweep_if_due(now)
         return value
     finally:
@@ -224,11 +238,39 @@ def get_or_set(key: str, compute: Callable[[], Any], l1_ttl: int = 45, l2_ttl: i
         _metrics["lookup_latency_count"] += 1
 
 
+def flush_all() -> None:
+    """Clear in-process L1 cache."""
+    global _l1_store
+    _l1_store.clear()
+
+
 def invalidate(*keys: str) -> None:
     _metrics["invalidations"] += len(keys)
     for k in keys:
         _l1_store.pop(k, None)
     delete(*keys)
+
+
+def invalidate_prefix(*prefixes: str) -> None:
+    """Invalidate all L1 and L2 keys starting with any of the given prefixes."""
+    for prefix in prefixes:
+        matching_l1 = [k for k in list(_l1_store.keys()) if k.startswith(prefix)]
+        for k in matching_l1:
+            _l1_store.pop(k, None)
+            _metrics["invalidations"] += 1
+    
+    client = _get_client()
+    if client is not None:
+        for prefix in prefixes:
+            try:
+                resp = client.post("/", json=["KEYS", f"{prefix}*"])
+                if resp.status_code == 200:
+                    found_keys = resp.json().get("result") or []
+                    if found_keys:
+                        delete(*found_keys)
+            except Exception as exc:
+                logger.debug("[Cache] invalidate_prefix(%s) error: %s", prefix, exc)
+
 
 
 def get_metrics() -> dict:
