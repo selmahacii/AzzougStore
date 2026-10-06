@@ -34,8 +34,8 @@ export function HomeSections() {
   const [apiReviews, setApiReviews] = useState<any[]>([]);
 
   const activeQuery = useQuery({
-    queryKey: ['store-products', activeStore?.id, 'active', 4],
-    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=4&is_active=true`),
+    queryKey: ['store-products', activeStore?.id, 'active', 8],
+    queryFn: () => apiFetch<{ success: boolean; data: Product[] }>(`/api/v1/products?store_id=${activeStore!.id}&pageSize=8&is_active=true`),
     enabled: !!activeStore,
     staleTime: 60 * 1000,
   });
@@ -67,7 +67,6 @@ export function HomeSections() {
   // Dynamic section labels from theme_config (ThemeConfig fields are optional, hide if null)
   const tc = activeStore?.theme_config;
   const newArrivalsLabel = tc?.labelNewArrivals ?? t('newArrivals');
-  const newArrivalsTag = tc?.labelNewArrivalsTag ?? t('latestReleases');
 
   if (!activeStore) return null;
 
@@ -86,32 +85,22 @@ export function HomeSections() {
     .filter(s => s.enabled && s.key !== 'bestSellers')
     .map(s => s.key);
 
-
   const newArrivalsSection = newArrivals.length > 0 ? (
         <section
           key="newArrivals"
           className={cn(
             tpl === 'clean' 
-              ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24' 
-              : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-20 sm:py-32'
+              ? 'max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-14 sm:py-20 lg:py-24' 
+              : 'max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 py-16 sm:py-24 lg:py-28'
           )}
         >
           <div className={cn(
-            "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 sm:mb-14",
+            "flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-12",
             tpl === 'clean' && "border-b border-slate-100 pb-5"
           )}>
             <div>
-              <div className={cn(
-                "inline-flex items-center gap-2 mb-2",
-                tpl === 'clean' && "px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100"
-              )}>
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-wider">
-                  {newArrivalsTag}
-                </span>
-              </div>
               <h2 className={cn(
-                "text-2xl sm:text-4xl tracking-tight uppercase",
+                "text-2xl sm:text-3xl lg:text-4xl tracking-tight uppercase",
                 tpl === 'clean' ? 'font-black text-slate-900' :
                 tpl === 'luxe' ? 'font-thin text-white' :
                 'font-black text-white tracking-tighter'
@@ -122,19 +111,19 @@ export function HomeSections() {
             <button 
               onClick={() => setStorefrontView('shop')}
               className={cn(
-                "text-xs font-black uppercase tracking-wider transition-all",
-                tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-2xs hover:bg-slate-50 flex items-center gap-2' :
-                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white' :
+                "group text-xs font-black uppercase tracking-wider transition-all self-start sm:self-auto",
+                tpl === 'clean' ? 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-2xs hover:bg-slate-50 flex items-center gap-2' :
+                tpl === 'luxe' ? 'text-white/40 border-white/10 hover:text-white pb-1.5' :
                 'text-gray-500 border-gray-200 hover:border-gray-900'
               )}
             >
               {t('viewCollection')}
-              <ArrowRight className="size-3.5" />
+              <ArrowRight className="size-3.5 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
           <div className={cn(
-            "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-4 sm:gap-6" : "gap-4 lg:gap-8"
+            "grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4",
+            tpl === 'clean' ? "gap-4 sm:gap-6 lg:gap-8" : "gap-4 lg:gap-8"
           )}>
             {newArrivals.map(product => (
               <ProductCard 

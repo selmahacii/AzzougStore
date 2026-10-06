@@ -134,11 +134,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white rounded-[24px] border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
+      className="group relative flex flex-col bg-white rounded-2xl sm:rounded-3xl border border-slate-100 hover:border-slate-200 hover:shadow-xl hover:shadow-slate-100/70 transition-all duration-300 cursor-pointer overflow-hidden p-2.5 sm:p-3"
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image container */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-2xl border border-slate-100/60">
+      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100/60">
         <img
           src={img1} 
           alt={product.name}
@@ -171,13 +171,13 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         <div className="absolute top-2.5 left-2.5 z-20 flex flex-col gap-1">
           {discount > 0 ? (
             <span
-              className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white rounded-lg shadow-xs"
+              className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white rounded-md shadow-xs"
               style={{ backgroundColor: primary }}
             >
               -{discount}%
             </span>
           ) : product.featured ? (
-            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-lg shadow-xs">
+            <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-900/90 text-white rounded-md shadow-xs">
               Vedette
             </span>
           ) : null}
@@ -186,7 +186,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         {/* Out of stock overlay */}
         {isOutOfStock && (
           <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
               Épuisé
             </span>
           </div>
@@ -198,7 +198,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
             <button
               type="button"
               onClick={handleAddToCart}
-              className="w-full h-9 rounded-xl text-xs font-black uppercase tracking-wider bg-white/95 hover:bg-white text-slate-800 hover:text-black shadow-md flex items-center justify-center gap-1.5 transition-all border border-slate-200/80 active:scale-[0.98]"
+              className="w-full h-9 rounded-xl text-xs font-bold tracking-wide bg-white/95 hover:bg-white text-slate-800 hover:text-black shadow-md flex items-center justify-center gap-1.5 transition-all border border-slate-200/80 active:scale-[0.98]"
             >
               <ShoppingCart className="size-3.5 text-slate-700" />
               {t('addToCart')}
@@ -206,7 +206,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
             <button
               type="button"
               onClick={handleBuyNow}
-              className="w-full h-9 rounded-xl text-xs font-black uppercase tracking-wider text-white shadow-md flex items-center justify-center gap-1.5 transition-all hover:brightness-110 active:scale-[0.98]"
+              className="w-full h-9 rounded-xl text-xs font-bold tracking-wide text-white shadow-md flex items-center justify-center gap-1.5 transition-all hover:brightness-105 active:scale-[0.98]"
               style={{ backgroundColor: primary }}
             >
               <Zap className="size-3.5 fill-current" />
@@ -217,12 +217,12 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
       </div>
 
       {/* Info Block */}
-      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
+      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-2.5">
         <div className="space-y-1">
           {product.category && (
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{product.category}</p>
+            <p className="text-[10px] font-medium tracking-wide uppercase text-slate-400">{product.category}</p>
           )}
-          <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 leading-snug line-clamp-2 group-hover:text-slate-950 transition-colors">
             {product.name}
           </h3>
           {colors.length > 0 && (
@@ -235,13 +235,13 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         </div>
 
         {/* Price & Action Row */}
-        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+        <div className="space-y-2 pt-2 border-t border-slate-100">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm font-black text-slate-900 font-mono">
+            <span className="text-sm sm:text-base font-extrabold text-slate-900 font-mono tracking-tight">
               {formatPrice(product.price)}
             </span>
             {product.compare_price !== null && product.compare_price > product.price && (
-              <span className="text-[11px] font-bold text-slate-400 font-mono line-through">
+              <span className="text-xs font-medium text-slate-400 font-mono line-through">
                 {formatPrice(product.compare_price)}
               </span>
             )}
@@ -249,11 +249,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
 
           {/* Mobile action buttons (touch screen fallback) */}
           {!isOutOfStock && (
-            <div className="grid grid-cols-2 gap-1.5 md:hidden">
+            <div className="grid grid-cols-2 gap-1.5 pt-0.5 md:hidden">
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="h-8 rounded-xl text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 active:bg-slate-200 flex items-center justify-center gap-1 transition-all"
+                className="h-8.5 rounded-xl text-[11px] font-semibold bg-slate-100 text-slate-700 active:bg-slate-200 flex items-center justify-center gap-1.5 transition-colors"
                 title={t('addToCart')}
               >
                 <ShoppingCart className="size-3 text-slate-600" />
@@ -262,7 +262,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
               <button
                 type="button"
                 onClick={handleBuyNow}
-                className="h-8 rounded-xl text-[10px] font-black uppercase tracking-wider text-white flex items-center justify-center gap-1 transition-all shadow-2xs active:brightness-90"
+                className="h-8.5 rounded-xl text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 transition-all shadow-2xs active:brightness-90"
                 style={{ backgroundColor: primary }}
                 title={t('buyNow')}
               >
