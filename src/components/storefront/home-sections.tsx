@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
 import { ProductCard } from './product-card';
-import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon } from 'lucide-react';
+import { ArrowRight, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';

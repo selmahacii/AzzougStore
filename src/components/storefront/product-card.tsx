@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Heart, ShoppingCart, Eye, Zap } from 'lucide-react';
+import { Heart, ShoppingCart, Zap } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
