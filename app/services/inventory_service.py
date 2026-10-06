@@ -233,9 +233,13 @@ def product_available_stock(product: Product) -> int:
         lowest = None
         for v in product.variants:
             if isinstance(v, dict):
-                v_stock = int(v.get("stock") or 0)
-                v_reserved = int(v.get("reserved") or 0)
-                v_available = max(0, v_stock - v_reserved)
+                is_forced_out = v.get("is_available") is False or v.get("out_of_stock") is True or v.get("is_active") is False
+                if is_forced_out:
+                    v_available = 0
+                else:
+                    v_stock = int(v.get("stock") or 0)
+                    v_reserved = int(v.get("reserved") or 0)
+                    v_available = max(0, v_stock - v_reserved)
                 if lowest is None or v_available < lowest:
                     lowest = v_available
         if lowest is not None:
@@ -305,9 +309,14 @@ class InventoryService:
         if variant_str and product.variants:
             matching_variant = _find_matching_variant(product.variants, variant_str)
             if matching_variant:
+                is_forced_out = (
+                    matching_variant.get("is_available") is False
+                    or matching_variant.get("out_of_stock") is True
+                    or matching_variant.get("is_active") is False
+                )
                 v_stock = int(matching_variant.get("stock") or 0)
                 v_reserved = int(matching_variant.get("reserved") or 0)
-                available = v_stock - v_reserved
+                available = 0 if is_forced_out else (v_stock - v_reserved)
                 
                 if available < quantity:
                     logger.warning(
