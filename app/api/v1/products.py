@@ -575,11 +575,6 @@ def update_product(
             if field in json_fields:
                 flag_modified(product, field)
 
-    # Synchronize active status based on stock
-    avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
-    if avail > 0 and not getattr(product, "is_active", True):
-        product.is_active = True
-
     db.add(product)
     db.commit()
     db.refresh(product)

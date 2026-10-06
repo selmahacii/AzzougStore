@@ -30,6 +30,7 @@ function getSessionId(): string {
 }
 
 export function VisitorCapture() {
+  return null;
   const activeStore = useAppStore((s) => s.activeStore);
   const [visible, setVisible] = useState(false);
   const [submitted, setSubmitted] = useState(false);

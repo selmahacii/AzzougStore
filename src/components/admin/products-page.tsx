@@ -16,6 +16,7 @@ import {
    Edit3,
    Trash2,
    Eye,
+   EyeOff,
    MoreHorizontal,
    Copy,
    ImageOff,
@@ -228,6 +229,8 @@ export default function ProductsPage() {
    const [startDate, setStartDate] = useState('');
    const [endDate, setEndDate] = useState('');
    const [categoryFilter, setCategoryFilter] = useState('all');
+   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+   const [togglingProductId, setTogglingProductId] = useState<string | null>(null);
    const [page, setPage] = useState(1);
    const [pageSizeOption, setPageSizeOption] = useState('15');
    const [isUploading, setIsUploading] = useState(false);
@@ -338,14 +341,16 @@ export default function ProductsPage() {
       const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString(), include_upsell_only: 'true' });
       if (searchQuery) params.set('search', searchQuery);
       if (categoryFilter !== 'all') params.set('category', categoryFilter);
+      if (statusFilter === 'active') params.set('is_active', 'true');
+      if (statusFilter === 'inactive') params.set('is_active', 'false');
       if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
       if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
       return params.toString();
-   }, [storeId, page, pageSize, searchQuery, categoryFilter, startDate, endDate]);
+   }, [storeId, page, pageSize, searchQuery, categoryFilter, statusFilter, startDate, endDate]);
     const [uploadingVariantIdx, setUploadingVariantIdx] = useState<number | null>(null);
 
    const productsQuery = useQuery<ProductsApiResponse>({
-      queryKey: ['admin-products', storeId, page, pageSize, searchQuery, categoryFilter, startDate, endDate],
+      queryKey: ['admin-products', storeId, page, pageSize, searchQuery, categoryFilter, statusFilter, startDate, endDate],
       queryFn: () => apiFetch(`/api/v1/products/?${buildQueryParams()}`),
       enabled: !!storeId,
    });
@@ -381,8 +386,26 @@ export default function ProductsPage() {
          setEditingProduct(null);
          setForm({ ...EMPTY_FORM });
       },
-      onError: (error: any) => toast.error(error.message || 'Erreur de mise a jour'),
+      onError: (error: any) => toast.error(error.message || 'Erreur de mise à jour'),
    });
+
+   const handleToggleVisibility = async (product: Product) => {
+      setTogglingProductId(product.id);
+      try {
+         const res = await apiFetch<{ success: boolean; is_active: boolean; message: string }>(
+            `/api/v1/products/${product.id}/toggle`,
+            { method: 'PATCH' }
+         );
+         toast.success(
+            res.message || (res.is_active ? 'Produit visible sur le site web' : 'Produit masqué du site web')
+         );
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
+      } catch (err: any) {
+         toast.error(err?.message || 'Erreur lors de la mise à jour de la visibilité');
+      } finally {
+         setTogglingProductId(null);
+      }
+   };
 
    const deleteMutation = useMutation({
       mutationFn: (id: string) => apiFetch(`/api/v1/products/${id}`, { method: 'DELETE' }),
@@ -861,6 +884,26 @@ export default function ProductsPage() {
                   </SelectContent>
                </Select>
 
+               <Select value={statusFilter} onValueChange={(v: any) => { setStatusFilter(v); setPage(1); }}>
+                  <SelectTrigger className="w-44 h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold focus:ring-[#4b7bec]">
+                     <div className="flex items-center gap-2">
+                        {statusFilter === 'active' ? (
+                           <Eye className="size-3.5 text-emerald-500" />
+                        ) : statusFilter === 'inactive' ? (
+                           <EyeOff className="size-3.5 text-slate-400" />
+                        ) : (
+                           <Filter className="size-3.5 text-slate-400" />
+                        )}
+                        <SelectValue placeholder="Visibilité" />
+                     </div>
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                     <SelectItem value="all">Tous les statuts</SelectItem>
+                     <SelectItem value="active">Visibles sur le site</SelectItem>
+                     <SelectItem value="inactive">Masqués du site</SelectItem>
+                  </SelectContent>
+               </Select>
+
                <button
                   onClick={() => productsQuery.refetch()}
                   className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all text-slate-500 shadow-xs"
@@ -881,7 +924,7 @@ export default function ProductsPage() {
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider">Catégorie / SKU</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Prix Vente</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Niveau Stock</th>
-                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Statut</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Visibilité Site</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Actions</th>
                      </tr>
                   </thead>
@@ -936,10 +979,56 @@ export default function ProductsPage() {
                               </div>
                            </td>
                            <td className="px-4 sm:px-8 py-6 text-center">
-                              <div className={cn("inline-flex h-2 w-2 rounded-full", product.is_active ? "bg-emerald-500 shadow-[0_0_8px_#20bf6b]" : "bg-slate-300")} />
+                              <button
+                                 type="button"
+                                 disabled={togglingProductId === product.id}
+                                 onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleVisibility(product);
+                                 }}
+                                 className={cn(
+                                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all shadow-2xs hover:scale-105 active:scale-95 cursor-pointer",
+                                    product.is_active
+                                       ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                                       : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200/80"
+                                 )}
+                                 title={product.is_active ? "Visible sur le site web — Cliquer pour masquer" : "Masqué du site web — Cliquer pour afficher"}
+                              >
+                                 {togglingProductId === product.id ? (
+                                    <Loader2 className="size-3.5 animate-spin text-slate-400" />
+                                 ) : product.is_active ? (
+                                    <Eye className="size-3.5 text-emerald-600" />
+                                 ) : (
+                                    <EyeOff className="size-3.5 text-slate-400" />
+                                 )}
+                                 <span>{product.is_active ? "Visible" : "Masqué"}</span>
+                              </button>
                            </td>
                            <td className="px-4 sm:px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-1.5 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
+                                 <button
+                                    type="button"
+                                    disabled={togglingProductId === product.id}
+                                    onClick={(e) => {
+                                       e.stopPropagation();
+                                       handleToggleVisibility(product);
+                                    }}
+                                    className={cn(
+                                       "size-10 rounded-2xl flex items-center justify-center bg-white border transition-all",
+                                       product.is_active
+                                          ? "border-slate-100 text-emerald-600 hover:text-rose-600 hover:border-rose-100 hover:shadow-lg"
+                                          : "border-slate-100 text-slate-400 hover:text-emerald-600 hover:border-emerald-100 hover:shadow-lg"
+                                    )}
+                                    title={product.is_active ? "Désactiver la visibilité sur le site web (Masquer)" : "Activer la visibilité sur le site web (Afficher)"}
+                                 >
+                                    {togglingProductId === product.id ? (
+                                       <Loader2 className="size-4 animate-spin text-[#4b7bec]" />
+                                    ) : product.is_active ? (
+                                       <Eye className="size-5" />
+                                    ) : (
+                                       <EyeOff className="size-5" />
+                                    )}
+                                 </button>
                                  <button
                                     onClick={() => { setAnalyticsProduct(product); setAnalyticsPeriod('30d'); }}
                                     className="size-10 rounded-2xl flex items-center justify-center bg-white border border-slate-100 text-slate-400 hover:text-[#4b7bec] hover:border-[#4b7bec]/20 hover:shadow-lg transition-all"
@@ -1111,6 +1200,21 @@ export default function ProductsPage() {
                      </div>
                   </div>
                   <div className="flex items-center gap-4">
+                     <div className="flex items-center gap-2 sm:gap-3 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                           {form.is_active ? <Eye className="size-3.5 text-emerald-600" /> : <EyeOff className="size-3.5 text-slate-400" />}
+                           <span className="text-[10px] font-black uppercase tracking-tight hidden sm:inline text-slate-700">
+                              {form.is_active ? 'Visible sur le site' : 'Masqué du site'}
+                           </span>
+                        </div>
+                        <input
+                           type="checkbox"
+                           checked={form.is_active}
+                           onChange={e => setF({ is_active: e.target.checked })}
+                           className="size-4.5 rounded border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec] cursor-pointer"
+                           title="Activer ou désactiver la visibilité sur le site web"
+                        />
+                     </div>
                      {editingProduct && (
                         <div className="hidden sm:block px-4 py-1.5 bg-slate-50 rounded-xl border border-slate-100 shrink-0">
                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Marge Nette</p>
@@ -2311,19 +2415,19 @@ export default function ProductsPage() {
 
                            <div className="flex items-center justify-between p-6 bg-slate-50 rounded-[24px] border border-slate-100">
                               <div className="flex items-center gap-4">
-                                 <div className="size-10 rounded-xl bg-white border flex items-center justify-center text-[#4b7bec]">
-                                    <Zap className="size-5" />
+                                 <div className={cn("size-10 rounded-xl border flex items-center justify-center transition-colors", form.is_active ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "bg-white border-slate-200 text-slate-400")}>
+                                    {form.is_active ? <Eye className="size-5" /> : <EyeOff className="size-5" />}
                                  </div>
                                  <div>
-                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Visibilité Publique</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activer pour afficher sur la vitrine</p>
+                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Visibilité sur le site web</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activer pour afficher sur la vitrine et le catalogue du site</p>
                                  </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                 <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_active ? "text-[#20bf6b]" : "text-slate-300")}>
-                                    {form.is_active ? 'En Ligne' : 'Hors Ligne'}
+                                 <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_active ? "text-[#20bf6b]" : "text-slate-400")}>
+                                    {form.is_active ? 'Visible sur le site' : 'Masqué du site'}
                                  </span>
-                                 <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec]" />
+                                 <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec] cursor-pointer" />
                               </div>
                            </div>
 
