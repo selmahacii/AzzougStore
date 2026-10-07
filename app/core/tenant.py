@@ -8,28 +8,26 @@ from app.db.base_class import Base
 # Context var to hold the current tenant's store_id
 tenant_store_id = contextvars.ContextVar("tenant_store_id", default=None)
 
-class TenantMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
+class TenantMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
         from app.core import timing as _timing
         import time as _time_mod
 
         _t0 = _time_mod.perf_counter()
 
-        headers = dict(scope.get("headers", []))
-        store_id = headers.get(b"x-store-id", b"").decode("latin-1", errors="ignore") or None
-        host = headers.get(b"host", b"").decode("latin-1", errors="ignore")
+        # 1. Try to get tenant from Header
+        store_id = request.headers.get("X-Store-Id")
 
+        # 2. Try to get tenant from Host (if custom domains are mapped)
+        # In a real app, you'd lookup the store_id by domain from a quick cache like Redis
+        host = request.headers.get("Host", "")
+
+        # Determine the tenant
         if store_id:
             tenant_val = store_id
         elif host and "azzougshop.com" not in host and "azghub.com" not in host and "localhost" not in host:
-            tenant_val = headers.get(b"x-resolved-store-id", b"").decode("latin-1", errors="ignore") or None
+            # Simulated host resolution (this would be a Redis fetch map)
+            tenant_val = request.headers.get("X-Resolved-Store-Id")
         else:
             tenant_val = None
 
@@ -37,7 +35,8 @@ class TenantMiddleware:
         _timing.record("tenant", (_time_mod.perf_counter() - _t0) * 1000)
 
         try:
-            await self.app(scope, receive, send)
+            response = await call_next(request)
+            return response
         finally:
             tenant_store_id.reset(token)
 
