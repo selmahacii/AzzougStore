@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe, Home, ShoppingBag, LogOut } from 'lucide-react';
+import { ShoppingCart, Menu, Search, X, LayoutDashboard, ChevronDown, Phone, Mail, Heart, MapPin, Truck, ShieldCheck, User, Check, Globe, Home, ShoppingBag, Flame, LogOut } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useCartStore } from '@/store/cart-store';
 import { LoginDialog } from '@/components/auth/login-dialog';
@@ -456,13 +456,14 @@ export function StorefrontHeader() {
                   {[
                     { label: t('home'), view: 'home', icon: Home },
                     { label: 'Tout le catalogue', view: 'shop', icon: ShoppingBag, badge: '58 Wilayas' },
+                    { label: t('ourBestSellers'), view: 'home', hash: '#best-sellers', icon: Flame },
                     { label: t('trackOrder'), view: 'order-tracking', icon: Truck },
                   ].map(item => {
                     const IconComp = item.icon;
                     return (
                       <button
                         key={item.label}
-                        onClick={() => handleNav(item.view)}
+                        onClick={() => handleNav(item.view, item.hash)}
                         className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                       >
                         <div className="flex items-center gap-2.5">

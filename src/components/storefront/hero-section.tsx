@@ -240,7 +240,7 @@ function CleanHero({
   const isVideo = store.theme_config?.bannerIsVideo as boolean | undefined;
 
   const tc = store.theme_config ?? ({} as any);
-  const resolvedTag = (tc.heroTag as string | undefined) || heroTag || '';
+  const resolvedTag = (tc.heroTag as string | undefined) || heroTag || 'Sélection Officielle 2026';
   const headline = (tc.heroHeadline as string | undefined) || store.name;
   const subtitle  = (tc.heroSubtitle  as string | undefined) || store.description || "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.";
   const cta       = (tc.heroCta       as string | undefined) || "Explorer le catalogue";
@@ -288,13 +288,12 @@ function CleanHero({
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             className="max-w-3xl mx-auto space-y-6"
           >
-            {resolvedTag && (
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
-                <span className="text-[10px] font-bold uppercase tracking-widest">
-                  {resolvedTag}
-                </span>
-              </div>
-            )}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
+              <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                {resolvedTag}
+              </span>
+            </div>
 
             <h1
               className={cn("text-4xl sm:text-6xl lg:text-7xl text-white tracking-tight leading-[1.08]", locale === 'ar' ? 'font-black' : 'font-black')}
@@ -329,9 +328,9 @@ function CleanHero({
   }
 
   return (
-    <section className="w-full bg-[#F8F9FC] py-12 sm:py-20 overflow-hidden relative border-b border-slate-100">
+    <section className="w-full bg-[#F8F9FC] py-10 sm:py-16 overflow-hidden relative border-b border-slate-100">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
           
           {/* Left Text content */}
           <div className="lg:col-span-6 flex flex-col justify-center order-2 lg:order-1">
@@ -342,14 +341,12 @@ function CleanHero({
               className="max-w-xl w-full space-y-6"
             >
               {/* Badge Tag */}
-              {resolvedTag && (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200/80 shadow-2xs">
-                  <span className="size-1.5 rounded-full" style={{ backgroundColor: primary }} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">
-                    {resolvedTag}
-                  </span>
-                </div>
-              )}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 text-[#4b7bec] border border-blue-100 shadow-2xs">
+                <span className="size-2 rounded-full bg-[#4b7bec] animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider">
+                  {resolvedTag}
+                </span>
+              </div>
               
               <h1 
                 className={cn("text-3xl sm:text-5xl lg:text-6xl text-slate-900 tracking-tight leading-[1.08]", locale === 'ar' ? 'font-black' : 'font-black')}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Heart, ShoppingCart, Zap } from 'lucide-react';
+import { Heart, ShoppingCart, Eye, Zap } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
@@ -11,13 +11,11 @@ import type { Product } from '@/lib/types';
 import { resolveTemplate } from '@/lib/template-resolver';
 import { cn } from '@/lib/utils';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
-import { useTranslation } from '@/hooks/use-translation';
 
 interface ProductCardProps {
   product: Product;
   onQuickView: (slug: string) => void;
-  onAddToCart?: (product: Product) => void;
-  onBuyNow?: (product: Product) => void;
+  onAddToCart: (product: Product) => void;
 }
 
 function getDiscountPercent(price: number, compare: number): number {
@@ -92,41 +90,13 @@ function useCardData(product: Product) {
 // ─────────────────────────────────────────────────────────────
 // CLEAN — Meta Ads Template Minimalist Storefront Card
 // ─────────────────────────────────────────────────────────────
-function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
+function CleanCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
-  onQuickView: (s: string) => void;
-  onAddToCart?: (p: Product) => void;
-  onBuyNow?: (p: Product) => void;
+  onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
   const { discount, isOutOfStock, img1, img2, colors } = useCardData(product);
   const toggleWishlist = useCartStore(s => s.toggleWishlist);
   const isInWishlist = useCartStore(s => s.isInWishlist(product.id));
-  const addItem = useCartStore(s => s.addItem);
-  const openCart = useCartStore(s => s.openCart);
-  const closeCart = useCartStore(s => s.closeCart);
-  const setStorefrontView = useAppStore(s => s.setStorefrontView);
-  const { t } = useTranslation();
-
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onAddToCart) {
-      onAddToCart(product);
-    } else {
-      addItem(product, 1);
-      openCart();
-    }
-  };
-
-  const handleBuyNow = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onBuyNow) {
-      onBuyNow(product);
-    } else {
-      addItem(product, 1);
-      closeCart();
-      setStorefrontView('checkout');
-    }
-  };
 
   return (
     <motion.div
@@ -134,11 +104,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white rounded-2xl sm:rounded-3xl border border-slate-100 hover:border-slate-200 hover:shadow-xl hover:shadow-slate-100/70 transition-all duration-300 cursor-pointer overflow-hidden p-2.5 sm:p-3"
+      className="group relative flex flex-col bg-white rounded-[24px] border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image container */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-100/60">
+      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-2xl border border-slate-100/60">
         <img
           src={img1} 
           alt={product.name}
@@ -171,13 +141,13 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         <div className="absolute top-2.5 left-2.5 z-20 flex flex-col gap-1">
           {discount > 0 ? (
             <span
-              className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white rounded-md shadow-xs"
+              className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white rounded-lg shadow-xs"
               style={{ backgroundColor: primary }}
             >
               -{discount}%
             </span>
           ) : product.featured ? (
-            <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-900/90 text-white rounded-md shadow-xs">
+            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-lg shadow-xs">
               Vedette
             </span>
           ) : null}
@@ -186,43 +156,20 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         {/* Out of stock overlay */}
         {isOutOfStock && (
           <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
+            <span className="text-[10px] font-black uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
               Épuisé
             </span>
-          </div>
-        )}
-
-        {/* Hover Actions: Ajouter au panier & Commander */}
-        {!isOutOfStock && (
-          <div className="hidden md:flex absolute inset-x-2.5 bottom-2.5 z-20 flex-col gap-1.5 opacity-0 translate-y-3 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 pointer-events-none group-hover:pointer-events-auto">
-            <button
-              type="button"
-              onClick={handleAddToCart}
-              className="w-full h-9 rounded-xl text-xs font-bold tracking-wide bg-white/95 hover:bg-white text-slate-800 hover:text-black shadow-md flex items-center justify-center gap-1.5 transition-all border border-slate-200/80 active:scale-[0.98]"
-            >
-              <ShoppingCart className="size-3.5 text-slate-700" />
-              {t('addToCart')}
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyNow}
-              className="w-full h-9 rounded-xl text-xs font-bold tracking-wide text-white shadow-md flex items-center justify-center gap-1.5 transition-all hover:brightness-105 active:scale-[0.98]"
-              style={{ backgroundColor: primary }}
-            >
-              <Zap className="size-3.5 fill-current" />
-              {t('buyNow')}
-            </button>
           </div>
         )}
       </div>
 
       {/* Info Block */}
-      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-2.5">
+      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
         <div className="space-y-1">
           {product.category && (
-            <p className="text-[10px] font-medium tracking-wide uppercase text-slate-400">{product.category}</p>
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{product.category}</p>
           )}
-          <h3 className="text-xs sm:text-sm font-bold text-slate-800 leading-snug line-clamp-2 group-hover:text-slate-950 transition-colors">
+          <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors">
             {product.name}
           </h3>
           {colors.length > 0 && (
@@ -235,41 +182,30 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
         </div>
 
         {/* Price & Action Row */}
-        <div className="space-y-2 pt-2 border-t border-slate-100">
+        <div className="space-y-2.5 pt-2 border-t border-slate-100">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm sm:text-base font-extrabold text-slate-900 font-mono tracking-tight">
+            <span className="text-sm font-black text-slate-900 font-mono">
               {formatPrice(product.price)}
             </span>
             {product.compare_price !== null && product.compare_price > product.price && (
-              <span className="text-xs font-medium text-slate-400 font-mono line-through">
+              <span className="text-[11px] font-bold text-slate-400 font-mono line-through">
                 {formatPrice(product.compare_price)}
               </span>
             )}
           </div>
 
-          {/* Mobile action buttons (touch screen fallback) */}
           {!isOutOfStock && (
-            <div className="grid grid-cols-2 gap-1.5 pt-0.5 md:hidden">
-              <button
-                type="button"
-                onClick={handleAddToCart}
-                className="h-8.5 rounded-xl text-[11px] font-semibold bg-slate-100 text-slate-700 active:bg-slate-200 flex items-center justify-center gap-1.5 transition-colors"
-                title={t('addToCart')}
-              >
-                <ShoppingCart className="size-3 text-slate-600" />
-                <span className="truncate">Panier</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleBuyNow}
-                className="h-8.5 rounded-xl text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 transition-all shadow-2xs active:brightness-90"
-                style={{ backgroundColor: primary }}
-                title={t('buyNow')}
-              >
-                <Zap className="size-3 fill-current" />
-                <span className="truncate">Commander</span>
-              </button>
-            </div>
+            <button
+              onClick={e => { 
+                e.stopPropagation(); 
+                onAddToCart(product); 
+              }}
+              className="w-full h-9 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 transition-all shadow-xs hover:opacity-95 active:scale-[0.98]"
+              style={{ backgroundColor: primary }}
+            >
+              <ShoppingCart className="size-3.5" />
+              Ajouter au panier
+            </button>
           )}
         </div>
       </div>
@@ -280,39 +216,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
 // ─────────────────────────────────────────────────────────────
 // ATHLETIC — Gymshark/Nike style: black, sharp, bold, dense
 // ─────────────────────────────────────────────────────────────
-function AthleticCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
+function AthleticCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
-  onQuickView: (s: string) => void;
-  onAddToCart?: (p: Product) => void;
-  onBuyNow?: (p: Product) => void;
+  onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
   const { discount, isOutOfStock, img1, img2, colors } = useCardData(product);
-  const addItem = useCartStore(s => s.addItem);
-  const openCart = useCartStore(s => s.openCart);
-  const closeCart = useCartStore(s => s.closeCart);
-  const setStorefrontView = useAppStore(s => s.setStorefrontView);
-  const { t } = useTranslation();
-
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onAddToCart) {
-      onAddToCart(product);
-    } else {
-      addItem(product, 1);
-      openCart();
-    }
-  };
-
-  const handleBuyNow = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onBuyNow) {
-      onBuyNow(product);
-    } else {
-      addItem(product, 1);
-      closeCart();
-      setStorefrontView('checkout');
-    }
-  };
 
   return (
     <motion.div
@@ -343,23 +251,15 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: 
           </div>
         )}
 
-        {/* CTA — slide up sharp bar on hover: Ajouter au panier & Commander */}
+        {/* CTA — slide up sharp bar */}
         {!isOutOfStock ? (
-          <div className="absolute inset-x-0 bottom-0 z-10 translate-y-full group-hover:translate-y-0 transition-transform duration-400 ease-[0.16,1,0.3,1] flex flex-col">
+          <div className="absolute inset-x-0 bottom-0 z-10 translate-y-full group-hover:translate-y-0 transition-transform duration-400 ease-[0.16,1,0.3,1]">
             <button
-              type="button"
-              onClick={handleAddToCart}
-              className="w-full py-2.5 bg-neutral-900/95 backdrop-blur-md text-white text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-1.5 transition-all hover:bg-neutral-800 border-t border-white/10"
-            >
-              <ShoppingCart className="size-3.5" /> {t('addToCart')}
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyNow}
-              className="w-full py-2.5 text-black text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-1.5 transition-all hover:brightness-110"
+              onClick={e => { e.stopPropagation(); onAddToCart(product); }}
+              className="w-full py-4 text-black text-[10px] font-black uppercase tracking-[0.35em] flex items-center justify-center gap-2 transition-all hover:brightness-110"
               style={{ backgroundColor: primary }}
             >
-              <Zap className="size-3.5 fill-current" /> {t('buyNow')}
+              <Zap className="size-3.5" /> Buy Now
             </button>
           </div>
         ) : (
@@ -390,27 +290,6 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: 
             <span className="text-xs font-bold text-white/20 line-through">{formatPrice(product.compare_price)}</span>
           )}
         </div>
-
-        {/* Mobile action buttons (touch screen fallback) */}
-        {!isOutOfStock && (
-          <div className="mt-3 grid grid-cols-2 gap-1.5 md:hidden">
-            <button
-              type="button"
-              onClick={handleAddToCart}
-              className="py-2 px-2 bg-neutral-900 border border-white/10 text-white text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1"
-            >
-              <ShoppingCart className="size-3" /> Panier
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyNow}
-              className="py-2 px-2 text-black text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1 font-bold"
-              style={{ backgroundColor: primary }}
-            >
-              <Zap className="size-3 fill-current" /> Commander
-            </button>
-          </div>
-        )}
       </div>
     </motion.div>
   );
@@ -419,41 +298,13 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: 
 // ─────────────────────────────────────────────────────────────
 // LUXE — Maison de Couture: deep navy, gold, cinematic, rare
 // ─────────────────────────────────────────────────────────────
-function LuxeCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
+function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
   product: Product; primary: string;
-  onQuickView: (s: string) => void;
-  onAddToCart?: (p: Product) => void;
-  onBuyNow?: (p: Product) => void;
+  onQuickView: (s: string) => void; onAddToCart: (p: Product) => void;
 }) {
   const { discount, isOutOfStock, img1, colors } = useCardData(product);
   const toggleWishlist = useCartStore(s => s.toggleWishlist);
   const isInWishlist = useCartStore(s => s.isInWishlist(product.id));
-  const addItem = useCartStore(s => s.addItem);
-  const openCart = useCartStore(s => s.openCart);
-  const closeCart = useCartStore(s => s.closeCart);
-  const setStorefrontView = useAppStore(s => s.setStorefrontView);
-  const { t } = useTranslation();
-
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onAddToCart) {
-      onAddToCart(product);
-    } else {
-      addItem(product, 1);
-      openCart();
-    }
-  };
-
-  const handleBuyNow = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onBuyNow) {
-      onBuyNow(product);
-    } else {
-      addItem(product, 1);
-      closeCart();
-      setStorefrontView('checkout');
-    }
-  };
 
   return (
     <motion.div
@@ -494,24 +345,17 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
           </div>
         )}
 
-        {/* CTA hover reveal: Ajouter au panier & Commander */}
+        {/* CTA hover reveal */}
         {!isOutOfStock ? (
-          <div className="absolute inset-x-0 bottom-0 z-10 p-4 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500 flex flex-col gap-2">
+          <div className="absolute inset-x-0 bottom-0 z-10 p-5 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
             <button
-              type="button"
-              onClick={handleAddToCart}
-              className="w-full py-2.5 border text-[10px] font-light tracking-[0.25em] uppercase transition-all duration-300 flex items-center justify-center gap-2"
-              style={{ borderColor: `${primary}50`, color: primary, backgroundColor: 'rgba(12,15,26,0.85)' }}
+              onClick={e => { e.stopPropagation(); onAddToCart(product); }}
+              className="w-full py-3 border text-[10px] font-light tracking-[0.35em] uppercase transition-all duration-300"
+              style={{ borderColor: `${primary}50`, color: primary, backgroundColor: 'rgba(12,15,26,0.8)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = primary; (e.currentTarget as HTMLButtonElement).style.color = '#0C0F1A'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(12,15,26,0.8)'; (e.currentTarget as HTMLButtonElement).style.color = primary; }}
             >
-              <ShoppingCart className="size-3" /> {t('addToCart')}
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyNow}
-              className="w-full py-2.5 text-[10px] font-medium tracking-[0.25em] uppercase transition-all duration-300 flex items-center justify-center gap-2 text-[#0C0F1A]"
-              style={{ backgroundColor: primary }}
-            >
-              <Zap className="size-3 fill-current" /> {t('buyNow')}
+              Ajouter — {formatPrice(product.price)}
             </button>
           </div>
         ) : (
@@ -549,28 +393,6 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
             </span>
           )}
         </div>
-
-        {/* Mobile action buttons (touch screen fallback) */}
-        {!isOutOfStock && (
-          <div className="mt-3 grid grid-cols-2 gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={handleAddToCart}
-              className="py-2 px-1 border text-[9px] font-light tracking-wider uppercase flex items-center justify-center gap-1"
-              style={{ borderColor: `${primary}40`, color: primary }}
-            >
-              <ShoppingCart className="size-3" /> Panier
-            </button>
-            <button
-              type="button"
-              onClick={handleBuyNow}
-              className="py-2 px-1 text-[9px] font-medium tracking-wider uppercase flex items-center justify-center gap-1 text-[#0C0F1A]"
-              style={{ backgroundColor: primary }}
-            >
-              <Zap className="size-3 fill-current" /> Commander
-            </button>
-          </div>
-        )}
       </div>
     </motion.div>
   );
@@ -579,16 +401,16 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart, onBuyNow }: {
 // ─────────────────────────────────────────────────────────────
 // MAIN EXPORT — dispatches to the right template card
 // ─────────────────────────────────────────────────────────────
-export function ProductCard({ product, onQuickView, onAddToCart, onBuyNow }: ProductCardProps) {
+export function ProductCard({ product, onQuickView, onAddToCart }: ProductCardProps) {
   const activeStore = useAppStore(s => s.activeStore);
   const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   const primary = (activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
 
   if (tpl === 'athletic' || tpl === 'landing') {
-    return <AthleticCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} onBuyNow={onBuyNow} />;
+    return <AthleticCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} />;
   }
   if (tpl === 'luxe') {
-    return <LuxeCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} onBuyNow={onBuyNow} />;
+    return <LuxeCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} />;
   }
-  return <CleanCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} onBuyNow={onBuyNow} />;
+  return <CleanCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} />;
 }
