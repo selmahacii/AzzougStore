@@ -39,71 +39,59 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Assign a correlation ID to every request
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         start = time.monotonic()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            duration_ms = (time.monotonic() - start) * 1000
+            access_logger.error(
+                "%s %s 500 %.1fms req_id=%s EXCEPTION: %s",
+                request.method, request.url.path, duration_ms, request_id, exc
+            )
+            from starlette.exceptions import HTTPException as StarletteHTTPException
+            from app.core.error_handlers import unhandled_exception_handler, http_exception_handler
+            if isinstance(exc, StarletteHTTPException):
+                return await http_exception_handler(request, exc)
+            return await unhandled_exception_handler(request, exc)
+
         duration_ms = (time.monotonic() - start) * 1000
         user_id = request.headers.get("x-user-id", "-")
-        # host + client_ip: who actually reached the server and via which
-        # domain. A user who "can't access" whose device is stuck on stale DNS
-        # (still pointing at the old Namecheap parking IP) never gets a TCP
-        # connection to us at all — nothing appears in these logs for them.
-        # If her login attempt IS visible here, the problem is downstream of
-        # DNS (auth/network from here on); if it's absent, it's DNS/network
-        # on her device/carrier, not this server.
         host = request.headers.get("host", "-")
         client_ip = (
             request.headers.get("x-forwarded-for", "").split(",")[0].strip()
             or (request.client.host if request.client else "-")
         )
-        # Breakdown of where the time actually went — previously only
-        # exposed via the Server-Timing response header (invisible unless
-        # someone opens devtools mid-incident), never logged server-side.
-        # Answers "was this request slow because of SQL, Redis, or our own
-        # code" from the container logs alone, after the fact.
-        #
-        # Read from response headers, NOT app.core.timing's contextvar
-        # directly: BaseHTTPMiddleware runs each middleware's dispatch() in
-        # its own asyncio task, so a ContextVar.set() done deeper in the
-        # chain (DistributedRateLimitMiddleware calls timing.start()) is
-        # invisible from this task's own context — reading the contextvar
-        # here always returned an empty bag (confirmed in prod: every
-        # access log line showed sql=0.0ms(0q) regardless of actual query
-        # activity). DistributedRateLimitMiddleware is the correct place
-        # that already computes this correctly for the Server-Timing
-        # header; it also stamps these X-Internal-* headers for us to read.
-        sql_ms = float(response.headers.get("X-Internal-Sql-Ms", "0") or 0)
-        sql_count = int(response.headers.get("X-Internal-Sql-Count", "0") or 0)
-        redis_ms = float(response.headers.get("X-Internal-Redis-Ms", "0") or 0)
-        for _h in ("X-Internal-Sql-Ms", "X-Internal-Sql-Count", "X-Internal-Redis-Ms"):
-            if _h in response.headers:
-                del response.headers[_h]
 
-        access_logger.info(
-            "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s sql=%.1fms(%dq) redis=%.1fms",
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration_ms,
-            user_id,
-            host,
-            client_ip,
-            request_id,
-            sql_ms,
-            sql_count,
-            redis_ms,
-        )
-        # Propagate correlation ID back to client
-        response.headers["X-Request-Id"] = request_id
-        # Server-side processing time only (excludes network/TLS/proxy hops)
-        # — lets us separate "our handler was slow" from "the network path
-        # to/from us was slow" from outside, without guessing.
-        response.headers["X-Process-Time-Ms"] = f"{duration_ms:.1f}"
-        # This middleware is innermost of the 3 custom ones (rate-limit and
-        # tenant wrap it), so this span is FastAPI routing + all Depends()
-        # resolution (auth, get_db) + the route body itself — recorded into
-        # the same per-request bag DistributedRateLimitMiddleware (outermost)
-        # turns into the Server-Timing header.
-        from app.core import timing as _timing
-        _timing.record("handler_total", duration_ms)
+        try:
+            sql_ms = float(response.headers.get("X-Internal-Sql-Ms", "0") or 0)
+            sql_count = int(response.headers.get("X-Internal-Sql-Count", "0") or 0)
+            redis_ms = float(response.headers.get("X-Internal-Redis-Ms", "0") or 0)
+            for _h in ("X-Internal-Sql-Ms", "X-Internal-Sql-Count", "X-Internal-Redis-Ms"):
+                if _h in response.headers:
+                    del response.headers[_h]
+
+            access_logger.info(
+                "%s %s %d %.1fms user=%s host=%s ip=%s req_id=%s sql=%.1fms(%dq) redis=%.1fms",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+                user_id,
+                host,
+                client_ip,
+                request_id,
+                sql_ms,
+                sql_count,
+                redis_ms,
+            )
+            # Propagate correlation ID back to client
+            response.headers["X-Request-Id"] = request_id
+            # Server-side processing time only
+            response.headers["X-Process-Time-Ms"] = f"{duration_ms:.1f}"
+            from app.core import timing as _timing
+            _timing.record("handler_total", duration_ms)
+        except Exception as log_err:
+            access_logger.warning("Error in RequestLoggingMiddleware after response: %s", log_err)
+
         return response
 
 app = FastAPI(
