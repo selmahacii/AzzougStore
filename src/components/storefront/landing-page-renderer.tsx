@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
@@ -166,21 +166,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   // eventId (not time-based) so meta-tracking.ts's own sessionStorage dedup
   // catches a re-render/refresh instead of re-firing.
   useEffect(() => {
-    const pid = data?.product?.id || (data as any)?.product_id;
-    if (!pid || !activeStore?.id) return;
-    // Remembered for the rest of this tab session so a later AddToCart/
-    // InitiateCheckout (cart-store.ts / checkout-form.tsx, neither of which
-    // knows the current LP) still attributes to this landing page in the
-    // /funnel/bottlenecks by_landing_page breakdown.
+    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
+    const storeId = activeStore?.id || data?.store_id;
+    if (!pid || !storeId) return;
     setCurrentLpId(data.id);
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
       content_name: data.product_name || data.product?.name || data.headline,
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
+    }, { storeId, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.product?.id, activeStore?.id]);
+  }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -265,6 +262,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   }, [data.product, data, quantity, selectedOfferIndex]);
 
   const handleSelectVariant = (variant: any) => {
+    trackAddToCartClick();
     if (variant.image) {
       setSelectedActiveImage(variant.image);
     }
@@ -286,6 +284,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   };
 
   const handleSelectVariantForIndex = (variant: any, itemIndex: number) => {
+    trackAddToCartClick();
     if (itemIndex === 0 && variant.image) {
       setSelectedActiveImage(variant.image);
     }
@@ -420,7 +419,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         useCartStore.getState().clearCart();
         useCartStore.getState().addItem(
           { ...data.product, price: unitPrice, main_image: pImage, sku: (selectedVarWithImg as any)?.sku || (data.product as any).sku } as any,
-          qty, variantDetails, undefined, unitPrice
+          qty, variantDetails, undefined, unitPrice, true
         );
       }
       return;
@@ -446,9 +445,32 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       cartItems[0]?.customPrice === unitPrice;
     if (!isMatched) {
       useCartStore.getState().clearCart();
-      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
+      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice, true);
     }
   }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
+
+  const trackAddToCartClick = useCallback(() => {
+    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
+    const storeId = activeStore?.id || data?.store_id;
+    if (!pid || !storeId) return;
+    const currentPrice = Number(currentOffer?.price ?? data.price ?? data.product?.price ?? 0);
+    const currentQty = Number(currentOffer?.quantity ?? quantity ?? 1);
+
+    void trackMetaEvent('AddToCart', {
+      content_ids: [String(pid)],
+      content_name: data.product_name || data.product?.name || data.headline,
+      content_type: 'product',
+      value: currentPrice,
+      currency: 'DZD',
+      contents: [{ id: String(pid), quantity: currentQty }],
+    }, {
+      storeId,
+      lpId: data.id,
+      value: currentPrice,
+      currency: 'DZD',
+      contents: [{ id: String(pid), quantity: currentQty }],
+    });
+  }, [data, activeStore?.id, currentOffer, quantity]);
 
   if (!mounted) {
     return (
@@ -474,6 +496,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   };
 
   const handleOrder = () => {
+    trackAddToCartClick();
     scrollToSection('checkout-form-container');
   };
 
@@ -547,7 +570,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           {/* End Side: Action Button & Secure Badge */}
           <div className="flex items-center gap-3 z-10 shrink-0">
             <button 
-              onClick={() => scrollToSection('checkout-form-container')}
+              onClick={() => { trackAddToCartClick(); scrollToSection('checkout-form-container'); }}
               className="text-[11px] sm:text-xs font-black uppercase tracking-wider px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
               style={{ backgroundColor: primary }}
             >
@@ -985,6 +1008,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               disabled={offerExceedsStock}
                               onClick={() => {
                                   if (offerExceedsStock) return;
+                                  trackAddToCartClick();
                                   setSelectedOfferIndex(idx);
                                   setQuantity(offer.quantity);
                               }}
@@ -1124,7 +1148,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       {/* Sticky Bottom CTA on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
         <button
-          onClick={() => scrollToSection('checkout-form-container')}
+          onClick={() => { trackAddToCartClick(); scrollToSection('checkout-form-container'); }}
           className="w-full py-3.5 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
           style={{ backgroundColor: primary }}
         >

@@ -51,11 +51,26 @@ function getAppBaseUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
 }
 
-async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData | null> {
+function normalizeSlug(slug: string): string {
+  try {
+    const decoded = decodeURIComponent(slug).toLowerCase().trim();
+    return decoded
+      .replace(/saccoche/g, 'sacoche')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  } catch {
+    return slug.toLowerCase().replace(/saccoche/g, 'sacoche');
+  }
+}
+
+async function fetchLandingPage(rawSlug: string, storeId?: string): Promise<LpData | null> {
   const backendUrl = getBackendUrl();
+  const slug = normalizeSlug(rawSlug) || rawSlug;
   const encodedSlug = encodeURIComponent(slug);
   const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : '';
-  console.log(`[fetchLandingPage] Starting fetch for slug: ${slug}, storeId: ${storeId} using backendUrl: ${backendUrl}`);
+  console.log(`[fetchLandingPage] Starting fetch for slug: ${slug} (raw: ${rawSlug}), storeId: ${storeId} using backendUrl: ${backendUrl}`);
   try {
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}${query}`,
@@ -63,13 +78,24 @@ async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData 
     );
     if (!res.ok) {
       if (storeId) {
-        // Fallback: search by slug globally
+        // Fallback: search by slug globally without store_id
         const fallbackRes = await fetch(
           `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}`,
           { next: { revalidate: 0 } }
         );
         if (fallbackRes.ok) {
           const json = await fallbackRes.json();
+          return json.data ?? null;
+        }
+      }
+      if (rawSlug !== slug) {
+        const rawEncoded = encodeURIComponent(rawSlug);
+        const rawRes = await fetch(
+          `${backendUrl}/api/v1/landing-pages/slug/${rawEncoded}${query}`,
+          { next: { revalidate: 0 } }
+        );
+        if (rawRes.ok) {
+          const json = await rawRes.json();
           return json.data ?? null;
         }
       }

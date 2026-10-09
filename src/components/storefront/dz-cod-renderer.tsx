@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Truck, Package, ShieldCheck } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
+import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 
 interface DzCodRendererProps {
   data: any;
@@ -82,6 +83,7 @@ const parseBannerImages = (urlStr: string | null | undefined): string[] => {
 };
 
 export default function DzCodRenderer({ data }: DzCodRendererProps) {
+  const activeStore = useAppStore((s) => s.activeStore);
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
@@ -105,10 +107,44 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
-  // Plafond de commande — même garde-fou que landing-page-renderer.tsx
-  // (bug confirmé : 20 en stock, commande passée à 21 via ce stepper de
-  // quantité). Le backend (reserve_stock) reste la source de vérité ;
-  // ceci n'est qu'un garde-fou côté client.
+
+  // ViewContent fires on landing page mount
+  useEffect(() => {
+    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
+    const storeId = activeStore?.id || data?.store_id;
+    if (!pid || !storeId) return;
+    setCurrentLpId(data.id);
+    void trackMetaEvent('ViewContent', {
+      content_ids: [String(pid)],
+      content_name: data.product_name || data.product?.name || data.headline,
+      content_type: 'product',
+      value: Number(data.price ?? data.product?.price ?? 0) || undefined,
+    }, { storeId, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
+  }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
+
+  const trackAddToCartClick = useCallback(() => {
+    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
+    const storeId = activeStore?.id || data?.store_id;
+    if (!pid || !storeId) return;
+    const currentPrice = Number(offers?.[selectedOfferIndex]?.price ?? data.price ?? data.product?.price ?? 0);
+    const currentQty = Number(offers?.[selectedOfferIndex]?.quantity ?? quantity ?? 1);
+
+    void trackMetaEvent('AddToCart', {
+      content_ids: [String(pid)],
+      content_name: data.product_name || data.product?.name || data.headline,
+      content_type: 'product',
+      value: currentPrice,
+      currency: 'DZD',
+      contents: [{ id: String(pid), quantity: currentQty }],
+    }, {
+      storeId,
+      lpId: data.id,
+      value: currentPrice,
+      currency: 'DZD',
+      contents: [{ id: String(pid), quantity: currentQty }],
+    });
+  }, [data, activeStore?.id, offers, selectedOfferIndex, quantity]);
+
   const maxOrderableQuantity = (() => {
     const p = data.product as any;
     if (!p) return undefined;
@@ -260,7 +296,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         useCartStore.getState().clearCart();
         useCartStore.getState().addItem(
           { ...data.product, price: unitPrice, main_image: pImage, sku: (selectedVarWithImg as any)?.sku || (data.product as any).sku } as any,
-          qty, variantDetails, undefined, unitPrice
+          qty, variantDetails, undefined, unitPrice, true
         );
       }
       return;
@@ -288,7 +324,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       cartItems[0]?.customPrice === unitPrice;
     if (!isMatched) {
       useCartStore.getState().clearCart();
-      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
+      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice, true);
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, maxOrderableQuantity]);
 
@@ -438,6 +474,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     onClick={() => {
                       setSelectedActiveImage(item.url);
                       if (item.variant) {
+                        trackAddToCartClick();
                         const v = item.variant;
                         setSelectedVariants(prev => prev.map(itemSelection => {
                           const subSelection: Record<string, any> = { [v.name]: v };
@@ -562,6 +599,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                              type="button"
                                              disabled={isOutOfStock}
                                              onClick={() => {
+                                               trackAddToCartClick();
                                                setSelectedVariants(prev => {
                                                  const next = [...prev];
                                                  const subSelection = {
@@ -642,6 +680,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                  type="button"
                                                  disabled={isOutOfStock}
                                                  onClick={() => {
+                                                   trackAddToCartClick();
                                                    setSelectedVariants(prev => {
                                                      const next = [...prev];
                                                      next[itemIndex] = {
@@ -719,6 +758,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                             disabled={offerExceedsStock}
                             onClick={() => {
                               if (offerExceedsStock) return;
+                              trackAddToCartClick();
                               setSelectedOfferIndex(idx);
                               setQuantity(offer.quantity);
                             }}
@@ -832,6 +872,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         </div>
         <button
           onClick={() => {
+            trackAddToCartClick();
             const el = document.getElementById('checkout-form-container');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
           }}

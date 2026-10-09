@@ -98,9 +98,9 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Production-ready Multi-Tenant ERP & Storefront API for AzzougShop",
     version=settings.VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    docs_url=None,    # désactive /docs
+    redoc_url=None,   # désactive /redoc
+    openapi_url=None  # désactive /openapi.json
 )
 
 # Accept both /endpoint and /endpoint/ — avoids redirect loops with Next.js proxy

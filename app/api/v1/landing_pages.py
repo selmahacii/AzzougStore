@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import uuid
 import re
+import urllib.parse
+import unicodedata
 import logging
 from typing import Any, Optional
 
@@ -367,25 +369,69 @@ def list_landing_pages(
     return {"success": True, "data": data}
 
 
+def _normalize_lp_slug(slug_str: str) -> str:
+    if not slug_str:
+        return ""
+    decoded = urllib.parse.unquote(slug_str).strip().lower()
+    decoded = decoded.replace("saccoche", "sacoche")
+    normalized = unicodedata.normalize('NFKD', decoded)
+    ascii_slug = "".join(c for c in normalized if not unicodedata.combining(c))
+    clean = re.sub(r"[^a-z0-9]+", "-", ascii_slug).strip("-")
+    return clean
+
+
 # ─── Public: get by slug (storefront) ─────────────────────────────────────────
 
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
     from app.core.cache import get_or_set
 
+    raw_slug = slug.strip()
+    norm_slug = _normalize_lp_slug(raw_slug)
+
     def _compute():
-        lp = db.query(LandingPage).filter(
-            LandingPage.slug == slug,
-            LandingPage.store_id == store_id,
-            LandingPage.is_active == True,
-        ).first()
+        unquoted = urllib.parse.unquote(raw_slug).strip().lower()
+        candidates = list(dict.fromkeys([norm_slug, unquoted, raw_slug]))
+
+        query = db.query(LandingPage).filter(LandingPage.is_active == True)
+        if store_id:
+            query = query.filter(LandingPage.store_id == store_id)
+
+        # 1. Exact match on candidates
+        lp = query.filter(LandingPage.slug.in_(candidates)).first()
+        if not lp:
+            # 2. Case-insensitive match
+            for c in candidates:
+                lp = query.filter(func.lower(LandingPage.slug) == c.lower()).first()
+                if lp:
+                    break
+
+        # 3. Fallback: search globally if store_id was specified but not found
+        if not lp and store_id:
+            lp = db.query(LandingPage).filter(
+                LandingPage.is_active == True,
+                LandingPage.slug.in_(candidates)
+            ).first()
+
+        # 4. Fallback: fuzzy/partial match on prefix/slug
+        if not lp:
+            for c in candidates:
+                if len(c) >= 4:
+                    lp = db.query(LandingPage).filter(
+                        LandingPage.is_active == True,
+                        LandingPage.slug.ilike(f"%{c}%")
+                    ).first()
+                    if lp:
+                        break
+
         return _serialize(lp) if lp else None
 
-    data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
+    cache_store_id = store_id or "any"
+    data = get_or_set(f"landing_page:{cache_store_id}:{norm_slug}", _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 
@@ -424,12 +470,14 @@ def get_by_slug(
                 data["product"]["variants"] = variants
 
     # View counting stays real-time on every request, cache hit or not — a
-    # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
-    db.execute(
-        text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-        {"slug": slug, "store_id": store_id},
-    )
-    db.commit()
+    # single indexed UPDATE by primary key id.
+    target_id = data.get("id")
+    if target_id:
+        db.execute(
+            text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE id = :id"),
+            {"id": target_id},
+        )
+        db.commit()
 
     return {"success": True, "data": data}
 

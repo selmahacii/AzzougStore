@@ -297,6 +297,8 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   const clearCart = useCartStore((s) => s.clearCart);
   const { t, dir } = useTranslation();
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hasInitiatedRef = useRef(false);
   const submittingRef = useRef(false); // prevents double-submit on fast multi-click
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -352,17 +354,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
-  useEffect(() => {
+  const triggerInitiateCheckout = useCallback(() => {
+    if (hasInitiatedRef.current) return;
     if (!items.length) return;
-    // One event_id per real checkout ATTEMPT (see getOrCreateCheckoutAttemptId
-    // in meta-tracking.ts) — not per render, not per cart content, not per
-    // time window. This effect legitimately re-runs several times for the
-    // SAME attempt (delivery fee resolving async as the shopper picks a
-    // wilaya/commune/partner changes finalTotal each time), and reusing the
-    // attempt id means every one of those re-runs is a no-op past the first
-    // (trackMetaEvent's own sessionStorage dedup on event_id) — while a
-    // genuinely new attempt (new tab, or this tab reopened after being
-    // closed) gets a fresh id and fires again even with the identical cart.
+    hasInitiatedRef.current = true;
+
     const attemptId = getOrCreateCheckoutAttemptId();
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
@@ -376,6 +372,30 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
     });
   }, [finalTotal, items]);
+
+  useEffect(() => {
+    if (hasInitiatedRef.current) return;
+
+    if (!isInline) {
+      triggerInitiateCheckout();
+      return;
+    }
+
+    if (!containerRef.current) return;
+
+    if (typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver((entries) => {
+        const [entry] = entries;
+        if (entry && entry.isIntersecting) {
+          triggerInitiateCheckout();
+          observer.disconnect();
+        }
+      }, { threshold: 0.1, rootMargin: '100px' });
+
+      observer.observe(containerRef.current);
+      return () => observer.disconnect();
+    }
+  }, [isInline, triggerInitiateCheckout]);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -699,7 +719,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   ];
 
   return (
-    <div style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
+    <div ref={containerRef} style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
       <div className={isInline ? "w-full py-2" : "mx-auto max-w-2xl px-4 py-10 sm:px-6"}>
         {/* Title */}
         {T.tpl !== 'dz_cod' && !isInline && (
@@ -765,7 +785,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <Phone className="size-3" /> {dir === 'rtl' ? 'رقم الهاتف' : t('phone')}
                   </label>
                   <Input id="phone" type="tel" placeholder={dir === 'rtl' ? '0555 12 34 56' : '0555 123 456'} value={customerInfo.phone}
-                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                    onFocus={triggerInitiateCheckout}
+                    onChange={e => {
+                      triggerInitiateCheckout();
+                      setCustomerInfo({ ...customerInfo, phone: e.target.value });
+                    }}
                     className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                     dir="ltr" style={{ textAlign: 'left' }} />
                   {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
@@ -777,7 +801,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <User className="size-3" /> {dir === 'rtl' ? 'الاسم الكامل' : t('fullName') || 'Nom Complet'}
                   </label>
                   <Input id="firstName" placeholder={dir === 'rtl' ? 'محمد بن علي' : 'Mohamed Benali'} value={customerInfo.firstName}
-                    onChange={e => setCustomerInfo({ ...customerInfo, firstName: e.target.value })}
+                    onFocus={triggerInitiateCheckout}
+                    onChange={e => {
+                      triggerInitiateCheckout();
+                      setCustomerInfo({ ...customerInfo, firstName: e.target.value });
+                    }}
                     className={`co-input text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
                   {errors.firstName && <p className="text-[10px] text-red-400">{errors.firstName}</p>}
                 </div>
@@ -869,7 +897,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <div key={f.id} className="space-y-1.5">
                       <label htmlFor={f.id} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>{f.label}</label>
                       <Input id={f.id} placeholder={f.placeholder} value={customerInfo[f.key]}
-                        onChange={e => setCustomerInfo({ ...customerInfo, [f.key]: e.target.value })}
+                        onFocus={triggerInitiateCheckout}
+                        onChange={e => {
+                          triggerInitiateCheckout();
+                          setCustomerInfo({ ...customerInfo, [f.key]: e.target.value });
+                        }}
                         className={`co-input text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
                       {f.err && <p className="text-[10px] text-red-400">{f.err}</p>}
                     </div>
@@ -883,7 +915,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                       <Phone className="size-3" /> {t('phone')}
                     </label>
                     <Input id="phone" type="tel" placeholder="0555 123 456" value={customerInfo.phone}
-                      onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                      onFocus={triggerInitiateCheckout}
+                      onChange={e => {
+                        triggerInitiateCheckout();
+                        setCustomerInfo({ ...customerInfo, phone: e.target.value });
+                      }}
                       className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
@@ -893,7 +929,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                       {t('phone2')}
                     </label>
                     <Input id="phone2" type="tel" placeholder="0661 234 567" value={customerInfo.phone2}
-                      onChange={e => setCustomerInfo({ ...customerInfo, phone2: e.target.value })}
+                      onFocus={triggerInitiateCheckout}
+                      onChange={e => {
+                        triggerInitiateCheckout();
+                        setCustomerInfo({ ...customerInfo, phone2: e.target.value });
+                      }}
                       className={`co-input text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone2 && <p className="text-[10px] text-red-400">{errors.phone2}</p>}
