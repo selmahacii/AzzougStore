@@ -514,6 +514,18 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     return digits;
   };
 
+  const isFakeAlgerianPhone = (p: string): boolean => {
+    if (!p || p.length !== 10) return true;
+    const body = p.slice(2);
+    if (/^(.)\1{7}$/.test(body)) return true;
+    const fakeSequences = [
+      '0000000', '1111111', '2222222', '3333333', '4444444',
+      '5555555', '6666666', '7777777', '8888888', '9999999',
+      '12345678', '87654321', '01234567'
+    ];
+    return fakeSequences.some(seq => p.includes(seq));
+  };
+
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
     const phone = normalizePhone(customerInfo.phone);
@@ -525,7 +537,8 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     }
     if (!phone) e.phone = t('phoneRequired');
     else if (!/^0[5-7]\d{8}$/.test(phone)) e.phone = t('phoneInvalid');
-    if (!isInline && customerInfo.phone2.trim() && !/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2))) e.phone2 = t('phone2Invalid');
+    else if (isFakeAlgerianPhone(phone)) e.phone = dir === 'rtl' ? 'يرجى إدخال رقم هاتف حقيقي وصحيح' : 'Numéro de téléphone invalide (numéro fictif détecté)';
+    if (!isInline && customerInfo.phone2.trim() && (!/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2)) || isFakeAlgerianPhone(normalizePhone(customerInfo.phone2)))) e.phone2 = t('phone2Invalid');
     if (!customerInfo.wilaya) e.wilaya = t('wilayaRequired');
     if (!customerInfo.commune.trim()) e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
     if (!isInline && !customerInfo.address.trim()) e.address = t('addressRequired');
