@@ -5,6 +5,7 @@ import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
   ShoppingBag, Check,
+} from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
