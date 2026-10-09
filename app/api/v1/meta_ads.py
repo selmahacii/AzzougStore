@@ -245,7 +245,7 @@ class MetaAdsConfigOut(BaseModel):
 
 @router.get("/public-config", response_model=dict)
 def get_meta_ads_public_config(
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -263,7 +263,12 @@ def get_meta_ads_public_config(
     never access_token/ad_account_id/is_connected, which stay admin-only.
     """
     db.info["skip_tenant_isolation"] = True
-    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
+    if not store_id:
+        from app.models.store import Store
+        def_store = db.query(Store).filter(Store.is_active == True).first() or db.query(Store).first()
+        store_id = def_store.id if def_store else ""
+
+    config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first() if store_id else None
     if not config:
         return {"success": True, "data": {
             "store_id": store_id,

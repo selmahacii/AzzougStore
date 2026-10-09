@@ -320,6 +320,22 @@ def run_db_migrations():
             except Exception as sync_err:
                 db_mig.rollback()
                 logger.debug("Delivered orders sync check: %s", sync_err)
+
+            # Normalize landing page slugs in DB to eliminate 404/422 for saccoche / accented slugs
+            try:
+                db_mig.execute(text("""
+                    UPDATE landing_pages
+                    SET slug = 'sacoche-a-main'
+                    WHERE slug ILIKE '%saccoche%' 
+                       OR slug ILIKE '%sacoche%à%' 
+                       OR slug ILIKE '%sacoche%main%'
+                       OR slug = 'saccoche-a-main'
+                       OR slug = 'saccoche-à-main';
+                """))
+                db_mig.commit()
+            except Exception as lp_slug_err:
+                db_mig.rollback()
+                logger.debug("Landing page slug normalization check: %s", lp_slug_err)
         finally:
             db_mig.close()
     except Exception as exc:

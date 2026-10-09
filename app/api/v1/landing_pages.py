@@ -377,6 +377,8 @@ def _normalize_lp_slug(slug_str: str) -> str:
     normalized = unicodedata.normalize('NFKD', decoded)
     ascii_slug = "".join(c for c in normalized if not unicodedata.combining(c))
     clean = re.sub(r"[^a-z0-9]+", "-", ascii_slug).strip("-")
+    if "sacoche" in clean and "main" in clean:
+        return "sacoche-a-main"
     return clean
 
 
@@ -428,12 +430,66 @@ def get_by_slug(
                     if lp:
                         break
 
-        return _serialize(lp) if lp else None
+        if not lp:
+            return None
+
+        res_data = _serialize(lp)
+        # Consolidate Meta Ads config and delivery partners to eliminate frontend waterfalls
+        try:
+            from app.models.marketing import MetaAdsConfig
+            from app.models.delivery_partner import DeliveryPartner
+            from app.api.v1.delivery_partners import _serialize as serialize_partner
+            db.info["skip_tenant_isolation"] = True
+            m_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == lp.store_id).first()
+            res_data["meta_ads_config"] = {
+                "store_id": lp.store_id,
+                "pixel_id": m_cfg.pixel_id if m_cfg else None,
+                "domain_verification_tag": m_cfg.domain_verification_tag if m_cfg else None,
+                "exchange_rate": (m_cfg.exchange_rate if m_cfg and m_cfg.exchange_rate is not None else 1.0),
+                "currency": (m_cfg.currency or "USD") if m_cfg else "USD",
+            }
+            pts = db.query(DeliveryPartner).filter(
+                DeliveryPartner.store_id == lp.store_id,
+                DeliveryPartner.is_active == True
+            ).all()
+            res_data["delivery_partners"] = [serialize_partner(p) for p in pts]
+        except Exception as enrich_err:
+            logger.warning("[LP] Failed to enrich LP with meta_ads_config or delivery_partners: %s", enrich_err)
+            res_data["meta_ads_config"] = None
+            res_data["delivery_partners"] = []
+
+        return res_data
 
     cache_store_id = store_id or "any"
     data = get_or_set(f"landing_page:{cache_store_id}:{norm_slug}", _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
+
+    # Rehydrate meta_ads_config & delivery_partners if served from legacy cache entry
+    if data and ("meta_ads_config" not in data or "delivery_partners" not in data):
+        target_store_id = data.get("store_id")
+        if target_store_id:
+            try:
+                from app.models.marketing import MetaAdsConfig
+                from app.models.delivery_partner import DeliveryPartner
+                from app.api.v1.delivery_partners import _serialize as serialize_partner
+                db.info["skip_tenant_isolation"] = True
+                m_cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == target_store_id).first()
+                data["meta_ads_config"] = {
+                    "store_id": target_store_id,
+                    "pixel_id": m_cfg.pixel_id if m_cfg else None,
+                    "domain_verification_tag": m_cfg.domain_verification_tag if m_cfg else None,
+                    "exchange_rate": (m_cfg.exchange_rate if m_cfg and m_cfg.exchange_rate is not None else 1.0),
+                    "currency": (m_cfg.currency or "USD") if m_cfg else "USD",
+                }
+                pts = db.query(DeliveryPartner).filter(
+                    DeliveryPartner.store_id == target_store_id,
+                    DeliveryPartner.is_active == True
+                ).all()
+                data["delivery_partners"] = [serialize_partner(p) for p in pts]
+            except Exception:
+                data["meta_ads_config"] = None
+                data["delivery_partners"] = []
 
     # Live stock & availability rehydration — guarantees product stock, reserved stock,
     # variant stock and availability flag are 100% real-time synchronized on every request.

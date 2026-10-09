@@ -834,7 +834,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                  </p>
                  <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                </div>
-               <CheckoutForm isInline={true} forceTemplate="dz_cod" />
+               <CheckoutForm isInline={true} forceTemplate="dz_cod" initialDeliveryPartners={(data as any).delivery_partners} />
              </div>
 
               {/* Publicity Banners (Multiple - Seamless Stack without gap) */}

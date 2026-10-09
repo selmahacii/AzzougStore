@@ -641,9 +641,17 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {heroImage && (() => {
               const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
               const mainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
+              const optimizedHeroUrl = optimizeCloudinaryUrl(mainImgSrc, 600);
 
               return (
                 <div className="space-y-4 w-full">
+                  <link
+                    rel="preload"
+                    as="image"
+                    href={optimizedHeroUrl}
+                    // @ts-expect-error fetchPriority is standard in modern HTML
+                    fetchPriority="high"
+                  />
                   <div 
                     className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"
                     onMouseMove={(e) => {
@@ -761,7 +769,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
-                  <CheckoutForm isInline={true}>
+                  <CheckoutForm isInline={true} initialDeliveryPartners={(data as any).delivery_partners}>
                     
                     {/* Variant Selector (One per product in pack) */}
                     {data.product?.variants && data.product.variants.length > 0 && (() => {

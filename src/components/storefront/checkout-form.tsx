@@ -288,7 +288,17 @@ export function SearchableCommuneSelect({
   );
 }
 
-export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
+export function CheckoutForm({
+  isInline = false,
+  forceTemplate,
+  children,
+  initialDeliveryPartners,
+}: {
+  isInline?: boolean;
+  forceTemplate?: string;
+  children?: React.ReactNode;
+  initialDeliveryPartners?: any[];
+}) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
@@ -323,8 +333,10 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     wilaya: '', commune: '', address: '', deliveryType: 'HOME',
   });
 
-  const [availablePartners, setAvailablePartners] = useState<any[]>([]);
-  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+  const [availablePartners, setAvailablePartners] = useState<any[]>(() => initialDeliveryPartners || []);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(() => {
+    return (initialDeliveryPartners && initialDeliveryPartners.length > 0) ? initialDeliveryPartners[0].id : null;
+  });
 
   const baseT = useCheckoutTheme(activeStore);
   const T = forceTemplate ? { ...baseT, tpl: forceTemplate } : baseT;
@@ -398,6 +410,13 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   }, [isInline, triggerInitiateCheckout]);
 
   useEffect(() => {
+    if (initialDeliveryPartners && initialDeliveryPartners.length > 0) {
+      setAvailablePartners(initialDeliveryPartners);
+      if (!selectedPartnerId) {
+        setSelectedPartnerId(initialDeliveryPartners[0].id);
+      }
+      return;
+    }
     if (!activeStore) return;
     const pIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
     fetch(`/api/v1/delivery-partners/availability?storeId=${activeStore.id}&productIds=${pIds}`)
@@ -410,7 +429,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         }
       })
       .catch(() => setAvailablePartners([]));
-  }, [items, activeStore]);
+  }, [items, activeStore, initialDeliveryPartners, selectedPartnerId]);
 
   useEffect(() => {
     if (!customerInfo.wilaya || !activeStore || !selectedPartnerId) return;

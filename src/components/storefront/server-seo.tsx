@@ -5,6 +5,7 @@ interface ServerSeoProps {
   description: string;
   image?: string | null;
   url?: string;
+  preloadImage?: string | null;
   productSchema?: {
     name: string;
     description: string;
@@ -17,7 +18,7 @@ interface ServerSeoProps {
   };
 }
 
-export function ServerSeo({ title, description, image, url, productSchema }: ServerSeoProps) {
+export function ServerSeo({ title, description, image, url, preloadImage, productSchema }: ServerSeoProps) {
   const canonicalUrl = url || '';
   const imageUrl = image || productSchema?.image || '';
   const productTitle = productSchema ? `${productSchema.name} | ${title}` : title;
@@ -65,6 +66,15 @@ export function ServerSeo({ title, description, image, url, productSchema }: Ser
       {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : null}
       <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
       <link rel="preconnect" href="https://connect.facebook.net" crossOrigin="anonymous" />
+      {preloadImage ? (
+        <link
+          rel="preload"
+          as="image"
+          href={preloadImage}
+          // @ts-expect-error fetchPriority is a standard HTML attribute supported by modern browsers
+          fetchPriority="high"
+        />
+      ) : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }} />
     </>
   );
