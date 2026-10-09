@@ -364,16 +364,23 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     // genuinely new attempt (new tab, or this tab reopened after being
     // closed) gets a fresh id and fires again even with the identical cart.
     const attemptId = getOrCreateCheckoutAttemptId();
+    const productIds = items.map(item => String(item.product?.id || (item as any).productId || '')).filter(Boolean);
+    const itemContents = items.map(item => ({ id: String(item.product?.id || (item as any).productId || ''), quantity: item.quantity }));
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
-      contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
+      content_ids: productIds,
+      product_id: productIds[0] || undefined,
+      contents: itemContents,
+      num_items: items.reduce((sum, item) => sum + (item.quantity || 1), 0),
       value: finalTotal,
       currency: 'DZD',
     }, {
       eventId: attemptId ? `initiatecheckout-${attemptId}` : undefined,
+      productId: productIds[0],
+      content_ids: productIds,
       value: finalTotal,
       currency: 'DZD',
-      contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
+      contents: itemContents,
     });
   }, [finalTotal, items]);
 

@@ -250,6 +250,9 @@ class MetaCapiLog(Base):
     its retry budget (status='failed').
     """
     __tablename__ = "meta_capi_logs"
+    __table_args__ = (
+        Index("ix_meta_capi_logs_status_created", "status", "created_at"),
+    )
 
     id = Column(String, primary_key=True, index=True)
     store_id = Column(String, ForeignKey("stores.id"), nullable=True, index=True)

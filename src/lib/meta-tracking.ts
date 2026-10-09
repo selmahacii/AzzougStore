@@ -41,7 +41,8 @@ export interface MetaTrackingOptions {
   eventSourceUrl?: string;
   fbp?: string;
   fbc?: string;
-  shouldSendToServer?: boolean;
+  productId?: string;
+  content_ids?: string[];
   /** Landing page id — powers the lightweight funnel-bottleneck rollup
    * (app/services/funnel_tracking.py). Optional: events without it are
    * still tracked, just without a per-LP breakdown. */
@@ -326,7 +327,32 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     ? Math.round((rawValue / adRate) * 100) / 100
     : rawValue;
 
-  const contentPayload = {
+  // Extract content_ids / product IDs for Meta Pixel & CAPI catalog matching
+  const rawContents = (options.contents || payload.contents) as Array<{ id: string | number; quantity?: number; item_price?: number }> | undefined;
+  const rawContentIds = (payload.content_ids || options.content_ids) as Array<string | number> | string | number | undefined;
+  
+  let contentIds: string[] = [];
+  if (Array.isArray(rawContentIds)) {
+    contentIds = rawContentIds.map(String).filter(Boolean);
+  } else if (rawContentIds) {
+    contentIds = [String(rawContentIds)];
+  } else if (Array.isArray(rawContents) && rawContents.length > 0) {
+    contentIds = rawContents.map(c => String(c.id)).filter(Boolean);
+  } else if (payload.productId || options.productId || payload.product_id) {
+    contentIds = [String(payload.productId || options.productId || payload.product_id)];
+  }
+
+  // Ensure InitiateCheckout ALWAYS has product_id / content_ids
+  if (eventName === 'InitiateCheckout' && contentIds.length === 0) {
+    if (typeof window !== 'undefined') {
+      const storedPid = window.sessionStorage?.getItem('azg_current_product_id');
+      const activeLp = getCurrentLpId();
+      if (storedPid) contentIds = [storedPid];
+      else if (activeLp) contentIds = [activeLp];
+    }
+  }
+
+  const contentPayload: Record<string, unknown> = {
     content_name: options.contentName || payload.content_name,
     content_category: options.contentCategory || payload.content_category,
     content_type: options.contentType || payload.content_type || 'product',
@@ -335,6 +361,11 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
     currency: adCurrency,
     value: convertedValue,
   };
+
+  if (contentIds.length > 0) {
+    contentPayload.content_ids = contentIds;
+    contentPayload.product_id = contentIds[0];
+  }
 
   // Pixel: only ever touched when this store has a Pixel configured — no
   // pixelId means no fbq() call, matching the fact that the Pixel <script>

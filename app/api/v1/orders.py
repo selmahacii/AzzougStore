@@ -5561,7 +5561,8 @@ def backfill_missing_capi(
     capi_success_exists = sa_exists().where(
         MetaCapiLog.order_id == Order.id, MetaCapiLog.event_name == "Purchase", MetaCapiLog.status == "success",
     )
-    cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - timedelta(days=META_CAPI_EVENT_TIME_WINDOW_DAYS)
+    # Limite stricte à 48h pour éviter d'envoyer des événements périmés à Meta
+    cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - timedelta(hours=48)
     if order_ids:
         q = db.query(Order).filter(Order.id.in_(order_ids), Order.is_deleted == False)
     else:

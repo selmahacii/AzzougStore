@@ -3219,15 +3219,32 @@ def _retry_pending_events_inner() -> None:
         _reclaim_stuck_processing(db)
 
         now = datetime.now(timezone.utc)
-        # 'queued'/'retry' are the durable-queue statuses this sweep now
-        # owns end-to-end; 'pending_retry' is kept for backward
-        # compatibility with rows written by the pre-durable-queue pipeline
-        # (never backfilled — see the migration docstring) so they still
-        # get drained instead of sitting orphaned forever.
+        cutoff_48h = now - timedelta(hours=48)
+
+        # 1. Purger/expirer immédiatement les événements de plus de 48h pour
+        # éviter d'empoisonner l'algorithme Meta avec des conversions périmées.
+        expired_rows = (
+            db.query(MetaCapiLog)
+            .filter(
+                MetaCapiLog.status.in_(("queued", "retry", "pending_retry")),
+                MetaCapiLog.created_at < cutoff_48h.replace(tzinfo=None),
+            )
+            .all()
+        )
+        if expired_rows:
+            for row in expired_rows:
+                row.status = "skipped"
+                row.error_message = "event expired (>48h old) - skipped to protect Meta algorithm"
+                row.completed_at = now.replace(tzinfo=None)
+            db.commit()
+            logger.info("[MetaCAPI] Purged %d events older than 48h in retry queue", len(expired_rows))
+
+        # 2. Ne traiter que les événements frais (< 48h)
         due = (
             db.query(MetaCapiLog)
             .filter(
                 MetaCapiLog.status.in_(("queued", "retry", "pending_retry")),
+                MetaCapiLog.created_at >= cutoff_48h.replace(tzinfo=None),
                 (MetaCapiLog.next_retry_at.is_(None)) | (MetaCapiLog.next_retry_at <= now),
             )
             .limit(200)
