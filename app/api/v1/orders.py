@@ -2279,26 +2279,26 @@ def create_order(
             # brand-new order, so it must fire Purchase CAPI exactly once
             if str(existing.status) != "MERGED":
                 try:
-                    from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                    from app.services.meta_capi import _get_meta_config_cached, send_lead_for_order, enqueue_lead_for_order
                     meta_cfg = _get_meta_config_cached(db, existing.store_id)
                     if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                         client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                         user_agent = request.headers.get("user-agent")
                         existing.client_ip = client_ip
                         existing.client_user_agent = user_agent
-                        log_id = enqueue_purchase_for_order(db, existing)
+                        log_id = enqueue_lead_for_order(db, existing)
                         db.commit()
                         if log_id:
-                            logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente (Log ID: %s, Order: %s, Pixel: %s)", log_id, existing.order_number, meta_cfg.get("pixel_id"))
-                            log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                            logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file d'attente (Log ID: %s, Order: %s, Pixel: %s)", log_id, existing.order_number, meta_cfg.get("pixel_id"))
+                            log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Lead CAPI ajouté à la file d'attente durable")
                             background_tasks.add_task(
-                                send_purchase_for_order,
+                                send_lead_for_order,
                                 order_id=str(existing.id),
                                 client_ip=client_ip,
                                 user_agent=user_agent
                             )
                         else:
-                            logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
+                            logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
                     else:
                         logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", existing.store_id)
                 except Exception as capi_err:
@@ -2426,26 +2426,26 @@ def create_order(
 
                     # Trigger Meta Conversions API (CAPI)
                     try:
-                        from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                        from app.services.meta_capi import _get_meta_config_cached, send_lead_for_order, enqueue_lead_for_order
                         meta_cfg = _get_meta_config_cached(db, _prev.store_id)
                         if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                             user_agent = request.headers.get("user-agent")
                             _prev.client_ip = client_ip
                             _prev.client_user_agent = user_agent
-                            log_id = enqueue_purchase_for_order(db, _prev)
+                            log_id = enqueue_lead_for_order(db, _prev)
                             db.commit()
                             if log_id:
-                                logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour commande 3-min (Log ID: %s, Order: %s, Pixel: %s)", log_id, _prev.order_number, meta_cfg.get("pixel_id"))
-                                log_order_event("ENVOI_META_CAPI_QUEUED", _prev, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                                logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file d'attente pour commande 3-min (Log ID: %s, Order: %s, Pixel: %s)", log_id, _prev.order_number, meta_cfg.get("pixel_id"))
+                                log_order_event("ENVOI_META_CAPI_QUEUED", _prev, "Événement Lead CAPI ajouté à la file d'attente durable")
                                 background_tasks.add_task(
-                                    send_purchase_for_order,
+                                    send_lead_for_order,
                                     order_id=str(_prev.id),
                                     client_ip=client_ip,
                                     user_agent=user_agent
                                 )
                             else:
-                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
+                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
                         else:
                             logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète pour la boutique %s", _prev.store_id)
                     except Exception as capi_err:
@@ -2543,27 +2543,27 @@ def create_order(
         # user_data, retries, logging, and an event_id shared with the browser
         # Pixel (purchase-{target_order.id}) so Meta deduplicates the two signals.
         try:
-            from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+            from app.services.meta_capi import _get_meta_config_cached, send_lead_for_order, enqueue_lead_for_order
             meta_cfg = _get_meta_config_cached(db, target_order.store_id)
             if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 target_order.client_ip = client_ip
                 target_order.client_user_agent = user_agent
-                log_id = enqueue_purchase_for_order(db, target_order)
+                log_id = enqueue_lead_for_order(db, target_order)
                 db.commit()
                 if log_id:
-                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, target_order.order_number, meta_cfg.get("pixel_id"))
+                    logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, target_order.order_number, meta_cfg.get("pixel_id"))
                     from app.core.logging import log_order_event
-                    log_order_event("ENVOI_META_CAPI_QUEUED", target_order, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                    log_order_event("ENVOI_META_CAPI_QUEUED", target_order, "Événement Lead CAPI ajouté à la file d'attente durable")
                     background_tasks.add_task(
-                        send_purchase_for_order,
+                        send_lead_for_order,
                         order_id=str(target_order.id),
                         client_ip=client_ip,
                         user_agent=user_agent
                     )
                 else:
-                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
+                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
             else:
                 logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", target_order.store_id)
         except Exception as capi_err:
@@ -3427,33 +3427,28 @@ def update_order(
         # Deliberately disabled per SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS
         # (see top of file) — explicit product decision, not a bug: Meta will
         # never learn about these conversions even though they are real sales.
+        # Trigger genuine Purchase CAPI when order reaches CONFIRMED or DELIVERED status
         _REAL_SALE_STATUSES = {"CONFIRMED", "SHIPPED", "DELIVERED"}
-        if SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS and _was_abandoned and str(updated.status) in _REAL_SALE_STATUSES:
+        if str(updated.status) in _REAL_SALE_STATUSES and (not _was_abandoned or SEND_PURCHASE_FOR_RECOVERED_ABANDONED_CARTS):
             try:
-                from app.models.marketing import MetaAdsConfig
-                meta_config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == updated.store_id).first()
-                if meta_config and meta_config.pixel_id and meta_config.access_token:
-                    from app.services.meta_capi import send_purchase_for_order, enqueue_purchase_for_order
-                    client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-                    user_agent = request.headers.get("user-agent")
-                    # Same values as today's synchronous send (the customer's own
-                    # session is gone, so this is the confirmatrice's browser —
-                    # an existing, unchanged trade-off); persisted so a later
-                    # retry of this same Purchase resends the same value instead
-                    # of nothing.
-                    updated.client_ip = client_ip
-                    updated.client_user_agent = user_agent
-                    enqueue_purchase_for_order(db, updated)
+                from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
+                meta_cfg = _get_meta_config_cached(db, updated.store_id)
+                if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
+                    client_ip = getattr(updated, "client_ip", None) or request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+                    user_agent = getattr(updated, "client_user_agent", None) or request.headers.get("user-agent")
+                    log_id = enqueue_purchase_for_order(db, updated)
                     db.commit()
-                    background_tasks.add_task(
-                        send_purchase_for_order,
-                        order_id=str(updated.id),
-                        client_ip=client_ip,
-                        user_agent=user_agent
-                    )
+                    if log_id:
+                        logger.info("🟢 [META CAPI] Purchase CAPI mis en file d'attente pour commande confirmée/livrée %s (Log ID: %s)", updated.order_number, log_id)
+                        background_tasks.add_task(
+                            send_purchase_for_order,
+                            order_id=str(updated.id),
+                            client_ip=client_ip,
+                            user_agent=user_agent
+                        )
             except Exception as capi_err:
                 db.rollback()
-                logger.warning(f"Failed to queue Meta CAPI event for phone-confirmed cart {updated.id}: {capi_err}")
+                logger.warning(f"Failed to queue Meta CAPI Purchase event for confirmed order {updated.id}: {capi_err}")
 
         try:
             from app.api.v1.analytics import clear_analytics_cache
