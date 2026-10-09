@@ -35,6 +35,7 @@ const nextConfig: NextConfig = {
 
   // Increase upload body size limit to 25MB for product images
   experimental: {
+    optimizePackageImports: ['lucide-react', 'date-fns'],
     serverActions: {
       bodySizeLimit: "25mb",
     },

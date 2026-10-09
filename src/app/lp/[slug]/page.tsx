@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
-import LandingPageRenderer from '@/components/storefront/landing-page-renderer';
-import DzCodRenderer from '@/components/storefront/dz-cod-renderer';
+import dynamic from 'next/dynamic';
+
+const LandingPageRenderer = dynamic(() => import('@/components/storefront/landing-page-renderer'));
+const DzCodRenderer = dynamic(() => import('@/components/storefront/dz-cod-renderer'));
 import { StorefrontIntegrations } from '@/components/storefront/store-integrations';
 import { HydrateStore } from '@/components/app/hydrate-store';
 import { ServerSeo } from '@/components/storefront/server-seo';

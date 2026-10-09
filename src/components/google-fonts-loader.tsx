@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 
 const FONTS_URL =
-  'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@300;400;500;700;800;900&display=swap';
+  'https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Inter:wght@400;500;600&family=Outfit:wght@400;600;700&display=swap';
 
 const LINK_ID = 'gfont-base-families';
 

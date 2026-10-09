@@ -350,7 +350,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           const rawInsetImgSrc = availableGallery.find((img: string) => img !== rawMainImgSrc) || (availableGallery.length > 1 ? availableGallery[0] : null);
           // 1600 preserves detail for the 2x zoom-on-hover interaction below —
           // capping too aggressively would make the zoomed view visibly soft.
-          const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 1600);
+          const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 800);
           const insetImgSrc = rawInsetImgSrc ? optimizeCloudinaryUrl(rawInsetImgSrc, 150) : null;
 
           return (
@@ -370,9 +370,12 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                 <img 
                   src={mainImgSrc} 
                   alt={productName || ''} 
-                  className="w-full h-auto transition-transform duration-100 ease-out" 
+                  width={800}
+                  height={800}
+                  loading="eager"
                   fetchPriority="high"
                   decoding="async"
+                  className="w-full h-auto transition-transform duration-100 ease-out" 
                   style={{
                     transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                     transform: isZoomed ? 'scale(2)' : 'scale(1)'
@@ -384,7 +387,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                   <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
                     <span className="text-sm font-bold text-slate-800">+</span>
                     <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                      <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
+                      <img src={insetImgSrc} loading="lazy" decoding="async" className="size-full object-cover" alt="detail" />
                     </div>
                   </div>
                 )}
@@ -458,6 +461,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     {item.url ? (
                       <img 
                         src={optimizeCloudinaryUrl(item.url, 100)} 
+                        loading="lazy"
+                        decoding="async"
                         className="size-full rounded-full object-cover" 
                         alt={item.label || 'Thumbnail'} 
                         onError={(e) => {
@@ -590,7 +595,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
+                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} loading="lazy" decoding="async" alt={v.value} className="size-full object-cover rounded-full" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -775,7 +780,9 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     {banners.map((url, i) => (
                       <img
                         key={i}
-                        src={optimizeCloudinaryUrl(url, 1600)}
+                        src={optimizeCloudinaryUrl(url, 1000)}
+                        loading="lazy"
+                        decoding="async"
                         alt={`Bannière publicitaire ${i + 1}`}
                         className="w-full h-auto block m-0 p-0"
                       />
