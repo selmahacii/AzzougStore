@@ -301,6 +301,27 @@ export async function buildMetaUserData(input?: MetaUserDataInput): Promise<Reco
 export async function trackMetaEvent(eventName: MetaEventName, payload: Record<string, unknown> = {}, options: MetaTrackingOptions = {}) {
   if (typeof window === 'undefined' || !isConsentEnabled()) return;
 
+  // Anti-rebond (debounce/throttle) strict : maximum 1 seul AddToCart par tranche de 10 secondes.
+  // Empêche le mitraillage d'événements AddToCart lorsque le visiteur clique rapidement entre
+  // les variantes (couleurs, tailles, packs) ou clique plusieurs fois sur le bouton de commande.
+  if (eventName === 'AddToCart') {
+    const now = Date.now();
+    let lastTime = 0;
+    try {
+      lastTime = Number(window.sessionStorage?.getItem('meta_last_addtocart_ts') || 0);
+    } catch {
+      lastTime = (window as any).__lastAddToCartTs || 0;
+    }
+    if (now - lastTime < 10000) {
+      return;
+    }
+    try {
+      window.sessionStorage?.setItem('meta_last_addtocart_ts', String(now));
+    } catch {
+      (window as any).__lastAddToCartTs = now;
+    }
+  }
+
   // Real Meta-provided dynamic URL params only (campaign_id/adset_id/ad_id) —
   // never inferred/guessed, see attribution.ts's own "fabricating data" note.
   const { getAttribution } = await import('./attribution');
@@ -308,7 +329,11 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
 
   const pixelId = options.pixelId || window.__metaPixelId || window.__metaTrackingConfig?.pixelId;
   const storeId = options.storeId || window.__metaTrackingConfig?.storeId;
-  const eventId = options.eventId || `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const eventId = options.eventId || (
+    eventName === 'AddToCart'
+      ? `addtocart-${storeId || 'shop'}-${Math.floor(Date.now() / 10000)}`
+      : `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  );
   const dedupIds = readStorage();
   if (dedupIds.includes(eventId)) return;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
@@ -148,6 +148,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
+  const lastAddToCartRef = useRef<number>(0);
 
   useEffect(() => {
     setMounted(true);
@@ -450,11 +451,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   const trackAddToCartClick = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAddToCartRef.current < 10000) {
+      return;
+    }
+    lastAddToCartRef.current = now;
+
     const pid = data?.product?.id || (data as any)?.product_id || data?.id;
     const storeId = activeStore?.id || data?.store_id;
     if (!pid || !storeId) return;
     const currentPrice = Number(currentOffer?.price ?? data.price ?? data.product?.price ?? 0);
     const currentQty = Number(currentOffer?.quantity ?? quantity ?? 1);
+    const eventId = `addtocart-${pid}-${Math.floor(now / 10000)}`;
 
     void trackMetaEvent('AddToCart', {
       content_ids: [String(pid)],
@@ -466,6 +474,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }, {
       storeId,
       lpId: data.id,
+      eventId,
       value: currentPrice,
       currency: 'DZD',
       contents: [{ id: String(pid), quantity: currentQty }],
