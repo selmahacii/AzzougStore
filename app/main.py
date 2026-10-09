@@ -416,8 +416,11 @@ async def resume_pending_queues():
                 # worker that died mid-send; the sweep itself reclaims rows
                 # stuck >15min back to 'retry'. 'retry'/'pending_retry':
                 # already-failed sends still eligible for another attempt.
+                from datetime import timedelta
+                cutoff_48h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
                 pending = db.query(MetaCapiLog).filter(
-                    MetaCapiLog.status.in_(("queued", "processing", "retry", "pending_retry"))
+                    MetaCapiLog.status.in_(("queued", "processing", "retry", "pending_retry")),
+                    MetaCapiLog.created_at >= cutoff_48h,
                 ).count()
             finally:
                 db.close()
