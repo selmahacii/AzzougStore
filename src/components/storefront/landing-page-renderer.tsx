@@ -840,7 +840,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
+                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )

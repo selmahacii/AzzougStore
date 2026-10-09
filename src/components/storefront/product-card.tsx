@@ -112,6 +112,8 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
         <img
           src={img1} 
           alt={product.name}
+          loading="lazy"
+          decoding="async"
           className={cn(
             "h-full w-full object-cover transition-all duration-700 ease-out group-hover:scale-105",
             img2 ? "group-hover:opacity-0" : ""
@@ -121,6 +123,8 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
           <img
             src={img2} 
             alt={product.name}
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 h-full w-full object-cover opacity-0 transition-all duration-700 ease-out group-hover:opacity-100 group-hover:scale-105"
           />
         )}
