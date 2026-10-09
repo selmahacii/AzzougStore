@@ -502,7 +502,17 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     finally { setPromoLoading(false); }
   }, [promoCode, activeStore, cartSubtotal]);
 
-  const normalizePhone = (p: string) => p.replace(/[\s\-\.]/g, '');
+  const normalizePhone = (p: string) => {
+    let digits = (p || '').replace(/\D/g, '');
+    if (digits.startsWith('213') && digits.length >= 11) {
+      digits = '0' + digits.substring(3);
+    } else if (digits.startsWith('00213') && digits.length >= 13) {
+      digits = '0' + digits.substring(5);
+    } else if (digits.length === 9 && ['5', '6', '7'].includes(digits[0])) {
+      digits = '0' + digits;
+    }
+    return digits;
+  };
 
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
@@ -563,8 +573,8 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       const payload = {
         store_id: activeStore.id,
         customer_name: isInline ? customerInfo.firstName.trim() : `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`,
-        customer_phone: customerInfo.phone.trim(),
-        customer_phone2: !isInline && customerInfo.phone2.trim() ? customerInfo.phone2.trim() : undefined,
+        customer_phone: normalizePhone(customerInfo.phone) || customerInfo.phone.trim(),
+        customer_phone2: !isInline && customerInfo.phone2.trim() ? (normalizePhone(customerInfo.phone2) || customerInfo.phone2.trim()) : undefined,
         customer_wilaya: customerInfo.wilaya,
         customer_commune: customerInfo.commune.trim() || undefined,
         customer_address: isInline ? (customerInfo.commune.trim() || customerInfo.wilaya) : customerInfo.address.trim(),

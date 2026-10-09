@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Truck, Package } from 'lucide-react';
+import { Truck, Package, ShieldCheck } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
@@ -710,10 +710,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     <div className="grid grid-cols-1 gap-2.5">
                       {offers.map((offer: any, idx: number) => {
                         const isSelected = selectedOfferIndex === idx;
-                        // Même garde-fou que landing-page-renderer.tsx : un
-                        // palier configuré admin (ex: "3 Pièces") ne
-                        // vérifiait jamais le stock réel disponible.
                         const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
+                        const isPopular = offer.popular || (offers.length > 1 && idx === 1);
                         return (
                           <button
                             key={idx}
@@ -725,7 +723,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                               setQuantity(offer.quantity);
                             }}
                           className={cn(
-                            "p-3 rounded-lg border-2 text-left transition-all relative flex items-center justify-between",
+                            "p-3.5 rounded-xl border-2 text-left transition-all relative flex items-center justify-between",
+                            isPopular && !isSelected && "border-amber-300 bg-amber-50/20",
                             offerExceedsStock
                               ? "opacity-40 cursor-not-allowed grayscale bg-white border-gray-200"
                               : isSelected
@@ -734,7 +733,15 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                           )}
                           style={!offerExceedsStock && isSelected ? { borderColor: primary, backgroundColor: `${primary}08` } : {}}
                         >
-                          <div>
+                          {isPopular && !offerExceedsStock && (
+                            <span 
+                              className="absolute -top-2.5 right-3 text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-sm text-white tracking-wide"
+                              style={{ backgroundColor: primary }}
+                            >
+                              {dir === 'rtl' ? '⭐ العرض الأكثر طلباً' : '⭐ Le Plus Vendu'}
+                            </span>
+                          )}
+                          <div className="text-start">
                             <span className="text-sm text-slate-900 font-bold">
                               {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                             </span>
@@ -759,6 +766,25 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                   </div>
                 )}
               </div>
+
+             {/* Trust & Reassurance Badges */}
+             <div className="grid grid-cols-3 gap-2 mb-6 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-center shadow-xs">
+               <div className="flex flex-col items-center justify-center p-1">
+                 <ShieldCheck className="size-5 text-emerald-600 mb-1" />
+                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'ضمان 100%' : 'Garantie 100%'}</span>
+                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'منتج أصلي ومضمون' : 'Produit vérifié'}</span>
+               </div>
+               <div className="flex flex-col items-center justify-center p-1 border-x border-slate-200">
+                 <Package className="size-5 text-blue-600 mb-1" />
+                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'دفع بعد المعاينة' : 'Paiement à réception'}</span>
+                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'عاين قبل أن تدفع' : 'Après inspection'}</span>
+               </div>
+               <div className="flex flex-col items-center justify-center p-1">
+                 <Truck className="size-5 text-amber-600 mb-1" />
+                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'توصيل 58 ولاية' : '58 Wilayas'}</span>
+                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'سريع 24-48 ساعة' : 'Express 24-48h'}</span>
+               </div>
+             </div>
 
              {/* Checkout Form */}
              <div id="checkout-form-container">
@@ -797,17 +823,23 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       </div>
 
       {/* Sticky Bottom CTA on Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/95 dark:bg-black/95 backdrop-blur-md border-t border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-3 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
+        <div className="flex flex-col text-start pl-2">
+          <span className="text-[10px] text-slate-500 font-bold uppercase">{dir === 'rtl' ? 'السعر' : 'Prix'}</span>
+          <span className="text-base font-black" style={{ color: primary }}>
+            {formatPrice(offers[selectedOfferIndex]?.price || (price ?? 0))}
+          </span>
+        </div>
         <button
           onClick={() => {
             const el = document.getElementById('checkout-form-container');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="w-full py-3.5 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+          className="flex-1 py-3.5 px-4 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
           style={{ backgroundColor: primary }}
         >
           <Package className="size-4" />
-          <span>اضغط هنا للطلب</span>
+          <span>{dir === 'rtl' ? 'اضغط هنا للطلب' : 'Commander Maintenant'}</span>
         </button>
       </div>
 
