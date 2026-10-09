@@ -2423,6 +2423,16 @@ def create_order(
 
                     from app.core.logging import log_order_event
                     log_order_event("COMMANDE_NORMALE_RECUE", _prev, "Commande validée directement par le client depuis le checkout (fenêtre 3-min)")
+                    logger.info(
+                        "🔄 [COMMANDE 3-MIN REÇUE/MISE À JOUR] N°: %s | ID: %s | Client: %s | Tél: %s | Wilaya: %s | Commune: %s | Total: %s DZD",
+                        _prev.order_number,
+                        _prev.id,
+                        _prev.customer_name,
+                        _prev.customer_phone,
+                        _prev.customer_wilaya,
+                        _prev.customer_commune,
+                        _prev.total,
+                    )
 
                     # Trigger Meta Conversions API (CAPI) - Purchase ET Lead simultanés
                     try:
@@ -2547,6 +2557,24 @@ def create_order(
             except Exception as lp_err:
                 logger.warning(f"Failed to increment landing page orders count: {lp_err}")
         
+        items_summary = ", ".join([
+            f"{it.get('product_name') or it.get('title') or it.get('name') or it.get('product_id')} (x{it.get('quantity', 1)} @ {it.get('unit_price') or it.get('price', 0)} DZD)"
+            for it in (items or [])
+        ]) or "aucun article"
+        logger.info(
+            "🛒 [NOUVELLE COMMANDE REÇUE] N°: %s | ID: %s | Boutique: %s | Client: %s | Tél: %s | Wilaya: %s | Commune: %s | Total: %s DZD | Articles: [%s] | Source: %s | IP: %s",
+            order.order_number,
+            order.id,
+            order.store_id,
+            order.customer_name,
+            order.customer_phone,
+            order.customer_wilaya,
+            order.customer_commune,
+            order.total,
+            items_summary,
+            order.source or "storefront",
+            target_order.client_ip or "N/A",
+        )
         if actor_id:
             logger.info("Order %s created by user %s", order.order_number, actor_id)
         else:
