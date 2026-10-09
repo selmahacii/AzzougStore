@@ -98,9 +98,9 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Production-ready Multi-Tenant ERP & Storefront API for AzzougShop",
     version=settings.VERSION,
-    docs_url=None,    # désactive /docs
-    redoc_url=None,   # désactive /redoc
-    openapi_url=None, # désactive /openapi.json
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
 # Accept both /endpoint and /endpoint/ — avoids redirect loops with Next.js proxy
@@ -416,11 +416,8 @@ async def resume_pending_queues():
                 # worker that died mid-send; the sweep itself reclaims rows
                 # stuck >15min back to 'retry'. 'retry'/'pending_retry':
                 # already-failed sends still eligible for another attempt.
-                from datetime import timedelta
-                cutoff_48h = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=48)
                 pending = db.query(MetaCapiLog).filter(
-                    MetaCapiLog.status.in_(("queued", "processing", "retry", "pending_retry")),
-                    MetaCapiLog.created_at >= cutoff_48h,
+                    MetaCapiLog.status.in_(("queued", "processing", "retry", "pending_retry"))
                 ).count()
             finally:
                 db.close()
@@ -952,6 +949,7 @@ async def root():
         "status": "online",
         "message": f"{settings.PROJECT_NAME} is running",
         "version": settings.VERSION,
+        "docs": "/docs"
     }
 
 

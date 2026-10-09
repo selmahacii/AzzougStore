@@ -130,16 +130,11 @@ def _get_meta_config_cached(db: Session, store_id: str) -> Optional[Dict[str, An
             _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
             return None
 
-    curr = (config.currency or "DZD").upper()
-    rate = float(config.exchange_rate or 1.0)
-    if curr in ("EUR", "USD") and rate <= 1.0:
-        curr = "DZD"
-
     snapshot = {
         "pixel_id": config.pixel_id,
         "access_token": config.access_token,
-        "currency": curr,
-        "exchange_rate": rate,
+        "currency": config.currency,
+        "exchange_rate": config.exchange_rate,
     }
     _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
     return snapshot
@@ -840,8 +835,8 @@ def build_purchase_event(
             fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
-            "value": round(float(order.total or 0) / float(exchange_rate or 1.0), 2) if (ad_currency and ad_currency.upper() not in ("DZD",) and float(exchange_rate or 1.0) > 1.0) else round(float(order.total or 0), 2),
-            "currency": (ad_currency.upper() if (ad_currency and float(exchange_rate or 1.0) > 1.0) else "DZD"),
+            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
+            "currency": (ad_currency or "DZD").upper(),
             "content_type": "product",
             "content_ids": [str(i.product_id) for i in items],
             "contents": contents,
@@ -892,8 +887,8 @@ def build_lead_event(
             fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
-            "value": round(float(order.total or 0) / float(exchange_rate or 1.0), 2) if (ad_currency and ad_currency.upper() not in ("DZD",) and float(exchange_rate or 1.0) > 1.0) else round(float(order.total or 0), 2),
-            "currency": (ad_currency.upper() if (ad_currency and float(exchange_rate or 1.0) > 1.0) else "DZD"),
+            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
+            "currency": (ad_currency or "DZD").upper(),
             "content_name": "Checkout Lead Submission",
             "content_category": "COD Order Form",
             "content_ids": [str(i.product_id) for i in items],
@@ -3224,15 +3219,15 @@ def _retry_pending_events_inner() -> None:
         _reclaim_stuck_processing(db)
 
         now = datetime.now(timezone.utc)
-        cutoff_48h = now - timedelta(hours=48)
-
-        # Traiter uniquement les événements récents (< 48h) via l'index composite (status, created_at)
-        # Aucune mise à jour massive synchrone au boot pour éviter de bloquer la base de données.
+        # 'queued'/'retry' are the durable-queue statuses this sweep now
+        # owns end-to-end; 'pending_retry' is kept for backward
+        # compatibility with rows written by the pre-durable-queue pipeline
+        # (never backfilled — see the migration docstring) so they still
+        # get drained instead of sitting orphaned forever.
         due = (
             db.query(MetaCapiLog)
             .filter(
                 MetaCapiLog.status.in_(("queued", "retry", "pending_retry")),
-                MetaCapiLog.created_at >= cutoff_48h.replace(tzinfo=None),
                 (MetaCapiLog.next_retry_at.is_(None)) | (MetaCapiLog.next_retry_at <= now),
             )
             .limit(200)
