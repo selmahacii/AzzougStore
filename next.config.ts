@@ -33,16 +33,6 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: true,
 
-  // Image optimization with WebP / AVIF and CDN remote patterns
-  images: {
-    formats: ['image/avif', 'image/webp'],
-    minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days cache for optimized assets
-    remotePatterns: [
-      { protocol: 'https', hostname: 'res.cloudinary.com' },
-      { protocol: 'https', hostname: 'images.unsplash.com' },
-    ],
-  },
-
   // Increase upload body size limit to 25MB for product images
   experimental: {
     serverActions: {

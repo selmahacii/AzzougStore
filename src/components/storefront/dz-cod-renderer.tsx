@@ -317,7 +317,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || data.product?.store?.logo_url) ? (
               <img 
-                src={optimizeCloudinaryUrl(data.store?.logo_url || data.product?.store?.logo_url || '', 150)} loading="eager" decoding="async" 
+                src={data.store?.logo_url || data.product?.store?.logo_url || ''} 
                 alt={data.headline || 'Logo'} 
                 className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
                 onError={(e) => { 
@@ -384,7 +384,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                   <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
                     <span className="text-sm font-bold text-slate-800">+</span>
                     <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                      <img src={insetImgSrc} className="size-full object-cover" alt="detail" loading="lazy" decoding="async" />
+                      <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
                     </div>
                   </div>
                 )}
@@ -590,7 +590,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" loading="lazy" decoding="async" />
+                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -775,10 +775,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     {banners.map((url, i) => (
                       <img
                         key={i}
-                        src={optimizeCloudinaryUrl(url, 800)}
+                        src={optimizeCloudinaryUrl(url, 1600)}
                         alt={`Bannière publicitaire ${i + 1}`}
-                        loading="lazy"
-                        decoding="async"
                         className="w-full h-auto block m-0 p-0"
                       />
                     ))}
