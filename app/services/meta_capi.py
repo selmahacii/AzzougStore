@@ -850,59 +850,6 @@ def build_purchase_event(
     return event
 
 
-def build_lead_event(
-    order,
-    *,
-    client_ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
-    ad_currency: str = "DZD",
-    exchange_rate: float = 1.0,
-) -> Dict[str, Any]:
-    """Assemble a standard Meta Lead event for COD order form submissions."""
-    items = getattr(order, "items", []) or []
-    contents = [
-        {"id": str(i.product_id), "quantity": int(i.quantity or 1),
-         "item_price": float(i.unit_price or 0)}
-        for i in items
-    ]
-    reference_dt = getattr(order, "created_at", None)
-    event_time = int(reference_dt.replace(tzinfo=timezone.utc).timestamp()) if reference_dt else int(time.time())
-    event: Dict[str, Any] = {
-        "event_name": "Lead",
-        "event_time": event_time,
-        "event_id": f"lead-{order.order_number or order.id}",
-        "action_source": "website",
-        "user_data": build_user_data(
-            email=getattr(order, "customer_email", None),
-            phone=order.customer_phone,
-            full_name=order.customer_name,
-            city=order.customer_commune,
-            state=order.customer_wilaya,
-            external_id=order.customer_phone or str(order.id),
-            client_ip=client_ip,
-            user_agent=user_agent,
-            fbp=getattr(order, "fbp", None),
-            fbc=getattr(order, "fbc", None),
-            fbclid=getattr(order, "fbclid", None),
-            fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
-        ),
-        "custom_data": {
-            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
-            "currency": (ad_currency or "DZD").upper(),
-            "content_name": "Checkout Lead Submission",
-            "content_category": "COD Order Form",
-            "content_ids": [str(i.product_id) for i in items],
-            "contents": contents,
-            "num_items": sum(int(i.quantity or 1) for i in items),
-            "order_id": str(order.order_number),
-        },
-    }
-    source_url = getattr(order, "event_source_url", None)
-    if source_url:
-        event["event_source_url"] = source_url
-    return event
-
-
 # ─── Sending + logging ────────────────────────────────────────────────────────
 
 def _backoff_with_jitter(attempt: int) -> float:
@@ -2776,39 +2723,15 @@ def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
     return log_id
 
 
-def enqueue_lead_for_order(db: Session, order) -> Optional[str]:
+def _claim_queue_row(db: Session, order_id: str) -> "Optional[Any]":
     """
-    Durable-queue entry point for Lead event (fired at checkout submission).
-    """
-    from app.models.marketing import MetaCapiLog
-
-    if str(getattr(order, "status", "")) == "MERGED":
-        return None
-
-    existing = (
-        db.query(MetaCapiLog.id)
-        .filter(MetaCapiLog.order_id == str(order.id), MetaCapiLog.event_name == "Lead")
-        .first()
-    )
-    if existing:
-        return None
-
-    log_id = str(uuid.uuid4())
-    db.add(MetaCapiLog(
-        id=log_id,
-        store_id=str(order.store_id),
-        order_id=str(order.id),
-        event_name="Lead",
-        event_id=f"lead-{order.order_number or order.id}",
-        status="queued",
-        retry_count=0,
-    ))
-    return log_id
-
-
-def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -> "Optional[Any]":
-    """
-    Atomically claims the queued row for this order and event_name: queued/retry -> processing.
+    Atomically claims the Purchase row for this order: queued/retry ->
+    processing, in a single UPDATE ... WHERE status IN (...) statement.
+    Returns the claimed row (already committed as 'processing') if THIS
+    call won the claim, or None if it's already being handled (by another
+    worker, another concurrent trigger, or already finished) — the caller
+    must then skip sending, which is what makes concurrent triggers/workers
+    safe without relying on the Meta-side dedup alone.
     """
     from sqlalchemy import update as sa_update
     from app.models.marketing import MetaCapiLog
@@ -2816,7 +2739,7 @@ def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     result = db.execute(
         sa_update(MetaCapiLog.__table__)
-        .where(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == event_name,
+        .where(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
                MetaCapiLog.status.in_(("queued", "retry")))
         .values(status="processing", processing_started_at=now, processing_worker=_worker_id())
     )
@@ -2824,7 +2747,7 @@ def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -
     if result.rowcount != 1:
         return None
     return db.query(MetaCapiLog).filter(
-        MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == event_name,
+        MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
     ).first()
 
 
@@ -2859,68 +2782,6 @@ def send_purchase_for_order(
 
         logger.info("[MetaCAPI] queue: processing order=%s log_id=%s", order_id, row.id)
         _handle_claimed_row(db, row, order_id, client_ip=client_ip, user_agent=user_agent)
-    finally:
-        db.close()
-
-
-def send_lead_for_order(
-    order_id: str,
-    *,
-    client_ip: Optional[str],
-    user_agent: Optional[str],
-) -> None:
-    """
-    Worker entry point for Lead event (fired asynchronously upon checkout submission).
-    """
-    from app.db.session import SessionLocal
-    from app.models.marketing import MetaAdsConfig
-    from app.models.order import Order
-
-    db = SessionLocal()
-    try:
-        row = _claim_queue_row(db, order_id, event_name="Lead")
-        if row is None:
-            return
-
-        order = db.query(Order).filter(Order.id == order_id).first()
-        if not order:
-            row.status = "failed"
-            row.error_message = "order not found"
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return
-
-        config = _get_meta_config_cached(db, order.store_id)
-        if not config or not config.get("pixel_id") or not config.get("access_token"):
-            row.status = "skipped"
-            row.error_message = "no valid meta config"
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return
-
-        effective_client_ip, effective_user_agent = resolve_client_context(order, client_ip, user_agent)
-        event = build_lead_event(
-            order, client_ip=effective_client_ip, user_agent=effective_user_agent,
-            ad_currency=config.get("currency") or "DZD",
-            exchange_rate=config.get("exchange_rate") if config.get("exchange_rate") else 1.0,
-        )
-        row.payload = event
-        res = send_events(
-            pixel_id=config["pixel_id"],
-            access_token=config["access_token"],
-            events=[event],
-        )
-        if res.get("success"):
-            row.status = "success"
-        else:
-            row.status = "failed"
-            row.error_message = str(res.get("error"))
-        row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        db.commit()
-        logger.info("[MetaCAPI] Lead event processed for order=%s status=%s", order.order_number or order_id, row.status)
-    except Exception as exc:
-        db.rollback()
-        logger.error("[MetaCAPI] send_lead_for_order failed for order=%s: %s", order_id, exc)
     finally:
         db.close()
 

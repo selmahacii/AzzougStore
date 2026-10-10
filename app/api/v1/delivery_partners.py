@@ -321,7 +321,7 @@ _AVAILABILITY_TTL = 60.0
 
 @router.get("/availability")
 def get_partners_availability(
-    store_id: Optional[str] = Query(None, alias="storeId"),
+    store_id: str = Query(..., alias="storeId"),
     product_ids: Optional[str] = Query(None, alias="productIds"),
     db: Session = Depends(get_db),
 ):
@@ -329,11 +329,6 @@ def get_partners_availability(
     Public endpoint for the storefront to check which carriers are active for a store.
     No authentication required.
     """
-    if not store_id:
-        from app.models.store import Store
-        def_store = db.query(Store).filter(Store.is_active == True).first() or db.query(Store).first()
-        store_id = def_store.id if def_store else ""
-
     _cache_key = (store_id, product_ids or "")
     _hit = _availability_cache.get(_cache_key)
     if _hit is not None and _avail_time.monotonic() - _hit[1] < _AVAILABILITY_TTL:

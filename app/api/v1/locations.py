@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from app.api.deps import get_db
 from app.services.noest_mapping import WILAYAS, get_noest_communes
@@ -21,7 +21,7 @@ def get_wilayas():
 @router.get("/communes")
 async def get_communes(
     wilaya_id: int = Query(..., description="The ID of the Wilaya (1-58)"),
-    store_id: Optional[str] = Query(None, description="Store ID for which to fetch communes (used for Noest integration)"),
+    store_id: str = Query(..., description="Store ID for which to fetch communes (used for Noest integration)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -31,11 +31,6 @@ async def get_communes(
     if wilaya_id < 1 or wilaya_id > 58:
         raise HTTPException(status_code=400, detail="Invalid wilaya_id. Must be between 1 and 58.")
     
-    if not store_id:
-        from app.models.store import Store
-        def_store = db.query(Store).filter(Store.is_active == True).first() or db.query(Store).first()
-        store_id = def_store.id if def_store else ""
-
     communes = await get_noest_communes(db, store_id, wilaya_id)
     if not communes:
         return []
