@@ -71,8 +71,7 @@ export function ServerSeo({ title, description, image, url, preloadImage, produc
           rel="preload"
           as="image"
           href={preloadImage}
-          // @ts-expect-error fetchPriority is a standard HTML attribute supported by modern browsers
-          fetchPriority="high"
+          {...({ fetchPriority: 'high' } as any)}
         />
       ) : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }} />

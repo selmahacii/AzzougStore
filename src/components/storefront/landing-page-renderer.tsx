@@ -658,8 +658,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     rel="preload"
                     as="image"
                     href={optimizedHeroUrl}
-                    // @ts-expect-error fetchPriority is standard in modern HTML
-                    fetchPriority="high"
+                    {...({ fetchPriority: 'high' } as any)}
                   />
                   <div 
                     className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"

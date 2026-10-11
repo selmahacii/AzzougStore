@@ -7,7 +7,14 @@ import { StorefrontIntegrations } from '@/components/storefront/store-integratio
 import { HydrateStore } from '@/components/app/hydrate-store';
 import { ServerSeo } from '@/components/storefront/server-seo';
 import { getBackendUrl } from '@/lib/utils';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 interface LpData {
   id: string;
@@ -204,8 +211,7 @@ export default async function LpPage({
           rel="preload"
           as="image"
           href={heroImage}
-          // @ts-expect-error fetchPriority is standard in HTML5
-          fetchPriority="high"
+          {...({ fetchPriority: 'high' } as any)}
         />
       )}
       <ServerSeo
