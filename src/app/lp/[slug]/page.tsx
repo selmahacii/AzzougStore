@@ -221,7 +221,7 @@ export default async function LpPage({
         url={`${getAppBaseUrl()}/lp/${slug}`}
         preloadImage={heroImage}
       />
-      <HydrateStore initialUser={null} initialStores={matchedStore ? [matchedStore] : []} activeStoreSlug={matchedStore?.slug} />
+      <HydrateStore initialUser={null} initialStores={matchedStore ? [matchedStore as any] : []} activeStoreSlug={matchedStore?.slug} />
       <StorefrontIntegrations config={metaAdsConfig} lpId={lp.id} />
       {lp.template === 'dz_cod' ? (
         <DzCodRenderer data={lp} />
