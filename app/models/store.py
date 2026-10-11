@@ -62,3 +62,7 @@ class Store(Base):
     returns = relationship("Return", back_populates="store")
     expenses = relationship("Expense", back_populates="store")
     delivery_partners = relationship("DeliveryPartner", back_populates="store", cascade="all, delete-orphan")
+    shopify_connection = relationship("ShopifyConnection", back_populates="store", uselist=False, cascade="all, delete-orphan")
+    shopify_mappings = relationship("ShopifyMapping", back_populates="store", cascade="all, delete-orphan")
+    shopify_webhook_inbox = relationship("ShopifyWebhookInbox", back_populates="store", cascade="all, delete-orphan")
+    shopify_inventory_sync_queue = relationship("ShopifyInventorySyncQueue", back_populates="store", cascade="all, delete-orphan")

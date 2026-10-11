@@ -28,3 +28,4 @@ from .payroll import PayrollRecord  # noqa: F401
 from .notification import Notification  # noqa: F401
 from .assignment_rule import AssignmentRule  # noqa: F401
 from .funnel_rollup import FunnelRollup  # noqa: F401
+from .shopify import ShopifyConnection, ShopifyMapping, ShopifyWebhookInbox, ShopifyInventorySyncQueue  # noqa: F401

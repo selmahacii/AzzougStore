@@ -53,6 +53,8 @@ import hashlib
 import ipaddress
 import logging
 import os
+
+logger = logging.getLogger(__name__)
 import random
 import re
 import socket
@@ -69,9 +71,8 @@ from httpcore._backends.sync import SyncStream as _BaseSyncStream
 from sqlalchemy.orm import Session
 from app.core.config import settings as _settings
 
-logger = logging.getLogger("app.meta_capi")
-
-GRAPH_VERSION = "v21.0"
+META_CAPI_GRAPH_VERSION = os.getenv("META_CAPI_GRAPH_VERSION", "v21.0")
+GRAPH_VERSION = META_CAPI_GRAPH_VERSION
 
 # The durable-queue rework (BackgroundTasks -> queued/processing/retry rows
 # written BEFORE the network call, dedup constraint, EMQ fixes) went live
@@ -775,16 +776,14 @@ def build_purchase_event(
     """
     Full Graph-compliant Purchase event from an Order ORM object.
 
-    ad_currency/exchange_rate: the store's OWN meta_ads_configs.currency and
-    exchange_rate (DZD per 1 unit of that currency, same convention as
-    get_conversion_rate in meta_ads.py). order.total is always stored in
-    DZD — sending "DZD" unconditionally to an ad account actually configured
-    in USD/EUR (verified: azconfort's ad account currency is USD) is a real
-    mismatch, and matches the exact pixel/account (456734346750846) where
-    Meta Pixel logged "Parameter 'currency' is invalid for event 'Purchase'"
-    in a live test. Converting to the account's own currency, the same way
-    campaign spend is already converted elsewhere in this codebase, sends
-    Meta a currency it actually expects for that account.
+    Contrat monétaire normalisé :
+    Le modèle métier est une commande e-commerce enregistrée en DZD (COD Algérie).
+    `custom_data.value` et `custom_data.currency` représentent strictement le montant transactionnel
+    réel enregistré sur la commande (`order.total` en DZD, incluant les frais de livraison et déduisant les remises).
+    La valeur de la commande n'est pas convertie vers la devise de facturation du compte publicitaire (USD/EUR) :
+    Meta Conversions API supporte nativement le DZD (ISO 4217), et Meta Ads Manager applique automatiquement
+    ses taux de change quotidiens pour calculer le ROAS dans la devise du compte publicitaire.
+    La conversion monétaire des dépenses (USD -> DZD) est réservée au module distinct de reporting/stats de l'ERP.
     """
     items = list(order.items or [])
     contents = [
@@ -819,11 +818,11 @@ def build_purchase_event(
         "action_source": "website",
         "user_data": build_user_data(
             email=getattr(order, "customer_email", None),
-            phone=order.customer_phone,
-            full_name=order.customer_name,
-            city=order.customer_commune,
-            state=order.customer_wilaya,
-            external_id=order.customer_phone or str(order.id),
+            phone=getattr(order, "customer_phone", None),
+            full_name=getattr(order, "customer_name", None),
+            city=getattr(order, "customer_commune", None),
+            state=getattr(order, "customer_wilaya", None),
+            external_id=getattr(order, "customer_phone", None) or str(getattr(order, "id", "")),
             client_ip=client_ip,
             user_agent=user_agent,
             fbp=getattr(order, "fbp", None),
@@ -835,8 +834,12 @@ def build_purchase_event(
             fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
-            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
-            "currency": (ad_currency or "DZD").upper(),
+            # Le modèle métier est une commande e-commerce enregistrée en DZD.
+            # value et currency représentent fidèlement le même montant transactionnel (order.total en DZD).
+            # On ne convertit pas la commande vers la devise de facturation du compte publicitaire :
+            # Meta CAPI supporte DZD nativement et Ads Manager assure la conversion multi-devises.
+            "value": round(float(order.total or 0), 2),
+            "currency": str(getattr(order, "currency", None) or "DZD").upper(),
             "content_type": "product",
             "content_ids": [str(i.product_id) for i in items],
             "contents": contents,

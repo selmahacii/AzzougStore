@@ -14,7 +14,7 @@ import re
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
@@ -372,20 +372,59 @@ def list_landing_pages(
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
-    store_id: str = Query(...),
+    store_id: Optional[str] = Query(None, description="ID de la boutique"),
+    store: Optional[str] = Query(None, description="Slug ou sous-domaine de la boutique"),
+    x_store_id: Optional[str] = Header(None, alias="x-store-id"),
     db: Session = Depends(get_db),
 ) -> Any:
     from app.core.cache import get_or_set
+    from app.models.store import Store
+
+    # 1. Résolution de la boutique cible
+    target_store_id: Optional[str] = None
+    if store_id:
+        target_store_id = store_id
+    elif store:
+        matched_store = db.query(Store).filter(
+            Store.slug == store,
+            Store.is_active == True,
+            Store.is_deleted == False
+        ).first()
+        if matched_store:
+            target_store_id = matched_store.id
+    elif x_store_id:
+        target_store_id = x_store_id
+
+    # 2. Si aucune boutique n'est spécifiée, résolution déterministe avec garde-fou multi-tenant
+    if not target_store_id:
+        matching_lps = db.query(LandingPage).filter(
+            LandingPage.slug == slug,
+            LandingPage.is_active == True
+        ).all()
+
+        if len(matching_lps) == 1:
+            # Unicité garantie à l'échelle de la plateforme
+            target_store_id = matching_lps[0].store_id
+        elif len(matching_lps) > 1:
+            # Ambiguïté multi-tenant : plusieurs boutiques possèdent ce slug
+            raise HTTPException(
+                status_code=409,
+                detail=f"Slug '{slug}' ambigu : présent dans plusieurs boutiques. Veuillez spécifier store_id ou le sous-domaine de la boutique."
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Landing page introuvable")
+
+    resolved_store_id = target_store_id
 
     def _compute():
         lp = db.query(LandingPage).filter(
             LandingPage.slug == slug,
-            LandingPage.store_id == store_id,
+            LandingPage.store_id == resolved_store_id,
             LandingPage.is_active == True,
         ).first()
         return _serialize(lp) if lp else None
 
-    data = get_or_set(f"landing_page:{store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
+    data = get_or_set(f"landing_page:{resolved_store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 
@@ -427,7 +466,7 @@ def get_by_slug(
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
     db.execute(
         text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-        {"slug": slug, "store_id": store_id},
+        {"slug": slug, "store_id": resolved_store_id},
     )
     db.commit()
 

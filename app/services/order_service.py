@@ -403,7 +403,7 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     # "Nouvelles Commandes", dispatchable/assignable) rather than silently
     # disappear into a MERGED/DOUBLON state. Never triggers a merge as the
     # entry point here...
-    if str(order.source or "").upper() == "MANUAL":
+    if str(order.source or "").upper() == "MANUAL" or str(order.source or "").lower() == "shopify" or getattr(order, "shopify_order_id", None):
         return 0
     # Entry status: any order still in the confirmation stage, OR already
     # CONFIRMED-without-tracking (it can still legitimately absorb a late
@@ -423,13 +423,9 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
 
     # Active candidates: confirmation-stage orders + CONFIRMED ones not yet at
     # the carrier (a confirmed parent can still absorb a late duplicate).
-    # ...and never swept up as a sibling into someone else's merge either —
-    # same reasoning, both directions. Phone match here is only the FIRST,
-    # cheap filter to bound the candidate set at the SQL level — it is NOT
-    # the merge decision; every candidate still goes through the similarity
-    # engine below before anything is touched.
+    # Exclude MANUAL orders and SHOPIFY orders from being absorbed or merged.
     candidate_states = list(_MERGEABLE_STATES) + ["CONFIRMED"]
-    from sqlalchemy import or_ as _or_manual
+    from sqlalchemy import or_ as _or_manual, and_ as _and_src
     phone_siblings = (
         db.query(Order)
         .filter(
@@ -438,7 +434,8 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             Order.id != order.id,
             Order.is_deleted == False,
             Order.status.in_(candidate_states),
-            _or_manual(Order.source.is_(None), Order.source != "MANUAL"),
+            _or_manual(Order.source.is_(None), _and_src(Order.source != "MANUAL", Order.source != "shopify")),
+            Order.shopify_order_id.is_(None),
         )
         .with_for_update()  # serialize concurrent merges on the same client
         .all()

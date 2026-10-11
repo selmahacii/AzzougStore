@@ -95,19 +95,22 @@ function normalizeSlug(slug: string): string {
   }
 }
 
-async function fetchLandingPage(rawSlug: string, storeId?: string): Promise<LpData | null> {
+async function fetchLandingPage(rawSlug: string, storeId?: string, storeSlug?: string): Promise<LpData | null> {
   const backendUrl = getBackendUrl();
   const slug = normalizeSlug(rawSlug) || rawSlug;
   const encodedSlug = encodeURIComponent(slug);
-  const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : '';
-  console.log(`[fetchLandingPage] Starting fetch for slug: ${slug} (raw: ${rawSlug}), storeId: ${storeId} using backendUrl: ${backendUrl}`);
+  const params = new URLSearchParams();
+  if (storeId) params.set('store_id', storeId);
+  if (storeSlug) params.set('store', storeSlug);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  console.log(`[fetchLandingPage] Starting fetch for slug: ${slug} (raw: ${rawSlug}), storeId: ${storeId}, storeSlug: ${storeSlug} using backendUrl: ${backendUrl}`);
   try {
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}${query}`,
       { next: { revalidate: 0 } }
     );
     if (!res.ok) {
-      if (storeId) {
+      if (storeId || storeSlug) {
         // Fallback: search by slug globally without store_id
         const fallbackRes = await fetch(
           `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}`,
@@ -148,7 +151,7 @@ export async function generateMetadata({ params, searchParams }: {
   const { slug } = await params;
   const sp = await searchParams;
   const baseUrl = getAppBaseUrl();
-  const lp = await fetchLandingPage(slug, sp.store_id);
+  const lp = await fetchLandingPage(slug, sp.store_id, sp.store);
   const matchedStore = lp?.store;
   const storeName = matchedStore?.name || 'AzzougShop Landing Page';
   const description = lp?.headline || lp?.subtitle || 'Landing page AzzougShop';
@@ -192,7 +195,7 @@ export default async function LpPage({
   console.log(`[LpPage] Rendering LP page for slug: "${slug}"`);
 
   // Direct unified fetch: retrieves LP, store, meta_ads_config & delivery_partners in 1 shot
-  const lp = await fetchLandingPage(slug, sp.store_id);
+  const lp = await fetchLandingPage(slug, sp.store_id, sp.store);
   if (!lp) {
     console.warn(`[LpPage] No landing page found for slug "${slug}". Returning 404.`);
     return notFound();

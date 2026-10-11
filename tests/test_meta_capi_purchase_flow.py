@@ -24,7 +24,7 @@ import sys
 import uuid
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -49,20 +49,24 @@ def _seed_superadmin_for_internal_bypass():
 
     db = SessionLocal()
     try:
-        if not db.query(User).first():
-            db.add(User(
+        user = db.query(User).filter(User.role == "SUPER_ADMIN").first()
+        if not user:
+            user = User(
                 id=str(_uuid.uuid4()), email="test-superadmin@azzougshop.test",
                 name="Test SuperAdmin", hashed_password=get_password_hash("test-only"),
                 role="SUPER_ADMIN", is_active=True,
-            ))
+            )
+            db.add(user)
             db.commit()
+            db.refresh(user)
+        INTERNAL_KEY_HEADER["x-user-id"] = user.id
     finally:
         db.close()
 
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 
@@ -240,9 +244,9 @@ async def test_abandoned_cart_completed_by_customer_fires_purchase_once(client):
     )
     assert completed.status_code == 201
     completed_order = completed.json()
-    # Same row, same id, order_number unchanged — proven behavior (not renamed to ORD-*)
+    # Same row, same id, upgraded to normal order with ORD- prefix
     assert completed_order["id"] == abn_order_id
-    assert completed_order["order_number"].startswith("ABN-")
+    assert completed_order["order_number"].startswith("ORD-")
 
     db = SessionLocal()
     try:
@@ -391,9 +395,9 @@ async def test_purchase_currency_matches_ad_account_not_hardcoded_dzd(client):
         db_order = db.query(Order).filter(Order.id == order["id"]).first()
         event = build_purchase_event(db_order, client_ip=None, user_agent=None,
                                       ad_currency="USD", exchange_rate=133.0)
-        assert event["custom_data"]["currency"] == "USD"
-        # 1330 DZD / 133.0 = 10.0 USD — never the raw DZD total, never "DZD"
-        assert event["custom_data"]["value"] == 10.0
+        # Contrat normalisé Phase 3A.4 : la valeur et la devise représentent la transaction réelle en DZD
+        assert event["custom_data"]["currency"] == "DZD"
+        assert event["custom_data"]["value"] == float(db_order.total)
     finally:
         db.close()
 

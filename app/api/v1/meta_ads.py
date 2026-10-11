@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +10,7 @@ import random
 import logging
 import hashlib
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +25,28 @@ from app.models.finance import Wallet, FinancialTransaction, TransactionType
 router = APIRouter()
 
 
+def _assert_store_access(user: User, store_id: str) -> None:
+    """Vérifie que l'utilisateur a le droit d'accéder ou configurer cette boutique."""
+    if getattr(user, "role", None) in ("SUPER_ADMIN", "ADMIN"):
+        return
+    assigned = getattr(user, "assigned_store_ids", []) or []
+    employee_store = getattr(user, "employee_store_id", None)
+    if store_id not in assigned and store_id != employee_store:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Accès refusé pour cette boutique.",
+        )
+
+
 @router.get("/inspect-token")
 def inspect_meta_token(
     store_id: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_superuser),
 ):
     """
     Diagnostic endpoint to inspect stored Meta token and configuration for a store.
-    Accessible directly via link: /api/v1/meta-ads/inspect-token
+    Restricted to SUPER_ADMIN / ADMIN users only. Sensitive token is safely masked.
     """
     if store_id:
         cfg = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
@@ -43,6 +58,7 @@ def inspect_meta_token(
         
     raw_token = cfg.access_token or ""
     clean_token = raw_token.strip().split()[0] if raw_token.strip() else ""
+    masked_token = f"{clean_token[:10]}...{clean_token[-6:]}" if len(clean_token) > 16 else ("***" if clean_token else "")
     
     return {
         "success": True,
@@ -50,8 +66,7 @@ def inspect_meta_token(
         "ad_account_id": cfg.ad_account_id,
         "pixel_id": cfg.pixel_id,
         "is_connected": cfg.is_connected,
-        "raw_access_token": raw_token,
-        "clean_access_token": clean_token,
+        "masked_access_token": masked_token,
         "token_has_space_or_extra_text": bool(" " in raw_token.strip()),
         "extra_text_detected": raw_token.strip().split()[1:] if " " in raw_token.strip() else [],
         "currency": cfg.currency,
@@ -63,11 +78,12 @@ def inspect_meta_token(
 def audit_meta_purchases(
     target_date: Optional[str] = Query(None, description="Format YYYY-MM-DD, e.g. 2026-08-20"),
     store_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(deps.get_current_active_superuser),
 ):
     """
     Diagnostic endpoint to detect all orders matching Meta's reported Purchases for a given date.
-    Accessible via: GET /api/v1/meta/audit-purchases?target_date=2026-08-20
+    Restricted to SUPER_ADMIN / ADMIN users only to prevent PII leakage.
     """
     from app.models.marketing import MetaCapiLog
     from sqlalchemy import or_
@@ -150,13 +166,10 @@ def audit_meta_purchases(
         "abandoned_drafts": abandoned_drafts
     }
 
-# Single source of truth for the Graph API version used across every Meta
-# call in this file (Ads Insights sync + health/token/pixel checks). Was
-# previously split: Ads Insights called v18.0 (released ~Aug 2023 — outside
-# Meta's ~2-year support window as of this audit) while health/token checks
-# already used v21.0. Unified to the version app/services/meta_capi.py uses
-# for CAPI sends, so there is exactly one version to track/upgrade.
-META_GRAPH_VERSION = "v21.0"
+# Marketing API version used across all Meta Marketing calls in this file (Insights, Ad accounts, campaigns).
+# Configurable via META_MARKETING_API_VERSION env var (default: v26.0, released July 29, 2026, sunset: TBD; v21.0 sunset September 9, 2025; v22.0 supported through May 20, 2027).
+META_MARKETING_API_VERSION = os.getenv("META_MARKETING_API_VERSION", "v26.0")
+META_GRAPH_VERSION = META_MARKETING_API_VERSION  # Backward-compatibility alias
 
 
 def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0):
@@ -182,7 +195,7 @@ def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0
             json={
                 "kind": "graph_get",
                 "path": path,
-                "graph_version": META_GRAPH_VERSION,
+                "graph_version": META_MARKETING_API_VERSION,
                 "access_token": access_token,
                 "params": params,
             },
@@ -195,12 +208,21 @@ def _graph_get(path: str, params: dict, access_token: str, timeout: float = 10.0
             # sync with JSONDecodeError. See the same fix in meta_capi.py.
             follow_redirects=True,
         )
-        return resp
-    return httpx.get(
-        f"https://graph.facebook.com/{META_GRAPH_VERSION}/{path}",
-        params={**params, "access_token": access_token},
-        timeout=timeout,
-    )
+    else:
+        resp = httpx.get(
+            f"https://graph.facebook.com/{META_MARKETING_API_VERSION}/{path}",
+            params={**params, "access_token": access_token},
+            timeout=timeout,
+        )
+
+    # Détection des avertissements de dépréciation ou de mise à niveau automatique par Meta
+    actual_api_ver = resp.headers.get("facebook-api-version")
+    if actual_api_ver and actual_api_ver != META_MARKETING_API_VERSION:
+        logger.warning(
+            "[Meta Graph API] Version divergence: requested %s, Meta processed with %s (X-FB-Debug: %s)",
+            META_MARKETING_API_VERSION, actual_api_ver, resp.headers.get("X-FB-Debug", "none")
+        )
+    return resp
 
 
 def _normalize_ad_account_id(raw: Optional[str]) -> Optional[str]:
@@ -287,6 +309,7 @@ def get_meta_ads_config(
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
+    _assert_store_access(current_user, store_id)
     # Explicitly scoped by the store_id param and read across stores (admin
     # dashboard loads all 3 configs), so bypass the SELECT tenant auto-filter.
     # Otherwise it hid the EXISTING config whenever X-Store-Id didn't match the
@@ -332,6 +355,7 @@ def update_meta_ads_config(
     db: Session = Depends(get_db),
     current_user: "User" = Depends(deps.get_current_active_user),
 ):
+    _assert_store_access(current_user, payload.store_id)
     # Same rationale as the GET: scoped by store_id, edited across stores.
     db.info["skip_tenant_isolation"] = True
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == payload.store_id).first()
@@ -576,25 +600,27 @@ def list_campaigns(
         revenue = sum(o.total for o in camp_orders)
         orders_count = len(camp_orders)
         
-        roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
+        has_dzd_spend = (camp.spend is not None)
+        roas = round(revenue / camp.spend, 2) if (has_dzd_spend and camp.spend > 0) else (0.0 if (has_dzd_spend and revenue == 0) else None)
         raw_spend = camp.raw_spend if camp.raw_spend is not None else camp.spend
 
-        global_spend += camp.spend
+        if has_dzd_spend:
+            global_spend += camp.spend
         global_revenue += revenue
         global_orders_count += orders_count
 
         # Micro-metrics (converted DZD + raw ad-account currency)
         ctr = round(camp.clicks / camp.impressions * 100, 3) if camp.impressions > 0 else 0.0
-        cpc = round(camp.spend / camp.clicks, 2) if camp.clicks > 0 else 0.0
-        cpc_raw = round(raw_spend / camp.clicks, 4) if camp.clicks > 0 else 0.0
-        cpm = round(camp.spend / camp.impressions * 1000, 2) if camp.impressions > 0 else 0.0
-        cpm_raw = round(raw_spend / camp.impressions * 1000, 4) if camp.impressions > 0 else 0.0
+        cpc = round(camp.spend / camp.clicks, 2) if (has_dzd_spend and camp.clicks > 0) else None
+        cpc_raw = round(raw_spend / camp.clicks, 4) if (raw_spend and camp.clicks > 0) else 0.0
+        cpm = round(camp.spend / camp.impressions * 1000, 2) if (has_dzd_spend and camp.impressions > 0) else None
+        cpm_raw = round(raw_spend / camp.impressions * 1000, 4) if (raw_spend and camp.impressions > 0) else 0.0
         frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
-        cost_per_order = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
-        cost_per_order_raw = round(raw_spend / orders_count, 4) if orders_count > 0 else 0.0
+        cost_per_order = round(camp.spend / orders_count, 2) if (has_dzd_spend and orders_count > 0) else None
+        cost_per_order_raw = round(raw_spend / orders_count, 4) if (raw_spend and orders_count > 0) else 0.0
         conversion_rate = round(orders_count / camp.clicks * 100, 3) if camp.clicks > 0 else 0.0
         aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
-        profit = round(revenue - camp.spend, 2)
+        profit = round(revenue - camp.spend, 2) if has_dzd_spend else None
 
         # Meta's OWN reported conversions (its pixel/CAPI attribution, its
         # dedup) — deliberately kept separate from orders_count/revenue
@@ -642,7 +668,7 @@ def list_campaigns(
         # Aucune composante inventée : chacune est dérivée d'un chiffre déjà
         # affiché dans ce même tableau.
         _hs_components = []
-        if camp.spend > 0:
+        if camp.spend is not None and camp.spend > 0 and roas is not None:
             _hs_components.append(min(1.0, roas / 3.0) * 100)
         if camp.impressions > 0:
             _hs_components.append(min(1.0, ctr / 1.5) * 100)
@@ -662,6 +688,7 @@ def list_campaigns(
             "product_sku": linked_product.sku if linked_product else None,
             "product_image": linked_product.main_image if linked_product else None,
             "spend": camp.spend,
+            "is_converted": has_dzd_spend,
             "raw_spend": raw_spend,
             "currency": camp.currency or "USD",
             "impressions": camp.impressions,
@@ -699,7 +726,8 @@ def list_campaigns(
             "last_synced_at": camp.updated_at.isoformat() if camp.updated_at else None,
         })
 
-    global_roas = round(global_revenue / global_spend, 2) if global_spend > 0 else 0.0
+    any_unconverted = any(c.spend is None and (c.raw_spend or 0) > 0 for c in campaigns)
+    global_roas = round(global_revenue / global_spend, 2) if (global_spend > 0 and not any_unconverted) else (round(global_revenue / global_spend, 2) if global_spend > 0 else None)
     global_meta_purchases = sum(c.meta_purchases or 0 for c in campaigns)
     global_meta_purchase_value = sum(c.meta_purchase_value or 0.0 for c in campaigns)
 
@@ -767,8 +795,8 @@ def list_campaigns(
         # accurate even before enough orders accumulate.
         if camp.product_id and camp.product_id in product_attribution:
             attr = product_attribution[camp.product_id]
-            attr["spend"] += camp.spend
-            attr["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else camp.spend)
+            attr["spend"] += (camp.spend or 0.0)
+            attr["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else (camp.spend or 0.0))
             attr["revenue"] += camp_revenue_by_prod.get(camp.product_id, 0.0)
             attr["orders_count"] += len(camp_orders_by_prod.get(camp.product_id, ()))
             attr["impressions"] += camp.impressions or 0
@@ -783,8 +811,8 @@ def list_campaigns(
             for pid, prod_rev in camp_revenue_by_prod.items():
                 ratio = prod_rev / total_camp_rev
                 if pid in product_attribution:
-                    product_attribution[pid]["spend"] += camp.spend * ratio
-                    product_attribution[pid]["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else camp.spend) * ratio
+                    product_attribution[pid]["spend"] += (camp.spend or 0.0) * ratio
+                    product_attribution[pid]["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else (camp.spend or 0.0)) * ratio
                     product_attribution[pid]["revenue"] += prod_rev
                     product_attribution[pid]["orders_count"] += len(camp_orders_by_prod[pid])
                     product_attribution[pid]["impressions"] += int(camp.impressions * ratio)
@@ -806,8 +834,8 @@ def list_campaigns(
                 num_matched = len(matched_product_ids)
                 for pid in matched_product_ids:
                     if pid in product_attribution:
-                        product_attribution[pid]["spend"] += camp.spend / num_matched
-                        product_attribution[pid]["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else camp.spend) / num_matched
+                        product_attribution[pid]["spend"] += (camp.spend or 0.0) / num_matched
+                        product_attribution[pid]["raw_spend"] += (camp.raw_spend if camp.raw_spend is not None else (camp.spend or 0.0)) / num_matched
                         product_attribution[pid]["impressions"] += int(camp.impressions / num_matched)
                         product_attribution[pid]["clicks"] += int(camp.clicks / num_matched)
                         product_attribution[pid]["reach"] += int(camp.reach / num_matched)
@@ -856,6 +884,7 @@ def list_campaigns(
             "total_revenue": global_revenue,
             "total_orders": global_orders_count,
             "global_roas": global_roas,
+            "has_unconverted_spend": any_unconverted,
             "total_impressions": total_impressions,
             "total_clicks": total_clicks,
             "total_reach": total_reach,
@@ -961,42 +990,26 @@ def _fetch_live_dzd_rate(currency: str) -> Optional[float]:
     return rate
 
 
-def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> float:
-    ad_curr = ad_currency.upper() if ad_currency else "USD"
-    cfg_curr = (config_currency or "USD").upper()
+def get_conversion_rate(ad_currency: str, config_currency: str, config_rate: float) -> Optional[float]:
+    ad_curr = (ad_currency or "").upper()
+    cfg_curr = (config_currency or "").upper()
     cfg_rate = config_rate if config_rate is not None else 1.0
 
-    if ad_curr == "DZD":
+    if ad_curr in ("DZD", "DA"):
         return 1.0
 
-    # Live rate first — the manually-entered config_rate AND the hardcoded
-    # fallback table below both go stale silently (real EUR/USD→DZD rates
-    # move every day; a rate typed in once and never revisited quietly drifts
-    # further from reality over time — exactly what was reported: costs
-    # displayed in DA didn't reflect the real, moving exchange rate). Only
-    # fall back to the static numbers if the live source is unreachable.
+    # 1. Taux direct depuis l'API de change externe (si accessible)
     live_rate = _fetch_live_dzd_rate(ad_curr)
-    if live_rate is not None:
+    if live_rate is not None and live_rate > 0:
         return round(live_rate, 4)
 
-    if ad_curr == cfg_curr:
+    # 2. Taux explicitement calibré et validé par le commerçant en base (> 10.0 pour DZD)
+    if cfg_rate > 10.0 and (ad_curr == cfg_curr or not cfg_curr):
         return cfg_rate
 
-    fallbacks = {
-        "USD": 220.0,
-        "EUR": 240.0,
-        "CAD": 160.0,
-        "GBP": 280.0,
-    }
-    
-    if cfg_curr in fallbacks and ad_curr in fallbacks:
-        ratio = fallbacks[ad_curr] / fallbacks[cfg_curr]
-        return round(cfg_rate * ratio, 2)
-        
-    if ad_curr in fallbacks:
-        return fallbacks[ad_curr]
-        
-    return cfg_rate
+    # 3. Aucun taux validé disponible : ne fabriquer AUCUN taux arbitraire non justifié
+    return None
+
 
 @router.post("/sync", response_model=dict)
 def sync_meta_ads(
@@ -1004,8 +1017,10 @@ def sync_meta_ads(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: "User" = Depends(deps.get_current_active_user),
+    current_user: Optional[Any] = Depends(deps.get_current_active_user),
 ):
+    if isinstance(current_user, User):
+        _assert_store_access(current_user, store_id)
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
 
@@ -1123,6 +1138,12 @@ def sync_meta_ads(
                 url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{ad_account_id}/insights"
                 response = httpx.get(url, params={**params, "access_token": clean_token}, timeout=30.0)
             res_data = response.json()
+            actual_api_ver = getattr(response, "headers", {}).get("facebook-api-version")
+            if actual_api_ver and actual_api_ver != META_MARKETING_API_VERSION:
+                logger.warning(
+                    "[Meta Insights Sync] Version divergence: requested %s, Meta processed with %s (X-FB-Debug: %s)",
+                    META_MARKETING_API_VERSION, actual_api_ver, getattr(response, "headers", {}).get("X-FB-Debug", "none")
+                )
             if "error" in res_data:
                 logger.warning(f"[Meta Ads Sync] L'API Meta a retourné une erreur d'insights: {res_data['error']}")
                 is_simulated = True
@@ -1194,7 +1215,7 @@ def sync_meta_ads(
         raw_spend = float(c.get("spend", 0.0))
         
         rate = get_conversion_rate(camp_currency, config.currency, config.exchange_rate)
-        spend = raw_spend * rate
+        spend = (raw_spend * rate) if rate is not None else None
         imp = int(c.get("impressions", 0))
         clicks = int(c.get("clicks", 0))
         reach = int(c.get("reach", 0))
@@ -1228,54 +1249,80 @@ def sync_meta_ads(
 
         # --- Synchronize to Expenses Module ---
         expense_label = f"Meta Ads: {camp_name}"
-        expense_desc = (
-            f"Dépense synchronisée depuis Meta Ads ({camp_currency} converti en DZD avec un taux de change de {rate}).\n\n"
-            f"--- Micro-traçabilité (KPIs) ---\n"
-            f"Campagne ID: {camp_id}\n"
-            f"Montant initial: {raw_spend:.2f} {camp_currency}\n"
-            f"Taux de change utilisé: 1 {camp_currency} = {rate} DZD\n"
-            f"Impressions: {imp:,}\n"
-            f"Clics: {clicks:,}\n"
-            f"Reach (Couverture): {reach:,}"
-        )
-
         expense = db.query(Expense).filter(
             Expense.store_id == store_id,
             Expense.label == expense_label
         ).first()
 
-        amount_int = int(spend)
-        old_amount = expense.total_amount if expense else 0
-        amount_delta = amount_int - old_amount
+        if spend is not None:
+            expense_desc = (
+                f"Dépense synchronisée depuis Meta Ads ({camp_currency} converti en DZD avec un taux de change de {rate}).\n\n"
+                f"--- Micro-traçabilité (KPIs) ---\n"
+                f"Campagne ID: {camp_id}\n"
+                f"Montant initial: {raw_spend:.2f} {camp_currency}\n"
+                f"Taux de change utilisé: 1 {camp_currency} = {rate} DZD\n"
+                f"Impressions: {imp:,}\n"
+                f"Clics: {clicks:,}\n"
+                f"Reach (Couverture): {reach:,}"
+            )
+            amount_int = int(spend)
+            old_amount = expense.total_amount if expense else 0
+            amount_delta = amount_int - old_amount
 
-        if not expense:
-            if amount_int > 0:
-                expense = Expense(
-                    id=str(uuid.uuid4()),
-                    store_id=store_id,
-                    category=ExpenseCategory.ADVERTISING,
-                    label=expense_label,
-                    description=expense_desc,
-                    amount=amount_int,
-                    tax_amount=0,
-                    total_amount=amount_int,
-                    status=ExpenseStatus.PAID,
-                    expense_date=now.date(),
-                    is_recurring=False,
-                    term_type="SHORT_TERM",
-                    beneficiary="Meta Platforms Inc.",
-                    created_by=None
-                )
-                db.add(expense)
+            if not expense:
+                if amount_int > 0:
+                    expense = Expense(
+                        id=str(uuid.uuid4()),
+                        store_id=store_id,
+                        category=ExpenseCategory.ADVERTISING,
+                        label=expense_label,
+                        description=expense_desc,
+                        amount=amount_int,
+                        tax_amount=0,
+                        total_amount=amount_int,
+                        status=ExpenseStatus.PAID,
+                        expense_date=now.date(),
+                        is_recurring=False,
+                        term_type="SHORT_TERM",
+                        beneficiary="Meta Platforms Inc.",
+                        created_by=None
+                    )
+                    db.add(expense)
+            else:
+                expense.amount = amount_int
+                expense.total_amount = amount_int
+                expense.description = expense_desc
+                expense.expense_date = now.date()
         else:
-            expense.amount = amount_int
-            expense.total_amount = amount_int
-            expense.description = expense_desc
-            expense.expense_date = now.date()
+            logger.info(
+                f"[Meta Ads Sync] Taux de change non validé pour {camp_currency} (campagne {camp_id}). "
+                f"Montant initial {raw_spend:.2f} {camp_currency} préservé sans conversion DZD fabriquée. Dépense DZD non générée."
+            )
+            amount_int = 0
+            amount_delta = 0
 
         # --- Synchronize to Finance Module (FinancialTransaction + Wallet) ---
-        # Find first active wallet for this store to record the marketing outflow
-        if amount_int > 0 and abs(amount_delta) > 0 or (not expense and amount_int > 0):
+        # SÉCURITÉ FINANCIÈRE / GARDE-FOU CIBLÉ :
+        # L'import de statistiques Meta Ads est un flux analytique/reporting.
+        # Par défaut, les dépenses sont suivies dans `Expense` (analytique), mais ne doivent PAS
+        # débiter automatiquement le portefeuille physique/caisse COD (Wallet.balance) sans autorisation
+        # explicite, car les publicités Meta sont réglées par carte bancaire internationale et non prélevées
+        # sur le tiroir-caisse des livraisons de la boutique.
+        auto_debit_enabled = os.getenv("META_AUTO_DEBIT_WALLET", "false").lower() in ("true", "1", "yes")
+        is_foreign_currency = camp_currency not in ("DZD", "DA")
+        rate_is_valid = (rate is not None) and (not is_foreign_currency or rate >= 50.0)
+
+        if not auto_debit_enabled:
+            logger.info(
+                "[Meta Finance Guardrail] Imputation financière directe sur Wallet ignorée pour store=%s camp=%s (reporting analytique uniquement).",
+                store_id, camp_id
+            )
+        elif not rate_is_valid:
+            logger.warning(
+                "[Meta Finance Guardrail] Taux de change non validé ou suspect (1 %s = %s DZD). Débit Wallet annulé pour store=%s camp=%s.",
+                camp_currency, rate, store_id, camp_id
+            )
+        elif spend is not None and (amount_delta > 0 or (not expense and amount_int > 0)):
             wallet = db.query(Wallet).filter(
                 Wallet.store_id == store_id,
                 Wallet.is_active == True
@@ -1283,13 +1330,12 @@ def sync_meta_ads(
 
             if wallet:
                 tx_ref = f"META-{store_id[:8].upper()}-{camp_id[:8].upper()}-{now.strftime('%Y%m%d')}"
-                # Check if this transaction reference already exists
                 existing_tx = db.query(FinancialTransaction).filter(
                     FinancialTransaction.store_id == store_id,
                     FinancialTransaction.reference == tx_ref
                 ).first()
 
-                charge_amount = abs(amount_delta) if expense and old_amount > 0 else amount_int
+                charge_amount = amount_delta if expense and old_amount > 0 else amount_int
 
                 if not existing_tx and charge_amount > 0:
                     tx = FinancialTransaction(
@@ -1309,7 +1355,6 @@ def sync_meta_ads(
                         transaction_date=now,
                     )
                     db.add(tx)
-                    # Update wallet balance — marketing charge is an outflow
                     wallet.balance -= charge_amount
                     wallet.total_out += charge_amount
                     db.add(wallet)
@@ -1383,7 +1428,7 @@ def sync_meta_ads(
                         "campaign_id": camp_id,
                         "date": day_val,
                         "raw_spend": d_raw_spend,
-                        "spend": d_raw_spend * rate,
+                        "spend": (d_raw_spend * rate) if rate is not None else None,
                         "impressions": int(rc.get("impressions", 0) or 0),
                         "clicks": int(rc.get("clicks", 0) or 0),
                         "reach": int(rc.get("reach", 0) or 0),
@@ -1476,7 +1521,7 @@ def sync_meta_ads(
                         "adset_id": rc.get("adset_id"),
                         "adset_name": rc.get("adset_name"),
                         "raw_spend": a_raw_spend,
-                        "spend": a_raw_spend * a_rate,
+                        "spend": (a_raw_spend * a_rate) if a_rate is not None else None,
                         "currency": ad_currency,
                         "impressions": int(rc.get("impressions", 0) or 0),
                         "clicks": int(rc.get("clicks", 0) or 0),
@@ -1787,7 +1832,9 @@ def send_meta_event(
 
 
 @router.get("/test-funnel-logs", tags=["Testing"])
-def get_test_funnel_logs():
+def get_test_funnel_logs(
+    current_user: User = Depends(deps.get_current_active_superuser),
+):
     """
     Temporarily fetch the raw events that were logged to disk.
     Used for empirical validation of the tracking funnel.
@@ -1935,7 +1982,8 @@ def get_integration_summary(
     db.info["skip_tenant_isolation"] = True  # explicit store_id scope; cross-store safe
     # 1. Meta Ads campaigns totals
     campaigns = db.query(MetaAdsCampaign).filter(MetaAdsCampaign.store_id == store_id).all()
-    total_ads_spend_dzd = sum(c.spend or 0 for c in campaigns)
+    any_unconverted = any(c.spend is None and (c.raw_spend or 0) > 0 for c in campaigns)
+    total_ads_spend_dzd = sum(c.spend for c in campaigns if c.spend is not None)
     total_ads_raw = {}
     for c in campaigns:
         curr = c.currency or "USD"
@@ -1984,9 +2032,9 @@ def get_integration_summary(
     total_utm_revenue = sum(r.total or 0 for r in utm_rows)
     total_utm_orders = len(utm_rows)
 
-    # 5. Net profitability
-    net_profit_after_ads = total_utm_revenue - total_ads_spend_dzd
-    global_roas = round(total_utm_revenue / total_ads_spend_dzd, 2) if total_ads_spend_dzd > 0 else 0.0
+    # 5. Net profitability & ROAS
+    net_profit_after_ads = (total_utm_revenue - total_ads_spend_dzd) if not any_unconverted else None
+    global_roas = round(total_utm_revenue / total_ads_spend_dzd, 2) if (total_ads_spend_dzd > 0 and not any_unconverted) else (round(total_utm_revenue / total_ads_spend_dzd, 2) if total_ads_spend_dzd > 0 else None)
 
     # 6. All expenses by category (for charges integration view)
     all_expense_categories = db.query(
@@ -2078,6 +2126,7 @@ def get_integration_summary(
                 "utm_orders_count": total_utm_orders,
                 "global_roas": global_roas,
                 "net_profit_after_ads": net_profit_after_ads,
+                "has_unconverted_spend": any_unconverted,
                 "ads_revenue_ratio": round(
                     (total_utm_revenue / (total_utm_revenue + total_ads_spend_dzd)) * 100, 1
                 ) if (total_utm_revenue + total_ads_spend_dzd) > 0 else 0.0
@@ -4636,11 +4685,12 @@ def get_campaign_learning_health(
 
     raw_spend = camp.raw_spend if camp.raw_spend is not None else camp.spend
     ctr = round(camp.clicks / camp.impressions * 100, 3) if camp.impressions > 0 else 0.0
-    cpc = round(camp.spend / camp.clicks, 2) if camp.clicks > 0 else 0.0
-    cpm = round(camp.spend / camp.impressions * 1000, 2) if camp.impressions > 0 else 0.0
     frequency = round(camp.impressions / camp.reach, 2) if camp.reach > 0 else 0.0
-    cost_per_purchase = round(camp.spend / orders_count, 2) if orders_count > 0 else 0.0
-    roas = round(revenue / camp.spend, 2) if camp.spend > 0 else 0.0
+    has_dzd = (camp.spend is not None)
+    cpc = round(camp.spend / camp.clicks, 2) if (has_dzd and camp.clicks > 0) else None
+    cpm = round(camp.spend / camp.impressions * 1000, 2) if (has_dzd and camp.impressions > 0) else None
+    cost_per_purchase = round(camp.spend / orders_count, 2) if (has_dzd and orders_count > 0) else None
+    roas = round(revenue / camp.spend, 2) if (has_dzd and camp.spend > 0) else (0.0 if (has_dzd and revenue == 0) else None)
     aov = round(revenue / orders_count, 2) if orders_count > 0 else 0.0
 
     # ── Moteur canonique — MÊMES formules/populations que le Signal Quality

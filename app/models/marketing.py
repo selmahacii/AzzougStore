@@ -145,7 +145,7 @@ class MetaAdsCampaign(Base):
     id = Column(String, primary_key=True, index=True)
     campaign_id = Column(String, unique=True, index=True, nullable=False)
     campaign_name = Column(String, nullable=False)
-    spend = Column(Float, default=0.0) # Ad spend in DZD or DA (or local currency)
+    spend = Column(Float, nullable=True) # Ad spend in DZD or DA (or local currency), None if unconverted
     raw_spend = Column(Float, default=0.0, nullable=True)
     currency = Column(String, default="USD", nullable=True)
     impressions = Column(Integer, default=0)
@@ -196,7 +196,7 @@ class MetaAdsDailyInsight(Base):
     store_id = Column(String, ForeignKey("stores.id"), nullable=False, index=True)
     campaign_id = Column(String, nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
-    spend = Column(Float, default=0.0)          # converted to DZD
+    spend = Column(Float, nullable=True)          # converted to DZD, None if unconverted
     raw_spend = Column(Float, default=0.0)      # ad-account currency
     impressions = Column(Integer, default=0)
     clicks = Column(Integer, default=0)
