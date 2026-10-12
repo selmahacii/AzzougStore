@@ -121,6 +121,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         for err in exc.errors()
     ]
 
+    if "/orders" in request.url.path:
+        try:
+            from app.core.funnel_diagnostic import log_checkout_diagnostic
+            err_summary = ", ".join(f"{e['field']}: {e['message']}" for e in errors[:3])
+            log_checkout_diagnostic(
+                "WARN",
+                "VALIDATION_FAILED",
+                request_id=request_id,
+                step="checkout_validation",
+                endpoint=request.url.path,
+                http_status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                error_code="VALIDATION_ERROR",
+                reason=f"Pydantic validation failed: {err_summary}",
+                previous_step="checkout_started",
+                expected_result="Valid order payload",
+                actual_result="Validation failed (HTTP 422)",
+                recovery_action="Correction des champs invalides par le visiteur",
+                action_classification="échouée",
+            )
+        except Exception:
+            pass
+
     return _error_response(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         error_code="VALIDATION_ERROR",

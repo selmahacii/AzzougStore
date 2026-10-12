@@ -79,6 +79,16 @@ def test_store_and_product(db: Session):
         is_active=True,
     )
     db.add(product)
+    from app.models.shopify import ShopifyMapping
+    db.add(ShopifyMapping(
+        id=str(uuid.uuid4()),
+        store_id=store.id,
+        entity_type="PRODUCT",
+        internal_id=product.id,
+        shopify_id="sh_prod_test_3a",
+        shopify_secondary_id="inv_item_test_3a",
+        extra_data={"inventory_item_id": "inv_item_test_3a"},
+    ))
     db.commit()
 
     return store, conn, product
@@ -173,7 +183,27 @@ def test_mutation_uses_idempotent_directive_and_passes_key():
     assert "$idempotencyKey: String!" in executed_query
     assert executed_vars["idempotencyKey"] == "idemp_key_custom_123"
     assert executed_vars["input"]["quantities"][0]["quantity"] == 15
-    assert executed_vars["input"]["quantities"][0]["compareQuantity"] == 10
+    assert executed_vars["input"]["quantities"][0]["changeFromQuantity"] == 10
+    assert "ignoreCompareQuantity" not in executed_vars["input"]
+
+
+def test_mutation_uses_change_from_quantity_for_2026_10_and_compare_quantity_for_legacy():
+    """Verify schema differences: 2026-10 uses changeFromQuantity, legacy uses compareQuantity + ignoreCompareQuantity."""
+    executed_2026 = None
+    client_2026 = ShopifyGraphQLClient("store.myshopify.com", "tok", api_version="2026-10")
+    client_2026.execute_graphql = lambda q, v: (setattr(client_2026, "_last_vars", v), {"inventorySetQuantities": {}})[1]
+
+    client_2026.set_inventory_quantities("1", "2", quantity=20, compare_quantity=18)
+    assert client_2026._last_vars["input"]["quantities"][0]["changeFromQuantity"] == 18
+    assert "ignoreCompareQuantity" not in client_2026._last_vars["input"]
+
+    # Legacy 2024-01
+    client_2024 = ShopifyGraphQLClient("store.myshopify.com", "tok", api_version="2024-01")
+    client_2024.execute_graphql = lambda q, v: (setattr(client_2024, "_last_vars", v), {"inventorySetQuantities": {}})[1]
+
+    client_2024.set_inventory_quantities("1", "2", quantity=20, compare_quantity=18)
+    assert client_2024._last_vars["input"]["quantities"][0]["compareQuantity"] == 18
+    assert client_2024._last_vars["input"]["ignoreCompareQuantity"] is False
 
 
 def test_idempotency_key_stability_and_retry_reuse():
@@ -433,3 +463,141 @@ def test_upgrade_obsolete_api_versions_endpoint(db: Session):
     assert conn_old.api_version == "2026-10"
     # Modern version preserved without blind overwrite
     assert conn_modern.api_version == "2026-07"
+
+
+# ─── 5. Scénario Requis : Révision 10 Tardive & Révision 11 Traitée ───────────
+
+def test_scenario_rev_10_late_response_and_rev_11_processed(db: Session, test_store_and_product):
+    """
+    Test strictly validating the requested scenario:
+      1. La révision 10 est envoyée vers Shopify (état PROCESSING).
+      2. Une nouvelle opération crée la révision 11 (état PENDING).
+      3. La réponse tardive de la révision 10 arrive.
+      4. La révision 11 reste à synchroniser et finit par être traitée (quantité ERP finale publiée).
+    """
+    store, conn, product = test_store_and_product
+
+    # Step 1: Révision 10 envoyée vers Shopify
+    task_10 = ShopifyInventorySyncQueue(
+        id=str(uuid.uuid4()),
+        store_id=store.id,
+        product_id=product.id,
+        shopify_inventory_item_id="inv_item_test_3a",
+        shopify_location_id="loc_test_3a",
+        target_quantity=20,
+        status="PROCESSING",
+        stock_revision=10,
+        idempotency_key="idemp_rev_10",
+        attempts=1,
+    )
+    db.add(task_10)
+    db.commit()
+
+    # Step 2: Une nouvelle opération crée la révision 11
+    product.stock = 33  # available = 33 - 5 = 28
+    db.commit()
+
+    task_11 = enqueue_inventory_sync(db, product_id=product.id)
+    assert task_11 is not None
+    assert task_11.stock_revision == 11
+    assert task_11.status == "PENDING"
+    assert task_11.target_quantity == 28
+    assert task_11.idempotency_key != task_10.idempotency_key
+    db.commit()
+
+    # Step 3: La réponse tardive de la révision 10 arrive
+    published_quantities = []
+
+    mock_client = MagicMock()
+    def fake_set_quantities(**kwargs):
+        published_quantities.append(kwargs["quantity"])
+        return {"inventoryAdjustmentGroup": {"id": "adj_1"}}
+
+    mock_client.set_inventory_quantities.side_effect = fake_set_quantities
+
+    # Exécution de la réponse tardive de la tâche 10
+    success_10 = process_inventory_queue_task(db, task_10.id, client=mock_client)
+    assert success_10 is True
+
+    db.refresh(task_10)
+    db.refresh(task_11)
+
+    # Révision 10 complétée sans corrompre ni marquer terminée la révision 11
+    assert task_10.status == "SUCCESS"
+    assert "révision 11 est en attente" in task_10.last_error
+
+    # Révision 11 DOIT rester en attente de synchronisation !
+    assert task_11.status == "PENDING"
+    assert task_11.stock_revision == 11
+    # previous_quantity de la révision 11 a été alignée sur la quantité appliquée par la 10 (20)
+    assert task_11.previous_quantity == 20
+
+    # Step 4: La révision 11 reste à synchroniser et finit par être traitée
+    success_11 = process_inventory_queue_task(db, task_11.id, client=mock_client)
+    assert success_11 is True
+
+    db.refresh(task_11)
+    assert task_11.status == "SUCCESS"
+    assert task_11.target_quantity == 28
+
+    # Vérification que la dernière quantité de l'ERP (28) a bien été publiée sur Shopify
+    assert published_quantities == [20, 28]
+    assert published_quantities[-1] == 28
+
+
+# ─── 6. Reprise après interruption (Crash Recovery) ──────────────────────────
+
+def test_crash_recovery_after_http_send_before_db_commit(db: Session, test_store_and_product):
+    """
+    Vérifie la reprise après une interruption survenue après l'envoi HTTP
+    mais avant l'enregistrement du succès en PostgreSQL :
+      - Tâche bloquée en PROCESSING lors d'un crash.
+      - reclaim_stuck_processing_inventory_syncs la replace en PENDING.
+      - La clé d'idempotence originale est strictement conservée.
+      - Au rejeu, Shopify applique la directive @idempotent sans double-ajustement de stock.
+    """
+    from app.services.shopify_inventory_service import reclaim_stuck_processing_inventory_syncs
+    store, conn, product = test_store_and_product
+
+    original_key = "idemp_crash_safe_999"
+    stuck_task = ShopifyInventorySyncQueue(
+        id=str(uuid.uuid4()),
+        store_id=store.id,
+        product_id=product.id,
+        shopify_inventory_item_id="inv_item_crash",
+        shopify_location_id="loc_test_3a",
+        target_quantity=20,
+        status="PROCESSING",  # Resté bloqué lors de l'arrêt du processus
+        stock_revision=5,
+        idempotency_key=original_key,
+        attempts=1,
+    )
+    db.add(stuck_task)
+    db.commit()
+
+    # Récupération automatique des tâches bloquées
+    reclaimed_count = reclaim_stuck_processing_inventory_syncs(db, store_id=store.id, max_age_seconds=0)
+    assert reclaimed_count == 1
+
+    db.refresh(stuck_task)
+    assert stuck_task.status == "PENDING"
+    # Clé d'idempotence originale conservée
+    assert stuck_task.idempotency_key == original_key
+    assert "Reprise après interruption" in stuck_task.last_error
+
+    # Rejeu par le worker
+    mock_client = MagicMock()
+    mock_client.set_inventory_quantities.return_value = {"inventoryAdjustmentGroup": {"id": "adj_replayed"}}
+
+    res = process_inventory_queue_task(db, stuck_task.id, client=mock_client)
+    assert res is True
+
+    # Vérification que la clé d'idempotence passée au client Shopify est bien la clé originale
+    mock_client.set_inventory_quantities.assert_called_once()
+    call_kwargs = mock_client.set_inventory_quantities.call_args.kwargs
+    assert call_kwargs["idempotency_key"] == original_key
+    assert call_kwargs["quantity"] == 20
+
+    db.refresh(stuck_task)
+    assert stuck_task.status == "SUCCESS"
+

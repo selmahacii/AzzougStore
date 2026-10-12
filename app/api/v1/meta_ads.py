@@ -1762,6 +1762,72 @@ def send_meta_event(
         except Exception:
             pass
 
+        # Real-time funnel diagnostics (Phase 3A.19)
+        try:
+            from app.core.funnel_diagnostic import log_funnel_event
+            req_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-Id")
+            has_attr = bool(payload.campaign_id or payload.adset_id or (payload.user_data and (payload.user_data.fbp or payload.user_data.fbc or payload.user_data.fbclid)))
+
+            if payload.event_name in ("PageView", "LandingPageView"):
+                log_funnel_event(
+                    "LANDING_PAGE_VIEW",
+                    request_id=req_id,
+                    store_id=payload.store_id,
+                    lp_id=payload.lp_id,
+                    event_id=payload.event_id,
+                    campaign_id=payload.campaign_id,
+                    adset_id=payload.adset_id,
+                    ad_id=payload.ad_id,
+                    has_attribution=has_attr,
+                )
+            elif payload.event_name == "ViewContent":
+                is_static_id = bool(payload.event_id and payload.event_id.startswith("viewcontent-lp-"))
+                log_funnel_event(
+                    "PRODUCT_VIEW",
+                    request_id=req_id,
+                    store_id=payload.store_id,
+                    product_id=product_id,
+                    lp_id=payload.lp_id,
+                    event_id=payload.event_id,
+                    campaign_id=payload.campaign_id,
+                    adset_id=payload.adset_id,
+                    ad_id=payload.ad_id,
+                    has_attribution=has_attr,
+                    is_suspected_collision=is_static_id,
+                    note="DÉDUPLICATION ANORMALE META (Identifiant statique 'viewcontent-lp-' réutilisé)" if is_static_id else None,
+                )
+            elif payload.event_name == "AddToCart":
+                is_bucket_collision = bool(payload.event_id and "addtocart-" in str(payload.event_id) and len(str(payload.event_id).split("-")) == 3)
+                log_funnel_event(
+                    "ADD_TO_CART",
+                    request_id=req_id,
+                    store_id=payload.store_id,
+                    product_id=product_id,
+                    lp_id=payload.lp_id,
+                    event_id=payload.event_id,
+                    campaign_id=payload.campaign_id,
+                    adset_id=payload.adset_id,
+                    ad_id=payload.ad_id,
+                    has_attribution=has_attr,
+                    is_suspected_collision=is_bucket_collision,
+                    note="COLLISION TEMPORELLE (Bucket 10s 'addtocart-*-<time>' écrasant les clics simultanés)" if is_bucket_collision else None,
+                )
+            elif payload.event_name == "InitiateCheckout":
+                log_funnel_event(
+                    "CHECKOUT_STARTED",
+                    request_id=req_id,
+                    store_id=payload.store_id,
+                    product_id=product_id,
+                    lp_id=payload.lp_id,
+                    event_id=payload.event_id,
+                    campaign_id=payload.campaign_id,
+                    adset_id=payload.adset_id,
+                    ad_id=payload.ad_id,
+                    has_attribution=has_attr,
+                )
+        except Exception:
+            pass
+
         background_tasks.add_task(
             record_funnel_event,
             store_id=payload.store_id,
@@ -5431,10 +5497,7 @@ def get_kpi_validation(
         "traceable_query": "SELECT status, COUNT(*) FROM meta_capi_logs WHERE store_id=:store_id AND event_name='Purchase' AND created_at BETWEEN :since AND :until GROUP BY status",
     })
 
-    # ── Check 2 : realtime/backfill recalculés indépendamment (nouvelle
-    # requête + boucle Python séparée de celle de /signal-quality), pour
-    # vérifier que realtime_count + backfill_count == sample_size PAR
-    # CONSTRUCTION et que cela correspond au nombre réel de succès.
+
     from app.models.audit import AuditLog
     backfill_order_ids = {
         row[0] for row in (

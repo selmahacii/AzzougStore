@@ -14,7 +14,7 @@ import re
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
@@ -372,6 +372,7 @@ def list_landing_pages(
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
+    request: Request,
     store_id: Optional[str] = Query(None, description="ID de la boutique"),
     store: Optional[str] = Query(None, description="Slug ou sous-domaine de la boutique"),
     x_store_id: Optional[str] = Header(None, alias="x-store-id"),
@@ -469,6 +470,20 @@ def get_by_slug(
         {"slug": slug, "store_id": resolved_store_id},
     )
     db.commit()
+
+    try:
+        from app.core.funnel_diagnostic import log_funnel_event
+        req_id = getattr(request.state, "request_id", None) if request else None
+        log_funnel_event(
+            "LANDING_PAGE_VIEW",
+            request_id=req_id,
+            store_id=resolved_store_id,
+            lp_id=data.get("id") if data else None,
+            product_id=data.get("product_id") if data else None,
+            note=f"Landing page slug: /{slug}",
+        )
+    except Exception:
+        pass
 
     return {"success": True, "data": data}
 

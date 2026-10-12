@@ -15,6 +15,12 @@ def _get_fernet():
     try:
         from cryptography.fernet import Fernet
         key = os.environ.get("ENCRYPTION_KEY")
+        if not key:
+            try:
+                from app.core.config import settings
+                key = getattr(settings, "ENCRYPTION_KEY", None)
+            except Exception:
+                pass
         if key:
             _fernet = Fernet(key.encode() if isinstance(key, str) else key)
         # else: encryption disabled — keys stored in plaintext (dev only)

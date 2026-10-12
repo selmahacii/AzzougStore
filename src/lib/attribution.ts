@@ -178,6 +178,7 @@ export function attributionPayload(): Record<string, string | undefined> {
     fbp: getFbp(),
     fbc: getFbc(),
     referrer: a.referrer,
+    landing_url: a.landing_url || (typeof window !== 'undefined' ? window.location.href.slice(0, 500) : undefined),
     event_source_url: typeof window !== 'undefined' ? window.location.href.slice(0, 500) : undefined,
   };
 }

@@ -1185,36 +1185,150 @@ STANDARD_WILAYA_FEES: dict[str, int] = {
     "58": 950, "el meniaa": 950,
 }
 
-def resolve_wilaya_delivery_fee(db: Session, store_id: str, wilaya: Optional[str], delivery_type: str = "HOME") -> int:
+def normalize_wilaya_key(wilaya: Optional[str]) -> Optional[str]:
     if not wilaya or not str(wilaya).strip():
-        return 400
-    clean_w = str(wilaya).strip().lower()
-    
-    try:
-        from app.models.delivery_partner import DeliveryPartner, DeliveryFeeGrid
-        partner = db.query(DeliveryPartner).filter(
-            DeliveryPartner.store_id == store_id,
-            DeliveryPartner.is_active == True
-        ).first()
+        return None
+    raw = str(wilaya).strip().lower()
+    import re
+    m = re.match(r"^(\d+)", raw)
+    if m:
+        return m.group(1)
+    return raw
 
-        if partner:
-            grid = db.query(DeliveryFeeGrid).filter(DeliveryFeeGrid.partner_id == partner.id).all()
-            for g in grid:
-                if str(g.wilaya_id) == clean_w or str(g.wilaya_name or "").strip().lower() == clean_w:
-                    fee = g.office_fee if delivery_type in ("stop_desk", "OFFICE") else g.home_fee
-                    if fee and fee > 0:
+
+def resolve_wilaya_delivery_fee(
+    db: Session,
+    store_id: Optional[str],
+    wilaya: Optional[str],
+    delivery_type: str = "HOME",
+    carrier_id: Optional[str] = None,
+    product_ids: Optional[List[str]] = None,
+    items_data: Optional[List[dict]] = None,
+) -> Optional[int]:
+    """
+    Authoritative shipping fee engine used in BOTH the storefront /calculate endpoint
+    and order creation in order_service.
+    
+    Priority:
+      1. Free shipping check (Product shipping_model == 'free' or tags or product.delivery_fees.is_free).
+      2. Product-specific custom fee grid (product.delivery_fees for the partner/wilaya).
+      3. Selected carrier fee grid (DeliveryFeeGrid for carrier_id + wilaya).
+      4. Selected carrier flat rate (fee_home / fee_relay).
+      5. Store's active carrier fallback (grid then flat).
+      6. Standard Algerian Wilaya fee grid (STANDARD_WILAYA_FEES).
+    Returns None if wilaya is missing/empty.
+    """
+    if not wilaya or not str(wilaya).strip():
+        return None
+
+    clean_w = str(wilaya).strip().lower()
+    norm_key = normalize_wilaya_key(clean_w) or clean_w
+    _dt = (delivery_type or "").lower()
+    is_office = any(k in _dt for k in ("office", "relay", "bureau", "desk", "stop"))
+
+    # 1. Free shipping check
+    p_ids: List[str] = list(product_ids or [])
+    if items_data:
+        p_ids.extend([item.get("product_id") for item in items_data if isinstance(item, dict) and item.get("product_id")])
+    p_ids = [str(pid) for pid in p_ids if pid]
+
+    try:
+        from app.models.product import Product
+        if p_ids:
+            prods = db.query(Product).filter(Product.id.in_(p_ids)).all()
+            if prods and all(
+                str(p.shipping_model or "").lower() == "free"
+                or "free_shipping" in [str(t).lower() for t in (p.tags or [])]
+                or "livraison_gratuite" in [str(t).lower() for t in (p.tags or [])]
+                for p in prods
+            ):
+                return 0
+    except Exception as exc:
+        logger.warning("Error checking product free shipping: %s", exc)
+
+    # 2. Carrier resolution (specific carrier or store's active partner)
+    from app.models.delivery_partner import DeliveryPartner, DeliveryFeeGrid
+    partner = None
+    try:
+        if carrier_id:
+            partner = db.query(DeliveryPartner).filter(
+                (DeliveryPartner.id == carrier_id) | (DeliveryPartner.carrier_id == carrier_id),
+                DeliveryPartner.is_active == True,
+            ).first()
+        if not partner and store_id:
+            partner = db.query(DeliveryPartner).filter(
+                DeliveryPartner.store_id == store_id,
+                DeliveryPartner.is_active == True,
+            ).first()
+    except Exception as exc:
+        logger.warning("Error querying delivery partner: %s", exc)
+
+    # 3. Product custom fees via product.delivery_fees if present
+    if partner and p_ids:
+        try:
+            prods = db.query(Product).filter(Product.id.in_(p_ids)).all()
+            resolved_p_fees = []
+            for product in prods:
+                if product.delivery_fees:
+                    import json
+                    d_fees = product.delivery_fees
+                    if isinstance(d_fees, str):
+                        try:
+                            d_fees = json.loads(d_fees)
+                        except Exception:
+                            d_fees = None
+                    if isinstance(d_fees, dict):
+                        if d_fees.get("is_free") or d_fees.get("isFree"):
+                            resolved_p_fees.append(0.0)
+                        else:
+                            fees_grid = d_fees.get("fees", {})
+                            carrier_fees = fees_grid.get(partner.carrier_id) or fees_grid.get(partner.id)
+                            if isinstance(carrier_fees, dict):
+                                w_fees = carrier_fees.get(str(norm_key)) or carrier_fees.get(clean_w)
+                                if isinstance(w_fees, dict):
+                                    type_key = "desk" if is_office else "home"
+                                    fee_val = w_fees.get(type_key)
+                                    if fee_val is None and is_office:
+                                        fee_val = w_fees.get("office") or w_fees.get("relay")
+                                    if fee_val is not None:
+                                        resolved_p_fees.append(float(fee_val))
+            if resolved_p_fees and len(resolved_p_fees) == len(prods):
+                return int(max(resolved_p_fees))
+        except Exception as exc:
+            logger.warning("Error checking custom product delivery fees: %s", exc)
+
+    # 4. Carrier's per-wilaya fee grid
+    if partner:
+        try:
+            grids = db.query(DeliveryFeeGrid).filter(DeliveryFeeGrid.partner_id == partner.id).all()
+            for g in grids:
+                if str(g.wilaya_id) == str(norm_key) or str(g.wilaya_name or "").strip().lower() == clean_w:
+                    fee = g.office_fee if is_office else g.home_fee
+                    if fee is not None and fee >= 0:
                         return int(fee)
-            
-            flat = partner.fee_relay if delivery_type in ("stop_desk", "OFFICE") else partner.fee_home
-            if flat and flat > 0:
+            # Carrier flat rate
+            flat = partner.fee_relay if is_office else partner.fee_home
+            if flat is not None and flat > 0:
                 return int(flat)
-    except Exception:
+        except Exception as exc:
+            logger.warning("Error checking partner grid/flat fee: %s", exc)
+
+    # 5. Standard Wilaya Fee fallback
+    fee = STANDARD_WILAYA_FEES.get(str(norm_key)) or STANDARD_WILAYA_FEES.get(clean_w)
+    if fee is not None:
+        if is_office:
+            fee = max(200, fee - 200)
+        return int(fee)
+
+    # If wilaya is recognized by number 1-58
+    try:
+        w_num = int(norm_key)
+        if 1 <= w_num <= 58:
+            return 600 if not is_office else 400
+    except (ValueError, TypeError):
         pass
 
-    fee = STANDARD_WILAYA_FEES.get(clean_w, 600)
-    if delivery_type in ("stop_desk", "OFFICE"):
-        fee = max(200, fee - 200)
-    return fee
+    return None
 
 
 class OrderService:
@@ -1348,8 +1462,15 @@ class OrderService:
         if admin_free_shipping:
             order.delivery_fee = 0
         else:
-            calc_fee = resolve_wilaya_delivery_fee(db, order.store_id, order.customer_wilaya, str(order.delivery_type or "HOME"))
-            order.delivery_fee = calc_fee
+            calc_fee = resolve_wilaya_delivery_fee(
+                db,
+                order.store_id,
+                order.customer_wilaya,
+                str(order.delivery_type or "HOME"),
+                carrier_id=order.carrier_id,
+                items_data=items_data,
+            )
+            order.delivery_fee = calc_fee if calc_fee is not None else 0
 
         if order.subtotal and order.subtotal > 0:
             order.total = max(0, (order.subtotal or 0) - (order.discount or 0) + (order.delivery_fee or 0))
@@ -1645,6 +1766,20 @@ class OrderService:
             if new_status == "DELIVERED" and old_status != "DELIVERED":
                 # Auto-record COD payment in finance
                 self._record_delivery_payment(db, order)
+                # Trigger Meta Purchase CAPI upon delivery for genuine sales (Phase 3A.20 Quality Optimization)
+                try:
+                    from app.services.meta_capi import handle_order_delivered_capi
+                    handle_order_delivered_capi(db, order)
+                except Exception as capi_err:
+                    logger.warning("Failed to trigger delivery Purchase CAPI for %s: %s", order.order_number, capi_err)
+
+            if new_status == "CONFIRMED" and old_status != "CONFIRMED":
+                # Trigger Meta Purchase CAPI upon confirmation if store configured for 'CONFIRMED'
+                try:
+                    from app.services.meta_capi import handle_order_confirmed_capi
+                    handle_order_confirmed_capi(db, order)
+                except Exception as capi_err:
+                    logger.warning("Failed to trigger confirmed Purchase CAPI for %s: %s", order.order_number, capi_err)
 
             _log_event(
                 db,

@@ -325,22 +325,23 @@ def process_inventory_queue_task(
         db.commit()
         return True
 
-    # Check if a newer task with higher revision exists (Revision Coalescence)
-    newer_task = (
-        db.query(ShopifyInventorySyncQueue)
-        .filter(
-            ShopifyInventorySyncQueue.store_id == task.store_id,
-            ShopifyInventorySyncQueue.product_id == task.product_id,
-            ShopifyInventorySyncQueue.variant_sku == task.variant_sku,
-            ShopifyInventorySyncQueue.stock_revision > task.stock_revision,
+    # Check if a newer task with higher revision exists (Revision Coalescence for unstarted tasks)
+    if task.status != "PROCESSING":
+        newer_task = (
+            db.query(ShopifyInventorySyncQueue)
+            .filter(
+                ShopifyInventorySyncQueue.store_id == task.store_id,
+                ShopifyInventorySyncQueue.product_id == task.product_id,
+                ShopifyInventorySyncQueue.variant_sku == task.variant_sku,
+                ShopifyInventorySyncQueue.stock_revision > task.stock_revision,
+            )
+            .first()
         )
-        .first()
-    )
-    if newer_task:
-        task.status = "COALESCED"
-        task.last_error = f"Ignorée: révision {task.stock_revision} rendue obsolète par révision {newer_task.stock_revision}."
-        db.commit()
-        return True
+        if newer_task:
+            task.status = "COALESCED"
+            task.last_error = f"Ignorée: révision {task.stock_revision} rendue obsolète par révision {newer_task.stock_revision}."
+            db.commit()
+            return True
 
     # Resolve mapping if missing
     if not task.shopify_inventory_item_id:
@@ -385,11 +386,6 @@ def process_inventory_queue_task(
         return False
     task.shopify_location_id = location_id
 
-    # Mark PROCESSING
-    task.status = "PROCESSING"
-    task.attempts += 1
-    db.commit()
-
     # Recalculate authoritative current sellable quantity
     product = db.query(Product).filter(Product.id == task.product_id).first()
     if not product:
@@ -398,8 +394,16 @@ def process_inventory_queue_task(
         db.commit()
         return False
 
-    current_avail = calculate_erp_available_stock(product, task.variant_str)
-    task.target_quantity = current_avail
+    if task.status != "PROCESSING":
+        # Mark PROCESSING and snapshot current ERP available stock
+        task.status = "PROCESSING"
+        task.attempts += 1
+        current_avail = calculate_erp_available_stock(product, task.variant_str)
+        task.target_quantity = current_avail
+        db.commit()
+    else:
+        # Task was already in-flight (status == PROCESSING) — keep the target quantity sent in flight
+        current_avail = task.target_quantity if task.target_quantity is not None else calculate_erp_available_stock(product, task.variant_str)
 
     # Initialize client if not injected
     if client is None:
@@ -541,6 +545,46 @@ def process_inventory_queue_task(
 
 # ─── Sweeper for Outbound Queue ──────────────────────────────────────────────
 
+def reclaim_stuck_processing_inventory_syncs(
+    db: Session,
+    store_id: Optional[str] = None,
+    max_age_seconds: int = 300,
+) -> int:
+    """
+    Recovers tasks stuck in 'PROCESSING' state due to an interruption, process kill,
+    or server restart (e.g. killed mid-HTTP-send or before committing success).
+    Resets eligible tasks to 'PENDING' so they can be safely retried.
+    Because the original idempotency_key is preserved on the task row, retries are
+    guaranteed idempotent on Shopify's side (@idempotent directive), eliminating
+    any risk of double stock adjustments.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+    query = (
+        db.query(ShopifyInventorySyncQueue)
+        .filter(
+            ShopifyInventorySyncQueue.status == "PROCESSING",
+            ShopifyInventorySyncQueue.updated_at <= cutoff,
+        )
+    )
+    if store_id:
+        query = query.filter(ShopifyInventorySyncQueue.store_id == store_id)
+    stuck_tasks = query.with_for_update().all()
+    reclaimed = 0
+    for task in stuck_tasks:
+        task.status = "PENDING"
+        task.last_error = (
+            f"Reprise après interruption (tâche bloquée en PROCESSING > {max_age_seconds}s). "
+            "Nouvel essai programmé avec la clé d'idempotence originale."
+        )
+        task.next_retry_at = datetime.now(timezone.utc)
+        task.updated_at = datetime.now(timezone.utc)
+        reclaimed += 1
+    if reclaimed:
+        db.commit()
+        logger.warning("[ShopifyInventory] Récupération de %d tâche(s) bloquée(s) en 'PROCESSING'", reclaimed)
+    return reclaimed
+
+
 def sweep_pending_inventory_syncs(
     db: Session,
     store_id: Optional[str] = None,
@@ -550,7 +594,9 @@ def sweep_pending_inventory_syncs(
     """
     Processes eligible pending and failed inventory sync tasks.
     Can be scoped to a specific store_id or executed globally.
+    First recovers any tasks orphaned or stuck in PROCESSING.
     """
+    reclaim_stuck_processing_inventory_syncs(db, store_id=store_id)
     now = datetime.now(timezone.utc)
     query = (
         db.query(ShopifyInventorySyncQueue)

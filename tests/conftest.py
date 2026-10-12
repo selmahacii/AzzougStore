@@ -237,3 +237,21 @@ def guardrail_assert_no_persistent_db():
                 )
 
     yield
+
+
+@pytest.fixture(autouse=True)
+def mock_celery_in_tests(monkeypatch):
+    """
+    Prevents background Celery tasks (like sync_store_inventory.delay) from stalling
+    tests by attempting 20 retries against an unreachable Redis server.
+    """
+    from unittest.mock import MagicMock
+    try:
+        import app.worker as worker_mod
+        import app.api.v1.stores as stores_mod
+        monkeypatch.setattr(worker_mod.sync_store_inventory, "delay", MagicMock())
+        monkeypatch.setattr(worker_mod.sync_store_inventory, "apply_async", MagicMock())
+        monkeypatch.setattr(stores_mod.sync_store_inventory, "delay", MagicMock())
+        monkeypatch.setattr(stores_mod.sync_store_inventory, "apply_async", MagicMock())
+    except Exception:
+        pass

@@ -163,20 +163,19 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     captureAttribution();
   }, [setLocale]);
 
-  // Meta Pixel + CAPI ViewContent — once per landing page product. A stable
-  // eventId (not time-based) so meta-tracking.ts's own sessionStorage dedup
-  // catches a re-render/refresh instead of re-firing.
+  // Meta Pixel + CAPI ViewContent — distinct eventId per consultation action.
   useEffect(() => {
     const pid = data?.product?.id || (data as any)?.product_id || data?.id;
     const storeId = activeStore?.id || data?.store_id;
     if (!pid || !storeId) return;
     setCurrentLpId(data.id);
+    const eventId = `viewcontent-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
       content_name: data.product_name || data.product?.name || data.headline,
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
+    }, { storeId, eventId, lpId: data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
 
@@ -451,18 +450,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   const trackAddToCartClick = useCallback(() => {
-    const now = Date.now();
-    if (now - lastAddToCartRef.current < 10000) {
-      return;
-    }
-    lastAddToCartRef.current = now;
-
     const pid = data?.product?.id || (data as any)?.product_id || data?.id;
     const storeId = activeStore?.id || data?.store_id;
     if (!pid || !storeId) return;
     const currentPrice = Number(currentOffer?.price ?? data.price ?? data.product?.price ?? 0);
     const currentQty = Number(currentOffer?.quantity ?? quantity ?? 1);
-    const eventId = `addtocart-${pid}-${Math.floor(now / 10000)}`;
+    const eventId = `addtocart-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     void trackMetaEvent('AddToCart', {
       content_ids: [String(pid)],

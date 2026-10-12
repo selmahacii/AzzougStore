@@ -1,5 +1,6 @@
 import logging
 import re
+import uuid
 from typing import Optional, Dict, Any, List
 import httpx
 
@@ -43,8 +44,10 @@ class ShopifyUserError(ShopifyClientError):
 
 
 class ShopifyCompareQuantityMismatchError(ShopifyUserError):
-    """compareQuantity does not match current Shopify stock."""
+    """changeFromQuantity or compareQuantity does not match current Shopify stock."""
     pass
+
+ShopifyChangeFromQuantityMismatchError = ShopifyCompareQuantityMismatchError
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -248,16 +251,29 @@ class ShopifyGraphQLClient:
             "locationId": loc_gid,
             "quantity": quantity,
         }
-        if compare_quantity is not None:
-            qty_input["compareQuantity"] = compare_quantity
 
-        variables: Dict[str, Any] = {
-            "input": {
+        # Schema adaptation: 2026-04+ and 2026-10 use changeFromQuantity (mandatory compare-and-swap field),
+        # replacing legacy compareQuantity and ignoreCompareQuantity.
+        if self.api_version >= "2026-04":
+            qty_input["changeFromQuantity"] = compare_quantity  # None explicitly bypasses concurrency check
+            input_payload: Dict[str, Any] = {
+                "name": "available",
+                "reason": "cycle_count_available",
+                "quantities": [qty_input],
+            }
+        else:
+            # Legacy schema (< 2026-04, e.g. 2024-01)
+            if compare_quantity is not None:
+                qty_input["compareQuantity"] = compare_quantity
+            input_payload = {
                 "name": "available",
                 "reason": "cycle_count_available",
                 "ignoreCompareQuantity": compare_quantity is None,
                 "quantities": [qty_input],
             }
+
+        variables: Dict[str, Any] = {
+            "input": input_payload
         }
         if use_idempotent_directive:
             variables["idempotencyKey"] = idempotency_key or str(uuid.uuid4())
@@ -274,7 +290,10 @@ class ShopifyGraphQLClient:
                 msg = ue.get("message", "")
                 field = ".".join(str(f) for f in (ue.get("field") or []))
                 error_details.append(f"[{code}] {msg} (champ: {field})")
-                if code == "COMPARE_QUANTITY_MISMATCH" or "compare quantity" in msg.lower():
+                if (
+                    code in ("CHANGE_FROM_QUANTITY_STALE", "COMPARE_QUANTITY_MISMATCH")
+                    or any(s in msg.lower() for s in ("change from quantity", "compare quantity", "changefromquantity"))
+                ):
                     is_compare_mismatch = True
 
             combined = "; ".join(error_details)
@@ -282,7 +301,7 @@ class ShopifyGraphQLClient:
 
             if is_compare_mismatch:
                 raise ShopifyCompareQuantityMismatchError(
-                    f"Conflit de version de stock: compareQuantity ({compare_quantity}) "
+                    f"Conflit de version de stock: quantité de référence ({compare_quantity}) "
                     f"ne correspond pas à l'inventaire actuel Shopify: {combined}",
                     errors=user_errors,
                 )

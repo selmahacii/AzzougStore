@@ -109,33 +109,28 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
 
-  // ViewContent fires on landing page mount
+  // ViewContent fires on landing page mount with unique eventId per consultation
   useEffect(() => {
     const pid = data?.product?.id || (data as any)?.product_id || data?.id;
     const storeId = activeStore?.id || data?.store_id;
     if (!pid || !storeId) return;
     setCurrentLpId(data.id);
+    const eventId = `viewcontent-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
       content_name: data.product_name || data.product?.name || data.headline,
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
+    }, { storeId, eventId, lpId: data.id });
   }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
 
   const trackAddToCartClick = useCallback(() => {
-    const now = Date.now();
-    if (now - lastAddToCartRef.current < 10000) {
-      return;
-    }
-    lastAddToCartRef.current = now;
-
     const pid = data?.product?.id || (data as any)?.product_id || data?.id;
     const storeId = activeStore?.id || data?.store_id;
     if (!pid || !storeId) return;
     const currentPrice = Number(offers?.[selectedOfferIndex]?.price ?? data.price ?? data.product?.price ?? 0);
     const currentQty = Number(offers?.[selectedOfferIndex]?.quantity ?? quantity ?? 1);
-    const eventId = `addtocart-${pid}-${Math.floor(now / 10000)}`;
+    const eventId = `addtocart-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     void trackMetaEvent('AddToCart', {
       content_ids: [String(pid)],
