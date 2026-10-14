@@ -403,7 +403,7 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
     # "Nouvelles Commandes", dispatchable/assignable) rather than silently
     # disappear into a MERGED/DOUBLON state. Never triggers a merge as the
     # entry point here...
-    if str(order.source or "").upper() == "MANUAL":
+    if str(order.source or "").upper() == "MANUAL" or str(order.source or "").lower() == "shopify" or getattr(order, "shopify_order_id", None):
         return 0
     # Entry status: any order still in the confirmation stage, OR already
     # CONFIRMED-without-tracking (it can still legitimately absorb a late
@@ -423,13 +423,9 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
 
     # Active candidates: confirmation-stage orders + CONFIRMED ones not yet at
     # the carrier (a confirmed parent can still absorb a late duplicate).
-    # ...and never swept up as a sibling into someone else's merge either —
-    # same reasoning, both directions. Phone match here is only the FIRST,
-    # cheap filter to bound the candidate set at the SQL level — it is NOT
-    # the merge decision; every candidate still goes through the similarity
-    # engine below before anything is touched.
+    # Exclude MANUAL orders and SHOPIFY orders from being absorbed or merged.
     candidate_states = list(_MERGEABLE_STATES) + ["CONFIRMED"]
-    from sqlalchemy import or_ as _or_manual
+    from sqlalchemy import or_ as _or_manual, and_ as _and_src
     phone_siblings = (
         db.query(Order)
         .filter(
@@ -438,7 +434,8 @@ def auto_merge_duplicates(db: Session, order: Order, actor_id: Optional[str] = N
             Order.id != order.id,
             Order.is_deleted == False,
             Order.status.in_(candidate_states),
-            _or_manual(Order.source.is_(None), Order.source != "MANUAL"),
+            _or_manual(Order.source.is_(None), _and_src(Order.source != "MANUAL", Order.source != "shopify")),
+            Order.shopify_order_id.is_(None),
         )
         .with_for_update()  # serialize concurrent merges on the same client
         .all()
@@ -1186,9 +1183,21 @@ STANDARD_WILAYA_FEES: dict[str, int] = {
     "56": 1400, "djanet": 1400,
     "57": 950, "el m'ghair": 950, "el mghair": 950,
     "58": 950, "el meniaa": 950,
+    # 11 nouvelles wilayas officielles (Loi 26-06 / Décret présidentiel 26-206)
+    "59": 800, "aflou": 800,
+    "60": 650, "barika": 650,
+    "61": 750, "el kantara": 750,
+    "62": 700, "bir el ater": 700,
+    "63": 650, "el aricha": 650,
+    "64": 650, "ksar chellala": 650,
+    "65": 750, "ain oussera": 750, "aïn oussera": 750,
+    "66": 750, "messaad": 750,
+    "67": 600, "ksar el boukhari": 600,
+    "68": 700, "bou saada": 700, "bou saâda": 700,
+    "69": 850, "el abiodh sidi cheikh": 850,
 }
 
-WILAYAS_58 = [
+_ALGERIAN_WILAYAS: List[str] = [
     'Adrar', 'Chlef', 'Laghouat', 'Oum El Bouaghi', 'Batna', 'Béjaïa',
     'Biskra', 'Béchar', 'Blida', 'Bouira', 'Tamanrasset', 'Tébessa',
     'Tlemcen', 'Tiaret', 'Tizi Ouzou', 'Alger', 'Djelfa', 'Jijel',
@@ -1197,45 +1206,79 @@ WILAYAS_58 = [
     'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
     'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
     'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
+    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Badji Mokhtar', 'Ouled Djellal',
     'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
     "El M'Ghair", 'El Meniaa',
+    # 11 nouvelles wilayas officielles (Loi 26-06 / Décret présidentiel 26-206)
+    'Aflou', 'Barika', 'El Kantara', 'Bir El Ater', 'El Aricha',
+    'Ksar Chellala', 'Aïn Oussera', 'Messaad', 'Ksar El Boukhari',
+    'Bou Saâda', 'El Abiodh Sidi Cheikh',
 ]
 
-
-def _strip_accents(text: str) -> str:
-    import unicodedata
-    return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
-
+# Transitional mapping: wilayas 59-69 -> mother wilaya ID (1-58)
+WILAYA_PARENT_MAP: dict[int, int] = {
+    59: 3,   # Aflou -> Laghouat
+    60: 5,   # Barika -> Batna
+    61: 7,   # El Kantara -> Biskra
+    62: 12,  # Bir El Ater -> Tébessa
+    63: 13,  # El Aricha -> Tlemcen
+    64: 14,  # Ksar Chellala -> Tiaret
+    65: 17,  # Aïn Oussera -> Djelfa
+    66: 17,  # Messaad -> Djelfa
+    67: 26,  # Ksar El Boukhari -> Médéa
+    68: 28,  # Bou Saâda -> M'Sila
+    69: 32,  # El Abiodh Sidi Cheikh -> El Bayadh
+}
 
 def resolve_wilaya_id(wilaya: Optional[str]) -> Optional[int]:
+    """
+    Robustly resolves any wilaya name, code, or prefixed string to its 1-indexed integer ID (1-69).
+    Returns None if unknown.
+    """
     if not wilaya or not str(wilaya).strip():
         return None
-    raw = str(wilaya).strip()
+    raw = str(wilaya).strip().lower()
     import re
-    m = re.match(r"^(\d+)", raw)
+    import unicodedata
+    m = re.match(r"^0*(\d+)", raw)
     if m:
-        num = int(m.group(1))
-        if 1 <= num <= 58:
-            return num
-    clean = _strip_accents(raw)
-    for i, w in enumerate(WILAYAS_58):
-        if _strip_accents(w) == clean:
-            return i + 1
+        try:
+            wid = int(m.group(1))
+            if 1 <= wid <= len(_ALGERIAN_WILAYAS):
+                return wid
+        except (ValueError, TypeError):
+            pass
+
+    clean = "".join(c for c in unicodedata.normalize('NFD', raw) if unicodedata.category(c) != 'Mn')
+    clean = re.sub(r"[^a-z0-9]", "", clean)
+
+    # 1. Exact match pass
+    for idx, w in enumerate(_ALGERIAN_WILAYAS, 1):
+        w_clean = "".join(c for c in unicodedata.normalize('NFD', w.lower()) if unicodedata.category(c) != 'Mn')
+        w_clean = re.sub(r"[^a-z0-9]", "", w_clean)
+        if clean == w_clean:
+            return idx
+
+    # 2. Substring match pass (only if length >= 3)
+    if len(clean) >= 3:
+        for idx, w in enumerate(_ALGERIAN_WILAYAS, 1):
+            w_clean = "".join(c for c in unicodedata.normalize('NFD', w.lower()) if unicodedata.category(c) != 'Mn')
+            w_clean = re.sub(r"[^a-z0-9]", "", w_clean)
+            if clean in w_clean or w_clean in clean:
+                return idx
     return None
 
-
 def normalize_wilaya_key(wilaya: Optional[str]) -> Optional[str]:
-    w_id = resolve_wilaya_id(wilaya)
-    if w_id is not None:
-        return str(w_id)
+    wid = resolve_wilaya_id(wilaya)
+    if wid is not None:
+        return str(wid)
     if not wilaya or not str(wilaya).strip():
         return None
     raw = str(wilaya).strip().lower()
     import re
     m = re.match(r"^(\d+)", raw)
     if m:
-        return str(int(m.group(1)))
+        return m.group(1)
     return raw
 
 
@@ -1251,22 +1294,24 @@ def resolve_wilaya_delivery_fee(
     """
     Authoritative shipping fee engine used in BOTH the storefront /calculate endpoint
     and order creation in order_service.
-
+    
     Priority:
       1. Free shipping check (Product shipping_model == 'free' or tags or product.delivery_fees.is_free).
-      2. Carrier resolution (carrier_id or store's active partner).
-      3. Product-specific custom fee grid (product.delivery_fees for the partner/wilaya).
-      4. Carrier per-wilaya fee grid (DeliveryFeeGrid for partner.id + wilaya_id).
-      5. Carrier flat rate (fee_home / fee_relay).
+      2. Product-specific custom fee grid (product.delivery_fees for the partner/wilaya).
+      3. Selected carrier fee grid (DeliveryFeeGrid for carrier_id + wilaya).
+      4. Selected carrier flat rate (fee_home / fee_relay).
+      5. Store's active carrier fallback (grid then flat).
       6. Standard Algerian Wilaya fee grid (STANDARD_WILAYA_FEES).
-    Returns None if wilaya is missing/empty or completely unknown.
+    Returns None if wilaya is missing/empty.
     """
     if not wilaya or not str(wilaya).strip():
         return None
 
     clean_w = str(wilaya).strip().lower()
-    norm_key = normalize_wilaya_key(clean_w) or clean_w
-    w_id = resolve_wilaya_id(wilaya)
+    target_wid = resolve_wilaya_id(clean_w)
+    if target_wid is None and clean_w not in STANDARD_WILAYA_FEES:
+        return None
+    norm_key = str(target_wid) if target_wid is not None else (normalize_wilaya_key(clean_w) or clean_w)
     _dt = (delivery_type or "").lower()
     is_office = any(k in _dt for k in ("office", "relay", "bureau", "desk", "stop"))
 
@@ -1343,43 +1388,59 @@ def resolve_wilaya_delivery_fee(
 
     # 4. Carrier's per-wilaya fee grid
     if partner:
+        target_wid = resolve_wilaya_id(clean_w)
         try:
-            if w_id is not None:
-                grid_match = db.query(DeliveryFeeGrid).filter(
+            if target_wid is not None:
+                # 4a. Specific wilaya pricing in carrier's grid
+                grid_row = db.query(DeliveryFeeGrid).filter(
                     DeliveryFeeGrid.partner_id == partner.id,
-                    DeliveryFeeGrid.wilaya_id == w_id,
+                    DeliveryFeeGrid.wilaya_id == target_wid,
                 ).first()
-                if grid_match:
-                    fee = grid_match.office_fee if is_office else grid_match.home_fee
-                    if fee is not None and fee >= 0:
+                if grid_row:
+                    fee = grid_row.office_fee if is_office else grid_row.home_fee
+                    if fee is not None and fee > 0:
                         return int(fee)
-            else:
-                grids = db.query(DeliveryFeeGrid).filter(DeliveryFeeGrid.partner_id == partner.id).all()
-                for g in grids:
-                    if str(g.wilaya_id) == str(norm_key) or getattr(g, 'wilaya_name', None) == clean_w:
-                        fee = g.office_fee if is_office else g.home_fee
-                        if fee is not None and fee >= 0:
+                    # If home_fee is 0 but office_fee > 0, home delivery is explicitly free (0 DA)
+                    if not is_office and grid_row.home_fee == 0 and (grid_row.office_fee or 0) > 0:
+                        return 0
+
+                # 4b. Transitional Mother Wilaya Fallback for wilayas 59-69
+                mother_wid = WILAYA_PARENT_MAP.get(target_wid)
+                if mother_wid is not None:
+                    mother_row = db.query(DeliveryFeeGrid).filter(
+                        DeliveryFeeGrid.partner_id == partner.id,
+                        DeliveryFeeGrid.wilaya_id == mother_wid,
+                    ).first()
+                    if mother_row:
+                        fee = mother_row.office_fee if is_office else mother_row.home_fee
+                        if fee is not None and fee > 0:
                             return int(fee)
-            # Carrier flat rate
+                        if not is_office and mother_row.home_fee == 0 and (mother_row.office_fee or 0) > 0:
+                            return 0
+
+            # 4c. Carrier flat rate fallback if wilaya is not explicitly priced in partner's grid
             flat = partner.fee_relay if is_office else partner.fee_home
             if flat is not None and flat > 0:
                 return int(flat)
-        except Exception as exc:
-            logger.warning("Error checking partner grid/flat fee: %s", exc)
 
-    # 5. Standard Wilaya Fee fallback
+        except Exception as exc:
+            logger.warning("Error querying partner grid/flat fee for partner=%s wilaya=%s: %s", getattr(partner, 'id', None), clean_w, exc)
+
+    # 5. Standard Wilaya Fee fallback (ONLY when NO delivery partner is configured for the store/order)
     fee = STANDARD_WILAYA_FEES.get(str(norm_key)) or STANDARD_WILAYA_FEES.get(clean_w)
     if fee is not None:
         if is_office:
             fee = max(200, fee - 200)
         return int(fee)
 
-    # If wilaya is recognized by number 1-58
-    if w_id is not None:
-        return 600 if not is_office else 400
+    # If wilaya is recognized by number 1-69
     try:
         w_num = int(norm_key)
-        if 1 <= w_num <= 58:
+        if 1 <= w_num <= len(_ALGERIAN_WILAYAS):
+            if w_num in WILAYA_PARENT_MAP:
+                mother_fee = STANDARD_WILAYA_FEES.get(str(WILAYA_PARENT_MAP[w_num]))
+                if mother_fee is not None:
+                    return int(max(200, mother_fee - 200) if is_office else mother_fee)
             return 600 if not is_office else 400
     except (ValueError, TypeError):
         pass
@@ -1822,6 +1883,20 @@ class OrderService:
             if new_status == "DELIVERED" and old_status != "DELIVERED":
                 # Auto-record COD payment in finance
                 self._record_delivery_payment(db, order)
+                # Trigger Meta Purchase CAPI upon delivery for genuine sales (Phase 3A.20 Quality Optimization)
+                try:
+                    from app.services.meta_capi import handle_order_delivered_capi
+                    handle_order_delivered_capi(db, order)
+                except Exception as capi_err:
+                    logger.warning("Failed to trigger delivery Purchase CAPI for %s: %s", order.order_number, capi_err)
+
+            if new_status == "CONFIRMED" and old_status != "CONFIRMED":
+                # Trigger Meta Purchase CAPI upon confirmation if store configured for 'CONFIRMED'
+                try:
+                    from app.services.meta_capi import handle_order_confirmed_capi
+                    handle_order_confirmed_capi(db, order)
+                except Exception as capi_err:
+                    logger.warning("Failed to trigger confirmed Purchase CAPI for %s: %s", order.order_number, capi_err)
 
             _log_event(
                 db,

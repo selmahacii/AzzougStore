@@ -1162,35 +1162,6 @@ export function CheckoutForm({
                   )}
                 </div>
 
-                {/* Code promo */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
-                    <Tag className="size-3" /> {t('promoCode')}
-                  </label>
-                  {appliedPromo ? (
-                    <div className="flex items-center gap-2 border px-3 py-2.5"
-                      style={{ borderRadius: T.radius, borderColor: 'rgba(52,211,153,0.3)', backgroundColor: 'rgba(52,211,153,0.08)' }}>
-                      <span className="text-xs font-bold text-emerald-400">{appliedPromo.code} · {appliedPromo.label}</span>
-                      <button type="button" className="ml-auto text-emerald-400 hover:text-emerald-300"
-                        onClick={() => { setPromoCode(''); setAppliedPromo(null); setPromoError(''); }}>
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Input placeholder="CODE PROMO" value={promoCode} maxLength={20}
-                        onChange={e => { setPromoCode(e.target.value.toUpperCase()); setPromoError(''); }}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleApplyPromo(); } }}
-                        className={`co-input flex-1 text-sm font-mono uppercase tracking-wider h-11 ${promoError ? 'border-red-400!' : ''}`} />
-                      <button type="button" onClick={handleApplyPromo} disabled={promoLoading || !promoCode.trim()}
-                        className="px-4 border text-xs font-bold transition-all disabled:opacity-40"
-                        style={{ borderRadius: T.radius, borderColor: T.cardBorder, color: T.textSecondary, backgroundColor: T.cardBg }}>
-                        {promoLoading ? <Loader2 className="size-4 animate-spin" /> : t('applyPromo')}
-                      </button>
-                    </div>
-                  )}
-                  {promoError && <p className="text-[10px] text-red-400">{promoError}</p>}
-                </div>
               </>
             )}
 

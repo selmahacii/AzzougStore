@@ -1,5 +1,7 @@
 /* eslint-disable */
 // Generated list of Algerian Communes grouped by EXACT Wilaya name used in the app
+import { WILAYAS } from './wilaya-data';
+
 export interface CommuneInfo {
   id: number;
   name: string;      // Arabic
@@ -1554,7 +1556,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 4825, name: "يلل", nameAscii: "Yellel" },
     { id: 4812, name: "زمورة", nameAscii: "Zemmoura" },
   ],
-  "El M'Ghair": [
+  "Timimoun": [
     { id: 123, name: "أوقروت", nameAscii: "Aougrout" },
     { id: 103, name: "شروين", nameAscii: "Charouine" },
     { id: 117, name: "دلدول", nameAscii: "Deldoul" },
@@ -1566,7 +1568,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 109, name: "تيميمون", nameAscii: "Timimoun" },
     { id: 116, name: "تنركوك", nameAscii: "Tinerkouk" },
   ],
-  "El Meniaa": [
+  "Bordj Badji Mokhtar": [
     { id: 125, name: "برج باجي مختار", nameAscii: "Bordj Badji Mokhtar" },
     { id: 128, name: "تيمياوين", nameAscii: "Timiaouine" },
   ],
@@ -1577,7 +1579,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 515, name: "رأس الميعاد", nameAscii: "Ras El Miad" },
     { id: 708, name: "سيدي خالد", nameAscii: "Sidi Khaled" },
   ],
-  "Bordj Baji Mokhtar": [
+  "Béni Abbès": [
     { id: 807, name: "بني عباس", nameAscii: "Beni-Abbes" },
     { id: 808, name: "بن يخلف", nameAscii: "Beni-Ikhlef" },
     { id: 814, name: "الواتة", nameAscii: "El Ouata" },
@@ -1588,14 +1590,14 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 820, name: "تامترت", nameAscii: "Tamtert" },
     { id: 805, name: "تيمودي", nameAscii: "Timoudi" },
   ],
-  "Béni Abbès": [
-    { id: 1108, name: "عين صالح", nameAscii: "Ain Salah" },
-    { id: 1110, name: "فقارة الزوى", nameAscii: "Foggaret Ezzoua" },
-    { id: 1103, name: "إينغر", nameAscii: "Inghar" },
+  "In Salah": [
+    { id: 5301, name: "عين صالح", nameAscii: "In Salah" },
+    { id: 5302, name: "فقارة الزوى", nameAscii: "Foggaret Ezzoua" },
+    { id: 5303, name: "إينغر", nameAscii: "Inghar" },
   ],
-  "Timimoun": [
-    { id: 1104, name: "عين قزام", nameAscii: "Ain Guezzam" },
-    { id: 1107, name: "تين زواتين", nameAscii: "Tin Zouatine" },
+  "In Guezzam": [
+    { id: 5401, name: "عين قزام", nameAscii: "In Guezzam" },
+    { id: 5402, name: "تين زواتين", nameAscii: "Tin Zouatine" },
   ],
   "Touggourt": [
     { id: 3017, name: "بن ناصر", nameAscii: "Benaceur" },
@@ -1615,7 +1617,7 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 5601, name: "برج الحواس", nameAscii: "Bordj El Haouass" },
     { id: 3302, name: "جانت", nameAscii: "Djanet" },
   ],
-  "In Salah": [
+  "El M'Ghair": [
     { id: 3928, name: "جامعة", nameAscii: "Djamaa" },
     { id: 3927, name: "المغير", nameAscii: "El-M'ghaier" },
     { id: 3922, name: "المرارة", nameAscii: "M'rara" },
@@ -1625,35 +1627,141 @@ export const ALGERIAN_COMMUNES: Record<string, CommuneInfo[]> = {
     { id: 3921, name: "سطيل", nameAscii: "Still" },
     { id: 3924, name: "تندلة", nameAscii: "Tenedla" },
   ],
-  "In Guezzam": [
+  "El Meniaa": [
     { id: 5801, name: "المنيعة", nameAscii: "El Meniaa" },
     { id: 5802, name: "حاسي الفحل", nameAscii: "Hassi Fehal" },
     { id: 5803, name: "حاسي القارة", nameAscii: "Hassi Gara" },
+  ],
+  // 11 nouvelles wilayas (Loi 26-06 / Décret présidentiel 26-206)
+  "Aflou": [
+    { id: 5901, name: "أفلو", nameAscii: "Aflou" },
+    { id: 5902, name: "سبقاق", nameAscii: "Sebgag" },
+    { id: 5903, name: "سيدي بوزيد", nameAscii: "Sidi Bouzid" },
+    { id: 5904, name: "وادي مرة", nameAscii: "Oued Morra" },
+    { id: 5905, name: "وادي مزي", nameAscii: "Oued M'Zi" },
+    { id: 5906, name: "البيضاء", nameAscii: "El Beidha" },
+    { id: 5907, name: "بريدة", nameAscii: "Brida" },
+    { id: 5908, name: "الغيشة", nameAscii: "El Ghicha" },
+    { id: 5909, name: "تاويالة", nameAscii: "Taouiala" },
+    { id: 5910, name: "حاج مشري", nameAscii: "Hadj Mechri" },
+  ],
+  "Barika": [
+    { id: 6001, name: "بريكة", nameAscii: "Barika" },
+    { id: 6002, name: "إمدوكال", nameAscii: "M'doukal" },
+    { id: 6003, name: "بيطام", nameAscii: "Bitam" },
+    { id: 6004, name: "عزيل عبد القادر", nameAscii: "Azil Abedelkader" },
+    { id: 6005, name: "الجزار", nameAscii: "Djezzar" },
+    { id: 6006, name: "أولاد عمار", nameAscii: "Ouled Ammar" },
+  ],
+  "El Kantara": [
+    { id: 6101, name: "القنطرة", nameAscii: "El Kantara" },
+    { id: 6102, name: "عين زعطوط", nameAscii: "Aïn Zaatout" },
+    { id: 6103, name: "جمورة", nameAscii: "Djemorah" },
+    { id: 6104, name: "برانيس", nameAscii: "Branis" },
+  ],
+  "Bir El Ater": [
+    { id: 6201, name: "بئر العاتر", nameAscii: "Bir El Ater" },
+    { id: 6202, name: "العقلة", nameAscii: "El Ogla" },
+    { id: 6203, name: "الكويف", nameAscii: "El Kouif" },
+    { id: 6204, name: "نقرين", nameAscii: "Negrine" },
+    { id: 6205, name: "فركان", nameAscii: "Ferkane" },
+    { id: 6206, name: "أم علي", nameAscii: "Oum Ali" },
+    { id: 6207, name: "صفصاف الوسرى", nameAscii: "Safsaf El Ouesra" },
+  ],
+  "El Aricha": [
+    { id: 6301, name: "العريشة", nameAscii: "El Aricha" },
+    { id: 6302, name: "البويهي", nameAscii: "El Bouihi" },
+    { id: 6303, name: "سيدي الجيلالي", nameAscii: "Sidi Djillali" },
+    { id: 6304, name: "سبدو", nameAscii: "Sebdou" },
+  ],
+  "Ksar Chellala": [
+    { id: 6401, name: "قصر الشلالة", nameAscii: "Ksar Chellala" },
+    { id: 6402, name: "سرغين", nameAscii: "Serghine" },
+    { id: 6403, name: "زمالة الأمير عبد القادر", nameAscii: "Zmalet El Emir Abdelkader" },
+    { id: 6404, name: "الحمادية", nameAscii: "Hamadia" },
+    { id: 6405, name: "الرشايقة", nameAscii: "Rechaiga" },
+  ],
+  "Aïn Oussera": [
+    { id: 6501, name: "عين وسارة", nameAscii: "Aïn Oussera" },
+    { id: 6502, name: "قرنيني", nameAscii: "Guernini" },
+    { id: 6503, name: "بنهار", nameAscii: "Benhar" },
+    { id: 6504, name: "بيرين", nameAscii: "Birine" },
+    { id: 6505, name: "حد الصحاري", nameAscii: "Had Sahary" },
+    { id: 6506, name: "بويرة الأحداب", nameAscii: "Bouira Lahdab" },
+  ],
+  "Messaad": [
+    { id: 6601, name: "مسعد", nameAscii: "Messaad" },
+    { id: 6602, name: "القطارة", nameAscii: "Guettara" },
+    { id: 6603, name: "دلدول", nameAscii: "Deldoul" },
+    { id: 6604, name: "سلمانة", nameAscii: "Selmana" },
+    { id: 6605, name: "سد رحال", nameAscii: "Sed Rahal" },
+    { id: 6606, name: "فيض البطمة", nameAscii: "Faidh El Botma" },
+    { id: 6607, name: "عمورة", nameAscii: "Amourah" },
+  ],
+  "Ksar El Boukhari": [
+    { id: 6701, name: "قصر البخاري", nameAscii: "Ksar El Boukhari" },
+    { id: 6702, name: "السانق", nameAscii: "Saneg" },
+    { id: 6703, name: "مفاتحة", nameAscii: "Meftaha" },
+    { id: 6704, name: "عزيز", nameAscii: "Aziz" },
+    { id: 6705, name: "دراق", nameAscii: "Derrag" },
+    { id: 6706, name: "أم الجليل", nameAscii: "Oum El Djalil" },
+    { id: 6707, name: "صغوان", nameAscii: "Seghouane" },
+    { id: 6708, name: "مجبر", nameAscii: "Moudjbar" },
+  ],
+  "El Abiodh Sidi Cheikh": [
+    { id: 6901, name: "الأبيض سيدي الشيخ", nameAscii: "El Abiodh Sidi Cheikh" },
+    { id: 6902, name: "عين العراك", nameAscii: "Ain El Orak" },
+    { id: 6903, name: "أربوات", nameAscii: "Arbaouat" },
+    { id: 6904, name: "بوسمغون", nameAscii: "Boussemghoun" },
+    { id: 6905, name: "بريزينة", nameAscii: "Brezina" },
+    { id: 6906, name: "البنود", nameAscii: "El Bnoud" },
+    { id: 6907, name: "الشقيق", nameAscii: "Cheguig" },
+    { id: 6908, name: "ستيتن", nameAscii: "Stitten" },
+    { id: 6909, name: "رقاصة", nameAscii: "Rogassa" },
+    { id: 6910, name: "الكاف الأحمر", nameAscii: "Kef El Ahmar" },
+    { id: 6911, name: "شلالة", nameAscii: "Chellala" },
   ],
 };
 
 // Aliases for common spelling variants
 ALGERIAN_COMMUNES["Medea"] = ALGERIAN_COMMUNES["Médéa"];
+ALGERIAN_COMMUNES["Beni Abbes"] = ALGERIAN_COMMUNES["Béni Abbès"];
+ALGERIAN_COMMUNES["Ain Oussera"] = ALGERIAN_COMMUNES["Aïn Oussera"];
+ALGERIAN_COMMUNES["El M'ghair"] = ALGERIAN_COMMUNES["El M'Ghair"];
+ALGERIAN_COMMUNES["El Mghair"] = ALGERIAN_COMMUNES["El M'Ghair"];
+ALGERIAN_COMMUNES["Ain Defla"] = ALGERIAN_COMMUNES["Aïn Defla"];
+ALGERIAN_COMMUNES["Ain Temouchent"] = ALGERIAN_COMMUNES["Aïn Témouchent"];
 
 /**
  * Universal helper to retrieve communes for any wilaya representation
- * Supports accents, no-accents, numbers (e.g. "26", "26 - Médéa", "Medea", "Médéa")
+ * Supports accents, no-accents, numbers (e.g. 16, "16", "16 - Alger", "Medea", "Médéa")
  */
 export function getCommunesForWilaya(wilayaInput: string | number | null | undefined): CommuneInfo[] {
   if (!wilayaInput) return [];
   const raw = String(wilayaInput).trim();
   if (ALGERIAN_COMMUNES[raw]) return ALGERIAN_COMMUNES[raw];
 
+  // If pure numeric wilaya ID (1 to 69)
+  if (/^\d+$/.test(raw)) {
+    const num = parseInt(raw, 10);
+    if (num >= 1 && num <= WILAYAS.length) {
+      const wilayaName = WILAYAS[num - 1];
+      if (ALGERIAN_COMMUNES[wilayaName]) return ALGERIAN_COMMUNES[wilayaName];
+    }
+  }
+
   // Strip leading number prefix (e.g. "26 - Médéa" -> "Médéa")
   const clean = raw.replace(/^\d+\s*[-_–.]\s*/, '').trim();
-  if (ALGERIAN_COMMUNES[clean]) return ALGERIAN_COMMUNES[clean];
+  if (clean && ALGERIAN_COMMUNES[clean]) return ALGERIAN_COMMUNES[clean];
 
   // Normalize (strip accents and special chars)
   const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
   const targetNorm = norm(clean || raw);
 
-  for (const [k, v] of Object.entries(ALGERIAN_COMMUNES)) {
-    if (norm(k) === targetNorm) return v;
+  if (targetNorm) {
+    for (const [k, v] of Object.entries(ALGERIAN_COMMUNES)) {
+      if (norm(k) === targetNorm) return v;
+    }
   }
 
   return [];

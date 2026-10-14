@@ -32,6 +32,10 @@ const ALGERIAN_WILAYAS = [
   'Khenchela', 'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
   'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Badji Mokhtar', 'Ouled Djellal', 'Béni Abbès',
   'In Salah', 'In Guezzam', 'Touggourt', 'Djanet', 'El M\'Ghair', 'El Meniaa',
+  // 11 nouvelles wilayas officielles (Loi 26-06 / Décret présidentiel 26-206)
+  'Aflou', 'Barika', 'El Kantara', 'Bir El Ater', 'El Aricha',
+  'Ksar Chellala', 'Aïn Oussera', 'Messaad', 'Ksar El Boukhari',
+  'Bou Saâda', 'El Abiodh Sidi Cheikh',
 ];
 
 // ─── KNOWN CARRIERS ───────────────────────────────────────────
@@ -473,7 +477,7 @@ function PartnerModal({
           const id = parseInt(row['wilaya_id'] ?? row['Wilaya ID'] ?? '');
           const home = String(row['domicile_da'] ?? row['Domicile'] ?? '').trim();
           const desk = String(row['stop_desk_da'] ?? row['Stop Desk'] ?? '').trim();
-          if (!isNaN(id) && id >= 1 && id <= 58) {
+          if (!isNaN(id) && id >= 1 && id <= ALGERIAN_WILAYAS.length) {
             newFees[id] = { home, desk };
             count++;
           }
@@ -617,7 +621,7 @@ function PartnerModal({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <div className="flex items-center gap-3">
                     <MapPin className="size-5 text-[#4b7bec] shrink-0" />
-                    <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">Grille Tarifaire par Wilaya (58 Wilayas)</p>
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">Grille Tarifaire par Wilaya ({ALGERIAN_WILAYAS.length} Wilayas)</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     {['yalidine', 'zr_express'].includes(carrier.id) && savedPartnerId && (

@@ -38,8 +38,12 @@ export const WILAYAS = [
   // du menu déroulant. Confirmé bureau par bureau (49A=Timimoun,
   // 51A=Ouled Djellal, 52A=Béni Abbès, 53A=In Salah, 55A=Touggourt,
   // 56A=Djanet, 58A=El Meniaa) avant correction.
-  'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal', 'Béni Abbès',
+  'Timimoun', 'Bordj Badji Mokhtar', 'Ouled Djellal', 'Béni Abbès',
   'In Salah', 'In Guezzam', 'Touggourt', 'Djanet', 'El M\'Ghair', 'El Meniaa',
+  // 11 nouvelles wilayas officielles (Loi 26-06 / Décret présidentiel 26-206)
+  'Aflou', 'Barika', 'El Kantara', 'Bir El Ater', 'El Aricha',
+  'Ksar Chellala', 'Aïn Oussera', 'Messaad', 'Ksar El Boukhari',
+  'Bou Saâda', 'El Abiodh Sidi Cheikh',
 ] as const;
 
 export const DEFAULT_DELIVERY_FEE = { home: 700, office: 400 };

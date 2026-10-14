@@ -173,25 +173,10 @@ def _serialize(p: DeliveryPartner) -> dict:
     }
 
 
-# ─── Public: Calculate delivery fee ─────────────────────────
-
-_WILAYAS = [
-    'Adrar', 'Chlef', 'Laghouat', 'Oum El Bouaghi', 'Batna', 'Béjaïa',
-    'Biskra', 'Béchar', 'Blida', 'Bouira', 'Tamanrasset', 'Tébessa',
-    'Tlemcen', 'Tiaret', 'Tizi Ouzou', 'Alger', 'Djelfa', 'Jijel',
-    'Sétif', 'Saïda', 'Skikda', 'Sidi Bel Abbès', 'Annaba', 'Guelma',
-    'Constantine', 'Médéa', 'Mostaganem', "M'Sila", 'Mascara', 'Ouargla',
-    'Oran', 'El Bayadh', 'Illizi', 'Bordj Bou Arréridj', 'Boumerdès',
-    'El Tarf', 'Tindouf', 'Tissemsilt', 'El Oued', 'Khenchela',
-    'Souk Ahras', 'Tipaza', 'Mila', 'Aïn Defla', 'Naâma', 'Aïn Témouchent',
-    'Ghardaïa', 'Relizane', 'Timimoun', 'Bordj Baji Mokhtar', 'Ouled Djellal',
-    'Béni Abbès', 'In Salah', 'In Guezzam', 'Touggourt', 'Djanet',
-    "El M'Ghair", 'El Meniaa',
-]
+from app.services.order_service import _ALGERIAN_WILAYAS as _WILAYAS, resolve_wilaya_id
 
 def _wilaya_name_to_id(name: str) -> Optional[int]:
     """Convert wilaya name to 1-based numeric ID, or None if not found."""
-    from app.services.order_service import resolve_wilaya_id
     return resolve_wilaya_id(name)
 
 
@@ -213,6 +198,11 @@ def calculate_delivery_fee(
     if partner_id:
         partner = db.query(DeliveryPartner).filter(
             DeliveryPartner.id == partner_id,
+            DeliveryPartner.is_active == True,
+        ).first()
+    elif store_id:
+        partner = db.query(DeliveryPartner).filter(
+            DeliveryPartner.store_id == store_id,
             DeliveryPartner.is_active == True,
         ).first()
 
