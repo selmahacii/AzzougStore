@@ -293,26 +293,57 @@ def lookup_domain(
     Lookup store by domain for edge routing.
     """
     import logging
+    from sqlalchemy import or_, func
     logger = logging.getLogger("app.stores")
 
     from app.core.cache import get_or_set
 
     _MISS = {"__miss__": True}
 
+    raw_domain = (domain or "").strip()
+    clean_domain = raw_domain.lower()
+    if clean_domain.startswith("http://"):
+        clean_domain = clean_domain[7:]
+    elif clean_domain.startswith("https://"):
+        clean_domain = clean_domain[8:]
+    clean_domain = clean_domain.split("/")[0].split(":")[0]
+
+    subdomain_slug = None
+    if clean_domain.endswith(".azghub.com") and clean_domain != "www.azghub.com":
+        subdomain_slug = clean_domain[:-len(".azghub.com")]
+    elif clean_domain.endswith(".vercel.app"):
+        subdomain_slug = clean_domain[:-len(".vercel.app")]
+
     def _compute():
-        logger.info(f"[LookupDomain] Query: domain={domain!r}")
+        logger.info(f"[LookupDomain] Query: domain={domain!r}, clean={clean_domain!r}, subdomain={subdomain_slug!r}")
+        
+        clauses = [
+            func.lower(Store.domain) == clean_domain,
+            func.lower(Store.slug) == clean_domain,
+            Store.domain == raw_domain,
+            Store.slug == raw_domain,
+        ]
+        if subdomain_slug:
+            clauses.extend([
+                func.lower(Store.slug) == subdomain_slug,
+                func.lower(Store.domain) == subdomain_slug,
+                func.lower(Store.domain) == f"{subdomain_slug}.azghub.com",
+            ])
+
         store = db.query(Store).filter(
-            (Store.domain == domain) | (Store.slug == domain),
+            or_(*clauses),
             Store.is_deleted == False
         ).first()
+
         if not store:
-            logger.warning(f"[LookupDomain] Store NOT found for domain={domain!r}")
+            logger.warning(f"[LookupDomain] Store NOT found for domain={domain!r} (clean={clean_domain!r})")
             return _MISS
+
         logger.info(f"[LookupDomain] Found store: id={store.id!r}, slug={store.slug!r}, domain={store.domain!r}")
         return {"storeId": store.id, "storeSlug": store.slug}
 
-    payload = get_or_set(f"domain_lookup:{domain}", _compute, l1_ttl=45, l2_ttl=1800)
-    if payload == _MISS:
+    payload = get_or_set(f"domain_lookup:{clean_domain}", _compute, l1_ttl=45, l2_ttl=1800)
+    if payload == _MISS or (isinstance(payload, dict) and payload.get("__miss__")):
         raise HTTPException(status_code=404, detail="Store not found for this domain")
     return payload
 

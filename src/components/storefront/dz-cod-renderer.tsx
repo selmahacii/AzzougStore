@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Truck, Package, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Truck, Package } from 'lucide-react';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { FloatingLanguageSwitcher } from '@/components/storefront/floating-language-switcher';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
-import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 
 interface DzCodRendererProps {
   data: any;
@@ -83,7 +82,6 @@ const parseBannerImages = (urlStr: string | null | undefined): string[] => {
 };
 
 export default function DzCodRenderer({ data }: DzCodRendererProps) {
-  const activeStore = useAppStore((s) => s.activeStore);
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
   const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
@@ -93,7 +91,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const { t, dir } = useTranslation();
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
-  const lastAddToCartRef = useRef<number>(0);
 
   const primary = data.primary_color || '#E53935';
   const variantWithImg = data.product?.variants?.find((v: any) => v.image);
@@ -108,47 +105,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     { quantity: 1, price: price ?? 0, compare_price: comparePrice ?? 0, name: `1 ${t('piece')}`, desc: t('tryProduct') },
     { quantity: 2, price: (price ?? 0) * 2, compare_price: (comparePrice ?? 0) * 2, name: `2 ${t('pieces')}`, desc: t('profitOffer'), popular: true }
   ];
-
-  // ViewContent fires on landing page mount with unique eventId per consultation
-  useEffect(() => {
-    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
-    const storeId = activeStore?.id || data?.store_id;
-    if (!pid || !storeId) return;
-    setCurrentLpId(data.id);
-    const eventId = `viewcontent-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    void trackMetaEvent('ViewContent', {
-      content_ids: [String(pid)],
-      content_name: data.product_name || data.product?.name || data.headline,
-      content_type: 'product',
-      value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId, eventId, lpId: data.id });
-  }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
-
-  const trackAddToCartClick = useCallback(() => {
-    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
-    const storeId = activeStore?.id || data?.store_id;
-    if (!pid || !storeId) return;
-    const currentPrice = Number(offers?.[selectedOfferIndex]?.price ?? data.price ?? data.product?.price ?? 0);
-    const currentQty = Number(offers?.[selectedOfferIndex]?.quantity ?? quantity ?? 1);
-    const eventId = `addtocart-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-    void trackMetaEvent('AddToCart', {
-      content_ids: [String(pid)],
-      content_name: data.product_name || data.product?.name || data.headline,
-      content_type: 'product',
-      value: currentPrice,
-      currency: 'DZD',
-      contents: [{ id: String(pid), quantity: currentQty }],
-    }, {
-      storeId,
-      lpId: data.id,
-      eventId,
-      value: currentPrice,
-      currency: 'DZD',
-      contents: [{ id: String(pid), quantity: currentQty }],
-    });
-  }, [data, activeStore?.id, offers, selectedOfferIndex, quantity]);
-
+  // Plafond de commande — même garde-fou que landing-page-renderer.tsx
+  // (bug confirmé : 20 en stock, commande passée à 21 via ce stepper de
+  // quantité). Le backend (reserve_stock) reste la source de vérité ;
+  // ceci n'est qu'un garde-fou côté client.
   const maxOrderableQuantity = (() => {
     const p = data.product as any;
     if (!p) return undefined;
@@ -197,12 +157,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     setQuantity(capped);
   }, [selectedOfferIndex, offers, maxOrderableQuantity]);
 
-  const isVarAvailable = (v: any) => {
-    if (!v) return false;
-    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-    return ((v.stock || 0) - (v.reserved || 0)) > 0;
-  };
-
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -229,11 +183,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
-            const mainVar = grouped[name]?.find(isVarAvailable) || grouped[name]?.[0];
+            const mainVar = grouped[name]?.[0];
             if (mainVar) {
               itemSelection[name] = mainVar;
               if (mainVar.sub_variants && mainVar.sub_variants.length > 0) {
-                const firstSub = mainVar.sub_variants.find(isVarAvailable) || mainVar.sub_variants[0];
+                const firstSub = mainVar.sub_variants[0];
                 itemSelection[firstSub.name] = firstSub;
               }
             }
@@ -300,7 +254,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         useCartStore.getState().clearCart();
         useCartStore.getState().addItem(
           { ...data.product, price: unitPrice, main_image: pImage, sku: (selectedVarWithImg as any)?.sku || (data.product as any).sku } as any,
-          qty, variantDetails, undefined, unitPrice, true
+          qty, variantDetails, undefined, unitPrice
         );
       }
       return;
@@ -328,7 +282,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       cartItems[0]?.customPrice === unitPrice;
     if (!isMatched) {
       useCartStore.getState().clearCart();
-      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice, true);
+      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
   }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, maxOrderableQuantity]);
 
@@ -390,7 +344,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           const rawInsetImgSrc = availableGallery.find((img: string) => img !== rawMainImgSrc) || (availableGallery.length > 1 ? availableGallery[0] : null);
           // 1600 preserves detail for the 2x zoom-on-hover interaction below —
           // capping too aggressively would make the zoomed view visibly soft.
-          const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 800);
+          const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 1600);
           const insetImgSrc = rawInsetImgSrc ? optimizeCloudinaryUrl(rawInsetImgSrc, 150) : null;
 
           return (
@@ -410,12 +364,9 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                 <img 
                   src={mainImgSrc} 
                   alt={productName || ''} 
-                  width={800}
-                  height={800}
-                  loading="eager"
+                  className="w-full h-auto transition-transform duration-100 ease-out" 
                   fetchPriority="high"
                   decoding="async"
-                  className="w-full h-auto transition-transform duration-100 ease-out" 
                   style={{
                     transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
                     transform: isZoomed ? 'scale(2)' : 'scale(1)'
@@ -427,7 +378,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                   <div className="absolute top-4 right-4 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-md border border-slate-200/50 select-none scale-90 sm:scale-100 origin-top-right">
                     <span className="text-sm font-bold text-slate-800">+</span>
                     <div className="size-10 sm:size-12 rounded-full overflow-hidden border border-slate-300">
-                      <img src={insetImgSrc} loading="lazy" decoding="async" className="size-full object-cover" alt="detail" />
+                      <img src={insetImgSrc} className="size-full object-cover" alt="detail" />
                     </div>
                   </div>
                 )}
@@ -478,7 +429,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     onClick={() => {
                       setSelectedActiveImage(item.url);
                       if (item.variant) {
-                        trackAddToCartClick();
                         const v = item.variant;
                         setSelectedVariants(prev => prev.map(itemSelection => {
                           const subSelection: Record<string, any> = { [v.name]: v };
@@ -502,8 +452,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     {item.url ? (
                       <img 
                         src={optimizeCloudinaryUrl(item.url, 100)} 
-                        loading="lazy"
-                        decoding="async"
                         className="size-full rounded-full object-cover" 
                         alt={item.label || 'Thumbnail'} 
                         onError={(e) => {
@@ -593,7 +541,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                      <div className="flex flex-wrap gap-2.5">
                                        {optionVariants.map((v: any, i: number) => {
                                          const isSelected = selectedVal === v.value;
-                                         const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                                         const isOutOfStock = ((v.stock || 0) - (v.reserved || 0)) <= 0;
                                          const colorHex = getVariantColor(v.value, v.color);
                                          const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -603,7 +551,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                              type="button"
                                              disabled={isOutOfStock}
                                              onClick={() => {
-                                               trackAddToCartClick();
                                                setSelectedVariants(prev => {
                                                  const next = [...prev];
                                                  const subSelection = {
@@ -637,7 +584,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                                colorHex ? (
                                                  <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                ) : v.image ? (
-                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} loading="lazy" decoding="async" alt={v.value} className="size-full object-cover rounded-full" />
+                                                 <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
                                                ) : (
                                                  <span className="text-[10px] font-bold text-slate-900">{v.value}</span>
                                                )
@@ -677,14 +624,13 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                          <div className="flex flex-wrap gap-2">
                                            {selectedMainVar.sub_variants.map((sv: any, i: number) => {
                                              const isSelected = selectedSubVal === sv.value;
-                                             const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
+                                             const isOutOfStock = ((sv.stock || 0) - (sv.reserved || 0)) <= 0;
                                              return (
                                                <button
                                                  key={`sub-${itemIndex}-${subName}-${sv.value || i}`}
                                                  type="button"
                                                  disabled={isOutOfStock}
                                                  onClick={() => {
-                                                   trackAddToCartClick();
                                                    setSelectedVariants(prev => {
                                                      const next = [...prev];
                                                      next[itemIndex] = {
@@ -753,8 +699,10 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     <div className="grid grid-cols-1 gap-2.5">
                       {offers.map((offer: any, idx: number) => {
                         const isSelected = selectedOfferIndex === idx;
+                        // Même garde-fou que landing-page-renderer.tsx : un
+                        // palier configuré admin (ex: "3 Pièces") ne
+                        // vérifiait jamais le stock réel disponible.
                         const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
-                        const isPopular = offer.popular || (offers.length > 1 && idx === 1);
                         return (
                           <button
                             key={idx}
@@ -762,13 +710,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                             disabled={offerExceedsStock}
                             onClick={() => {
                               if (offerExceedsStock) return;
-                              trackAddToCartClick();
                               setSelectedOfferIndex(idx);
                               setQuantity(offer.quantity);
                             }}
                           className={cn(
-                            "p-3.5 rounded-xl border-2 text-left transition-all relative flex items-center justify-between",
-                            isPopular && !isSelected && "border-amber-300 bg-amber-50/20",
+                            "p-3 rounded-lg border-2 text-left transition-all relative flex items-center justify-between",
                             offerExceedsStock
                               ? "opacity-40 cursor-not-allowed grayscale bg-white border-gray-200"
                               : isSelected
@@ -777,15 +723,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                           )}
                           style={!offerExceedsStock && isSelected ? { borderColor: primary, backgroundColor: `${primary}08` } : {}}
                         >
-                          {isPopular && !offerExceedsStock && (
-                            <span 
-                              className="absolute -top-2.5 right-3 text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-sm text-white tracking-wide"
-                              style={{ backgroundColor: primary }}
-                            >
-                              {dir === 'rtl' ? '⭐ العرض الأكثر طلباً' : '⭐ Le Plus Vendu'}
-                            </span>
-                          )}
-                          <div className="text-start">
+                          <div>
                             <span className="text-sm text-slate-900 font-bold">
                               {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                             </span>
@@ -811,25 +749,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                 )}
               </div>
 
-             {/* Trust & Reassurance Badges */}
-             <div className="grid grid-cols-3 gap-2 mb-6 p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-center shadow-xs">
-               <div className="flex flex-col items-center justify-center p-1">
-                 <ShieldCheck className="size-5 text-emerald-600 mb-1" />
-                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'ضمان 100%' : 'Garantie 100%'}</span>
-                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'منتج أصلي ومضمون' : 'Produit vérifié'}</span>
-               </div>
-               <div className="flex flex-col items-center justify-center p-1 border-x border-slate-200">
-                 <Package className="size-5 text-blue-600 mb-1" />
-                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'دفع بعد المعاينة' : 'Paiement à réception'}</span>
-                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'عاين قبل أن تدفع' : 'Après inspection'}</span>
-               </div>
-               <div className="flex flex-col items-center justify-center p-1">
-                 <Truck className="size-5 text-amber-600 mb-1" />
-                 <span className="text-[11px] font-black text-slate-800">{dir === 'rtl' ? 'توصيل 58 ولاية' : '58 Wilayas'}</span>
-                 <span className="text-[9px] text-slate-500 font-medium">{dir === 'rtl' ? 'سريع 24-48 ساعة' : 'Express 24-48h'}</span>
-               </div>
-             </div>
-
              {/* Checkout Form */}
              <div id="checkout-form-container">
                <div className="text-center mb-6 px-4">
@@ -838,7 +757,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                  </p>
                  <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                </div>
-               <CheckoutForm isInline={true} forceTemplate="dz_cod" initialDeliveryPartners={(data as any).delivery_partners} />
+               <CheckoutForm isInline={true} forceTemplate="dz_cod" />
              </div>
 
               {/* Publicity Banners (Multiple - Seamless Stack without gap) */}
@@ -850,9 +769,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                     {banners.map((url, i) => (
                       <img
                         key={i}
-                        src={optimizeCloudinaryUrl(url, 1000)}
-                        loading="lazy"
-                        decoding="async"
+                        src={optimizeCloudinaryUrl(url, 1600)}
                         alt={`Bannière publicitaire ${i + 1}`}
                         className="w-full h-auto block m-0 p-0"
                       />
@@ -867,24 +784,17 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
       </div>
 
       {/* Sticky Bottom CTA on Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/95 dark:bg-black/95 backdrop-blur-md border-t border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-3 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
-        <div className="flex flex-col text-start pl-2">
-          <span className="text-[10px] text-slate-500 font-bold uppercase">{dir === 'rtl' ? 'السعر' : 'Prix'}</span>
-          <span className="text-base font-black" style={{ color: primary }}>
-            {formatPrice(offers[selectedOfferIndex]?.price || (price ?? 0))}
-          </span>
-        </div>
+      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
         <button
           onClick={() => {
-            trackAddToCartClick();
             const el = document.getElementById('checkout-form-container');
             if (el) el.scrollIntoView({ behavior: 'smooth' });
           }}
-          className="flex-1 py-3.5 px-4 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
+          className="w-full py-3.5 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
           style={{ backgroundColor: primary }}
         >
           <Package className="size-4" />
-          <span>{dir === 'rtl' ? 'اضغط هنا للطلب' : 'Commander Maintenant'}</span>
+          <span>اضغط هنا للطلب</span>
         </button>
       </div>
 

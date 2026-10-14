@@ -40,31 +40,6 @@ interface CustomerInfo {
   deliveryType: DeliveryType;
 }
 
-// ─── Phone formatting and validation helpers ───────────────────
-function normalizePhone(p: string): string {
-  let digits = (p || '').replace(/\D/g, '');
-  if (digits.startsWith('213') && digits.length >= 11) {
-    digits = '0' + digits.substring(3);
-  } else if (digits.startsWith('00213') && digits.length >= 13) {
-    digits = '0' + digits.substring(5);
-  } else if (digits.length === 9 && ['5', '6', '7'].includes(digits[0])) {
-    digits = '0' + digits;
-  }
-  return digits;
-}
-
-function isFakeAlgerianPhone(p: string): boolean {
-  if (!p || p.length !== 10) return true;
-  const body = p.slice(2);
-  if (/^(.)\1{7}$/.test(body)) return true;
-  const fakeSequences = [
-    '0000000', '1111111', '2222222', '3333333', '4444444',
-    '5555555', '6666666', '7777777', '8888888', '9999999',
-    '12345678', '87654321', '01234567'
-  ];
-  return fakeSequences.some(seq => p.includes(seq));
-}
-
 // ─── Template theming helper ──────────────────────────────────
 function useCheckoutTheme(activeStore: any) {
   const _rawTpl = (activeStore?.template_id ?? activeStore?.theme_config?.templateId ?? 'clean') as string;
@@ -162,164 +137,6 @@ function formatAlgerianPhone(ph: string): string {
   return digits;
 }
 
-interface SearchableWilayaSelectProps {
-  value: string;
-  onChange: (wilayaName: string) => void;
-  isWilayaActive?: (wilayaName: string) => boolean;
-  dir: string;
-  T: any;
-  placeholder?: string;
-  error?: boolean;
-  onFocus?: () => void;
-}
-
-export function SearchableWilayaSelect({
-  value,
-  onChange,
-  isWilayaActive,
-  dir,
-  T,
-  placeholder = 'Sélectionnez la wilaya',
-  error,
-  onFocus,
-}: SearchableWilayaSelectProps) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const wilayasList = useMemo(() => {
-    return (WILAYAS as readonly string[]).map((name, idx) => ({
-      id: idx + 1,
-      code: String(idx + 1).padStart(2, '0'),
-      name,
-    }));
-  }, []);
-
-  const activeWilayas = useMemo(() => {
-    if (!isWilayaActive) return wilayasList;
-    return wilayasList.filter(w => isWilayaActive(w.name));
-  }, [wilayasList, isWilayaActive]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return activeWilayas;
-    const clean = (str: string) =>
-      str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    const s = clean(search);
-    return activeWilayas.filter(w =>
-      clean(w.name).includes(s) ||
-      w.code.includes(s) ||
-      String(w.id).includes(s)
-    );
-  }, [activeWilayas, search]);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const displayLabel = useMemo(() => {
-    if (!value) return '';
-    const idx = (WILAYAS as readonly string[]).indexOf(value);
-    if (idx >= 0) {
-      return `${String(idx + 1).padStart(2, '0')}. ${value}`;
-    }
-    return value;
-  }, [value]);
-
-  return (
-    <div ref={containerRef} className="relative w-full">
-      <button
-        type="button"
-        id="wilaya"
-        onClick={() => {
-          onFocus?.();
-          setOpen(prev => !prev);
-          setSearch('');
-        }}
-        className={cn(
-          "w-full flex items-center justify-between px-3 h-11 text-[16px] md:text-sm border-2 transition-all outline-none cursor-pointer",
-          error ? "border-red-500" : ""
-        )}
-        style={{
-          backgroundColor: T.inputBg,
-          borderColor: T.inputBorder,
-          color: value ? T.inputText : T.inputPlaceholder,
-          borderRadius: T.inputRadius,
-        }}
-      >
-        <span className="truncate">
-          {displayLabel || placeholder}
-        </span>
-        <span className="text-[10px] opacity-60">▼</span>
-      </button>
-
-      {open && (
-        <div
-          className="absolute z-50 mt-1 w-full left-0 right-0 border-2 rounded-xl shadow-xl max-h-64 overflow-hidden flex flex-col"
-          style={{
-            backgroundColor: T.cardBg || '#ffffff',
-            borderColor: T.cardBorder || T.inputBorder || '#e2e8f0',
-          }}
-        >
-          {/* Search bar */}
-          <div className="p-2 border-b flex items-center gap-2" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
-            <Search className="size-3.5 opacity-60 shrink-0" style={{ color: T.inputText }} />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder={dir === 'rtl' ? 'بحث عن ولاية أو رقم (مثال: 16 أو الجزائر)...' : 'Rechercher wilaya ou code (ex: 16 ou Alger)...'}
-              className="w-full bg-transparent text-[16px] md:text-xs border-none outline-none focus:ring-0 focus:outline-none"
-              style={{ color: T.inputText }}
-              autoFocus
-            />
-          </div>
-
-          {/* List */}
-          <div className="overflow-y-auto flex-1 max-h-52 py-1 scrollbar-thin">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
-                {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
-              </div>
-            ) : (
-              filtered.map(w => {
-                const isSelected = value === w.name;
-                return (
-                  <button
-                    key={w.id}
-                    type="button"
-                    onClick={() => {
-                      onChange(w.name);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "w-full text-left px-3 py-2.5 text-xs transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between cursor-pointer",
-                      isSelected ? "font-bold" : ""
-                    )}
-                    style={{
-                      color: T.inputText,
-                      backgroundColor: isSelected ? `${T.primary}12` : 'transparent',
-                      textAlign: dir === 'rtl' ? 'right' : 'left'
-                    }}
-                  >
-                    <span>{w.code}. {w.name}</span>
-                    {isSelected && <Check className="size-3.5" style={{ color: T.primary }} />}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface SearchableCommuneSelectProps {
   wilaya: string;
   value: string;
@@ -341,7 +158,6 @@ export function SearchableCommuneSelect({
 }: SearchableCommuneSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [isManualMode, setIsManualMode] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const communes = useMemo(() => {
@@ -379,47 +195,8 @@ export function SearchableCommuneSelect({
     return dir === 'rtl' ? `${match.name} (${match.nameAscii})` : match.nameAscii;
   }, [value, communes, dir]);
 
-  if (isManualMode) {
-    return (
-      <div className="space-y-1.5 w-full">
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            placeholder={dir === 'rtl' ? 'اكتب اسم بلديتك أو منطقتك...' : 'Saisissez votre commune ou localité...'}
-            className={cn(
-              "w-full px-3 h-11 text-[16px] md:text-sm border-2 transition-all outline-none",
-              error ? "border-red-500" : ""
-            )}
-            style={{
-              backgroundColor: T.inputBg,
-              borderColor: error ? '#ef4444' : T.inputBorder,
-              color: T.inputText,
-              borderRadius: T.inputRadius,
-              textAlign: dir === 'rtl' ? 'right' : 'left'
-            }}
-            autoFocus
-          />
-        </div>
-        <div className="flex items-center justify-between text-[11px] px-1">
-          <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
-            <span>📞</span> {dir === 'rtl' ? 'سيتم تأكيد العنوان بدقة هاتفياً' : 'Adresse confirmée par téléphone'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setIsManualMode(false)}
-            className="text-slate-500 hover:text-slate-700 underline text-[10px]"
-          >
-            {dir === 'rtl' ? 'الرجوع للقائمة' : 'Choisir dans la liste'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="relative w-full space-y-1">
+    <div ref={containerRef} className="relative w-full">
       <button
         type="button"
         onClick={() => {
@@ -429,13 +206,13 @@ export function SearchableCommuneSelect({
         }}
         disabled={!wilaya}
         className={cn(
-          "w-full flex items-center justify-between px-3 h-11 text-[16px] md:text-sm border-2 transition-all outline-none",
+          "w-full flex items-center justify-between px-3 h-11 text-sm border-2 transition-all outline-none",
           error ? "border-red-500" : "",
           !wilaya ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
         )}
         style={{
           backgroundColor: T.inputBg,
-          borderColor: error ? '#ef4444' : T.inputBorder,
+          borderColor: T.inputBorder,
           color: value ? T.inputText : T.inputPlaceholder,
           borderRadius: T.inputRadius,
         }}
@@ -449,16 +226,9 @@ export function SearchableCommuneSelect({
         <span className="text-[10px] opacity-60">▼</span>
       </button>
 
-      {/* Reassuring note if non-standard commune is chosen */}
-      {value && !communes.some(c => c.nameAscii.toLowerCase() === value.toLowerCase() || c.name.toLowerCase() === value.toLowerCase()) && (
-        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 px-1 font-medium flex items-center gap-1">
-          <span>📞</span> {dir === 'rtl' ? 'بلدية مخصصة — سيتم تأكيد العنوان هاتفياً' : 'Commune spécifique — adresse confirmée par téléphone'}
-        </p>
-      )}
-
       {open && wilaya && (
         <div 
-          className="absolute z-50 mt-1 w-full left-0 right-0 border-2 rounded-xl shadow-xl max-h-80 overflow-hidden flex flex-col"
+          className="absolute z-50 mt-1 w-full border-2 rounded-xl shadow-xl max-h-72 overflow-hidden flex flex-col"
           style={{
             backgroundColor: T.cardBg || '#ffffff',
             borderColor: T.cardBorder || T.inputBorder || '#e2e8f0',
@@ -471,18 +241,18 @@ export function SearchableCommuneSelect({
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={dir === 'rtl' ? 'ابحث أو اكتب اسم بلديتك...' : 'Rechercher ou taper votre commune...'}
-              className="w-full bg-transparent text-[16px] md:text-xs border-none outline-none focus:ring-0 focus:outline-none"
+              placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
+              className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
               style={{ color: T.inputText }}
               autoFocus
             />
           </div>
 
           {/* List */}
-          <div className="overflow-y-auto flex-1 max-h-52 py-1 scrollbar-thin">
+          <div className="overflow-y-auto flex-1 max-h-56 py-1 scrollbar-thin">
             {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-center opacity-60" style={{ color: T.inputText }}>
-                {dir === 'rtl' ? 'لم يتم العثور على البلدية في القائمة' : 'Commune non trouvée dans la liste'}
+              <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
+                {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
               </div>
             ) : (
               filtered.map(c => {
@@ -512,60 +282,13 @@ export function SearchableCommuneSelect({
               })
             )}
           </div>
-
-          {/* Fallback button when user types something custom */}
-          {search.trim().length >= 2 && (
-            <div className="p-2 border-t bg-slate-50 dark:bg-slate-900/50" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(search.trim());
-                  setOpen(false);
-                }}
-                className="w-full p-2 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 transition-all flex flex-col gap-0.5 text-left"
-                style={{ textAlign: dir === 'rtl' ? 'right' : 'left' }}
-              >
-                <div className="font-bold flex items-center gap-1.5">
-                  <span>✓</span>
-                  <span>{dir === 'rtl' ? `استخدام « ${search.trim()} »` : `Utiliser « ${search.trim()} »`}</span>
-                </div>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                  {dir === 'rtl' ? '📞 سيتم تأكيد العنوان بدقة عبر الهاتف' : '📞 Adresse exacte confirmée par téléphone'}
-                </span>
-              </button>
-            </div>
-          )}
-
-          {/* Toggle manual mode button */}
-          <div className="p-2 border-t flex justify-center" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setIsManualMode(true);
-              }}
-              className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline"
-            >
-              {dir === 'rtl' ? 'بلديتك غير موجودة؟ كتابة يدوية' : 'Ma commune n\'est pas listée ? Écrire manuellement'}
-            </button>
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function CheckoutForm({
-  isInline = false,
-  forceTemplate,
-  children,
-  initialDeliveryPartners,
-}: {
-  isInline?: boolean;
-  forceTemplate?: string;
-  children?: React.ReactNode;
-  initialDeliveryPartners?: any[];
-}) {
+export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
@@ -574,8 +297,6 @@ export function CheckoutForm({
   const clearCart = useCartStore((s) => s.clearCart);
   const { t, dir } = useTranslation();
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hasInitiatedRef = useRef(false);
   const submittingRef = useRef(false); // prevents double-submit on fast multi-click
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -600,10 +321,8 @@ export function CheckoutForm({
     wilaya: '', commune: '', address: '', deliveryType: 'HOME',
   });
 
-  const [availablePartners, setAvailablePartners] = useState<any[]>(() => initialDeliveryPartners || []);
-  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(() => {
-    return (initialDeliveryPartners && initialDeliveryPartners.length > 0) ? initialDeliveryPartners[0].id : null;
-  });
+  const [availablePartners, setAvailablePartners] = useState<any[]>([]);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
   const baseT = useCheckoutTheme(activeStore);
   const T = forceTemplate ? { ...baseT, tpl: forceTemplate } : baseT;
@@ -633,11 +352,17 @@ export function CheckoutForm({
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
-  const triggerInitiateCheckout = useCallback(() => {
-    if (hasInitiatedRef.current) return;
+  useEffect(() => {
     if (!items.length) return;
-    hasInitiatedRef.current = true;
-
+    // One event_id per real checkout ATTEMPT (see getOrCreateCheckoutAttemptId
+    // in meta-tracking.ts) — not per render, not per cart content, not per
+    // time window. This effect legitimately re-runs several times for the
+    // SAME attempt (delivery fee resolving async as the shopper picks a
+    // wilaya/commune/partner changes finalTotal each time), and reusing the
+    // attempt id means every one of those re-runs is a no-op past the first
+    // (trackMetaEvent's own sessionStorage dedup on event_id) — while a
+    // genuinely new attempt (new tab, or this tab reopened after being
+    // closed) gets a fresh id and fires again even with the identical cart.
     const attemptId = getOrCreateCheckoutAttemptId();
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
@@ -653,37 +378,6 @@ export function CheckoutForm({
   }, [finalTotal, items]);
 
   useEffect(() => {
-    if (hasInitiatedRef.current) return;
-
-    if (!isInline) {
-      triggerInitiateCheckout();
-      return;
-    }
-
-    if (!containerRef.current) return;
-
-    if (typeof IntersectionObserver !== 'undefined') {
-      const observer = new IntersectionObserver((entries) => {
-        const [entry] = entries;
-        if (entry && entry.isIntersecting) {
-          triggerInitiateCheckout();
-          observer.disconnect();
-        }
-      }, { threshold: 0.1, rootMargin: '100px' });
-
-      observer.observe(containerRef.current);
-      return () => observer.disconnect();
-    }
-  }, [isInline, triggerInitiateCheckout]);
-
-  useEffect(() => {
-    if (initialDeliveryPartners && initialDeliveryPartners.length > 0) {
-      setAvailablePartners(initialDeliveryPartners);
-      if (!selectedPartnerId) {
-        setSelectedPartnerId(initialDeliveryPartners[0].id);
-      }
-      return;
-    }
     if (!activeStore) return;
     const pIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
     fetch(`/api/v1/delivery-partners/availability?storeId=${activeStore.id}&productIds=${pIds}`)
@@ -696,112 +390,83 @@ export function CheckoutForm({
         }
       })
       .catch(() => setAvailablePartners([]));
-  }, [items, activeStore, initialDeliveryPartners, selectedPartnerId]);
+  }, [items, activeStore]);
 
   useEffect(() => {
-    if (!customerInfo.wilaya || !activeStore) {
-      setDeliveryFee(null);
-      return;
-    }
+    if (!customerInfo.wilaya || !activeStore || !selectedPartnerId) return;
     setDeliveryLoading(true);
     const productIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
-    const partnerParam = selectedPartnerId ? `&partnerId=${encodeURIComponent(selectedPartnerId)}` : '';
-    fetch(`/api/v1/delivery-partners/calculate?wilayaId=${encodeURIComponent(customerInfo.wilaya)}&storeId=${encodeURIComponent(activeStore.id)}&type=${customerInfo.deliveryType}&productIds=${productIds}${partnerParam}`)
+    fetch(`/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${customerInfo.wilaya}&type=${customerInfo.deliveryType}&productIds=${productIds}`)
       .then(r => r.json())
       .then((res: any) => {
-        const fee = res.success ? (res.data?.fee ?? res.fee) : null;
-        setDeliveryFee(typeof fee === 'number' ? fee : null);
+        const fee = res.success ? res.data?.fee : (res.fee ?? null);
+        setDeliveryFee(fee);
       })
-      .catch(() => {
-        setDeliveryFee(null);
-        try {
-          fetch('/api/v1/orders/checkout-diagnostic', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event: 'SHIPPING_CALCULATION_FAILED',
-              step: 'shipping_calculation',
-              reason: 'Échec réseau du calcul des frais de livraison',
-              error_code: 'CLIENT_NETWORK_ERROR',
-              wilaya: customerInfo.wilaya,
-              action_status: 'échouée'
-            })
-          }).catch(() => {});
-        } catch (_) {}
-      })
+      .catch(() => setDeliveryFee(null))
       .finally(() => setDeliveryLoading(false));
   }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, items]);
 
-  // Dedicated abandoned cart sync handler
-  const syncAbandonedCart = useCallback(async (forcedPhone?: string) => {
-    if (!activeStore || items.length === 0 || orderSuccess) return;
-
-    const rawPhone = forcedPhone ?? customerInfo.phone;
-    const phone = normalizePhone(rawPhone);
-    if (phone.length !== 10) return;
-
-    try {
-      const orderItems = items
-        .filter((item: CartItem) => item?.product)
-        .map((item: CartItem) => {
-          const vDetails: any = {};
-          if (item.selectedVariant) vDetails.variant = item.selectedVariant;
-          return {
-            product_id: item.product.id,
-            product_name: item.product.name,
-            quantity: item.quantity,
-            unit_price: item.product.price,
-            variant_details: Object.keys(vDetails).length > 0 ? vDetails : null,
-          };
-        });
-
-      if (orderItems.length === 0) return;
-
-      const payload = {
-        abandoned_cart_id: abandonedCartId,
-        store_id: activeStore.id,
-        customer_name: `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim() || 'Inconnu',
-        customer_phone: phone,
-        customer_phone2: customerInfo.phone2.trim() ? (normalizePhone(customerInfo.phone2) || customerInfo.phone2.trim()) : undefined,
-        customer_wilaya: customerInfo.wilaya || 'Alger',
-        customer_commune: customerInfo.commune.trim() || undefined,
-        customer_address: customerInfo.address.trim() || 'Inconnu',
-        delivery_type: customerInfo.deliveryType === 'OFFICE' ? 'stop_desk' : 'HOME',
-        items: orderItems,
-        subtotal: cartSubtotal,
-        delivery_fee: currentDeliveryFee,
-        carrier_id: selectedPartnerId,
-        total: finalTotal,
-        discount: discountAmount,
-        source: isInline ? 'landing_page' : 'storefront',
-        ...attributionPayload(),
-      };
-
-      const res = await fetch('/api/v1/orders/abandoned', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (res.ok && json.id) {
-        setAbandonedCartId(json.id);
-      }
-    } catch (err) {
-      // ignore errors for background tracking
-    }
-  }, [customerInfo, items, activeStore, cartSubtotal, finalTotal, abandonedCartId, orderSuccess, selectedPartnerId, currentDeliveryFee, discountAmount, isInline]);
-
-  // Track abandoned cart (debounced auto-save)
+  // Track abandoned cart
   useEffect(() => {
+    if (!activeStore || items.length === 0 || orderSuccess) return;
+    
+    // We only track abandoned carts if a valid phone number (exactly 10 digits) has been entered.
+    // This ensures every abandoned cart listed in the agent dashboard is actionable.
     const phone = normalizePhone(customerInfo.phone);
     if (phone.length !== 10) return;
 
-    const timeoutId = setTimeout(() => {
-      syncAbandonedCart();
-    }, 1200);
+    const timeoutId = setTimeout(async () => {
+      try {
+        const orderItems = items
+          .filter((item: CartItem) => item?.product)
+          .map((item: CartItem) => {
+            const vDetails: any = {};
+            if (item.selectedVariant) vDetails.variant = item.selectedVariant;
+            return {
+              product_id: item.product.id,
+              product_name: item.product.name,
+              quantity: item.quantity,
+              unit_price: item.product.price,
+              variant_details: Object.keys(vDetails).length > 0 ? vDetails : null,
+            };
+          });
+
+        const payload = {
+          abandoned_cart_id: abandonedCartId,
+          store_id: activeStore.id,
+          customer_name: `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`.trim() || 'Inconnu',
+          customer_phone: customerInfo.phone.trim() || 'Inconnu',
+          customer_phone2: customerInfo.phone2.trim() || undefined,
+          customer_wilaya: customerInfo.wilaya || 'Alger',
+          customer_commune: customerInfo.commune.trim() || undefined,
+          customer_address: customerInfo.address.trim() || 'Inconnu',
+          delivery_type: customerInfo.deliveryType === 'OFFICE' ? 'stop_desk' : 'HOME',
+          items: orderItems,
+          subtotal: cartSubtotal,
+          delivery_fee: currentDeliveryFee,
+          carrier_id: selectedPartnerId,
+          total: finalTotal,
+          discount: discountAmount,
+          source: isInline ? 'landing_page' : 'storefront',
+          ...attributionPayload(),
+        };
+
+        const res = await fetch('/api/v1/orders/abandoned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (res.ok && json.id) {
+          setAbandonedCartId(json.id);
+        }
+      } catch (err) {
+        // ignore errors for background tracking
+      }
+    }, 2000); // 2 seconds debounce
 
     return () => clearTimeout(timeoutId);
-  }, [customerInfo.phone, customerInfo.firstName, customerInfo.lastName, customerInfo.wilaya, customerInfo.commune, customerInfo.address, customerInfo.deliveryType, syncAbandonedCart]);
+  }, [customerInfo, items, activeStore, cartSubtotal, finalTotal, abandonedCartId, orderSuccess, selectedPartnerId]);
 
   const handleApplyPromo = useCallback(async () => {
     if (!promoCode.trim() || !activeStore) return;
@@ -835,6 +500,8 @@ export function CheckoutForm({
     finally { setPromoLoading(false); }
   }, [promoCode, activeStore, cartSubtotal]);
 
+  const normalizePhone = (p: string) => p.replace(/[\s\-\.]/g, '');
+
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
     const phone = normalizePhone(customerInfo.phone);
@@ -846,38 +513,12 @@ export function CheckoutForm({
     }
     if (!phone) e.phone = t('phoneRequired');
     else if (!/^0[5-7]\d{8}$/.test(phone)) e.phone = t('phoneInvalid');
-    else if (isFakeAlgerianPhone(phone)) e.phone = dir === 'rtl' ? 'يرجى إدخال رقم هاتف حقيقي وصحيح' : 'Numéro de téléphone invalide (numéro fictif détecté)';
-    if (!isInline && customerInfo.phone2.trim() && (!/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2)) || isFakeAlgerianPhone(normalizePhone(customerInfo.phone2)))) e.phone2 = t('phone2Invalid');
-    if (!customerInfo.wilaya) {
-      e.wilaya = t('wilayaRequired');
-    } else if (deliveryFee === null && !deliveryLoading) {
-      e.wilaya = dir === 'rtl' ? 'تعذر حساب مصاريف التوصيل لهذه الولاية، يرجى إعادة المحاولة' : 'Impossible de calculer les frais de livraison pour cette wilaya';
-    }
-    if (!customerInfo.commune.trim()) {
-      e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
-    } else if (customerInfo.commune.trim().length < 2) {
-      e.commune = dir === 'rtl' ? 'يرجى إدخال اسم بلدية صالح' : 'Veuillez saisir un nom de commune valide';
-    }
+    if (!isInline && customerInfo.phone2.trim() && !/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2))) e.phone2 = t('phone2Invalid');
+    if (!customerInfo.wilaya) e.wilaya = t('wilayaRequired');
+    if (!customerInfo.commune.trim()) e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
     if (!isInline && !customerInfo.address.trim()) e.address = t('addressRequired');
     setErrors(e);
-    const isValid = Object.keys(e).length === 0;
-    if (!isValid) {
-      try {
-        fetch('/api/v1/orders/checkout-diagnostic', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'VALIDATION_FAILED',
-            step: 'checkout_validation',
-            reason: `Validation formulaire échouée: ${Object.keys(e).join(', ')}`,
-            error_code: 'CLIENT_VALIDATION_ERROR',
-            wilaya: customerInfo.wilaya,
-            action_status: 'échouée'
-          })
-        }).catch(() => {});
-      } catch (_) {}
-    }
-    return isValid;
+    return Object.keys(e).length === 0;
   };
 
   const handleNext = async () => {
@@ -895,30 +536,7 @@ export function CheckoutForm({
 
   const handleSubmit = async () => {
     if (!activeStore || items.length === 0) return;
-    if (deliveryFee === null) {
-      setErrors({
-        general: dir === 'rtl'
-          ? 'تعذر تأكيد الطلب: لم يتم تحديد مصاريف التوصيل بعد. يرجى اختيار ولاية صالحة أو إعادة المحاولة.'
-          : 'Impossible de confirmer la commande : les frais de livraison ne sont pas encore calculés. Veuillez vérifier votre wilaya ou patienter.'
-      });
-      return;
-    }
-    if (submittingRef.current) {
-      try {
-        fetch('/api/v1/orders/checkout-diagnostic', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'REPEATED_SUBMISSION_BLOCKED',
-            step: 'checkout_submit',
-            reason: 'Double-clic détecté: soumission concurrente bloquée par submittingRef',
-            error_code: 'CONCURRENT_SUBMISSION_PREVENTED',
-            action_status: 'répétée'
-          })
-        }).catch(() => {});
-      } catch (_) {}
-      return; // block concurrent submissions
-    }
+    if (submittingRef.current) return; // block concurrent submissions
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -940,24 +558,22 @@ export function CheckoutForm({
             variant_details: Object.keys(vDetails).length > 0 ? vDetails : null,
           };
         });
-      const resolvedDeliveryFee = deliveryFee ?? 0;
-      const computedTotal = cartSubtotal - discountAmount + resolvedDeliveryFee;
       const payload = {
         store_id: activeStore.id,
         customer_name: isInline ? customerInfo.firstName.trim() : `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`,
-        customer_phone: normalizePhone(customerInfo.phone) || customerInfo.phone.trim(),
-        customer_phone2: !isInline && customerInfo.phone2.trim() ? (normalizePhone(customerInfo.phone2) || customerInfo.phone2.trim()) : undefined,
+        customer_phone: customerInfo.phone.trim(),
+        customer_phone2: !isInline && customerInfo.phone2.trim() ? customerInfo.phone2.trim() : undefined,
         customer_wilaya: customerInfo.wilaya,
         customer_commune: customerInfo.commune.trim() || undefined,
         customer_address: isInline ? (customerInfo.commune.trim() || customerInfo.wilaya) : customerInfo.address.trim(),
         delivery_type: customerInfo.deliveryType === 'OFFICE' ? 'stop_desk' : 'HOME',
         items: orderItems,
         subtotal: cartSubtotal,
-        delivery_fee: resolvedDeliveryFee,
+        delivery_fee: currentDeliveryFee,
         carrier_id: selectedPartnerId,
         source: isInline ? 'landing_page' : 'storefront',
         promo_code: appliedPromo?.code || undefined,
-        total: computedTotal,
+        total: finalTotal,
         discount: discountAmount,
         abandoned_cart_id: abandonedCartId,
         checkout_attempt_id: getOrCreateCheckoutAttemptId(),
@@ -1058,7 +674,7 @@ export function CheckoutForm({
   ];
 
   return (
-    <div ref={containerRef} style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
+    <div style={{ backgroundColor: isInline ? 'transparent' : T.pageBg }} className={isInline ? "" : "min-h-screen"} dir={dir}>
       <div className={isInline ? "w-full py-2" : "mx-auto max-w-2xl px-4 py-10 sm:px-6"}>
         {/* Title */}
         {T.tpl !== 'dz_cod' && !isInline && (
@@ -1090,11 +706,6 @@ export function CheckoutForm({
             color: ${T.inputText} !important;
             border-color: ${T.inputBorder} !important;
             border-radius: ${T.inputRadius} !important;
-          }
-          @media (max-width: 768px) {
-            .co-input, .co-select, select, input, button {
-              font-size: 16px !important;
-            }
           }
         `}</style>
 
@@ -1129,13 +740,8 @@ export function CheckoutForm({
                     <Phone className="size-3" /> {dir === 'rtl' ? 'رقم الهاتف' : t('phone')}
                   </label>
                   <Input id="phone" type="tel" placeholder={dir === 'rtl' ? '0555 12 34 56' : '0555 123 456'} value={customerInfo.phone}
-                    onFocus={triggerInitiateCheckout}
-                    onChange={e => {
-                      triggerInitiateCheckout();
-                      setCustomerInfo({ ...customerInfo, phone: e.target.value });
-                    }}
-                    onBlur={() => syncAbandonedCart()}
-                    className={`co-input text-[16px] md:text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                    onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                    className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                     dir="ltr" style={{ textAlign: 'left' }} />
                   {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                 </div>
@@ -1146,12 +752,8 @@ export function CheckoutForm({
                     <User className="size-3" /> {dir === 'rtl' ? 'الاسم الكامل' : t('fullName') || 'Nom Complet'}
                   </label>
                   <Input id="firstName" placeholder={dir === 'rtl' ? 'محمد بن علي' : 'Mohamed Benali'} value={customerInfo.firstName}
-                    onFocus={triggerInitiateCheckout}
-                    onChange={e => {
-                      triggerInitiateCheckout();
-                      setCustomerInfo({ ...customerInfo, firstName: e.target.value });
-                    }}
-                    className={`co-input text-[16px] md:text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
+                    onChange={e => setCustomerInfo({ ...customerInfo, firstName: e.target.value })}
+                    className={`co-input text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
                   {errors.firstName && <p className="text-[10px] text-red-400">{errors.firstName}</p>}
                 </div>
 
@@ -1160,16 +762,17 @@ export function CheckoutForm({
                   <label htmlFor="wilaya" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
                   </label>
-                  <SearchableWilayaSelect
-                    value={customerInfo.wilaya}
-                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
-                    isWilayaActive={isWilayaActive}
-                    dir={dir}
-                    T={T}
-                    placeholder={t('selectWilaya')}
-                    error={!!errors.wilaya}
-                    onFocus={triggerInitiateCheckout}
-                  />
+                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                      <SelectValue placeholder={t('selectWilaya')} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                      {WILAYAS.filter(isWilayaActive).map(w => (
+                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -1241,12 +844,8 @@ export function CheckoutForm({
                     <div key={f.id} className="space-y-1.5">
                       <label htmlFor={f.id} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: T.labelColor }}>{f.label}</label>
                       <Input id={f.id} placeholder={f.placeholder} value={customerInfo[f.key]}
-                        onFocus={triggerInitiateCheckout}
-                        onChange={e => {
-                          triggerInitiateCheckout();
-                          setCustomerInfo({ ...customerInfo, [f.key]: e.target.value });
-                        }}
-                        className={`co-input text-[16px] md:text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
+                        onChange={e => setCustomerInfo({ ...customerInfo, [f.key]: e.target.value })}
+                        className={`co-input text-sm h-11 ${f.err ? 'border-red-400!' : ''}`} />
                       {f.err && <p className="text-[10px] text-red-400">{f.err}</p>}
                     </div>
                   ))}
@@ -1259,13 +858,8 @@ export function CheckoutForm({
                       <Phone className="size-3" /> {t('phone')}
                     </label>
                     <Input id="phone" type="tel" placeholder="0555 123 456" value={customerInfo.phone}
-                      onFocus={triggerInitiateCheckout}
-                      onChange={e => {
-                        triggerInitiateCheckout();
-                        setCustomerInfo({ ...customerInfo, phone: e.target.value });
-                      }}
-                      onBlur={() => syncAbandonedCart()}
-                      className={`co-input text-[16px] md:text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                      onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                      className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                   </div>
@@ -1274,12 +868,8 @@ export function CheckoutForm({
                       {t('phone2')}
                     </label>
                     <Input id="phone2" type="tel" placeholder="0661 234 567" value={customerInfo.phone2}
-                      onFocus={triggerInitiateCheckout}
-                      onChange={e => {
-                        triggerInitiateCheckout();
-                        setCustomerInfo({ ...customerInfo, phone2: e.target.value });
-                      }}
-                      className={`co-input text-[16px] md:text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
+                      onChange={e => setCustomerInfo({ ...customerInfo, phone2: e.target.value })}
+                      className={`co-input text-sm h-11 font-mono ${errors.phone2 ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone2 && <p className="text-[10px] text-red-400">{errors.phone2}</p>}
                   </div>
@@ -1290,16 +880,17 @@ export function CheckoutForm({
                   <label htmlFor="wilaya" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {t('wilaya')}
                   </label>
-                  <SearchableWilayaSelect
-                    value={customerInfo.wilaya}
-                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
-                    isWilayaActive={isWilayaActive}
-                    dir={dir}
-                    T={T}
-                    placeholder={t('selectWilaya')}
-                    error={!!errors.wilaya}
-                    onFocus={triggerInitiateCheckout}
-                  />
+                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                      <SelectValue placeholder={t('selectWilaya')} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                      {WILAYAS.filter(isWilayaActive).map(w => (
+                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -1385,17 +976,7 @@ export function CheckoutForm({
                         <Truck className="size-3.5 text-emerald-500" /> {t('deliveryFeeEstimated')}
                       </span>
                       <span className="text-sm font-black" style={{ color: T.textPrimary }}>
-                        {deliveryLoading ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : deliveryFee !== null ? (
-                          deliveryFee === 0 ? (
-                            <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
-                          ) : (
-                            formatPrice(deliveryFee)
-                          )
-                        ) : (
-                          <span className="text-amber-500 text-xs font-semibold">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
-                        )}
+                        {deliveryLoading ? <Loader2 className="size-3.5 animate-spin" /> : `${formatPrice(currentDeliveryFee)}`}
                       </span>
                     </div>
                   )}
@@ -1452,14 +1033,8 @@ export function CheckoutForm({
                       {customerInfo.wilaya ? (
                         deliveryLoading ? (
                           <Loader2 className="size-3 animate-spin inline" />
-                        ) : deliveryFee !== null ? (
-                          deliveryFee === 0 ? (
-                            <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
-                          ) : (
-                            formatPrice(deliveryFee)
-                          )
                         ) : (
-                          <span className="text-amber-500 text-[10px] font-medium">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
+                          formatPrice(currentDeliveryFee)
                         )
                       ) : (
                         <span className="text-[10px] font-normal italic opacity-60">{t('selectWilaya') || 'Sélectionnez votre wilaya'}</span>
@@ -1474,9 +1049,7 @@ export function CheckoutForm({
                   )}
                   <div className="flex justify-between px-4 py-3 bg-slate-50/50" style={{ backgroundColor: T.summaryBg }}>
                     <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
-                    <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>
-                      {deliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
-                    </span>
+                    <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
                   </div>
                 </div>
               </div>
@@ -1564,26 +1137,16 @@ export function CheckoutForm({
             {/* Totaux */}
             <div className="border overflow-hidden" style={{ borderRadius: T.radius, borderColor: T.cardBorder }}>
               <div className="divide-y" style={{ borderColor: T.dividerColor }}>
-                <div className="flex justify-between px-4 py-3 text-sm" style={{ borderBottomColor: T.dividerColor }}>
-                  <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>{t('subtotal')}</span>
-                  <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(cartSubtotal)}</span>
-                </div>
-                <div className="flex justify-between px-4 py-3 text-sm" style={{ borderBottomColor: T.dividerColor }}>
-                  <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>
-                    <Truck className="size-3.5" /> {t('deliveryFee')}
-                  </span>
-                  <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>
-                    {deliveryFee !== null ? (
-                      deliveryFee === 0 ? (
-                        <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
-                      ) : (
-                        formatPrice(deliveryFee)
-                      )
-                    ) : (
-                      <span className="text-amber-500 text-xs font-semibold">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
-                    )}
-                  </span>
-                </div>
+                {[
+                  { label: t('subtotal'), value: cartSubtotal },
+                  { label: t('deliveryFee'), value: currentDeliveryFee, icon: <Truck className="size-3.5" /> },
+                ].map(row => (
+                  <div key={row.label} className="flex justify-between px-4 py-3 text-sm"
+                    style={{ borderBottomColor: T.dividerColor }}>
+                    <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>{row.icon}{row.label}</span>
+                    <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(row.value)}</span>
+                  </div>
+                ))}
                 {appliedPromo && discountAmount > 0 && (
                   <div className="flex justify-between px-4 py-3 text-sm" style={{ backgroundColor: 'rgba(52,211,153,0.06)' }}>
                     <span className="text-emerald-400 flex items-center gap-1.5"><Tag className="size-3.5" /> {appliedPromo.code}</span>
@@ -1592,9 +1155,7 @@ export function CheckoutForm({
                 )}
                 <div className="flex justify-between px-4 py-4" style={{ backgroundColor: T.summaryBg }}>
                   <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
-                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>
-                    {deliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
-                  </span>
+                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
                 </div>
               </div>
             </div>

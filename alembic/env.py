@@ -27,26 +27,9 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-def _get_target_database_url() -> str:
-    """Returns programmatic override URL (for isolated test databases) or settings.DATABASE_URL."""
-    env_override = os.getenv("ALEMBIC_DATABASE_URL")
-    if env_override and env_override.strip():
-        return env_override.strip()
-
-    attr_override = config.attributes.get("sqlalchemy_url")
-    if attr_override and attr_override.strip():
-        return attr_override.strip()
-
-    main_opt = config.get_main_option("sqlalchemy.url")
-    if main_opt and main_opt.strip() and main_opt != "postgresql://postgres:password@localhost:5444/azzougshop":
-        return main_opt.strip()
-
-    return settings.DATABASE_URL
-
-
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = _get_target_database_url()
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -59,9 +42,8 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    target_url = _get_target_database_url()
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = target_url
+    configuration["sqlalchemy.url"] = settings.DATABASE_URL
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -72,7 +54,7 @@ def run_migrations_online() -> None:
         # 🚀 Industrial Migration Safety: Prevent large schema locks from paralyzing tenant DBs
         # If Alembic can't get an exclusive lock in 3s, it fails fast instead of queueing up other queries.
         from sqlalchemy import text
-        if "sqlite" not in target_url:
+        if "sqlite" not in settings.DATABASE_URL:
             connection.execute(text("SET lock_timeout TO '3s';"))
             
         context.configure(

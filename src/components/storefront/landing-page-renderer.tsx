@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
   ShoppingBag, Check,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
@@ -148,7 +149,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
-  const lastAddToCartRef = useRef<number>(0);
 
   useEffect(() => {
     setMounted(true);
@@ -163,21 +163,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     captureAttribution();
   }, [setLocale]);
 
-  // Meta Pixel + CAPI ViewContent — distinct eventId per consultation action.
+  // Meta Pixel + CAPI ViewContent — once per landing page product. A stable
+  // eventId (not time-based) so meta-tracking.ts's own sessionStorage dedup
+  // catches a re-render/refresh instead of re-firing.
   useEffect(() => {
-    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
-    const storeId = activeStore?.id || data?.store_id;
-    if (!pid || !storeId) return;
+    const pid = data?.product?.id || (data as any)?.product_id;
+    if (!pid || !activeStore?.id) return;
+    // Remembered for the rest of this tab session so a later AddToCart/
+    // InitiateCheckout (cart-store.ts / checkout-form.tsx, neither of which
+    // knows the current LP) still attributes to this landing page in the
+    // /funnel/bottlenecks by_landing_page breakdown.
     setCurrentLpId(data.id);
-    const eventId = `viewcontent-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
       content_name: data.product_name || data.product?.name || data.headline,
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
-    }, { storeId, eventId, lpId: data.id });
+    }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.product?.id, data?.id, data?.store_id, activeStore?.id]);
+  }, [data?.product?.id, activeStore?.id]);
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -212,12 +216,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const isVarAvailable = (v: any) => {
-    if (!v) return false;
-    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-    return ((v.stock || 0) - (v.reserved || 0)) > 0;
-  };
-
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -245,11 +243,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
-            const mainVar = grouped[name]?.find(isVarAvailable) || grouped[name]?.[0];
+            const mainVar = grouped[name]?.[0];
             if (mainVar) {
               itemSelection[name] = mainVar;
               if (mainVar.sub_variants && mainVar.sub_variants.length > 0) {
-                const firstSub = mainVar.sub_variants.find(isVarAvailable) || mainVar.sub_variants[0];
+                const firstSub = mainVar.sub_variants[0];
                 itemSelection[firstSub.name] = firstSub;
               }
             }
@@ -262,7 +260,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   }, [data.product, data, quantity, selectedOfferIndex]);
 
   const handleSelectVariant = (variant: any) => {
-    trackAddToCartClick();
     if (variant.image) {
       setSelectedActiveImage(variant.image);
     }
@@ -272,7 +269,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           [variant.name]: variant
         };
         if (variant.sub_variants && variant.sub_variants.length > 0) {
-          const firstSub = variant.sub_variants.find(isVarAvailable) || variant.sub_variants[0];
+          const firstSub = variant.sub_variants[0];
           subSelection[firstSub.name] = firstSub;
         }
         return {
@@ -284,7 +281,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   };
 
   const handleSelectVariantForIndex = (variant: any, itemIndex: number) => {
-    trackAddToCartClick();
     if (itemIndex === 0 && variant.image) {
       setSelectedActiveImage(variant.image);
     }
@@ -294,7 +290,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         [variant.name]: variant
       };
       if (variant.sub_variants && variant.sub_variants.length > 0) {
-        const firstSub = variant.sub_variants.find(isVarAvailable) || variant.sub_variants[0];
+        const firstSub = variant.sub_variants[0];
         subSelection[firstSub.name] = firstSub;
       }
       next[itemIndex] = {
@@ -327,7 +323,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const variantWithImg = data.product?.variants?.find((v: any) => v.image && v.is_available !== false && v.out_of_stock !== true && v.is_active !== false) || data.product?.variants?.find((v: any) => v.image);
+  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
   const heroImage = variantWithImg?.image || data.product?.main_image || data.image_url;
   const price = data.product?.price ?? data.price ?? null;
   const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
@@ -365,7 +361,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       return available > 0 ? available : undefined;
     }
     const firstGroupName = variants[0]?.name;
-    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName && v.is_available !== false && v.out_of_stock !== true && v.is_active !== false);
+    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
     const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
     return total > 0 ? total : undefined;
   })();
@@ -419,7 +415,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         useCartStore.getState().clearCart();
         useCartStore.getState().addItem(
           { ...data.product, price: unitPrice, main_image: pImage, sku: (selectedVarWithImg as any)?.sku || (data.product as any).sku } as any,
-          qty, variantDetails, undefined, unitPrice, true
+          qty, variantDetails, undefined, unitPrice
         );
       }
       return;
@@ -445,34 +441,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       cartItems[0]?.customPrice === unitPrice;
     if (!isMatched) {
       useCartStore.getState().clearCart();
-      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice, true);
+      useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
   }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
-
-  const trackAddToCartClick = useCallback(() => {
-    const pid = data?.product?.id || (data as any)?.product_id || data?.id;
-    const storeId = activeStore?.id || data?.store_id;
-    if (!pid || !storeId) return;
-    const currentPrice = Number(currentOffer?.price ?? data.price ?? data.product?.price ?? 0);
-    const currentQty = Number(currentOffer?.quantity ?? quantity ?? 1);
-    const eventId = `addtocart-${pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-    void trackMetaEvent('AddToCart', {
-      content_ids: [String(pid)],
-      content_name: data.product_name || data.product?.name || data.headline,
-      content_type: 'product',
-      value: currentPrice,
-      currency: 'DZD',
-      contents: [{ id: String(pid), quantity: currentQty }],
-    }, {
-      storeId,
-      lpId: data.id,
-      eventId,
-      value: currentPrice,
-      currency: 'DZD',
-      contents: [{ id: String(pid), quantity: currentQty }],
-    });
-  }, [data, activeStore?.id, currentOffer, quantity]);
 
   if (!mounted) {
     return (
@@ -498,7 +469,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   };
 
   const handleOrder = () => {
-    trackAddToCartClick();
     scrollToSection('checkout-form-container');
   };
 
@@ -572,7 +542,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           {/* End Side: Action Button & Secure Badge */}
           <div className="flex items-center gap-3 z-10 shrink-0">
             <button 
-              onClick={() => { trackAddToCartClick(); scrollToSection('checkout-form-container'); }}
+              onClick={() => scrollToSection('checkout-form-container')}
               className="text-[11px] sm:text-xs font-black uppercase tracking-wider px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
               style={{ backgroundColor: primary }}
             >
@@ -643,16 +613,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {heroImage && (() => {
               const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
               const mainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
-              const optimizedHeroUrl = optimizeCloudinaryUrl(mainImgSrc, 600);
 
               return (
                 <div className="space-y-4 w-full">
-                  <link
-                    rel="preload"
-                    as="image"
-                    href={optimizedHeroUrl}
-                    {...({ fetchPriority: 'high' } as any)}
-                  />
                   <div 
                     className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"
                     onMouseMove={(e) => {
@@ -770,7 +733,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
-                  <CheckoutForm isInline={true} initialDeliveryPartners={(data as any).delivery_partners}>
+                  <CheckoutForm isInline={true}>
                     
                     {/* Variant Selector (One per product in pack) */}
                     {data.product?.variants && data.product.variants.length > 0 && (() => {
@@ -835,14 +798,15 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           <div className="flex flex-wrap gap-2.5">
                                           {optionVariants.map((v: any, i: number) => {
                                             const isSelected = selectedVal === v.value;
-                                            // Synchronisé sur le stock RÉEL restant et le statut de disponibilité manuel :
-                                            // si marqué indisponible ou si le stock est épuisé, l'option est grisée.
-                                            const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
-                                            const availableForValue = isForcedOut ? 0 : (v.stock || 0) - (v.reserved || 0);
+                                            // Synchronisé sur le stock RÉEL restant, pas juste "en rupture ou pas" :
+                                            // si 2 unités sont en stock et que 2 des N produits de la commande
+                                            // ont déjà choisi cette valeur, la 3e ne peut plus la choisir non
+                                            // plus, même si stock > 0 dans l'absolu.
+                                            const availableForValue = (v.stock || 0) - (v.reserved || 0);
                                             const selectedElsewhere = selectedVariants.reduce(
                                               (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
                                             );
-                                            const isOutOfStock = isForcedOut || (!isSelected && selectedElsewhere >= availableForValue);
+                                            const isOutOfStock = !isSelected && selectedElsewhere >= availableForValue;
                                             const colorHex = getVariantColor(v.value, v.color);
                                             const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -924,12 +888,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           >
                                             <option value="" disabled>{dir === 'rtl' ? 'اختر المقاس / الخيار' : 'Sélectionnez une option'}</option>
                                             {optionVariants.map((v, i) => {
-                                              const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
-                                              const availableForValue = isForcedOut ? 0 : (v.stock || 0) - (v.reserved || 0);
+                                              const availableForValue = (v.stock || 0) - (v.reserved || 0);
                                               const selectedElsewhere = selectedVariants.reduce(
                                                 (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
                                               );
-                                              const isOutOfStock = isForcedOut || (selectedVal !== v.value && selectedElsewhere >= availableForValue);
+                                              const isOutOfStock = selectedVal !== v.value && selectedElsewhere >= availableForValue;
                                               return (
                                                 <option key={`opt-${v.id || i}`} value={v.value} disabled={isOutOfStock} className={isDark ? "bg-neutral-900 text-white" : "bg-white text-slate-800"}>
                                                   {v.value} {isOutOfStock ? (dir === 'rtl' ? '(غير متوفر)' : '(Rupture)') : ''}
@@ -1017,7 +980,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               disabled={offerExceedsStock}
                               onClick={() => {
                                   if (offerExceedsStock) return;
-                                  trackAddToCartClick();
                                   setSelectedOfferIndex(idx);
                                   setQuantity(offer.quantity);
                               }}
@@ -1157,7 +1119,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       {/* Sticky Bottom CTA on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
         <button
-          onClick={() => { trackAddToCartClick(); scrollToSection('checkout-form-container'); }}
+          onClick={() => scrollToSection('checkout-form-container')}
           className="w-full py-3.5 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
           style={{ backgroundColor: primary }}
         >

@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
@@ -9,13 +9,6 @@ const geistSans = { variable: "--font-geist-sans" };
 const geistMono = { variable: "--font-geist-mono" };
 const inter = { variable: "--font-inter" };
 const outfit = { variable: "--font-outfit" };
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
 
 export const metadata: Metadata = {
   title: "Azzougshop",

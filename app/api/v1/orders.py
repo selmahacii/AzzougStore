@@ -80,20 +80,6 @@ def _carrier_stage_bucket(stage: Optional[str]) -> Optional[str]:
     return None
 
 
-def _normalize_phone_number(raw: Optional[str]) -> str:
-    if not raw:
-        return ""
-    import re
-    digits = re.sub(r"\D", "", str(raw))
-    if digits.startswith("213") and len(digits) >= 11:
-        digits = "0" + digits[3:]
-    elif digits.startswith("00213") and len(digits) >= 13:
-        digits = "0" + digits[5:]
-    elif len(digits) == 9 and digits[0] in ("5", "6", "7"):
-        digits = "0" + digits
-    return digits or str(raw).strip()
-
-
 # ─── RBAC helpers ────────────────────────────────────────────────────────────
 
 # Confirmatrice responsibility scope — UNION semantics, STRICT ISOLATION by
@@ -1910,14 +1896,7 @@ def update_abandoned_cart(
     # pg_advisory_xact_lock is transaction-scoped — it releases automatically
     # at commit/rollback, no manual unlock needed, and blocks concurrent
     # requests for the same (store, phone) until the first one finishes.
-    raw_p = (order_data.get("customer_phone") or "").strip()
-    clean_p = _normalize_phone_number(raw_p)
-    if clean_p and clean_p.lower() != "inconnu":
-        order_data["customer_phone"] = clean_p
-        _lock_phone = clean_p
-    else:
-        _lock_phone = raw_p
-
+    _lock_phone = (order_data.get("customer_phone") or "").strip()
     if _lock_phone and _lock_phone.lower() != "inconnu":
         from sqlalchemy import text as _sql_text
         db.execute(
@@ -1942,12 +1921,11 @@ def update_abandoned_cart(
         phone = (order_data.get("customer_phone") or "").strip()
         if phone and phone.lower() != "inconnu":
             _window_7d = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
-            phones_check = {phone, raw_p} if raw_p else {phone}
             db_order = (
                 db.query(Order)
                 .filter(
                     Order.store_id == order_in.store_id,
-                    Order.customer_phone.in_(phones_check),
+                    Order.customer_phone == phone,
                     Order.created_at >= _window_7d,
                     Order.is_deleted == False,
                     Order.status.notin_(["CANCELLED", "RETURNED"]),
@@ -2165,23 +2143,6 @@ def update_abandoned_cart(
     from app.core.logging import log_order_event
     log_order_event("DRAFT_PANIER_ABANDONNE", db_order, "Pré-saisie de téléphone ou panier abandonné capturé sur la landing page")
 
-    try:
-        from app.core.funnel_diagnostic import log_funnel_event, mask_phone
-        req_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-Id")
-        p_ids = [item.product_id for item in order_in.items if hasattr(item, "product_id")]
-        log_funnel_event(
-            "CHECKOUT_STARTED",
-            request_id=req_id,
-            store_id=order_in.store_id,
-            product_id=p_ids[0] if p_ids else None,
-            lp_id=getattr(order_in, "landing_page_id", None),
-            source=order_in.source,
-            has_attribution=bool(order_in.campaign_id or order_in.fbclid or order_in.fbp),
-            note=f"Panier abandonné capturé #{db_order.order_number} (téléphone: {mask_phone(db_order.customer_phone)})",
-        )
-    except Exception:
-        pass
-
     return {"success": True, "id": db_order.id, "message": "Panier abandonné sauvegardé"}
 
 
@@ -2196,10 +2157,6 @@ def create_order(
     Create a new order. No authentication required — guests can place orders.
     If a valid session cookie is present it is used for audit, but not required.
     """
-    import time
-    _start_order_time = time.monotonic()
-    _req_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-Id")
-
     items = [item.model_dump() for item in order_in.items]
     order_data = order_in.model_dump(exclude={"items", "abandoned_cart_id"})
     
@@ -2225,11 +2182,8 @@ def create_order(
         if order_in.abandoned_cart_id:
             existing = db.query(Order).filter(Order.id == order_in.abandoned_cart_id).first()
         if not existing and order_in.customer_phone:
-            raw_target_p = order_in.customer_phone.strip()
-            clean_target_p = _normalize_phone_number(raw_target_p)
-            phones_target = {raw_target_p, clean_target_p} if clean_target_p else {raw_target_p}
             existing = db.query(Order).filter(
-                Order.customer_phone.in_(phones_target),
+                Order.customer_phone == order_in.customer_phone,
                 or_(Order.is_abandoned_cart == True, Order.status == "ABANDONED"),
                 Order.is_deleted == False
             ).order_by(Order.created_at.desc()).first()
@@ -2321,85 +2275,35 @@ def create_order(
                     logger.warning(f"Failed to increment landing page orders count for upgraded cart: {lp_err}")
 
             # The customer just completed checkout THEMSELVES from an
-            # abandoned-cart link — this is a genuine order submission, so it must
-            # follow the store's Meta CAPI trigger policy (Lead for COD, Purchase for prepaid or ORDER_CREATED)
+            # abandoned-cart link — this is a genuine sale, exactly like a
+            # brand-new order, so it must fire Purchase CAPI exactly once
             if str(existing.status) != "MERGED":
                 try:
-                    from app.services.meta_capi import (
-                        _get_meta_config_cached,
-                        get_store_purchase_trigger,
-                        send_purchase_for_order,
-                        enqueue_purchase_for_order,
-                        send_lead_for_order,
-                        enqueue_lead_for_order,
-                    )
+                    from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
                     meta_cfg = _get_meta_config_cached(db, existing.store_id)
                     if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                         client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                         user_agent = request.headers.get("user-agent")
                         existing.client_ip = client_ip
                         existing.client_user_agent = user_agent
-
-                        trigger_mode = get_store_purchase_trigger(db, existing.store_id)
-                        is_prepaid = bool(
-                            getattr(existing, "shopify_financial_status", None) == "paid"
-                            or getattr(existing, "is_prepaid", False)
-                        )
-
-                        if is_prepaid or trigger_mode == "ORDER_CREATED":
-                            log_id = enqueue_purchase_for_order(db, existing)
-                            db.commit()
-                            if log_id:
-                                logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file pour panier récupéré prépayé/immédiat (%s)", existing.order_number)
-                                log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
-                                background_tasks.add_task(
-                                    send_purchase_for_order,
-                                    order_id=str(existing.id),
-                                    client_ip=client_ip,
-                                    user_agent=user_agent
-                                )
-                            else:
-                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
+                        log_id = enqueue_purchase_for_order(db, existing)
+                        db.commit()
+                        if log_id:
+                            logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente (Log ID: %s, Order: %s, Pixel: %s)", log_id, existing.order_number, meta_cfg.get("pixel_id"))
+                            log_order_event("ENVOI_META_CAPI_QUEUED", existing, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                            background_tasks.add_task(
+                                send_purchase_for_order,
+                                order_id=str(existing.id),
+                                client_ip=client_ip,
+                                user_agent=user_agent
+                            )
                         else:
-                            log_id = enqueue_lead_for_order(db, existing)
-                            db.commit()
-                            if log_id:
-                                logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file pour panier récupéré COD (%s, mode=%s)", existing.order_number, trigger_mode)
-                                log_order_event("ENVOI_META_LEAD_QUEUED", existing, f"Événement Lead CAPI ajouté à la file d'attente (mode: {trigger_mode})")
-                                background_tasks.add_task(
-                                    send_lead_for_order,
-                                    order_id=str(existing.id),
-                                    client_ip=client_ip,
-                                    user_agent=user_agent
-                                )
-                            else:
-                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
+                            logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", existing.order_number)
                     else:
                         logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", existing.store_id)
                 except Exception as capi_err:
                     db.rollback()
                     logger.warning(f"Failed to queue Meta CAPI event for recovered cart {existing.id}: {capi_err}")
-            try:
-                from app.core.funnel_diagnostic import log_checkout_diagnostic, mask_phone
-                log_checkout_diagnostic(
-                    "OK",
-                    "ORDER_CREATED",
-                    request_id=_req_id,
-                    step="order_creation",
-                    endpoint="/api/v1/orders/",
-                    http_status=201,
-                    duration_ms=(time.monotonic() - _start_order_time) * 1000,
-                    order_id=str(existing.id),
-                    order_number=str(existing.order_number),
-                    customer_phone_masked=mask_phone(existing.customer_phone),
-                    wilaya=existing.customer_wilaya,
-                    previous_step="checkout_started",
-                    expected_result="Commande créée / mise à niveau",
-                    actual_result="Commande créée avec succès (Upgrade Panier Abandonné -> Commande Normale)",
-                    action_classification="réussie",
-                )
-            except Exception:
-                pass
 
             return existing
 
@@ -2520,57 +2424,28 @@ def create_order(
                     from app.core.logging import log_order_event
                     log_order_event("COMMANDE_NORMALE_RECUE", _prev, "Commande validée directement par le client depuis le checkout (fenêtre 3-min)")
 
-                    # Trigger Meta Conversions API (CAPI) (Phase 3A.20 Quality Optimization)
+                    # Trigger Meta Conversions API (CAPI)
                     try:
-                        from app.services.meta_capi import (
-                            _get_meta_config_cached,
-                            get_store_purchase_trigger,
-                            send_purchase_for_order,
-                            enqueue_purchase_for_order,
-                            send_lead_for_order,
-                            enqueue_lead_for_order,
-                        )
+                        from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
                         meta_cfg = _get_meta_config_cached(db, _prev.store_id)
                         if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                             user_agent = request.headers.get("user-agent")
                             _prev.client_ip = client_ip
                             _prev.client_user_agent = user_agent
-
-                            trigger_mode = get_store_purchase_trigger(db, _prev.store_id)
-                            is_prepaid = bool(
-                                getattr(_prev, "shopify_financial_status", None) == "paid"
-                                or getattr(_prev, "is_prepaid", False)
-                            )
-
-                            if is_prepaid or trigger_mode == "ORDER_CREATED":
-                                log_id = enqueue_purchase_for_order(db, _prev)
-                                db.commit()
-                                if log_id:
-                                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour commande 3-min prépayée (%s)", _prev.order_number)
-                                    log_order_event("ENVOI_META_CAPI_QUEUED", _prev, "Événement Purchase CAPI ajouté à la file d'attente durable")
-                                    background_tasks.add_task(
-                                        send_purchase_for_order,
-                                        order_id=str(_prev.id),
-                                        client_ip=client_ip,
-                                        user_agent=user_agent
-                                    )
-                                else:
-                                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
+                            log_id = enqueue_purchase_for_order(db, _prev)
+                            db.commit()
+                            if log_id:
+                                logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour commande 3-min (Log ID: %s, Order: %s, Pixel: %s)", log_id, _prev.order_number, meta_cfg.get("pixel_id"))
+                                log_order_event("ENVOI_META_CAPI_QUEUED", _prev, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                                background_tasks.add_task(
+                                    send_purchase_for_order,
+                                    order_id=str(_prev.id),
+                                    client_ip=client_ip,
+                                    user_agent=user_agent
+                                )
                             else:
-                                log_id = enqueue_lead_for_order(db, _prev)
-                                db.commit()
-                                if log_id:
-                                    logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file pour commande 3-min (%s, mode=%s)", _prev.order_number, trigger_mode)
-                                    log_order_event("ENVOI_META_LEAD_QUEUED", _prev, f"Événement Lead CAPI ajouté à la file d'attente (mode: {trigger_mode})")
-                                    background_tasks.add_task(
-                                        send_lead_for_order,
-                                        order_id=str(_prev.id),
-                                        client_ip=client_ip,
-                                        user_agent=user_agent
-                                    )
-                                else:
-                                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
+                                logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", _prev.order_number)
                         else:
                             logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète pour la boutique %s", _prev.store_id)
                     except Exception as capi_err:
@@ -2581,27 +2456,6 @@ def create_order(
                         "Deduplicated submit: phone %s submitted within 3-min window → updated existing order %s (is_duplicate=False, CAPI queued)",
                         phone_digits, _prev.order_number,
                     )
-                    try:
-                        from app.core.funnel_diagnostic import log_checkout_diagnostic, mask_phone
-                        log_checkout_diagnostic(
-                            "OK",
-                            "ORDER_CREATED",
-                            request_id=_req_id,
-                            step="order_creation",
-                            endpoint="/api/v1/orders/",
-                            http_status=201,
-                            duration_ms=(time.monotonic() - _start_order_time) * 1000,
-                            order_id=str(_prev.id),
-                            order_number=str(_prev.order_number),
-                            customer_phone_masked=mask_phone(_prev.customer_phone),
-                            wilaya=_prev.customer_wilaya,
-                            previous_step="checkout_started",
-                            expected_result="Commande absorbée / dédupliquée",
-                            actual_result="Commande absorbée avec succès (Soumission répétée sous 3 min fusionnée)",
-                            action_classification="répétée",
-                        )
-                    except Exception:
-                        pass
                     return _prev
 
         is_upsell = order_data.get("is_upsell", False)
@@ -2685,157 +2539,45 @@ def create_order(
         else:
             logger.info("Order %s created by guest", order.order_number)
             
-        # Trigger Meta Conversions API (CAPI) on target_order if configured (Phase 3A.20 Quality Optimization):
-        # - Prepaid orders or stores in 'ORDER_CREATED' mode: enqueue and send Purchase immediately.
-        # - Normal COD orders (default 'DELIVERED' or 'CONFIRMED' mode): enqueue and send Lead immediately,
-        #   reserving Purchase for genuine confirmed/delivered sales to optimize Meta on customer quality.
+        # Trigger Meta Conversions API (CAPI) on target_order if configured — fully normalized
+        # user_data, retries, logging, and an event_id shared with the browser
+        # Pixel (purchase-{target_order.id}) so Meta deduplicates the two signals.
         try:
-            from app.services.meta_capi import (
-                _get_meta_config_cached,
-                get_store_purchase_trigger,
-                send_purchase_for_order,
-                enqueue_purchase_for_order,
-                send_lead_for_order,
-                enqueue_lead_for_order,
-            )
+            from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
             meta_cfg = _get_meta_config_cached(db, target_order.store_id)
             if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
                 client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 target_order.client_ip = client_ip
                 target_order.client_user_agent = user_agent
-
-                trigger_mode = get_store_purchase_trigger(db, target_order.store_id)
-                is_prepaid = bool(
-                    getattr(target_order, "shopify_financial_status", None) == "paid"
-                    or getattr(target_order, "is_prepaid", False)
-                )
-
-                if is_prepaid or trigger_mode == "ORDER_CREATED":
-                    log_id = enqueue_purchase_for_order(db, target_order)
-                    db.commit()
-                    if log_id:
-                        logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour commande prépayée/immédiate (%s)", target_order.order_number)
-                        from app.core.logging import log_order_event
-                        log_order_event("ENVOI_META_CAPI_QUEUED", target_order, "Événement Purchase CAPI ajouté à la file d'attente durable")
-                        background_tasks.add_task(
-                            send_purchase_for_order,
-                            order_id=str(target_order.id),
-                            client_ip=client_ip,
-                            user_agent=user_agent
-                        )
-                    else:
-                        logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
+                log_id = enqueue_purchase_for_order(db, target_order)
+                db.commit()
+                if log_id:
+                    logger.info("🟢 [META CAPI DIAGNOSTIC] Purchase CAPI mis en file d'attente pour nouvelle commande (Log ID: %s, Order: %s, Pixel: %s)", log_id, target_order.order_number, meta_cfg.get("pixel_id"))
+                    from app.core.logging import log_order_event
+                    log_order_event("ENVOI_META_CAPI_QUEUED", target_order, "Événement Purchase CAPI ajouté à la file d'attente durable")
+                    background_tasks.add_task(
+                        send_purchase_for_order,
+                        order_id=str(target_order.id),
+                        client_ip=client_ip,
+                        user_agent=user_agent
+                    )
                 else:
-                    log_id = enqueue_lead_for_order(db, target_order)
-                    db.commit()
-                    if log_id:
-                        logger.info("🟢 [META CAPI DIAGNOSTIC] Lead CAPI mis en file pour nouvelle commande COD (%s, mode=%s)", target_order.order_number, trigger_mode)
-                        from app.core.logging import log_order_event
-                        log_order_event("ENVOI_META_LEAD_QUEUED", target_order, f"Événement Lead CAPI ajouté à la file d'attente (mode: {trigger_mode})")
-                        background_tasks.add_task(
-                            send_lead_for_order,
-                            order_id=str(target_order.id),
-                            client_ip=client_ip,
-                            user_agent=user_agent
-                        )
-                    else:
-                        logger.info("ℹ️ [META CAPI DIAGNOSTIC] Lead CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
+                    logger.info("ℹ️ [META CAPI DIAGNOSTIC] Purchase CAPI déjà existant ou ignoré pour la commande %s", target_order.order_number)
             else:
                 logger.warning("⚠️ [META CAPI DIAGNOSTIC] Configuration Meta Ads absente ou incomplète (Pixel ID/Access Token manquant) pour la boutique %s", target_order.store_id)
         except Exception as capi_err:
             db.rollback()
             logger.warning(f"Failed to queue Meta CAPI event: {capi_err}")
 
-        try:
-            from app.core.funnel_diagnostic import log_checkout_diagnostic, mask_phone
-            log_checkout_diagnostic(
-                "OK",
-                "ORDER_CREATED",
-                request_id=_req_id,
-                step="order_creation",
-                endpoint="/api/v1/orders/",
-                http_status=201,
-                duration_ms=(time.monotonic() - _start_order_time) * 1000,
-                order_id=str(order.id),
-                order_number=str(order.order_number),
-                customer_phone_masked=mask_phone(order.customer_phone),
-                wilaya=order.customer_wilaya,
-                previous_step="checkout_started",
-                expected_result="Commande persistée en base",
-                actual_result="Nouvelle commande persistée avec succès",
-                action_classification="réussie",
-            )
-        except Exception:
-            pass
-
         return order
     except Exception as e:
         db.rollback()
         logger.error(f"Error creating order: {e}", exc_info=True)
         from app.core.exceptions import InsufficientStockError, ProductNotFoundError
-        http_st = 400 if isinstance(e, (InsufficientStockError, ProductNotFoundError, ValueError)) else 500
-        err_code = "INSUFFICIENT_STOCK" if isinstance(e, InsufficientStockError) else ("PRODUCT_NOT_FOUND" if isinstance(e, ProductNotFoundError) else "ORDER_CREATION_FAILED")
-        try:
-            from app.core.funnel_diagnostic import log_checkout_diagnostic, mask_phone
-            log_checkout_diagnostic(
-                "ERROR",
-                "ORDER_CREATION_FAILED",
-                request_id=_req_id,
-                step="order_creation",
-                endpoint="/api/v1/orders/",
-                http_status=http_st,
-                error_code=err_code,
-                duration_ms=(time.monotonic() - _start_order_time) * 1000,
-                reason=str(e),
-                previous_step="checkout_started",
-                expected_result="Commande persistée en base",
-                actual_result=f"Échec de création ({type(e).__name__}): {e}",
-                recovery_action="Vérifier la validité des articles, du stock et de la boutique",
-                customer_phone_masked=mask_phone(order_data.get("customer_phone")),
-                wilaya=order_data.get("customer_wilaya"),
-                action_classification="échouée",
-            )
-        except Exception:
-            pass
         if isinstance(e, (InsufficientStockError, ProductNotFoundError, ValueError)):
             raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/checkout-diagnostic", response_model=dict)
-def receive_checkout_diagnostic(
-    diagnostic_in: dict = Body(...),
-    request: Request = None,
-):
-    """
-    Receives frontend telemetry for checkout errors (validation failures, shipping calculation errors,
-    network timeouts, repeated clicks) and emits structured diagnostic logs in real time.
-    """
-    from app.core.funnel_diagnostic import log_checkout_diagnostic, mask_phone
-    req_id = getattr(request.state, "request_id", None) if request else None
-    req_id = req_id or diagnostic_in.get("request_id")
-    event_type = diagnostic_in.get("event") or "VALIDATION_FAILED"
-    level = "WARN" if "FAILED" in event_type or "BLOCKED" in event_type else "INFO"
-    log_checkout_diagnostic(
-        level=level,
-        event_type=event_type,
-        request_id=req_id,
-        step=diagnostic_in.get("step") or "checkout_form",
-        endpoint=diagnostic_in.get("endpoint") or "/checkout",
-        http_status=diagnostic_in.get("http_status"),
-        error_code=diagnostic_in.get("error_code") or event_type,
-        duration_ms=diagnostic_in.get("duration_ms"),
-        reason=diagnostic_in.get("reason"),
-        previous_step=diagnostic_in.get("previous_step"),
-        expected_result=diagnostic_in.get("expected_result"),
-        actual_result=diagnostic_in.get("actual_result"),
-        recovery_action=diagnostic_in.get("recovery_action"),
-        customer_phone_masked=mask_phone(diagnostic_in.get("phone")),
-        wilaya=diagnostic_in.get("wilaya"),
-        action_classification=diagnostic_in.get("action_status") or "échouée",
-    )
-    return {"success": True}
 
 
 # ─── Commissions confirmatrice / livreur ────────────────────────────────────

@@ -64,8 +64,3 @@ venv/
 backend/venv/
 *.egg-info/
 .pytest_cache/
-
-# Database dumps & scratch artifacts
-*.dump
-scratch/
-bun.lock

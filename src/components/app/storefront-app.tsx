@@ -16,6 +16,7 @@ import { WishlistView } from '@/components/storefront/wishlist-view';
 import { StorefrontFooter } from './storefront-footer';
 
 import { HomeSections } from '@/components/storefront/home-sections';
+import { VisitorCapture } from '@/components/storefront/visitor-capture';
 import { LandingPage } from '@/components/storefront/landing-page';
 
 export function StorefrontApp() {
@@ -89,6 +90,7 @@ export function StorefrontApp() {
       </main>
       <StorefrontFooter />
       <CartDrawer />
+      <VisitorCapture />
     </div>
   );
 }

@@ -53,8 +53,6 @@ import hashlib
 import ipaddress
 import logging
 import os
-
-logger = logging.getLogger(__name__)
 import random
 import re
 import socket
@@ -71,8 +69,9 @@ from httpcore._backends.sync import SyncStream as _BaseSyncStream
 from sqlalchemy.orm import Session
 from app.core.config import settings as _settings
 
-META_CAPI_GRAPH_VERSION = os.getenv("META_CAPI_GRAPH_VERSION", "v21.0")
-GRAPH_VERSION = META_CAPI_GRAPH_VERSION
+logger = logging.getLogger("app.meta_capi")
+
+GRAPH_VERSION = "v21.0"
 
 # The durable-queue rework (BackgroundTasks -> queued/processing/retry rows
 # written BEFORE the network call, dedup constraint, EMQ fixes) went live
@@ -112,45 +111,33 @@ def _get_meta_config_cached(db: Session, store_id: str) -> Optional[Dict[str, An
         return cached[0]
 
     config = db.query(MetaAdsConfig).filter(MetaAdsConfig.store_id == store_id).first()
-    pix = config.pixel_id if config else None
-    tok = config.access_token if config else None
-    curr = config.currency if config else "DZD"
-    rate = config.exchange_rate if config else 1.0
-
-    # Fallback to Store.marketing_config if missing or undecrypted Fernet ciphertext
-    is_bad_cipher = isinstance(tok, str) and tok.startswith("gAAAAAB") and len(tok) > 100
-    if not pix or not tok or is_bad_cipher:
+    if not config or not config.pixel_id or not config.access_token:
         from app.models.store import Store
         store = db.query(Store).filter(Store.id == store_id).first()
         m_cfg = (store.marketing_config or {}) if store else {}
-        pix = pix or m_cfg.get("meta_pixel_id") or m_cfg.get("pixel_id") or m_cfg.get("facebook_pixel_id")
-        if not tok or is_bad_cipher:
-            tok = m_cfg.get("meta_access_token") or m_cfg.get("access_token") or m_cfg.get("fb_access_token")
-        curr = curr or m_cfg.get("account_currency") or m_cfg.get("currency") or "DZD"
-        rate = rate or float(m_cfg.get("exchange_rate") or 1.0)
+        pix = m_cfg.get("meta_pixel_id") or m_cfg.get("pixel_id")
+        tok = m_cfg.get("meta_access_token") or m_cfg.get("access_token") or m_cfg.get("fb_access_token")
+        if pix and tok:
+            snapshot = {
+                "pixel_id": str(pix),
+                "access_token": str(tok),
+                "currency": m_cfg.get("account_currency") or m_cfg.get("currency") or "DZD",
+                "exchange_rate": float(m_cfg.get("exchange_rate") or 1.0),
+            }
+            _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
+            return snapshot
+        if not config:
+            _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
+            return None
 
-    # Fallback to environment variables
-    is_bad_cipher = isinstance(tok, str) and tok.startswith("gAAAAAB") and len(tok) > 100
-    if not pix or not tok or is_bad_cipher:
-        env_pix = os.getenv("META_PIXEL_ID") or os.getenv("FACEBOOK_PIXEL_ID")
-        env_tok = os.getenv("META_ACCESS_TOKEN") or os.getenv("META_CAPI_ACCESS_TOKEN") or os.getenv("FACEBOOK_ACCESS_TOKEN")
-        if env_pix:
-            pix = pix or env_pix
-        if env_tok and (not tok or is_bad_cipher):
-            tok = env_tok
-
-    if pix and tok and not (isinstance(tok, str) and tok.startswith("gAAAAAB") and len(tok) > 100):
-        snapshot = {
-            "pixel_id": str(pix).strip(),
-            "access_token": str(tok).strip(),
-            "currency": curr or "DZD",
-            "exchange_rate": float(rate or 1.0),
-        }
-        _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
-        return snapshot
-
-    _META_CONFIG_CACHE[store_id] = (None, time.monotonic() + _META_CONFIG_CACHE_TTL)
-    return None
+    snapshot = {
+        "pixel_id": config.pixel_id,
+        "access_token": config.access_token,
+        "currency": config.currency,
+        "exchange_rate": config.exchange_rate,
+    }
+    _META_CONFIG_CACHE[store_id] = (snapshot, time.monotonic() + _META_CONFIG_CACHE_TTL)
+    return snapshot
 
 # Immediate retries (within the same request, e.g. during order creation's
 # background task) — short-lived, for blips that resolve in seconds.
@@ -764,11 +751,6 @@ def purchase_event_id(order_id: str) -> str:
     return f"purchase-{order_id}"
 
 
-def lead_event_id(order_id: str) -> str:
-    """Deterministic, shared event_id for the checkout lead submission."""
-    return f"lead-{order_id}"
-
-
 def resolve_client_context(order, client_ip: Optional[str], user_agent: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """
     Repli sur les valeurs capturées à la création de la commande
@@ -786,93 +768,6 @@ def resolve_client_context(order, client_ip: Optional[str], user_agent: Optional
     )
 
 
-def _dt_to_meta_event_time(dt: Optional[datetime], default_ts: int) -> int:
-    """
-    Convert a model datetime to an epoch timestamp strictly valid for Meta CAPI:
-    - If dt is timezone-aware, convert directly.
-    - If dt is naive, check if treating it as UTC places it in the future (common when
-      Postgres runs with local timezone). If so, treat it as local system time.
-    - Never in the future (clamp to current epoch time).
-    - Never older than 7 days (clamp to current epoch time to avoid Meta CAPI rejection).
-    """
-    now = int(time.time())
-    if not dt:
-        return min(default_ts, now)
-
-    try:
-        if dt.tzinfo is not None:
-            ts = int(dt.timestamp())
-        else:
-            ts_utc = int(dt.replace(tzinfo=timezone.utc).timestamp())
-            if ts_utc > now:
-                ts = int(dt.timestamp())
-            else:
-                ts = ts_utc
-    except Exception:
-        ts = default_ts
-
-    if ts > now:
-        ts = now
-    if now - ts > (_EVENT_TIME_MAX_AGE_DAYS * 86400):
-        ts = now
-    return ts
-
-
-def build_lead_event(
-    order, *, client_ip: Optional[str], user_agent: Optional[str],
-    ad_currency: str = "DZD", exchange_rate: float = 1.0,
-) -> Dict[str, Any]:
-    """
-    Full Graph-compliant Lead event for initial checkout submission (COD).
-    Signals intent without falsely counting as completed revenue before confirmation/delivery.
-    """
-    items = list(order.items or [])
-    contents = [
-        {"id": str(i.product_id), "quantity": int(i.quantity or 1),
-         "item_price": float(i.unit_price or 0)}
-        for i in items
-    ]
-    reference_dt = getattr(order, "created_at", None)
-    now_ts = int(time.time())
-    event_time = _dt_to_meta_event_time(reference_dt, now_ts)
-
-    event: Dict[str, Any] = {
-        "event_name": "Lead",
-        "event_time": event_time,
-        "event_id": lead_event_id(str(order.order_number or order.id)),
-        "action_source": "website",
-        "user_data": build_user_data(
-            email=getattr(order, "customer_email", None),
-            phone=getattr(order, "customer_phone", None),
-            full_name=getattr(order, "customer_name", None),
-            city=getattr(order, "customer_commune", None),
-            state=getattr(order, "customer_wilaya", None),
-            external_id=getattr(order, "customer_phone", None) or str(getattr(order, "id", "")),
-            client_ip=client_ip,
-            user_agent=user_agent,
-            fbp=getattr(order, "fbp", None),
-            fbc=getattr(order, "fbc", None),
-            fbclid=getattr(order, "fbclid", None),
-            fbc_reference_time=float(event_time),
-        ),
-        "custom_data": {
-            "value": round(float(order.total or 0), 2),
-            "currency": str(getattr(order, "currency", None) or "DZD").upper(),
-            "content_name": "Commande Soumise (COD)",
-            "content_category": "COD Checkout",
-            "content_type": "product",
-            "content_ids": [str(i.product_id) for i in items],
-            "contents": contents,
-            "num_items": sum(int(i.quantity or 1) for i in items),
-            "order_id": str(order.order_number),
-        },
-    }
-    source_url = getattr(order, "event_source_url", None)
-    if source_url:
-        event["event_source_url"] = source_url
-    return event
-
-
 def build_purchase_event(
     order, *, client_ip: Optional[str], user_agent: Optional[str],
     ad_currency: str = "DZD", exchange_rate: float = 1.0,
@@ -880,14 +775,16 @@ def build_purchase_event(
     """
     Full Graph-compliant Purchase event from an Order ORM object.
 
-    Contrat monétaire normalisé :
-    Le modèle métier est une commande e-commerce enregistrée en DZD (COD Algérie).
-    `custom_data.value` et `custom_data.currency` représentent strictement le montant transactionnel
-    réel enregistré sur la commande (`order.total` en DZD, incluant les frais de livraison et déduisant les remises).
-    La valeur de la commande n'est pas convertie vers la devise de facturation du compte publicitaire (USD/EUR) :
-    Meta Conversions API supporte nativement le DZD (ISO 4217), et Meta Ads Manager applique automatiquement
-    ses taux de change quotidiens pour calculer le ROAS dans la devise du compte publicitaire.
-    La conversion monétaire des dépenses (USD -> DZD) est réservée au module distinct de reporting/stats de l'ERP.
+    ad_currency/exchange_rate: the store's OWN meta_ads_configs.currency and
+    exchange_rate (DZD per 1 unit of that currency, same convention as
+    get_conversion_rate in meta_ads.py). order.total is always stored in
+    DZD — sending "DZD" unconditionally to an ad account actually configured
+    in USD/EUR (verified: azconfort's ad account currency is USD) is a real
+    mismatch, and matches the exact pixel/account (456734346750846) where
+    Meta Pixel logged "Parameter 'currency' is invalid for event 'Purchase'"
+    in a live test. Converting to the account's own currency, the same way
+    campaign spend is already converted elsewhere in this codebase, sends
+    Meta a currency it actually expects for that account.
     """
     items = list(order.items or [])
     contents = [
@@ -895,18 +792,20 @@ def build_purchase_event(
          "item_price": float(i.unit_price or 0)}
         for i in items
     ]
-    # event_time DOIT être le moment réel de l'achat : pour une commande livrée (DELIVERED),
-    # c'est l'encaissement effectif ; pour une commande prépayée, c'est la création.
-    # En cas de commande plus ancienne que 7 jours, clampé à l'heure actuelle pour respecter
-    # la fenêtre de validité stricte de Meta sans rejet.
-    now_ts = int(time.time())
+    # event_time DOIT être le moment réel de l'achat, jamais l'heure d'envoi
+    # — c'était int(time.time()) avant ce correctif, ce qui rapportait à Meta
+    # "cette conversion vient d'avoir lieu" même pour un backfill vieux de
+    # plusieurs semaines. Contraire à la doc officielle Conversions API
+    # (Meta accepte event_time jusqu'à 7 jours dans le passé et attend
+    # explicitement l'heure réelle de la conversion, pas l'heure d'envoi —
+    # https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
+    # : "event_time... This is important to help Facebook determine the
+    # optimal conversion window for your event"). Un envoi hors de cette
+    # fenêtre de 7 jours sera rejeté par Meta — c'est le comportement voulu
+    # (voir _handle_claimed_row : erreur non-retryable classée "failed",
+    # jamais masquée en réutilisant l'heure actuelle).
     reference_dt = getattr(order, "created_at", None)
-    if str(getattr(order, "status", "")) == "DELIVERED":
-        delivery_dt = getattr(order, "delivered_at", None) or getattr(order, "updated_at", None) or reference_dt
-        event_time = _dt_to_meta_event_time(delivery_dt, now_ts)
-    else:
-        event_time = _dt_to_meta_event_time(reference_dt, now_ts)
-
+    event_time = int(reference_dt.replace(tzinfo=timezone.utc).timestamp()) if reference_dt else int(time.time())
     event: Dict[str, Any] = {
         "event_name": "Purchase",
         "event_time": event_time,
@@ -920,11 +819,11 @@ def build_purchase_event(
         "action_source": "website",
         "user_data": build_user_data(
             email=getattr(order, "customer_email", None),
-            phone=getattr(order, "customer_phone", None),
-            full_name=getattr(order, "customer_name", None),
-            city=getattr(order, "customer_commune", None),
-            state=getattr(order, "customer_wilaya", None),
-            external_id=getattr(order, "customer_phone", None) or str(getattr(order, "id", "")),
+            phone=order.customer_phone,
+            full_name=order.customer_name,
+            city=order.customer_commune,
+            state=order.customer_wilaya,
+            external_id=order.customer_phone or str(order.id),
             client_ip=client_ip,
             user_agent=user_agent,
             fbp=getattr(order, "fbp", None),
@@ -936,12 +835,8 @@ def build_purchase_event(
             fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
-            # Le modèle métier est une commande e-commerce enregistrée en DZD.
-            # value et currency représentent fidèlement le même montant transactionnel (order.total en DZD).
-            # On ne convertit pas la commande vers la devise de facturation du compte publicitaire :
-            # Meta CAPI supporte DZD nativement et Ads Manager assure la conversion multi-devises.
-            "value": round(float(order.total or 0), 2),
-            "currency": str(getattr(order, "currency", None) or "DZD").upper(),
+            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
+            "currency": (ad_currency or "DZD").upper(),
             "content_type": "product",
             "content_ids": [str(i.product_id) for i in items],
             "contents": contents,
@@ -2816,34 +2711,21 @@ def enqueue_purchase_for_order(db: Session, order) -> Optional[str]:
         return None
 
     log_id = str(uuid.uuid4())
-    ev_id = purchase_event_id(str(order.order_number or order.id))
     db.add(MetaCapiLog(
         id=log_id,
         store_id=str(order.store_id),
         order_id=str(order.id),
         event_name="Purchase",
-        event_id=ev_id,
+        event_id=purchase_event_id(str(order.order_number or order.id)),
         status="queued",
         retry_count=0,
     ))
-    try:
-        from app.core.funnel_diagnostic import log_meta_capi_event
-        log_meta_capi_event(
-            "INFO",
-            "PURCHASE_QUEUED",
-            order_id=str(order.id),
-            order_number=str(getattr(order, "order_number", "—")),
-            event_id=ev_id,
-            action_classification="réussie",
-        )
-    except Exception:
-        pass
     return log_id
 
 
-def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -> "Optional[Any]":
+def _claim_queue_row(db: Session, order_id: str) -> "Optional[Any]":
     """
-    Atomically claims the row for this order & event_name: queued/retry ->
+    Atomically claims the Purchase row for this order: queued/retry ->
     processing, in a single UPDATE ... WHERE status IN (...) statement.
     Returns the claimed row (already committed as 'processing') if THIS
     call won the claim, or None if it's already being handled (by another
@@ -2857,7 +2739,7 @@ def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     result = db.execute(
         sa_update(MetaCapiLog.__table__)
-        .where(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == event_name,
+        .where(MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
                MetaCapiLog.status.in_(("queued", "retry")))
         .values(status="processing", processing_started_at=now, processing_worker=_worker_id())
     )
@@ -2865,254 +2747,8 @@ def _claim_queue_row(db: Session, order_id: str, event_name: str = "Purchase") -
     if result.rowcount != 1:
         return None
     return db.query(MetaCapiLog).filter(
-        MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == event_name,
+        MetaCapiLog.order_id == order_id, MetaCapiLog.event_name == "Purchase",
     ).first()
-
-
-def enqueue_lead_for_order(db: Session, order) -> Optional[str]:
-    """
-    Durable-queue entry point for checkout Lead events.
-    Enforces idempotency (at most one Lead row per order).
-    """
-    from app.models.marketing import MetaCapiLog
-
-    if str(getattr(order, "status", "")) == "MERGED":
-        logger.info("[MetaCAPI] skip lead enqueue: order=%s is MERGED", order.id)
-        return None
-
-    existing = (
-        db.query(MetaCapiLog.id)
-        .filter(MetaCapiLog.order_id == str(order.id), MetaCapiLog.event_name == "Lead")
-        .first()
-    )
-    if existing:
-        return None
-
-    log_id = str(uuid.uuid4())
-    ev_id = lead_event_id(str(order.order_number or order.id))
-    db.add(MetaCapiLog(
-        id=log_id,
-        store_id=str(order.store_id),
-        order_id=str(order.id),
-        event_name="Lead",
-        event_id=ev_id,
-        status="queued",
-        retry_count=0,
-    ))
-    try:
-        from app.core.funnel_diagnostic import log_meta_capi_event
-        log_meta_capi_event(
-            "INFO",
-            "LEAD_QUEUED",
-            order_id=str(order.id),
-            order_number=str(getattr(order, "order_number", "—")),
-            event_id=ev_id,
-            action_classification="réussie",
-        )
-    except Exception:
-        pass
-    return log_id
-
-
-def send_lead_for_order(
-    order_id: str,
-    *,
-    client_ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> None:
-    """Worker entry point for sending a queued Lead event."""
-    from app.db.session import SessionLocal
-
-    db = SessionLocal()
-    try:
-        row = _claim_queue_row(db, order_id, event_name="Lead")
-        if row is None:
-            return
-        _handle_claimed_lead_row(db, row, order_id, client_ip=client_ip, user_agent=user_agent)
-    finally:
-        db.close()
-
-
-def _handle_claimed_lead_row(
-    db: Session,
-    row,
-    order_id: str,
-    *,
-    client_ip: Optional[str],
-    user_agent: Optional[str],
-) -> None:
-    from app.models.order import Order
-
-    try:
-        order = db.query(Order).filter(Order.id == order_id).first()
-        if not order:
-            row.status = "failed"
-            row.error_message = "order not found"
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return
-
-        if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
-            row.status = "skipped"
-            row.error_message = f"source={order.source} status={order.status}"
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return
-
-        config = _get_meta_config_cached(db, order.store_id)
-        if not config or not config["pixel_id"] or not config["access_token"] or len(config["access_token"]) < 15:
-            row.status = "skipped"
-            row.error_message = "no valid meta config"
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-            return
-
-        effective_client_ip, effective_user_agent = resolve_client_context(order, client_ip, user_agent)
-        event = build_lead_event(
-            order, client_ip=effective_client_ip, user_agent=effective_user_agent,
-            ad_currency=config["currency"] or "DZD",
-            exchange_rate=config["exchange_rate"] if config["exchange_rate"] else 1.0,
-        )
-
-        result = send_events(
-            config["pixel_id"], config["access_token"], [event],
-            store_label=order.store.name if order.store else str(order.store_id),
-            order_label=f"#{order.order_number}",
-        )
-
-        _meta_response_meta = {
-            "http_status": result.get("http_status"),
-            "fbtrace_id": result.get("fbtrace_id"),
-            "events_received": result.get("events_received"),
-            "error": result.get("error"),
-            "error_category": result.get("error_category"),
-        }
-        event_with_response = {**event, "_meta_response": _meta_response_meta}
-
-        if result["success"]:
-            row.status = "success"
-            row.events_received = result.get("events_received")
-            row.latency_ms = result.get("latency_ms")
-            row.last_http_status = result.get("http_status")
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            row.error_message = None
-            row.payload = event_with_response
-            db.commit()
-        elif result.get("retryable"):
-            row.error_message = result["error"]
-            row.error_category = result.get("error_category")
-            row.last_http_status = result.get("http_status")
-            row.payload = event_with_response
-            row.retry_count = (row.retry_count or 0) + 1
-            if row.retry_count >= _MAX_QUEUE_RETRIES:
-                row.status = "failed"
-                row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            else:
-                row.status = "retry"
-                idx = min(row.retry_count - 1, len(_QUEUE_BACKOFF_MINUTES) - 1)
-                row.next_retry_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=_QUEUE_BACKOFF_MINUTES[idx])
-            db.commit()
-        else:
-            row.status = "failed"
-            row.error_message = result["error"]
-            row.error_category = result.get("error_category")
-            row.last_http_status = result.get("http_status")
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            row.payload = event_with_response
-            db.commit()
-    except Exception as exc:
-        db.rollback()
-        try:
-            row.status = "failed"
-            row.error_message = f"unexpected exception: {exc}"[:1000]
-            row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            db.commit()
-        except Exception:
-            db.rollback()
-        logger.exception("[MetaCAPI] queue: order=%s unexpected exception in lead row", order_id)
-
-
-DEFAULT_PURCHASE_TRIGGER = os.getenv("META_CAPI_PURCHASE_TRIGGER", "ORDER_CREATED").upper()
-
-
-def get_store_purchase_trigger(db: Session, store_id: str) -> str:
-    """
-    Returns the purchase trigger mode for this store:
-    - 'DELIVERED': (Default) Send Purchase CAPI only when order is DELIVERED and cash collected.
-                   Orders at checkout emit 'Lead'.
-    - 'CONFIRMED': Send Purchase CAPI when order is phone-confirmed.
-    - 'ORDER_CREATED': (Legacy) Send Purchase CAPI immediately on checkout submission.
-    """
-    from app.models.store import Store
-    store = db.query(Store).filter(Store.id == store_id).first()
-    if store:
-        ops = store.operations_config or {}
-        if ops.get("meta_purchase_trigger"):
-            return str(ops["meta_purchase_trigger"]).upper()
-        mkt = store.marketing_config or {}
-        if mkt.get("meta_purchase_trigger"):
-            return str(mkt["meta_purchase_trigger"]).upper()
-    return DEFAULT_PURCHASE_TRIGGER
-
-
-def handle_order_delivered_capi(
-    db: Session,
-    order,
-    *,
-    client_ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> Optional[str]:
-    """
-    Called upon transition to DELIVERED.
-    Emits the authoritative Purchase CAPI event for cash-collected COD orders.
-    Enforces strict idempotency.
-    """
-    from app.models.marketing import MetaCapiLog
-    if not order or getattr(order, "is_deleted", False) or (getattr(order, "source", None) or "").upper() in ("MANUAL", "POS") or str(getattr(order, "status", "")) == "MERGED":
-        return None
-
-    # Check if a Purchase was already recorded or is currently processing for this order
-    existing_purchase = (
-        db.query(MetaCapiLog.id)
-        .filter(MetaCapiLog.order_id == str(order.id), MetaCapiLog.event_name == "Purchase")
-        .first()
-    )
-    if existing_purchase:
-        logger.info("[MetaCAPI] Order %s already has a Purchase row — skipping duplicate delivery trigger", order.order_number)
-        return None
-
-    config = _get_meta_config_cached(db, order.store_id)
-    if not config or not config.get("pixel_id") or not config.get("access_token"):
-        return None
-
-    log_id = enqueue_purchase_for_order(db, order)
-    if not log_id:
-        return None
-    db.commit()
-
-    send_purchase_for_order(
-        order_id=str(order.id),
-        client_ip=client_ip,
-        user_agent=user_agent,
-    )
-    return log_id
-
-
-def handle_order_confirmed_capi(
-    db: Session,
-    order,
-    *,
-    client_ip: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> Optional[str]:
-    """
-    Called upon transition to CONFIRMED.
-    Only emits Purchase if store's purchase_trigger is configured as 'CONFIRMED'.
-    """
-    trigger_mode = get_store_purchase_trigger(db, order.store_id)
-    if trigger_mode != "CONFIRMED":
-        return None
-    return handle_order_delivered_capi(db, order, client_ip=client_ip, user_agent=user_agent)
 
 
 def send_purchase_for_order(
@@ -3145,17 +2781,6 @@ def send_purchase_for_order(
             return
 
         logger.info("[MetaCAPI] queue: processing order=%s log_id=%s", order_id, row.id)
-        try:
-            from app.core.funnel_diagnostic import log_meta_capi_event
-            log_meta_capi_event(
-                "INFO",
-                "PURCHASE_PROCESSING",
-                order_id=order_id,
-                event_id=row.event_id,
-                action_classification="réussie",
-            )
-        except Exception:
-            pass
         _handle_claimed_row(db, row, order_id, client_ip=client_ip, user_agent=user_agent)
     finally:
         db.close()
@@ -3288,31 +2913,6 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
                 "[META_CAPI_RESPONSE] order_id=%s num=%s event_id=%s status=success http_status=%s events_received=%s latency_ms=%s fbtrace=%s",
                 order.id, order.order_number, event.get("event_id"), result.get("http_status"), result.get("events_received"), result.get("latency_ms"), result.get("fbtrace_id"),
             )
-            try:
-                from app.core.funnel_diagnostic import log_meta_capi_event
-                log_meta_capi_event(
-                    "OK",
-                    "PURCHASE_SENT",
-                    order_id=str(order.id),
-                    order_number=str(order.order_number),
-                    event_id=event.get("event_id"),
-                    pixel_id=config.get("pixel_id"),
-                    fbtrace_id=result.get("fbtrace_id"),
-                    http_status=result.get("http_status"),
-                    duration_ms=result.get("latency_ms"),
-                    events_received=result.get("events_received"),
-                    attribution_data={
-                        "utm_source": getattr(order, "utm_source", None),
-                        "campaign_id": getattr(order, "campaign_id", None),
-                        "fbp": getattr(order, "fbp", None),
-                        "fbc": getattr(order, "fbc", None),
-                        "fbclid": getattr(order, "fbclid", None),
-                        "landing_url": getattr(order, "landing_url", None),
-                    },
-                    action_classification="réussie",
-                )
-            except Exception:
-                pass
         elif result.get("retryable"):
             row.error_message = result["error"]
             row.error_category = result.get("error_category")
@@ -3338,34 +2938,6 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
                     "[MetaCAPI] queue: order=%s RETRY (%d/%d) event_id=%s next_retry_at=%s: %s (diagnostic: %s)",
                     order.order_number, row.retry_count, _MAX_QUEUE_RETRIES, event["event_id"], row.next_retry_at, result["error"], _diagnosis["label"],
                 )
-            try:
-                from app.core.funnel_diagnostic import log_meta_capi_event
-                log_meta_capi_event(
-                    "ERROR",
-                    "PURCHASE_FAILED",
-                    order_id=str(order.id),
-                    order_number=str(order.order_number),
-                    event_id=event.get("event_id"),
-                    pixel_id=config.get("pixel_id"),
-                    fbtrace_id=result.get("fbtrace_id"),
-                    http_status=result.get("http_status"),
-                    duration_ms=result.get("latency_ms"),
-                    retry_count=row.retry_count,
-                    next_retry_at=str(row.next_retry_at) if row.next_retry_at else None,
-                    error_message=result.get("error"),
-                    error_category=result.get("error_category"),
-                    attribution_data={
-                        "utm_source": getattr(order, "utm_source", None),
-                        "campaign_id": getattr(order, "campaign_id", None),
-                        "fbp": getattr(order, "fbp", None),
-                        "fbc": getattr(order, "fbc", None),
-                        "fbclid": getattr(order, "fbclid", None),
-                        "landing_url": getattr(order, "landing_url", None),
-                    },
-                    action_classification="échouée",
-                )
-            except Exception:
-                pass
         else:
             row.status = "failed"
             row.error_message = result["error"]
@@ -3382,32 +2954,6 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
                 "[MetaCAPI] queue: order=%s FAILED event_id=%s: %s (diagnostic: %s — %s)",
                 order.order_number, event["event_id"], result["error"], _diagnosis["label"], _diagnosis["fix"],
             )
-            try:
-                from app.core.funnel_diagnostic import log_meta_capi_event
-                log_meta_capi_event(
-                    "ERROR",
-                    "PURCHASE_FAILED",
-                    order_id=str(order.id),
-                    order_number=str(order.order_number),
-                    event_id=event.get("event_id"),
-                    pixel_id=config.get("pixel_id"),
-                    fbtrace_id=result.get("fbtrace_id"),
-                    http_status=result.get("http_status"),
-                    duration_ms=result.get("latency_ms"),
-                    error_message=result.get("error"),
-                    error_category=result.get("error_category"),
-                    attribution_data={
-                        "utm_source": getattr(order, "utm_source", None),
-                        "campaign_id": getattr(order, "campaign_id", None),
-                        "fbp": getattr(order, "fbp", None),
-                        "fbc": getattr(order, "fbc", None),
-                        "fbclid": getattr(order, "fbclid", None),
-                        "landing_url": getattr(order, "landing_url", None),
-                    },
-                    action_classification="échouée",
-                )
-            except Exception:
-                pass
     except Exception as exc:
         db.rollback()
         try:
@@ -3612,20 +3158,19 @@ def _retry_pending_events_inner() -> None:
         # implementations is exactly how the claim/idempotency guarantee
         # could silently drift out of sync between them. One code path,
         # always rebuilt fresh from the order at send time.
-        due_items = [(row.order_id, row.event_name) for row in due if row.order_id]
+        order_ids = [row.order_id for row in due if row.order_id]
         deferred_bulk = 0
-        for i, (order_id, ev_name) in enumerate(due_items):
+        for i, order_id in enumerate(order_ids):
             if _circuit_is_open():
                 deferred_until = now + timedelta(seconds=_CIRCUIT_COOLDOWN_SECONDS + 10)
                 from sqlalchemy import update as sa_update
-                remaining_ids = [oid for oid, _ in due_items[i:]]
                 db.execute(
                     sa_update(MetaCapiLog.__table__)
-                    .where(MetaCapiLog.order_id.in_(remaining_ids),
+                    .where(MetaCapiLog.order_id.in_(order_ids[i:]),
                            MetaCapiLog.status.in_(("queued", "retry", "pending_retry")))
                     .values(next_retry_at=deferred_until, error_message="circuit breaker open: bulk deferred")
                 )
-                deferred_bulk = len(due_items) - i
+                deferred_bulk = len(order_ids) - i
                 db.commit()
                 logger.warning(
                     "[MetaCAPI] circuit opened mid-sweep — %d remaining event(s) bulk deferred to %s UTC",
@@ -3633,10 +3178,7 @@ def _retry_pending_events_inner() -> None:
                 )
                 return
             try:
-                if ev_name == "Lead":
-                    send_lead_for_order(order_id, client_ip=None, user_agent=None)
-                else:
-                    send_purchase_for_order(order_id, client_ip=None, user_agent=None)
+                send_purchase_for_order(order_id, client_ip=None, user_agent=None)
             except Exception:
                 # One order's claim/send blowing up (e.g. a transient DB
                 # connectivity error on the claim UPDATE itself, before
@@ -3644,7 +3186,7 @@ def _retry_pending_events_inner() -> None:
                 # the claimed-row handling even starts) must never abort the
                 # rest of this sweep batch — every other due order_id still
                 # deserves its attempt this round.
-                logger.exception("[MetaCAPI] sweep: order=%s event=%s raised unexpectedly — continuing with next due order", order_id, ev_name)
+                logger.exception("[MetaCAPI] sweep: order=%s raised unexpectedly — continuing with next due order", order_id)
     except Exception:
         db.rollback()
         logger.exception("[MetaCAPI] retry sweep crashed")

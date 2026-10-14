@@ -14,7 +14,7 @@ import re
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
@@ -372,60 +372,42 @@ def list_landing_pages(
 @router.get("/slug/{slug}")
 def get_by_slug(
     slug: str,
-    request: Request,
-    store_id: Optional[str] = Query(None, description="ID de la boutique"),
-    store: Optional[str] = Query(None, description="Slug ou sous-domaine de la boutique"),
-    x_store_id: Optional[str] = Header(None, alias="x-store-id"),
+    store_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ) -> Any:
+    import urllib.parse
     from app.core.cache import get_or_set
-    from app.models.store import Store
+    from sqlalchemy import func, or_
 
-    # 1. Résolution de la boutique cible
-    target_store_id: Optional[str] = None
-    if store_id:
-        target_store_id = store_id
-    elif store:
-        matched_store = db.query(Store).filter(
-            Store.slug == store,
-            Store.is_active == True,
-            Store.is_deleted == False
-        ).first()
-        if matched_store:
-            target_store_id = matched_store.id
-    elif x_store_id:
-        target_store_id = x_store_id
-
-    # 2. Si aucune boutique n'est spécifiée, résolution déterministe avec garde-fou multi-tenant
-    if not target_store_id:
-        matching_lps = db.query(LandingPage).filter(
-            LandingPage.slug == slug,
-            LandingPage.is_active == True
-        ).all()
-
-        if len(matching_lps) == 1:
-            # Unicité garantie à l'échelle de la plateforme
-            target_store_id = matching_lps[0].store_id
-        elif len(matching_lps) > 1:
-            # Ambiguïté multi-tenant : plusieurs boutiques possèdent ce slug
-            raise HTTPException(
-                status_code=409,
-                detail=f"Slug '{slug}' ambigu : présent dans plusieurs boutiques. Veuillez spécifier store_id ou le sous-domaine de la boutique."
-            )
-        else:
-            raise HTTPException(status_code=404, detail="Landing page introuvable")
-
-    resolved_store_id = target_store_id
+    raw_slug = (slug or "").strip()
+    decoded_slug = urllib.parse.unquote(raw_slug).strip()
+    clean_store_id = (store_id or "").strip()
 
     def _compute():
+        slug_filters = [
+            LandingPage.slug == raw_slug,
+            LandingPage.slug == decoded_slug,
+            func.lower(LandingPage.slug) == raw_slug.lower(),
+            func.lower(LandingPage.slug) == decoded_slug.lower(),
+        ]
+
+        if clean_store_id:
+            lp = db.query(LandingPage).filter(
+                or_(*slug_filters),
+                LandingPage.store_id == clean_store_id,
+                LandingPage.is_active == True,
+            ).first()
+            if lp:
+                return _serialize(lp)
+
         lp = db.query(LandingPage).filter(
-            LandingPage.slug == slug,
-            LandingPage.store_id == resolved_store_id,
+            or_(*slug_filters),
             LandingPage.is_active == True,
         ).first()
         return _serialize(lp) if lp else None
 
-    data = get_or_set(f"landing_page:{resolved_store_id}:{slug}", _compute, l1_ttl=45, l2_ttl=1800)
+    cache_key = f"landing_page:{clean_store_id or 'all'}:{decoded_slug}"
+    data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 
@@ -465,25 +447,21 @@ def get_by_slug(
 
     # View counting stays real-time on every request, cache hit or not — a
     # single indexed UPDATE, decoupled from the (now cached) SELECT+serialize.
-    db.execute(
-        text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
-        {"slug": slug, "store_id": resolved_store_id},
-    )
-    db.commit()
-
     try:
-        from app.core.funnel_diagnostic import log_funnel_event
-        req_id = getattr(request.state, "request_id", None) if request else None
-        log_funnel_event(
-            "LANDING_PAGE_VIEW",
-            request_id=req_id,
-            store_id=resolved_store_id,
-            lp_id=data.get("id") if data else None,
-            product_id=data.get("product_id") if data else None,
-            note=f"Landing page slug: /{slug}",
-        )
-    except Exception:
-        pass
+        if clean_store_id:
+            db.execute(
+                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug AND store_id = :store_id"),
+                {"slug": slug, "store_id": clean_store_id},
+            )
+        else:
+            db.execute(
+                text("UPDATE landing_pages SET views = COALESCE(views, 0) + 1 WHERE slug = :slug"),
+                {"slug": slug},
+            )
+        db.commit()
+    except Exception as view_err:
+        db.rollback()
+        logger.debug("Failed to increment views for slug %s: %s", slug, view_err)
 
     return {"success": True, "data": data}
 
@@ -533,27 +511,37 @@ def get_landing_page_analytics(
         )
     except ValueError as val_err:
         raise HTTPException(404, str(val_err))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to calculate landing page analytics for %s: %s", lp_id, exc)
+        raise HTTPException(500, f"Error generating analytics: {exc}")
 
     # Add legacy compatibility fields so existing widgets never break
+    kpis = data.get("kpis", {})
+    meta_perf = data.get("meta_performance", {})
+    health = data.get("health_score", {})
+    lp_meta = data.get("landing_page", {})
+
     legacy_daily = data.get("diagnostic_table", [])
     legacy_totals = {
-        "orders": data["kpis"]["orders"]["value"],
-        "delivered": data["kpis"]["delivered"]["value"],
-        "returned": data["kpis"]["returned"]["value"],
-        "shipped": data["kpis"]["shipped"]["shipped_count"],
-        "with_tracking": data["kpis"]["shipped"]["with_tracking_count"],
-        "recovered": data["kpis"]["recovered_carts"]["recovered_count"],
-        "abandoned": data["kpis"]["recovered_carts"]["abandoned_count"],
-        "meta_impressions": data["meta_performance"].get("impressions", 0),
-        "meta_clicks": data["meta_performance"].get("clicks", 0),
-        "meta_purchases": data["meta_performance"].get("purchases", 0),
-        "meta_spend": data["meta_performance"].get("spend_dzd", 0.0),
-        "meta_raw_spend": data["meta_performance"].get("spend_raw", 0.0),
-        "meta_currency": data["meta_performance"].get("currency", "DZD"),
-        "taux_conversion_pct": data["kpis"]["conversion_rate"]["value_pct"],
-        "health_score": data["health_score"]["score"],
-        "health_badge": data["health_score"]["badge"],
-        "health_color": data["health_score"]["color"],
+        "orders": kpis.get("orders", {}).get("value", 0),
+        "delivered": kpis.get("delivered", {}).get("value", 0),
+        "returned": kpis.get("returned", {}).get("value", 0),
+        "shipped": kpis.get("shipped", {}).get("shipped_count", 0),
+        "with_tracking": kpis.get("shipped", {}).get("with_tracking_count", 0),
+        "recovered": kpis.get("recovered_carts", {}).get("recovered_count", 0),
+        "abandoned": kpis.get("recovered_carts", {}).get("abandoned_count", 0),
+        "meta_impressions": meta_perf.get("impressions", 0),
+        "meta_clicks": meta_perf.get("clicks", 0),
+        "meta_purchases": meta_perf.get("purchases", 0),
+        "meta_spend": meta_perf.get("spend_dzd", 0.0),
+        "meta_raw_spend": meta_perf.get("spend_raw", 0.0),
+        "meta_currency": meta_perf.get("currency", "DZD"),
+        "taux_conversion_pct": kpis.get("conversion_rate", {}).get("value_pct", 0.0),
+        "health_score": health.get("score", 0),
+        "health_badge": health.get("badge", "UNKNOWN"),
+        "health_color": health.get("color", "gray"),
     }
 
     return {
@@ -562,8 +550,8 @@ def get_landing_page_analytics(
             **data,
             "daily": legacy_daily,
             "totals": legacy_totals,
-            "created_at": data["landing_page"]["created_at"],
-            "views": data["kpis"]["conversion_rate"]["sessions_count"],
+            "created_at": lp_meta.get("created_at"),
+            "views": kpis.get("conversion_rate", {}).get("sessions_count", 0),
         },
     }
 

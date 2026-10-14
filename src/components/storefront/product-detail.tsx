@@ -318,34 +318,16 @@ function useProductDetailData() {
   };
 }
 
-function isVariantAvailable(v: any): boolean {
-  if (!v) return false;
-  if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-  if (v.sub_variants && Array.isArray(v.sub_variants) && v.sub_variants.length > 0) {
-    return v.sub_variants.some((sv: any) =>
-      sv.is_available !== false && sv.out_of_stock !== true && sv.is_active !== false && (((sv.stock || 0) - (sv.reserved || 0)) > 0)
-    );
-  }
-  return (((v.stock || 0) - (v.reserved || 0)) > 0);
-}
-
-function isSubVariantAvailable(sv: any): boolean {
-  if (!sv) return false;
-  if (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) return false;
-  return (((sv.stock || 0) - (sv.reserved || 0)) > 0);
-}
-
 /* ─────────────────────────────── CLEAN ─────────────────────────────── */
 function CleanDetail() {
   const d = useProductDetailData();
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
+  const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [activeSubVariantVal, setActiveSubVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
 
   // Group variants
@@ -354,23 +336,13 @@ function CleanDetail() {
 
   useEffect(() => {
     if (p?.variants && p.variants.length > 0) {
-      const firstAvailable = p.variants.find(isVariantAvailable) || p.variants[0];
-      const firstVal = firstAvailable.value;
+      const firstVal = p.variants[0].value;
       setActiveVariantVal(firstVal);
-
-      let subVal = '';
-      if (firstAvailable.sub_variants && firstAvailable.sub_variants.length > 0) {
-        const firstSub = firstAvailable.sub_variants.find(isSubVariantAvailable) || firstAvailable.sub_variants[0];
-        subVal = firstSub?.value || '';
-      }
-      setActiveSubVariantVal(subVal);
       setQuantity(1);
-
-      // Reset previous selections and set current
-      const combinedKey = subVal ? `${firstVal} - ${subVal}` : firstVal;
-      d.updateSelection(combinedKey, 'quantity', 1);
-
-      const firstImg = firstAvailable.image || (firstAvailable as any)?.image_url || (firstAvailable as any)?.imageUrl;
+      p.variants.forEach(v => {
+        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
+      });
+      const firstImg = p.variants[0].image || (p.variants[0] as any)?.image_url || (p.variants[0] as any)?.imageUrl;
       if (firstImg) {
         d.setActiveVariantImage(firstImg);
       }
@@ -381,55 +353,20 @@ function CleanDetail() {
 
   const handleSelectVariant = (val: string) => {
     setActiveVariantVal(val);
+    p?.variants?.forEach(v => {
+      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
+    });
     const vObj = p?.variants?.find(x => x.value === val);
-    let subVal = '';
-    if (vObj?.sub_variants && vObj.sub_variants.length > 0) {
-      const firstSub = vObj.sub_variants.find(isSubVariantAvailable) || vObj.sub_variants[0];
-      subVal = firstSub?.value || '';
-    }
-    setActiveSubVariantVal(subVal);
-
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-
-    const combinedKey = subVal ? `${val} - ${subVal}` : val;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-
     const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl || (vObj as any)?.photo || (vObj as any)?.img;
     if (vImg) {
       d.setActiveVariantImage(vImg);
     }
   };
 
-  const handleSelectSubVariant = (subVal: string) => {
-    setActiveSubVariantVal(subVal);
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-    const combinedKey = subVal ? `${activeVariantVal} - ${subVal}` : activeVariantVal;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-  };
-
   const handleQuantityChange = (newQty: number) => {
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
-      const combinedKey = activeSubVariantVal ? `${activeVariantVal} - ${activeSubVariantVal}` : activeVariantVal;
-      d.updateSelection(combinedKey, 'quantity', newQty);
+      d.updateSelection(activeVariantVal, 'quantity', newQty);
     } else {
       d.updateSelection('default', 'quantity', newQty);
     }
@@ -629,18 +566,15 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2.5">
                           {colorVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
-                            const isOutOfStock = !isVariantAvailable(v);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
-                                disabled={isOutOfStock}
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
                                   "relative size-11 rounded-xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs",
-                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400",
-                                  isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
+                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400"
                                 )}
                                 style={!vImg && v.color ? { backgroundColor: v.color } : {}}
                                 title={v.value}
@@ -651,11 +585,6 @@ function CleanDetail() {
                                   <span className="size-full" style={{ backgroundColor: v.color }} />
                                 ) : (
                                   <span className="text-[10px] font-black text-slate-800 uppercase">{v.value.slice(0, 3)}</span>
-                                )}
-                                {isOutOfStock && (
-                                  <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-                                    <span className="text-red-500 font-bold text-xs">✕</span>
-                                  </div>
                                 )}
                               </button>
                             );
@@ -672,77 +601,30 @@ function CleanDetail() {
                         <div className="flex flex-wrap gap-2">
                           {textVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
-                            const isOutOfStock = !isVariantAvailable(v);
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
                             return (
                               <button
                                 key={v.value}
                                 type="button"
-                                disabled={isOutOfStock}
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
                                   "px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2",
                                   isSelected 
                                     ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
-                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400",
-                                  isOutOfStock && "opacity-40 cursor-not-allowed line-through"
+                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
                                 )}
                               >
                                 {vImg && (
                                   <img src={optimizeCloudinaryUrl(vImg, 80)} alt={v.value} className="size-5 rounded-md object-cover" />
                                 )}
                                 <span>{v.value}</span>
-                                {isOutOfStock ? (
-                                  <span className="text-[10px] text-rose-500 font-bold ml-1">({t('outOfStock') || 'Rupture'})</span>
-                                ) : (
-                                  (v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
-                                )}
+                                {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
                               </button>
                             );
                           })}
                         </div>
                       </div>
                     )}
-
-                    {/* Sub-variants (Pointures/Tailles) */}
-                    {(() => {
-                      const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
-                      if (!selectedObj?.sub_variants || selectedObj.sub_variants.length === 0) return null;
-                      const subName = selectedObj.sub_variants[0]?.name || t('optionSize') || 'Taille';
-                      return (
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                            {subName} : <span className="text-slate-900 font-black">{activeSubVariantVal || '—'}</span>
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
-                              const isSelected = activeSubVariantVal === sv.value;
-                              const isOutOfStock = !isSubVariantAvailable(sv);
-                              return (
-                                <button
-                                  key={sv.value || svIdx}
-                                  type="button"
-                                  disabled={isOutOfStock}
-                                  onClick={() => handleSelectSubVariant(sv.value)}
-                                  className={cn(
-                                    "px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-1.5",
-                                    isSelected
-                                      ? "bg-slate-900 border-slate-900 text-white shadow-xs"
-                                      : "bg-white border-slate-200 text-slate-700 hover:border-slate-400",
-                                    isOutOfStock && "opacity-40 cursor-not-allowed line-through"
-                                  )}
-                                >
-                                  <span>{sv.value}</span>
-                                  {isOutOfStock ? (
-                                    <span className="text-[9px] text-rose-500 font-bold ml-1">({t('outOfStock') || 'Rupture'})</span>
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </div>
                 )}
 
@@ -884,11 +766,10 @@ function AthleticDetail() {
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#ef4444';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
+  const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [activeSubVariantVal, setActiveSubVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
 
   // Group variants
@@ -897,81 +778,33 @@ function AthleticDetail() {
 
   useEffect(() => {
     if (p?.variants && p.variants.length > 0) {
-      const firstAvailable = p.variants.find(isVariantAvailable) || p.variants[0];
-      const firstVal = firstAvailable.value;
+      const firstVal = p.variants[0].value;
       setActiveVariantVal(firstVal);
-
-      let subVal = '';
-      if (firstAvailable.sub_variants && firstAvailable.sub_variants.length > 0) {
-        const firstSub = firstAvailable.sub_variants.find(isSubVariantAvailable) || firstAvailable.sub_variants[0];
-        subVal = firstSub?.value || '';
-      }
-      setActiveSubVariantVal(subVal);
       setQuantity(1);
-
-      const combinedKey = subVal ? `${firstVal} - ${subVal}` : firstVal;
-      d.updateSelection(combinedKey, 'quantity', 1);
-
-      const firstImg = firstAvailable.image || (firstAvailable as any)?.image_url || (firstAvailable as any)?.imageUrl;
-      if (firstImg) {
-        d.setActiveVariantImage(firstImg);
-      }
+      p.variants.forEach(v => {
+        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
+      });
     } else {
       d.updateSelection('default', 'quantity', 1);
     }
-  }, [p?.variants, d.setActiveVariantImage]);
+  }, [p?.variants]);
 
   const handleSelectVariant = (val: string) => {
     setActiveVariantVal(val);
+    p?.variants?.forEach(v => {
+      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
+    });
     const vObj = p?.variants?.find(x => x.value === val);
-    let subVal = '';
-    if (vObj?.sub_variants && vObj.sub_variants.length > 0) {
-      const firstSub = vObj.sub_variants.find(isSubVariantAvailable) || vObj.sub_variants[0];
-      subVal = firstSub?.value || '';
-    }
-    setActiveSubVariantVal(subVal);
-
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-
-    const combinedKey = subVal ? `${val} - ${subVal}` : val;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-
     const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
     if (vImg) {
       d.setActiveVariantImage(vImg);
     }
   };
 
-  const handleSelectSubVariant = (subVal: string) => {
-    setActiveSubVariantVal(subVal);
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-    const combinedKey = subVal ? `${activeVariantVal} - ${subVal}` : activeVariantVal;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-  };
-
   const handleQuantityChange = (newQty: number) => {
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
-      const combinedKey = activeSubVariantVal ? `${activeVariantVal} - ${activeSubVariantVal}` : activeVariantVal;
-      d.updateSelection(combinedKey, 'quantity', newQty);
+      d.updateSelection(activeVariantVal, 'quantity', newQty);
     } else {
       d.updateSelection('default', 'quantity', newQty);
     }
@@ -1065,27 +898,18 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
                             type="button"
-                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "relative size-9 rounded-full border transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                              isSelected ? "border-white ring-2 ring-offset-2 ring-offset-[#111] ring-white" : "border-white/10",
-                              isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
+                              isSelected ? "border-white ring-2 ring-offset-2 ring-offset-[#111] ring-white" : "border-white/10"
                             )}
                             style={{ backgroundColor: v.color }}
                             title={v.value}
-                          >
-                            {isOutOfStock && (
-                              <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
-                                <span className="text-red-500 font-bold text-xs">✕</span>
-                              </div>
-                            )}
-                          </button>
+                          />
                         );
                       })}
                     </div>
@@ -1100,73 +924,26 @@ function AthleticDetail() {
                     <div className="flex flex-wrap gap-2">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
                             type="button"
-                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "px-4 py-2.5 text-xs font-black uppercase tracking-[0.1em] border transition-all active:scale-95",
                               isSelected 
                                 ? "bg-white border-white text-black" 
-                                : "bg-transparent border-white/10 text-white/60 hover:border-white/30 hover:text-white",
-                              isOutOfStock && "opacity-40 cursor-not-allowed line-through"
+                                : "bg-transparent border-white/10 text-white/60 hover:border-white/30 hover:text-white"
                             )}
                           >
                             {v.value}
-                            {isOutOfStock ? (
-                              <span className="text-[9px] text-red-400 ml-1">({t('outOfStock') || 'Rupture'})</span>
-                            ) : (
-                              (v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
-                            )}
+                            {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
                           </button>
                         );
                       })}
                     </div>
                   </div>
                 )}
-
-                {/* Sub-variants (Pointures/Tailles) */}
-                {(() => {
-                  const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
-                  if (!selectedObj?.sub_variants || selectedObj.sub_variants.length === 0) return null;
-                  const subName = selectedObj.sub_variants[0]?.name || t('optionSize') || 'Taille';
-                  return (
-                    <div className="space-y-2">
-                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30">
-                        {subName} : <span className="text-white/60 normal-case font-bold">{activeSubVariantVal || '—'}</span>
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
-                          const isSelected = activeSubVariantVal === sv.value;
-                          const isOutOfStock = !isSubVariantAvailable(sv);
-                          return (
-                            <button
-                              key={sv.value || svIdx}
-                              type="button"
-                              disabled={isOutOfStock}
-                              onClick={() => handleSelectSubVariant(sv.value)}
-                              className={cn(
-                                "px-4 py-2.5 text-xs font-black uppercase tracking-[0.1em] border transition-all active:scale-95",
-                                isSelected 
-                                  ? "bg-white border-white text-black" 
-                                  : "bg-transparent border-white/10 text-white/60 hover:border-white/30 hover:text-white",
-                                isOutOfStock && "opacity-40 cursor-not-allowed line-through"
-                              )}
-                            >
-                              {sv.value}
-                              {isOutOfStock ? (
-                                <span className="text-[9px] text-red-400 ml-1">({t('outOfStock') || 'Rupture'})</span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
             )}
 
@@ -1241,11 +1018,10 @@ function LuxeDetail() {
   const primary = (d.activeStore?.theme_config?.primaryColor as string) || '#b8964e';
   const p = d.product;
   const wishlisted = p ? d.isInWishlist(p.id) : false;
-  const isOOS = Boolean(p && (p.stock === 0 || (Array.isArray(p.variants) && p.variants.length > 0 && p.variants.every(v => !isVariantAvailable(v)))));
+  const isOOS = p ? p.stock === 0 : false;
   const { t, dir } = useTranslation();
 
   const [activeVariantVal, setActiveVariantVal] = useState<string>('');
-  const [activeSubVariantVal, setActiveSubVariantVal] = useState<string>('');
   const [quantity, setQuantity] = useState(1);
 
   // Group variants
@@ -1254,81 +1030,33 @@ function LuxeDetail() {
 
   useEffect(() => {
     if (p?.variants && p.variants.length > 0) {
-      const firstAvailable = p.variants.find(isVariantAvailable) || p.variants[0];
-      const firstVal = firstAvailable.value;
+      const firstVal = p.variants[0].value;
       setActiveVariantVal(firstVal);
-
-      let subVal = '';
-      if (firstAvailable.sub_variants && firstAvailable.sub_variants.length > 0) {
-        const firstSub = firstAvailable.sub_variants.find(isSubVariantAvailable) || firstAvailable.sub_variants[0];
-        subVal = firstSub?.value || '';
-      }
-      setActiveSubVariantVal(subVal);
       setQuantity(1);
-
-      const combinedKey = subVal ? `${firstVal} - ${subVal}` : firstVal;
-      d.updateSelection(combinedKey, 'quantity', 1);
-
-      const firstImg = firstAvailable.image || (firstAvailable as any)?.image_url || (firstAvailable as any)?.imageUrl;
-      if (firstImg) {
-        d.setActiveVariantImage(firstImg);
-      }
+      p.variants.forEach(v => {
+        d.updateSelection(v.value, 'quantity', v.value === firstVal ? 1 : 0);
+      });
     } else {
       d.updateSelection('default', 'quantity', 1);
     }
-  }, [p?.variants, d.setActiveVariantImage]);
+  }, [p?.variants]);
 
   const handleSelectVariant = (val: string) => {
     setActiveVariantVal(val);
+    p?.variants?.forEach(v => {
+      d.updateSelection(v.value, 'quantity', v.value === val ? quantity : 0);
+    });
     const vObj = p?.variants?.find(x => x.value === val);
-    let subVal = '';
-    if (vObj?.sub_variants && vObj.sub_variants.length > 0) {
-      const firstSub = vObj.sub_variants.find(isSubVariantAvailable) || vObj.sub_variants[0];
-      subVal = firstSub?.value || '';
-    }
-    setActiveSubVariantVal(subVal);
-
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-
-    const combinedKey = subVal ? `${val} - ${subVal}` : val;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-
     const vImg = vObj?.image || (vObj as any)?.image_url || (vObj as any)?.imageUrl;
     if (vImg) {
       d.setActiveVariantImage(vImg);
     }
   };
 
-  const handleSelectSubVariant = (subVal: string) => {
-    setActiveSubVariantVal(subVal);
-    if (p?.variants) {
-      p.variants.forEach(v => {
-        d.updateSelection(v.value, 'quantity', 0);
-        if (v.sub_variants) {
-          v.sub_variants.forEach((sv: any) => {
-            d.updateSelection(`${v.value} - ${sv.value}`, 'quantity', 0);
-          });
-        }
-      });
-    }
-    const combinedKey = subVal ? `${activeVariantVal} - ${subVal}` : activeVariantVal;
-    d.updateSelection(combinedKey, 'quantity', quantity);
-  };
-
   const handleQuantityChange = (newQty: number) => {
     setQuantity(newQty);
     if (p?.variants && p.variants.length > 0) {
-      const combinedKey = activeSubVariantVal ? `${activeVariantVal} - ${activeSubVariantVal}` : activeVariantVal;
-      d.updateSelection(combinedKey, 'quantity', newQty);
+      d.updateSelection(activeVariantVal, 'quantity', newQty);
     } else {
       d.updateSelection('default', 'quantity', newQty);
     }
@@ -1426,27 +1154,18 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-3">
                       {colorVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
                             type="button"
-                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "relative size-8 rounded-full border transition-all hover:scale-105 active:scale-95 flex items-center justify-center",
-                              isSelected ? "border-[#b8964e] ring-1 ring-offset-2 ring-offset-[#0C0F1A] ring-[#b8964e]" : "border-white/10",
-                              isOutOfStock && "opacity-40 cursor-not-allowed hover:scale-100"
+                              isSelected ? "border-[#b8964e] ring-1 ring-offset-2 ring-offset-[#0C0F1A] ring-[#b8964e]" : "border-white/10"
                             )}
                             style={{ backgroundColor: v.color }}
                             title={v.value}
-                          >
-                            {isOutOfStock && (
-                              <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
-                                <span className="text-red-500 font-bold text-xs">✕</span>
-                              </div>
-                            )}
-                          </button>
+                          />
                         );
                       })}
                     </div>
@@ -1461,73 +1180,26 @@ function LuxeDetail() {
                     <div className="flex flex-wrap gap-2.5">
                       {textVariants.map(v => {
                         const isSelected = activeVariantVal === v.value;
-                        const isOutOfStock = !isVariantAvailable(v);
                         return (
                           <button
                             key={v.value}
                             type="button"
-                            disabled={isOutOfStock}
                             onClick={() => handleSelectVariant(v.value)}
                             className={cn(
                               "px-5 py-2 text-[10px] tracking-[0.15em] uppercase border transition-all active:scale-95 font-light",
                               isSelected 
                                 ? "bg-white border-white text-black font-normal" 
-                                : "bg-transparent border-white/10 text-white/40 hover:border-white/30 hover:text-white",
-                              isOutOfStock && "opacity-40 cursor-not-allowed line-through"
+                                : "bg-transparent border-white/10 text-white/40 hover:border-white/30 hover:text-white"
                             )}
                           >
                             {v.value}
-                            {isOutOfStock ? (
-                              <span className="text-[9px] text-[#b8964e]/60 ml-1">({t('outOfStock') || 'Rupture'})</span>
-                            ) : (
-                              (v.priceModifier ?? 0) > 0 && <span className="text-[9px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>
-                            )}
+                            {(v.priceModifier ?? 0) > 0 && <span className="text-[9px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
                           </button>
                         );
                       })}
                     </div>
                   </div>
                 )}
-
-                {/* Sub-variants (Pointures/Tailles) */}
-                {(() => {
-                  const selectedObj = p.variants?.find(x => x.value === activeVariantVal);
-                  if (!selectedObj?.sub_variants || selectedObj.sub_variants.length === 0) return null;
-                  const subName = selectedObj.sub_variants[0]?.name || t('optionSize') || 'Taille';
-                  return (
-                    <div className="space-y-2.5">
-                      <p className="text-[9px] tracking-[0.35em] uppercase text-white/25">
-                        {subName} : <span className="text-white/60 normal-case font-light tracking-wider">{activeSubVariantVal || '—'}</span>
-                      </p>
-                      <div className="flex flex-wrap gap-2.5">
-                        {selectedObj.sub_variants.map((sv: any, svIdx: number) => {
-                          const isSelected = activeSubVariantVal === sv.value;
-                          const isOutOfStock = !isSubVariantAvailable(sv);
-                          return (
-                            <button
-                              key={sv.value || svIdx}
-                              type="button"
-                              disabled={isOutOfStock}
-                              onClick={() => handleSelectSubVariant(sv.value)}
-                              className={cn(
-                                "px-5 py-2 text-[10px] tracking-[0.15em] uppercase border transition-all active:scale-95 font-light",
-                                isSelected 
-                                  ? "bg-white border-white text-black font-normal" 
-                                  : "bg-transparent border-white/10 text-white/40 hover:border-white/30 hover:text-white",
-                                isOutOfStock && "opacity-40 cursor-not-allowed line-through"
-                              )}
-                            >
-                              {sv.value}
-                              {isOutOfStock ? (
-                                <span className="text-[9px] text-[#b8964e]/60 ml-1">({t('outOfStock') || 'Rupture'})</span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
             )}
 

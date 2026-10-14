@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.api.v1 import meta_ads
 
 # Must NEVER require admin auth — see module docstring for why.
-_MUST_STAY_PUBLIC = {"/events", "/catalog-feed", "/public-config"}
+_MUST_STAY_PUBLIC = {"/events", "/catalog-feed"}
 
 
 def test_every_route_is_authenticated_except_the_two_public_ones():

@@ -162,27 +162,6 @@ def _sync_product_availability_and_invalidate_cache(db: Session, product: Produc
         logger.warning(f"Failed to invalidate landing page cache for product {product.id}: {exc}")
 
 
-def _trigger_shopify_inventory_sync_if_enabled(
-    db: Session,
-    product: Product,
-    variant_str: Optional[str] = None,
-) -> None:
-    """
-    Hook called on stock movements to queue an asynchronous Shopify stock update
-    if the store has an active Shopify connection with inventory sync enabled.
-    Performs NO external HTTP calls inside this transaction.
-    """
-    try:
-        from app.services.shopify_inventory_service import enqueue_inventory_sync
-        enqueue_inventory_sync(
-            db,
-            product_id=product.id,
-            variant_details={"variant": variant_str} if variant_str else None,
-        )
-    except Exception as exc:
-        logger.debug("[ShopifyInventorySync] Hook ignoré ou échec de mise en file: %s", exc)
-
-
 def _lock_product(db: Session, product_id: str) -> Product:
     """
     SELECT FOR UPDATE — acquires a row-level lock on the product row.
@@ -392,7 +371,6 @@ class InventoryService:
             "Stock reserved: product=%s qty=%d order=%s (new reserved_stock=%d)",
             product_id, quantity, order_id, product.reserved_stock,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
 
     # ── confirm_stock ─────────────────────────────────────────
 
@@ -456,7 +434,6 @@ class InventoryService:
             "Stock confirmed: product=%s qty=%d order=%s (stock=%d, reserved=%d)",
             product_id, quantity, order_id, product.stock, product.reserved_stock,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
 
     # ── release_reservation ────────────────────────────────────
 
@@ -509,7 +486,6 @@ class InventoryService:
             "Reservation released: product=%s qty=%d order=%s (reserved=%d)",
             product_id, quantity, order_id, product.reserved_stock,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
 
     # ── return_restock ─────────────────────────────────────────
 
@@ -566,7 +542,6 @@ class InventoryService:
             "Return restocked: product=%s qty=%d order=%s (new stock=%d)",
             product_id, quantity, order_id, product.stock,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
 
     # ── restock ────────────────────────────────────────────────
 
@@ -620,7 +595,6 @@ class InventoryService:
         )
         _sync_product_availability_and_invalidate_cache(db, product)
         logger.info("Manual restock: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
         return product
 
     # ── sell_at_pos ────────────────────────────────────────────
@@ -695,7 +669,6 @@ class InventoryService:
             reason=reason or f"Vente au comptoir ({variant_str or 'Général'})",
         )
         logger.info("POS sale: product=%s qty=%d (new stock=%d)", product_id, quantity, product.stock)
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
         return product
 
     # ── manual_adjustment ──────────────────────────────────────
@@ -768,7 +741,6 @@ class InventoryService:
             "Manual adjustment: product=%s delta=%+d (new stock=%d) reason='%s'",
             product_id, quantity, product.stock, reason,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
         return product
 
     # ── record_manual_movement ──────────────────────────────────
@@ -852,7 +824,6 @@ class InventoryService:
             "Manual movement: product=%s type=%s delta=%+d (new stock=%d)",
             product_id, movement_type, quantity_delta, product.stock,
         )
-        _trigger_shopify_inventory_sync_if_enabled(db, product, variant_str)
         return product
 
 

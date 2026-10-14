@@ -34,7 +34,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 from starlette.background import BackgroundTasks
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,24 +53,20 @@ def _seed_superadmin_for_internal_bypass():
 
     db = SessionLocal()
     try:
-        user = db.query(User).filter(User.role == "SUPER_ADMIN").first()
-        if not user:
-            user = User(
+        if not db.query(User).first():
+            db.add(User(
                 id=str(uuid.uuid4()), email="test-superadmin-2@azzougshop.test",
                 name="Test SuperAdmin 2", hashed_password=get_password_hash("test-only"),
                 role="SUPER_ADMIN", is_active=True,
-            )
-            db.add(user)
+            ))
             db.commit()
-            db.refresh(user)
-        INTERNAL_KEY_HEADER["x-user-id"] = user.id
     finally:
         db.close()
 
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
 

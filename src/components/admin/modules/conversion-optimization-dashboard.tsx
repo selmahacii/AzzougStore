@@ -26,7 +26,7 @@ const C = {
   text: '#2D3436', textLight: '#636E72', textDim: '#B2BEC3', border: '#E9ECF0', bg: '#F8F9FC',
 };
 
-function StatCard({ label, value, sub, color, trend }: { key?: any; label: string; value: React.ReactNode; sub?: string; color?: string; trend?: number | null }) {
+function StatCard({ label, value, sub, color, trend }: { label: string; value: React.ReactNode; sub?: string; color?: string; trend?: number | null }) {
   const c = color || C.text;
   return (
     <div className="rounded-2xl border bg-white p-4 w-full" style={{ borderColor: c + '33' }}>

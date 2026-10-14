@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, JSON, DateTime, Text, Index, UniqueConstraint
+from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, JSON, DateTime, Text, Index
 from sqlalchemy.orm import relationship
 from app.db.base_class import Base
 
@@ -9,8 +9,6 @@ class Order(Base):
         Index('idx_order_store_status', 'store_id', 'status'),
         Index('idx_order_store_created', 'store_id', 'created_at'),
         Index('idx_order_store_deleted', 'store_id', 'is_deleted'),
-        Index('idx_order_store_shopify_id', 'store_id', 'shopify_order_id'),
-        UniqueConstraint('store_id', 'shopify_order_id', name='uq_order_store_shopify_id'),
     )
 
     id = Column(String, primary_key=True, index=True)
@@ -175,12 +173,6 @@ class Order(Base):
     confirmation_start_time = Column(DateTime, nullable=True)
     nrp_count = Column(Integer, default=0)
     next_callback_time = Column(DateTime, nullable=True)
-
-    # Shopify External Origin Attributes
-    shopify_order_id = Column(String, nullable=True, index=True)
-    shopify_order_number = Column(String, nullable=True)
-    shopify_financial_status = Column(String, nullable=True) # "paid", "pending", "refunded", etc.
-    shopify_fulfillment_status = Column(String, nullable=True) # "unfulfilled", "fulfilled", etc.
 
     store = relationship("Store", back_populates="orders")
     assignee = relationship("User", back_populates="assigned_orders", foreign_keys=[assigned_to])

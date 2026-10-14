@@ -308,7 +308,7 @@ export async function trackMetaEvent(eventName: MetaEventName, payload: Record<s
 
   const pixelId = options.pixelId || window.__metaPixelId || window.__metaTrackingConfig?.pixelId;
   const storeId = options.storeId || window.__metaTrackingConfig?.storeId;
-  const eventId = options.eventId || `${eventName.toLowerCase()}-${storeId || 'shop'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const eventId = options.eventId || `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const dedupIds = readStorage();
   if (dedupIds.includes(eventId)) return;
 

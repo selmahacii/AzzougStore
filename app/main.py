@@ -15,7 +15,7 @@ from app.api.v1 import (
     partners, delivery_partners, upload, landing_pages, api_keys,
     meta_ads, upsell, purchase_vouchers, locations, tiktok_ads, payroll,
     notifications, conversion_optimization, internal, ads_comparison,
-    assignment_rules, shopify,
+    assignment_rules,
 )
 from app.api.carriers import yalidine as yalidine_carrier
 from app.api.carriers import noest as noest_carrier
@@ -38,7 +38,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Assign a correlation ID to every request
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
-        request.state.request_id = request_id
         start = time.monotonic()
         response = await call_next(request)
         duration_ms = (time.monotonic() - start) * 1000
@@ -154,30 +153,6 @@ def run_db_migrations():
         "UPDATE orders SET delivery_fee = CASE WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('16', 'alger') THEN 400 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('9', 'blida', '35', 'boumerdès', 'boumerdes', '42', 'tipaza') THEN 500 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('19', 'sétif', 'setif', '23', 'annaba', '25', 'constantine', '31', 'oran') THEN 600 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('3', 'laghouat', '30', 'ouargla', '32', 'el bayadh', '38', 'tissemsilt', '45', 'naâma', 'naama', '47', 'ghardaïa', 'ghardaia', '51', 'ouled djellal', '55', 'touggourt', '57', 'el m''ghair', 'el mghair', '58', 'el meniaa') THEN 950 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('1', 'adrar', '8', 'béchar', 'bechar', '11', 'tamanrasset', '33', 'illizi', '37', 'tindouf', '49', 'timimoun', '50', 'bordj badji mokhtar', '52', 'béni abbès', 'beni abbes', '53', 'in salah', '54', 'in guezzam', '56', 'djanet') THEN 1200 ELSE 800 END WHERE (delivery_fee IS NULL OR delivery_fee = 0) AND customer_wilaya IS NOT NULL AND TRIM(customer_wilaya) != ''",
         "UPDATE orders SET subtotal = CASE WHEN (subtotal IS NULL OR subtotal = 0) THEN (total - COALESCE(delivery_fee, 0)) ELSE subtotal END, total = (CASE WHEN (subtotal IS NOT NULL AND subtotal > 0) THEN subtotal ELSE (total - COALESCE(delivery_fee, 0)) END) - COALESCE(discount, 0) + COALESCE(delivery_fee, 0) WHERE is_deleted IS FALSE OR is_deleted IS NULL",
         "UPDATE orders SET is_abandoned_cart = FALSE, status = 'NEW', order_number = REPLACE(order_number, 'ABN-', 'ORD-') WHERE (store_sequence_number IN (830, 831, 832, 833) OR order_number LIKE '%830%' OR order_number LIKE '%831%' OR order_number LIKE '%832%' OR order_number LIKE '%833%') AND status != 'CANCELLED'",
-        # Shopify Integrations (Phase 1 & 3A)
-        "CREATE TABLE IF NOT EXISTS shopify_connections (id VARCHAR PRIMARY KEY, store_id VARCHAR NOT NULL UNIQUE REFERENCES stores(id) ON DELETE CASCADE, shop_domain VARCHAR NOT NULL UNIQUE, status VARCHAR NOT NULL DEFAULT 'CONNECTED', api_version VARCHAR NOT NULL DEFAULT '2026-10', access_token_encrypted TEXT, webhook_secret_encrypted TEXT, sync_orders BOOLEAN NOT NULL DEFAULT TRUE, sync_inventory BOOLEAN NOT NULL DEFAULT TRUE, sync_products BOOLEAN NOT NULL DEFAULT FALSE, settings JSONB DEFAULT '{}'::jsonb, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW())",
-        "ALTER TABLE shopify_connections ALTER COLUMN api_version SET DEFAULT '2026-10'",
-        "CREATE TABLE IF NOT EXISTS shopify_mappings (id VARCHAR PRIMARY KEY, store_id VARCHAR NOT NULL REFERENCES stores(id) ON DELETE CASCADE, entity_type VARCHAR NOT NULL, internal_id VARCHAR NOT NULL, shopify_id VARCHAR NOT NULL, shopify_secondary_id VARCHAR, extra_data JSONB DEFAULT '{}'::jsonb, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), CONSTRAINT uq_shopify_map_store_entity_shopify UNIQUE (store_id, entity_type, shopify_id), CONSTRAINT uq_shopify_map_store_entity_internal UNIQUE (store_id, entity_type, internal_id))",
-        "CREATE TABLE IF NOT EXISTS shopify_webhook_inbox (id VARCHAR PRIMARY KEY, delivery_id VARCHAR NOT NULL UNIQUE, store_id VARCHAR NOT NULL REFERENCES stores(id) ON DELETE CASCADE, topic VARCHAR NOT NULL, shop_domain VARCHAR NOT NULL, payload JSONB NOT NULL, status VARCHAR NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 5, next_retry_at TIMESTAMP WITH TIME ZONE, processed_at TIMESTAMP WITH TIME ZONE, last_error TEXT, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_conn_store ON shopify_connections (store_id)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_conn_domain ON shopify_connections (shop_domain)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_map_lookup ON shopify_mappings (store_id, entity_type, shopify_id)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_map_reverse ON shopify_mappings (store_id, entity_type, internal_id)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inbox_queue ON shopify_webhook_inbox (status, next_retry_at, created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inbox_store_topic ON shopify_webhook_inbox (store_id, topic)",
-        # Shopify Orders (Phase 2 Additive Columns)
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_order_id VARCHAR",
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_order_number VARCHAR",
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_financial_status VARCHAR",
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shopify_fulfillment_status VARCHAR",
-        "CREATE INDEX IF NOT EXISTS idx_order_store_shopify_id ON orders (store_id, shopify_order_id)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_order_store_shopify_id ON orders (store_id, shopify_order_id)",
-        # Shopify Inventory Sync Queue (Phase 3)
-        "CREATE TABLE IF NOT EXISTS shopify_inventory_sync_queue (id VARCHAR PRIMARY KEY, store_id VARCHAR NOT NULL REFERENCES stores(id) ON DELETE CASCADE, product_id VARCHAR NOT NULL REFERENCES products(id) ON DELETE CASCADE, variant_sku VARCHAR, variant_str VARCHAR, shopify_inventory_item_id VARCHAR, shopify_location_id VARCHAR, target_quantity INTEGER NOT NULL, previous_quantity INTEGER, status VARCHAR NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 5, next_retry_at TIMESTAMP WITH TIME ZONE, last_error TEXT, idempotency_key VARCHAR NOT NULL, stock_revision INTEGER NOT NULL DEFAULT 1, processed_at TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW())",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inv_queue_poll ON shopify_inventory_sync_queue (status, next_retry_at, created_at)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inv_queue_store_prod ON shopify_inventory_sync_queue (store_id, product_id, variant_sku)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inv_queue_idemp ON shopify_inventory_sync_queue (idempotency_key)",
-        "CREATE INDEX IF NOT EXISTS idx_shopify_inv_queue_status ON shopify_inventory_sync_queue (status)",
     ]
 
     for stmt in statements:
@@ -378,14 +353,11 @@ def _acquire_scheduler_leader_lock() -> bool:
     workers share the container filesystem, so flock on a fixed path is a
     simple, dependency-free way to pick exactly one leader.
     """
+    import fcntl
     try:
-        import fcntl
         lock_file = open("/tmp/azzougshop_scheduler.lock", "w")
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         globals()["_scheduler_lock_fh"] = lock_file  # keep FD alive for process lifetime
-        return True
-    except ImportError:
-        # Non-Unix environments (e.g. Windows testing) do not support fcntl
         return True
     except (OSError, BlockingIOError):
         return False
@@ -467,19 +439,6 @@ async def resume_pending_queues():
                 _log.info("[StartupRecovery] CAPI startup sweep complete")
             else:
                 _log.info("[StartupRecovery] CAPI queue empty — no recovery needed")
-
-            # Shopify Inbox recovery sweep
-            try:
-                from app.services.shopify_sync import sweep_pending_shopify_webhooks
-                db_shopify = SessionLocal()
-                try:
-                    recovered = await asyncio.to_thread(sweep_pending_shopify_webhooks, db_shopify, 50)
-                    if recovered:
-                        _log.info("[StartupRecovery] %d événement(s) de webhook Shopify récupéré(s) au démarrage", recovered)
-                finally:
-                    db_shopify.close()
-            except Exception as s_exc:
-                _log.error("[StartupRecovery] Échec du sweep Shopify: %s", s_exc)
         except Exception as exc:
             _log.error("[StartupRecovery] CAPI sweep failed: %s", exc)
 
@@ -758,28 +717,27 @@ def create_initial_superadmin():
         email = "nadjibazzoug@gmail.com"
         existing = db.query(User).filter(User.email == email).first()
         if not existing:
-            import os
-            init_password = os.getenv("SUPER_ADMIN_PASSWORD") or getattr(settings, "FIRST_SUPERUSER_PASSWORD", None) or "AzzougShop2026@InitSecure"
             user = User(
                 id=str(uuid.uuid4()),
                 email=email,
                 name="nadjib",
-                hashed_password=get_password_hash(init_password),
+                hashed_password=get_password_hash("nadjib2026@"),
                 role="SUPER_ADMIN",
                 is_active=True
             )
             db.add(user)
             db.commit()
-            print(f"Created initial SUPER_ADMIN user: {email} via startup event")
+            print(f"Created SUPER_ADMIN user: {email} via startup event")
         else:
-            # Do NOT reset existing password to static string; maintain account role & active status
+            existing.hashed_password = get_password_hash("nadjib2026@")
+            existing.name = "nadjib"
             existing.role = "SUPER_ADMIN"
             existing.is_active = True
             db.commit()
-            print(f"SUPER_ADMIN user {email} active (existing password preserved) via startup event")
+            print(f"SUPER_ADMIN user {email} already exists, updated password and role via startup event")
     except Exception as e:
         db.rollback()
-        print(f"Error checking startup superadmin: {e}")
+        print(f"Error creating startup superadmin: {e}")
     finally:
         db.close()
 
@@ -795,7 +753,7 @@ def list_routes(current_user: Any = Depends(deps.get_current_active_user)):
     return [{"path": r.path, "name": r.name} for r in app.routes if hasattr(r, "path")]
 
 @app.get("/api/v1/debug-noest-token")
-def debug_noest_token(store_id: str, current_user: Any = Depends(deps.get_current_active_superuser)):
+def debug_noest_token(store_id: str, x_internal_key: str = Depends(deps.get_current_user)):
     from app.db.session import SessionLocal
     from app.api.carriers.noest import _get_partner, _creds
     db = SessionLocal()
@@ -955,7 +913,6 @@ include_v1(api_keys.router,       "api-keys",       ["🔑 Clés API"])
 include_v1(locations.router,      "locations",      ["🌍 Locations"])
 include_v1(notifications.router,  "notifications",  ["🔔 Notifications"])
 include_v1(internal.router,       "internal",       ["🛠️ Internal / Observability"])
-include_v1(shopify.router,        "shopify",        ["🛍️ Shopify Integration"])
 
 # ─── Carrier Proxies (both /api/ and /api/v1/ prefixes for compatibility) ──
 app.include_router(yalidine_carrier.router, prefix="/api/yalidine", tags=["🚀 Yalidine"])
@@ -1041,3 +998,40 @@ def verify_domain(domain: str = Query(...)):
         return Response(status_code=403, content="Domain not authorized")
     finally:
         db.close()
+
+
+@app.get("/api/v1/system/env", tags=["🛠️ Internal / Observability"])
+@app.get("/api/env", tags=["🛠️ Internal / Observability"])
+def get_system_env():
+    """
+    Public environment detector endpoint for Vercel Frontend Migration.
+    Returns all required environment variables for Next.js deployment.
+    """
+    import os
+    backend_url = os.getenv("BACKEND_URL") or "https://azconfort.azghub.com"
+    public_api_url = os.getenv("NEXT_PUBLIC_API_URL") or "https://azconfort.azghub.com"
+    app_url = os.getenv("NEXT_PUBLIC_APP_URL") or os.getenv("APP_URL") or "https://azzougshop.vercel.app"
+    internal_key = os.getenv("INTERNAL_API_KEY") or getattr(settings, "INTERNAL_API_KEY", "azzougshop_internal_secure_key_2026")
+    secret_key = os.getenv("SECRET_KEY") or getattr(settings, "SECRET_KEY", "")
+
+    return {
+        "success": True,
+        "message": "Variables d'environnement AzzougShop pour migration Vercel",
+        "frontend_env": {
+            "BACKEND_URL": backend_url,
+            "NEXT_PUBLIC_API_URL": public_api_url,
+            "NEXT_PUBLIC_APP_URL": app_url,
+            "INTERNAL_API_KEY": internal_key,
+            "SECRET_KEY": secret_key,
+            "NODE_ENV": "production"
+        },
+        "vercel_copy_paste": (
+            f"# AZZOUGSHOP — VERCEL FRONTEND ENV VARIABLES\n"
+            f'BACKEND_URL="{backend_url}"\n'
+            f'NEXT_PUBLIC_API_URL="{public_api_url}"\n'
+            f'NEXT_PUBLIC_APP_URL="{app_url}"\n'
+            f'INTERNAL_API_KEY="{internal_key}"\n'
+            f'SECRET_KEY="{secret_key}"\n'
+            f'NODE_ENV="production"'
+        )
+    }

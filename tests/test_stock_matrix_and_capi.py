@@ -22,37 +22,6 @@ from app.core.config import settings
 INTERNAL_KEY_HEADER = {"x-internal-key": settings.INTERNAL_API_KEY}
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _seed_superadmin():
-    from app.db.session import SessionLocal
-    from app.models.user import User
-    from app.core.security import get_password_hash
-
-    db = SessionLocal()
-    try:
-        if not db.query(User).first():
-            db.add(User(
-                id=str(uuid.uuid4()), email="stock-matrix@azzougshop.test",
-                name="Stock Matrix Test", hashed_password=get_password_hash("test-only"),
-                role="SUPER_ADMIN", is_active=True,
-            ))
-            db.commit()
-    finally:
-        db.close()
-
-
-def _get_admin_token():
-    from app.db.session import SessionLocal
-    from app.models.user import User
-    from app.core.security import create_access_token
-    db = SessionLocal()
-    try:
-        u = db.query(User).filter(User.role == "SUPER_ADMIN").first()
-        return create_access_token(subject=u.id)
-    finally:
-        db.close()
-
-
 @pytest.fixture
 async def client():
     transport = ASGITransport(app=app)
@@ -109,13 +78,12 @@ def test_capi_normalization_meta_spec():
 # ─── 2. Stock matrix through the real API ─────────────────────────────────────
 
 async def _setup(client, suffix, stock=50):
-    auth_header = {"Authorization": f"Bearer {_get_admin_token()}"}
     store_response = await client.post(
         f"{settings.API_V1_STR}/stores/",
         json={"name": f"Stock Shop {suffix}", "slug": f"stock-shop-{suffix}",
               "domain": f"stock-shop-{suffix}.com", "template_id": "modern",
               "owner_id": "SYSTEM_ADMIN"},
-        headers=auth_header,
+        headers=INTERNAL_KEY_HEADER,
     )
     assert store_response.status_code == 200
     store_id = store_response.json()["id"]
@@ -124,7 +92,7 @@ async def _setup(client, suffix, stock=50):
         json={"name": f"Stock Product {suffix}", "description": "x", "price": 1000,
               "stock": stock, "category": "General", "sku": f"SKU-STK-{suffix}",
               "store_id": store_id, "is_active": True},
-        headers=auth_header,
+        headers=INTERNAL_KEY_HEADER,
     )
     assert product_response.status_code == 200
     return store_id, product_response.json()
@@ -167,8 +135,7 @@ async def test_stock_symmetry_confirm_cancel_reconfirm(client):
         async def patch_status(status):
             resp = await client.patch(
                 f"{settings.API_V1_STR}/orders/{order_id}",
-                json={"status": status},
-                headers={"Authorization": f"Bearer {_get_admin_token()}"},
+                json={"status": status}, headers=INTERNAL_KEY_HEADER,
             )
             assert resp.status_code == 200, resp.text
             return resp
@@ -195,7 +162,4 @@ async def test_stock_symmetry_confirm_cancel_reconfirm(client):
     finally:
         db.close()
 
-    await client.delete(
-        f"{settings.API_V1_STR}/stores/{store_id}",
-        headers={"Authorization": f"Bearer {_get_admin_token()}"},
-    )
+    await client.delete(f"{settings.API_V1_STR}/stores/{store_id}", headers=INTERNAL_KEY_HEADER)
