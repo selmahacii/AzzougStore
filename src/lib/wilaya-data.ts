@@ -102,28 +102,109 @@ export async function getDeliveryFeeByName(
  * Uses default fees based on hardcoded Maghreb benchmarks.
  */
 export function getDeliveryFeeSync(
-  wilaya: string | null,
+  wilaya: string | number | null | undefined,
   type: 'home' | 'office' | 'bureau' = 'home'
 ): number {
-  if (!wilaya) return DEFAULT_DELIVERY_FEE.home;
+  if (!wilaya) return 800;
   
   const lookupType = type === 'bureau' ? 'office' : type;
+  const isOffice = lookupType === 'office';
+  const raw = String(wilaya).trim();
 
-  // Hardcoded known deviations for UX (as seen in original types.ts)
-  const deviations: Record<string, { home: number; office: number }> = {
-    'Alger': { home: 400, office: 250 },
-    'Blida': { home: 500, office: 300 },
-    'Boumerdès': { home: 500, office: 300 },
-    'Tipaza': { home: 500, office: 300 },
-    'Oran': { home: 600, office: 350 },
-    'Constantine': { home: 600, office: 350 },
-    'Annaba': { home: 600, office: 350 },
-    'Sétif': { home: 600, office: 350 },
-    'Tizi Ouzou': { home: 600, office: 350 },
+  // Robust wilaya name extraction
+  let name = raw;
+  const m = raw.match(/^\d+\s*[-_–.]\s*(.*)$/);
+  if (m) name = m[1].trim();
+
+  // If purely numeric
+  if (/^\d+$/.test(raw)) {
+    const num = parseInt(raw, 10);
+    if (num >= 1 && num <= WILAYAS.length) {
+      name = WILAYAS[num - 1];
+    }
+  }
+
+  // Exact Noest tarif grid
+  const grid: Record<string, { home: number; office: number }> = {
+    'Adrar': { home: 1450, office: 700 },
+    'Chlef': { home: 800, office: 400 },
+    'Laghouat': { home: 950, office: 500 },
+    'Oum El Bouaghi': { home: 800, office: 400 },
+    'Batna': { home: 800, office: 400 },
+    'Béjaïa': { home: 800, office: 400 },
+    'Biskra': { home: 950, office: 500 },
+    'Béchar': { home: 1150, office: 600 },
+    'Blida': { home: 550, office: 350 },
+    'Bouira': { home: 700, office: 400 },
+    'Tamanrasset': { home: 1750, office: 1000 },
+    'Tébessa': { home: 850, office: 400 },
+    'Tlemcen': { home: 800, office: 400 },
+    'Tiaret': { home: 850, office: 400 },
+    'Tizi Ouzou': { home: 700, office: 400 },
+    'Alger': { home: 500, office: 250 },
+    'Djelfa': { home: 900, office: 500 },
+    'Jijel': { home: 800, office: 400 },
+    'Sétif': { home: 750, office: 400 },
+    'Saïda': { home: 900, office: 400 },
+    'Skikda': { home: 800, office: 400 },
+    'Sidi Bel Abbès': { home: 800, office: 400 },
+    'Annaba': { home: 800, office: 400 },
+    'Guelma': { home: 850, office: 400 },
+    'Constantine': { home: 750, office: 400 },
+    'Médéa': { home: 700, office: 400 },
+    'Mostaganem': { home: 800, office: 400 },
+    "M'Sila": { home: 800, office: 400 },
+    'Mascara': { home: 800, office: 400 },
+    'Ouargla': { home: 1050, office: 500 },
+    'Oran': { home: 750, office: 400 },
+    'El Bayadh': { home: 1200, office: 600 },
+    'Illizi': { home: 1750, office: 1000 },
+    'Bordj Bou Arréridj': { home: 750, office: 400 },
+    'Boumerdès': { home: 550, office: 350 },
+    'El Tarf': { home: 900, office: 500 },
+    'Tindouf': { home: 1500, office: 600 },
+    'Tissemsilt': { home: 800, office: 400 },
+    'El Oued': { home: 1100, office: 500 },
+    'Khenchela': { home: 900, office: 400 },
+    'Souk Ahras': { home: 900, office: 400 },
+    'Tipaza': { home: 550, office: 350 },
+    'Mila': { home: 800, office: 400 },
+    'Aïn Defla': { home: 800, office: 400 },
+    'Naâma': { home: 1150, office: 600 },
+    'Aïn Témouchent': { home: 800, office: 400 },
+    'Ghardaïa': { home: 1050, office: 500 },
+    'Relizane': { home: 800, office: 400 },
+    'Timimoun': { home: 1500, office: 700 },
+    'Bordj Badji Mokhtar': { home: 1400, office: 700 },
+    'Ouled Djellal': { home: 1000, office: 450 },
+    'Béni Abbès': { home: 1200, office: 600 },
+    'In Salah': { home: 1700, office: 1000 },
+    'In Guezzam': { home: 1400, office: 700 },
+    'Touggourt': { home: 1050, office: 500 },
+    'Djanet': { home: 1400, office: 700 },
+    "El M'Ghair": { home: 1100, office: 500 },
+    'El Meniaa': { home: 1100, office: 500 },
+    'Aflou': { home: 950, office: 500 },
+    'Barika': { home: 800, office: 400 },
+    'El Kantara': { home: 950, office: 500 },
+    'Bir El Ater': { home: 850, office: 400 },
+    'El Aricha': { home: 800, office: 400 },
+    'Ksar Chellala': { home: 850, office: 400 },
+    'Aïn Oussera': { home: 900, office: 500 },
+    'Messaad': { home: 900, office: 500 },
+    'Ksar El Boukhari': { home: 700, office: 400 },
+    'Bou Saâda': { home: 800, office: 400 },
+    'El Abiodh Sidi Cheikh': { home: 1200, office: 600 },
   };
 
-  const fee = deviations[wilaya];
-  if (fee) return lookupType === 'home' ? fee.home : fee.office;
-  
-  return lookupType === 'home' ? DEFAULT_DELIVERY_FEE.home : DEFAULT_DELIVERY_FEE.office;
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const targetNorm = norm(name);
+
+  for (const [k, v] of Object.entries(grid)) {
+    if (norm(k) === targetNorm) {
+      return isOffice ? v.office : v.home;
+    }
+  }
+
+  return isOffice ? 400 : 800;
 }

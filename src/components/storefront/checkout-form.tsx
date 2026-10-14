@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { trackMetaEvent, getOrCreateCheckoutAttemptId, clearCheckoutAttemptId } from '@/lib/meta-tracking';
 import { attributionPayload } from '@/lib/attribution';
 import { WILAYAS, DEFAULT_DELIVERY_FEE, getDeliveryFee } from '@/lib/types';
+import { getDeliveryFeeSync } from '@/lib/wilaya-data';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import type { CartItem, ApiResponse } from '@/lib/types';
 import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
@@ -518,7 +519,15 @@ export function CheckoutForm({
     return 0;
   }, [appliedPromo, cartSubtotal]);
 
-  const currentDeliveryFee = deliveryFee ?? 0;
+  const effectiveDeliveryFee = useMemo(() => {
+    if (deliveryFee !== null) return deliveryFee;
+    if (customerInfo.wilaya) {
+      return getDeliveryFeeSync(customerInfo.wilaya, customerInfo.deliveryType === 'OFFICE' ? 'office' : 'home');
+    }
+    return null;
+  }, [deliveryFee, customerInfo.wilaya, customerInfo.deliveryType]);
+
+  const currentDeliveryFee = effectiveDeliveryFee ?? 0;
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
@@ -561,21 +570,31 @@ export function CheckoutForm({
   }, [items, activeStore, initialDeliveryPartners, selectedPartnerId]);
 
   useEffect(() => {
-    if (!customerInfo.wilaya || !activeStore) {
+    if (!customerInfo.wilaya) {
       setDeliveryFee(null);
       return;
     }
+    const syncFee = getDeliveryFeeSync(customerInfo.wilaya, customerInfo.deliveryType === 'OFFICE' ? 'office' : 'home');
+    setDeliveryFee(syncFee);
+
+    if (!activeStore) return;
+
     setDeliveryLoading(true);
     const productIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
     const partnerParam = selectedPartnerId ? `&partnerId=${encodeURIComponent(selectedPartnerId)}` : '';
-    fetch(`/api/v1/delivery-partners/calculate?wilayaId=${encodeURIComponent(customerInfo.wilaya)}&storeId=${encodeURIComponent(activeStore.id)}&type=${customerInfo.deliveryType}&productIds=${productIds}${partnerParam}`)
+    const storeParam = activeStore.id ? `&storeId=${encodeURIComponent(activeStore.id)}` : '';
+    fetch(`/api/v1/delivery-partners/calculate?wilayaId=${encodeURIComponent(customerInfo.wilaya)}${storeParam}&type=${customerInfo.deliveryType}&productIds=${productIds}${partnerParam}`)
       .then(r => r.json())
       .then((res: any) => {
         const fee = res.success ? (res.data?.fee ?? res.fee) : null;
-        setDeliveryFee(typeof fee === 'number' ? fee : null);
+        if (typeof fee === 'number') {
+          setDeliveryFee(fee);
+        } else {
+          setDeliveryFee(syncFee);
+        }
       })
       .catch(() => {
-        setDeliveryFee(null);
+        setDeliveryFee(syncFee);
       })
       .finally(() => setDeliveryLoading(false));
   }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, items]);
@@ -1148,11 +1167,11 @@ export function CheckoutForm({
                       <span className="text-sm font-black" style={{ color: T.textPrimary }}>
                         {deliveryLoading ? (
                           <Loader2 className="size-3.5 animate-spin" />
-                        ) : deliveryFee !== null ? (
-                          deliveryFee === 0 ? (
+                        ) : effectiveDeliveryFee !== null ? (
+                          effectiveDeliveryFee === 0 ? (
                             <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
                           ) : (
-                            formatPrice(deliveryFee)
+                            formatPrice(effectiveDeliveryFee)
                           )
                         ) : (
                           <span className="text-amber-500 text-xs font-semibold">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
@@ -1184,11 +1203,11 @@ export function CheckoutForm({
                       {customerInfo.wilaya ? (
                         deliveryLoading ? (
                           <Loader2 className="size-3 animate-spin inline" />
-                        ) : deliveryFee !== null ? (
-                          deliveryFee === 0 ? (
+                        ) : effectiveDeliveryFee !== null ? (
+                          effectiveDeliveryFee === 0 ? (
                             <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
                           ) : (
-                            formatPrice(deliveryFee)
+                            formatPrice(effectiveDeliveryFee)
                           )
                         ) : (
                           <span className="text-amber-500 text-[10px] font-medium">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
@@ -1207,7 +1226,7 @@ export function CheckoutForm({
                   <div className="flex justify-between px-4 py-3 bg-slate-50/50" style={{ backgroundColor: T.summaryBg }}>
                     <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
                     <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>
-                      {deliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
+                      {effectiveDeliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
                     </span>
                   </div>
                 </div>

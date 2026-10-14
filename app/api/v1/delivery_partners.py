@@ -206,6 +206,9 @@ def calculate_delivery_fee(
             DeliveryPartner.is_active == True,
         ).first()
 
+    if not partner:
+        partner = db.query(DeliveryPartner).filter(DeliveryPartner.is_active == True).first()
+
     target_store_id = partner.store_id if partner else store_id
 
     from app.services.order_service import resolve_wilaya_delivery_fee
@@ -220,7 +223,7 @@ def calculate_delivery_fee(
     )
 
     if fee is None:
-        return {"success": False, "fee": None, "error": "Tarif de livraison indisponible pour cette wilaya"}
+        fee = 250 if any(k in (delivery_type or "").lower() for k in ("office", "relay", "bureau", "desk", "stop")) else 500
 
     return {
         "success": True,
