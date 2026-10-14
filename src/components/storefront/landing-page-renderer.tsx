@@ -733,7 +733,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
-                  <CheckoutForm isInline={true}>
+                  <CheckoutForm isInline={true} initialDeliveryPartners={(data as any).delivery_partners}>
                     
                     {/* Variant Selector (One per product in pack) */}
                     {data.product?.variants && data.product.variants.length > 0 && (() => {

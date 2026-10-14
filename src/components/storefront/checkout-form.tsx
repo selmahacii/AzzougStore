@@ -137,6 +137,164 @@ function formatAlgerianPhone(ph: string): string {
   return digits;
 }
 
+interface SearchableWilayaSelectProps {
+  value: string;
+  onChange: (wilayaName: string) => void;
+  isWilayaActive?: (wilayaName: string) => boolean;
+  dir: string;
+  T: any;
+  placeholder?: string;
+  error?: boolean;
+  onFocus?: () => void;
+}
+
+export function SearchableWilayaSelect({
+  value,
+  onChange,
+  isWilayaActive,
+  dir,
+  T,
+  placeholder = 'Sélectionnez la wilaya',
+  error,
+  onFocus,
+}: SearchableWilayaSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const wilayasList = useMemo(() => {
+    return (WILAYAS as readonly string[]).map((name, idx) => ({
+      id: idx + 1,
+      code: String(idx + 1).padStart(2, '0'),
+      name,
+    }));
+  }, []);
+
+  const activeWilayas = useMemo(() => {
+    if (!isWilayaActive) return wilayasList;
+    return wilayasList.filter(w => isWilayaActive(w.name));
+  }, [wilayasList, isWilayaActive]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return activeWilayas;
+    const clean = (str: string) =>
+      str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const s = clean(search);
+    return activeWilayas.filter(w =>
+      clean(w.name).includes(s) ||
+      w.code.includes(s) ||
+      String(w.id).includes(s)
+    );
+  }, [activeWilayas, search]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const displayLabel = useMemo(() => {
+    if (!value) return '';
+    const idx = (WILAYAS as readonly string[]).indexOf(value);
+    if (idx >= 0) {
+      return `${String(idx + 1).padStart(2, '0')}. ${value}`;
+    }
+    return value;
+  }, [value]);
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        id="wilaya"
+        onClick={() => {
+          onFocus?.();
+          setOpen(prev => !prev);
+          setSearch('');
+        }}
+        className={cn(
+          "w-full flex items-center justify-between px-3 h-11 text-[16px] md:text-sm border-2 transition-all outline-none cursor-pointer",
+          error ? "border-red-500" : ""
+        )}
+        style={{
+          backgroundColor: T.inputBg,
+          borderColor: T.inputBorder,
+          color: value ? T.inputText : T.inputPlaceholder,
+          borderRadius: T.inputRadius,
+        }}
+      >
+        <span className="truncate">
+          {displayLabel || placeholder}
+        </span>
+        <span className="text-[10px] opacity-60">▼</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-50 mt-1 w-full left-0 right-0 border-2 rounded-xl shadow-xl max-h-64 overflow-hidden flex flex-col"
+          style={{
+            backgroundColor: T.cardBg || '#ffffff',
+            borderColor: T.cardBorder || T.inputBorder || '#e2e8f0',
+          }}
+        >
+          {/* Search bar */}
+          <div className="p-2 border-b flex items-center gap-2" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
+            <Search className="size-3.5 opacity-60 shrink-0" style={{ color: T.inputText }} />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={dir === 'rtl' ? 'بحث عن ولاية أو رقم (مثال: 16 أو الجزائر)...' : 'Rechercher wilaya ou code (ex: 16 ou Alger)...'}
+              className="w-full bg-transparent text-[16px] md:text-xs border-none outline-none focus:ring-0 focus:outline-none"
+              style={{ color: T.inputText }}
+              autoFocus
+            />
+          </div>
+
+          {/* List */}
+          <div className="overflow-y-auto flex-1 max-h-52 py-1 scrollbar-thin">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
+                {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
+              </div>
+            ) : (
+              filtered.map(w => {
+                const isSelected = value === w.name;
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(w.name);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2.5 text-xs transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between cursor-pointer",
+                      isSelected ? "font-bold" : ""
+                    )}
+                    style={{
+                      color: T.inputText,
+                      backgroundColor: isSelected ? `${T.primary}12` : 'transparent',
+                      textAlign: dir === 'rtl' ? 'right' : 'left'
+                    }}
+                  >
+                    <span>{w.code}. {w.name}</span>
+                    {isSelected && <Check className="size-3.5" style={{ color: T.primary }} />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface SearchableCommuneSelectProps {
   wilaya: string;
   value: string;
@@ -288,7 +446,17 @@ export function SearchableCommuneSelect({
   );
 }
 
-export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
+export function CheckoutForm({
+  isInline = false,
+  forceTemplate,
+  children,
+  initialDeliveryPartners,
+}: {
+  isInline?: boolean;
+  forceTemplate?: string;
+  children?: React.ReactNode;
+  initialDeliveryPartners?: any[];
+}) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
@@ -321,8 +489,10 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     wilaya: '', commune: '', address: '', deliveryType: 'HOME',
   });
 
-  const [availablePartners, setAvailablePartners] = useState<any[]>([]);
-  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+  const [availablePartners, setAvailablePartners] = useState<any[]>(() => initialDeliveryPartners || []);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(() => {
+    return (initialDeliveryPartners && initialDeliveryPartners.length > 0) ? initialDeliveryPartners[0].id : null;
+  });
 
   const baseT = useCheckoutTheme(activeStore);
   const T = forceTemplate ? { ...baseT, tpl: forceTemplate } : baseT;
@@ -354,15 +524,6 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   useEffect(() => {
     if (!items.length) return;
-    // One event_id per real checkout ATTEMPT (see getOrCreateCheckoutAttemptId
-    // in meta-tracking.ts) — not per render, not per cart content, not per
-    // time window. This effect legitimately re-runs several times for the
-    // SAME attempt (delivery fee resolving async as the shopper picks a
-    // wilaya/commune/partner changes finalTotal each time), and reusing the
-    // attempt id means every one of those re-runs is a no-op past the first
-    // (trackMetaEvent's own sessionStorage dedup on event_id) — while a
-    // genuinely new attempt (new tab, or this tab reopened after being
-    // closed) gets a fresh id and fires again even with the identical cart.
     const attemptId = getOrCreateCheckoutAttemptId();
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
@@ -378,6 +539,13 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
   }, [finalTotal, items]);
 
   useEffect(() => {
+    if (initialDeliveryPartners && initialDeliveryPartners.length > 0) {
+      setAvailablePartners(initialDeliveryPartners);
+      if (!selectedPartnerId) {
+        setSelectedPartnerId(initialDeliveryPartners[0].id);
+      }
+      return;
+    }
     if (!activeStore) return;
     const pIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
     fetch(`/api/v1/delivery-partners/availability?storeId=${activeStore.id}&productIds=${pIds}`)
@@ -390,19 +558,25 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
         }
       })
       .catch(() => setAvailablePartners([]));
-  }, [items, activeStore]);
+  }, [items, activeStore, initialDeliveryPartners, selectedPartnerId]);
 
   useEffect(() => {
-    if (!customerInfo.wilaya || !activeStore || !selectedPartnerId) return;
+    if (!customerInfo.wilaya || !activeStore) {
+      setDeliveryFee(null);
+      return;
+    }
     setDeliveryLoading(true);
     const productIds = items.map(i => i.product?.id || '').filter(Boolean).join(',');
-    fetch(`/api/v1/delivery-partners/calculate?partnerId=${selectedPartnerId}&wilayaId=${customerInfo.wilaya}&type=${customerInfo.deliveryType}&productIds=${productIds}`)
+    const partnerParam = selectedPartnerId ? `&partnerId=${encodeURIComponent(selectedPartnerId)}` : '';
+    fetch(`/api/v1/delivery-partners/calculate?wilayaId=${encodeURIComponent(customerInfo.wilaya)}&storeId=${encodeURIComponent(activeStore.id)}&type=${customerInfo.deliveryType}&productIds=${productIds}${partnerParam}`)
       .then(r => r.json())
       .then((res: any) => {
-        const fee = res.success ? res.data?.fee : (res.fee ?? null);
-        setDeliveryFee(fee);
+        const fee = res.success ? (res.data?.fee ?? res.fee) : null;
+        setDeliveryFee(typeof fee === 'number' ? fee : null);
       })
-      .catch(() => setDeliveryFee(null))
+      .catch(() => {
+        setDeliveryFee(null);
+      })
       .finally(() => setDeliveryLoading(false));
   }, [customerInfo.wilaya, customerInfo.deliveryType, activeStore, selectedPartnerId, items]);
 
@@ -762,17 +936,15 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   <label htmlFor="wilaya" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
                   </label>
-                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
-                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
-                      <SelectValue placeholder={t('selectWilaya')} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
-                      {WILAYAS.filter(isWilayaActive).map(w => (
-                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableWilayaSelect
+                    value={customerInfo.wilaya}
+                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
+                    isWilayaActive={isWilayaActive}
+                    dir={dir}
+                    T={T}
+                    placeholder={t('selectWilaya')}
+                    error={!!errors.wilaya}
+                  />
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -880,17 +1052,15 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   <label htmlFor="wilaya" className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {t('wilaya')}
                   </label>
-                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
-                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
-                      <SelectValue placeholder={t('selectWilaya')} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
-                      {WILAYAS.filter(isWilayaActive).map(w => (
-                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableWilayaSelect
+                    value={customerInfo.wilaya}
+                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
+                    isWilayaActive={isWilayaActive}
+                    dir={dir}
+                    T={T}
+                    placeholder={t('selectWilaya')}
+                    error={!!errors.wilaya}
+                  />
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -976,7 +1146,17 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                         <Truck className="size-3.5 text-emerald-500" /> {t('deliveryFeeEstimated')}
                       </span>
                       <span className="text-sm font-black" style={{ color: T.textPrimary }}>
-                        {deliveryLoading ? <Loader2 className="size-3.5 animate-spin" /> : `${formatPrice(currentDeliveryFee)}`}
+                        {deliveryLoading ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : deliveryFee !== null ? (
+                          deliveryFee === 0 ? (
+                            <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
+                          ) : (
+                            formatPrice(deliveryFee)
+                          )
+                        ) : (
+                          <span className="text-amber-500 text-xs font-semibold">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
+                        )}
                       </span>
                     </div>
                   )}
@@ -1033,8 +1213,14 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                       {customerInfo.wilaya ? (
                         deliveryLoading ? (
                           <Loader2 className="size-3 animate-spin inline" />
+                        ) : deliveryFee !== null ? (
+                          deliveryFee === 0 ? (
+                            <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
+                          ) : (
+                            formatPrice(deliveryFee)
+                          )
                         ) : (
-                          formatPrice(currentDeliveryFee)
+                          <span className="text-amber-500 text-[10px] font-medium">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
                         )
                       ) : (
                         <span className="text-[10px] font-normal italic opacity-60">{t('selectWilaya') || 'Sélectionnez votre wilaya'}</span>
@@ -1049,7 +1235,9 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   )}
                   <div className="flex justify-between px-4 py-3 bg-slate-50/50" style={{ backgroundColor: T.summaryBg }}>
                     <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
-                    <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
+                    <span className="text-lg font-black tabular-nums" style={{ color: T.primary }}>
+                      {deliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1137,16 +1325,28 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
             {/* Totaux */}
             <div className="border overflow-hidden" style={{ borderRadius: T.radius, borderColor: T.cardBorder }}>
               <div className="divide-y" style={{ borderColor: T.dividerColor }}>
-                {[
-                  { label: t('subtotal'), value: cartSubtotal },
-                  { label: t('deliveryFee'), value: currentDeliveryFee, icon: <Truck className="size-3.5" /> },
-                ].map(row => (
-                  <div key={row.label} className="flex justify-between px-4 py-3 text-sm"
-                    style={{ borderBottomColor: T.dividerColor }}>
-                    <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>{row.icon}{row.label}</span>
-                    <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(row.value)}</span>
-                  </div>
-                ))}
+                <div className="flex justify-between px-4 py-3 text-sm" style={{ borderBottomColor: T.dividerColor }}>
+                  <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>{t('subtotal')}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>{formatPrice(cartSubtotal)}</span>
+                </div>
+                <div className="flex justify-between px-4 py-3 text-sm" style={{ borderBottomColor: T.dividerColor }}>
+                  <span className="flex items-center gap-1.5" style={{ color: T.textSecondary }}>
+                    <Truck className="size-3.5" /> {t('deliveryFee')}
+                  </span>
+                  <span className="font-semibold tabular-nums" style={{ color: T.textPrimary }}>
+                    {deliveryLoading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : deliveryFee !== null ? (
+                      deliveryFee === 0 ? (
+                        <span className="text-emerald-500 font-bold">{dir === 'rtl' ? 'مجاني' : 'Gratuit'}</span>
+                      ) : (
+                        formatPrice(deliveryFee)
+                      )
+                    ) : (
+                      <span className="text-amber-500 text-xs font-semibold">{dir === 'rtl' ? 'غير متوفر' : 'Tarif indisponible'}</span>
+                    )}
+                  </span>
+                </div>
                 {appliedPromo && discountAmount > 0 && (
                   <div className="flex justify-between px-4 py-3 text-sm" style={{ backgroundColor: 'rgba(52,211,153,0.06)' }}>
                     <span className="text-emerald-400 flex items-center gap-1.5"><Tag className="size-3.5" /> {appliedPromo.code}</span>
@@ -1155,7 +1355,9 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                 )}
                 <div className="flex justify-between px-4 py-4" style={{ backgroundColor: T.summaryBg }}>
                   <span className="text-sm font-bold" style={{ color: T.textPrimary }}>{t('totalToPay')}</span>
-                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>{formatPrice(finalTotal)}</span>
+                  <span className="text-xl font-black tabular-nums" style={{ color: T.primary }}>
+                    {deliveryFee !== null ? formatPrice(finalTotal) : `${formatPrice(cartSubtotal - discountAmount)} + livraison`}
+                  </span>
                 </div>
               </div>
             </div>

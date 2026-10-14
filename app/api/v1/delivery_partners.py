@@ -191,120 +191,58 @@ _WILAYAS = [
 
 def _wilaya_name_to_id(name: str) -> Optional[int]:
     """Convert wilaya name to 1-based numeric ID, or None if not found."""
-    try:
-        return int(name)  # already a numeric string
-    except (ValueError, TypeError):
-        pass
-    normalized = name.strip().lower()
-    for i, w in enumerate(_WILAYAS):
-        if w.lower() == normalized:
-            return i + 1
-    return None
+    from app.services.order_service import resolve_wilaya_id
+    return resolve_wilaya_id(name)
 
 
 @router.get("/calculate")
 def calculate_delivery_fee(
-    partner_id: str = Query(..., alias="partnerId"),
+    request: Request,
     wilaya_id: str = Query(..., alias="wilayaId"),
+    partner_id: Optional[str] = Query(None, alias="partnerId"),
+    store_id: Optional[str] = Query(None, alias="storeId"),
     delivery_type: str = Query("home", alias="type"),
     product_ids: Optional[str] = Query(None, alias="productIds"),
     db: Session = Depends(get_db),
 ):
     """
     Public endpoint for the storefront to get delivery fee for a carrier + wilaya.
-    Priority: product-specific custom rate → per-wilaya grid → flat partner fee.
+    Priority: product-specific custom rate → per-wilaya grid → flat partner fee → standard fallback.
     """
-    partner = db.query(DeliveryPartner).filter(
-        DeliveryPartner.id == partner_id,
-        DeliveryPartner.is_active == True,
-    ).first()
-    if not partner:
-        return {"success": False, "fee": None}
-
-    # The manual-order UI and the storefront send different labels for a
-    # pickup-point delivery ("stop_desk", "stopdesk", "desk", "bureau", …).
-    # Any of them means "office/desk" — matching on a fixed short list missed
-    # "stop_desk" and silently charged the (cheaper) home rate for stop-desk
-    # orders. Detect by substring so every spelling resolves correctly.
-    _dt = (delivery_type or "").lower()
-    is_office = any(k in _dt for k in ("office", "relay", "bureau", "desk", "stop"))
-    numeric_id = _wilaya_name_to_id(wilaya_id)
-
-    # 1. Resolve fee using products if productIds are provided
-    if product_ids and numeric_id is not None:
-        p_ids = [pid.strip() for pid in product_ids.split(",") if pid.strip()]
-        if p_ids:
-            products = db.query(Product).filter(Product.id.in_(p_ids)).all()
-            if products:
-                resolved_fees = []
-                for product in products:
-                    product_fee = None
-                    if product.delivery_fees:
-                        try:
-                            import json
-                            d_fees = product.delivery_fees
-                            if isinstance(d_fees, str):
-                                d_fees = json.loads(d_fees)
-                            
-                            if isinstance(d_fees, dict):
-                                if d_fees.get("is_free") or d_fees.get("isFree"):
-                                    product_fee = 0.0
-                                else:
-                                    fees_grid = d_fees.get("fees", {})
-                                    carrier_key = partner.carrier_id
-                                    carrier_fees = fees_grid.get(carrier_key) or fees_grid.get(partner.id)
-                                    if isinstance(carrier_fees, dict):
-                                        w_fees = carrier_fees.get(str(numeric_id)) or carrier_fees.get(numeric_id)
-                                        if isinstance(w_fees, dict):
-                                            type_key = "desk" if is_office else "home"
-                                            fee_val = w_fees.get(type_key)
-                                            if fee_val is None and type_key == "desk":
-                                                fee_val = w_fees.get("office") or w_fees.get("relay")
-                                            
-                                            if fee_val is not None:
-                                                product_fee = float(fee_val)
-                        except Exception as e:
-                            logger.error(f"Error parsing delivery_fees for product {product.id}: {e}")
-
-                    # Fallback to default carrier grid or flat rate for this product
-                    if product_fee is None:
-                        grid_entry = db.query(DeliveryFeeGrid).filter(
-                            DeliveryFeeGrid.partner_id == partner_id,
-                            DeliveryFeeGrid.wilaya_id == numeric_id,
-                        ).first()
-                        if grid_entry:
-                            product_fee = float(grid_entry.office_fee if is_office else grid_entry.home_fee)
-                        else:
-                            product_fee = float(partner.fee_relay if is_office else partner.fee_home)
-
-                    resolved_fees.append(product_fee)
-
-                if resolved_fees:
-                    max_fee = max(resolved_fees)
-                    return {
-                        "success": True,
-                        "data": {
-                            "fee": max_fee,
-                            "partner_id": partner_id,
-                            "wilaya_id": numeric_id,
-                            "type": delivery_type,
-                            "source": "product_custom"
-                        }
-                    }
-
-    # 2. Try default carrier per-wilaya fee grid
-    if numeric_id is not None:
-        grid_entry = db.query(DeliveryFeeGrid).filter(
-            DeliveryFeeGrid.partner_id == partner_id,
-            DeliveryFeeGrid.wilaya_id == numeric_id,
+    partner = None
+    if partner_id:
+        partner = db.query(DeliveryPartner).filter(
+            DeliveryPartner.id == partner_id,
+            DeliveryPartner.is_active == True,
         ).first()
-        if grid_entry:
-            fee = grid_entry.office_fee if is_office else grid_entry.home_fee
-            return {"success": True, "data": {"fee": fee, "partner_id": partner_id, "wilaya_id": numeric_id, "type": delivery_type, "source": "grid"}}
 
-    # 3. Fall back to partner flat rate
-    fee = partner.fee_relay if is_office else partner.fee_home
-    return {"success": True, "data": {"fee": fee, "partner_id": partner_id, "type": delivery_type, "source": "flat"}}
+    target_store_id = partner.store_id if partner else store_id
+
+    from app.services.order_service import resolve_wilaya_delivery_fee
+    p_ids = [pid.strip() for pid in product_ids.split(",") if pid.strip()] if product_ids else None
+    fee = resolve_wilaya_delivery_fee(
+        db,
+        store_id=target_store_id,
+        wilaya=wilaya_id,
+        delivery_type=delivery_type,
+        carrier_id=partner.id if partner else None,
+        product_ids=p_ids,
+    )
+
+    if fee is None:
+        return {"success": False, "fee": None, "error": "Tarif de livraison indisponible pour cette wilaya"}
+
+    return {
+        "success": True,
+        "fee": fee,
+        "data": {
+            "fee": fee,
+            "partner_id": partner.id if partner else None,
+            "wilaya_id": wilaya_id,
+            "type": delivery_type,
+            "source": "unified_engine",
+        }
+    }
 
 
 # ─── Public Availability ─────────────────────────────────────
