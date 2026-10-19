@@ -157,12 +157,6 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     setQuantity(capped);
   }, [selectedOfferIndex, offers, maxOrderableQuantity]);
 
-  const isVarAvailable = (v: any) => {
-    if (!v) return false;
-    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
-    return ((v.stock || 0) - (v.reserved || 0)) > 0;
-  };
-
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -189,11 +183,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
-            const mainVar = grouped[name]?.find(isVarAvailable) || grouped[name]?.[0];
+            const mainVar = grouped[name]?.[0];
             if (mainVar) {
               itemSelection[name] = mainVar;
               if (mainVar.sub_variants && mainVar.sub_variants.length > 0) {
-                const firstSub = mainVar.sub_variants.find(isVarAvailable) || mainVar.sub_variants[0];
+                const firstSub = mainVar.sub_variants[0];
                 itemSelection[firstSub.name] = firstSub;
               }
             }
@@ -547,7 +541,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                      <div className="flex flex-wrap gap-2.5">
                                        {optionVariants.map((v: any, i: number) => {
                                          const isSelected = selectedVal === v.value;
-                                         const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
+                                         const isOutOfStock = ((v.stock || 0) - (v.reserved || 0)) <= 0;
                                          const colorHex = getVariantColor(v.value, v.color);
                                          const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -630,7 +624,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                          <div className="flex flex-wrap gap-2">
                                            {selectedMainVar.sub_variants.map((sv: any, i: number) => {
                                              const isSelected = selectedSubVal === sv.value;
-                                             const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
+                                             const isOutOfStock = ((sv.stock || 0) - (sv.reserved || 0)) <= 0;
                                              return (
                                                <button
                                                  key={`sub-${itemIndex}-${subName}-${sv.value || i}`}
