@@ -211,7 +211,7 @@ def list_suppliers(
 
     return {
         "success": True,
-        "data": [SupplierOut.model_validate(s).model_dump(mode="json") for s in suppliers],
+        "data": [SupplierOut.model_validate(s).model_dump() for s in suppliers],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -303,7 +303,7 @@ def get_supplier(supplier_id: str, db: Session = Depends(get_db)):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump(mode="json")}
+    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump()}
 
 
 @router.post("/", response_model=dict)
@@ -340,7 +340,7 @@ def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db)):
     db.add(supplier)
     db.commit()
     db.refresh(supplier)
-    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump(mode="json")}
+    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump()}
 
 
 @router.patch("/{supplier_id}", response_model=dict)
@@ -355,7 +355,7 @@ def update_supplier(supplier_id: str, payload: SupplierUpdate, db: Session = Dep
 
     db.commit()
     db.refresh(supplier)
-    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump(mode="json")}
+    return {"success": True, "data": SupplierOut.model_validate(supplier).model_dump()}
 
 
 @router.delete("/{supplier_id}", response_model=dict)

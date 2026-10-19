@@ -422,36 +422,15 @@ def get_by_slug(
             total_variant_available = 0
             for v in variants:
                 if isinstance(v, dict):
-                    is_v_available = (v.get("is_available") is not False) and (v.get("out_of_stock") is not True) and (v.get("is_active") is not False)
-                    sub_vars = v.get("sub_variants")
-                    if sub_vars and isinstance(sub_vars, list) and len(sub_vars) > 0:
-                        sub_available_sum = 0
-                        has_any_sub_avail = False
-                        for sv in sub_vars:
-                            if isinstance(sv, dict):
-                                sv_is_avail = (sv.get("is_available") is not False) and (sv.get("out_of_stock") is not True) and (sv.get("is_active") is not False)
-                                try:
-                                    sv_s = int(sv.get("stock") or 0)
-                                    sv_r = int(sv.get("reserved") or 0)
-                                except (TypeError, ValueError):
-                                    sv_s, sv_r = 0, 0
-                                sv_rem = max(0, sv_s - sv_r) if sv_is_avail else 0
-                                sub_available_sum += sv_rem
-                                if sv_is_avail and sv_rem > 0:
-                                    has_any_sub_avail = True
-                        if is_v_available and has_any_sub_avail:
-                            in_stock += 1
-                            total_variant_available += sub_available_sum
-                    else:
-                        try:
-                            s = int(v.get("stock") or 0)
-                            r = int(v.get("reserved") or 0)
-                        except (TypeError, ValueError):
-                            s, r = 0, 0
-                        available = max(0, s - r) if is_v_available else 0
-                        total_variant_available += available
-                        if is_v_available and available > 0:
-                            in_stock += 1
+                    try:
+                        s = int(v.get("stock") or 0)
+                        r = int(v.get("reserved") or 0)
+                    except (TypeError, ValueError):
+                        s, r = 0, 0
+                    available = max(0, s - r)
+                    total_variant_available += available
+                    if available > 0:
+                        in_stock += 1
             product_available = total_variant_available if variants else max(0, int(live_p.stock or 0) - int(live_p.reserved_stock or 0))
             
             data["stock_detail"] = {
