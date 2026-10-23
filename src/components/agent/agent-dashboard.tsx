@@ -2134,8 +2134,8 @@ function SalaryView({
   const abandonedBonus = Number(stats.abandoned_bonus ?? (recoveredDeliveredCount * paymentRecovered));
   const marketplaceBonus = Number(stats.marketplace_bonus ?? (marketplaceDeliveredCount * paymentMarketplace));
   const upsellBonus = Number(stats.upsell_bonus ?? (upsellDeliveredCount * paymentUpsell));
-  const returnedPenalty = Number(stats.returned_penalty ?? (returnedCount * paymentLost));
-  const totalSalary = Number(stats.salary ?? (isMonthlySalary ? paymentAmount : Math.max(0, baseSalary + abandonedBonus + marketplaceBonus + upsellBonus - returnedPenalty)));
+  const returnedPenalty = 0; // Pas de pénalité sur les retours chez AzzougShop
+  const totalSalary = Number(isMonthlySalary ? paymentAmount : (baseSalary + abandonedBonus + marketplaceBonus + upsellBonus));
 
   // ── Détection de la période active ──
   const formatLocalIso = (d: Date) => {
@@ -2507,20 +2507,7 @@ function SalaryView({
                 </>
               )}
 
-              {returnedPenalty > 0 && (
-                <>
-                  <span className="text-slate-500 text-sm font-black">-</span>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveTab('orders'); setOrderFilter('RETURNED'); }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 transition-all cursor-pointer group text-left"
-                  >
-                    <span className="size-2 rounded-full bg-rose-400"></span>
-                    <span className="text-rose-300">Pénalité Retours:</span>
-                    <span className="text-rose-200 font-black">-{formatPrice(returnedPenalty)}</span>
-                  </button>
-                </>
-              )}
+              
 
               <span className="text-slate-500 text-sm font-black">=</span>
 
@@ -2635,27 +2622,27 @@ function SalaryView({
           </div>
         </div>
 
-        {/* Carte 5 : Retours (Pénalité) */}
+        {/* Carte 5 : Retours (Informatif - Aucune Pénalité) */}
         <div 
           onClick={() => { setActiveTab('orders'); setOrderFilter('RETURNED'); }}
           className={cn(
             "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
-            orderFilter === 'RETURNED' ? "border-rose-500 ring-2 ring-rose-500/20" : "border-slate-200 hover:border-rose-300"
+            orderFilter === 'RETURNED' ? "border-slate-400 ring-2 ring-slate-400/20" : "border-slate-200 hover:border-slate-300"
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
               Colis Retournés
             </span>
-            <ChevronRight className="size-4 text-slate-300 group-hover:text-rose-500 transition-colors" />
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-slate-600 transition-colors" />
           </div>
-          <p className="text-3xl font-black text-rose-600 mt-2 font-mono">{returnedCount}</p>
+          <p className="text-3xl font-black text-slate-800 mt-2 font-mono">{returnedCount}</p>
           <p className="text-xs font-bold text-slate-500 mt-1">
-            {paymentLost > 0 ? `${returnedCount} × ${formatPrice(paymentLost)}` : 'Aucune déduction (0 DA)'}
+            Non aboutis / Refusés
           </p>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Déduction</span>
-            <span className="text-sm font-black text-rose-600 font-mono">-{formatPrice(returnedPenalty)}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Impact Salaire</span>
+            <span className="text-xs font-bold text-slate-600 font-mono">0 DA</span>
           </div>
         </div>
       </div>
@@ -2825,10 +2812,10 @@ function SalaryView({
                     orderCommission = paymentAmount;
                     commLabel = `+${formatPrice(orderCommission)} (Normale Livrée)`;
                     commColor = 'bg-blue-50 text-blue-700 border-blue-200 font-bold';
-                  } else if (isRet && paymentLost > 0) {
-                    orderCommission = -paymentLost;
-                    commLabel = `-${formatPrice(paymentLost)} (Pénalité Retour)`;
-                    commColor = 'bg-rose-50 text-rose-700 border-rose-200 font-bold';
+                  } else if (isRet) {
+                    orderCommission = 0;
+                    commLabel = '0 DA (Retourné)';
+                    commColor = 'bg-slate-100 text-slate-600 border-slate-200 font-medium';
                   }
 
                   return (
@@ -3097,13 +3084,11 @@ function SalaryView({
                 <p className="text-xs text-pink-800">Commission additionnelle par article vendu issu du catalogue partagé.</p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200 space-y-2">
-                <p className="text-xs font-black text-rose-900 uppercase tracking-wider">🔻 Colis Retournés (Pénalité)</p>
-                <p className="text-2xl font-black text-rose-700 font-mono">
-                  {paymentLost > 0 ? `-${formatPrice(paymentLost)}` : '0 DA (Aucune déduction)'}
-                </p>
-                <p className="text-xs text-rose-800">
-                  {paymentLost > 0 ? 'Déduction par colis retourné. Note de garantie : votre salaire ne peut jamais devenir négatif.' : 'Aucune déduction de salaire n\'est appliquée sur vos retours.'}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <p className="text-xs font-black text-slate-800 uppercase tracking-wider">📦 Colis Retournés</p>
+                <p className="text-2xl font-black text-slate-700 font-mono">0 DA</p>
+                <p className="text-xs text-slate-600">
+                  Chez AzzougShop, aucune pénalité ni déduction sur salaire n'est appliquée en cas de retour client.
                 </p>
               </div>
             </div>
