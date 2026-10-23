@@ -7,7 +7,7 @@ import {
   LayoutTemplate, Package, FileText, Loader2, X, Check,
   ChevronRight, BarChart3, Star, ArrowRight, Palette,
   Image as ImageIcon, MessageSquare, HelpCircle, Settings,
-  TrendingUp, Users, ShoppingCart, Link, RefreshCw, Calendar,
+  TrendingUp, Users, ShoppingCart, ShoppingBag, Link, RefreshCw, Calendar,
   Truck, Upload, Sparkles, ShieldCheck, AlertTriangle, AlertCircle,
   ArrowUpRight, ArrowDownRight, Activity, Percent, Layers, Globe,
   CheckCircle2, ChevronDown, ChevronUp, Info, MousePointerClick,
@@ -1384,6 +1384,25 @@ function LandingPageModal({
   const [whatsappMessage, setWhatsappMessage] = useState(existingReassurance.whatsapp_message || 'مرحباً، أود الاستفسار بخصوص المنتج');
   const [showDeliverySection, setShowDeliverySection] = useState(existingReassurance.show_delivery_section !== false);
   const [showBottomCard, setShowBottomCard] = useState(existingReassurance.show_bottom_card !== false);
+  const [bottomCardImage, setBottomCardImage] = useState(
+    existingReassurance.bottom_card_image || (existing?.banner_image_url ? existing.banner_image_url.split(',')[0] : '')
+  );
+  const [bottomCardTitle, setBottomCardTitle] = useState(
+    existingReassurance.bottom_card_title || existing?.cta_headline || 'اجعل كل رحلة أكثر راحة'
+  );
+  const [bottomCardSubtitle, setBottomCardSubtitle] = useState(
+    existingReassurance.bottom_card_subtitle || existing?.cta_subtitle || 'وسادة سفر مريحة مع قناع عين هدية 🎁 - في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك'
+  );
+  const [bottomCardBtnText, setBottomCardBtnText] = useState(
+    existingReassurance.bottom_card_btn_text || (existing?.cta2_label || 'اطلب الآن — 1400 دج فقط')
+  );
+  const [bottomCardBg, setBottomCardBg] = useState(
+    existingReassurance.bottom_card_bg || '#0F172A'
+  );
+  const [bottomCardBtnBg, setBottomCardBtnBg] = useState(
+    existingReassurance.bottom_card_btn_bg || primaryColor || '#2563EB'
+  );
+  const [isUploadingBottomBanner, setIsUploadingBottomBanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
@@ -1426,6 +1445,49 @@ function LandingPageModal({
       toast.error(err.message || 'Erreur lors du téléversement');
     } finally {
       setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleBottomBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Type non supporté. Utilisez JPEG, PNG, WebP, GIF ou AVIF.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('Image trop volumineuse. Limite: 20 MB.');
+      return;
+    }
+
+    setIsUploadingBottomBanner(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      if (bottomCardImage) form.append('old_url', bottomCardImage);
+      const res = await fetch('/api/v1/upload/image', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.detail || 'Échec du téléversement');
+      }
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      const newUrl = data.url || data.secure_url || data.image_url;
+      if (!newUrl) throw new Error("Le serveur n'a pas renvoyé d'URL d'image");
+      setBottomCardImage(newUrl);
+      toast.success('Photo de la bannière mise à jour !');
+    } catch (err: any) {
+      toast.error(err.message || 'Erreur lors du téléversement');
+    } finally {
+      setIsUploadingBottomBanner(false);
       e.target.value = '';
     }
   };
@@ -1622,9 +1684,10 @@ function LandingPageModal({
         template,
         price: price ? parseInt(price) : null,
         compare_price: comparePrice ? parseInt(comparePrice) : null,
-        cta_headline: ctaHeadline,
-        cta_subtitle: ctaSubtitle,
-        cta2_label: cta2Label || null,
+        cta_headline: bottomCardTitle || ctaHeadline,
+        cta_subtitle: bottomCardSubtitle || ctaSubtitle,
+        cta2_label: bottomCardBtnText || cta2Label || null,
+        banner_image_url: bottomCardImage || bannerImageUrl || null,
         phone: whatsappPhone || phone || null,
         benefits: (() => {
           const cleanMarketingBenefits = (benefits || []).filter((b: any) => b?.id !== 'reassurance_config' && b?.show_announcement_bar === undefined);
@@ -1669,7 +1732,12 @@ function LandingPageModal({
               { icon: '🔄', title: 'استبدال مجاني', desc: 'إذا وصلتك السلعة فيها أي عيب، اتصل بنا ونبدلوها لك مجاناً' }
             ],
             show_bottom_card: showBottomCard,
-            bottom_card_bg: '#0f172a',
+            bottom_card_image: bottomCardImage || null,
+            bottom_card_title: bottomCardTitle || ctaHeadline,
+            bottom_card_subtitle: bottomCardSubtitle || ctaSubtitle,
+            bottom_card_btn_text: bottomCardBtnText || cta2Label || 'اطلب الآن',
+            bottom_card_bg: bottomCardBg,
+            bottom_card_btn_bg: bottomCardBtnBg,
             footer_logo_bg: 'transparent',
             logo_bg: 'transparent',
           };
@@ -1680,7 +1748,6 @@ function LandingPageModal({
         stats,
         faq,
         offers,
-        banner_image_url: bannerImageUrl || null,
       };
 
       if (isEdit) {
@@ -1705,7 +1772,7 @@ function LandingPageModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-4xl p-0 border border-slate-200 shadow-xl overflow-hidden flex flex-col w-[95vw] h-[90dvh] rounded-2xl bg-white">
+      <DialogContent className="w-[96vw] max-w-5xl h-[92dvh] sm:h-[90dvh] p-0 border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col rounded-2xl sm:rounded-3xl bg-white">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
           <div className="flex items-center gap-3">
@@ -2993,25 +3060,205 @@ function LandingPageModal({
                       ))}
                     </div>
 
-                    {/* Bannière de réassurance finale */}
-                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
-                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider border-b pb-3">Bannière de réassurance finale (Bas de page)</h4>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre de la bannière</label>
-                        <Input value={ctaHeadline} onChange={e => setCtaHeadline(e.target.value)} placeholder="Ex: Redéfinissez votre façon de voyager" className="h-11 rounded-2xl border-slate-200 text-sm font-bold" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre / Texte de réassurance</label>
-                        <Textarea value={ctaSubtitle} onChange={e => setCtaSubtitle(e.target.value)} placeholder="Ex: Le confort d'un nuage, partout avec vous." rows={3} className="rounded-2xl border-slate-200 text-sm font-medium resize-none" />
+                    {/* ── BANNIÈRE DE RÉASSURANCE FINALE (Bas de page) ── */}
+                    <div className="bg-white rounded-[24px] border p-4 sm:p-6 space-y-5 border-slate-100 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3.5">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                            <span>Bannière de Réassurance Finale (Bas de page)</span>
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">Bannière visuelle complète avec photo, titre, texte et bouton d'action juste avant le footer</p>
+                        </div>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="text-xs font-bold text-slate-600">{showBottomCard ? 'Affichée' : 'Masquée'}</span>
+                          <Switch checked={showBottomCard} onCheckedChange={setShowBottomCard} />
+                        </div>
                       </div>
 
-                      <div className="border-t border-slate-200 pt-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photos Bannières Publicitaires (Multiples - Bas de page)</label>
-                          {getBannerUrls(bannerImageUrl).length > 0 && (
-                            <span className="text-[10px] font-bold text-slate-400">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
-                          )}
+                      {showBottomCard && (
+                        <div className="space-y-5 pt-1">
+                          {/* 1. Photo de la Bannière */}
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo de la Bannière (Recommandé: Format 16:9 ou 16:10)</label>
+                            
+                            {bottomCardImage ? (
+                              <div className="relative aspect-video max-h-48 rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 group shadow-sm">
+                                <img src={bottomCardImage} alt="Aperçu bannière" className="size-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                  <label className="cursor-pointer h-9 px-3.5 rounded-xl bg-white/90 hover:bg-white text-slate-900 font-bold text-xs flex items-center gap-2 shadow-md transition-transform active:scale-95">
+                                    <Upload className="size-3.5" /> Changer la photo
+                                    <input
+                                      type="file"
+                                      accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
+                                      onChange={handleBottomBannerUpload}
+                                      className="hidden"
+                                      disabled={isUploadingBottomBanner}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBottomCardImage('')}
+                                    className="h-9 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-transform active:scale-95"
+                                  >
+                                    <Trash2 className="size-3.5" /> Supprimer
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col sm:flex-row items-center gap-4 p-5 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 hover:border-slate-300 transition-all">
+                                <div className="size-14 rounded-2xl bg-white shadow-xs flex items-center justify-center border border-slate-100 shrink-0">
+                                  <ImageIcon className="size-6 text-slate-400" />
+                                </div>
+                                <div className="flex-1 text-center sm:text-left">
+                                  <p className="text-sm font-bold text-slate-700">Ajouter une photo de couverture pour la bannière</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">JPG, PNG, WebP (ratio panoramique 16:9 recommandé)</p>
+                                </div>
+                                <div className="relative shrink-0">
+                                  <Button type="button" variant="outline" className="h-10 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 shadow-2xs">
+                                    <Upload className="size-4 text-slate-500" />
+                                    {isUploadingBottomBanner ? 'Téléversement...' : 'Choisir une photo'}
+                                  </Button>
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
+                                    onChange={handleBottomBannerUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                                    disabled={isUploadingBottomBanner}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* URL directe en secours */}
+                            <div className="pt-1">
+                              <Input
+                                value={bottomCardImage}
+                                onChange={e => setBottomCardImage(e.target.value)}
+                                placeholder="Ou collez directement l'URL d'une image (https://...)"
+                                className="h-9 rounded-xl border-slate-200 text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          {/* 2. Titre & Sous-titre */}
+                          <div className="grid grid-cols-1 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre de la bannière (Arabe ou Français)</label>
+                              <Input
+                                value={bottomCardTitle}
+                                onChange={e => {
+                                  setBottomCardTitle(e.target.value);
+                                  setCtaHeadline(e.target.value);
+                                }}
+                                placeholder="Ex: اجعل كل رحلة أكثر راحة"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre / Message de réassurance</label>
+                              <Textarea
+                                value={bottomCardSubtitle}
+                                onChange={e => {
+                                  setBottomCardSubtitle(e.target.value);
+                                  setCtaSubtitle(e.target.value);
+                                }}
+                                placeholder="Ex: وسادة سفر مريحة مع قناع عين هدية 🎁 - في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك"
+                                rows={2}
+                                className="rounded-2xl border-slate-200 text-sm font-medium resize-none"
+                                dir="rtl"
+                              />
+                            </div>
+                          </div>
+
+                          {/* 3. Bouton CTA & Couleurs */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="space-y-1.5 sm:col-span-1">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte du Bouton CTA</label>
+                              <Input
+                                value={bottomCardBtnText}
+                                onChange={e => {
+                                  setBottomCardBtnText(e.target.value);
+                                  setCta2Label(e.target.value);
+                                }}
+                                placeholder="Ex: اطلب الآن — 1400 دج فقط"
+                                className="h-10 rounded-xl border-slate-200 text-xs font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur de Fond de la Carte</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={bottomCardBg}
+                                  onChange={e => setBottomCardBg(e.target.value)}
+                                  className="size-10 rounded-xl border border-slate-200 cursor-pointer shrink-0"
+                                />
+                                <Input
+                                  value={bottomCardBg}
+                                  onChange={e => setBottomCardBg(e.target.value)}
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-mono uppercase"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur du Bouton CTA</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={bottomCardBtnBg}
+                                  onChange={e => setBottomCardBtnBg(e.target.value)}
+                                  className="size-10 rounded-xl border border-slate-200 cursor-pointer shrink-0"
+                                />
+                                <Input
+                                  value={bottomCardBtnBg}
+                                  onChange={e => setBottomCardBtnBg(e.target.value)}
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-mono uppercase"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 4. Aperçu en direct (Live Preview) */}
+                          <div className="space-y-2 pt-2 border-t border-slate-100">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Aperçu en Direct de la Bannière</label>
+                            <div className="max-w-[420px] mx-auto rounded-2xl overflow-hidden shadow-lg border border-slate-200 text-center" style={{ backgroundColor: bottomCardBg }}>
+                              {bottomCardImage && (
+                                <div className="aspect-[16/9] w-full overflow-hidden bg-slate-900">
+                                  <img src={bottomCardImage} alt="Preview" className="size-full object-cover" />
+                                </div>
+                              )}
+                              <div className="p-5 text-white space-y-2" dir="rtl">
+                                <p className="text-base font-black leading-snug">{bottomCardTitle || 'عنوان البانر'}</p>
+                                <p className="text-xs text-slate-300 opacity-90 leading-relaxed line-clamp-2">{bottomCardSubtitle || 'نص وصفي للبانر'}</p>
+                                <div className="pt-2">
+                                  <div className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs font-black shadow-md text-white" style={{ backgroundColor: bottomCardBtnBg }}>
+                                    <ShoppingBag className="size-3.5" />
+                                    <span>{bottomCardBtnText || 'اطلب الآن'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
+                      )}
+                    </div>
+
+                    {/* Photos Bannières Publicitaires (Multiples - Bas de page) */}
+                    <div className="bg-white rounded-[24px] border p-4 sm:p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Photos Bannières Publicitaires (Empilées)</h4>
+                          <p className="text-xs text-slate-400 mt-0.5">Ces photos s'afficheront empilées en bas de la landing page</p>
+                        </div>
+                        {getBannerUrls(bannerImageUrl).length > 0 && (
+                          <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
+                        )}
+                      </div>
                         
                         {/* Grid of banner thumbnails */}
                         {getBannerUrls(bannerImageUrl).length > 0 && (
@@ -3065,7 +3312,6 @@ function LandingPageModal({
                           {isUploadingBanner && <Loader2 className="size-5 animate-spin text-[#6C5CE7]" />}
                         </div>
                       </div>
-                    </div>
                   </TabsContent>
 
                 </div>

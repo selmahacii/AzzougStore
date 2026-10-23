@@ -1256,26 +1256,34 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               </div>
             )}
 
-            {/* Final Pitch / Reassurance Card matching Image 2 */}
+            {/* ── FINAL REASSURANCE BANNER CARD (Fully customizable & responsive) ── */}
             {reassuranceConfig.show_bottom_card !== false && (
-              <div className="mt-14 max-w-[560px] mx-auto overflow-hidden rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D]">
-                {(data.banner_image_url || data.image_url || data.product?.main_image) && (
-                  <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
-                    <img
-                      src={optimizeCloudinaryUrl(data.banner_image_url || data.image_url || data.product?.main_image || '', 800)}
-                      alt={data.product_name || 'Produit'}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
+              <div className="mt-12 sm:mt-16 max-w-[580px] w-full mx-auto overflow-hidden rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D] transition-all">
+                {(() => {
+                  const bannerImg = reassuranceConfig.bottom_card_image || 
+                    parseBannerImages(data.banner_image_url)[0] || 
+                    data.image_url || 
+                    data.product?.main_image;
+                  if (!bannerImg) return null;
+                  return (
+                    <div className="relative aspect-[16/10] sm:aspect-[16/9] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
+                      <img
+                        src={optimizeCloudinaryUrl(bannerImg, 900)}
+                        alt={data.product_name || 'Bannière'}
+                        className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                        loading="lazy"
+                      />
+                    </div>
+                  );
+                })()}
                 <div 
-                  className="p-6 md:p-8 text-center text-white"
+                  className="p-5 sm:p-8 text-center text-white"
                   style={{ backgroundColor: reassuranceConfig.bottom_card_bg || '#0F172A' }}
                 >
-                  <h3 className="text-xl md:text-2xl font-black mb-3" style={{ color: reassuranceConfig.bottom_card_title_color || '#FFFFFF' }}>
+                  <h3 className="text-lg sm:text-2xl font-black mb-2.5 sm:mb-3" style={{ color: reassuranceConfig.bottom_card_title_color || '#FFFFFF' }}>
                     {reassuranceConfig.bottom_card_title || data.cta_headline || (dir === 'rtl' ? 'اجعل كل رحلة أكثر راحة' : 'Voyagez avec un confort absolu')}
                   </h3>
-                  <p className="text-xs md:text-sm leading-relaxed mb-6 font-medium max-w-md mx-auto" style={{ color: reassuranceConfig.bottom_card_subtitle_color || '#CBD5E1' }}>
+                  <p className="text-xs sm:text-sm leading-relaxed mb-5 sm:mb-6 font-medium max-w-md mx-auto opacity-90" style={{ color: reassuranceConfig.bottom_card_subtitle_color || '#CBD5E1' }}>
                     {reassuranceConfig.bottom_card_subtitle || data.cta_subtitle || (dir === 'rtl' ? (
                       <>
                         وسادة سفر مريحة مع قناع عين هدية 🎁<br />
@@ -1287,7 +1295,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </p>
                   <button
                     onClick={() => scrollToSection('checkout-form-container')}
-                    className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-xl font-black text-sm tracking-wide shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                    className="w-full max-w-xs mx-auto py-3 sm:py-3.5 px-6 rounded-xl font-black text-xs sm:text-sm tracking-wide shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                     style={{
                       backgroundColor: reassuranceConfig.bottom_card_btn_bg || primary || '#2563EB',
                       color: reassuranceConfig.bottom_card_btn_color || '#FFFFFF'
