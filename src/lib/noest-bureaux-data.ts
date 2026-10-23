@@ -48,6 +48,8 @@ export const NOEST_BUREAUX: NoestBureau[] = [
   { code: '16H', name: 'Alger « Bordj el bahri »', address: 'Cité Galoul, lotissement coopératif immobilier, n° 428 (A coté de la crèche IBN BAZ - طريق المرشي كوسيدار الجديدة )', phones: ['0563029129', '0563029128'], wilayaId: 16 },
   { code: '16I', name: 'Alger « Zeralda »', address: 'Local N, Cité 62 local LPP BTN 5C, 02 03 RDC, Zéralda', phones: ['0563029229', '0560262242'], wilayaId: 16 },
   { code: '16J', name: 'Alger « Birkhadem »', address: 'Birkhadem El Malha', phones: ['0560004746'], wilayaId: 16 },
+  { code: '16K', name: 'Alger « Hussein Dey »', address: 'Rue Layache Yahia N06, Hussein Dey en face Mosquee De Brossette', phones: ['0770006944', '0560432083'], wilayaId: 16 },
+  { code: '16L', name: 'Alger « Draria »', address: 'Draria Boudjemaa Temime Al Ansar', phones: ['0560521522'], wilayaId: 16 },
   { code: '17A', name: 'Djelfa', address: 'Centre-ville, en face de la Caisse Nationale des Retraites (C.N.R), Quartier Ben Djerma', phones: ['0770580860', '0550429422'], wilayaId: 17 },
   { code: '17B', name: 'Djelfa «Ain Ouassara»', address: 'Quartier Mohamed Boudiaf, Section 23, Local n° 30 Bisi, Commune de Ain Oussera.', phones: ['0549746237', '027941332', '0778550473'], wilayaId: 17 },
   { code: '18A', name: 'Jijel', address: 'rue26, Avenue Kaoula Mokhtar, cita sans intérdit , Hay IDARI', phones: ['0770613439', '0561660019'], wilayaId: 18 },
