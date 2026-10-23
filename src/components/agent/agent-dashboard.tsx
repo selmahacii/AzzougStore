@@ -2825,6 +2825,9 @@ function SalaryView({
                     orderCommission = 0;
                     commLabel = '0 DA (Retourné)';
                     commColor = 'bg-slate-100 text-slate-600 border-slate-200 font-medium';
+                  } else if (ord.livreur_id && !isDel && ord.status !== 'RETURNED') {
+                    commLabel = '0 DA (Chez le livreur - Non livrée)';
+                    commColor = 'bg-violet-50 text-violet-700 border-violet-200 font-bold';
                   } else if (ord.status === 'SHIPPED') {
                     commLabel = '0 DA (En cours de livraison)';
                     commColor = 'bg-sky-50 text-sky-700 border-sky-200';
@@ -3083,7 +3086,7 @@ function SalaryView({
               <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-900 flex items-center gap-3">
                 <span className="text-xl">⭐</span>
                 <p className="text-xs font-bold leading-relaxed">
-                  <span className="font-black text-indigo-950 uppercase tracking-wide">Règle d'or de rémunération :</span> 100% des commissions (Normales, Paniers Récupérés, Marketplace, Upsell) sont déclenchées <span className="underline font-black">UNIQUEMENT</span> lorsque le colis est <span className="font-black text-emerald-700">LIVRÉ et encaissé</span>. Aucune commande confirmée ou en cours de livraison n'est rémunérée avant encaissement réel.
+                  <span className="font-black text-indigo-950 uppercase tracking-wide">Règle d'or de rémunération :</span> 100% des commissions (Normales, Paniers Récupérés, Marketplace, Upsell, <span className="underline font-black">y compris les colis assignés à un livreur</span>) sont déclenchées <span className="underline font-black">UNIQUEMENT</span> lorsque le colis est <span className="font-black text-emerald-700">LIVRÉ et encaissé</span>. Tant que le livreur n'a pas validé la livraison, la commission reste à 0 DA.
                 </p>
               </div>
             </div>
