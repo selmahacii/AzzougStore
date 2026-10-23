@@ -2085,104 +2085,169 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   );
 }
 
-function SalaryView({ perf, user, onSelectOrder }: any) {
-  const [drilldownFilter, setDrilldownFilter] = useState<string | null>(null);
-  const [drilldownSearch, setDrilldownSearch] = useState<string>('');
+function SalaryView({ 
+  perf, 
+  user, 
+  onSelectOrder,
+  startDate,
+  endDate,
+  setStartDate,
+  setEndDate,
+  dateByMode = 'delivered_at',
+  setDateByMode,
+  isFetching = false,
+}: any) {
+  const [activeTab, setActiveTab] = useState<'orders' | 'daily' | 'rules'>('orders');
+  const [orderFilter, setOrderFilter] = useState<string>('DELIVERED');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const stats = perf?.stats ?? {};
   const rawOrders: any[] = perf?.recent_orders ?? [];
+  const dailyBreakdown: any[] = perf?.daily_breakdown ?? [];
 
+  // ── Types & Configuration de Rémunération ──
   const paymentType = stats.payment_type ?? user?.payment_type ?? 'PER_DELIVERED_ORDER';
-  const paymentAmount = stats.payment_amount ?? user?.payment_amount ?? 0;
-  
-  const confirmedCount = stats.confirmed_count ?? 0;
-  const deliveredCount = stats.delivered_count ?? 0;
-  const totalAssigned = stats.total_assigned ?? 0;
-  const cancelledCount = stats.cancelled_count ?? 0;
-  const upsellCount = stats.upsell_count ?? 0;
-  const normalDeliveredCount = stats.normal_delivered_count ?? 0;
-  const recoveredDeliveredCount = stats.recovered_delivered_count ?? 0;
+  const isMonthlySalary = paymentType === 'MONTHLY_SALARY';
 
-  const recoveredCount = stats.recovered_count ?? 0;
-  const lostCount = stats.lost_count ?? 0;
-  const paymentRecovered = stats.payment_recovered_cart ?? user?.payment_recovered_cart ?? 0;
-  const paymentLost = stats.payment_lost_cart ?? user?.payment_lost_cart ?? 0;
-  const abandonedBonus = stats.abandoned_bonus ?? 0;
-  const upsellDeliveredCount = stats.upsell_delivered_count ?? 0;
-  const paymentUpsell = stats.payment_upsell ?? user?.payment_upsell ?? 0;
-  const upsellBonus = stats.upsell_bonus ?? 0;
-  
-  const marketplaceDeliveredCount = stats.marketplace_delivered_count ?? 0;
-  const marketplaceBonus = stats.marketplace_bonus ?? 0;
+  const paymentAmount = Number(stats.payment_amount ?? user?.payment_amount ?? 100);
+  const paymentRecovered = Number(stats.payment_recovered_cart ?? user?.payment_recovered_cart ?? 150);
+  const paymentLost = Number(stats.payment_lost_cart ?? user?.payment_lost_cart ?? 0);
+  const paymentMarketplace = Number(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50);
+  const paymentUpsell = Number(stats.payment_upsell ?? user?.payment_upsell ?? 0);
+  const paymentStorePickup = Number(stats.payment_store_pickup ?? user?.payment_store_pickup ?? 100);
 
-  const storePickupCount = stats.store_pickup_delivered_count ?? 0;
-  const recoveredStorePickupCount = stats.recovered_store_pickup_delivered_count ?? 0;
-  const paymentStorePickup = stats.payment_store_pickup ?? user?.payment_store_pickup ?? 100;
-  const paymentRecoveredStorePickup = stats.payment_recovered_store_pickup ?? user?.payment_recovered_store_pickup ?? 150;
-  
-  const totalSalary = stats.salary ?? 0;
+  // ── Quantités de Commandes ──
+  const normalDeliveredCount = Number(stats.normal_delivered_count ?? 0);
+  const recoveredDeliveredCount = Number(stats.recovered_delivered_count ?? 0);
+  const totalDeliveredCount = Number(stats.delivered_count ?? (normalDeliveredCount + recoveredDeliveredCount));
+  const marketplaceDeliveredCount = Number(stats.marketplace_delivered_count ?? 0);
+  const storePickupCount = Number(stats.store_pickup_delivered_count ?? 0);
+  const recoveredStorePickupCount = Number(stats.recovered_store_pickup_delivered_count ?? 0);
+  const upsellDeliveredCount = Number(stats.upsell_delivered_count ?? 0);
+  const returnedCount = Number(stats.returned_count ?? stats.lost_count ?? 0);
+  const confirmedCount = Number(stats.confirmed_count ?? 0);
+  const totalAssigned = Number(stats.total_assigned ?? 0);
 
-  // Calculate base salary amount for display
-  const baseSalaryVal = paymentType === 'MONTHLY_SALARY' ? paymentAmount : normalDeliveredCount * paymentAmount;
+  // ── Montants Exacts (Calcul Backend Réconcilié) ──
+  const baseSalary = Number(stats.base_salary ?? (isMonthlySalary ? paymentAmount : normalDeliveredCount * paymentAmount));
+  const abandonedBonus = Number(stats.abandoned_bonus ?? (recoveredDeliveredCount * paymentRecovered));
+  const marketplaceBonus = Number(stats.marketplace_bonus ?? (marketplaceDeliveredCount * paymentMarketplace));
+  const upsellBonus = Number(stats.upsell_bonus ?? (upsellDeliveredCount * paymentUpsell));
+  const returnedPenalty = Number(stats.returned_penalty ?? (returnedCount * paymentLost));
+  const totalSalary = Number(stats.salary ?? (isMonthlySalary ? paymentAmount : Math.max(0, baseSalary + abandonedBonus + marketplaceBonus + upsellBonus - returnedPenalty)));
 
-  let baseSalaryExplain = '';
-  if (paymentType === 'MONTHLY_SALARY') {
-    baseSalaryExplain = `Salaire mensuel fixe`;
-  } else {
-    baseSalaryExplain = `${normalDeliveredCount} livraisons normales × ${formatPrice(paymentAmount)}`;
-  }
-
-  const FILTER_CONFIG: Record<string, { title: string; badge: string; color: string; bg: string }> = {
-    NORMAL_DELIVERED:    { title: 'Commandes Normales Livrées', badge: 'Normales Livrées', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-    RECOVERED_DELIVERED: { title: 'Paniers Abandonnés Récupérés et Livrés', badge: 'Paniers Récupérés Livrés', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-    DELIVERED:           { title: 'Toutes les Commandes Livrées', badge: 'Livraisons (Total)', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-    CONFIRMED:           { title: 'Commandes Confirmées', badge: 'Confirmations', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
-    RECOVERED:           { title: 'Tous les Paniers Récupérés', badge: 'Paniers Récupérés', color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
-    STORE_PICKUP:        { title: 'Retraits Point de Vente / Magasin', badge: 'Retrait Magasin', color: 'text-indigo-700', bg: 'bg-indigo-50 border-indigo-200' },
-    ALL:                 { title: 'Toutes les Commandes Assignées', badge: 'Total Assigné', color: 'text-slate-800', bg: 'bg-slate-50 border-slate-200' },
-    CANCELLED:           { title: 'Commandes Annulées', badge: 'Annulées', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200' },
-    RETURNED:            { title: 'Commandes Retournées (Échecs)', badge: 'Retours', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
-    UPSELL:              { title: 'Commandes Upsell / Multi-produits', badge: 'Upsell', color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
-    MARKETPLACE:         { title: 'Commandes Marketplace Livrées', badge: 'Marketplace (50 DA)', color: 'text-pink-700', bg: 'bg-pink-50 border-pink-200' },
+  // ── Détection de la période active ──
+  const formatLocalIso = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
 
-  const filteredDrilldownOrders = useMemo(() => {
-    if (!drilldownFilter) return [];
-    return rawOrders.filter((ord: any) => {
-      let matches = true;
-      const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
-      const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
-      const isDel = ord.status === 'DELIVERED';
+  const getActivePreset = () => {
+    if (!startDate && !endDate) return 'all';
+    const now = new Date();
+    const todayStr = formatLocalIso(now);
+    if (startDate === todayStr && endDate === todayStr) return 'today';
+    
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    const yestStr = formatLocalIso(yest);
+    if (startDate === yestStr && endDate === yestStr) return 'yesterday';
 
-      if (drilldownFilter === 'NORMAL_DELIVERED') {
-        matches = isDel && !isRec && !isMp;
-      } else if (drilldownFilter === 'RECOVERED_DELIVERED') {
-        matches = isDel && isRec;
-      } else if (drilldownFilter === 'DELIVERED') {
-        matches = isDel;
-      } else if (drilldownFilter === 'CONFIRMED') {
-        matches = ['CONFIRMED', 'SHIPPED', 'DELIVERED'].includes(ord.status);
-      } else if (drilldownFilter === 'RECOVERED') {
-        matches = isRec;
-      } else if (drilldownFilter === 'RETURNED') {
-        matches = ord.status === 'RETURNED';
-      } else if (drilldownFilter === 'CANCELLED') {
-        matches = ord.status === 'CANCELLED';
-      } else if (drilldownFilter === 'UPSELL') {
-        matches = Boolean(ord.is_upsell);
-      } else if (drilldownFilter === 'MARKETPLACE') {
-        matches = isDel && isMp;
-      } else if (drilldownFilter === 'STORE_PICKUP') {
-        matches = ord.delivery_type === 'OFFICE' || ord.delivery_type === 'STORE_PICKUP';
-      } else if (drilldownFilter === 'ALL') {
-        matches = true;
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 6);
+    if (startDate === formatLocalIso(d7) && endDate === todayStr) return '7d';
+
+    const d30 = new Date();
+    d30.setDate(d30.getDate() - 29);
+    if (startDate === formatLocalIso(d30) && endDate === todayStr) return '30d';
+
+    const firstThisMonth = formatLocalIso(new Date(now.getFullYear(), now.getMonth(), 1));
+    if (startDate === firstThisMonth && endDate === todayStr) return 'this_month';
+
+    const firstLastMonth = formatLocalIso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const lastLastMonth = formatLocalIso(new Date(now.getFullYear(), now.getMonth(), 0));
+    if (startDate === firstLastMonth && endDate === lastLastMonth) return 'last_month';
+
+    return 'custom';
+  };
+
+  const applyPreset = (presetId: string) => {
+    if (!setStartDate || !setEndDate) return;
+    const now = new Date();
+    if (presetId === 'today') {
+      const t = formatLocalIso(now);
+      setStartDate(t);
+      setEndDate(t);
+    } else if (presetId === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = formatLocalIso(y);
+      setStartDate(yStr);
+      setEndDate(yStr);
+    } else if (presetId === '7d') {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      setStartDate(formatLocalIso(d));
+      setEndDate(formatLocalIso(now));
+    } else if (presetId === 'this_month') {
+      setStartDate(formatLocalIso(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setEndDate(formatLocalIso(now));
+    } else if (presetId === 'last_month') {
+      setStartDate(formatLocalIso(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+      setEndDate(formatLocalIso(new Date(now.getFullYear(), now.getMonth(), 0)));
+    } else if (presetId === '30d') {
+      const d = new Date();
+      d.setDate(d.getDate() - 29);
+      setStartDate(formatLocalIso(d));
+      setEndDate(formatLocalIso(now));
+    } else if (presetId === 'all') {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const currentPreset = getActivePreset();
+
+  // ── Filtrage précis des commandes ──
+  const filteredOrders = useMemo(() => {
+    return rawOrders.filter((ord: any) => {
+      const isDel = ord.status === 'DELIVERED';
+      const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at || ord.order_type === 'RECOVERED');
+      const isMp = Boolean(ord.is_marketplace_upsell || ord.order_type === 'MARKETPLACE' || ord.source === 'MARKETPLACE');
+      const isRet = ord.status === 'RETURNED';
+      const isUp = Boolean(ord.is_upsell);
+      const isRelais = ['STORE_PICKUP', 'POINT_DE_VENTE', 'STORE', 'RETRAIT_MAGASIN', 'OFFICE'].includes(ord.delivery_type);
+
+      let passCategory = true;
+      if (orderFilter === 'DELIVERED') {
+        passCategory = isDel;
+      } else if (orderFilter === 'NORMAL_DELIVERED') {
+        passCategory = isDel && !isRec && !isMp;
+      } else if (orderFilter === 'RECOVERED_DELIVERED') {
+        passCategory = isDel && isRec;
+      } else if (orderFilter === 'MARKETPLACE') {
+        passCategory = isDel && isMp;
+      } else if (orderFilter === 'UPSELL') {
+        passCategory = isUp;
+      } else if (orderFilter === 'STORE_PICKUP') {
+        passCategory = isRelais;
+      } else if (orderFilter === 'RETURNED') {
+        passCategory = isRet;
+      } else if (orderFilter.startsWith('DAY_')) {
+        const targetDay = orderFilter.replace('DAY_', '');
+        const ordDate = (ord.delivered_at || ord.created_at || '').slice(0, 10);
+        passCategory = ordDate === targetDay;
+      } else if (orderFilter === 'ALL') {
+        passCategory = true;
       }
 
-      if (!matches) return false;
+      if (!passCategory) return false;
 
-      if (drilldownSearch.trim()) {
-        const q = drilldownSearch.trim().toLowerCase();
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
         const num = (ord.order_number || '').toLowerCase();
         const trk = (ord.tracking_number || '').toLowerCase();
         const name = (ord.customer_name || '').toLowerCase();
@@ -2193,15 +2258,15 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
         const itemsStr = (ord.items || []).map((it: any) => (it.product_name || '')).join(' ').toLowerCase();
 
         return (
-          num.includes(q) || trk.includes(q) || name.includes(q) || 
-          phone.includes(q) || wilaya.includes(q) || commune.includes(q) || 
+          num.includes(q) || trk.includes(q) || name.includes(q) ||
+          phone.includes(q) || wilaya.includes(q) || commune.includes(q) ||
           note.includes(q) || itemsStr.includes(q)
         );
       }
 
       return true;
     });
-  }, [rawOrders, drilldownFilter, drilldownSearch]);
+  }, [rawOrders, orderFilter, searchQuery]);
 
   const copyToClipboard = (text: string, id: string) => {
     if (!text) return;
@@ -2213,506 +2278,848 @@ function SalaryView({ perf, user, onSelectOrder }: any) {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-       {/* High Level Stats Grid (Interactive / Clickable for Drilldown) */}
-       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-          {[
-            { label: 'Confirmations', val: confirmedCount, color: 'text-emerald-600', bg: 'bg-emerald-50/50', border: 'border-emerald-100', filterKey: 'CONFIRMED' },
-            { label: 'Livraisons (Total)', val: deliveredCount, color: 'text-blue-600', bg: 'bg-blue-50/50', border: 'border-blue-100', filterKey: 'DELIVERED' },
-            { label: 'Livrées (Normales)', val: normalDeliveredCount, color: 'text-cyan-600', bg: 'bg-cyan-50/50', border: 'border-cyan-100', filterKey: 'NORMAL_DELIVERED' },
-            { label: 'Livrées (Paniers Récup.)', val: recoveredDeliveredCount || recoveredCount, color: 'text-emerald-700 font-black', bg: 'bg-emerald-50', border: 'border-emerald-200', filterKey: 'RECOVERED_DELIVERED' },
-            { label: 'Marketplace Livrées', val: marketplaceDeliveredCount, color: 'text-pink-700 font-black', bg: 'bg-pink-50', border: 'border-pink-200', filterKey: 'MARKETPLACE' },
-            { label: 'Retrait Magasin', val: storePickupCount + recoveredStorePickupCount, color: 'text-indigo-600', bg: 'bg-indigo-50/50', border: 'border-indigo-100', filterKey: 'STORE_PICKUP' },
-            { label: 'Paniers Récupérés', val: recoveredCount, color: 'text-violet-600', bg: 'bg-violet-50/50', border: 'border-violet-100', filterKey: 'RECOVERED' },
-            { label: 'Total Assigné', val: totalAssigned, color: 'text-slate-900', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'ALL' },
-            { label: 'Annulées', val: cancelledCount, color: 'text-slate-500', bg: 'bg-slate-100/50', border: 'border-slate-200', filterKey: 'CANCELLED' },
-            { label: 'Retours', val: lostCount, color: 'text-rose-600', bg: 'bg-rose-50/50', border: 'border-rose-100', filterKey: 'RETURNED' },
-            { label: 'Upsell', val: upsellCount, color: 'text-amber-600', bg: 'bg-amber-50/50', border: 'border-amber-100', filterKey: 'UPSELL' },
-          ].map(s => (
-            <button
-               key={s.label}
-               type="button"
-               onClick={() => {
-                 setDrilldownFilter(s.filterKey);
-                 setDrilldownSearch('');
-               }}
-               className={cn(
-                 "p-4 border rounded-2xl bg-white shadow-xs transition-all hover:scale-[1.03] hover:shadow-md cursor-pointer text-left w-full relative group",
-                 s.bg, s.border
-               )}
-            >
-               <div className="flex items-center justify-between">
-                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{s.label}</p>
-                 <ChevronRight className="size-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-               </div>
-               <p className={cn("text-2xl font-black mt-1", s.color)}>{s.val}</p>
-               <p className="text-[8px] font-bold text-slate-400/80 uppercase tracking-wider mt-1">Cliquer pour voir la liste ↗</p>
-            </button>
-          ))}
-       </div>
+      
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 1. BARRE DE FILTRES TEMPORELS INTÉGRÉE & INTELLIGENTE               */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          
+          {/* Titre & Période Actuelle */}
+          <div className="flex items-center gap-3">
+            <div className="size-11 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+              <Wallet className="size-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-black text-slate-900 tracking-tight">Mon Relevé de Rémunération</h2>
+                {isFetching && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 animate-pulse">
+                    <Loader2 className="size-3 animate-spin" />
+                    Actualisation...
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-medium">
+                {startDate && endDate ? (
+                  <span>Du <strong className="text-slate-800 font-bold">{new Date(startDate).toLocaleDateString('fr-FR')}</strong> au <strong className="text-slate-800 font-bold">{new Date(endDate).toLocaleDateString('fr-FR')}</strong></span>
+                ) : startDate ? (
+                  <span>À partir du <strong className="text-slate-800 font-bold">{new Date(startDate).toLocaleDateString('fr-FR')}</strong></span>
+                ) : (
+                  <span>Historique global (Toutes les commandes)</span>
+                )}
+              </p>
+            </div>
+          </div>
 
-       {/* Detailed Salary Card */}
-       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-             <div className="bg-white rounded-2xl border p-6 space-y-6">
-                <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider pb-2 border-b">
-                   Détails de Rémunération
-                </h3>
-                
-                {/* Base Salary Breakdown */}
-                <div 
-                   onClick={() => { setDrilldownFilter('NORMAL_DELIVERED'); setDrilldownSearch(''); }}
-                   className="flex items-center justify-between py-2 cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors group"
+          {/* Mode de Calcul (Livraison vs Création) */}
+          {setDateByMode && (
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200 self-start sm:self-auto">
+              <span className="text-[10px] font-black uppercase text-slate-400 pl-2 pr-1 hidden sm:inline">Calculé par :</span>
+              <button
+                type="button"
+                onClick={() => setDateByMode('delivered_at')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  dateByMode === 'delivered_at'
+                    ? "bg-white text-indigo-700 shadow-xs font-black"
+                    : "text-slate-500 hover:text-slate-800"
+                )}
+                title="Commandes réellement livrées et encaissées durant cette période"
+              >
+                <Truck className="size-3.5 text-indigo-600" />
+                <span>Date de Livraison (Paie)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDateByMode('created_at')}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  dateByMode === 'created_at'
+                    ? "bg-white text-slate-900 shadow-xs font-black"
+                    : "text-slate-500 hover:text-slate-800"
+                )}
+                title="Commandes appelées et confirmées au téléphone durant cette période"
+              >
+                <Calendar className="size-3.5 text-slate-500" />
+                <span>Date de Commande</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Boutons de Périodes Prédéfinies */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 w-full sm:w-auto">
+            {[
+              { id: 'today', label: "Aujourd'hui" },
+              { id: 'yesterday', label: 'Hier' },
+              { id: '7d', label: '7 jours' },
+              { id: 'this_month', label: 'Ce mois' },
+              { id: 'last_month', label: 'Mois dernier' },
+              { id: '30d', label: '30 jours' },
+              { id: 'all', label: 'Toutes les dates' },
+            ].map(p => {
+              const isActive = currentPreset === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyPreset(p.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                    isActive
+                      ? "bg-slate-900 text-white shadow-xs font-black"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  )}
                 >
-                   <div>
-                      <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                         <span>Rémunération de base (Normales)</span>
-                         <span className="text-[9px] text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-medium">{baseSalaryExplain}</p>
-                   </div>
-                   <span className="text-sm font-bold text-slate-800">{formatPrice(baseSalaryVal)}</span>
-                </div>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
 
-                {/* Retrait Point de Vente breakdown */}
-                {(storePickupCount > 0 || recoveredStorePickupCount > 0) && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">
-                         Retrait Point de Vente / Magasin
-                      </p>
-                      {storePickupCount > 0 && (
-                         <div 
-                           onClick={() => { setDrilldownFilter('STORE_PICKUP'); setDrilldownSearch(''); }}
-                           className="flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
-                         >
-                            <div className="space-y-0.5">
-                               <p className="font-bold text-slate-700">Retrait Magasin Normal</p>
-                               <p className="text-[10px] text-slate-400">{storePickupCount} retrait{storePickupCount > 1 ? 's' : ''} × {formatPrice(paymentStorePickup)}</p>
-                            </div>
-                            <span className="font-bold text-indigo-600">+{formatPrice(storePickupCount * paymentStorePickup)}</span>
-                         </div>
-                      )}
-                      {recoveredStorePickupCount > 0 && (
-                         <div 
-                           onClick={() => { setDrilldownFilter('STORE_PICKUP'); setDrilldownSearch(''); }}
-                           className="flex items-center justify-between text-xs cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-colors"
-                         >
-                            <div className="space-y-0.5">
-                               <p className="font-bold text-slate-700">Retrait Magasin Panier Récupéré</p>
-                               <p className="text-[10px] text-slate-400">{recoveredStorePickupCount} retrait{recoveredStorePickupCount > 1 ? 's' : ''} × {formatPrice(paymentRecoveredStorePickup)}</p>
-                            </div>
-                            <span className="font-bold text-indigo-600">+{formatPrice(recoveredStorePickupCount * paymentRecoveredStorePickup)}</span>
-                         </div>
-                      )}
-                   </div>
+          {/* Dates Personnalisées Du / Au */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Du</span>
+              <input
+                type="date"
+                value={startDate || ''}
+                onChange={e => setStartDate && setStartDate(e.target.value)}
+                className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Au</span>
+              <input
+                type="date"
+                value={endDate || ''}
+                onChange={e => setEndDate && setEndDate(e.target.value)}
+                className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => applyPreset('all')}
+                className="px-2.5 py-1 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors cursor-pointer"
+                title="Effacer le filtre de dates"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 2. GRANDE BANNIÈRE SALAIRE & ÉQUATION DE DÉCOMPOSITION              */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-800 relative overflow-hidden">
+        {/* Motif d'arrière-plan discret */}
+        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 size-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative z-10 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  {isMonthlySalary ? 'Salaire Mensuel Fixe' : 'Rémunération par Colis Livré'}
+                </span>
+                <span className="text-xs text-slate-400 font-medium">
+                  • {totalDeliveredCount} colis livré{totalDeliveredCount > 1 ? 's' : ''} au total
+                </span>
+              </div>
+              <p className="text-4xl sm:text-5xl font-black text-white mt-2 font-mono tracking-tight">
+                {formatPrice(totalSalary)}
+              </p>
+            </div>
+
+            {/* Statut Paie */}
+            <div className="flex items-center gap-2 bg-slate-800/80 backdrop-blur-xs px-4 py-3 rounded-2xl border border-slate-700/60 self-start sm:self-auto">
+              <div className="size-2 rounded-full bg-emerald-400 animate-pulse"></div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">État du Relevé</p>
+                <p className="text-xs font-bold text-white">Calcul en temps réel (Vérifié)</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Formule de Calcul Visuelle Horizontale (Équation Claire) */}
+          <div className="pt-4 border-t border-slate-800 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Formule de décomposition de votre salaire :
+            </p>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs font-mono font-bold">
+              
+              {/* Base */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('orders'); setOrderFilter('NORMAL_DELIVERED'); }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-all cursor-pointer group text-left"
+              >
+                <span className="size-2 rounded-full bg-blue-400"></span>
+                <span className="text-slate-300">Base Livrées:</span>
+                <span className="text-white font-black">+{formatPrice(baseSalary)}</span>
+              </button>
+
+              <span className="text-slate-500 text-sm font-black">+</span>
+
+              {/* Bonus Paniers */}
+              <button
+                type="button"
+                onClick={() => { setActiveTab('orders'); setOrderFilter('RECOVERED_DELIVERED'); }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/60 transition-all cursor-pointer group text-left"
+              >
+                <span className="size-2 rounded-full bg-emerald-400"></span>
+                <span className="text-emerald-300">Paniers Récupérés:</span>
+                <span className="text-emerald-200 font-black">+{formatPrice(abandonedBonus)}</span>
+              </button>
+
+              {marketplaceBonus > 0 && (
+                <>
+                  <span className="text-slate-500 text-sm font-black">+</span>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('orders'); setOrderFilter('MARKETPLACE'); }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-pink-950/60 hover:bg-pink-900/60 border border-pink-800/60 transition-all cursor-pointer group text-left"
+                  >
+                    <span className="size-2 rounded-full bg-pink-400"></span>
+                    <span className="text-pink-300">Marketplace:</span>
+                    <span className="text-pink-200 font-black">+{formatPrice(marketplaceBonus)}</span>
+                  </button>
+                </>
+              )}
+
+              {upsellBonus > 0 && (
+                <>
+                  <span className="text-slate-500 text-sm font-black">+</span>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('orders'); setOrderFilter('UPSELL'); }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800/60 transition-all cursor-pointer group text-left"
+                  >
+                    <span className="size-2 rounded-full bg-amber-400"></span>
+                    <span className="text-amber-300">Upsell:</span>
+                    <span className="text-amber-200 font-black">+{formatPrice(upsellBonus)}</span>
+                  </button>
+                </>
+              )}
+
+              {returnedPenalty > 0 && (
+                <>
+                  <span className="text-slate-500 text-sm font-black">-</span>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('orders'); setOrderFilter('RETURNED'); }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/60 border border-rose-800/60 transition-all cursor-pointer group text-left"
+                  >
+                    <span className="size-2 rounded-full bg-rose-400"></span>
+                    <span className="text-rose-300">Pénalité Retours:</span>
+                    <span className="text-rose-200 font-black">-{formatPrice(returnedPenalty)}</span>
+                  </button>
+                </>
+              )}
+
+              <span className="text-slate-500 text-sm font-black">=</span>
+
+              {/* Total Net */}
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white border border-indigo-400/40 shadow-md">
+                <span className="text-xs uppercase font-sans font-black">Net :</span>
+                <span className="text-sm font-black">{formatPrice(totalSalary)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 3. GRILLE DES 5 CARTES DE PERFORMANCE & COMMISSIONS                */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        
+        {/* Carte 1 : Normales Livrées */}
+        <div 
+          onClick={() => { setActiveTab('orders'); setOrderFilter('NORMAL_DELIVERED'); }}
+          className={cn(
+            "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
+            orderFilter === 'NORMAL_DELIVERED' ? "border-blue-500 ring-2 ring-blue-500/20" : "border-slate-200 hover:border-blue-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+              Normales Livrées
+            </span>
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
+          </div>
+          <p className="text-3xl font-black text-slate-900 mt-2 font-mono">{normalDeliveredCount}</p>
+          <p className="text-xs font-bold text-slate-500 mt-1">
+            {normalDeliveredCount} × {formatPrice(paymentAmount)}
+          </p>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Gain Base</span>
+            <span className="text-sm font-black text-blue-700 font-mono">+{formatPrice(baseSalary)}</span>
+          </div>
+        </div>
+
+        {/* Carte 2 : Paniers Abandonnés Récupérés */}
+        <div 
+          onClick={() => { setActiveTab('orders'); setOrderFilter('RECOVERED_DELIVERED'); }}
+          className={cn(
+            "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
+            orderFilter === 'RECOVERED_DELIVERED' ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-slate-200 hover:border-emerald-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+              Paniers Récupérés
+            </span>
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+          </div>
+          <p className="text-3xl font-black text-emerald-600 mt-2 font-mono">{recoveredDeliveredCount}</p>
+          <p className="text-xs font-bold text-slate-500 mt-1">
+            {recoveredDeliveredCount} × {formatPrice(paymentRecovered)}
+          </p>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Panier</span>
+            <span className="text-sm font-black text-emerald-600 font-mono">+{formatPrice(abandonedBonus)}</span>
+          </div>
+        </div>
+
+        {/* Carte 3 : Marketplace */}
+        <div 
+          onClick={() => { setActiveTab('orders'); setOrderFilter('MARKETPLACE'); }}
+          className={cn(
+            "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
+            orderFilter === 'MARKETPLACE' ? "border-pink-500 ring-2 ring-pink-500/20" : "border-slate-200 hover:border-pink-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-pink-50 text-pink-700 border border-pink-100">
+              Marketplace
+            </span>
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-pink-500 transition-colors" />
+          </div>
+          <p className="text-3xl font-black text-pink-600 mt-2 font-mono">{marketplaceDeliveredCount}</p>
+          <p className="text-xs font-bold text-slate-500 mt-1">
+            {marketplaceDeliveredCount} × {formatPrice(paymentMarketplace)}
+          </p>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Market</span>
+            <span className="text-sm font-black text-pink-600 font-mono">+{formatPrice(marketplaceBonus)}</span>
+          </div>
+        </div>
+
+        {/* Carte 4 : Retraits Magasin / Bureau */}
+        <div 
+          onClick={() => { setActiveTab('orders'); setOrderFilter('STORE_PICKUP'); }}
+          className={cn(
+            "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
+            orderFilter === 'STORE_PICKUP' ? "border-indigo-500 ring-2 ring-indigo-500/20" : "border-slate-200 hover:border-indigo-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
+              Retraits Relais
+            </span>
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
+          </div>
+          <p className="text-3xl font-black text-indigo-600 mt-2 font-mono">{storePickupCount + recoveredStorePickupCount}</p>
+          <p className="text-xs font-bold text-slate-500 mt-1">
+            Stop-Desk / Bureau
+          </p>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Inclus</span>
+            <span className="text-xs font-bold text-slate-600 font-mono">Dans Base</span>
+          </div>
+        </div>
+
+        {/* Carte 5 : Retours (Pénalité) */}
+        <div 
+          onClick={() => { setActiveTab('orders'); setOrderFilter('RETURNED'); }}
+          className={cn(
+            "p-5 rounded-3xl border bg-white shadow-xs transition-all hover:scale-[1.02] cursor-pointer text-left relative group",
+            orderFilter === 'RETURNED' ? "border-rose-500 ring-2 ring-rose-500/20" : "border-slate-200 hover:border-rose-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100">
+              Colis Retournés
+            </span>
+            <ChevronRight className="size-4 text-slate-300 group-hover:text-rose-500 transition-colors" />
+          </div>
+          <p className="text-3xl font-black text-rose-600 mt-2 font-mono">{returnedCount}</p>
+          <p className="text-xs font-bold text-slate-500 mt-1">
+            {paymentLost > 0 ? `${returnedCount} × ${formatPrice(paymentLost)}` : 'Aucune déduction (0 DA)'}
+          </p>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Déduction</span>
+            <span className="text-sm font-black text-rose-600 font-mono">-{formatPrice(returnedPenalty)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 4. SYSTÈME D'ONGLETS INTÉGRÉS : COMMANDES / HISTORIQUE / RÈGLES      */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
+        
+        {/* En-tête des Onglets */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
+          <div className="flex items-center gap-2 p-1 bg-slate-200/60 rounded-2xl border border-slate-200 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('orders')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === 'orders'
+                  ? "bg-white text-slate-900 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Package className="size-4 text-indigo-600" />
+              <span>Détail des Commandes</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                {rawOrders.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('daily')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === 'daily'
+                  ? "bg-white text-slate-900 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Calendar className="size-4 text-blue-600" />
+              <span>Gain Jour par Jour</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                {dailyBreakdown.length}j
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('rules')}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === 'rules'
+                  ? "bg-white text-slate-900 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Award className="size-4 text-amber-600" />
+              <span>Ma Grille de Taux</span>
+            </button>
+          </div>
+
+          {/* Recherche si onglet Commandes */}
+          {activeTab === 'orders' && (
+            <div className="relative w-full sm:w-80">
+              <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Rechercher par N°, tracking, client, wilaya..."
+                className="w-full pl-9 pr-8 py-2 bg-white rounded-xl border border-slate-200 text-xs text-slate-800 font-medium placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ─── VUE 1 : DÉTAIL DES COMMANDES ─── */}
+        {activeTab === 'orders' && (
+          <div className="p-4 sm:p-6 space-y-4">
+            
+            {/* Filtres Rapides par Sous-Type de Commande */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {[
+                { id: 'DELIVERED', label: 'Toutes les Livrées', count: totalDeliveredCount },
+                { id: 'NORMAL_DELIVERED', label: 'Normales Livrées', count: normalDeliveredCount },
+                { id: 'RECOVERED_DELIVERED', label: 'Paniers Récupérés', count: recoveredDeliveredCount },
+                { id: 'MARKETPLACE', label: 'Marketplace', count: marketplaceDeliveredCount },
+                { id: 'UPSELL', label: 'Upsells', count: upsellDeliveredCount },
+                { id: 'STORE_PICKUP', label: 'Retrait Magasin', count: storePickupCount + recoveredStorePickupCount },
+                { id: 'RETURNED', label: 'Retours', count: returnedCount },
+                { id: 'ALL', label: 'Toutes Assignées', count: totalAssigned },
+              ].map(f => {
+                const isSelected = orderFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setOrderFilter(f.id)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                      isSelected
+                        ? "bg-indigo-600 text-white shadow-xs font-black"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    )}
+                  >
+                    <span>{f.label}</span>
+                    <span className={cn(
+                      "px-1.5 py-0.2 rounded-md text-[10px] font-black",
+                      isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                    )}>
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Liste des Commandes Rémunérées */}
+            {filteredOrders.length === 0 ? (
+              <div className="text-center py-16 px-4 space-y-3 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <Package className="size-12 text-slate-300 mx-auto" />
+                <p className="text-sm font-bold text-slate-700">Aucune commande ne correspond à ce filtre</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  {searchQuery ? "Aucun résultat trouvé pour votre recherche textuelle." : "Aucune commande enregistrée pour ce critère dans la période choisie."}
+                </p>
+                {(searchQuery || orderFilter !== 'DELIVERED') && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearchQuery(''); setOrderFilter('DELIVERED'); }}
+                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Réinitialiser les filtres
+                  </button>
                 )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredOrders.map((ord: any) => {
+                  const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at || ord.order_type === 'RECOVERED');
+                  const isMp = Boolean(ord.is_marketplace_upsell || ord.order_type === 'MARKETPLACE' || ord.source === 'MARKETPLACE');
+                  const isDel = ord.status === 'DELIVERED';
+                  const isRet = ord.status === 'RETURNED';
 
-                {/* Abandoned Cart Recovery breakdown */}
-                {(paymentRecovered > 0 || (recoveredDeliveredCount || recoveredCount) > 0) && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1.5">
-                         Paniers Abandonnés Récupérés Livrés (Bonus)
-                      </p>
-                      <div 
-                        onClick={() => { setDrilldownFilter('RECOVERED_DELIVERED'); setDrilldownSearch(''); }}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-emerald-50/60 p-2.5 rounded-xl transition-colors border border-emerald-100 group"
-                      >
-                         <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                               <span>Commission Paniers Récupérés Livrés</span>
-                               <span className="text-[9px] text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-medium">
-                               {(recoveredDeliveredCount || recoveredCount)} panier{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} récupéré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} et livré{(recoveredDeliveredCount || recoveredCount) > 1 ? 's' : ''} × {formatPrice(paymentRecovered || 150)}
-                            </p>
-                         </div>
-                         <span className="font-black text-emerald-600">+{formatPrice((recoveredDeliveredCount || recoveredCount) * (paymentRecovered || 150))}</span>
+                  // Calcul du gain net exact pour cette commande
+                  let orderCommission = 0;
+                  let commLabel = 'En attente';
+                  let commColor = 'bg-slate-100 text-slate-600 border-slate-200';
+
+                  if (isMp && isDel) {
+                    orderCommission = paymentMarketplace;
+                    commLabel = `+${formatPrice(orderCommission)} (Marketplace)`;
+                    commColor = 'bg-pink-50 text-pink-700 border-pink-200';
+                  } else if (isRec && isDel) {
+                    orderCommission = paymentRecovered;
+                    commLabel = `+${formatPrice(orderCommission)} (Panier Récupéré)`;
+                    commColor = 'bg-emerald-50 text-emerald-700 border-emerald-200 font-black';
+                  } else if (isDel) {
+                    orderCommission = paymentAmount;
+                    commLabel = `+${formatPrice(orderCommission)} (Normale Livrée)`;
+                    commColor = 'bg-blue-50 text-blue-700 border-blue-200 font-bold';
+                  } else if (isRet && paymentLost > 0) {
+                    orderCommission = -paymentLost;
+                    commLabel = `-${formatPrice(paymentLost)} (Pénalité Retour)`;
+                    commColor = 'bg-rose-50 text-rose-700 border-rose-200 font-bold';
+                  }
+
+                  return (
+                    <div
+                      key={ord.id}
+                      className={cn(
+                        "bg-white rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md space-y-3",
+                        isRec && isDel ? "border-emerald-200/80 bg-emerald-50/15" : (isMp && isDel ? "border-pink-200/80 bg-pink-50/15" : "border-slate-200")
+                      )}
+                    >
+                      {/* Ligne 1 : Références, Tracking, Statut NOEST et Gain Net */}
+                      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+                        <div className="flex flex-wrap items-center gap-2">
+                          
+                          {/* N° Commande */}
+                          <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl">
+                            <span className="font-mono font-black text-xs text-slate-900">{ord.order_number}</span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(ord.order_number, `ord-${ord.id}`)}
+                              className="text-slate-400 hover:text-slate-700 p-0.5"
+                              title="Copier le N° de commande"
+                            >
+                              {copiedId === `ord-${ord.id}` ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                            </button>
+                          </div>
+
+                          {/* Tracking NOEST */}
+                          {ord.tracking_number && (
+                            <div className="flex items-center gap-1 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-xl">
+                              <Truck className="size-3 text-indigo-600 shrink-0" />
+                              <span className="font-mono font-bold text-xs text-indigo-900">{ord.tracking_number}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(ord.tracking_number, `trk-${ord.id}`)}
+                                className="text-indigo-400 hover:text-indigo-700 p-0.5"
+                                title="Copier le N° de tracking"
+                              >
+                                {copiedId === `trk-${ord.id}` ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Type de Commande */}
+                          {isMp ? (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-200">
+                              Marketplace
+                            </span>
+                          ) : isRec ? (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Panier Récupéré
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+                              Normale
+                            </span>
+                          )}
+
+                          {/* Statut Transporteur */}
+                          <span className={cn(
+                            "px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                            ord.status === 'DELIVERED' ? "bg-emerald-500 text-white" :
+                            ord.status === 'SHIPPED' ? "bg-cyan-500 text-white" :
+                            ord.status === 'CONFIRMED' ? "bg-indigo-500 text-white" :
+                            ord.status === 'RETURNED' ? "bg-rose-500 text-white" : "bg-slate-200 text-slate-800"
+                          )}>
+                            {ord.status === 'DELIVERED' ? 'Livrée (Encaissée)' : (ord.carrier_stage_label || ord.status)}
+                          </span>
+                        </div>
+
+                        {/* Badge Commission Net en évidence */}
+                        <div className="flex items-center gap-2">
+                          <span className={cn("px-3 py-1 rounded-xl text-xs font-mono border", commColor)}>
+                            Gain : {commLabel}
+                          </span>
+                        </div>
                       </div>
-                   </div>
-                )}
 
-                {/* Marketplace bonus breakdown */}
-                {(marketplaceDeliveredCount > 0 || marketplaceBonus > 0 || (stats.payment_marketplace_upsell_only || 50) > 0) && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-pink-600 tracking-wider">
-                         Marketplace (Commission 50 DA)
-                      </p>
-                      <div 
-                        onClick={() => { setDrilldownFilter('MARKETPLACE'); setDrilldownSearch(''); }}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-pink-50/60 p-2.5 rounded-xl transition-colors border border-pink-100 group"
-                      >
-                         <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                               <span>Commission Commandes Marketplace Livrées</span>
-                               <span className="text-[9px] text-pink-600 opacity-0 group-hover:opacity-100 transition-opacity">Voir les commandes ↗</span>
-                            </p>
-                                <p className="text-[10px] text-slate-400 font-medium">
-                                   {marketplaceDeliveredCount} commande{marketplaceDeliveredCount > 1 ? 's' : ''} marketplace livrée{marketplaceDeliveredCount > 1 ? 's' : ''} × {formatPrice(stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50)} = {formatPrice(marketplaceDeliveredCount * (stats.payment_marketplace_upsell_only ?? user?.payment_marketplace_upsell_only ?? 50))}
+                      {/* Ligne 2 : Détails Client, Articles et Actions */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs pt-1">
+                        
+                        {/* Client & Wilaya */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Client & Destination</p>
+                          <p className="font-bold text-slate-900">{ord.customer_name || 'Client Inconnu'}</p>
+                          <a href={`tel:${ord.customer_phone}`} className="text-indigo-600 hover:underline font-mono font-bold block">
+                            {ord.customer_phone}
+                          </a>
+                          <p className="text-slate-500 text-[11px] flex items-center gap-1">
+                            <MapPin className="size-3 text-slate-400 shrink-0" />
+                            <span>{ord.customer_wilaya || ord.wilaya || 'Wilaya'}{(ord.customer_commune || ord.commune) ? ` (${ord.customer_commune || ord.commune})` : ''}</span>
+                          </p>
+                        </div>
+
+                        {/* Articles Commandés */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Produit(s) Commandé(s)</p>
+                          {(ord.items || []).length > 0 ? (
+                            (ord.items || []).map((it: any, i: number) => {
+                              const varStr = typeof it.variant_details === 'object' && it.variant_details
+                                ? Object.entries(it.variant_details).map(([k, v]) => `${v}`).join(' / ')
+                                : (typeof it.variant_details === 'string' ? it.variant_details : '');
+                              return (
+                                <p key={i} className="text-slate-700 font-medium leading-tight">
+                                  <span className="font-black text-slate-900">{it.quantity}x</span> {it.product_name}
+                                  {varStr ? <span className="text-slate-400 text-[10px]"> [{varStr}]</span> : ''}
                                 </p>
-                         </div>
-                         <span className="font-black text-pink-600">+{formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}</span>
-                      </div>
-                   </div>
-                )}
+                              );
+                            })
+                          ) : (
+                            <p className="text-slate-400 italic">Détails articles non spécifiés</p>
+                          )}
+                        </div>
 
-                {/* Returns penalty breakdown */}
-                {lostCount > 0 && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-rose-600 tracking-wider">
-                         Retours (Pénalité)
-                      </p>
-                      <div 
-                        onClick={() => { setDrilldownFilter('RETURNED'); setDrilldownSearch(''); }}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50/60 p-2 rounded-xl transition-colors"
-                      >
-                         <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700">Commandes retournées</p>
-                            <p className="text-[10px] text-slate-400">{lostCount} retour{lostCount > 1 ? 's' : ''} × {formatPrice(paymentLost)}</p>
-                         </div>
-                         <span className="font-bold text-rose-600">-{formatPrice(stats.returned_penalty ?? (lostCount * paymentLost))}</span>
-                      </div>
-                   </div>
-                )}
+                        {/* Dates & Note Suivi */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Dates & Note</p>
+                          {ord.delivered_at ? (
+                            <p className="text-slate-700 font-bold">
+                              Livré le : <span className="text-slate-900 font-mono">{new Date(ord.delivered_at).toLocaleDateString('fr-FR')}</span>
+                            </p>
+                          ) : null}
+                          {ord.created_at ? (
+                            <p className="text-slate-500 text-[11px]">
+                              Créé le : {new Date(ord.created_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          ) : null}
+                          {ord.carrier_tracking_note && (
+                            <p className="text-[11px] text-amber-700 bg-amber-50 p-1.5 rounded-lg border border-amber-200">
+                              {ord.carrier_tracking_note}
+                            </p>
+                          )}
+                        </div>
 
-                {/* Upsell bonus breakdown */}
-                {upsellDeliveredCount > 0 && (
-                   <div className="border-t pt-4 space-y-3">
-                      <p className="text-[10px] font-black uppercase text-amber-600 tracking-wider">
-                         Upsell (Bonus)
-                      </p>
-                      <div 
-                        onClick={() => { setDrilldownFilter('UPSELL'); setDrilldownSearch(''); }}
-                        className="flex items-center justify-between text-xs cursor-pointer hover:bg-amber-50/60 p-2 rounded-xl transition-colors"
-                      >
-                         <div className="space-y-0.5">
-                            <p className="font-bold text-slate-700">Commandes upsell livrées</p>
-                            <p className="text-[10px] text-slate-400">{upsellDeliveredCount} commande{upsellDeliveredCount > 1 ? 's' : ''} × {formatPrice(paymentUpsell)}</p>
-                         </div>
-                         <span className="font-bold text-amber-600">+{formatPrice(upsellBonus)}</span>
+                        {/* Montant Colis & Bouton Fiche */}
+                        <div className="space-y-1 sm:text-right flex flex-col justify-between">
+                          <div>
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Montant Encaissé</p>
+                            <p className="text-base font-black text-slate-900 font-mono">{formatPrice(ord.total || 0)}</p>
+                          </div>
+
+                          {onSelectOrder && (
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={() => onSelectOrder(ord)}
+                                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+                              >
+                                <Eye className="size-3.5" />
+                                <span>Voir la fiche</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                   </div>
-                )}
-             </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
+        )}
 
-          {/* Salary estimation Hero widget */}
-          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-8 flex flex-col justify-between">
-             <div>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Revenu Total Estimé</p>
-                <p className="text-4xl font-black mt-2 text-white">{formatPrice(totalSalary)}</p>
-             </div>
-             
-             <div className="mt-8 space-y-4">
-                <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs">
-                   <span className="text-slate-400 font-medium">Base :</span>
-                   <span className="font-bold">{formatPrice(baseSalaryVal)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-violet-300">
-                   <span className="font-medium">Bonus Paniers :</span>
-                   <span className="font-bold">+{formatPrice(abandonedBonus)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-pink-300">
-                   <span className="font-medium">Bonus Marketplace ({marketplaceDeliveredCount} × 50 DA) :</span>
-                   <span className="font-bold">+{formatPrice(marketplaceBonus || (marketplaceDeliveredCount * 50))}</span>
-                </div>
-                {upsellBonus > 0 && (
-                   <div className="flex items-center justify-between text-xs text-amber-300">
-                      <span className="font-medium">Bonus Upsell :</span>
-                      <span className="font-bold">+{formatPrice(upsellBonus)}</span>
-                   </div>
-                )}
-                <div className="p-3 bg-slate-800/50 rounded-xl flex items-start gap-2.5 text-[10px] text-slate-400 leading-normal font-medium">
-                   <AlertCircle className="size-4 text-slate-500 shrink-0 mt-0.5" />
-                   <span>Ce montant est calculé dynamiquement par le service de trésorerie en fonction des critères et de la grille de commissions.</span>
-                </div>
-             </div>
+        {/* ─── VUE 2 : HISTORIQUE JOURNALIER (GAIN JOUR PAR JOUR) ─── */}
+        {activeTab === 'daily' && (
+          <div className="p-4 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Répartition Journalière des Livraisons & Gains</h3>
+                <p className="text-xs text-slate-500">Chaque jour affiche les colis confirmés, livrés et le gain net calculé.</p>
+              </div>
+            </div>
+
+            {dailyBreakdown.length === 0 ? (
+              <div className="text-center py-16 px-4 space-y-3 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                <Calendar className="size-12 text-slate-300 mx-auto" />
+                <p className="text-sm font-bold text-slate-700">Aucune donnée journalière sur cette période</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-3 text-center">Confirmées</th>
+                      <th className="py-3 px-3 text-center">Livrées (Normales)</th>
+                      <th className="py-3 px-3 text-center">Paniers Récupérés</th>
+                      <th className="py-3 px-3 text-center">Total Livrées</th>
+                      <th className="py-3 px-3 text-center">Retours</th>
+                      <th className="py-3 px-4 text-right">💵 Gain Net du Jour</th>
+                      <th className="py-3 px-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {dailyBreakdown.map((row: any) => {
+                      const dayEarnings = Number(row.daily_earnings ?? 0);
+                      return (
+                        <tr key={row.date} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            {row.date_formatted || row.date}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-indigo-600">
+                            {row.confirmed}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-blue-600">
+                            {row.normal_delivered}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-emerald-600">
+                            {row.recovered_delivered}
+                          </td>
+                          <td className="py-3 px-3 text-center font-black text-slate-900">
+                            {row.total_delivered}
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-rose-600">
+                            {row.returned}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black font-mono text-emerald-700 text-sm">
+                            +{formatPrice(dayEarnings)}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveTab('orders');
+                                setOrderFilter(`DAY_${row.date}`);
+                              }}
+                              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              Voir colis ↗
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-       </div>
+        )}
 
-       {/* ═══════════════════════════════════════════════════════════════════════ */}
-       {/* 🔍 MODALE DE DÉTAIL / DRILLDOWN DE CHAQUE KPI DE SALAIRE             */}
-       {/* ═══════════════════════════════════════════════════════════════════════ */}
-       {drilldownFilter && (
-         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-             
-             {/* Header */}
-             <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-               <div>
-                 <div className="flex items-center gap-2">
-                   <span className={cn("px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider border", FILTER_CONFIG[drilldownFilter]?.bg, FILTER_CONFIG[drilldownFilter]?.color)}>
-                     {FILTER_CONFIG[drilldownFilter]?.badge || drilldownFilter}
-                   </span>
-                   <span className="text-xs font-bold text-slate-400">
-                     ({filteredDrilldownOrders.length} commande{filteredDrilldownOrders.length > 1 ? 's' : ''})
-                   </span>
-                 </div>
-                 <h3 className="text-lg font-black text-slate-900 mt-1">
-                   {FILTER_CONFIG[drilldownFilter]?.title}
-                 </h3>
-               </div>
-               
-               <button
-                 type="button"
-                 onClick={() => setDrilldownFilter(null)}
-                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-               >
-                 <X className="size-5" />
-               </button>
-             </div>
+        {/* ─── VUE 3 : RÈGLES & GRILLE DE CALCUL ─── */}
+        {activeTab === 'rules' && (
+          <div className="p-4 sm:p-6 space-y-6">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">Comment est calculée votre rémunération ?</h3>
+              <p className="text-xs text-slate-500">Voici la grille contractuelle active configurée pour votre compte confirmatrice.</p>
+            </div>
 
-             {/* Filter switchers & Search toolbar */}
-             <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white">
-               {/* Search bar */}
-               <div className="relative w-full sm:w-80">
-                 <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                 <input
-                   type="text"
-                   value={drilldownSearch}
-                   onChange={e => setDrilldownSearch(e.target.value)}
-                   placeholder="Rechercher par N°, client, tél, wilaya, article..."
-                   className="w-full pl-9 pr-8 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-800 font-medium placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
-                 />
-                 {drilldownSearch && (
-                   <button
-                     onClick={() => setDrilldownSearch('')}
-                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                   >
-                     <X className="size-3.5" />
-                   </button>
-                 )}
-               </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-200 space-y-2">
+                <p className="text-xs font-black text-blue-900 uppercase tracking-wider">📦 Livraisons Normales</p>
+                <p className="text-2xl font-black text-blue-700 font-mono">{formatPrice(paymentAmount)}</p>
+                <p className="text-xs text-blue-800">Par commande standard confirmée et livrée avec encaissement valide.</p>
+              </div>
 
-               {/* Quick filter tabs */}
-               <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
-                 {[
-                   { id: 'NORMAL_DELIVERED', label: 'Normales Livrées' },
-                   { id: 'RECOVERED_DELIVERED', label: 'Paniers Récup. Livrés' },
-                   { id: 'MARKETPLACE', label: 'Marketplace (50 DA)' },
-                   { id: 'DELIVERED', label: 'Toutes Livrées' },
-                   { id: 'CONFIRMED', label: 'Confirmées' },
-                   { id: 'RETURNED', label: 'Retours' },
-                   { id: 'ALL', label: 'Toutes' },
-                 ].map(tab => (
-                   <button
-                     key={tab.id}
-                     type="button"
-                     onClick={() => setDrilldownFilter(tab.id)}
-                     className={cn(
-                       "px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap",
-                       drilldownFilter === tab.id
-                         ? "bg-slate-900 text-white shadow-sm"
-                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                     )}
-                   >
-                     {tab.label}
-                   </button>
-                 ))}
-               </div>
-             </div>
+              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+                <p className="text-xs font-black text-emerald-900 uppercase tracking-wider">🟩 Paniers Abandonnés Récupérés</p>
+                <p className="text-2xl font-black text-emerald-700 font-mono">{formatPrice(paymentRecovered)}</p>
+                <p className="text-xs text-emerald-800">Bonus incitatif majoré pour chaque panier client relancé, confirmé et livré avec succès.</p>
+              </div>
 
-             {/* Order List Body */}
-             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 custom-scrollbar bg-slate-50/40">
-               {filteredDrilldownOrders.length === 0 ? (
-                 <div className="text-center py-16 px-4 space-y-3">
-                   <Package className="size-12 text-slate-300 mx-auto" />
-                   <p className="text-sm font-bold text-slate-700">Aucune commande trouvée</p>
-                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                     {drilldownSearch ? "Aucun résultat pour cette recherche. Essayez de modifier les termes." : "Aucune commande enregistrée pour ce critère dans la période sélectionnée."}
-                   </p>
-                   {drilldownSearch && (
-                     <button
-                       onClick={() => setDrilldownSearch('')}
-                       className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
-                     >
-                       Effacer la recherche
-                     </button>
-                   )}
-                 </div>
-               ) : (
-                 filteredDrilldownOrders.map((ord: any) => {
-                   const isRec = Boolean(ord.is_abandoned_cart || ord.recovered_at);
-                   const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
-                   const isDel = ord.status === 'DELIVERED';
-return (
-                     <div
-                       key={ord.id}
-                       className={cn(
-                         "bg-white rounded-2xl p-4 border transition-all hover:shadow-md space-y-3",
-                         isMp ? "border-pink-200/80 bg-pink-50/10" : (isRec ? "border-emerald-200/80 bg-emerald-50/10" : "border-slate-200")
-                       )}
-                     >
-                       {/* Row 1: Order ref, Status, Date & Type Badge */}
-                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                         <div className="flex items-center gap-2">
-                           <span className="font-mono font-black text-xs text-slate-900">
-                             {ord.order_number}
-                           </span>
-                           <button
-                             type="button"
-                             onClick={() => copyToClipboard(ord.order_number, ord.id)}
-                             className="text-slate-400 hover:text-slate-700 transition-colors p-1"
-                             title="Copier le N° de commande"
-                           >
-                             {copiedId === ord.id ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
-                           </button>
-                           
-                           {isMp ? (
-                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-200">
-                               Marketplace (50 DA)
-                             </span>
-                           ) : isRec ? (
-                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                               Panier Récupéré
-                             </span>
-                           ) : (
-                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
-                               Normale
-                             </span>
-                           )}
+              <div className="p-4 rounded-2xl bg-pink-50/60 border border-pink-200 space-y-2">
+                <p className="text-xs font-black text-pink-900 uppercase tracking-wider">🛍️ Ventes Marketplace</p>
+                <p className="text-2xl font-black text-pink-700 font-mono">{formatPrice(paymentMarketplace)}</p>
+                <p className="text-xs text-pink-800">Commission additionnelle par article vendu issu du catalogue partagé.</p>
+              </div>
 
-                           <span className={cn(
-                             "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
-                             ord.status === 'DELIVERED' ? "bg-emerald-500 text-white" :
-                             ord.status === 'CONFIRMED' ? "bg-emerald-100 text-emerald-800" :
-                             ord.status === 'SHIPPED' ? "bg-cyan-100 text-cyan-800" :
-                             ord.status === 'RETURNED' ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
-                           )}>
-                             {ord.status === 'DELIVERED' ? 'Livrée' : ord.status}
-                           </span>
-                         </div>
+              <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200 space-y-2">
+                <p className="text-xs font-black text-rose-900 uppercase tracking-wider">🔻 Colis Retournés (Pénalité)</p>
+                <p className="text-2xl font-black text-rose-700 font-mono">
+                  {paymentLost > 0 ? `-${formatPrice(paymentLost)}` : '0 DA (Aucune déduction)'}
+                </p>
+                <p className="text-xs text-rose-800">
+                  {paymentLost > 0 ? 'Déduction par colis retourné. Note de garantie : votre salaire ne peut jamais devenir négatif.' : 'Aucune déduction de salaire n\'est appliquée sur vos retours.'}
+                </p>
+              </div>
+            </div>
 
-                         <div className="text-[11px] font-bold text-slate-400">
-                           {ord.delivered_at ? (
-                             <span>Livré le {new Date(ord.delivered_at).toLocaleDateString('fr-FR')} {new Date(ord.delivered_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-                           ) : ord.created_at ? (
-                             <span>Créé le {new Date(ord.created_at).toLocaleDateString('fr-FR')}</span>
-                           ) : null}
-                         </div>
-                       </div>
-
-                       {/* Row 2: Customer, Items, Tracking & Financials */}
-                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                         {/* Customer */}
-                         <div className="space-y-1">
-                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Client</p>
-                           <p className="font-bold text-slate-900">{ord.customer_name || 'Client inconnu'}</p>
-                           <a href={`tel:${ord.customer_phone}`} className="text-indigo-600 hover:underline font-mono font-bold block">
-                             {ord.customer_phone}
-                           </a>
-                           <p className="text-slate-500 text-[11px] flex items-center gap-1">
-                             <MapPin className="size-3 text-slate-400 shrink-0" />
-                             <span>{ord.customer_wilaya || ord.wilaya || 'Wilaya non spécifiée'}{(ord.customer_commune || ord.commune) ? ` (${ord.customer_commune || ord.commune})` : ''}</span>
-                           </p>
-                         </div>
-
-                         {/* Items */}
-                         <div className="space-y-1">
-                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Articles commandés</p>
-                           {(ord.items || []).length > 0 ? (
-                             (ord.items || []).map((it: any, i: number) => {
-                               const varStr = typeof it.variant_details === 'object' && it.variant_details
-                                 ? Object.entries(it.variant_details).map(([k, v]) => `${v}`).join(' / ')
-                                 : (typeof it.variant_details === 'string' ? it.variant_details : '');
-                               return (
-                                 <p key={i} className="text-slate-700 font-medium leading-tight">
-                                   <span className="font-black text-slate-900">{it.quantity}x</span> {it.product_name}
-                                   {varStr ? <span className="text-slate-400 text-[10px]"> [{varStr}]</span> : ''}
-                                 </p>
-                               );
-                             })
-                           ) : (
-                             <p className="text-slate-400 italic">Détails articles non disponibles</p>
-                           )}
-                         </div>
-
-                         {/* Suivi Transporteur */}
-                         <div className="space-y-1">
-                           <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Transporteur & Suivi</p>
-                           {ord.tracking_number ? (
-                             <div className="space-y-0.5">
-                               <p className="font-mono font-bold text-slate-800 flex items-center gap-1">
-                                 <Truck className="size-3 text-slate-400" />
-                                 {ord.tracking_number}
-                               </p>
-                               {ord.carrier_stage_label && (
-                                 <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                                   {ord.carrier_stage_label}
-                                 </span>
-                               )}
-                             </div>
-                           ) : (
-                             <p className="text-slate-400 italic">Colis non expédié</p>
-                           )}
-                         </div>
-
-                         {/* Financials & Commission */}
-                         <div className="space-y-1 sm:text-right flex flex-col justify-between">
-                           <div>
-                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Montant Total</p>
-                             <p className="text-base font-black text-slate-900 font-mono">{formatPrice(ord.total || 0)}</p>
-                             {(() => {
-                               const isMp = Boolean(ord.is_marketplace_upsell || ord.source === 'MARKETPLACE');
-                               const comm = isMp ? (ord.commission_marketplace_rate || ord.commission_amount || 50) : ord.commission_amount;
-                               if (isMp) {
-                                 return (
-                                   <p className="text-[11px] font-black mt-0.5 text-pink-600 font-mono">
-                                     Commission: +{formatPrice(comm || 50)}
-                                   </p>
-                                 );
-                               }
-                               if (comm !== undefined && comm !== null) {
-                                 return (
-                                   <p className={cn(
-                                     "text-[11px] font-black mt-0.5 font-mono",
-                                     comm > 0 ? "text-emerald-600" : (comm < 0 ? "text-rose-600" : "text-slate-400")
-                                   )}>
-                                     Commission: {comm > 0 ? `+${formatPrice(comm)}` : (comm < 0 ? `-${formatPrice(Math.abs(comm))}` : '0 DA')}
-                                   </p>
-                                 );
-                               }
-                               return null;
-                             })()}
-                           </div>
-
-                           {onSelectOrder && (
-                             <div className="pt-2">
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   onSelectOrder(ord);
-                                   setDrilldownFilter(null);
-                                 }}
-                                 className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors inline-flex items-center gap-1.5"
-                               >
-                                 <Eye className="size-3" />
-                                 Ouvrir la fiche
-                               </button>
-                             </div>
-                           )}
-                         </div>
-                       </div>
-                     </div>
-                   );
-                 })
-               )}
-             </div>
-
-             {/* Footer */}
-             <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs">
-               <span className="font-bold text-slate-500">
-                 Affichage de {filteredDrilldownOrders.length} commande{filteredDrilldownOrders.length > 1 ? 's' : ''}
-               </span>
-               <button
-                 type="button"
-                 onClick={() => setDrilldownFilter(null)}
-                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition-colors"
-               >
-                 Fermer
-               </button>
-             </div>
-           </div>
-         </div>
-       )}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+              <AlertCircle className="size-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-slate-600 space-y-1">
+                <p className="font-bold text-slate-800">Règle de transparence totale</p>
+                <p>
+                  Chaque commande porte un historique de commission immuable : les taux enregistrés lors de la confirmation sont protégés et ne changent jamais rétroactivement.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -3688,123 +4095,16 @@ export default function AgentDashboard() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 pb-24 sm:pb-8 custom-scrollbar bg-slate-50/50">
           {activeSubModule === 'salary-details' ? (
             <div className="space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-xl font-bold tracking-tight">Mon Salaire</h2>
-                <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-2xl border shadow-sm w-full md:w-auto justify-between md:justify-start">
-                  {/* Presets */}
-                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border text-[10px] font-bold overflow-x-auto">
-                    {[
-                      { id: 'today', label: "Aujourd'hui" },
-                      { id: '7d', label: '7j' },
-                      { id: 'this_month', label: 'Ce mois' },
-                      { id: 'last_month', label: 'Mois dernier' },
-                      { id: '30d', label: '30j' },
-                    ].map(p => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          const now = new Date();
-                          const formatLocal = (d: Date) => {
-                            const y = d.getFullYear();
-                            const m = String(d.getMonth() + 1).padStart(2, '0');
-                            const day = String(d.getDate()).padStart(2, '0');
-                            return `${y}-${m}-${day}`;
-                          };
-                          if (p.id === 'today') {
-                            const t = formatLocal(now);
-                            setStartDate(t);
-                            setEndDate(t);
-                          } else if (p.id === 'this_month') {
-                            setStartDate(formatLocal(new Date(now.getFullYear(), now.getMonth(), 1)));
-                            setEndDate(formatLocal(now));
-                          } else if (p.id === 'last_month') {
-                            setStartDate(formatLocal(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
-                            setEndDate(formatLocal(new Date(now.getFullYear(), now.getMonth(), 0)));
-                          } else if (p.id === '7d') {
-                            const d = new Date();
-                            d.setDate(d.getDate() - 6);
-                            setStartDate(formatLocal(d));
-                            setEndDate(formatLocal(now));
-                          } else if (p.id === '30d') {
-                            const d = new Date();
-                            d.setDate(d.getDate() - 29);
-                            setStartDate(formatLocal(d));
-                            setEndDate(formatLocal(now));
-                          }
-                        }}
-                        className="px-2 py-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white transition-all cursor-pointer whitespace-nowrap"
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border text-[11px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setDateByMode('created_at')}
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer",
-                        dateByMode === 'created_at' 
-                          ? "bg-white text-slate-900 shadow-xs font-black" 
-                          : "text-slate-500 hover:text-slate-700"
-                      )}
-                    >
-                      <Calendar className="size-3.5" />
-                      Création
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDateByMode('delivered_at')}
-                      className={cn(
-                        "px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer",
-                        dateByMode === 'delivered_at' 
-                          ? "bg-white text-indigo-600 shadow-xs font-black" 
-                          : "text-slate-500 hover:text-slate-700"
-                      )}
-                    >
-                      <Truck className="size-3.5" />
-                      Livraison
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black uppercase text-slate-400">Du</span>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black uppercase text-slate-400">Au</span>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="text-xs font-bold px-2 py-1 bg-slate-50 border rounded-lg outline-none text-slate-700 font-sans"
-                    />
-                  </div>
-                  {(startDate || endDate) && (
-                    <button
-                      onClick={() => { setStartDate(''); setEndDate(''); }}
-                      className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                    >
-                      Effacer
-                    </button>
-                  )}
-                  {perfQuery.isFetching && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 animate-pulse">
-                      <Loader2 className="size-3 animate-spin" />
-                      <span>Actualisation...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
               <SalaryView 
                 perf={perfQuery.data} 
                 user={user} 
+                startDate={startDate}
+                endDate={endDate}
+                setStartDate={setStartDate}
+                setEndDate={setEndDate}
+                dateByMode={dateByMode}
+                setDateByMode={setDateByMode}
+                isFetching={perfQuery.isFetching}
                 onSelectOrder={(ord: any) => { 
                   setSelectedOrder(ord); 
                   setDrawerInitialEdit(false); 
