@@ -150,6 +150,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
+  // Garde-fou anti-__DISABLED__ : filtre toute question désactivée ou vide
+  const validFaq = useMemo(() => {
+    if (!data.faq || !Array.isArray(data.faq)) return [];
+    return data.faq.filter(
+      (item) => item && item.question && !item.question.includes('__DISABLED__') && item.question.trim().length > 0
+    );
+  }, [data.faq]);
+
   useEffect(() => {
     setMounted(true);
     if (setLocale) {
@@ -499,7 +507,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {dir === 'rtl' ? 'آراء العملاء' : (t('customerReviews') || 'Avis')}
               </button>
             )}
-            {data.faq && data.faq.length > 0 && (
+            {validFaq.length > 0 && (
               <button 
                 onClick={() => scrollToSection('faq-section')}
                 className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
@@ -1049,15 +1057,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
       </div>
 
-      {/* REVIEWS & FAQ SECTION (Optional, Minimalist style) */}
-      {/* REVIEWS & FAQ SECTION (Optional, Only if testimonials or faq present) */}
-      {((data.testimonials && data.testimonials.length > 0) || (data.faq && data.faq.length > 0)) && (
+      {/* REVIEWS & FAQ SECTION */}
+      {((data.testimonials && data.testimonials.length > 0) || validFaq.length > 0) && (
         <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
           <div className="max-w-[800px] mx-auto px-4 py-16">
             
             {/* Testimonials */}
             {data.testimonials && data.testimonials.length > 0 && (
-              <div id="testimonials-section" className={cn(data.faq && data.faq.length > 0 ? "mb-20" : "")}>
+              <div id="testimonials-section" className={cn(validFaq.length > 0 ? "mb-20" : "")}>
                  <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
                  <div className="space-y-6">
                    {data.testimonials.map((t, i) => (
@@ -1083,37 +1090,151 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               </div>
             )}
 
-            {/* FAQ */}
-            {data.faq && data.faq.length > 0 && (
-              <div id="faq-section">
-                <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
-                <div className="space-y-3">
-                  {data.faq.map((item, i) => (
-                    <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
-                      <button
-                        onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                        className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
+            {/* FAQ matching Image 2 */}
+            {validFaq.length > 0 && (
+              <div id="faq-section" className="mb-8">
+                <div className="text-center mb-8">
+                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-2">
+                    {dir === 'rtl' ? 'أسئلة شائعة' : (t('faqTitle') || 'FAQ')}
+                  </h2>
+                  <p className="text-xs md:text-sm text-slate-500 dark:text-white/50 font-medium">
+                    {dir === 'rtl' ? 'كل ما تحتاج لمعرفته قبل الطلب' : 'Tout ce que vous devez savoir avant de commander'}
+                  </p>
+                </div>
+
+                <div className="space-y-3.5 max-w-[640px] mx-auto">
+                  {validFaq.map((item, i) => {
+                    const isOpen = openFaq === i;
+                    return (
+                      <div 
+                        key={i} 
+                        className={cn(
+                          "rounded-2xl border transition-all duration-200 overflow-hidden shadow-sm",
+                          isDark ? "border-white/10 bg-[#0F172A]" : "border-slate-200/80 bg-white hover:border-slate-300"
+                        )}
                       >
-                        <span>{item.question}</span>
-                        {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                      </button>
-                      {openFaq === i && (
-                        <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
-                          {item.answer}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        <button
+                          onClick={() => setOpenFaq(isOpen ? null : i)}
+                          className="w-full flex items-center justify-between p-4 md:p-5 text-right font-bold text-xs md:text-sm text-slate-800 dark:text-white gap-3 select-none"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="size-6 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-500 font-black text-xs flex items-center justify-center shrink-0">
+                              ؟
+                            </span>
+                            <span className="text-right font-bold leading-snug">{item.question}</span>
+                          </div>
+                          <div className={cn("size-6 rounded-full flex items-center justify-center shrink-0 text-slate-400 transition-transform duration-200", isOpen ? "rotate-180" : "")}>
+                            <ChevronDown className="size-4" />
+                          </div>
+                        </button>
+                        {isOpen && (
+                          <div className={cn("px-5 pb-5 pt-1 text-xs md:text-sm leading-relaxed border-t border-slate-100 dark:border-white/5 font-medium", isDark ? "text-white/70" : "text-slate-600")}>
+                            {item.answer}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
+
+            {/* Final Pitch / Reassurance Card matching Image 2 */}
+            <div className="mt-14 max-w-[560px] mx-auto overflow-hidden rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D]">
+              {(data.banner_image_url || data.image_url || data.product?.main_image) && (
+                <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
+                  <img
+                    src={optimizeCloudinaryUrl(data.banner_image_url || data.image_url || data.product?.main_image || '', 800)}
+                    alt={data.product_name || 'Produit'}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+              <div className="p-6 md:p-8 text-center text-white bg-gradient-to-b from-[#111827] to-[#0B132B]">
+                <h3 className="text-xl md:text-2xl font-black mb-3 text-white">
+                  {dir === 'rtl' ? 'اجعل كل رحلة أكثر راحة' : 'Voyagez avec un confort absolu'}
+                </h3>
+                <p className="text-xs md:text-sm text-slate-300 leading-relaxed mb-6 font-medium max-w-md mx-auto">
+                  {dir === 'rtl' ? (
+                    <>
+                      وسادة سفر مريحة مع قناع عين هدية 🎁<br />
+                      في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك
+                    </>
+                  ) : (
+                    data.product_desc || 'Confort optimal, ergonomie et douceur pour tous vos déplacements.'
+                  )}
+                </p>
+                <button
+                  onClick={() => scrollToSection('checkout-form-container')}
+                  className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-xl text-white font-black text-sm tracking-wide shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: primary || '#2563eb' }}
+                >
+                  <ShoppingBag className="size-4" />
+                  <span>
+                    {dir === 'rtl' 
+                      ? `اطلب الآن — ${data.price ? `${data.price} دج` : '1400 دج'} فقط` 
+                      : `Commander — ${data.price ? `${data.price} DA` : ''}`}
+                  </span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
 
+      {/* Elegant Custom Footer matching Image 2 */}
+      <footer className="w-full bg-[#0B132B] text-white pt-10 pb-28 md:pb-12 border-t border-slate-800 text-center">
+        <div className="max-w-[800px] mx-auto px-4 flex flex-col items-center">
+          {/* Store Logo Card in clean white pill */}
+          {(data.store?.logo_url || activeStore?.logo_url) ? (
+            <div className="inline-flex items-center justify-center px-4 py-2 bg-white rounded-2xl shadow-lg mb-4 max-w-[150px]">
+              <img
+                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 200)}
+                alt={data.store?.name || activeStore?.name || 'Store'}
+                className="h-9 w-auto object-contain max-h-11"
+              />
+            </div>
+          ) : (
+            <div className="text-base font-black tracking-widest text-white uppercase mb-3">
+              {data.store?.name || activeStore?.name || 'AzzougShop'}
+            </div>
+          )}
 
-      <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
-        {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}
+          {/* Contact & WhatsApp */}
+          {(() => {
+            const storePhone = data.phone || (activeStore as any)?.phone || '0770041321';
+            const formattedPhone = storePhone.replace(/(\d{4})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4');
+            return (
+              <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-slate-300 mb-3" dir="rtl">
+                <a href={`tel:${storePhone}`} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                  <Phone className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>للتواصل: {formattedPhone}</span>
+                </a>
+                <span className="text-slate-600">•</span>
+                <a 
+                  href={`https://wa.me/213${storePhone.replace(/^0/, '')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="hover:text-emerald-400 transition-colors flex items-center gap-1.5"
+                >
+                  <span className="text-emerald-400 font-black">واتساب:</span>
+                  <span>{formattedPhone}</span>
+                </a>
+              </div>
+            );
+          })()}
+
+          {/* Reassurance text */}
+          <p className="text-[11px] text-slate-400 font-medium mb-3">
+            الدفع عند الاستلام • توصيل سريع لـ 58 ولاية • ضمان الاستبدال
+          </p>
+
+          {/* Copyright */}
+          <p className="text-[10px] text-slate-500 font-semibold tracking-wider">
+            © {new Date().getFullYear()} {data.store?.name || activeStore?.name || 'AzzougShop'}. جميع الحقوق محفوظة.
+          </p>
+        </div>
       </footer>
 
       {/* Sticky Bottom CTA on Mobile */}
