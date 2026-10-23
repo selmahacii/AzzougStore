@@ -2473,7 +2473,7 @@ function SalaryView({
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/60 transition-all cursor-pointer group text-left"
               >
                 <span className="size-2 rounded-full bg-emerald-400"></span>
-                <span className="text-emerald-300">Paniers Récupérés:</span>
+                <span className="text-emerald-300">Paniers Récupérés Livrés:</span>
                 <span className="text-emerald-200 font-black">+{formatPrice(abandonedBonus)}</span>
               </button>
 
@@ -2559,9 +2559,12 @@ function SalaryView({
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
-              Paniers Récupérés
-            </span>
+            <div className="flex flex-col">
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 inline-block w-fit">
+                Paniers Récupérés (Livrés)
+              </span>
+              <span className="text-[9px] text-slate-400 font-medium mt-0.5">Payé uniquement si livré</span>
+            </div>
             <ChevronRight className="size-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
           </div>
           <p className="text-3xl font-black text-emerald-600 mt-2 font-mono">{recoveredDeliveredCount}</p>
@@ -2569,7 +2572,7 @@ function SalaryView({
             {recoveredDeliveredCount} × {formatPrice(paymentRecovered)}
           </p>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Panier</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Panier Livré</span>
             <span className="text-sm font-black text-emerald-600 font-mono">+{formatPrice(abandonedBonus)}</span>
           </div>
         </div>
@@ -2802,11 +2805,11 @@ function SalaryView({
 
                   if (isMp && isDel) {
                     orderCommission = paymentMarketplace;
-                    commLabel = `+${formatPrice(orderCommission)} (Marketplace)`;
-                    commColor = 'bg-pink-50 text-pink-700 border-pink-200';
+                    commLabel = `+${formatPrice(orderCommission)} (Marketplace Livrée)`;
+                    commColor = 'bg-pink-50 text-pink-700 border-pink-200 font-bold';
                   } else if (isRec && isDel) {
                     orderCommission = paymentRecovered;
-                    commLabel = `+${formatPrice(orderCommission)} (Panier Récupéré)`;
+                    commLabel = `+${formatPrice(orderCommission)} (Panier Livré)`;
                     commColor = 'bg-emerald-50 text-emerald-700 border-emerald-200 font-black';
                   } else if (isDel) {
                     orderCommission = paymentAmount;
@@ -2816,6 +2819,12 @@ function SalaryView({
                     orderCommission = 0;
                     commLabel = '0 DA (Retourné)';
                     commColor = 'bg-slate-100 text-slate-600 border-slate-200 font-medium';
+                  } else if (ord.status === 'SHIPPED') {
+                    commLabel = '0 DA (En cours de livraison)';
+                    commColor = 'bg-sky-50 text-sky-700 border-sky-200';
+                  } else if (ord.status === 'CONFIRMED') {
+                    commLabel = '0 DA (Confirmée - Non livrée)';
+                    commColor = 'bg-amber-50 text-amber-700 border-amber-200';
                   }
 
                   return (
