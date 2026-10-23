@@ -3527,8 +3527,28 @@ export default function AgentDashboard() {
   }, [ordersQuery.data]);
 
 
+  // Auto-guérison en arrière-plan : synchroniser en base toute commande avec tracking restée à NEW
+  useEffect(() => {
+    for (const raw of rawAgentOrders) {
+      if (raw?.id && raw.status === 'NEW' && raw.tracking_number) {
+        const eff = getEffectiveOrderStatus(raw);
+        if (eff !== 'NEW') {
+          apiFetch(`/api/v1/orders/${raw.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: eff }),
+            allStores: true,
+          }).catch(() => {});
+        }
+      }
+    }
+  }, [rawAgentOrders]);
+
   if (currentFilter === 'ALL') {
-     filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
+    filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
+  } else if (currentFilter === 'NEW') {
+    filteredOrders = filteredOrders.filter(o => o.status === 'NEW' && !o.tracking_number && getEffectiveOrderStatus(o) === 'NEW');
+  } else if (['ABANDONED_IN_PROGRESS', 'PENDING_CONFIRMATION', 'NRP_NORMAL', 'NRP_ABANDONED'].includes(currentFilter)) {
+    filteredOrders = filteredOrders.filter(o => !o.tracking_number && !['SHIPPED', 'DELIVERED', 'RETURNED'].includes(o.status));
   }
 
   // ─── Fusion visuelle des doublons : un client (même téléphone) = une seule ligne ───

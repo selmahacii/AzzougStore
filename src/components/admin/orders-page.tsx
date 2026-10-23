@@ -975,7 +975,8 @@ const [timeLeft, setTimeLeft] = useState('');
   const orders = useMemo(() => {
     const seen = new Set<string>();
     const list: Order[] = [];
-    const desyncedIds: string[] = [];
+
+    const desyncedItems: { id: string; status: OrderStatus }[] = [];
 
     for (const raw of rawOrders) {
       if (!raw || !raw.id || seen.has(raw.id)) continue;
@@ -985,18 +986,18 @@ const [timeLeft, setTimeLeft] = useState('');
       if (effStatus !== raw.status) {
         list.push({ ...raw, status: effStatus });
         if (raw.tracking_number && raw.status === 'NEW') {
-          desyncedIds.push(raw.id);
+          desyncedItems.push({ id: raw.id, status: effStatus });
         }
       } else {
         list.push(raw);
       }
     }
 
-    if (desyncedIds.length > 0) {
-      desyncedIds.forEach(id => {
-        apiFetch(`/api/v1/orders/${id}`, {
+    if (desyncedItems.length > 0) {
+      desyncedItems.forEach(item => {
+        apiFetch(`/api/v1/orders/${item.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ status: 'SHIPPED' }),
+          body: JSON.stringify({ status: item.status }),
         }).catch(() => {});
       });
     }
@@ -1064,9 +1065,17 @@ const [timeLeft, setTimeLeft] = useState('');
     { id: 'INTERNAL_DELIVERED', label: 'Interne Livrées', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', match: (o) => o.status === 'DELIVERED' && !!o.livreur_id && !o.tracking_number },
     { id: 'PROMO',     label: 'Code Promo',        color: 'bg-indigo-50 text-indigo-700 border-indigo-200',    match: (o) => !!o.promo_code },
   ];
-  const displayOrders = typeFilter === 'ALL'
-    ? orders
-    : orders.filter(ORDER_TYPE_FILTERS.find((f) => f.id === typeFilter)?.match ?? (() => true));
+  const displayOrders = useMemo(() => {
+    let result = orders;
+    if (statusFilter === 'NEW') {
+      result = result.filter(o => o.status === 'NEW' && !o.tracking_number && getEffectiveOrderStatus(o) === 'NEW');
+    }
+    if (typeFilter !== 'ALL') {
+      const matcher = ORDER_TYPE_FILTERS.find((f) => f.id === typeFilter)?.match ?? (() => true);
+      result = result.filter(matcher);
+    }
+    return result;
+  }, [orders, statusFilter, typeFilter]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => { 

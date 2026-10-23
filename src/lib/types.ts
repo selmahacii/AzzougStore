@@ -769,21 +769,45 @@ export function getEffectiveOrderStatus(order: {
   if (!order) return 'NEW';
   const st = (order.status || 'NEW') as OrderStatus;
   const trk = (order.tracking_number || '').trim();
+  const cs = (order.carrier_stage || '').toLowerCase().trim();
 
-  // Terminal statuses preserve their definitive outcome
-  if (st === 'DELIVERED' || st === 'RETURNED' || st === 'CANCELLED' || st === 'MERGED') {
+  // Terminal statuses preserve their definitive outcome (unless carrier explicitly delivered or returned)
+  if (st === 'CANCELLED' || st === 'MERGED') {
+    return st;
+  }
+
+  // If carrier stage indicates delivery (e.g. delivered or cash received by partner)
+  if (
+    cs === 'delivered' ||
+    cs === 'livre' ||
+    cs === 'livré' ||
+    cs === 'validation_reception_cash_by_partener' ||
+    cs.includes('cash') ||
+    cs.includes('livr')
+  ) {
+    return 'DELIVERED';
+  }
+
+  // If carrier stage indicates return / failure
+  if (
+    cs === 'returned' ||
+    cs === 'retourne' ||
+    cs === 'retourné' ||
+    cs === 'echoue' ||
+    cs === 'échec' ||
+    cs.startsWith('return') ||
+    cs.startsWith('colis_retour')
+  ) {
+    return 'RETURNED';
+  }
+
+  // If already marked delivered/returned in DB and no carrier override
+  if (st === 'DELIVERED' || st === 'RETURNED') {
     return st;
   }
 
   // If a carrier tracking number exists, the parcel has been created and handed to transport
-  if (trk) {
-    const cs = (order.carrier_stage || '').toLowerCase();
-    if (cs === 'delivered' || cs === 'livre' || cs === 'livré') {
-      return 'DELIVERED';
-    }
-    if (cs === 'returned' || cs === 'retourne' || cs === 'retourné' || cs === 'echoue' || cs === 'échec') {
-      return 'RETURNED';
-    }
+  if (trk || (cs && cs !== 'new')) {
     return 'SHIPPED';
   }
 
