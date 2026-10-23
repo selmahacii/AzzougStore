@@ -756,6 +756,40 @@ export interface PaginatedResponse<T> {
 }
 
 // ─── Order Pipeline Labels ──────────────────────────────────
+/**
+ * Determines the true operational status of an order based on tracking & logistics reality.
+ * If an order has a valid carrier tracking number, it is physically in delivery / shipped (or delivered/returned),
+ * and must NEVER display as 'NEW', 'ABANDONED', or other pre-dispatch states.
+ */
+export function getEffectiveOrderStatus(order: {
+  status: string;
+  tracking_number?: string | null;
+  carrier_stage?: string | null;
+} | null | undefined): OrderStatus {
+  if (!order) return 'NEW';
+  const st = (order.status || 'NEW') as OrderStatus;
+  const trk = (order.tracking_number || '').trim();
+
+  // Terminal statuses preserve their definitive outcome
+  if (st === 'DELIVERED' || st === 'RETURNED' || st === 'CANCELLED' || st === 'MERGED') {
+    return st;
+  }
+
+  // If a carrier tracking number exists, the parcel has been created and handed to transport
+  if (trk) {
+    const cs = (order.carrier_stage || '').toLowerCase();
+    if (cs === 'delivered' || cs === 'livre' || cs === 'livré') {
+      return 'DELIVERED';
+    }
+    if (cs === 'returned' || cs === 'retourne' || cs === 'retourné' || cs === 'echoue' || cs === 'échec') {
+      return 'RETURNED';
+    }
+    return 'SHIPPED';
+  }
+
+  return st;
+}
+
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: 'Nouvelle',
   ASSIGNED: 'Assignée',

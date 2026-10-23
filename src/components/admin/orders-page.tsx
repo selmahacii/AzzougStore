@@ -81,6 +81,7 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
   ORDER_STATUS_DOT,
+  getEffectiveOrderStatus,
 } from '@/lib/types';
 import type {
   Order,
@@ -969,7 +970,39 @@ const [timeLeft, setTimeLeft] = useState('');
     onError: () => toast.error('Erreur lors de la mise à jour en lot'),
   });
 
-  const orders = ordersQuery.data?.data ?? [];
+  // 1. Deduplicate by order ID & normalize status using tracking reality
+  const rawOrders = ordersQuery.data?.data ?? [];
+  const orders = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Order[] = [];
+    const desyncedIds: string[] = [];
+
+    for (const raw of rawOrders) {
+      if (!raw || !raw.id || seen.has(raw.id)) continue;
+      seen.add(raw.id);
+
+      const effStatus = getEffectiveOrderStatus(raw);
+      if (effStatus !== raw.status) {
+        list.push({ ...raw, status: effStatus });
+        if (raw.tracking_number && raw.status === 'NEW') {
+          desyncedIds.push(raw.id);
+        }
+      } else {
+        list.push(raw);
+      }
+    }
+
+    if (desyncedIds.length > 0) {
+      desyncedIds.forEach(id => {
+        apiFetch(`/api/v1/orders/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'SHIPPED' }),
+        }).catch(() => {});
+      });
+    }
+
+    return list;
+  }, [rawOrders]);
   const totalPages = ordersQuery.data?.totalPages ?? 1;
   const total = ordersQuery.data?.total ?? 0;
   // Garde-fou pagination : si le nombre de pages chute sous la page courante
@@ -993,8 +1026,10 @@ const [timeLeft, setTimeLeft] = useState('');
       fetch(`/api/v1/orders/${selectedOrderId}`)
         .then((r) => r.json())
         .then((res) => {
-          const order = res.data ?? res;
-          if (order?.id) {
+          const raw = res.data ?? res;
+          if (raw?.id) {
+            const effStatus = getEffectiveOrderStatus(raw);
+            const order = effStatus !== raw.status ? { ...raw, status: effStatus } : raw;
             setSelectedOrder(order);
             setDetailDialogOpen(true);
           }
@@ -1976,7 +2011,7 @@ const [timeLeft, setTimeLeft] = useState('');
                                   order.status === 'CANCELLED' ? "text-red-700" :
                                   order.status === 'RETURNED' ? "text-orange-700" :
                                   "text-slate-700"
-                                )}>{ORDER_STATUS_LABELS[order.status] || order.status}</span>
+                                )}>{ORDER_STATUS_LABELS[getEffectiveOrderStatus(order)] || order.status}</span>
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-48 rounded-2xl shadow-xl border-slate-100 p-2">
@@ -2537,7 +2572,7 @@ const [timeLeft, setTimeLeft] = useState('');
                     </button>
                   )}
                   <Badge className={cn("text-[11px] font-black px-4 py-2 uppercase tracking-widest border-none rounded-xl", ORDER_STATUS_COLORS[selectedOrder.status])}>
-                    {ORDER_STATUS_LABELS[selectedOrder.status]}
+                    {ORDER_STATUS_LABELS[getEffectiveOrderStatus(selectedOrder)]}
                   </Badge>
                   {(() => {
                     const opsCfg: any = allStores.find(s => s.id === selectedOrder.store_id)?.operations_config || {};

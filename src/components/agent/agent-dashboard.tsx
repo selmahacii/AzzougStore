@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { toast } from 'sonner';
+import { getEffectiveOrderStatus } from '@/lib/types';
 import type { Order } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -193,8 +194,9 @@ function useWorkTimer() {
   return `${h}:${m}:${s}`;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CFG[status] ?? { label: status, color: '#64748b', bg: '#f8fafc' };
+function StatusBadge({ status, order }: { status: string; order?: any }) {
+  const effectiveStatus = order ? getEffectiveOrderStatus(order) : status;
+  const cfg = STATUS_CFG[effectiveStatus] ?? { label: effectiveStatus, color: '#64748b', bg: '#f8fafc' };
   return (
     <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border" 
           style={{ color: cfg.color, backgroundColor: cfg.bg, borderColor: `${cfg.color}20` }}>
@@ -423,6 +425,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
 
   const current = livreurs.find((l: any) => l.id === order.livreur_id);
   const hasCarrierParcel = !!order.tracking_number;
+  const effectiveStatus = getEffectiveOrderStatus(order);
 
   return (
     <div className="space-y-3 pt-3 border-t border-slate-200/80">
@@ -433,7 +436,7 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Option 1 — Transporteur</p>
         {hasCarrierParcel ? (
           <p className="text-[10px] font-bold text-cyan-700">📦 Colis créé chez le transporteur — suivi : {order.tracking_number}</p>
-        ) : (order.status as string) !== 'CONFIRMED' ? (
+        ) : (effectiveStatus as string) !== 'CONFIRMED' && !hasCarrierParcel ? (
           <div className="space-y-1.5">
             <p className="text-[10px] font-bold text-slate-400">Disponible une fois la commande Confirmée pour expédition.</p>
             {['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED', 'ABANDONED', 'CONFIRMED'].includes(order.status as any) && onStatusChange && (
@@ -521,7 +524,8 @@ function LivreurAssign({ order, onOrderUpdate, onDispatch, onStatusChange, isPen
 }
 
 function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, onDispatch, initialEdit, onOrderUpdate, isDuplicatePhone }: { order: Order; onClose: () => void; onStatusChange: (id: string, s?: string, assignTo?: string, callResult?: string, deliveryType?: string, note?: string) => void; isPending?: boolean; currentUser: any; onDispatch?: (id: string) => void; initialEdit?: boolean; onOrderUpdate?: (updated: Order) => void; isDuplicatePhone?: (phone: string) => boolean }) {
-  const cfg = STATUS_CFG[order.status] ?? { next: [] };
+  const effectiveStatus = getEffectiveOrderStatus(order);
+  const cfg = STATUS_CFG[effectiveStatus] ?? { next: [] };
   const queryClient = useQueryClient();
   const storeId = order.store_id;
   const isLivreurRole = currentUser?.role === 'LIVREUR';
@@ -878,7 +882,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               {!isLivreurRole ? (
                 <>
                   <OrderTypeBadge order={order} />
-                  <StatusBadge status={order.status} />
+                  <StatusBadge status={effectiveStatus} order={order} />
                   <NrpBadge count={order.nrp_count || 0} />
                   <PendingBadge order={order} />
                   <OrderTimer startTime={order.confirmation_start_time} />
@@ -3060,9 +3064,40 @@ export default function AgentDashboard() {
     );
   };
 
+  // Normalisation du statut selon la réalité du tracking (les commandes avec tracking sont en livraison)
+  const rawAgentOrders = ordersQuery.data?.data ?? [];
+  const normalizedAgentOrders = useMemo(() => {
+    const list: Order[] = [];
+    const desyncedIds: string[] = [];
+    for (const raw of rawAgentOrders) {
+      const effStatus = getEffectiveOrderStatus(raw);
+      if (effStatus !== raw.status) {
+        list.push({ ...raw, status: effStatus });
+        if (raw.tracking_number && raw.status === 'NEW') {
+          desyncedIds.push(raw.id);
+        }
+      } else {
+        list.push(raw);
+      }
+    }
+    if (desyncedIds.length > 0) {
+      desyncedIds.forEach(id => {
+        apiFetch(`/api/v1/orders/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'SHIPPED' }),
+          allStores: true,
+        }).catch(() => {});
+      });
+    }
+    return list;
+  }, [rawAgentOrders]);
+
   let filteredOrders = search.trim().length >= 2 && searchResults.length > 0
-    ? searchResults
-    : (ordersQuery.data?.data ?? []).filter(o => 
+    ? searchResults.map(o => {
+        const eff = getEffectiveOrderStatus(o);
+        return eff !== o.status ? { ...o, status: eff } : o;
+      })
+    : normalizedAgentOrders.filter(o => 
         o.order_number.toLowerCase().includes(search.toLowerCase()) ||
         o.customer_name.toLowerCase().includes(search.toLowerCase()) ||
         o.customer_phone.includes(search) ||
@@ -3240,13 +3275,38 @@ export default function AgentDashboard() {
         toast.success('Action enregistrée');
       }
 
+      const tracking = data?.dispatch?.tracking_number;
+      // Optimistically update query cache
+      queryClient.setQueriesData({ queryKey: ['agent-orders'] }, (oldData: any) => {
+        if (!oldData || !Array.isArray(oldData.data)) return oldData;
+        const isMovedFromQueue = ['CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'].includes(variables.status || '') || !!tracking;
+        if (isMovedFromQueue && ['NEW', 'ABANDONED_IN_PROGRESS', 'PENDING_CONFIRMATION', 'NRP_NORMAL', 'NRP_ABANDONED'].includes(currentFilter)) {
+          return {
+            ...oldData,
+            data: oldData.data.filter((o: any) => o.id !== variables.orderId),
+            total: Math.max(0, (oldData.total || 1) - 1)
+          };
+        }
+        return {
+          ...oldData,
+          data: oldData.data.map((o: any) => {
+            if (o.id !== variables.orderId) return o;
+            return {
+              ...o,
+              status: tracking ? 'SHIPPED' : (variables.status || 'CONFIRMED'),
+              tracking_number: tracking || o.tracking_number,
+            };
+          })
+        };
+      });
+
       if (!isAutoRotate) {
         setSelectedOrder((prev: any) => {
           if (!prev || prev.id !== variables.orderId) return prev;
           return {
             ...prev,
-            status: data?.dispatch?.tracking_number ? 'SHIPPED' : (variables.status || prev.status),
-            tracking_number: data?.dispatch?.tracking_number || prev.tracking_number
+            status: tracking ? 'SHIPPED' : (variables.status || 'CONFIRMED'),
+            tracking_number: tracking || prev.tracking_number
           };
         });
       }
@@ -4001,7 +4061,7 @@ export default function AgentDashboard() {
                             {!isLivreur && (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <OrderTypeBadge order={order} />
-                                <StatusBadge status={order.status} />
+                                <StatusBadge status={order.status} order={order} />
                                 <NrpBadge count={order.nrp_count || 0} />
                                 <PendingBadge order={order} />
                                 {((order as any).is_marketplace_upsell || order.source === 'MARKETPLACE') && (
@@ -4138,7 +4198,7 @@ export default function AgentDashboard() {
                                <div className="flex items-center gap-2 flex-wrap min-w-0">
                                  <span className="text-[9px] font-black uppercase tracking-wider text-purple-600 shrink-0">↳ 🟣 Liée</span>
                                  <OrderTypeBadge order={rel} size="xs" short />
-                                 <StatusBadge status={rel.status} />
+                                 <StatusBadge status={rel.status} order={rel} />
                                  <span className="text-[10px] font-bold text-slate-500 truncate">{formatOrderRef(rel, 'admin')}</span>
                                </div>
                                <div className="flex items-center gap-3 shrink-0">
