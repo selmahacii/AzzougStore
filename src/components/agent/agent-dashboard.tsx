@@ -2231,9 +2231,9 @@ function SalaryView({
       } else if (orderFilter === 'MARKETPLACE') {
         passCategory = isDel && isMp;
       } else if (orderFilter === 'UPSELL') {
-        passCategory = isUp;
+        passCategory = isDel && isUp;
       } else if (orderFilter === 'STORE_PICKUP') {
-        passCategory = isRelais;
+        passCategory = isDel && isRelais;
       } else if (orderFilter === 'RETURNED') {
         passCategory = isRet;
       } else if (orderFilter.startsWith('DAY_')) {
@@ -2486,7 +2486,7 @@ function SalaryView({
                     className="flex items-center gap-2 px-3 py-2 rounded-xl bg-pink-950/60 hover:bg-pink-900/60 border border-pink-800/60 transition-all cursor-pointer group text-left"
                   >
                     <span className="size-2 rounded-full bg-pink-400"></span>
-                    <span className="text-pink-300">Marketplace:</span>
+                    <span className="text-pink-300">Marketplace Livrées:</span>
                     <span className="text-pink-200 font-black">+{formatPrice(marketplaceBonus)}</span>
                   </button>
                 </>
@@ -2501,7 +2501,7 @@ function SalaryView({
                     className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/60 border border-amber-800/60 transition-all cursor-pointer group text-left"
                   >
                     <span className="size-2 rounded-full bg-amber-400"></span>
-                    <span className="text-amber-300">Upsell:</span>
+                    <span className="text-amber-300">Upsell Livrés:</span>
                     <span className="text-amber-200 font-black">+{formatPrice(upsellBonus)}</span>
                   </button>
                 </>
@@ -2586,9 +2586,12 @@ function SalaryView({
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-pink-50 text-pink-700 border border-pink-100">
-              Marketplace
-            </span>
+            <div className="flex flex-col">
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-pink-50 text-pink-700 border border-pink-100 inline-block w-fit">
+                Marketplace (Livrées)
+              </span>
+              <span className="text-[9px] text-slate-400 font-medium mt-0.5">Payé uniquement si livré</span>
+            </div>
             <ChevronRight className="size-4 text-slate-300 group-hover:text-pink-500 transition-colors" />
           </div>
           <p className="text-3xl font-black text-pink-600 mt-2 font-mono">{marketplaceDeliveredCount}</p>
@@ -2596,7 +2599,7 @@ function SalaryView({
             {marketplaceDeliveredCount} × {formatPrice(paymentMarketplace)}
           </p>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Market</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Bonus Market Livré</span>
             <span className="text-sm font-black text-pink-600 font-mono">+{formatPrice(marketplaceBonus)}</span>
           </div>
         </div>
@@ -2610,9 +2613,12 @@ function SalaryView({
           )}
         >
           <div className="flex items-center justify-between">
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
-              Retraits Relais
-            </span>
+            <div className="flex flex-col">
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100 inline-block w-fit">
+                Retraits Relais (Livrés)
+              </span>
+              <span className="text-[9px] text-slate-400 font-medium mt-0.5">Payé uniquement si livré</span>
+            </div>
             <ChevronRight className="size-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
           </div>
           <p className="text-3xl font-black text-indigo-600 mt-2 font-mono">{storePickupCount + recoveredStorePickupCount}</p>
@@ -3069,9 +3075,17 @@ function SalaryView({
         {/* ─── VUE 3 : RÈGLES & GRILLE DE CALCUL ─── */}
         {activeTab === 'rules' && (
           <div className="p-4 sm:p-6 space-y-6">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">Comment est calculée votre rémunération ?</h3>
-              <p className="text-xs text-slate-500">Voici la grille contractuelle active configurée pour votre compte confirmatrice.</p>
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Comment est calculée votre rémunération ?</h3>
+                <p className="text-xs text-slate-500">Voici la grille contractuelle active configurée pour votre compte confirmatrice.</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-900 flex items-center gap-3">
+                <span className="text-xl">⭐</span>
+                <p className="text-xs font-bold leading-relaxed">
+                  <span className="font-black text-indigo-950 uppercase tracking-wide">Règle d'or de rémunération :</span> 100% des commissions (Normales, Paniers Récupérés, Marketplace, Upsell) sont déclenchées <span className="underline font-black">UNIQUEMENT</span> lorsque le colis est <span className="font-black text-emerald-700">LIVRÉ et encaissé</span>. Aucune commande confirmée ou en cours de livraison n'est rémunérée avant encaissement réel.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3090,7 +3104,7 @@ function SalaryView({
               <div className="p-4 rounded-2xl bg-pink-50/60 border border-pink-200 space-y-2">
                 <p className="text-xs font-black text-pink-900 uppercase tracking-wider">🛍️ Ventes Marketplace</p>
                 <p className="text-2xl font-black text-pink-700 font-mono">{formatPrice(paymentMarketplace)}</p>
-                <p className="text-xs text-pink-800">Commission additionnelle par article vendu issu du catalogue partagé.</p>
+                <p className="text-xs text-pink-800">Commission additionnelle par article issu du catalogue partagé, payée uniquement une fois le colis livré au client.</p>
               </div>
 
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
