@@ -3215,10 +3215,10 @@ export default function AgentDashboard() {
   // Any change of store / filter / period restarts from the first page
   useEffect(() => {
     setPage(1);
-  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
+  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate, dateByMode]);
 
   const ordersQuery = useQuery({
-    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
+    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, dateByMode, page],
     queryFn: () => {
       let url = `/api/v1/orders?page=${page}&pageSize=${PAGE_SIZE}`;
 
