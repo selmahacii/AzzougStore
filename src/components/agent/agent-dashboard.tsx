@@ -3459,29 +3459,10 @@ export default function AgentDashboard() {
   // Normalisation du statut selon la réalité du tracking (les commandes avec tracking sont en livraison)
   const rawAgentOrders = ordersQuery.data?.data ?? [];
   const normalizedAgentOrders = useMemo(() => {
-    const list: Order[] = [];
-    const desyncedIds: string[] = [];
-    for (const raw of rawAgentOrders) {
+    return rawAgentOrders.map(raw => {
       const effStatus = getEffectiveOrderStatus(raw);
-      if (effStatus !== raw.status) {
-        list.push({ ...raw, status: effStatus });
-        if (raw.tracking_number && raw.status === 'NEW') {
-          desyncedIds.push(raw.id);
-        }
-      } else {
-        list.push(raw);
-      }
-    }
-    if (desyncedIds.length > 0) {
-      desyncedIds.forEach(id => {
-        apiFetch(`/api/v1/orders/${id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status: 'SHIPPED' }),
-          allStores: true,
-        }).catch(() => {});
-      });
-    }
-    return list;
+      return effStatus !== raw.status ? { ...raw, status: effStatus } : raw;
+    });
   }, [rawAgentOrders]);
 
   let filteredOrders = search.trim().length >= 2 && searchResults.length > 0
