@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
-  ShoppingBag, Check,
+  ShoppingBag, Check, MessageCircle, Clock,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useCartStore } from '@/store/cart-store';
@@ -157,6 +157,26 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       (item) => item && item.question && !item.question.includes('__DISABLED__') && item.question.trim().length > 0
     );
   }, [data.faq]);
+
+  // Extraction de la configuration de réassurance et personnalisation
+  const reassuranceConfig = useMemo(() => {
+    if (!data.benefits || !Array.isArray(data.benefits)) return {};
+    const found = data.benefits.find(
+      (b: any) => b && (b.id === 'reassurance_config' || b.show_announcement_bar !== undefined)
+    );
+    return (found as any) || {};
+  }, [data.benefits]);
+
+  const storeName = data.store?.name || activeStore?.name || 'AzzougShop';
+  const storeLogo = data.store?.logo_url || activeStore?.logo_url;
+  const storePhone = data.phone || reassuranceConfig.whatsapp_phone || (activeStore as any)?.phone || '0770041321';
+  const cleanPhone = String(storePhone).replace(/\s+/g, '');
+  const formattedPhone = cleanPhone.replace(/(\d{4})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4');
+  const whatsappPhone = cleanPhone.replace(/^0/, '');
+  const whatsappMessage = encodeURIComponent(
+    reassuranceConfig.whatsapp_message || `مرحباً، أود الاستفسار بخصوص منتج: ${data.headline || data.product_name || ''}`
+  );
+  const whatsappUrl = `https://wa.me/213${whatsappPhone}?text=${whatsappMessage}`;
 
   useEffect(() => {
     setMounted(true);
@@ -484,49 +504,34 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
       <FloatingLanguageSwitcher primaryColor={primary} />
       
-      {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
+      {/* ── TOP ANNOUNCEMENT BAR (Haut de page) ── */}
+      {reassuranceConfig.show_announcement_bar !== false && (
+        <div 
+          className="w-full py-2 px-4 text-center text-[11px] sm:text-xs font-bold tracking-wide relative z-50 shadow-2xs transition-colors"
+          style={{
+            backgroundColor: reassuranceConfig.announcement_bar_bg || '#0B1329',
+            color: reassuranceConfig.announcement_bar_text_color || '#FACC15',
+          }}
+          dir="rtl"
+        >
+          <span>{reassuranceConfig.announcement_bar_text || '🔒 الدفع عند الاستلام • 🚚 توصيل لـ 58 ولاية • ⏳ العرض ساري حتى نهاية الأسبوع'}</span>
+        </div>
+      )}
+
+      {/* ── STICKY HEADER MATCHING USER SCREENSHOT (RTL: Logo on Right, Secure Badge in Center, Red Order CTA on Left) ── */}
       <header className={cn(
-        "w-full py-3 border-b flex items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
+        "w-full py-2.5 sm:py-3 border-b flex items-center justify-center sticky top-0 z-40 backdrop-blur-md shadow-2xs transition-all duration-300 ease-in-out",
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
-      )}>
+      )} dir={dir}>
         <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
-          {/* Start Side: Nav links on Desktop */}
-          <nav className="hidden md:flex items-center gap-6 z-10">
-            <button 
-              onClick={() => scrollToSection('presentation-section')}
-              className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
-            >
-              {dir === 'rtl' ? 'المنتج' : (t('presentation') || 'Présentation')}
-            </button>
-            {data.testimonials && data.testimonials.length > 0 && (
-              <button 
-                onClick={() => scrollToSection('testimonials-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
-              >
-                {dir === 'rtl' ? 'آراء العملاء' : (t('customerReviews') || 'Avis')}
-              </button>
-            )}
-            {validFaq.length > 0 && (
-              <button 
-                onClick={() => scrollToSection('faq-section')}
-                className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
-              >
-                {dir === 'rtl' ? 'الأسئلة الشائعة' : (t('faqTitle') || 'FAQ')}
-              </button>
-            )}
-          </nav>
-
-          {/* Start Side Placeholder for Mobile balance */}
-          <div className="md:hidden w-12 shrink-0" />
-
-          {/* CENTERED LOGO (Mobile & Desktop) */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center max-w-[45%] sm:max-w-[35%] pointer-events-auto z-10">
-            {(data.store?.logo_url || activeStore?.logo_url) ? (
+          {/* RTL Right / LTR Left: STORE LOGO (Transparent Background, NO white box) */}
+          <div className="flex items-center shrink-0 max-w-[40%] sm:max-w-[30%]">
+            {storeLogo ? (
               <img
-                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 200)}
-                alt={data.store?.name || activeStore?.name || 'Logo'}
-                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] transition-all" 
+                src={optimizeCloudinaryUrl(storeLogo, 240)}
+                alt={storeName}
+                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] bg-transparent transition-all" 
                 onError={(e) => { 
                   const target = e.currentTarget as HTMLImageElement;
                   target.onerror = null;
@@ -537,30 +542,41 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               />
             ) : null}
             <span 
-              className="text-sm sm:text-base font-black tracking-tight uppercase truncate" 
+              className="text-sm sm:text-base font-black tracking-tight uppercase truncate text-slate-900 dark:text-white" 
               style={{ 
-                color: primary, 
-                display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
+                color: storeLogo ? undefined : primary, 
+                display: storeLogo ? 'none' : 'block' 
               }}
             >
-              {data.store?.name || activeStore?.name || 'Boutique'}
+              {storeName}
             </span>
           </div>
 
-          {/* End Side: Action Button & Secure Badge */}
+          {/* CENTER: Safe Purchase Badge (Visible on BOTH mobile and desktop) */}
+          {reassuranceConfig.show_header_badge !== false && (
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto z-10">
+              <div 
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold border shadow-2xs whitespace-nowrap transition-all"
+                style={{
+                  backgroundColor: reassuranceConfig.header_badge_bg || '#ECFDF5',
+                  color: reassuranceConfig.header_badge_color || '#047857',
+                  borderColor: reassuranceConfig.header_badge_color ? `${reassuranceConfig.header_badge_color}30` : '#A7F3D0',
+                }}
+              >
+                <ShieldCheck className="size-3.5 shrink-0" />
+                <span>{reassuranceConfig.header_badge_text || 'شراء آمن'}</span>
+              </div>
+            </div>
+          )}
+
+          {/* RTL Left / LTR Right: Red Order Now CTA button */}
           <div className="flex items-center gap-3 z-10 shrink-0">
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="text-[11px] sm:text-xs font-black uppercase tracking-wider px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
-              style={{ backgroundColor: primary }}
+              className="text-xs sm:text-sm font-black px-4 py-2 sm:px-5 sm:py-2 rounded-xl text-white shadow-md transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap bg-red-600 hover:bg-red-700"
             >
-              {dir === 'rtl' ? 'اطلب الآن' : (t('buyNow') || 'Commander')}
+              {dir === 'rtl' ? (reassuranceConfig.header_cta_text || 'اطلب الآن') : (t('buyNow') || 'Commander')}
             </button>
-            <div className="hidden md:block">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60 whitespace-nowrap">
-                {dir === 'rtl' ? 'شراء آمن' : (t('confirmedTitleLuxe') || 'Achat Sécurisé')}
-              </span>
-            </div>
           </div>
         </div>
       </header>
@@ -576,45 +592,97 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             
             {/* Header section (Mobile shows this at the very top, Desktop shows it left) */}
             <div>
-              {data.badge_text && (
+              {/* Limited offer badge above title */}
+              {reassuranceConfig.show_badge !== false && (data.badge_text || reassuranceConfig.badge_text) && (
                 <span 
-                  className="px-3 py-1 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest mb-4 inline-block shadow-sm"
-                  style={{ backgroundColor: `${primary}15`, color: primary }}
+                  className="px-3 py-1 rounded-full text-xs font-bold mb-3 inline-block shadow-2xs border"
+                  style={{ 
+                    backgroundColor: reassuranceConfig.badge_bg || '#FEF3C7', 
+                    color: reassuranceConfig.badge_color || '#B45309',
+                    borderColor: reassuranceConfig.badge_color ? `${reassuranceConfig.badge_color}30` : '#FDE68A'
+                  }}
                 >
-                  {data.badge_text}
+                  ⏳ {data.badge_text || reassuranceConfig.badge_text || 'عرض محدود'}
                 </span>
               )}
               
-              <h1 className={cn("text-3xl sm:text-4xl lg:text-5xl font-black leading-[1.1] mb-4 tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+              <h1 className={cn("text-3xl sm:text-4xl lg:text-5xl font-black leading-[1.15] mb-2 tracking-tight", isDark ? "text-white" : "text-slate-900")}>
                 {data.headline}
               </h1>
 
+              {data.subtitle && (
+                <p className={cn("text-sm sm:text-base font-medium mb-4 leading-relaxed", isDark ? "text-slate-300" : "text-slate-600")}>
+                  {data.subtitle}
+                </p>
+              )}
 
+              {/* Promo Gift Ribbon */}
+              {reassuranceConfig.show_gift_ribbon !== false && (
+                <div 
+                  className="p-3 rounded-2xl border font-bold text-xs sm:text-sm flex items-center justify-center gap-2 mb-4 shadow-2xs transition-all"
+                  style={{
+                    backgroundColor: reassuranceConfig.gift_ribbon_bg || '#FFFBEB',
+                    color: reassuranceConfig.gift_ribbon_color || '#92400E',
+                    borderColor: reassuranceConfig.gift_ribbon_color ? `${reassuranceConfig.gift_ribbon_color}35` : '#FDE68A',
+                  }}
+                >
+                  <span>{reassuranceConfig.gift_ribbon_text || 'مع كل قطعة: قناع عين للنوم هدية 🎁'}</span>
+                </div>
+              )}
 
+              {/* Price row & Savings Badge */}
               {price !== null && (() => {
                 const currentPrice = currentOffer?.price || (selectedVariants[0]?.price || price);
                 const currentComparePrice = currentOffer?.compare_price || comparePrice;
-                const currentDiscount = currentComparePrice && currentPrice ? Math.round((1 - currentPrice / currentComparePrice) * 100) : 0;
+                const savingsAmount = currentComparePrice && currentPrice && currentComparePrice > currentPrice
+                  ? Math.round(currentComparePrice - currentPrice)
+                  : 0;
+
                 return (
-                  <div className="flex items-end gap-3 mb-6">
-                    <span className="text-4xl sm:text-5xl font-black leading-none" style={{ color: primary }}>
-                      {formatPrice(currentPrice)}
-                    </span>
-                    {currentComparePrice !== null && currentComparePrice > currentPrice && (
-                      <div className="flex flex-col items-start leading-none mb-1">
-                        <span className={cn("text-base line-through font-medium mb-1", isDark ? "text-white/40" : "text-slate-400")}>
+                  <div className="space-y-2 mb-5">
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-3xl sm:text-4xl font-black leading-none text-red-600 dark:text-red-500">
+                        {formatPrice(currentPrice)}
+                      </span>
+                      {currentComparePrice && currentComparePrice > currentPrice && (
+                        <span className="text-lg font-bold line-through text-slate-400">
                           {formatPrice(currentComparePrice)}
                         </span>
-                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-500 text-white uppercase">
-                          -{currentDiscount}% Promo
+                      )}
+                      {reassuranceConfig.show_savings_badge !== false && savingsAmount > 0 && (
+                        <span 
+                          className="px-2.5 py-1 rounded-full text-xs font-black shadow-2xs"
+                          style={{
+                            backgroundColor: reassuranceConfig.savings_badge_bg || '#10B981',
+                            color: reassuranceConfig.savings_badge_color || '#FFFFFF',
+                          }}
+                        >
+                          {reassuranceConfig.savings_badge_text || 'وفر'} {savingsAmount} دج
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Rating stars */}
+                    {reassuranceConfig.show_rating !== false && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star 
+                              key={s} 
+                              className="size-4 fill-amber-400 text-amber-400" 
+                            />
+                          ))}
+                        </div>
+                        <span 
+                          className="text-xs font-bold text-slate-600 dark:text-slate-300"
+                        >
+                          {reassuranceConfig.rating_text || '4.7/5 — تقييم زبائننا'}
                         </span>
                       </div>
                     )}
                   </div>
                 );
               })()}
-
-              {/* Subtitle removed */}
             </div>
 
             {/* Main Image with Zoom */}
@@ -635,6 +703,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     }}
                     onMouseLeave={() => setIsZoomed(false)}
                   >
+                    {/* Image Gift Badge */}
+                    {reassuranceConfig.show_image_badge !== false && (
+                      <div 
+                        className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-full text-xs font-black shadow-md transition-all flex items-center gap-1"
+                        style={{
+                          backgroundColor: reassuranceConfig.image_badge_bg || '#F97316',
+                          color: reassuranceConfig.image_badge_color || '#FFFFFF',
+                        }}
+                      >
+                        <span>{reassuranceConfig.image_badge_text || '🎁 + قناع عين هدية'}</span>
+                      </div>
+                    )}
                     <img
                       src={optimizeCloudinaryUrl(mainImgSrc, 600)}
                       alt={productName || ''}
@@ -737,7 +817,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 <div id="checkout-form-container">
                   <div className="text-center mb-6 px-4">
                     <p className={cn("text-lg sm:text-xl font-black tracking-wide leading-relaxed", isDark ? "text-white" : "text-slate-900")}>
-                      للطلب، يرجى ادخال معلوماتك هنا
+                      للطلب، أدخل معلوماتك هنا
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
@@ -1030,6 +1110,43 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </CheckoutForm>
                 </div>
 
+                {/* 3 Delivery Guarantees */}
+                {reassuranceConfig.show_delivery_section !== false && (
+                  <div className="mt-6 pt-6 border-t border-slate-100 dark:border-white/10 space-y-3">
+                    {reassuranceConfig.delivery_section_title && (
+                      <div className="text-center mb-3">
+                        <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                          {reassuranceConfig.delivery_section_title}
+                        </h4>
+                        {reassuranceConfig.delivery_section_subtitle && (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {reassuranceConfig.delivery_section_subtitle}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {(reassuranceConfig.delivery_cards && reassuranceConfig.delivery_cards.length > 0
+                        ? reassuranceConfig.delivery_cards
+                        : [
+                            { icon: '💰', title: 'الدفع عند الاستلام', desc: 'تدفع كاش عند استلام طلبيتك وفحصها' },
+                            { icon: '🚚', title: 'توصيل سريع 24-72 س', desc: 'نوصلو لـ 58 ولاية حتى باب دارك' },
+                            { icon: '🔄', title: 'استبدال مجاني', desc: 'ضمان الجودة وإمكانية الاستبدال' },
+                          ]
+                      ).map((card, idx) => (
+                        <div 
+                          key={idx}
+                          className="p-3 rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.02] flex flex-col items-center text-center shadow-2xs"
+                        >
+                          <span className="text-xl mb-1">{card.icon}</span>
+                          <span className="text-xs font-black text-slate-800 dark:text-white mb-0.5 line-clamp-1">{card.title}</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight line-clamp-2">{card.desc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Publicity Banners (Multiple - Seamless Stack without gap under Checkout Button) */}
                 {(() => {
                   const banners = parseBannerImages(data.banner_image_url);
@@ -1140,102 +1257,132 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             )}
 
             {/* Final Pitch / Reassurance Card matching Image 2 */}
-            <div className="mt-14 max-w-[560px] mx-auto overflow-hidden rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D]">
-              {(data.banner_image_url || data.image_url || data.product?.main_image) && (
-                <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
-                  <img
-                    src={optimizeCloudinaryUrl(data.banner_image_url || data.image_url || data.product?.main_image || '', 800)}
-                    alt={data.product_name || 'Produit'}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-              <div className="p-6 md:p-8 text-center text-white bg-gradient-to-b from-[#111827] to-[#0B132B]">
-                <h3 className="text-xl md:text-2xl font-black mb-3 text-white">
-                  {dir === 'rtl' ? 'اجعل كل رحلة أكثر راحة' : 'Voyagez avec un confort absolu'}
-                </h3>
-                <p className="text-xs md:text-sm text-slate-300 leading-relaxed mb-6 font-medium max-w-md mx-auto">
-                  {dir === 'rtl' ? (
-                    <>
-                      وسادة سفر مريحة مع قناع عين هدية 🎁<br />
-                      في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك
-                    </>
-                  ) : (
-                    data.product_desc || 'Confort optimal, ergonomie et douceur pour tous vos déplacements.'
-                  )}
-                </p>
-                <button
-                  onClick={() => scrollToSection('checkout-form-container')}
-                  className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-xl text-white font-black text-sm tracking-wide shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
-                  style={{ backgroundColor: primary || '#2563eb' }}
+            {reassuranceConfig.show_bottom_card !== false && (
+              <div className="mt-14 max-w-[560px] mx-auto overflow-hidden rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D]">
+                {(data.banner_image_url || data.image_url || data.product?.main_image) && (
+                  <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    <img
+                      src={optimizeCloudinaryUrl(data.banner_image_url || data.image_url || data.product?.main_image || '', 800)}
+                      alt={data.product_name || 'Produit'}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <div 
+                  className="p-6 md:p-8 text-center text-white"
+                  style={{ backgroundColor: reassuranceConfig.bottom_card_bg || '#0F172A' }}
                 >
-                  <ShoppingBag className="size-4" />
-                  <span>
-                    {dir === 'rtl' 
-                      ? `اطلب الآن — ${data.price ? `${data.price} دج` : '1400 دج'} فقط` 
-                      : `Commander — ${data.price ? `${data.price} DA` : ''}`}
-                  </span>
-                </button>
+                  <h3 className="text-xl md:text-2xl font-black mb-3" style={{ color: reassuranceConfig.bottom_card_title_color || '#FFFFFF' }}>
+                    {reassuranceConfig.bottom_card_title || data.cta_headline || (dir === 'rtl' ? 'اجعل كل رحلة أكثر راحة' : 'Voyagez avec un confort absolu')}
+                  </h3>
+                  <p className="text-xs md:text-sm leading-relaxed mb-6 font-medium max-w-md mx-auto" style={{ color: reassuranceConfig.bottom_card_subtitle_color || '#CBD5E1' }}>
+                    {reassuranceConfig.bottom_card_subtitle || data.cta_subtitle || (dir === 'rtl' ? (
+                      <>
+                        وسادة سفر مريحة مع قناع عين هدية 🎁<br />
+                        في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك
+                      </>
+                    ) : (
+                      data.product_desc || 'Confort optimal, ergonomie et douceur pour tous vos déplacements.'
+                    ))}
+                  </p>
+                  <button
+                    onClick={() => scrollToSection('checkout-form-container')}
+                    className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-xl font-black text-sm tracking-wide shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                    style={{
+                      backgroundColor: reassuranceConfig.bottom_card_btn_bg || primary || '#2563EB',
+                      color: reassuranceConfig.bottom_card_btn_color || '#FFFFFF'
+                    }}
+                  >
+                    <ShoppingBag className="size-4" />
+                    <span>
+                      {reassuranceConfig.bottom_card_btn_text || (dir === 'rtl' 
+                        ? `اطلب الآن — ${data.price ? `${data.price} دج` : '1400 دج'} فقط` 
+                        : `Commander — ${data.price ? `${data.price} DA` : ''}`)}
+                    </span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
         </div>
       )}
 
-      {/* Elegant Custom Footer matching Image 2 */}
+      {/* ── ELEGANT CUSTOM FOOTER (Transparent Logo & Direct WhatsApp Button) ── */}
       <footer className="w-full bg-[#0B132B] text-white pt-10 pb-28 md:pb-12 border-t border-slate-800 text-center">
         <div className="max-w-[800px] mx-auto px-4 flex flex-col items-center">
-          {/* Store Logo Card in clean white pill */}
-          {(data.store?.logo_url || activeStore?.logo_url) ? (
-            <div className="inline-flex items-center justify-center px-4 py-2 bg-white rounded-2xl shadow-lg mb-4 max-w-[150px]">
+          {/* Store Logo with TRANSPARENT background (no white card / no pill) */}
+          {storeLogo ? (
+            <div className="mb-4 flex items-center justify-center">
               <img
-                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 200)}
-                alt={data.store?.name || activeStore?.name || 'Store'}
-                className="h-9 w-auto object-contain max-h-11"
+                src={optimizeCloudinaryUrl(storeLogo, 240)}
+                alt={storeName}
+                className="h-10 sm:h-12 w-auto object-contain bg-transparent mx-auto transition-all"
               />
             </div>
           ) : (
-            <div className="text-base font-black tracking-widest text-white uppercase mb-3">
-              {data.store?.name || activeStore?.name || 'AzzougShop'}
+            <div className="text-lg font-black tracking-widest text-white uppercase mb-4">
+              {storeName}
             </div>
           )}
 
-          {/* Contact & WhatsApp */}
-          {(() => {
-            const storePhone = data.phone || (activeStore as any)?.phone || '0770041321';
-            const formattedPhone = storePhone.replace(/(\d{4})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4');
-            return (
-              <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-slate-300 mb-3" dir="rtl">
-                <a href={`tel:${storePhone}`} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5">
-                  <Phone className="size-3.5 text-emerald-400 shrink-0" />
-                  <span>للتواصل: {formattedPhone}</span>
-                </a>
-                <span className="text-slate-600">•</span>
-                <a 
-                  href={`https://wa.me/213${storePhone.replace(/^0/, '')}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="hover:text-emerald-400 transition-colors flex items-center gap-1.5"
-                >
-                  <span className="text-emerald-400 font-black">واتساب:</span>
-                  <span>{formattedPhone}</span>
-                </a>
-              </div>
-            );
-          })()}
+          {/* Contact & WhatsApp Text Row */}
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-slate-300 mb-2" dir="rtl">
+            <a href={`tel:${cleanPhone}`} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200">
+              <Phone className="size-3.5 text-emerald-400 shrink-0" />
+              <span>للتواصل: <span className="font-mono">{formattedPhone}</span></span>
+            </a>
+            <span className="text-slate-600">•</span>
+            <a 
+              href={whatsappUrl}
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200"
+            >
+              <span className="text-emerald-400 font-black">واتساب:</span>
+              <span className="font-mono">{formattedPhone}</span>
+            </a>
+          </div>
+
+          {/* Dedicated WhatsApp Button in Footer */}
+          {reassuranceConfig.whatsapp_enabled !== false && (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 text-xs sm:text-sm my-3"
+            >
+              <MessageCircle className="size-4.5" />
+              <span>{reassuranceConfig.whatsapp_btn_text || 'تواصل معنا عبر واتساب'}</span>
+            </a>
+          )}
 
           {/* Reassurance text */}
-          <p className="text-[11px] text-slate-400 font-medium mb-3">
+          <p className="text-[11px] text-slate-400 font-medium mb-3 mt-1">
             الدفع عند الاستلام • توصيل سريع لـ 58 ولاية • ضمان الاستبدال
           </p>
 
-          {/* Copyright */}
+          {/* Copyright in 100% Arabic */}
           <p className="text-[10px] text-slate-500 font-semibold tracking-wider">
-            © {new Date().getFullYear()} {data.store?.name || activeStore?.name || 'AzzougShop'}. جميع الحقوق محفوظة.
+            © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
           </p>
         </div>
       </footer>
+
+      {/* ── FLOATING WHATSAPP BUTTON (Bottom corner) ── */}
+      {reassuranceConfig.whatsapp_enabled !== false && (
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Contact WhatsApp"
+          className="fixed bottom-20 md:bottom-6 left-6 z-40 size-13 sm:size-14 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group"
+          title="تواصل معنا عبر واتساب"
+        >
+          <MessageCircle className="size-6 sm:size-7 fill-white/20" />
+          <span className="sr-only">واتساب</span>
+        </a>
+      )}
 
       {/* Sticky Bottom CTA on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">

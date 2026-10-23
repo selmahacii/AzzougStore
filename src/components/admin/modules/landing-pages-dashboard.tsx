@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Zap, Plus, Eye, EyeOff, Trash2, ExternalLink, Copy,
@@ -13,6 +13,7 @@ import {
   CheckCircle2, ChevronDown, ChevronUp, Info, MousePointerClick,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -1363,6 +1364,26 @@ function LandingPageModal({
   const [ctaHeadline, setCtaHeadline] = useState(existing?.cta_headline || "N'attendez plus.");
   const [ctaSubtitle, setCtaSubtitle] = useState(existing?.cta_subtitle || "Rejoignez des milliers de clients satisfaits et profitez de notre offre exclusive aujourd'hui.");
   const [cta2Label, setCta2Label] = useState(existing?.cta2_label || '');
+
+  // ── Reassurance & Customization State ──
+  const existingReassurance = useMemo(() => {
+    return (existing?.benefits?.find((b: any) => b?.id === 'reassurance_config' || b?.show_announcement_bar !== undefined) as any) || {};
+  }, [existing?.benefits]);
+
+  const [showAnnouncementBar, setShowAnnouncementBar] = useState(existingReassurance.show_announcement_bar !== false);
+  const [announcementBarText, setAnnouncementBarText] = useState(existingReassurance.announcement_bar_text || '🔒 الدفع عند الاستلام • 🚚 توصيل لـ 58 ولاية • ⏳ العرض ساري حتى نهاية الأسبوع');
+  const [announcementBarBg, setAnnouncementBarBg] = useState(existingReassurance.announcement_bar_bg || '#0b1329');
+  const [showHeaderBadge, setShowHeaderBadge] = useState(existingReassurance.show_header_badge !== false);
+  const [headerBadgeText, setHeaderBadgeText] = useState(existingReassurance.header_badge_text || 'شراء آمن');
+  const [showGiftRibbon, setShowGiftRibbon] = useState(existingReassurance.show_gift_ribbon !== false);
+  const [giftRibbonText, setGiftRibbonText] = useState(existingReassurance.gift_ribbon_text || 'مع كل قطعة: قناع عين للنوم هدية 🎁');
+  const [showImageBadge, setShowImageBadge] = useState(existingReassurance.show_image_badge !== false);
+  const [imageBadgeText, setImageBadgeText] = useState(existingReassurance.image_badge_text || '🎁 + قناع عين هدية');
+  const [whatsappEnabled, setWhatsappEnabled] = useState(existingReassurance.whatsapp_enabled !== false);
+  const [whatsappPhone, setWhatsappPhone] = useState(existingReassurance.whatsapp_phone || existing?.phone || '');
+  const [whatsappMessage, setWhatsappMessage] = useState(existingReassurance.whatsapp_message || 'مرحباً، أود الاستفسار بخصوص المنتج');
+  const [showDeliverySection, setShowDeliverySection] = useState(existingReassurance.show_delivery_section !== false);
+  const [showBottomCard, setShowBottomCard] = useState(existingReassurance.show_bottom_card !== false);
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
@@ -1597,7 +1618,6 @@ function LandingPageModal({
         badge_text: badgeText,
         cta_label: ctaLabel,
         image_url: imageUrl || null,
-        phone: phone || null,
         primary_color: primaryColor,
         template,
         price: price ? parseInt(price) : null,
@@ -1605,7 +1625,56 @@ function LandingPageModal({
         cta_headline: ctaHeadline,
         cta_subtitle: ctaSubtitle,
         cta2_label: cta2Label || null,
-        benefits,
+        phone: whatsappPhone || phone || null,
+        benefits: (() => {
+          const cleanMarketingBenefits = (benefits || []).filter((b: any) => b?.id !== 'reassurance_config' && b?.show_announcement_bar === undefined);
+          const finalReassuranceConfig = {
+            id: 'reassurance_config',
+            show_announcement_bar: showAnnouncementBar,
+            announcement_bar_text: announcementBarText,
+            announcement_bar_bg: announcementBarBg,
+            announcement_bar_text_color: '#facc15',
+            show_header_badge: showHeaderBadge,
+            header_badge_text: headerBadgeText,
+            header_badge_bg: '#ecfdf5',
+            header_badge_color: '#047857',
+            show_gift_ribbon: showGiftRibbon,
+            gift_ribbon_text: giftRibbonText,
+            gift_ribbon_bg: '#fffbeb',
+            gift_ribbon_color: '#92400e',
+            show_image_badge: showImageBadge,
+            image_badge_text: imageBadgeText,
+            image_badge_bg: '#f97316',
+            image_badge_color: '#ffffff',
+            show_badge: true,
+            badge_text: badgeText || 'عرض محدود',
+            badge_bg: '#fef3c7',
+            badge_color: '#b45309',
+            show_rating: true,
+            rating_text: '4.7/5 — تقييم زبائننا',
+            rating_stars_color: '#fbbf24',
+            show_savings_badge: true,
+            savings_badge_text: 'وفّر',
+            savings_badge_bg: '#10b981',
+            savings_badge_color: '#ffffff',
+            whatsapp_enabled: whatsappEnabled,
+            whatsapp_phone: whatsappPhone || phone,
+            whatsapp_message: whatsappMessage,
+            show_delivery_section: showDeliverySection,
+            delivery_section_title: 'التوصيل والدفع',
+            delivery_section_subtitle: 'كل شيء واضح قبل ما تطلب',
+            delivery_cards: existingReassurance.delivery_cards || [
+              { icon: '💰', title: 'الدفع عند الاستلام', desc: 'ما تخلص والو مسبقاً — تدفع كاش غير كي توصلك السلعة وتشوفها بعينيك' },
+              { icon: '🚚', title: 'توصيل سريع 24-72 ساعة', desc: 'نوصلو لكل 58 ولاية — للمنزل أو لأقرب مكتب توصيل حسب ما يريحك' },
+              { icon: '🔄', title: 'استبدال مجاني', desc: 'إذا وصلتك السلعة فيها أي عيب، اتصل بنا ونبدلوها لك مجاناً' }
+            ],
+            show_bottom_card: showBottomCard,
+            bottom_card_bg: '#0f172a',
+            footer_logo_bg: 'transparent',
+            logo_bg: 'transparent',
+          };
+          return [finalReassuranceConfig, ...cleanMarketingBenefits];
+        })(),
         testimonials,
         steps,
         stats,
@@ -2737,6 +2806,154 @@ function LandingPageModal({
 
                   {/* ── RÉASSURANCE & FAQ ── */}
                   <TabsContent value="reassurance" className="mt-0 space-y-6">
+
+                    {/* Barre d'annonce supérieure */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Barre d'annonce supérieure (Haut de page)</h4>
+                          <p className="text-xs text-slate-400">Bandeau d'information accrocheur affiché au tout début de la page</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showAnnouncementBar ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showAnnouncementBar} onCheckedChange={setShowAnnouncementBar} />
+                        </div>
+                      </div>
+                      {showAnnouncementBar && (
+                        <div className="space-y-4 pt-1">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte de l'annonce</label>
+                            <Input
+                              value={announcementBarText}
+                              onChange={e => setAnnouncementBarText(e.target.value)}
+                              placeholder="🔒 الدفع عند الاستلام • 🚚 توصيل لـ 58 ولاية • ⏳ العرض ساري حتى نهاية الأسبوع"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                              dir="rtl"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur d'arrière-plan du bandeau</label>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="color"
+                                value={announcementBarBg}
+                                onChange={e => setAnnouncementBarBg(e.target.value)}
+                                className="size-10 rounded-xl border border-slate-200 cursor-pointer"
+                              />
+                              <Input
+                                value={announcementBarBg}
+                                onChange={e => setAnnouncementBarBg(e.target.value)}
+                                className="h-10 w-32 rounded-xl border-slate-200 text-xs font-mono uppercase"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Badges d'en-tête, Ruban Cadeau & Photo */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
+                      <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider border-b pb-3">Badges de Confiance & Cadeaux</h4>
+                      
+                      {/* Badge Achat Sécurisé Header */}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-slate-700">Badge "Achat Sécurisé" dans l'en-tête</p>
+                          <Switch checked={showHeaderBadge} onCheckedChange={setShowHeaderBadge} />
+                        </div>
+                        {showHeaderBadge && (
+                          <Input
+                            value={headerBadgeText}
+                            onChange={e => setHeaderBadgeText(e.target.value)}
+                            placeholder="شراء آمن"
+                            className="h-10 rounded-xl border-slate-200 text-sm font-bold bg-white"
+                            dir="rtl"
+                          />
+                        )}
+                      </div>
+
+                      {/* Ruban Cadeau Promo */}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-slate-700">Ruban Cadeau / Promo (au-dessus du prix)</p>
+                          <Switch checked={showGiftRibbon} onCheckedChange={setShowGiftRibbon} />
+                        </div>
+                        {showGiftRibbon && (
+                          <Input
+                            value={giftRibbonText}
+                            onChange={e => setGiftRibbonText(e.target.value)}
+                            placeholder="مع كل قطعة: قناع عين للنوم هدية 🎁"
+                            className="h-10 rounded-xl border-slate-200 text-sm font-bold bg-white"
+                            dir="rtl"
+                          />
+                        )}
+                      </div>
+
+                      {/* Badge sur la photo du produit */}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-slate-700">Badge étiquette sur la photo principale</p>
+                          <Switch checked={showImageBadge} onCheckedChange={setShowImageBadge} />
+                        </div>
+                        {showImageBadge && (
+                          <Input
+                            value={imageBadgeText}
+                            onChange={e => setImageBadgeText(e.target.value)}
+                            placeholder="🎁 + قناع عين هدية"
+                            className="h-10 rounded-xl border-slate-200 text-sm font-bold bg-white"
+                            dir="rtl"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* WhatsApp & Contact Direct */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">WhatsApp & Contact Direct</h4>
+                          <p className="text-xs text-slate-400">Bouton WhatsApp dans le footer et bulle flottante cliquable</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{whatsappEnabled ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={whatsappEnabled} onCheckedChange={setWhatsappEnabled} />
+                        </div>
+                      </div>
+                      {whatsappEnabled && (
+                        <div className="space-y-4 pt-1">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Numéro WhatsApp (Algérie)</label>
+                            <Input
+                              value={whatsappPhone}
+                              onChange={e => setWhatsappPhone(e.target.value)}
+                              placeholder="0770041321"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-mono font-bold"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Message WhatsApp pré-rempli</label>
+                            <Input
+                              value={whatsappMessage}
+                              onChange={e => setWhatsappMessage(e.target.value)}
+                              placeholder="مرحباً، أود الاستفسار بخصوص المنتج"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                              dir="rtl"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section Garanties & Livraisons */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">3 Cartes de Réassurance & Livraison</h4>
+                          <p className="text-xs text-slate-400">الدفع عند الاستلام • توصيل سريع 24-72 س • استبدال مجاني</p>
+                        </div>
+                        <Switch checked={showDeliverySection} onCheckedChange={setShowDeliverySection} />
+                      </div>
+                    </div>
                     {/* Témoignages */}
                     <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100">
                       <div className="flex items-center justify-between border-b pb-3">
