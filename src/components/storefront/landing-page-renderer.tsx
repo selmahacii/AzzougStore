@@ -677,6 +677,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             isInline={true}
             customCtaText={reassuranceConfig.form_cta_text || 'اطلب الآن – الدفع عند الاستلام'}
             customCtaSubtext={reassuranceConfig.form_cta_subtext || 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك'}
+            customCtaBg={reassuranceConfig.form_cta_bg || '#B91C1C'}
             customBadges={[
               reassuranceConfig.form_badge_1 || '🔒 الدفع عند الاستلام',
               reassuranceConfig.form_badge_2 || '🚚 التوصيل 24-72 ساعة',
@@ -1100,7 +1101,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               <button
                 type="button"
                 onClick={() => scrollToSection('checkout-form-container')}
-                className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all text-white cursor-pointer"
+                className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg bg-[#B91C1C] hover:bg-[#991B1B] active:scale-95 transition-all text-white cursor-pointer"
               >
                 {reassuranceConfig.bottom_card_btn_text || `اطلب الآن — ${price} دج فقط`}
               </button>

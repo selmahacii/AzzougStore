@@ -1372,11 +1372,13 @@ export function CheckoutForm({
                     type="button"
                     onClick={handleNext}
                     disabled={checkingDuplicate || submitting}
-                    className="w-full py-4 px-6 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer"
+                    className="w-full py-4 px-6 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer hover:brightness-105"
                     style={{
-                      backgroundColor: customCtaBg || '#2563EB',
+                      backgroundColor: customCtaBg || '#B91C1C',
                       color: customCtaTextColor || '#FFFFFF',
-                      boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.3)',
+                      boxShadow: customCtaBg && customCtaBg !== '#B91C1C'
+                        ? `0 10px 25px -5px ${customCtaBg}55`
+                        : '0 10px 25px -5px rgba(185, 28, 28, 0.35)',
                     }}
                   >
                     {checkingDuplicate || submitting ? (
