@@ -1330,7 +1330,10 @@ function LandingPageModal({
 
   // Form state
   const [headline, setHeadline] = useState(existing?.headline || '');
-  const [subtitle, setSubtitle] = useState(existing?.subtitle || '');
+  const [subtitle, setSubtitle] = useState(
+    (existing?.benefits?.find((b: any) => b?.id === 'reassurance_config' || b?.show_announcement_bar !== undefined) as any)?.subtitle ??
+    (existing?.subtitle || '')
+  );
   const [badgeText, setBadgeText] = useState(existing?.badge_text || 'Offre limitée');
   const [ctaLabel, setCtaLabel] = useState(existing?.cta_label || 'Commander maintenant');
   const [imageUrl, setImageUrl] = useState(existing?.image_url || '');
@@ -1377,6 +1380,9 @@ function LandingPageModal({
   const [headerBadgeText, setHeaderBadgeText] = useState(existingReassurance.header_badge_text || 'شراء آمن');
   const [showGiftRibbon, setShowGiftRibbon] = useState(existingReassurance.show_gift_ribbon !== false);
   const [giftRibbonText, setGiftRibbonText] = useState(existingReassurance.gift_ribbon_text || 'مع كل قطعة: قناع عين للنوم هدية 🎁');
+  const [showSubtitle, setShowSubtitle] = useState(existingReassurance.show_subtitle !== false);
+  const [showRating, setShowRating] = useState(existingReassurance.show_rating !== false);
+  const [ratingText, setRatingText] = useState(existingReassurance.rating_text || '4.7/5 — تقييم زبائننا');
   const [showImageBadge, setShowImageBadge] = useState(existingReassurance.show_image_badge !== false);
   const [imageBadgeText, setImageBadgeText] = useState(existingReassurance.image_badge_text || '🎁 + قناع عين هدية');
   const [whatsappEnabled, setWhatsappEnabled] = useState(existingReassurance.whatsapp_enabled !== false);
@@ -1739,7 +1745,7 @@ function LandingPageModal({
         mode: mode === 'new_product' ? 'product' : mode, // Convert back to product mode for storage
         product_id: finalProductId,
         headline,
-        subtitle,
+        subtitle: showSubtitle ? subtitle : '',
         badge_text: badgeText,
         cta_label: ctaLabel,
         image_url: imageUrl || null,
@@ -1776,8 +1782,10 @@ function LandingPageModal({
             badge_text: badgeText || 'عرض محدود',
             badge_bg: '#fef3c7',
             badge_color: '#b45309',
-            show_rating: true,
-            rating_text: '4.7/5 — تقييم زبائننا',
+            show_subtitle: showSubtitle,
+            subtitle: showSubtitle ? subtitle : '',
+            show_rating: showRating,
+            rating_text: ratingText || '4.7/5 — تقييم زبائننا',
             rating_stars_color: '#fbbf24',
             show_savings_badge: true,
             savings_badge_text: 'وفّر',
@@ -2017,9 +2025,27 @@ function LandingPageModal({
                           <label className="text-xs font-bold text-slate-700">Titre principal *</label>
                           <Input value={headline} onChange={e => setHeadline(e.target.value)} placeholder="Ex: Produit Révolutionnaire" className="h-10 rounded-lg text-sm" />
                         </div>
-                        <div className="sm:col-span-2 space-y-1.5">
-                          <label className="text-xs font-bold text-slate-700">Sous-titre</label>
-                          <Textarea value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="Description courte et percutante..." rows={3} className="rounded-lg text-sm resize-none" />
+                        <div className="sm:col-span-2 p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700">Sous-titre du produit</label>
+                              <p className="text-[11px] text-slate-400">Texte affiché sous le titre principal (ex: slogan, description courte)</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-600">{showSubtitle ? 'Visible' : 'Masqué'}</span>
+                              <Switch checked={showSubtitle} onCheckedChange={setShowSubtitle} />
+                            </div>
+                          </div>
+                          {showSubtitle && (
+                            <Textarea
+                              value={subtitle}
+                              onChange={e => setSubtitle(e.target.value)}
+                              placeholder="اكتب وصفاً أو شعاراً قصيراً للمنتج هنا..."
+                              rows={2}
+                              className="rounded-xl text-sm bg-white border-slate-200 resize-none font-medium"
+                              dir="auto"
+                            />
+                          )}
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-700">Badge</label>
@@ -2036,6 +2062,30 @@ function LandingPageModal({
                         <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-700">Prix barré (DA)</label>
                           <Input type="number" value={comparePrice} onChange={e => setComparePrice(e.target.value)} placeholder="Ex: 4500" className="h-10 rounded-lg text-sm" />
+                        </div>
+                        <div className="sm:col-span-2 p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-xs font-bold text-slate-700">Section Note & Étoiles (Rating sous le prix)</label>
+                              <p className="text-[11px] text-slate-400">Étoiles jaunes et note affichées immédiatement sous le prix</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-slate-600">{showRating ? 'Visible' : 'Masqué'}</span>
+                              <Switch checked={showRating} onCheckedChange={setShowRating} />
+                            </div>
+                          </div>
+                          {showRating && (
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] font-bold text-slate-600">Texte d'évaluation</label>
+                              <Input
+                                value={ratingText}
+                                onChange={e => setRatingText(e.target.value)}
+                                placeholder="4.7/5 — تقييم زبائننا"
+                                className="h-10 rounded-xl bg-white border-slate-200 text-sm font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+                          )}
                         </div>
                         <div className="sm:col-span-2 space-y-1.5">
                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image hero (Galerie)</label>
@@ -3538,6 +3588,46 @@ function LandingPageModal({
                             value={imageBadgeText}
                             onChange={e => setImageBadgeText(e.target.value)}
                             placeholder="🎁 + قناع عين هدية"
+                            className="h-10 rounded-xl border-slate-200 text-sm font-bold bg-white"
+                            dir="rtl"
+                          />
+                        )}
+                      </div>
+
+                      {/* Sous-titre Produit */}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-slate-700">Sous-titre sous le titre principal</p>
+                            <p className="text-[10px] text-slate-400">Slogan ou description courte sous le nom du produit</p>
+                          </div>
+                          <Switch checked={showSubtitle} onCheckedChange={setShowSubtitle} />
+                        </div>
+                        {showSubtitle && (
+                          <Input
+                            value={subtitle}
+                            onChange={e => setSubtitle(e.target.value)}
+                            placeholder="اكتب وصفاً أو شعاراً قصيراً للمنتج هنا..."
+                            className="h-10 rounded-xl border-slate-200 text-sm font-medium bg-white"
+                            dir="auto"
+                          />
+                        )}
+                      </div>
+
+                      {/* Évaluation / Rating sous le prix */}
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-slate-700">Note & Étoiles (Rating sous le prix)</p>
+                            <p className="text-[10px] text-slate-400">Étoiles jaunes et texte d'évaluation affichés immédiatement sous le prix</p>
+                          </div>
+                          <Switch checked={showRating} onCheckedChange={setShowRating} />
+                        </div>
+                        {showRating && (
+                          <Input
+                            value={ratingText}
+                            onChange={e => setRatingText(e.target.value)}
+                            placeholder="4.7/5 — تقييم زبائننا"
                             className="h-10 rounded-xl border-slate-200 text-sm font-bold bg-white"
                             dir="rtl"
                           />

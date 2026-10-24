@@ -551,9 +551,19 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           </h1>
 
           {/* Subtitle */}
-          <p className="text-sm sm:text-base font-medium text-slate-600 dark:text-slate-300 leading-relaxed max-w-md">
-            {data.subtitle || 'نوم هادئ في الطائرة والسيارة – ودّع آلام الرقبة 🌙'}
-          </p>
+          {reassuranceConfig.show_subtitle !== false && (() => {
+            const isCoussinProduct = /coussin|وسادة/i.test(productName);
+            const raw = reassuranceConfig.subtitle !== undefined ? reassuranceConfig.subtitle : data.subtitle;
+            const text = (raw === 'نوم هادئ في الطائرة والسيارة – ودّع آلام الرقبة 🌙' && !isCoussinProduct)
+              ? ''
+              : (raw || '');
+            if (!text || !text.trim()) return null;
+            return (
+              <p className="text-sm sm:text-base font-medium text-slate-600 dark:text-slate-300 leading-relaxed max-w-md">
+                {text}
+              </p>
+            );
+          })()}
 
           {/* Gift Ribbon Banner */}
           {reassuranceConfig.show_gift_ribbon !== false && (
@@ -1080,7 +1090,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
         {/* ── 14. BOTTOM REASSURANCE BANNER CARD ── */}
         {reassuranceConfig.show_bottom_card !== false && (
-          <div className="mt-8 rounded-3xl overflow-hidden shadow-xl border border-slate-200/80 bg-slate-900 text-white">
+          <div
+            className="mt-8 rounded-3xl overflow-hidden shadow-xl border"
+            style={{
+              backgroundColor: reassuranceConfig.bottom_card_bg || '#0F172A',
+              borderColor: reassuranceConfig.bottom_card_border || 'rgba(226, 232, 240, 0.8)',
+            }}
+          >
             {reassuranceConfig.bottom_card_image && (
               <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-800">
                 <img
@@ -1092,16 +1108,26 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               </div>
             )}
             <div className="p-6 text-center space-y-3">
-              <h4 className="text-xl font-black">
+              <h4
+                className="text-xl font-black"
+                style={{ color: reassuranceConfig.bottom_card_title_color || '#FFFFFF' }}
+              >
                 {reassuranceConfig.bottom_card_title || 'اجعل كل رحلة أكثر راحة'}
               </h4>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-sm mx-auto">
+              <p
+                className="text-xs sm:text-sm leading-relaxed max-w-sm mx-auto"
+                style={{ color: reassuranceConfig.bottom_card_subtitle_color || '#CBD5E1' }}
+              >
                 {reassuranceConfig.bottom_card_subtitle || 'وسادة سفر مريحة مع قناع عين هدية 🎁 - في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك'}
               </p>
               <button
                 type="button"
                 onClick={() => scrollToSection('checkout-form-container')}
-                className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg bg-[#B91C1C] hover:bg-[#991B1B] active:scale-95 transition-all text-white cursor-pointer"
+                className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg active:scale-95 transition-all cursor-pointer"
+                style={{
+                  backgroundColor: reassuranceConfig.bottom_card_btn_bg || '#B91C1C',
+                  color: reassuranceConfig.bottom_card_btn_text_color || '#FFFFFF',
+                }}
               >
                 {reassuranceConfig.bottom_card_btn_text || `اطلب الآن — ${price} دج فقط`}
               </button>
@@ -1112,62 +1138,72 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       </div>
 
       {/* ── 15. ELEGANT FOOTER ── */}
-      <footer className="w-full bg-[#0B132B] text-white pt-10 pb-28 sm:pb-12 border-t border-slate-800 text-center mt-8">
-        <div className="max-w-[600px] mx-auto px-4 flex flex-col items-center">
-          {storeLogo ? (
-            <div className="mb-4">
-              <img
-                src={optimizeCloudinaryUrl(storeLogo, 200)}
-                alt={storeName}
-                className="h-10 sm:h-11 w-auto object-contain bg-transparent mx-auto"
-              />
-            </div>
-          ) : (
-            <div className="text-lg font-black tracking-widest text-white uppercase mb-4">
-              {storeName}
-            </div>
-          )}
+      {reassuranceConfig.show_footer !== false && (
+        <footer
+          className="w-full pt-10 pb-28 sm:pb-12 border-t text-center mt-8"
+          style={{
+            backgroundColor: reassuranceConfig.footer_bg || '#0B132B',
+            borderColor: reassuranceConfig.footer_border || '#1E293B',
+            color: reassuranceConfig.footer_text_color || '#CBD5E1',
+          }}
+        >
+          <div className="max-w-[600px] mx-auto px-4 flex flex-col items-center">
+            {storeLogo ? (
+              <div className="mb-4">
+                <img
+                  src={optimizeCloudinaryUrl(storeLogo, 200)}
+                  alt={storeName}
+                  className="h-10 sm:h-11 w-auto object-contain bg-transparent mx-auto"
+                />
+              </div>
+            ) : (
+              <div className="text-lg font-black tracking-widest uppercase mb-4" style={{ color: reassuranceConfig.footer_text_color || '#FFFFFF' }}>
+                {storeName}
+              </div>
+            )}
 
-          {/* Contact & WhatsApp */}
-          <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-slate-300 mb-2" dir="rtl">
-            <a href={`tel:${cleanPhone}`} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200">
-              <Phone className="size-3.5 text-emerald-400 shrink-0" />
-              <span>للتواصل: <span className="font-mono">{formattedPhone}</span></span>
-            </a>
-            <span className="text-slate-600">•</span>
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200"
-            >
-              <span className="text-emerald-400 font-black">واتساب:</span>
-              <span className="font-mono">{formattedPhone}</span>
-            </a>
+            {/* Contact & WhatsApp */}
+            <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold mb-2" dir="rtl">
+              <a href={`tel:${cleanPhone}`} className="hover:opacity-80 transition-opacity flex items-center gap-1.5" style={{ color: reassuranceConfig.footer_text_color || '#CBD5E1' }}>
+                <Phone className="size-3.5 text-emerald-400 shrink-0" />
+                <span>للتواصل: <span className="font-mono">{formattedPhone}</span></span>
+              </a>
+              <span className="opacity-40">•</span>
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:opacity-80 transition-opacity flex items-center gap-1.5"
+                style={{ color: reassuranceConfig.footer_text_color || '#CBD5E1' }}
+              >
+                <span className="text-emerald-400 font-black">واتساب:</span>
+                <span className="font-mono">{formattedPhone}</span>
+              </a>
+            </div>
+
+            {/* Dedicated WhatsApp Button */}
+            {reassuranceConfig.whatsapp_enabled !== false && (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 text-xs sm:text-sm my-3"
+              >
+                <MessageCircle className="size-4.5" />
+                <span>{reassuranceConfig.whatsapp_btn_text || 'تواصل معنا عبر واتساب'}</span>
+              </a>
+            )}
+
+            <p className="text-[11px] font-medium mb-3 mt-1 opacity-80">
+              {reassuranceConfig.footer_disclaimer_text || 'الدفع عند الاستلام • توصيل سريع لـ 58 ولاية • ضمان الاستبدال'}
+            </p>
+
+            <p className="text-[10px] font-semibold tracking-wider opacity-60">
+              © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
+            </p>
           </div>
-
-          {/* Dedicated WhatsApp Button */}
-          {reassuranceConfig.whatsapp_enabled !== false && (
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold px-6 py-2.5 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 text-xs sm:text-sm my-3"
-            >
-              <MessageCircle className="size-4.5" />
-              <span>{reassuranceConfig.whatsapp_btn_text || 'تواصل معنا عبر واتساب'}</span>
-            </a>
-          )}
-
-          <p className="text-[11px] text-slate-400 font-medium mb-3 mt-1">
-            الدفع عند الاستلام • توصيل سريع لـ 58 ولاية • ضمان الاستبدال
-          </p>
-
-          <p className="text-[10px] text-slate-500 font-semibold tracking-wider">
-            © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
-          </p>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* ── 16. FLOATING WHATSAPP BUTTON ── */}
       {reassuranceConfig.whatsapp_enabled !== false && (
@@ -1184,16 +1220,28 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       )}
 
       {/* ── 17. MOBILE FIXED BOTTOM CTA BUTTON ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/95 dark:bg-black/95 backdrop-blur-md border-t border-slate-200/80 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] sm:hidden">
-        <button
-          type="button"
-          onClick={() => scrollToSection('checkout-form-container')}
-          className="w-full py-3.5 rounded-2xl font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2 bg-[#B91C1C] hover:bg-[#991B1B] text-white cursor-pointer"
+      {reassuranceConfig.show_mobile_sticky_cta !== false && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-40 p-3 backdrop-blur-md border-t flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] sm:hidden"
+          style={{
+            backgroundColor: reassuranceConfig.mobile_sticky_bar_bg || 'rgba(255, 255, 255, 0.95)',
+            borderColor: reassuranceConfig.mobile_sticky_border || 'rgba(226, 232, 240, 0.8)',
+          }}
         >
-          <ShoppingBag className="size-4" />
-          <span>{reassuranceConfig.header_cta_text || 'اضغط هنا للطلب'}</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => scrollToSection('checkout-form-container')}
+            className="w-full py-3.5 rounded-2xl font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            style={{
+              backgroundColor: reassuranceConfig.mobile_sticky_btn_bg || '#B91C1C',
+              color: reassuranceConfig.mobile_sticky_btn_text_color || '#FFFFFF',
+            }}
+          >
+            <ShoppingBag className="size-4" />
+            <span>{reassuranceConfig.mobile_sticky_cta_text || reassuranceConfig.header_cta_text || 'اضغط هنا للطلب'}</span>
+          </button>
+        </div>
+      )}
 
     </div>
   );
