@@ -534,10 +534,10 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       <div className="max-w-[600px] mx-auto bg-white dark:bg-[#0A0A0A] shadow-xl sm:border-x sm:border-slate-200/80 min-h-screen px-4 sm:px-6 py-6 sm:py-8 space-y-6">
 
         {/* ── 3. HERO CONTENT & HEADINGS ── */}
-        <div className="text-center space-y-3">
+        <div className="text-right space-y-3">
           {/* Limited offer badge */}
           {reassuranceConfig.show_badge !== false && (
-            <div className="inline-block">
+            <div className="flex justify-start">
               <span className="px-3.5 py-1 rounded-full text-xs font-bold shadow-2xs border bg-rose-50 text-rose-700 border-rose-200 inline-flex items-center gap-1">
                 <span>⏳</span>
                 <span>{data.badge_text || reassuranceConfig.badge_text || 'عرض محدود'}</span>
@@ -551,38 +551,38 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           </h1>
 
           {/* Subtitle */}
-          <p className="text-sm sm:text-base font-medium text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
+          <p className="text-sm sm:text-base font-medium text-slate-600 dark:text-slate-300 leading-relaxed max-w-md">
             {data.subtitle || 'نوم هادئ في الطائرة والسيارة – ودّع آلام الرقبة 🌙'}
           </p>
 
           {/* Gift Ribbon Banner */}
           {reassuranceConfig.show_gift_ribbon !== false && (
-            <div className="py-2.5 px-4 rounded-2xl border font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs bg-amber-50/90 text-amber-900 border-amber-300/80 max-w-md mx-auto">
+            <div className="py-2.5 px-4 rounded-2xl border font-black text-xs sm:text-sm flex items-center justify-start gap-2 shadow-2xs bg-amber-50/90 text-amber-900 border-amber-300/80 max-w-md">
               <span>{reassuranceConfig.gift_ribbon_text || '🎁 مع كل قطعة: قناع عين للنوم هدية'}</span>
             </div>
           )}
 
           {/* Price & Rating Row */}
           <div className="pt-1 space-y-2">
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-3xl sm:text-4xl font-black text-red-600 leading-none">
+            <div className="flex items-center justify-start gap-3">
+              <span className="text-3xl sm:text-4xl font-black text-red-600 leading-none" dir="ltr">
                 {formatPrice(currentOffer.price)}
               </span>
-              {currentOffer.compare_price > currentOffer.price && (
-                <span className="text-xl sm:text-2xl font-bold line-through text-slate-400">
-                  {formatPrice(currentOffer.compare_price)}
+              {Boolean(currentOffer.compare_price && currentOffer.compare_price > currentOffer.price) && (
+                <span className="text-xl sm:text-2xl font-bold line-through text-slate-400" dir="ltr">
+                  {formatPrice(currentOffer.compare_price!)}
                 </span>
               )}
-              {currentOffer.compare_price > currentOffer.price && (
+              {Boolean(currentOffer.compare_price && currentOffer.compare_price > currentOffer.price) && (
                 <span className="px-3 py-1 rounded-full text-xs font-black shadow-xs bg-emerald-600 text-white">
-                  {reassuranceConfig.savings_badge_text || 'وفّر'} {Math.round(currentOffer.compare_price - currentOffer.price)} دج
+                  {reassuranceConfig.savings_badge_text || 'وفّر'} {Math.round(currentOffer.compare_price! - currentOffer.price)} دج
                 </span>
               )}
             </div>
 
             {/* Rating */}
             {reassuranceConfig.show_rating !== false && (
-              <div className="flex items-center justify-center gap-1.5 pt-0.5">
+              <div className="flex items-center justify-start gap-1.5 pt-0.5">
                 <div className="flex gap-0.5">
                   {[1, 2, 3, 4, 5].map((s) => (
                     <Star key={s} className="size-4 fill-amber-400 text-amber-400" />
@@ -635,7 +635,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
           {/* 5 Variant Image Thumbnails */}
           {allVariantPhotos.length > 1 && (
-            <div className="flex gap-2 sm:gap-3 overflow-x-auto py-1 justify-center sm:justify-start">
+            <div className="flex gap-2 sm:gap-3 overflow-x-auto py-1 justify-start">
               {allVariantPhotos.map((item, i) => {
                 const isSelected = selectedVariants[0]?.Couleur?.value === item.variant?.value;
                 return (
@@ -775,12 +775,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                       </div>
 
                       <div className="text-end">
-                        <span className="text-base sm:text-lg font-black text-red-600 block">
+                        <span className="text-base sm:text-lg font-black text-red-600 block" dir="ltr">
                           {formatPrice(offer.price)}
                         </span>
-                        {offer.compare_price > offer.price && (
-                          <span className="text-xs line-through text-slate-400 block font-bold">
-                            {formatPrice(offer.compare_price)}
+                        {Boolean(offer.compare_price && offer.compare_price > offer.price) && (
+                          <span className="text-xs line-through text-slate-400 block font-bold" dir="ltr">
+                            {formatPrice(offer.compare_price!)}
                           </span>
                         )}
                       </div>

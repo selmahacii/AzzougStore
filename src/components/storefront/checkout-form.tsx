@@ -519,6 +519,12 @@ export function CheckoutForm({
   customCtaText,
   customCtaSubtext,
   customBadges,
+  customCtaBg,
+  customCtaTextColor,
+  customCtaSubtextColor,
+  showBadges = true,
+  customBadgesBg,
+  customBadgesTextColor,
 }: {
   isInline?: boolean;
   forceTemplate?: string;
@@ -526,6 +532,12 @@ export function CheckoutForm({
   customCtaText?: string;
   customCtaSubtext?: string;
   customBadges?: string[];
+  customCtaBg?: string;
+  customCtaTextColor?: string;
+  customCtaSubtextColor?: string;
+  showBadges?: boolean;
+  customBadgesBg?: string;
+  customBadgesTextColor?: string;
 }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
@@ -1360,7 +1372,12 @@ export function CheckoutForm({
                     type="button"
                     onClick={handleNext}
                     disabled={checkingDuplicate || submitting}
-                    className="w-full py-4 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-lg shadow-blue-500/25 text-white flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer"
+                    className="w-full py-4 px-6 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer"
+                    style={{
+                      backgroundColor: customCtaBg || '#2563EB',
+                      color: customCtaTextColor || '#FFFFFF',
+                      boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.3)',
+                    }}
                   >
                     {checkingDuplicate || submitting ? (
                       <span className="flex items-center gap-2 font-bold text-sm">
@@ -1369,26 +1386,31 @@ export function CheckoutForm({
                       </span>
                     ) : (
                       <>
-                        <span className="text-base sm:text-lg font-black tracking-wide">
+                        <span className="text-base sm:text-lg font-black tracking-wide" style={{ color: customCtaTextColor || '#FFFFFF' }}>
                           {customCtaText || (dir === 'rtl' ? 'اطلب الآن – الدفع عند الاستلام' : 'Acheter maintenant')}
                         </span>
-                        <span className="text-[11px] sm:text-xs text-blue-100 font-medium">
+                        <span className="text-[11px] sm:text-xs font-medium opacity-90" style={{ color: customCtaSubtextColor || 'rgba(255, 255, 255, 0.85)' }}>
                           {customCtaSubtext || (dir === 'rtl' ? 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك' : '')}
                         </span>
                       </>
                     )}
                   </button>
 
-                  <div className="pt-1 text-center space-y-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
-                      <span>{customBadges?.[0] || '🔒 الدفع عند الاستلام'}</span>
-                      <span className="text-slate-300 dark:text-slate-600">•</span>
-                      <span>{customBadges?.[1] || '🚚 التوصيل 24-72 ساعة'}</span>
+                  {showBadges !== false && (
+                    <div
+                      className="pt-1 text-center space-y-1.5 text-xs font-bold"
+                      style={{ color: customBadgesTextColor || undefined }}
+                    >
+                      <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+                        <span>{customBadges?.[0] || '🔒 الدفع عند الاستلام'}</span>
+                        <span className="opacity-40">•</span>
+                        <span>{customBadges?.[1] || '🚚 التوصيل 24-72 ساعة'}</span>
+                      </div>
+                      <div className="flex items-center justify-center text-[11px] opacity-80">
+                        <span>{customBadges?.[2] || '🔄 استبدال مجاني في حال وجود عيب'}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-center text-[11px] text-slate-500 dark:text-slate-400">
-                      <span>{customBadges?.[2] || '🔄 استبدال مجاني في حال وجود عيب'}</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               ) : (
                 <button onClick={handleNext} disabled={checkingDuplicate || submitting}
