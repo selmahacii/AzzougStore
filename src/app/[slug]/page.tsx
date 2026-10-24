@@ -90,7 +90,7 @@ export async function generateMetadata({
   if (activeStore && productSlug) {
     try {
       const res = await fetch(
-        `${backendUrl}/api/v1/products?store_id=${activeStore.id}&slug=${encodeURIComponent(productSlug)}`,
+        `${backendUrl}/api/v1/products?store_id=${activeStore.id}&slug=${encodeURIComponent(productSlug)}&is_active=true`,
         { next: { revalidate: 10 } }
       );
       if (res.ok) {
@@ -157,7 +157,7 @@ export default async function Page({
     try {
       const backendUrl = getBackendUrl();
       const res = await fetch(
-        `${backendUrl}/api/v1/products?store_id=${activeStore.id}&slug=${encodeURIComponent(productSlug)}`,
+        `${backendUrl}/api/v1/products?store_id=${activeStore.id}&slug=${encodeURIComponent(productSlug)}&is_active=true`,
         { next: { revalidate: 10 } }
       );
       if (res.ok) {

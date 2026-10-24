@@ -1402,6 +1402,69 @@ function LandingPageModal({
   const [bottomCardBtnBg, setBottomCardBtnBg] = useState(
     existingReassurance.bottom_card_btn_bg || primaryColor || '#2563EB'
   );
+
+  // ── Visual Sections & Text Customization State (COD & Coussin) ──
+  const [formTitle, setFormTitle] = useState(existingReassurance.form_title || 'للطلب، أدخل معلوماتك هنا');
+  const [formCtaText, setFormCtaText] = useState(existingReassurance.form_cta_text || 'اطلب الآن – الدفع عند الاستلام');
+  const [formCtaSubtext, setFormCtaSubtext] = useState(existingReassurance.form_cta_subtext || 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك');
+  const [formBadge1, setFormBadge1] = useState(existingReassurance.form_badge_1 || '🔒 الدفع عند الاستلام');
+  const [formBadge2, setFormBadge2] = useState(existingReassurance.form_badge_2 || '🚚 التوصيل 24-72 ساعة');
+  const [formBadge3, setFormBadge3] = useState(existingReassurance.form_badge_3 || '🔄 استبدال مجاني في حال وجود عيب');
+
+  const [showYellowAlert, setShowYellowAlert] = useState(existingReassurance.show_yellow_alert !== false);
+  const [yellowAlertText, setYellowAlertText] = useState(existingReassurance.yellow_alert_text || '🎁 عرض خاص: قناع عين للنوم هدية مجانية مع كل قطعة تطلبها');
+
+  const [showLifestyle1, setShowLifestyle1] = useState(existingReassurance.show_lifestyle_1 !== false);
+  const [lifestyle1Image, setLifestyle1Image] = useState(existingReassurance.lifestyle_1_image || '/images/coussin/lifestyle-window.jpg');
+
+  const [showBeforeAfter, setShowBeforeAfter] = useState(existingReassurance.show_before_after !== false);
+  const [beforeAfterTitle, setBeforeAfterTitle] = useState(existingReassurance.before_after_title || 'ودّع آلام الرقبة أثناء السفر');
+  const [beforeAfterSubtitle, setBeforeAfterSubtitle] = useState(existingReassurance.before_after_subtitle || 'الفرق واضح من أول استعمال');
+  const [beforeImage, setBeforeImage] = useState(existingReassurance.before_image || '/images/coussin/before-pain.jpg');
+  const [beforeText, setBeforeText] = useState(existingReassurance.before_text || 'ألم الرقبة، نوم غير مريح، تعب بعد الاستيقاظ');
+  const [afterImage, setAfterImage] = useState(existingReassurance.after_image || '/images/coussin/after-relief.jpg');
+  const [afterText, setAfterText] = useState(existingReassurance.after_text || 'دعم مثالي للرقبة، نوم هادئ، راحة طوال الرحلة');
+
+  const [showWhyChoose, setShowWhyChoose] = useState(existingReassurance.show_why_choose !== false);
+  const [whyChooseTitle, setWhyChooseTitle] = useState(existingReassurance.why_choose_title || 'لماذا تختار وسادة AZ Confort؟');
+  const [whyChooseSubtitle, setWhyChooseSubtitle] = useState(existingReassurance.why_choose_subtitle || 'مصممة لراحتك في كل رحلة');
+  const [whyChooseImage, setWhyChooseImage] = useState(existingReassurance.why_choose_image || '/images/coussin/why-choose-features.jpg');
+
+  const [showLifestyle2, setShowLifestyle2] = useState(existingReassurance.show_lifestyle_2 !== false);
+  const [lifestyle2Image, setLifestyle2Image] = useState(existingReassurance.lifestyle_2_image || '/images/coussin/lifestyle-passenger.jpg');
+
+  const [showColorsShowcase, setShowColorsShowcase] = useState(existingReassurance.show_colors_showcase !== false);
+  const [colorsShowcaseTitle, setColorsShowcaseTitle] = useState(existingReassurance.colors_showcase_title || 'متوفر بـ 5 ألوان');
+  const [colorsShowcaseSubtitle, setColorsShowcaseSubtitle] = useState(existingReassurance.colors_showcase_subtitle || 'اختر اللون لي يعجبك');
+
+  const [showReviewsSection, setShowReviewsSection] = useState(existingReassurance.show_reviews_section !== false);
+  const [reviewsTitle, setReviewsTitle] = useState(existingReassurance.reviews_title || 'ماذا قال زبائننا؟');
+  const [reviewsRatingText, setReviewsRatingText] = useState(existingReassurance.reviews_rating_text || '4.7 من 5 – بناءً على تقييمات زبائننا عبر 58 ولاية');
+  const [reviewsList, setReviewsList] = useState<any[]>(
+    existingReassurance.reviews_list || [
+      {
+        name: 'أمينة ب.',
+        city: 'الجزائر العاصمة',
+        stars: 5,
+        text: 'جربتها في رحلة طويلة، رقبتي ما وجعتنيش والقناع زادني راحة. التوصيل جا في يومين برك.',
+        verified: true,
+      },
+      {
+        name: 'كريم م.',
+        city: 'وهران',
+        stars: 5,
+        text: 'جودة روعة إسفنج ميموري فوم مريح جداً، والقناع الهدية ممتاز. ننصح بيها لأي واحد يسافر بزاف.',
+        verified: true,
+      },
+      {
+        name: 'سارة ت.',
+        city: 'قسنطينة',
+        stars: 5,
+        text: 'وصلتني في وقت قياسي وتغليف متقن، خفيفة وسهلة الحمل في الحقيبة.',
+        verified: true,
+      },
+    ]
+  );
   const [isUploadingBottomBanner, setIsUploadingBottomBanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -1740,6 +1803,36 @@ function LandingPageModal({
             bottom_card_btn_bg: bottomCardBtnBg,
             footer_logo_bg: 'transparent',
             logo_bg: 'transparent',
+            form_title: formTitle,
+            form_cta_text: formCtaText,
+            form_cta_subtext: formCtaSubtext,
+            form_badge_1: formBadge1,
+            form_badge_2: formBadge2,
+            form_badge_3: formBadge3,
+            show_yellow_alert: showYellowAlert,
+            yellow_alert_text: yellowAlertText,
+            show_lifestyle_1: showLifestyle1,
+            lifestyle_1_image: lifestyle1Image,
+            show_before_after: showBeforeAfter,
+            before_after_title: beforeAfterTitle,
+            before_after_subtitle: beforeAfterSubtitle,
+            before_image: beforeImage,
+            before_text: beforeText,
+            after_image: afterImage,
+            after_text: afterText,
+            show_why_choose: showWhyChoose,
+            why_choose_title: whyChooseTitle,
+            why_choose_subtitle: whyChooseSubtitle,
+            why_choose_image: whyChooseImage,
+            show_lifestyle_2: showLifestyle2,
+            lifestyle_2_image: lifestyle2Image,
+            show_colors_showcase: showColorsShowcase,
+            colors_showcase_title: colorsShowcaseTitle,
+            colors_showcase_subtitle: colorsShowcaseSubtitle,
+            show_reviews_section: showReviewsSection,
+            reviews_title: reviewsTitle,
+            reviews_rating_text: reviewsRatingText,
+            reviews_list: reviewsList,
           };
           return [finalReassuranceConfig, ...cleanMarketingBenefits];
         })(),
@@ -1889,6 +1982,7 @@ function LandingPageModal({
                         { id: 'general',     label: 'Général & Produit' },
                         { id: 'offers',      label: 'Offres & Tarifs' },
                         { id: 'style',       label: 'Design & Style' },
+                        { id: 'visual_sections', label: 'Sections Visuelles & Textes' },
                         { id: 'content',     label: 'Contenu Marketing' },
                         { id: 'reassurance', label: 'Réassurance & FAQ' },
                       ];
@@ -2868,6 +2962,483 @@ function LandingPageModal({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </TabsContent>
+
+                  {/* ── SECTIONS VISUELLES & TEXTES ── */}
+                  <TabsContent value="visual_sections" className="mt-0 space-y-6">
+                    {/* 1. Formulaire de Commande & CTA */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-5 border-slate-100 shadow-xs">
+                      <div className="border-b pb-3">
+                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                          <span>Formulaire de Commande & Bouton CTA</span>
+                        </h4>
+                        <p className="text-xs text-slate-400">Personnalisez le titre du formulaire, le texte du bouton et les 3 badges de garantie</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre du formulaire</label>
+                          <Input
+                            value={formTitle}
+                            onChange={e => setFormTitle(e.target.value)}
+                            placeholder="للطلب، أدخل معلوماتك هنا"
+                            className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                            dir="rtl"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte principal du bouton CTA</label>
+                            <Input
+                              value={formCtaText}
+                              onChange={e => setFormCtaText(e.target.value)}
+                              placeholder="اطلب الآن – الدفع عند الاستلام"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                              dir="rtl"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-texte de réassurance du bouton</label>
+                            <Input
+                              value={formCtaSubtext}
+                              onChange={e => setFormCtaSubtext(e.target.value)}
+                              placeholder="ما تخلص حتى توصلك السلعة وتشوفها بعينيك"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                              dir="rtl"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-slate-100">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">3 Badges de réassurance sous le bouton</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <Input
+                              value={formBadge1}
+                              onChange={e => setFormBadge1(e.target.value)}
+                              placeholder="🔒 الدفع عند الاستلام"
+                              className="h-10 rounded-xl border-slate-200 text-xs font-bold"
+                              dir="rtl"
+                            />
+                            <Input
+                              value={formBadge2}
+                              onChange={e => setFormBadge2(e.target.value)}
+                              placeholder="🚚 التوصيل 24-72 ساعة"
+                              className="h-10 rounded-xl border-slate-200 text-xs font-bold"
+                              dir="rtl"
+                            />
+                            <Input
+                              value={formBadge3}
+                              onChange={e => setFormBadge3(e.target.value)}
+                              placeholder="🔄 استبدال مجاني في حال وجود عيب"
+                              className="h-10 rounded-xl border-slate-200 text-xs font-bold"
+                              dir="rtl"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. Bandeau Alerte Spéciale (Bandeau Jaune) */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Bandeau Alerte Spéciale (Sous le Formulaire)</h4>
+                          <p className="text-xs text-slate-400">Bandeau jaune d'alerte cadeau / offre spéciale</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showYellowAlert ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showYellowAlert} onCheckedChange={setShowYellowAlert} />
+                        </div>
+                      </div>
+
+                      {showYellowAlert && (
+                        <div className="space-y-1.5 pt-1">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte du bandeau</label>
+                          <Input
+                            value={yellowAlertText}
+                            onChange={e => setYellowAlertText(e.target.value)}
+                            placeholder="🎁 عرض خاص: قناع عين للنوم هدية مجانية مع كل قطعة تطلبها"
+                            className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                            dir="rtl"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 3. Carte Lifestyle 1 (Photo Hublot d'Avion) */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Carte Lifestyle 1 (Photo Hublot d'Avion)</h4>
+                          <p className="text-xs text-slate-400">Photo de la وسادة avec masque devant le hublot d'avion</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showLifestyle1 ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showLifestyle1} onCheckedChange={setShowLifestyle1} />
+                        </div>
+                      </div>
+
+                      {showLifestyle1 && (
+                        <div className="space-y-1.5 pt-1">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">URL de l'image</label>
+                          <Input
+                            value={lifestyle1Image}
+                            onChange={e => setLifestyle1Image(e.target.value)}
+                            placeholder="/images/coussin/lifestyle-window.jpg"
+                            className="h-11 rounded-2xl border-slate-200 text-xs font-mono"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. Section Avant / Après (Comparaison) */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Section Avant / Après (Comparaison)</h4>
+                          <p className="text-xs text-slate-400">Comparaison visuelle côte à côte entre douleur au cou et confort absolu</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showBeforeAfter ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showBeforeAfter} onCheckedChange={setShowBeforeAfter} />
+                        </div>
+                      </div>
+
+                      {showBeforeAfter && (
+                        <div className="space-y-4 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre de la section</label>
+                              <Input
+                                value={beforeAfterTitle}
+                                onChange={e => setBeforeAfterTitle(e.target.value)}
+                                placeholder="ودّع آلام الرقبة أثناء السفر"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre de la section</label>
+                              <Input
+                                value={beforeAfterSubtitle}
+                                onChange={e => setBeforeAfterSubtitle(e.target.value)}
+                                placeholder="الفرق واضح من أول استعمال"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                                dir="rtl"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                            {/* Avant */}
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
+                              <p className="text-xs font-black text-slate-800">Colonne "Avant" (Douleur)</p>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image Avant</label>
+                                <Input
+                                  value={beforeImage}
+                                  onChange={e => setBeforeImage(e.target.value)}
+                                  placeholder="/images/coussin/before-pain.jpg"
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-mono"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte Avant</label>
+                                <Input
+                                  value={beforeText}
+                                  onChange={e => setBeforeText(e.target.value)}
+                                  placeholder="ألم الرقبة، نوم غير مريح، تعب بعد الاستيقاظ"
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-medium"
+                                  dir="rtl"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Après */}
+                            <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-3">
+                              <p className="text-xs font-black text-blue-900">Colonne "Après" (Confort)</p>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image Après</label>
+                                <Input
+                                  value={afterImage}
+                                  onChange={e => setAfterImage(e.target.value)}
+                                  placeholder="/images/coussin/after-relief.jpg"
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-mono"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte Après</label>
+                                <Input
+                                  value={afterText}
+                                  onChange={e => setAfterText(e.target.value)}
+                                  placeholder="دعم مثالي للرقبة، نوم هادئ، راحة طوال الرحلة"
+                                  className="h-10 rounded-xl border-slate-200 text-xs font-medium"
+                                  dir="rtl"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 5. Section Pourquoi Choisir */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Section "Pourquoi Choisir notre Produit"</h4>
+                          <p className="text-xs text-slate-400">Bannière présentant les 3 avantages majeurs (tissu lavable, mousse mémoire pliable, masque cadeau)</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showWhyChoose ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showWhyChoose} onCheckedChange={setShowWhyChoose} />
+                        </div>
+                      </div>
+
+                      {showWhyChoose && (
+                        <div className="space-y-4 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre de la section</label>
+                              <Input
+                                value={whyChooseTitle}
+                                onChange={e => setWhyChooseTitle(e.target.value)}
+                                placeholder="لماذا تختار وسادة AZ Confort؟"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre</label>
+                              <Input
+                                value={whyChooseSubtitle}
+                                onChange={e => setWhyChooseSubtitle(e.target.value)}
+                                placeholder="مصممة لراحتك في كل رحلة"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                                dir="rtl"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Image Bannière Caractéristiques</label>
+                            <Input
+                              value={whyChooseImage}
+                              onChange={e => setWhyChooseImage(e.target.value)}
+                              placeholder="/images/coussin/why-choose-features.jpg"
+                              className="h-11 rounded-2xl border-slate-200 text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 6. Carte Lifestyle 2 (Passager en Sommeil) */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Carte Lifestyle 2 (Passager endormi)</h4>
+                          <p className="text-xs text-slate-400">Photo d'un passager qui dort paisiblement avec la وسادة et le masque dans l'avion</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showLifestyle2 ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showLifestyle2} onCheckedChange={setShowLifestyle2} />
+                        </div>
+                      </div>
+
+                      {showLifestyle2 && (
+                        <div className="space-y-1.5 pt-1">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">URL de l'image</label>
+                          <Input
+                            value={lifestyle2Image}
+                            onChange={e => setLifestyle2Image(e.target.value)}
+                            placeholder="/images/coussin/lifestyle-passenger.jpg"
+                            className="h-11 rounded-2xl border-slate-200 text-xs font-mono"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 7. Galerie 5 Couleurs */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Section Galerie des Couleurs Disponibles</h4>
+                          <p className="text-xs text-slate-400">Vitrine des 5 couleurs cliquables pour sélection directe</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showColorsShowcase ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showColorsShowcase} onCheckedChange={setShowColorsShowcase} />
+                        </div>
+                      </div>
+
+                      {showColorsShowcase && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre</label>
+                            <Input
+                              value={colorsShowcaseTitle}
+                              onChange={e => setColorsShowcaseTitle(e.target.value)}
+                              placeholder="متوفر بـ 5 ألوان"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                              dir="rtl"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sous-titre</label>
+                            <Input
+                              value={colorsShowcaseSubtitle}
+                              onChange={e => setColorsShowcaseSubtitle(e.target.value)}
+                              placeholder="اختر اللون لي يعجبك"
+                              className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                              dir="rtl"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 8. Avis Clients Vérifiés */}
+                    <div className="bg-white rounded-[24px] border p-6 space-y-4 border-slate-100 shadow-xs">
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Avis Clients & Témoignages Vérifiés</h4>
+                          <p className="text-xs text-slate-400">Titre, note moyenne et liste complète des avis modifiables</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-600">{showReviewsSection ? 'Activé' : 'Désactivé'}</span>
+                          <Switch checked={showReviewsSection} onCheckedChange={setShowReviewsSection} />
+                        </div>
+                      </div>
+
+                      {showReviewsSection && (
+                        <div className="space-y-5 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre de la section</label>
+                              <Input
+                                value={reviewsTitle}
+                                onChange={e => setReviewsTitle(e.target.value)}
+                                placeholder="ماذا قال زبائننا؟"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-bold"
+                                dir="rtl"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Texte de la note moyenne</label>
+                              <Input
+                                value={reviewsRatingText}
+                                onChange={e => setReviewsRatingText(e.target.value)}
+                                placeholder="4.7 من 5 – بناءً على تقييمات زبائننا عبر 58 ولاية"
+                                className="h-11 rounded-2xl border-slate-200 text-sm font-medium"
+                                dir="rtl"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Liste des avis éditables */}
+                          <div className="space-y-3 pt-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avis Clients ({reviewsList.length})</label>
+                              <button
+                                type="button"
+                                onClick={() => setReviewsList([...reviewsList, { name: 'زبون جديد', city: 'الجزائر العاصمة', stars: 5, text: 'منتج رائع وتوصيل سريع.', verified: true }])}
+                                className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                              >
+                                + Ajouter un avis
+                              </button>
+                            </div>
+
+                            {reviewsList.map((rev, rIdx) => (
+                              <div key={rIdx} className="p-4 rounded-2xl border border-slate-200 space-y-3 bg-slate-50/60">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] font-bold uppercase text-slate-400">Nom du client</label>
+                                    <Input
+                                      value={rev.name}
+                                      onChange={e => {
+                                        const updated = [...reviewsList];
+                                        updated[rIdx] = { ...updated[rIdx], name: e.target.value };
+                                        setReviewsList(updated);
+                                      }}
+                                      className="h-9 rounded-xl bg-white text-xs font-bold"
+                                      dir="rtl"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] font-bold uppercase text-slate-400">Ville / Wilaya</label>
+                                    <Input
+                                      value={rev.city}
+                                      onChange={e => {
+                                        const updated = [...reviewsList];
+                                        updated[rIdx] = { ...updated[rIdx], city: e.target.value };
+                                        setReviewsList(updated);
+                                      }}
+                                      className="h-9 rounded-xl bg-white text-xs font-medium"
+                                      dir="rtl"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[9px] font-bold uppercase text-slate-400">Étoiles (1-5)</label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={5}
+                                      value={rev.stars || 5}
+                                      onChange={e => {
+                                        const updated = [...reviewsList];
+                                        updated[rIdx] = { ...updated[rIdx], stars: parseInt(e.target.value) || 5 };
+                                        setReviewsList(updated);
+                                      }}
+                                      className="h-9 rounded-xl bg-white text-xs font-bold"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold uppercase text-slate-400">Commentaire du client</label>
+                                  <Textarea
+                                    value={rev.text}
+                                    onChange={e => {
+                                      const updated = [...reviewsList];
+                                      updated[rIdx] = { ...updated[rIdx], text: e.target.value };
+                                      setReviewsList(updated);
+                                    }}
+                                    rows={2}
+                                    className="rounded-xl bg-white text-xs font-medium resize-none"
+                                    dir="rtl"
+                                  />
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={rev.verified !== false}
+                                      onChange={e => {
+                                        const updated = [...reviewsList];
+                                        updated[rIdx] = { ...updated[rIdx], verified: e.target.checked };
+                                        setReviewsList(updated);
+                                      }}
+                                      className="rounded"
+                                    />
+                                    <span>Badge "مشترية موثّقة" (Achat vérifié)</span>
+                                  </label>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setReviewsList(reviewsList.filter((_, idx) => idx !== rIdx))}
+                                    className="text-xs text-red-500 hover:text-red-700 font-bold"
+                                  >
+                                    Supprimer cet avis
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </TabsContent>
 

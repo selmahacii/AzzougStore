@@ -300,3 +300,22 @@
   font-family: inherit !important;
 }
 
+/* ── Mobile Modal & Input Zoom Fixes ── */
+@media (max-width: 640px) {
+  /* Prevent zoom scaling on mobile dialogs/modals */
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"] {
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  /* Prevent iOS/mobile Safari auto-zoom on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}

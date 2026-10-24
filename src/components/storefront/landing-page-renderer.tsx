@@ -4,9 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
-  ShoppingBag, Check, MessageCircle, Clock,
+  ShoppingBag, Check, MessageCircle, Clock, Sparkles,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useCartStore } from '@/store/cart-store';
 import { useAppStore } from '@/store/app-store';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
@@ -48,7 +47,7 @@ interface LpData {
   compare_price: number | null;
   primary_color: string;
   template: string;
-  benefits: { icon: string; title: string; desc: string }[];
+  benefits: { icon?: string; title?: string; desc?: string; [key: string]: any }[];
   testimonials: { name: string; location: string; text: string; stars: number; avatar?: string }[];
   steps: { step: string; title: string; desc: string }[];
   stats: { value: number; suffix: string; label: string }[];
@@ -73,52 +72,70 @@ interface LpData {
 }
 
 const COLOR_MAP: Record<string, string> = {
-  'noir': '#2d3436',
-  'noire': '#2d3436',
+  'noir': '#000000',
+  'noire': '#000000',
+  'black': '#000000',
   'blanc': '#ffffff',
   'blanche': '#ffffff',
   'rouge': '#d63031',
-  'bleu': '#0984e3',
-  'bleue': '#0984e3',
+  'bleu': '#1e3545',
+  'bleue': '#1e3545',
+  'bleu canard': '#1e3545',
   'vert': '#2ecc71',
   'verte': '#2ecc71',
   'jaune': '#f1c40f',
-  'rose': '#e84393',
-  'gris': '#7f8c8d',
-  'grise': '#7f8c8d',
+  'rose': '#eaa48e',
+  'rose poudré': '#eaa48e',
+  'gris': '#b5b5b5',
+  'grise': '#b5b5b5',
+  'gris souris': '#b5b5b5',
   'marron': '#a0522d',
   'orange': '#e67e22',
   'violet': '#9b59b6',
   'violette': '#9b59b6',
   'beige': '#f5f5dc',
-  'black': '#2d3436',
-  'white': '#ffffff',
-  'red': '#d63031',
-  'blue': '#0984e3',
-  'green': '#2ecc71',
-  'yellow': '#f1c40f',
-  'pink': '#e84393',
-  'gray': '#7f8c8d',
-  'grey': '#7f8c8d',
-  'brown': '#a0522d',
-  'purple': '#9b59b6',
-  'أسود': '#2d3436',
-  'اسود': '#2d3436',
+  'bordeaux': '#5e121e',
+  'أسود': '#000000',
+  'اسود': '#000000',
   'ابيض': '#ffffff',
   'أبيض': '#ffffff',
   'احمر': '#d63031',
   'أحمر': '#d63031',
-  'ازرق': '#0984e3',
-  'أزرق': '#0984e3',
+  'ازرق': '#1e3545',
+  'أزرق': '#1e3545',
+  'كحلي': '#1e3545',
   'اخضر': '#2ecc71',
   'أخضر': '#2ecc71',
   'اصفر': '#f1c40f',
   'أصفر': '#f1c40f',
-  'وردي': '#e84393',
-  'رمادي': '#7f8c8d',
+  'وردي': '#eaa48e',
+  'رمادي': '#b5b5b5',
+  'عنابي': '#5e121e',
   'بني': '#a0522d',
   'برتقالي': '#e67e22',
   'بنفسجي': '#9b59b6',
+};
+
+const COLOR_NAMES_AR: Record<string, string> = {
+  'noir': 'أسود',
+  'noire': 'أسود',
+  'black': 'أسود',
+  'gris': 'رمادي',
+  'grise': 'رمادي',
+  'grey': 'رمادي',
+  'gray': 'رمادي',
+  'gris souris': 'رمادي',
+  'bordeaux': 'عنابي',
+  'bleu': 'كحلي',
+  'bleue': 'كحلي',
+  'blue': 'كحلي',
+  'bleu canard': 'كحلي',
+  'rose': 'وردي',
+  'rose poudré': 'وردي',
+  'pink': 'وردي',
+  'blanc': 'أبيض',
+  'rouge': 'أحمر',
+  'vert': 'أخضر',
 };
 
 function getVariantColor(value: string, colorField?: string): string | null {
@@ -127,14 +144,20 @@ function getVariantColor(value: string, colorField?: string): string | null {
   return COLOR_MAP[val] || colorField || null;
 }
 
-const getExpandedVariants = (selected: any[], count: number) => {
-  if (!selected || selected.length === 0) return [];
-  const res: any[] = [];
-  for (let i = 0; i < count; i++) {
-    res.push(selected[i % selected.length]);
-  }
-  return res;
-};
+function getArabicVariantName(val: string): string {
+  if (!val) return '';
+  const key = val.toLowerCase().trim();
+  return COLOR_NAMES_AR[key] || val;
+}
+
+function getArabicOfferTitle(qty: number, customName?: string): string {
+  if (customName && /[\u0600-\u06FF]/.test(customName)) return customName;
+  if (qty === 1) return 'قطعة 1';
+  if (qty === 2) return 'قطعتين';
+  if (qty === 3) return '3 قطع';
+  if (qty === 4) return '4 قطع';
+  return `${qty} قطع`;
+}
 
 export default function LandingPageRenderer({ data }: { data: LpData }) {
   const activeStore = useAppStore((s) => s.activeStore);
@@ -147,16 +170,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [isZoomed, setIsZoomed] = useState(false);
   const { t, dir, setLocale } = useTranslation();
   const [showNavbar, setShowNavbar] = useState(true);
-  const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
-
-  // Garde-fou anti-__DISABLED__ : filtre toute question désactivée ou vide
-  const validFaq = useMemo(() => {
-    if (!data.faq || !Array.isArray(data.faq)) return [];
-    return data.faq.filter(
-      (item) => item && item.question && !item.question.includes('__DISABLED__') && item.question.trim().length > 0
-    );
-  }, [data.faq]);
 
   // Extraction de la configuration de réassurance et personnalisation
   const reassuranceConfig = useMemo(() => {
@@ -167,14 +181,21 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     return (found as any) || {};
   }, [data.benefits]);
 
-  const storeName = data.store?.name || activeStore?.name || 'AzzougShop';
+  const validFaq = useMemo(() => {
+    if (!data.faq || !Array.isArray(data.faq)) return [];
+    return data.faq.filter(
+      (item) => item && item.question && !item.question.includes('__DISABLED__') && item.question.trim().length > 0
+    );
+  }, [data.faq]);
+
+  const storeName = data.store?.name || activeStore?.name || 'AZ Confort';
   const storeLogo = data.store?.logo_url || activeStore?.logo_url;
   const storePhone = data.phone || reassuranceConfig.whatsapp_phone || (activeStore as any)?.phone || '0770041321';
   const cleanPhone = String(storePhone).replace(/\s+/g, '');
   const formattedPhone = cleanPhone.replace(/(\d{4})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4');
   const whatsappPhone = cleanPhone.replace(/^0/, '');
   const whatsappMessage = encodeURIComponent(
-    reassuranceConfig.whatsapp_message || `مرحباً، أود الاستفسار بخصوص منتج: ${data.headline || data.product_name || ''}`
+    reassuranceConfig.whatsapp_message || `مرحباً، أود الاستفسار بخصوص منتج: ${data.headline || data.product_name || 'وسادة السفر'}`
   );
   const whatsappUrl = `https://wa.me/213${whatsappPhone}?text=${whatsappMessage}`;
 
@@ -183,24 +204,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     if (setLocale) {
       setLocale('ar');
     }
-    // Landing pages are where paid-traffic clicks actually land (the URL
-    // still carries utm_*/fbclid here) — captureAttribution() was built but
-    // never called anywhere, so every order shipped with fully empty
-    // utm_source/campaign_id/fbclid columns despite the backend already
-    // supporting and storing them end-to-end.
     captureAttribution();
   }, [setLocale]);
 
-  // Meta Pixel + CAPI ViewContent — once per landing page product. A stable
-  // eventId (not time-based) so meta-tracking.ts's own sessionStorage dedup
-  // catches a re-render/refresh instead of re-firing.
+  // Meta Pixel + CAPI ViewContent
   useEffect(() => {
     const pid = data?.product?.id || (data as any)?.product_id;
     if (!pid || !activeStore?.id) return;
-    // Remembered for the rest of this tab session so a later AddToCart/
-    // InitiateCheckout (cart-store.ts / checkout-form.tsx, neither of which
-    // knows the current LP) still attributes to this landing page in the
-    // /funnel/bottlenecks by_landing_page breakdown.
     setCurrentLpId(data.id);
     void trackMetaEvent('ViewContent', {
       content_ids: [String(pid)],
@@ -208,46 +218,71 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       content_type: 'product',
       value: Number(data.price ?? data.product?.price ?? 0) || undefined,
     }, { storeId: activeStore.id, eventId: `viewcontent-lp-${pid}`, lpId: data.id });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.product?.id, activeStore?.id]);
+  }, [data?.product?.id, activeStore?.id, data.headline, data.id, data.price, data.product?.name, data.product_name]);
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      
-      // Navbar visibility
-      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+      if (currentScrollY > lastScrollY && currentScrollY > 60) {
         setShowNavbar(false);
       } else {
         setShowNavbar(true);
       }
       lastScrollY = currentScrollY;
-
-      // Sticky CTA visibility
-      const el = document.getElementById('checkout-form-container');
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        if (rect.top > window.innerHeight - 80) {
-          setShowStickyCta(true);
-        } else {
-          setShowStickyCta(false);
-        }
-      } else {
-        setShowStickyCta(true);
-      }
     };
-
-    handleScroll();
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const galleryImages = (data.gallery && data.gallery.length > 0)
-    ? data.gallery
-    : (data.product?.images || []);
+  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
+  const heroImage = variantWithImg?.image || data.product?.main_image || data.image_url;
+  const price = data.product?.price ?? data.price ?? 1400;
+  const comparePrice = data.product?.compare_price ?? data.compare_price ?? 1600;
+  const productName = data.headline || data.product_name || data.product?.name || 'وسادة سفر مريحة';
 
+  // Real offers list with smart Arabic naming fallback matching screenshot
+  const rawOffers = (data as any).offers && (data as any).offers.length > 0 ? (data as any).offers : [
+    { quantity: 1, price: price, compare_price: comparePrice, name: 'قطعة 1', popular: false },
+    { quantity: 2, price: 2400, compare_price: 3200, name: 'قطعتين', popular: true },
+    { quantity: 3, price: 3500, compare_price: 4800, name: '3 قطع', popular: false },
+    { quantity: 4, price: 4400, compare_price: 6400, name: '4 قطع', popular: false },
+  ];
+
+  const offers = useMemo(() => {
+    return rawOffers.map((o: any, idx: number) => ({
+      ...o,
+      arabicTitle: getArabicOfferTitle(o.quantity, o.name),
+      popular: o.popular !== undefined ? o.popular : idx === 1,
+    }));
+  }, [rawOffers]);
+
+  const maxOrderableQuantity = useMemo(() => {
+    const variants = data.product?.variants;
+    if (!variants || variants.length === 0) {
+      const p = data.product as any;
+      if (!p) return undefined;
+      const available = Math.max(0, p.stock || 0);
+      return available > 0 ? available : undefined;
+    }
+    const firstGroupName = variants[0]?.name;
+    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
+    const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
+    return total > 0 ? total : undefined;
+  }, [data.product]);
+
+  useEffect(() => {
+    if (selectedOfferIndex >= offers.length) {
+      setSelectedOfferIndex(0);
+    }
+  }, [offers, selectedOfferIndex]);
+
+  const currentOffer = useMemo(() => {
+    return offers[selectedOfferIndex] || offers[0];
+  }, [offers, selectedOfferIndex]);
+
+  // Synchronisation des variantes sélectionnées
   useEffect(() => {
     if (data.product?.variants && data.product.variants.length > 0) {
       const grouped: Record<string, any[]> = {};
@@ -255,17 +290,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         if (!grouped[v.name]) grouped[v.name] = [];
         grouped[v.name].push(v);
       });
-      data.product.variants.forEach((v: any) => {
-        if (v.sub_variants && v.sub_variants.length > 0) {
-          const firstSub = v.sub_variants[0];
-          if (firstSub && firstSub.name && !grouped[firstSub.name]) {
-            grouped[firstSub.name] = [];
-          }
-        }
-      });
 
-      const rawOffers = (data as any).offers;
-      const targetQty = rawOffers && rawOffers.length > 0 && rawOffers[selectedOfferIndex] ? rawOffers[selectedOfferIndex].quantity : quantity;
+      const targetQty = currentOffer ? currentOffer.quantity : quantity;
       setSelectedVariants(prev => {
         const newVars = [...prev];
         while (newVars.length < targetQty) {
@@ -285,7 +311,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         return newVars.slice(0, targetQty);
       });
     }
-  }, [data.product, data, quantity, selectedOfferIndex]);
+  }, [data.product, quantity, currentOffer]);
 
   const handleSelectVariant = (variant: any) => {
     if (variant.image) {
@@ -329,89 +355,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     });
   };
 
-  useEffect(() => {
-    const currentActiveStore = useAppStore.getState().activeStore;
-    if (!currentActiveStore || currentActiveStore.id !== data.store_id) {
-      useAppStore.getState().setActiveStore({
-        id: data.store_id,
-        name: data.store?.name || data.headline || 'Boutique',
-        description: data.subtitle || '',
-        slug: data.store?.slug || data.slug,
-        logo_url: data.store?.logo_url,
-        template_id: data.template || 'clean',
-        theme_config: {
-          primaryColor: data.primary_color,
-          templateId: data.template || 'clean',
-        },
-      } as any);
-    }
-  }, [data]);
-
-  const primary = data.primary_color || '#e84393';
-  const isTestErp = data.slug === 'test-produit-erp';
-  const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
-
-  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
-  const heroImage = variantWithImg?.image || data.product?.main_image || data.image_url;
-  const price = data.product?.price ?? data.price ?? null;
-  const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
-  const productName = data.product?.name || data.product_name || data.headline;
-  const productDesc = data.product?.description || data.product_desc;
-  const discount = comparePrice && price ? Math.round((1 - price / comparePrice) * 100) : 0;
-
-  // Une landing page n'a pas TOUJOURS d'offre par palier configurée — quand
-  // le champ Offres est laissé vide côté admin, le client doit pouvoir
-  // choisir librement la quantité de chaque variante (pas de palier imposé),
-  // au lieu de forcer un choix entre deux paliers fictifs "1 pièce"/"2 pièces".
-  const hasRealOffers = !!((data as any).offers && (data as any).offers.length > 0);
-  const offers = hasRealOffers ? (data as any).offers : [];
-  // Plafond de commande = stock total disponible sur le premier groupe de
-  // variantes (ex: toutes les couleurs) — un client ne doit jamais pouvoir
-  // choisir une quantité au-delà de ce que le stock permet réellement de
-  // livrer, avec ou sans offre par palier. `undefined` = pas de variantes
-  // suivies en stock sur ce produit → pas de plafond connu, pas de blocage.
-  const maxOrderableQuantity = (() => {
-    const variants = data.product?.variants;
-    if (!variants || variants.length === 0) {
-      // Produit SANS variantes suivies (le cas le plus courant) — le
-      // plafond doit venir du stock du produit lui-même, pas rester
-      // "undefined" (= aucun plafond). Sans ce fallback, un client pouvait
-      // incrémenter le stepper de quantité au-delà du stock réel
-      // (confirmé en prod : 20 en stock, commande passée à 21).
-      // GET /landing-pages/slug/{slug} only ever sends the raw `stock`
-      // figure for a non-variant product (no reserved_stock field in this
-      // payload) — the backend's own reserve_stock() is still the
-      // authoritative gate at order-creation time regardless; this is a
-      // client-side UX guard, not the source of truth.
-      const p = data.product as any;
-      if (!p) return undefined;
-      const available = Math.max(0, p.stock || 0);
-      return available > 0 ? available : undefined;
-    }
-    const firstGroupName = variants[0]?.name;
-    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
-    const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
-    return total > 0 ? total : undefined;
-  })();
-  useEffect(() => {
-    if (hasRealOffers && selectedOfferIndex >= offers.length) {
-      setSelectedOfferIndex(0);
-    }
-  }, [offers, hasRealOffers, selectedOfferIndex]);
-
-  const currentOffer = useMemo(() => {
-    return hasRealOffers
-      ? (offers[selectedOfferIndex] || offers[0])
-      : {
-          quantity,
-          price: (price ?? 0) * quantity,
-          compare_price: (comparePrice ?? 0) * quantity,
-          name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
-        };
-  }, [hasRealOffers, offers, selectedOfferIndex, quantity, price, comparePrice, t]);
-
+  // Sync avec le panier d'achat
   const selectedVariantsSerialized = JSON.stringify(selectedVariants);
-
   useEffect(() => {
     if (!mounted) return;
     const qty = maxOrderableQuantity !== undefined
@@ -432,7 +377,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       const offerPrice = currentOffer.price;
       const unitPrice = Math.round(offerPrice / (qty || 1));
       const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-      const pImage = (selectedVarWithImg as any)?.image || heroImage || data.product.main_image;
+      const pImage = (selectedVarWithImg as any)?.image || selectedActiveImage || heroImage || data.product.main_image;
       const cartItems = useCartStore.getState().items;
       const isMatched = cartItems.length === 1 &&
         cartItems[0]?.product?.id === data.product.id &&
@@ -471,861 +416,709 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] text-slate-900 font-sans">
-        <div className="flex flex-col items-center gap-4">
-          <div className="size-8 rounded-full border-2 border-slate-200 border-t-slate-800 animate-spin" />
-        </div>
-      </div>
-    );
-  }
+  }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedActiveImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
     if (el) {
-      const headerOffset = 70; // height of the sticky header
+      const headerOffset = 65;
       const elementPosition = el.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
       window.scrollTo({
         top: offsetPosition,
-        behavior: 'auto' // Instant navigation for excellent speed
+        behavior: 'smooth'
       });
     }
   };
 
-  const handleOrder = () => {
-    scrollToSection('checkout-form-container');
-  };
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-900 font-sans">
+        <div className="size-8 rounded-full border-2 border-slate-200 border-t-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
+  // Active color info
+  const selectedColorVal = selectedVariants[0]?.Couleur?.value || 'Noir';
+  const activeColorArabic = getArabicVariantName(selectedColorVal);
+
+  // Variant photos list for thumbnails
+  const allVariantPhotos: Array<{ url: string; label: string; variant: any }> = [];
+  const seenVariantUrls = new Set<string>();
+  if (data.product?.variants && data.product.variants.length > 0) {
+    data.product.variants.forEach((v: any) => {
+      if (v.image && !seenVariantUrls.has(v.image)) {
+        seenVariantUrls.add(v.image);
+        allVariantPhotos.push({ url: v.image, label: v.value, variant: v });
+      }
+    });
+  }
+
+  const currentMainImgSrc = selectedActiveImage || (Object.values(selectedVariants[0] || {}).find((v: any) => v?.image) as any)?.image || heroImage;
 
   return (
-    <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
-      <FloatingLanguageSwitcher primaryColor={primary} />
-      
-      {/* ── TOP ANNOUNCEMENT BAR (Haut de page) ── */}
+    <div className="min-h-screen bg-slate-100/70 dark:bg-black font-sans text-slate-900 antialiased" dir={dir}>
+      <FloatingLanguageSwitcher primaryColor="#2563EB" />
+
+      {/* ── 1. TOP ANNOUNCEMENT BAR ── */}
       {reassuranceConfig.show_announcement_bar !== false && (
-        <div 
-          className="w-full py-2 px-4 text-center text-[11px] sm:text-xs font-bold tracking-wide relative z-50 shadow-2xs transition-colors"
+        <div
+          className="w-full py-2 px-4 text-center text-xs font-bold tracking-wide relative z-50 shadow-xs"
           style={{
             backgroundColor: reassuranceConfig.announcement_bar_bg || '#0B1329',
             color: reassuranceConfig.announcement_bar_text_color || '#FACC15',
           }}
           dir="rtl"
         >
-          <span>{reassuranceConfig.announcement_bar_text || '🔒 الدفع عند الاستلام • 🚚 توصيل لـ 58 ولاية • ⏳ العرض ساري حتى نهاية الأسبوع'}</span>
+          <span>
+            {reassuranceConfig.announcement_bar_text && !reassuranceConfig.announcement_bar_text.endsWith('•')
+              ? reassuranceConfig.announcement_bar_text
+              : '🔒 الدفع عند الاستلام • 🚚 توصيل لـ 58 ولاية • ⏳ العرض ساري حتى نهاية الأسبوع'}
+          </span>
         </div>
       )}
 
-      {/* ── STICKY HEADER MATCHING USER SCREENSHOT (RTL: Logo on Right, Secure Badge in Center, Red Order CTA on Left) ── */}
-      <header className={cn(
-        "w-full py-2.5 sm:py-3 border-b flex items-center justify-center sticky top-0 z-40 backdrop-blur-md shadow-2xs transition-all duration-300 ease-in-out",
-        isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
-        showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
-      )} dir={dir}>
-        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
-          {/* RTL Right / LTR Left: STORE LOGO (Transparent Background, NO white box) */}
-          <div className="flex items-center shrink-0 max-w-[40%] sm:max-w-[30%]">
+      {/* ── 2. STICKY HEADER ── */}
+      <header
+        className={cn(
+          "w-full py-2 sm:py-2.5 border-b bg-white/95 dark:bg-black/95 backdrop-blur-md border-slate-200/80 sticky top-0 z-40 shadow-xs transition-all duration-300",
+          showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
+        )}
+        dir={dir}
+      >
+        <div className="max-w-[620px] w-full mx-auto px-4 flex items-center justify-between h-12">
+          {/* RTL Right: STORE LOGO */}
+          <div className="flex items-center justify-start min-w-0">
             {storeLogo ? (
               <img
-                src={optimizeCloudinaryUrl(storeLogo, 240)}
+                src={optimizeCloudinaryUrl(storeLogo, 200)}
                 alt={storeName}
-                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] bg-transparent transition-all" 
-                onError={(e) => { 
+                className="h-8 sm:h-9 w-auto object-contain max-h-[38px] transition-all"
+                onError={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
-                  target.onerror = null;
                   target.style.display = 'none';
                   const sibling = target.nextElementSibling as HTMLElement;
                   if (sibling) sibling.style.display = 'block';
                 }}
               />
             ) : null}
-            <span 
-              className="text-sm sm:text-base font-black tracking-tight uppercase truncate text-slate-900 dark:text-white" 
-              style={{ 
-                color: storeLogo ? undefined : primary, 
-                display: storeLogo ? 'none' : 'block' 
-              }}
+            <span
+              className="text-base font-black tracking-tight text-slate-900 dark:text-white"
+              style={{ display: storeLogo ? 'none' : 'block' }}
             >
               {storeName}
             </span>
           </div>
 
-          {/* CENTER: Safe Purchase Badge (Visible on BOTH mobile and desktop) */}
+          {/* RTL Center: Trust Badge */}
           {reassuranceConfig.show_header_badge !== false && (
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto z-10">
-              <div 
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold border shadow-2xs whitespace-nowrap transition-all"
-                style={{
-                  backgroundColor: reassuranceConfig.header_badge_bg || '#ECFDF5',
-                  color: reassuranceConfig.header_badge_color || '#047857',
-                  borderColor: reassuranceConfig.header_badge_color ? `${reassuranceConfig.header_badge_color}30` : '#A7F3D0',
-                }}
-              >
-                <ShieldCheck className="size-3.5 shrink-0" />
-                <span>{reassuranceConfig.header_badge_text || 'شراء آمن'}</span>
-              </div>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+              <ShieldCheck className="size-3.5 text-emerald-600 shrink-0" />
+              <span>{reassuranceConfig.header_badge_text || 'شراء آمن'}</span>
             </div>
           )}
 
-          {/* RTL Left / LTR Right: Red Order Now CTA button */}
-          <div className="flex items-center gap-3 z-10 shrink-0">
-            <button 
-              onClick={() => scrollToSection('checkout-form-container')}
-              className="text-xs sm:text-sm font-black px-4 py-2 sm:px-5 sm:py-2 rounded-xl text-white shadow-md transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap bg-red-600 hover:bg-red-700"
-            >
-              {dir === 'rtl' ? (reassuranceConfig.header_cta_text || 'اطلب الآن') : (t('buyNow') || 'Commander')}
-            </button>
-          </div>
+          {/* RTL Left: Red Quick Order CTA Button */}
+          <button
+            type="button"
+            onClick={() => scrollToSection('checkout-form-container')}
+            className="text-xs sm:text-sm font-black px-4 py-2 rounded-xl text-white shadow-md transition-all hover:brightness-110 active:scale-95 cursor-pointer bg-[#B91C1C] hover:bg-[#991B1B]"
+          >
+            {reassuranceConfig.header_cta_text || 'اطلب الآن'}
+          </button>
         </div>
       </header>
-      
 
-      <div id="presentation-section" className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 lg:py-16">
-        
-        {/* TWO COLUMN LAYOUT */}
-        <div className="flex flex-col lg:flex-row gap-10 lg:gap-16">
-          
-          {/* LEFT COLUMN: Product Presentation */}
-          <div className="flex-1 space-y-8">
-            
-            {/* Header section (Mobile shows this at the very top, Desktop shows it left) */}
-            <div>
-              {/* Limited offer badge above title */}
-              {reassuranceConfig.show_badge !== false && (data.badge_text || reassuranceConfig.badge_text) && (
-                <span 
-                  className="px-3 py-1 rounded-full text-xs font-bold mb-3 inline-block shadow-2xs border"
-                  style={{ 
-                    backgroundColor: reassuranceConfig.badge_bg || '#FEF3C7', 
-                    color: reassuranceConfig.badge_color || '#B45309',
-                    borderColor: reassuranceConfig.badge_color ? `${reassuranceConfig.badge_color}30` : '#FDE68A'
-                  }}
-                >
-                  ⏳ {data.badge_text || reassuranceConfig.badge_text || 'عرض محدود'}
+      {/* ── MAIN CONTENT CONTAINER (Centered Mobile & Desktop Frame) ── */}
+      <div className="max-w-[600px] mx-auto bg-white dark:bg-[#0A0A0A] shadow-xl sm:border-x sm:border-slate-200/80 min-h-screen px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+
+        {/* ── 3. HERO CONTENT & HEADINGS ── */}
+        <div className="text-center space-y-3">
+          {/* Limited offer badge */}
+          {reassuranceConfig.show_badge !== false && (
+            <div className="inline-block">
+              <span className="px-3.5 py-1 rounded-full text-xs font-bold shadow-2xs border bg-rose-50 text-rose-700 border-rose-200 inline-flex items-center gap-1">
+                <span>⏳</span>
+                <span>{data.badge_text || reassuranceConfig.badge_text || 'عرض محدود'}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Main Title */}
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+            {productName}
+          </h1>
+
+          {/* Subtitle */}
+          <p className="text-sm sm:text-base font-medium text-slate-600 dark:text-slate-300 leading-relaxed max-w-md mx-auto">
+            {data.subtitle || 'نوم هادئ في الطائرة والسيارة – ودّع آلام الرقبة 🌙'}
+          </p>
+
+          {/* Gift Ribbon Banner */}
+          {reassuranceConfig.show_gift_ribbon !== false && (
+            <div className="py-2.5 px-4 rounded-2xl border font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs bg-amber-50/90 text-amber-900 border-amber-300/80 max-w-md mx-auto">
+              <span>{reassuranceConfig.gift_ribbon_text || '🎁 مع كل قطعة: قناع عين للنوم هدية'}</span>
+            </div>
+          )}
+
+          {/* Price & Rating Row */}
+          <div className="pt-1 space-y-2">
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-3xl sm:text-4xl font-black text-red-600 leading-none">
+                {formatPrice(currentOffer.price)}
+              </span>
+              {currentOffer.compare_price > currentOffer.price && (
+                <span className="text-xl sm:text-2xl font-bold line-through text-slate-400">
+                  {formatPrice(currentOffer.compare_price)}
                 </span>
               )}
-              
-              <h1 className={cn("text-3xl sm:text-4xl lg:text-5xl font-black leading-[1.15] mb-2 tracking-tight", isDark ? "text-white" : "text-slate-900")}>
-                {data.headline}
-              </h1>
-
-              {data.subtitle && (
-                <p className={cn("text-sm sm:text-base font-medium mb-4 leading-relaxed", isDark ? "text-slate-300" : "text-slate-600")}>
-                  {data.subtitle}
-                </p>
+              {currentOffer.compare_price > currentOffer.price && (
+                <span className="px-3 py-1 rounded-full text-xs font-black shadow-xs bg-emerald-600 text-white">
+                  {reassuranceConfig.savings_badge_text || 'وفّر'} {Math.round(currentOffer.compare_price - currentOffer.price)} دج
+                </span>
               )}
-
-              {/* Promo Gift Ribbon */}
-              {reassuranceConfig.show_gift_ribbon !== false && (
-                <div 
-                  className="p-3 rounded-2xl border font-bold text-xs sm:text-sm flex items-center justify-center gap-2 mb-4 shadow-2xs transition-all"
-                  style={{
-                    backgroundColor: reassuranceConfig.gift_ribbon_bg || '#FFFBEB',
-                    color: reassuranceConfig.gift_ribbon_color || '#92400E',
-                    borderColor: reassuranceConfig.gift_ribbon_color ? `${reassuranceConfig.gift_ribbon_color}35` : '#FDE68A',
-                  }}
-                >
-                  <span>{reassuranceConfig.gift_ribbon_text || 'مع كل قطعة: قناع عين للنوم هدية 🎁'}</span>
-                </div>
-              )}
-
-              {/* Price row & Savings Badge */}
-              {price !== null && (() => {
-                const currentPrice = currentOffer?.price || (selectedVariants[0]?.price || price);
-                const currentComparePrice = currentOffer?.compare_price || comparePrice;
-                const savingsAmount = currentComparePrice && currentPrice && currentComparePrice > currentPrice
-                  ? Math.round(currentComparePrice - currentPrice)
-                  : 0;
-
-                return (
-                  <div className="space-y-2 mb-5">
-                    <div className="flex items-baseline gap-3">
-                      <span className="text-3xl sm:text-4xl font-black leading-none text-red-600 dark:text-red-500">
-                        {formatPrice(currentPrice)}
-                      </span>
-                      {currentComparePrice && currentComparePrice > currentPrice && (
-                        <span className="text-lg font-bold line-through text-slate-400">
-                          {formatPrice(currentComparePrice)}
-                        </span>
-                      )}
-                      {reassuranceConfig.show_savings_badge !== false && savingsAmount > 0 && (
-                        <span 
-                          className="px-2.5 py-1 rounded-full text-xs font-black shadow-2xs"
-                          style={{
-                            backgroundColor: reassuranceConfig.savings_badge_bg || '#10B981',
-                            color: reassuranceConfig.savings_badge_color || '#FFFFFF',
-                          }}
-                        >
-                          {reassuranceConfig.savings_badge_text || 'وفر'} {savingsAmount} دج
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Rating stars */}
-                    {reassuranceConfig.show_rating !== false && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <div className="flex gap-0.5">
-                          {[1, 2, 3, 4, 5].map((s) => (
-                            <Star 
-                              key={s} 
-                              className="size-4 fill-amber-400 text-amber-400" 
-                            />
-                          ))}
-                        </div>
-                        <span 
-                          className="text-xs font-bold text-slate-600 dark:text-slate-300"
-                        >
-                          {reassuranceConfig.rating_text || '4.7/5 — تقييم زبائننا'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
 
-            {/* Main Image with Zoom */}
-            {heroImage && (() => {
-              const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-              const mainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
-
-              return (
-                <div className="space-y-4 w-full">
-                  <div 
-                    className="w-full relative rounded-2xl overflow-hidden shadow-lg cursor-zoom-in group"
-                    onMouseMove={(e) => {
-                      const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-                      const x = ((e.clientX - left) / width) * 100;
-                      const y = ((e.clientY - top) / height) * 100;
-                      setZoomPos({ x, y });
-                      setIsZoomed(true);
-                    }}
-                    onMouseLeave={() => setIsZoomed(false)}
-                  >
-                    {/* Image Gift Badge */}
-                    {reassuranceConfig.show_image_badge !== false && (
-                      <div 
-                        className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-full text-xs font-black shadow-md transition-all flex items-center gap-1"
-                        style={{
-                          backgroundColor: reassuranceConfig.image_badge_bg || '#F97316',
-                          color: reassuranceConfig.image_badge_color || '#FFFFFF',
-                        }}
-                      >
-                        <span>{reassuranceConfig.image_badge_text || '🎁 + قناع عين هدية'}</span>
-                      </div>
-                    )}
-                    <img
-                      src={optimizeCloudinaryUrl(mainImgSrc, 600)}
-                      alt={productName || ''}
-                      width={600}
-                      height={600}
-                      loading="eager"
-                      fetchPriority="high"
-                      decoding="async"
-                      className="w-full h-auto transition-transform duration-100 ease-out"
-                      style={{
-                        transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
-                        transform: isZoomed ? 'scale(2)' : 'scale(1)'
-                      }}
-                    />
-                  </div>
-
-                  {/* Galerie multi-photos (Photos des variantes uniquement si présentes, sinon photos produit) */}
-                  {(() => {
-                    const allPhotos: Array<{ url: string; label: string; variant?: any }> = [];
-                    const seen = new Set<string>();
-                    const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
-
-                    if (hasVariantImages) {
-                      // Quand le produit a des variantes avec photo, on n'affiche QUE les photos des variantes
-                      data.product?.variants?.forEach((v: any) => {
-                        if (v.image && !seen.has(v.image)) {
-                          seen.add(v.image);
-                          allPhotos.push({ url: v.image, label: v.value || v.name, variant: v });
-                        }
-                      });
-                    } else {
-                      // Sinon, photos principales du produit
-                      const mainImgs = [
-                        data.product?.main_image,
-                        ...(data.product?.images || []),
-                        ...(data.gallery || []),
-                        heroImage
-                      ].filter(Boolean) as string[];
-
-                      mainImgs.forEach((url, i) => {
-                        if (!seen.has(url)) {
-                          seen.add(url);
-                          allPhotos.push({ url, label: `Photo ${i + 1}` });
-                        }
-                      });
-                    }
-
-                    if (allPhotos.length <= 1) return null;
-
-                    return (
-                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 justify-start">
-                        {allPhotos.map((item, i) => {
-                          const isActive = mainImgSrc === item.url;
-                          const isVariantSelected = item.variant && Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === item.variant.value && val?.name === item.variant.name);
-                          
-                          return (
-                            <button
-                              key={`thumb-${i}`}
-                              type="button"
-                              onClick={() => {
-                                setSelectedActiveImage(item.url);
-                                if (item.variant) {
-                                  handleSelectVariant(item.variant);
-                                }
-                              }}
-                              className={cn(
-                                "relative shrink-0 size-16 sm:size-20 rounded-2xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95 bg-white shadow-sm",
-                                (isActive || isVariantSelected) ? "ring-2 ring-offset-1 shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
-                              )}
-                              style={{ borderColor: (isActive || isVariantSelected) ? primary : undefined }}
-                              title={item.label}
-                            >
-                              <img 
-                                src={optimizeCloudinaryUrl(item.url, 160)} 
-                                alt={item.label} 
-                                className="size-full object-cover" 
-                                onError={(e) => {
-                                  const btn = e.currentTarget.closest('button');
-                                  if (btn) btn.style.setProperty('display', 'none', 'important');
-                                }}
-                              />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
+            {/* Rating */}
+            {reassuranceConfig.show_rating !== false && (
+              <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                <div className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star key={s} className="size-4 fill-amber-400 text-amber-400" />
+                  ))}
                 </div>
-              );
-            })()}
-
-          </div>
-
-          {/* RIGHT COLUMN: The Sticky Form */}
-          <div className="w-full lg:w-[450px] shrink-0">
-            <div className="sticky top-6">
-              <div className={cn("rounded-3xl border shadow-xl p-6 sm:p-8 relative", isDark ? "border-white/10 bg-[#0A0A0A]" : "border-slate-200/60 bg-white")}>
-                
-                {/* Checkout Form (contains fields at top, selectors in middle, CTA at bottom) */}
-                <div id="checkout-form-container">
-                  <div className="text-center mb-6 px-4">
-                    <p className={cn("text-lg sm:text-xl font-black tracking-wide leading-relaxed", isDark ? "text-white" : "text-slate-900")}>
-                      للطلب، أدخل معلوماتك هنا
-                    </p>
-                    <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
-                  </div>
-                  <CheckoutForm isInline={true}>
-                    
-                    {/* Variant Selector (One per product in pack) */}
-                    {data.product?.variants && data.product.variants.length > 0 && (() => {
-                      const grouped: Record<string, any[]> = {};
-                      data.product.variants.forEach((v: any) => {
-                        if (!grouped[v.name]) grouped[v.name] = [];
-                        grouped[v.name].push(v);
-                      });
-                      data.product.variants.forEach((v: any) => {
-                        if (v.sub_variants && v.sub_variants.length > 0) {
-                          const firstSub = v.sub_variants[0];
-                          if (firstSub && firstSub.name && !grouped[firstSub.name]) {
-                            grouped[firstSub.name] = [];
-                          }
-                        }
-                      });
-
-                      const qty = currentOffer?.quantity || quantity;
-
-                      return (
-                        <div className="mb-6 space-y-5 pt-4 border-t border-slate-100 dark:border-white/10">
-                          <div className="flex items-center justify-between">
-                            <p className={cn("text-sm sm:text-base font-black uppercase tracking-wider text-start", isDark ? "text-white/75" : "text-slate-800")}>
-                              {t('chooseOption')}
-                            </p>
-                          </div>
-
-                          <div className="space-y-6">
-                            {Array.from({ length: qty }).map((_, itemIndex) => {
-                              const itemSelection = selectedVariants[itemIndex] || {};
-                              return (
-                                <div key={itemIndex} className="p-4 rounded-2xl bg-slate-50/50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 space-y-4">
-                                  {qty > 1 && (
-                                    <span className={cn("text-xs font-black uppercase tracking-wider text-start block border-b pb-2 mb-2 border-slate-200/50 dark:border-white/5", isDark ? "text-white/80" : "text-slate-800")}>
-                                      {dir === 'rtl' ? `المنتج #${itemIndex + 1}` : `Produit #${itemIndex + 1}`}
-                                    </span>
-                                  )}
-                                  
-                                  {Object.keys(grouped).map(optionName => {
-                                    const mainOptionName = Object.keys(grouped).find(k => k.toLowerCase().includes('couleur') || k.toLowerCase().includes('color')) || Object.keys(grouped)[0];
-                                    let optionVariants = grouped[optionName];
-                                    
-                                    if (optionName !== mainOptionName) {
-                                      const mainSelectedVal = itemSelection[mainOptionName]?.value;
-                                      const selectedMainVar = mainSelectedVal
-                                        ? grouped[mainOptionName]?.find(v => v.value === mainSelectedVal) ?? itemSelection[mainOptionName]
-                                        : itemSelection[mainOptionName];
-                                      if (selectedMainVar?.sub_variants && selectedMainVar.sub_variants.length > 0) {
-                                        optionVariants = selectedMainVar.sub_variants;
-                                      }
-                                    }
-                                    
-                                    const selectedVal = itemSelection[optionName]?.value;
-                                    const isColorOption = optionName.toLowerCase().includes('couleur') || optionName.toLowerCase().includes('color') || optionVariants.some(v => v.color);
-
-                                    if (isColorOption) {
-                                      return (
-                                        <div key={optionName} className="flex flex-col gap-2">
-                                          <span className={cn("text-[10px] font-extrabold uppercase tracking-wider text-start", isDark ? "text-white/40" : "text-slate-400")}>
-                                            {optionName}: <span className={isDark ? "text-white" : "text-slate-800"}>{selectedVal || '—'}</span>
-                                          </span>
-                                          <div className="flex flex-wrap gap-2.5">
-                                          {optionVariants.map((v: any, i: number) => {
-                                            const isSelected = selectedVal === v.value;
-                                            // Synchronisé sur le stock RÉEL restant, pas juste "en rupture ou pas" :
-                                            // si 2 unités sont en stock et que 2 des N produits de la commande
-                                            // ont déjà choisi cette valeur, la 3e ne peut plus la choisir non
-                                            // plus, même si stock > 0 dans l'absolu.
-                                            const availableForValue = (v.stock || 0) - (v.reserved || 0);
-                                            const selectedElsewhere = selectedVariants.reduce(
-                                              (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
-                                            );
-                                            const isOutOfStock = !isSelected && selectedElsewhere >= availableForValue;
-                                            const colorHex = getVariantColor(v.value, v.color);
-                                            const isCircle = isColorOption || !!(v.image || v.color || colorHex);
-
-                                            return (
-                                              <button
-                                                key={`var-${itemIndex}-${optionName}-${v.id || i}`}
-                                                type="button"
-                                                disabled={isOutOfStock}
-                                                onClick={() => handleSelectVariantForIndex(v, itemIndex)}
-                                                className={cn(
-                                                  "relative flex items-center justify-center border-2 transition-all shadow-sm active:scale-95",
-                                                  isCircle ? "size-10 rounded-full p-0.5 bg-white" : "px-4 py-2 h-9 rounded-xl text-xs font-bold",
-                                                  isSelected
-                                                    ? "border-slate-900 ring-2 ring-offset-2 dark:ring-offset-[#0A0A0A] dark:border-white"
-                                                    : (isDark ? "border-white/10 hover:border-white/30 bg-white/[0.02]" : "border-slate-200 hover:border-slate-400 bg-white"),
-                                                  isOutOfStock && "opacity-40 cursor-not-allowed"
-                                                )}
-                                                style={{
-                                                  borderColor: isSelected ? primary : undefined,
-                                                  // @ts-ignore
-                                                  "--tw-ring-color": isSelected ? primary : undefined,
-                                                }}
-                                                title={v.value}
-                                              >
-                                                {isCircle ? (
-                                                  colorHex ? (
-                                                    <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
-                                                  ) : v.image ? (
-                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
-                                                  ) : (
-                                                    <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
-                                                  )
-                                                ) : (
-                                                  <span className={cn("font-bold", isSelected ? "text-white" : (isDark ? "text-white/85" : "text-slate-800"))}>
-                                                    {v.value}
-                                                  </span>
-                                                )}
-
-                                                {isSelected && isCircle && (
-                                                  <span className="absolute -top-1 -right-1 size-4 rounded-full flex items-center justify-center text-[8px] text-white font-bold shadow-md border border-white" style={{ backgroundColor: primary }}>
-                                                    ✓
-                                                  </span>
-                                                )}
-
-                                                {isOutOfStock && (
-                                                  <div className="absolute inset-0 bg-black/10 dark:bg-white/10 rounded-full flex items-center justify-center">
-                                                    <span className="text-red-500 font-bold text-xs">✕</span>
-                                                  </div>
-                                                )}
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    );
-                                    } else {
-                                      return (
-                                        <div key={optionName} className="flex flex-col gap-1.5 text-start">
-                                          <span className={cn("text-[10px] font-extrabold uppercase tracking-wider", isDark ? "text-white/40" : "text-slate-400")}>
-                                            {optionName}
-                                          </span>
-                                          <select
-                                            value={selectedVal || ''}
-                                            onChange={(e) => {
-                                              const matched = optionVariants.find(v => v.value === e.target.value);
-                                              if (matched) {
-                                                handleSelectVariantForIndex(matched, itemIndex);
-                                              }
-                                            }}
-                                            className={cn(
-                                              "w-full h-11 px-4 text-xs font-bold border-2 rounded-xl focus:border-slate-900 outline-none transition-all cursor-pointer",
-                                              isDark 
-                                                ? "bg-neutral-900 border-white/10 text-white focus:border-white" 
-                                                : "bg-white border-slate-200 text-slate-800 focus:border-slate-800"
-                                            )}
-                                            style={{
-                                              borderColor: selectedVal ? primary : undefined,
-                                            }}
-                                          >
-                                            <option value="" disabled>{dir === 'rtl' ? 'اختر المقاس / الخيار' : 'Sélectionnez une option'}</option>
-                                            {optionVariants.map((v, i) => {
-                                              const availableForValue = (v.stock || 0) - (v.reserved || 0);
-                                              const selectedElsewhere = selectedVariants.reduce(
-                                                (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
-                                              );
-                                              const isOutOfStock = selectedVal !== v.value && selectedElsewhere >= availableForValue;
-                                              return (
-                                                <option key={`opt-${v.id || i}`} value={v.value} disabled={isOutOfStock} className={isDark ? "bg-neutral-900 text-white" : "bg-white text-slate-800"}>
-                                                  {v.value} {isOutOfStock ? (dir === 'rtl' ? '(غير متوفر)' : '(Rupture)') : ''}
-                                                </option>
-                                              );
-                                            })}
-                                          </select>
-                                        </div>
-                                      );
-                                    }
-                                  })}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Quantity Pack Selector — paliers d'offre SI configurés,
-                        sinon un choix libre de quantité (aucune offre remplie
-                        par l'admin ne doit jamais forcer un palier fictif). */}
-                    <div className="mb-6 space-y-3 pt-4 border-t border-slate-100 dark:border-white/10">
-                      <p className={cn("text-sm sm:text-base font-black uppercase tracking-wider", isDark ? "text-white/75" : "text-slate-800")}>
-                        {t('chooseQuantity')}
-                      </p>
-                      {!hasRealOffers ? (
-                        <div className={cn(
-                          "flex items-center justify-between gap-4 p-4 rounded-2xl border",
-                          isDark ? "border-white/10 bg-white/[0.02]" : "border-slate-200 bg-white"
-                        )}>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                              disabled={quantity <= 1}
-                              className={cn(
-                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
-                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                              )}
-                            >
-                              −
-                            </button>
-                            <span className={cn("min-w-[2ch] text-center text-lg font-black", isDark ? "text-white" : "text-slate-900")}>{quantity}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity) return;
-                                setQuantity(quantity + 1);
-                              }}
-                              disabled={maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity}
-                              className={cn(
-                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
-                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                              )}
-                            >
-                              +
-                            </button>
-                          </div>
-                          <div className="text-right">
-                            {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
-                              <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
-                            )}
-                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
-                            {currentOffer.compare_price > currentOffer.price && (
-                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                      <div className="grid grid-cols-1 gap-3">
-                        {offers.map((offer: any, idx: number) => {
-                          const isSelected = selectedOfferIndex === idx;
-                          // Un palier d'offre (ex: "3 Pièces") configuré par
-                          // l'admin ne vérifiait jamais le stock réel — un
-                          // client pouvait cliquer "3 Pièces" alors qu'il ne
-                          // reste que 2 unités en stock. Désactivé dès que la
-                          // quantité du palier dépasse ce qui est réellement
-                          // disponible (maxOrderableQuantity, calculé plus haut).
-                          const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              disabled={offerExceedsStock}
-                              onClick={() => {
-                                  if (offerExceedsStock) return;
-                                  setSelectedOfferIndex(idx);
-                                  setQuantity(offer.quantity);
-                              }}
-                              className={cn(
-                                "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
-                                offerExceedsStock
-                                  ? "opacity-40 cursor-not-allowed grayscale"
-                                  : isSelected
-                                  ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
-                                  : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
-                              )}
-                            >
-                              {offer.popular && !offerExceedsStock && (
-                                <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
-                                  {t('popular')}
-                                </div>
-                              )}
-                              <div>
-                                <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
-                                  {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
-                                </p>
-                                {offerExceedsStock ? (
-                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
-                                ) : offer.desc && (
-                                  <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
-                                )}
-                              </div>
-                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
-                                <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
-                                {offer.compare_price > offer.price && (
-                                  <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      )}
-                    </div>
-                  </CheckoutForm>
-                </div>
-
-                {/* 3 Delivery Guarantees */}
-                {reassuranceConfig.show_delivery_section !== false && (
-                  <div className="mt-6 pt-6 border-t border-slate-100 dark:border-white/10 space-y-3">
-                    {reassuranceConfig.delivery_section_title && (
-                      <div className="text-center mb-3">
-                        <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                          {reassuranceConfig.delivery_section_title}
-                        </h4>
-                        {reassuranceConfig.delivery_section_subtitle && (
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {reassuranceConfig.delivery_section_subtitle}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {(reassuranceConfig.delivery_cards && reassuranceConfig.delivery_cards.length > 0
-                        ? reassuranceConfig.delivery_cards
-                        : [
-                            { icon: '💰', title: 'الدفع عند الاستلام', desc: 'تدفع كاش عند استلام طلبيتك وفحصها' },
-                            { icon: '🚚', title: 'توصيل سريع 24-72 س', desc: 'نوصلو لـ 58 ولاية حتى باب دارك' },
-                            { icon: '🔄', title: 'استبدال مجاني', desc: 'ضمان الجودة وإمكانية الاستبدال' },
-                          ]
-                      ).map((card, idx) => (
-                        <div 
-                          key={idx}
-                          className="p-3 rounded-xl border border-slate-100 dark:border-white/5 bg-slate-50/70 dark:bg-white/[0.02] flex flex-col items-center text-center shadow-2xs"
-                        >
-                          <span className="text-xl mb-1">{card.icon}</span>
-                          <span className="text-xs font-black text-slate-800 dark:text-white mb-0.5 line-clamp-1">{card.title}</span>
-                          <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight line-clamp-2">{card.desc}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Publicity Banners (Multiple - Seamless Stack without gap under Checkout Button) */}
-                {(() => {
-                  const banners = parseBannerImages(data.banner_image_url);
-                  if (banners.length === 0) return null;
-                  return (
-                    <div className="mt-6 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
-                      {banners.map((url, i) => (
-                        <img
-                          key={i}
-                          src={optimizeCloudinaryUrl(url, 1200)}
-                          alt={`Bannière publicitaire ${i + 1}`}
-                          className="w-full h-auto block m-0 p-0"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      ))}
-                    </div>
-                  );
-                })()}
-
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {reassuranceConfig.rating_text || '4.7/5 – تقييم زبائننا'}
+                </span>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
-      </div>
+        {/* ── 4. HERO MAIN IMAGE & THUMBNAILS ── */}
+        <div className="space-y-3">
+          {heroImage && (
+            <div
+              className="w-full relative rounded-3xl overflow-hidden shadow-lg border border-slate-200/80 cursor-zoom-in group bg-slate-50"
+              onMouseMove={(e) => {
+                const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+                const x = ((e.clientX - left) / width) * 100;
+                const y = ((e.clientY - top) / height) * 100;
+                setZoomPos({ x, y });
+                setIsZoomed(true);
+              }}
+              onMouseLeave={() => setIsZoomed(false)}
+            >
+              {/* Floating Image Badge */}
+              {reassuranceConfig.show_image_badge !== false && (
+                <div className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-full text-xs font-black shadow-md bg-amber-500 text-white flex items-center gap-1">
+                  <span>{reassuranceConfig.image_badge_text || '🎁 + قناع عين هدية'}</span>
+                </div>
+              )}
 
-      {/* REVIEWS & FAQ SECTION */}
-      {((data.testimonials && data.testimonials.length > 0) || validFaq.length > 0) && (
-        <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
-          <div className="max-w-[800px] mx-auto px-4 py-16">
-            
-            {/* Testimonials */}
-            {data.testimonials && data.testimonials.length > 0 && (
-              <div id="testimonials-section" className={cn(validFaq.length > 0 ? "mb-20" : "")}>
-                 <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
-                 <div className="space-y-6">
-                   {data.testimonials.map((t, i) => (
-                     <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
-                       <div className="flex gap-1 mb-3">
-                         {Array.from({ length: t.stars }).map((_, j) => (
-                           <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
-                         ))}
-                       </div>
-                       <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
-                       <div className="flex items-center gap-3">
-                         <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
-                           {t.name.charAt(0)}
-                         </div>
-                         <div>
-                           <p className="text-xs font-bold">{t.name}</p>
-                           <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
-                         </div>
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-              </div>
-            )}
+              <img
+                src={optimizeCloudinaryUrl(currentMainImgSrc, 800)}
+                alt={productName}
+                width={800}
+                height={800}
+                fetchPriority="high"
+                decoding="async"
+                className="w-full h-auto transition-transform duration-100 ease-out object-cover"
+                style={{
+                  transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
+                  transform: isZoomed ? 'scale(2)' : 'scale(1)',
+                }}
+              />
+            </div>
+          )}
 
-            {/* FAQ matching Image 2 */}
-            {validFaq.length > 0 && (
-              <div id="faq-section" className="mb-8">
-                <div className="text-center mb-8">
-                  <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white mb-2">
-                    {dir === 'rtl' ? 'أسئلة شائعة' : (t('faqTitle') || 'FAQ')}
-                  </h2>
-                  <p className="text-xs md:text-sm text-slate-500 dark:text-white/50 font-medium">
-                    {dir === 'rtl' ? 'كل ما تحتاج لمعرفته قبل الطلب' : 'Tout ce que vous devez savoir avant de commander'}
-                  </p>
+          {/* 5 Variant Image Thumbnails */}
+          {allVariantPhotos.length > 1 && (
+            <div className="flex gap-2 sm:gap-3 overflow-x-auto py-1 justify-center sm:justify-start">
+              {allVariantPhotos.map((item, i) => {
+                const isSelected = selectedVariants[0]?.Couleur?.value === item.variant?.value;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSelectVariant(item.variant)}
+                    className={cn(
+                      "relative shrink-0 size-14 sm:size-16 rounded-2xl overflow-hidden border-2 transition-all p-0.5 bg-white shadow-xs cursor-pointer hover:scale-105 active:scale-95",
+                      isSelected
+                        ? "border-blue-600 ring-2 ring-blue-300 ring-offset-1"
+                        : "border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100"
+                    )}
+                    title={item.label}
+                  >
+                    <img
+                      src={optimizeCloudinaryUrl(item.url, 160)}
+                      alt={item.label}
+                      className="size-full object-cover rounded-xl"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── 5. CHECKOUT FORM CARD ── */}
+        <div id="checkout-form-container" className="rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0E0E0E] shadow-xl p-5 sm:p-7 relative">
+          {/* Card Header Title */}
+          <div className="text-center mb-6 px-2">
+            <h2 className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 tracking-tight">
+              {reassuranceConfig.form_title || 'للطلب، أدخل معلوماتك هنا'}
+            </h2>
+            <div className="w-16 h-1 mx-auto mt-2 rounded-full bg-blue-600 dark:bg-blue-400" />
+          </div>
+
+          <CheckoutForm
+            isInline={true}
+            customCtaText={reassuranceConfig.form_cta_text || 'اطلب الآن – الدفع عند الاستلام'}
+            customCtaSubtext={reassuranceConfig.form_cta_subtext || 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك'}
+            customBadges={[
+              reassuranceConfig.form_badge_1 || '🔒 الدفع عند الاستلام',
+              reassuranceConfig.form_badge_2 || '🚚 التوصيل 24-72 ساعة',
+              reassuranceConfig.form_badge_3 || '🔄 استبدال مجاني في حال وجود عيب',
+            ]}
+          >
+            {/* Color Swatch Circles */}
+            {data.product?.variants && data.product.variants.length > 0 && (
+              <div className="pt-4 border-t border-slate-100 dark:border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-slate-800 dark:text-white">
+                    اللون: <span className="text-slate-900 dark:text-slate-100 font-black">{activeColorArabic}</span>
+                  </span>
                 </div>
 
-                <div className="space-y-3.5 max-w-[640px] mx-auto">
-                  {validFaq.map((item, i) => {
-                    const isOpen = openFaq === i;
+                <div className="flex items-center gap-3 flex-wrap">
+                  {allVariantPhotos.map((vItem, i) => {
+                    const isSelected = selectedVariants[0]?.Couleur?.value === vItem.variant.value;
+                    const colorHex = getVariantColor(vItem.variant.value, vItem.variant.color);
+
                     return (
-                      <div 
-                        key={i} 
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSelectVariant(vItem.variant)}
                         className={cn(
-                          "rounded-2xl border transition-all duration-200 overflow-hidden shadow-sm",
-                          isDark ? "border-white/10 bg-[#0F172A]" : "border-slate-200/80 bg-white hover:border-slate-300"
+                          "relative size-10 rounded-full border-2 transition-all p-0.5 shadow-sm active:scale-95 cursor-pointer",
+                          isSelected
+                            ? "border-white ring-2 ring-blue-600 ring-offset-2 dark:ring-offset-black scale-105"
+                            : "border-slate-200 hover:border-slate-400 bg-white"
                         )}
+                        title={vItem.label}
                       >
-                        <button
-                          onClick={() => setOpenFaq(isOpen ? null : i)}
-                          className="w-full flex items-center justify-between p-4 md:p-5 text-right font-bold text-xs md:text-sm text-slate-800 dark:text-white gap-3 select-none"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="size-6 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-500 font-black text-xs flex items-center justify-center shrink-0">
-                              ؟
-                            </span>
-                            <span className="text-right font-bold leading-snug">{item.question}</span>
-                          </div>
-                          <div className={cn("size-6 rounded-full flex items-center justify-center shrink-0 text-slate-400 transition-transform duration-200", isOpen ? "rotate-180" : "")}>
-                            <ChevronDown className="size-4" />
-                          </div>
-                        </button>
-                        {isOpen && (
-                          <div className={cn("px-5 pb-5 pt-1 text-xs md:text-sm leading-relaxed border-t border-slate-100 dark:border-white/5 font-medium", isDark ? "text-white/70" : "text-slate-600")}>
-                            {item.answer}
-                          </div>
-                        )}
-                      </div>
+                        <div
+                          className="size-full rounded-full border border-black/10"
+                          style={{ backgroundColor: colorHex || '#333' }}
+                        />
+                      </button>
                     );
                   })}
                 </div>
               </div>
             )}
 
-            {/* ── FINAL REASSURANCE BANNER CARD (Fully customizable & responsive) ── */}
-            {reassuranceConfig.show_bottom_card !== false && (
-              <div className="mt-12 sm:mt-16 max-w-[580px] w-full mx-auto overflow-hidden rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0A0F1D] transition-all">
-                {(() => {
-                  const bannerImg = reassuranceConfig.bottom_card_image || 
-                    parseBannerImages(data.banner_image_url)[0] || 
-                    data.image_url || 
-                    data.product?.main_image;
-                  if (!bannerImg) return null;
+            {/* Quantity Packages Selection */}
+            <div className="pt-4 border-t border-slate-100 dark:border-white/10 space-y-3">
+              <p className="text-sm font-black text-slate-900 dark:text-white">
+                حدد الكمية
+              </p>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {offers.map((offer: any, idx: number) => {
+                  const isSelected = selectedOfferIndex === idx;
+                  const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
+                  const savings = offer.compare_price > offer.price ? Math.round(offer.compare_price - offer.price) : 0;
+                  const perPiece = Math.round(offer.price / offer.quantity);
+
                   return (
-                    <div className="relative aspect-[16/10] sm:aspect-[16/9] w-full overflow-hidden bg-slate-100 dark:bg-slate-900">
-                      <img
-                        src={optimizeCloudinaryUrl(bannerImg, 900)}
-                        alt={data.product_name || 'Bannière'}
-                        className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                        loading="lazy"
-                      />
-                    </div>
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={offerExceedsStock}
+                      onClick={() => {
+                        if (offerExceedsStock) return;
+                        setSelectedOfferIndex(idx);
+                        setQuantity(offer.quantity);
+                      }}
+                      className={cn(
+                        "p-3.5 sm:p-4 rounded-2xl border-2 text-start transition-all relative flex items-center justify-between cursor-pointer",
+                        offerExceedsStock
+                          ? "opacity-40 cursor-not-allowed grayscale bg-slate-50 border-slate-200"
+                          : isSelected
+                          ? "bg-blue-50/60 dark:bg-blue-950/20 border-blue-500 shadow-sm"
+                          : "bg-white dark:bg-white/[0.02] border-slate-200 hover:border-slate-300"
+                      )}
+                    >
+                      {/* Popular Badge */}
+                      {offer.popular && !offerExceedsStock && (
+                        <div className="absolute top-2 left-3 sm:top-2.5 sm:left-4 px-2.5 py-0.5 text-[10px] font-black text-white bg-amber-500 rounded-full shadow-xs flex items-center gap-1">
+                          <span>🔥</span>
+                          <span>الأكثر طلباً</span>
+                        </div>
+                      )}
+
+                      <div className="space-y-0.5">
+                        <span className="text-sm sm:text-base font-black text-slate-900 dark:text-white block">
+                          {offer.arabicTitle}
+                        </span>
+                        {offerExceedsStock ? (
+                          <span className="block text-xs font-bold text-rose-500">غير متوفر بهذه الكمية</span>
+                        ) : savings > 0 ? (
+                          <span className="text-xs font-bold text-emerald-600 block">
+                            {offer.quantity === 4 ? `وفّر ${savings} دج – ${perPiece} دج/قطعة` : `وفّر ${savings} دج`}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="text-end">
+                        <span className="text-base sm:text-lg font-black text-red-600 block">
+                          {formatPrice(offer.price)}
+                        </span>
+                        {offer.compare_price > offer.price && (
+                          <span className="text-xs line-through text-slate-400 block font-bold">
+                            {formatPrice(offer.compare_price)}
+                          </span>
+                        )}
+                      </div>
+                    </button>
                   );
-                })()}
-                <div 
-                  className="p-5 sm:p-8 text-center text-white"
-                  style={{ backgroundColor: reassuranceConfig.bottom_card_bg || '#0F172A' }}
-                >
-                  <h3 className="text-lg sm:text-2xl font-black mb-2.5 sm:mb-3" style={{ color: reassuranceConfig.bottom_card_title_color || '#FFFFFF' }}>
-                    {reassuranceConfig.bottom_card_title || data.cta_headline || (dir === 'rtl' ? 'اجعل كل رحلة أكثر راحة' : 'Voyagez avec un confort absolu')}
-                  </h3>
-                  <p className="text-xs sm:text-sm leading-relaxed mb-5 sm:mb-6 font-medium max-w-md mx-auto opacity-90" style={{ color: reassuranceConfig.bottom_card_subtitle_color || '#CBD5E1' }}>
-                    {reassuranceConfig.bottom_card_subtitle || data.cta_subtitle || (dir === 'rtl' ? (
-                      <>
-                        وسادة سفر مريحة مع قناع عين هدية 🎁<br />
-                        في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك
-                      </>
-                    ) : (
-                      data.product_desc || 'Confort optimal, ergonomie et douceur pour tous vos déplacements.'
-                    ))}
-                  </p>
-                  <button
-                    onClick={() => scrollToSection('checkout-form-container')}
-                    className="w-full max-w-xs mx-auto py-3 sm:py-3.5 px-6 rounded-xl font-black text-xs sm:text-sm tracking-wide shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
-                    style={{
-                      backgroundColor: reassuranceConfig.bottom_card_btn_bg || primary || '#2563EB',
-                      color: reassuranceConfig.bottom_card_btn_color || '#FFFFFF'
-                    }}
-                  >
-                    <ShoppingBag className="size-4" />
-                    <span>
-                      {reassuranceConfig.bottom_card_btn_text || (dir === 'rtl' 
-                        ? `اطلب الآن — ${data.price ? `${data.price} دج` : '1400 دج'} فقط` 
-                        : `Commander — ${data.price ? `${data.price} DA` : ''}`)}
-                    </span>
-                  </button>
+                })}
+              </div>
+            </div>
+          </CheckoutForm>
+        </div>
+
+        {/* ── 6. SPECIAL OFFER YELLOW STRIP ── */}
+        {reassuranceConfig.show_yellow_alert !== false && (
+          <div className="w-full py-3 px-4 rounded-2xl bg-amber-100/90 border border-amber-300/80 text-center font-bold text-amber-900 text-xs sm:text-sm shadow-xs flex items-center justify-center gap-1.5">
+            <span>{reassuranceConfig.yellow_alert_text || '🎁 عرض خاص: قناع عين للنوم هدية مجانية مع كل قطعة تطلبها'}</span>
+          </div>
+        )}
+
+        {/* ── 7. LIFESTYLE IMAGE CARD 1 (Airplane Window Pillow + Mask) ── */}
+        {reassuranceConfig.show_lifestyle_1 !== false && (
+          <div className="w-full rounded-3xl overflow-hidden border border-slate-200/80 shadow-md bg-white">
+            <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-50">
+              <img
+                src={reassuranceConfig.lifestyle_1_image || '/images/coussin/lifestyle-window.jpg'}
+                alt="راحة في كل رحلة"
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── 8. BEFORE / AFTER COMPARISON SECTION ── */}
+        {reassuranceConfig.show_before_after !== false && (
+          <div className="w-full space-y-4 pt-2">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                {reassuranceConfig.before_after_title || 'ودّع آلام الرقبة أثناء السفر'}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                {reassuranceConfig.before_after_subtitle || 'الفرق واضح من أول استعمال'}
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-[#0E0E0E] rounded-3xl border border-slate-200/80 p-3 sm:p-4 shadow-md">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                {/* Before (Right in RTL / Pain) */}
+                <div className="space-y-2">
+                  <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
+                    <img
+                      src={reassuranceConfig.before_image || '/images/coussin/before-pain.jpg'}
+                      alt="Before"
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-100 text-center">
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 leading-snug">
+                      {reassuranceConfig.before_text || 'ألم الرقبة، نوم غير مريح، تعب بعد الاستيقاظ'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* After (Left in RTL / Relief) */}
+                <div className="space-y-2">
+                  <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 border border-blue-200">
+                    <img
+                      src={reassuranceConfig.after_image || '/images/coussin/after-relief.jpg'}
+                      alt="After"
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="p-2 sm:p-2.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-100 text-center">
+                    <p className="text-[10px] sm:text-xs font-bold text-slate-800 dark:text-slate-100 leading-snug">
+                      {reassuranceConfig.after_text || 'دعم مثالي للرقبة، نوم هادئ، راحة طوال الرحلة'}
+                    </p>
+                  </div>
                 </div>
               </div>
-            )}
-
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── ELEGANT CUSTOM FOOTER (Transparent Logo & Direct WhatsApp Button) ── */}
-      <footer className="w-full bg-[#0B132B] text-white pt-10 pb-28 md:pb-12 border-t border-slate-800 text-center">
-        <div className="max-w-[800px] mx-auto px-4 flex flex-col items-center">
-          {/* Store Logo with TRANSPARENT background (no white card / no pill) */}
-          {storeLogo ? (
-            <div className="mb-4 flex items-center justify-center">
+        {/* ── 9. WHY CHOOSE SECTION ── */}
+        {reassuranceConfig.show_why_choose !== false && (
+          <div className="w-full space-y-4 pt-2">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                {reassuranceConfig.why_choose_title || `لماذا تختار وسادة ${storeName}؟`}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                {reassuranceConfig.why_choose_subtitle || 'مصممة لراحتك في كل رحلة'}
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-[#0E0E0E] rounded-3xl border border-slate-200/80 p-3 sm:p-4 shadow-md overflow-hidden">
               <img
-                src={optimizeCloudinaryUrl(storeLogo, 240)}
+                src={reassuranceConfig.why_choose_image || '/images/coussin/why-choose-features.jpg'}
+                alt="لماذا تختار وسادة السفر"
+                className="w-full h-auto rounded-2xl object-cover"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── 10. LIFESTYLE IMAGE CARD 2 (Passenger Sleeping) ── */}
+        {reassuranceConfig.show_lifestyle_2 !== false && (
+          <div className="w-full rounded-3xl overflow-hidden border border-slate-200/80 shadow-md bg-white">
+            <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-50">
+              <img
+                src={reassuranceConfig.lifestyle_2_image || '/images/coussin/lifestyle-passenger.jpg'}
+                alt="راحة ونوم هادئ في السفر"
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── 11. COLORS SHOWCASE SECTION ── */}
+        {reassuranceConfig.show_colors_showcase !== false && allVariantPhotos.length > 0 && (
+          <div className="w-full space-y-4 pt-2">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                {reassuranceConfig.colors_showcase_title || 'متوفر بـ 5 ألوان'}
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                {reassuranceConfig.colors_showcase_subtitle || 'اختر اللون لي يعجبك'}
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-[#0E0E0E] rounded-3xl border border-slate-200/80 p-3 sm:p-4 shadow-md flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+              {allVariantPhotos.map((vItem, idx) => {
+                const isSelected = selectedVariants[0]?.Couleur?.value === vItem.variant.value;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      handleSelectVariant(vItem.variant);
+                      scrollToSection('checkout-form-container');
+                    }}
+                    className={cn(
+                      "size-14 sm:size-16 rounded-2xl overflow-hidden border-2 transition-all p-0.5 bg-white shadow-xs cursor-pointer hover:scale-105 active:scale-95",
+                      isSelected
+                        ? "border-blue-600 ring-2 ring-blue-300 ring-offset-1"
+                        : "border-slate-200 hover:border-slate-300"
+                    )}
+                    title={vItem.label}
+                  >
+                    <img
+                      src={optimizeCloudinaryUrl(vItem.url, 160)}
+                      alt={vItem.label}
+                      className="size-full object-cover rounded-xl"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── 12. CUSTOMER REVIEWS SECTION ── */}
+        {reassuranceConfig.show_reviews_section !== false && (
+          <div className="w-full space-y-4 pt-4 border-t border-slate-100 dark:border-white/10">
+            <div className="text-center space-y-1.5">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                {reassuranceConfig.reviews_title || 'ماذا قال زبائننا؟'}
+              </h3>
+              <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                <div className="flex gap-0.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star key={s} className="size-4 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  {reassuranceConfig.reviews_rating_text || '4.7 من 5 – بناءً على تقييمات زبائننا عبر 58 ولاية'}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {(reassuranceConfig.reviews_list && reassuranceConfig.reviews_list.length > 0
+                ? reassuranceConfig.reviews_list
+                : (data.testimonials && data.testimonials.length > 0
+                  ? data.testimonials.map((t: any) => ({
+                      name: t.name,
+                      city: t.location,
+                      stars: t.stars || 5,
+                      text: t.text,
+                      verified: true,
+                    }))
+                  : [
+                      {
+                        name: 'أمينة ب.',
+                        city: 'الجزائر العاصمة',
+                        stars: 5,
+                        text: 'جربتها في رحلة طويلة، رقبتي ما وجعتنيش والقناع زادني راحة. التوصيل جا في يومين برك.',
+                        verified: true,
+                      },
+                      {
+                        name: 'كريم م.',
+                        city: 'وهران',
+                        stars: 5,
+                        text: 'جودة روعة إسفنج ميموري فوم مريح جداً، والقناع الهدية ممتاز. ننصح بيها لأي واحد يسافر بزاف.',
+                        verified: true,
+                      },
+                      {
+                        name: 'سارة ت.',
+                        city: 'قسنطينة',
+                        stars: 5,
+                        text: 'وصلتني في وقت قياسي وتغليف متقن، خفيفة وسهلة الحمل في الحقيبة.',
+                        verified: true,
+                      },
+                    ]
+                )
+              ).map((review: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="bg-white dark:bg-[#0E0E0E] rounded-3xl border border-slate-200/80 p-4 sm:p-5 shadow-xs space-y-2.5 text-start"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-black text-slate-900 dark:text-white">{review.name}</p>
+                      <p className="text-[11px] text-slate-400 font-medium">{review.city}</p>
+                    </div>
+                    <div className="flex gap-0.5">
+                      {Array.from({ length: review.stars || 5 }).map((_, j) => (
+                        <Star key={j} className="size-3.5 fill-amber-400 text-amber-400" />
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {review.text}
+                  </p>
+
+                  {review.verified !== false && (
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 pt-1 border-t border-slate-100 dark:border-white/5">
+                      <span>✓</span>
+                      <span>مشترية موثّقة</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── 13. FAQ ACCORDION ── */}
+        {validFaq.length > 0 && (
+          <div className="w-full space-y-4 pt-4 border-t border-slate-100 dark:border-white/10">
+            <div className="text-center space-y-1">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                أسئلة شائعة
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                كل ما تحتاج لمعرفته قبل الطلب
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
+              {validFaq.map((item, i) => {
+                const isOpen = openFaq === i;
+                return (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#0E0E0E] overflow-hidden shadow-xs"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setOpenFaq(isOpen ? null : i)}
+                      className="w-full flex items-center justify-between p-4 text-right font-bold text-xs sm:text-sm text-slate-800 dark:text-white gap-3 select-none cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="size-6 rounded-full bg-rose-50 text-rose-500 font-black text-xs flex items-center justify-center shrink-0">
+                          ؟
+                        </span>
+                        <span className="text-right font-bold leading-snug">{item.question}</span>
+                      </div>
+                      <ChevronDown className={cn("size-4 text-slate-400 transition-transform duration-200 shrink-0", isOpen ? "rotate-180" : "")} />
+                    </button>
+                    {isOpen && (
+                      <div className="px-5 pb-4 pt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-white/5 font-medium">
+                        {item.answer}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── 14. BOTTOM REASSURANCE BANNER CARD ── */}
+        {reassuranceConfig.show_bottom_card !== false && (
+          <div className="mt-8 rounded-3xl overflow-hidden shadow-xl border border-slate-200/80 bg-slate-900 text-white">
+            {reassuranceConfig.bottom_card_image && (
+              <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-800">
+                <img
+                  src={optimizeCloudinaryUrl(reassuranceConfig.bottom_card_image, 800)}
+                  alt="Bottom card"
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            )}
+            <div className="p-6 text-center space-y-3">
+              <h4 className="text-xl font-black">
+                {reassuranceConfig.bottom_card_title || 'اجعل كل رحلة أكثر راحة'}
+              </h4>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-sm mx-auto">
+                {reassuranceConfig.bottom_card_subtitle || 'وسادة سفر مريحة مع قناع عين هدية 🎁 - في السيارة أو الطائرة • الدفع عند الاستلام والتوصيل لباب دارك'}
+              </p>
+              <button
+                type="button"
+                onClick={() => scrollToSection('checkout-form-container')}
+                className="w-full max-w-xs mx-auto py-3.5 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all text-white cursor-pointer"
+              >
+                {reassuranceConfig.bottom_card_btn_text || `اطلب الآن — ${price} دج فقط`}
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* ── 15. ELEGANT FOOTER ── */}
+      <footer className="w-full bg-[#0B132B] text-white pt-10 pb-28 sm:pb-12 border-t border-slate-800 text-center mt-8">
+        <div className="max-w-[600px] mx-auto px-4 flex flex-col items-center">
+          {storeLogo ? (
+            <div className="mb-4">
+              <img
+                src={optimizeCloudinaryUrl(storeLogo, 200)}
                 alt={storeName}
-                className="h-10 sm:h-12 w-auto object-contain bg-transparent mx-auto transition-all"
+                className="h-10 sm:h-11 w-auto object-contain bg-transparent mx-auto"
               />
             </div>
           ) : (
@@ -1334,17 +1127,17 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             </div>
           )}
 
-          {/* Contact & WhatsApp Text Row */}
-          <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-bold text-slate-300 mb-2" dir="rtl">
+          {/* Contact & WhatsApp */}
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold text-slate-300 mb-2" dir="rtl">
             <a href={`tel:${cleanPhone}`} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200">
               <Phone className="size-3.5 text-emerald-400 shrink-0" />
               <span>للتواصل: <span className="font-mono">{formattedPhone}</span></span>
             </a>
             <span className="text-slate-600">•</span>
-            <a 
+            <a
               href={whatsappUrl}
-              target="_blank" 
-              rel="noopener noreferrer" 
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-slate-200"
             >
               <span className="text-emerald-400 font-black">واتساب:</span>
@@ -1352,7 +1145,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             </a>
           </div>
 
-          {/* Dedicated WhatsApp Button in Footer */}
+          {/* Dedicated WhatsApp Button */}
           {reassuranceConfig.whatsapp_enabled !== false && (
             <a
               href={whatsappUrl}
@@ -1365,42 +1158,39 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             </a>
           )}
 
-          {/* Reassurance text */}
           <p className="text-[11px] text-slate-400 font-medium mb-3 mt-1">
             الدفع عند الاستلام • توصيل سريع لـ 58 ولاية • ضمان الاستبدال
           </p>
 
-          {/* Copyright in 100% Arabic */}
           <p className="text-[10px] text-slate-500 font-semibold tracking-wider">
             © {new Date().getFullYear()} {storeName}. جميع الحقوق محفوظة.
           </p>
         </div>
       </footer>
 
-      {/* ── FLOATING WHATSAPP BUTTON (Bottom corner) ── */}
+      {/* ── 16. FLOATING WHATSAPP BUTTON ── */}
       {reassuranceConfig.whatsapp_enabled !== false && (
         <a
           href={whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Contact WhatsApp"
-          className="fixed bottom-20 md:bottom-6 left-6 z-40 size-13 sm:size-14 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group"
+          className="fixed bottom-20 sm:bottom-6 left-6 z-40 size-13 sm:size-14 rounded-full bg-[#25D366] hover:bg-[#20ba59] text-white shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer"
           title="تواصل معنا عبر واتساب"
         >
           <MessageCircle className="size-6 sm:size-7 fill-white/20" />
-          <span className="sr-only">واتساب</span>
         </a>
       )}
 
-      {/* Sticky Bottom CTA on Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 dark:bg-black/90 backdrop-blur-md border-t border-slate-200/60 dark:border-white/10 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] md:hidden">
+      {/* ── 17. MOBILE FIXED BOTTOM CTA BUTTON ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/95 dark:bg-black/95 backdrop-blur-md border-t border-slate-200/80 flex justify-center items-center shadow-[0_-8px_30px_rgb(0,0,0,0.12)] sm:hidden">
         <button
+          type="button"
           onClick={() => scrollToSection('checkout-form-container')}
-          className="w-full py-3.5 rounded-xl text-white font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2"
-          style={{ backgroundColor: primary }}
+          className="w-full py-3.5 rounded-2xl font-black uppercase tracking-wider text-xs shadow-md active:scale-[0.97] transition-all flex items-center justify-center gap-2 bg-[#B91C1C] hover:bg-[#991B1B] text-white cursor-pointer"
         >
           <ShoppingBag className="size-4" />
-          <span>اضغط هنا للطلب</span>
+          <span>{reassuranceConfig.header_cta_text || 'اضغط هنا للطلب'}</span>
         </button>
       </div>
 
