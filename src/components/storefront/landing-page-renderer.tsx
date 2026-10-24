@@ -1166,7 +1166,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-bold mb-2" dir="rtl">
               <a href={`tel:${cleanPhone}`} className="hover:opacity-80 transition-opacity flex items-center gap-1.5" style={{ color: reassuranceConfig.footer_text_color || '#CBD5E1' }}>
                 <Phone className="size-3.5 text-emerald-400 shrink-0" />
-                <span>للتواصل: <span className="font-mono">{formattedPhone}</span></span>
+                <span>للتواصل: <bdi dir="ltr" className="inline-block font-mono tracking-wider">{formattedPhone}</bdi></span>
               </a>
               <span className="opacity-40">•</span>
               <a
@@ -1177,7 +1177,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 style={{ color: reassuranceConfig.footer_text_color || '#CBD5E1' }}
               >
                 <span className="text-emerald-400 font-black">واتساب:</span>
-                <span className="font-mono">{formattedPhone}</span>
+                <bdi dir="ltr" className="inline-block font-mono tracking-wider">{formattedPhone}</bdi>
               </a>
             </div>
 
