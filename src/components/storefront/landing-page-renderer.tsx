@@ -476,23 +476,18 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
-      {/* ── TOP ANNOUNCEMENT BAR (ONLY FOR COUSSIN DE VOYAGE - EXACT USER SCREENSHOT STYLE) ── */}
+      {/* ── TOP ANNOUNCEMENT BAR (ONLY FOR COUSSIN DE VOYAGE) ── */}
       {isCoussin && (
         <div
           onClick={() => scrollToSection('checkout-form-container')}
           className="w-full py-2 px-3 text-center text-[12px] sm:text-xs font-bold tracking-wide relative z-50 cursor-pointer select-none transition-all hover:brightness-110 shadow-xs"
-          style={{ backgroundColor: '#0B1329', color: '#FFFFFF' }}
+          style={{ backgroundColor: primary, color: '#FFFFFF' }}
           dir="rtl"
         >
-          <div className="max-w-[1200px] mx-auto flex items-center justify-center flex-wrap gap-x-1.5 gap-y-0.5 leading-snug">
+          <div className="max-w-[1200px] mx-auto flex items-center justify-center flex-wrap gap-x-2.5 gap-y-0.5 leading-snug">
             <span>🔒 الدفع عند الاستلام</span>
             <span className="opacity-60">•</span>
             <span>🚚 توصيل ل 58 ولاية</span>
-            <span className="opacity-60">•</span>
-            <span className="inline-flex items-center gap-1 text-[#FACC15] font-extrabold">
-              <span>⌛</span>
-              <span>العرض ساري حتى نهاية الأسبوع</span>
-            </span>
           </div>
         </div>
       )}
