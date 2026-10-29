@@ -140,11 +140,19 @@ def run_db_migrations():
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS commission_recovered_store_pickup_rate INTEGER",
         "UPDATE products SET is_active = TRUE WHERE (stock - COALESCE(reserved_stock, 0)) > 0 AND (is_active IS FALSE OR is_active IS NULL)",
         "UPDATE orders SET status = 'NEW' WHERE status IS NULL OR status = ''",
+        "UPDATE orders c SET is_deleted = TRUE, parent_order_id = NULL FROM orders p WHERE c.parent_order_id = p.id AND (c.is_deleted IS FALSE OR c.is_deleted IS NULL) AND ABS(EXTRACT(EPOCH FROM (c.created_at - p.created_at))) <= 86400",
+        "DELETE FROM notifications WHERE order_id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
+        "DELETE FROM stock_movements WHERE order_id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
+        "DELETE FROM order_events WHERE order_id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
+        "DELETE FROM order_items WHERE order_id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
+        "DELETE FROM orders WHERE id IN (SELECT d.id FROM orders d JOIN (SELECT id, COALESCE(store_id, 'default') AS store_key, LOWER(TRIM(customer_phone)) AS clean_phone, created_at, ROW_NUMBER() OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY created_at ASC) AS rn FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu') m ON LOWER(TRIM(d.customer_phone)) = m.clean_phone AND COALESCE(d.store_id, 'default') = m.store_key AND m.rn = 1 AND d.id != m.id AND d.created_at >= m.created_at AND d.created_at <= m.created_at + INTERVAL '5 minutes')",
+        "WITH ranked_orders AS (SELECT id, FIRST_VALUE(id) OVER (PARTITION BY COALESCE(store_id, 'default'), LOWER(TRIM(customer_phone)) ORDER BY (CASE WHEN COALESCE(is_abandoned_cart, FALSE) IS FALSE AND status NOT IN ('ABANDONED', 'MERGED') THEN 0 ELSE 1 END) ASC, created_at ASC) as parent_id FROM orders WHERE customer_phone IS NOT NULL AND TRIM(customer_phone) != '' AND LOWER(TRIM(customer_phone)) != 'inconnu' AND (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders o SET status = 'MERGED', parent_order_id = r.parent_id, is_deleted = TRUE FROM ranked_orders r WHERE o.id = r.id AND o.id != r.parent_id",
         "WITH renumbered AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY store_id ORDER BY created_at ASC) AS seq FROM orders WHERE (is_deleted IS FALSE OR is_deleted IS NULL) AND status != 'MERGED') UPDATE orders SET store_sequence_number = renumbered.seq FROM renumbered WHERE orders.id = renumbered.id",
         "UPDATE orders SET status = 'ABANDONED', is_abandoned_cart = TRUE WHERE id LIKE 'cd0cdcbe%' OR store_sequence_number = 768 OR customer_phone = '0658225644'",
         "UPDATE orders SET is_deleted = TRUE, status = 'DELETED' WHERE order_number IN ('ABN-20260819-051F94', 'ABN-20260819-5AEEAE', 'ABN-20260819-F6C4F1') OR order_number LIKE '%5AEEAE%' OR order_number LIKE '%F6C4F1%' OR order_number LIKE '%051F94%' OR (customer_phone = '0780125700' AND order_number LIKE 'ABN%')",
         "UPDATE orders SET delivery_fee = CASE WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('16', 'alger') THEN 400 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('9', 'blida', '35', 'boumerdès', 'boumerdes', '42', 'tipaza') THEN 500 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('19', 'sétif', 'setif', '23', 'annaba', '25', 'constantine', '31', 'oran') THEN 600 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('3', 'laghouat', '30', 'ouargla', '32', 'el bayadh', '38', 'tissemsilt', '45', 'naâma', 'naama', '47', 'ghardaïa', 'ghardaia', '51', 'ouled djellal', '55', 'touggourt', '57', 'el m''ghair', 'el mghair', '58', 'el meniaa') THEN 950 WHEN LOWER(TRIM(COALESCE(customer_wilaya, ''))) IN ('1', 'adrar', '8', 'béchar', 'bechar', '11', 'tamanrasset', '33', 'illizi', '37', 'tindouf', '49', 'timimoun', '50', 'bordj badji mokhtar', '52', 'béni abbès', 'beni abbes', '53', 'in salah', '54', 'in guezzam', '56', 'djanet') THEN 1200 ELSE 800 END WHERE (delivery_fee IS NULL OR delivery_fee = 0) AND customer_wilaya IS NOT NULL AND TRIM(customer_wilaya) != ''",
         "UPDATE orders SET subtotal = CASE WHEN (subtotal IS NULL OR subtotal = 0) THEN (total - COALESCE(delivery_fee, 0)) ELSE subtotal END, total = (CASE WHEN (subtotal IS NOT NULL AND subtotal > 0) THEN subtotal ELSE (total - COALESCE(delivery_fee, 0)) END) - COALESCE(discount, 0) + COALESCE(delivery_fee, 0) WHERE is_deleted IS FALSE OR is_deleted IS NULL",
+        "UPDATE orders SET is_abandoned_cart = FALSE, status = 'NEW', order_number = REPLACE(order_number, 'ABN-', 'ORD-') WHERE (store_sequence_number IN (830, 831, 832, 833) OR order_number LIKE '%830%' OR order_number LIKE '%831%' OR order_number LIKE '%832%' OR order_number LIKE '%833%') AND status != 'CANCELLED'",
     ]
 
     for stmt in statements:
@@ -194,6 +202,32 @@ def run_db_migrations():
                     p.subtotal = int(subtotal)
                     p.total = max(0, int(subtotal) + int(p.delivery_fee or 0) - int(p.discount or 0))
             
+            # Delete any MERGED child orders created within 10 minutes of their parent order
+            child_orders = db_mig.query(Order).filter(
+                Order.parent_order_id.isnot(None),
+                Order.status == "MERGED",
+            ).all()
+            purged = 0
+            for child in child_orders:
+                try:
+                    parent = db_mig.query(Order).filter(Order.id == child.parent_order_id).first()
+                    if parent and child.created_at and parent.created_at:
+                        diff_sec = abs((child.created_at - parent.created_at).total_seconds())
+                        if diff_sec <= 600:
+                            child_id = str(child.id)
+                            # Unlink any orders referencing this child as parent
+                            db_mig.execute(text("UPDATE orders SET parent_order_id = NULL WHERE parent_order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM stock_movements WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM order_events WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM meta_capi_logs WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM order_items WHERE order_id = :cid"), {"cid": child_id})
+                            db_mig.execute(text("DELETE FROM orders WHERE id = :cid"), {"cid": child_id})
+                            db_mig.commit()
+                            purged += 1
+                except Exception as child_del_err:
+                    db_mig.rollback()
+                    logger.debug("Failed to purge child duplicate %s: %s", getattr(child, "id", "unknown"), child_del_err)
+            print(f"[OK] Cleaned up merged parent order baskets and purged {purged} <10min duplicate child orders.")
 
             # Ensure missing delivered orders (Karim maiza, Olmi, etc.) are present and marked DELIVERED
             try:
