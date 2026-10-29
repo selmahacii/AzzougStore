@@ -510,7 +510,7 @@ export function SearchableCommuneSelect({
   );
 }
 
-export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
+export function CheckoutForm({ isInline = false, forceTemplate, children, isCoussin = false }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode; isCoussin?: boolean }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
   const setSelectedProductSlug = useAppStore((s) => s.setSelectedProductSlug);
@@ -548,6 +548,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   const baseT = useCheckoutTheme(activeStore);
   const T = forceTemplate ? { ...baseT, tpl: forceTemplate } : baseT;
+  const isCoussinProduct = isCoussin || activeStore?.slug === 'azconfort' || activeStore?.id === '2c81d28d-a453-4645-a8b7-b79dd32ba6f7';
 
   const isWilayaActive = useCallback((wilayaName: string) => {
     if (availablePartners.length === 0) return true;
@@ -984,15 +985,29 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   <label htmlFor="wilaya" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
                   </label>
-                  <SearchableWilayaSelect
-                    value={customerInfo.wilaya}
-                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
-                    dir={dir}
-                    T={T}
-                    placeholder={t('selectWilaya') || 'Sélectionnez une wilaya'}
-                    error={!!errors.wilaya}
-                    activeFilter={isWilayaActive}
-                  />
+                  {isCoussinProduct ? (
+                    <SearchableWilayaSelect
+                      value={customerInfo.wilaya}
+                      onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
+                      dir={dir}
+                      T={T}
+                      placeholder={t('selectWilaya') || 'Sélectionnez une wilaya'}
+                      error={!!errors.wilaya}
+                      activeFilter={isWilayaActive}
+                    />
+                  ) : (
+                    <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
+                      <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                        style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
+                        <SelectValue placeholder={t('selectWilaya')} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
+                        {WILAYAS.filter(isWilayaActive).map(w => (
+                          <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -1276,56 +1291,74 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
             </div>
 
             {/* CTA & Reassurance */}
-            <div className="pt-2 space-y-3">
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={checkingDuplicate || submitting}
-                className={cn(
-                  "w-full rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer hover:brightness-105",
-                  isInline ? "py-4 px-6" : (T.tpl === 'dz_cod' ? "py-4 px-6 bg-red-600 hover:bg-red-700" : "py-3.5 px-4")
-                )}
-                style={{
-                  backgroundColor: T.primary || '#B91C1C',
-                  color: T.btnText || '#FFFFFF',
-                  boxShadow: `0 10px 25px -5px ${T.primary || '#B91C1C'}44`,
-                }}
-              >
-                {checkingDuplicate || submitting ? (
-                  <span className="flex items-center gap-2 font-bold text-sm">
-                    <Loader2 className="size-5 animate-spin" />
-                    {submitting ? (dir === 'rtl' ? 'جاري تأكيد الطلب...' : t('submitting')) : (dir === 'rtl' ? 'جاري التحقق...' : t('checking'))}
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-base sm:text-lg font-black tracking-wide">
-                      {dir === 'rtl' ? 'اطلب الآن – الدفع عند الاستلام' : 'Acheter maintenant – Paiement à la livraison'}
+            {isCoussinProduct ? (
+              <div className="pt-2 space-y-3">
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={checkingDuplicate || submitting}
+                  className={cn(
+                    "w-full rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer hover:brightness-105",
+                    isInline ? "py-4 px-6" : (T.tpl === 'dz_cod' ? "py-4 px-6 bg-red-600 hover:bg-red-700" : "py-3.5 px-4")
+                  )}
+                  style={{
+                    backgroundColor: T.primary || '#B91C1C',
+                    color: T.btnText || '#FFFFFF',
+                    boxShadow: `0 10px 25px -5px ${T.primary || '#B91C1C'}44`,
+                  }}
+                >
+                  {checkingDuplicate || submitting ? (
+                    <span className="flex items-center gap-2 font-bold text-sm">
+                      <Loader2 className="size-5 animate-spin" />
+                      {submitting ? (dir === 'rtl' ? 'جاري تأكيد الطلب...' : t('submitting')) : (dir === 'rtl' ? 'جاري التحقق...' : t('checking'))}
                     </span>
-                    <span className="text-[11px] sm:text-xs font-medium opacity-90">
-                      {dir === 'rtl' ? 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك' : 'Ne payez qu\'à la réception après vérification'}
-                    </span>
-                  </>
-                )}
-              </button>
+                  ) : (
+                    <>
+                      <span className="text-base sm:text-lg font-black tracking-wide">
+                        {dir === 'rtl' ? 'اطلب الآن – الدفع عند الاستلام' : 'Acheter maintenant – Paiement à la livraison'}
+                      </span>
+                      <span className="text-[11px] sm:text-xs font-medium opacity-90">
+                        {dir === 'rtl' ? 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك' : 'Ne payez qu\'à la réception après vérification'}
+                      </span>
+                    </>
+                  )}
+                </button>
 
-              {/* COD Reassurance Badges */}
-              <div className="pt-1 text-center space-y-2 text-xs font-bold" style={{ color: T.textSecondary || undefined }}>
-                <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap text-[11px] sm:text-xs">
-                  <span className="inline-flex items-center gap-1">
-                    <span>🔒</span> {dir === 'rtl' ? 'الدفع عند الاستلام' : 'Paiement à la livraison'}
-                  </span>
-                  <span className="opacity-40">•</span>
-                  <span className="inline-flex items-center gap-1">
-                    <span>🚚</span> {dir === 'rtl' ? 'توصيل سريع لـ 58 ولاية' : 'Livraison rapide 58 wilayas'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-center text-[10px] sm:text-[11px] opacity-85">
-                  <span className="inline-flex items-center gap-1">
-                    <span>🔄</span> {dir === 'rtl' ? 'ضمان واستبدال مجاني في حال وجود أي عيب' : 'Garantie & remplacement gratuit sous 48h'}
-                  </span>
+                {/* COD Reassurance Badges (Only for Coussin de Voyage) */}
+                <div className="pt-1 text-center space-y-2 text-xs font-bold" style={{ color: T.textSecondary || undefined }}>
+                  <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap text-[11px] sm:text-xs">
+                    <span className="inline-flex items-center gap-1">
+                      <span>🔒</span> {dir === 'rtl' ? 'الدفع عند الاستلام' : 'Paiement à la livraison'}
+                    </span>
+                    <span className="opacity-40">•</span>
+                    <span className="inline-flex items-center gap-1">
+                      <span>🚚</span> {dir === 'rtl' ? 'توصيل سريع لـ 58 ولاية' : 'Livraison rapide 58 wilayas'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-center text-[10px] sm:text-[11px] opacity-85">
+                    <span className="inline-flex items-center gap-1">
+                      <span>🔄</span> {dir === 'rtl' ? 'ضمان واستبدال مجاني في حال وجود أي عيب' : 'Garantie & remplacement gratuit sous 48h'}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              /* PURE ORIGINAL TRUST SHOP CTA BUTTON (100% UNTOUCHED) */
+              <div className="pt-2">
+                <button onClick={handleNext} disabled={checkingDuplicate || submitting}
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60",
+                    isInline ? "h-14 text-base" : (T.tpl === 'dz_cod' ? "h-16 text-xl bg-red-600 hover:bg-red-700" : "h-13 text-sm")
+                  )}
+                  style={isInline ? { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }
+                    : (T.tpl === 'dz_cod' ? { color: '#ffffff', borderRadius: '8px' } : { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius })}>
+                  {checkingDuplicate || submitting
+                    ? <><Loader2 className="size-5 animate-spin" /> {submitting ? t('submitting') : t('checking')}</>
+                    : isInline ? (dir === 'rtl' ? 'اضغط هنا للطلب' : 'Acheter maintenant') 
+                    : (T.tpl === 'dz_cod' ? t('buyNowCod') : <>{t('continue')} <ArrowRight className="size-4" /></>)}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

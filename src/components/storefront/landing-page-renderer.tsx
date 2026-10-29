@@ -472,8 +472,30 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     scrollToSection('checkout-form-container');
   };
 
+  const isCoussin = data?.slug === 'coussin-de-voyage' || data?.store_id === '2c81d28d-a453-4645-a8b7-b79dd32ba6f7';
+
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
+      {/* ── TOP ANNOUNCEMENT BAR (ONLY FOR COUSSIN DE VOYAGE - EXACT USER SCREENSHOT STYLE) ── */}
+      {isCoussin && (
+        <div
+          onClick={() => scrollToSection('checkout-form-container')}
+          className="w-full py-2 px-3 text-center text-[12px] sm:text-xs font-bold tracking-wide relative z-50 cursor-pointer select-none transition-all hover:brightness-110 shadow-xs"
+          style={{ backgroundColor: '#0B1329', color: '#FFFFFF' }}
+          dir="rtl"
+        >
+          <div className="max-w-[1200px] mx-auto flex items-center justify-center flex-wrap gap-x-1.5 gap-y-0.5 leading-snug">
+            <span>🔒 الدفع عند الاستلام</span>
+            <span className="opacity-60">•</span>
+            <span>🚚 توصيل ل 58 ولاية</span>
+            <span className="opacity-60">•</span>
+            <span className="inline-flex items-center gap-1 text-[#FACC15] font-extrabold">
+              <span>⌛</span>
+              <span>العرض ساري حتى نهاية الأسبوع</span>
+            </span>
+          </div>
+        </div>
+      )}
       <FloatingLanguageSwitcher primaryColor={primary} />
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
@@ -734,25 +756,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
 
-                  {/* Trust Reassurance Header Bar */}
-                  <div className="grid grid-cols-3 gap-1.5 py-2.5 px-2 mb-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
-                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400">
-                      <Truck className="size-4 mb-0.5" />
-                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">توصيل 58 ولاية</span>
-                      <span className="text-[8px] sm:text-[9px] opacity-75">لباب منزلك</span>
-                    </div>
-                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400 border-x border-emerald-500/20">
-                      <ShieldCheck className="size-4 mb-0.5" />
-                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">الدفع عند الاستلام</span>
-                      <span className="text-[8px] sm:text-[9px] opacity-75">عاين سلعتك أولاً</span>
-                    </div>
-                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400">
-                      <RotateCcw className="size-4 mb-0.5" />
-                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">استبدال مجاني</span>
-                      <span className="text-[8px] sm:text-[9px] opacity-75">ضمان الجودة 100%</span>
-                    </div>
-                  </div>
-                  <CheckoutForm isInline={true}>
+                  <CheckoutForm isInline={true} isCoussin={isCoussin}>
                     
                     {/* Variant Selector (One per product in pack) */}
                     {data.product?.variants && data.product.variants.length > 0 && (() => {
