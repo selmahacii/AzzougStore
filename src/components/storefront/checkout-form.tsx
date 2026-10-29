@@ -137,6 +137,228 @@ function formatAlgerianPhone(ph: string): string {
   return digits;
 }
 
+export const WILAYA_ARABIC_NAMES: Record<string, { ar: string; code: string }> = {
+  'Adrar': { ar: 'أدرار', code: '01' },
+  'Chlef': { ar: 'الشلف', code: '02' },
+  'Laghouat': { ar: 'الأغواط', code: '03' },
+  'Oum El Bouaghi': { ar: 'أم البواقي', code: '04' },
+  'Batna': { ar: 'باتنة', code: '05' },
+  'Béjaïa': { ar: 'بجاية', code: '06' },
+  'Biskra': { ar: 'بسكرة', code: '07' },
+  'Béchar': { ar: 'بشار', code: '08' },
+  'Blida': { ar: 'البليدة', code: '09' },
+  'Bouira': { ar: 'البويرة', code: '10' },
+  'Tamanrasset': { ar: 'تمنراست', code: '11' },
+  'Tébessa': { ar: 'تبسة', code: '12' },
+  'Tlemcen': { ar: 'تلمسان', code: '13' },
+  'Tiaret': { ar: 'تيارت', code: '14' },
+  'Tizi Ouzou': { ar: 'تيزي وزو', code: '15' },
+  'Alger': { ar: 'الجزائر', code: '16' },
+  'Djelfa': { ar: 'الجلفة', code: '17' },
+  'Jijel': { ar: 'جيجل', code: '18' },
+  'Sétif': { ar: 'سطيف', code: '19' },
+  'Saïda': { ar: 'سعيدة', code: '20' },
+  'Skikda': { ar: 'سكيكدة', code: '21' },
+  'Sidi Bel Abbès': { ar: 'سيدي بلعباس', code: '22' },
+  'Annaba': { ar: 'عنابة', code: '23' },
+  'Guelma': { ar: 'قالمة', code: '24' },
+  'Constantine': { ar: 'قسنطينة', code: '25' },
+  'Médéa': { ar: 'المدية', code: '26' },
+  'Mostaganem': { ar: 'مستغانم', code: '27' },
+  'Msila': { ar: 'المسيلة', code: '28' },
+  'M\'Sila': { ar: 'المسيلة', code: '28' },
+  'M\'sila': { ar: 'المسيلة', code: '28' },
+  'Mascara': { ar: 'معسكر', code: '29' },
+  'Ouargla': { ar: 'ورقلة', code: '30' },
+  'Oran': { ar: 'وهران', code: '31' },
+  'El Bayadh': { ar: 'البيض', code: '32' },
+  'Illizi': { ar: 'إليزي', code: '33' },
+  'Bordj Bou Arréridj': { ar: 'برج بوعريريج', code: '34' },
+  'Boumerdès': { ar: 'بومرداس', code: '35' },
+  'El Tarf': { ar: 'الطارف', code: '36' },
+  'Tindouf': { ar: 'تندوف', code: '37' },
+  'Tissemsilt': { ar: 'تيسمسيلت', code: '38' },
+  'El Oued': { ar: 'الوادي', code: '39' },
+  'Khenchela': { ar: 'خنشلة', code: '40' },
+  'Souk Ahras': { ar: 'سوق أهراس', code: '41' },
+  'Tipaza': { ar: 'تيبازة', code: '42' },
+  'Mila': { ar: 'ميلة', code: '43' },
+  'Aïn Defla': { ar: 'عين الدفلى', code: '44' },
+  'Naâma': { ar: 'النعامة', code: '45' },
+  'Aïn Témouchent': { ar: 'عين تموشنت', code: '46' },
+  'Ghardaïa': { ar: 'غرداية', code: '47' },
+  'Relizane': { ar: 'غليزان', code: '48' },
+  'Timimoun': { ar: 'تيميمون', code: '49' },
+  'Bordj Baji Mokhtar': { ar: 'برج باجي مختار', code: '50' },
+  'Ouled Djellal': { ar: 'أولاد جلال', code: '51' },
+  'Béni Abbès': { ar: 'بني عباس', code: '52' },
+  'In Salah': { ar: 'عين صالح', code: '53' },
+  'In Guezzam': { ar: 'عين قزام', code: '54' },
+  'Touggourt': { ar: 'تقرت', code: '55' },
+  'Djanet': { ar: 'جانت', code: '56' },
+  'El M\'Ghair': { ar: 'المغير', code: '57' },
+  'El Meniaa': { ar: 'المنيعة', code: '58' },
+};
+
+interface SearchableWilayaSelectProps {
+  value: string;
+  onChange: (wilayaName: string) => void;
+  dir: string;
+  T: any;
+  placeholder?: string;
+  error?: boolean;
+  activeFilter?: (w: string) => boolean;
+}
+
+export function SearchableWilayaSelect({
+  value,
+  onChange,
+  dir,
+  T,
+  placeholder = 'Sélectionnez une wilaya',
+  error,
+  activeFilter,
+}: SearchableWilayaSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const availableWilayas = useMemo(() => {
+    let list = WILAYAS as readonly string[];
+    if (activeFilter) {
+      list = list.filter(activeFilter);
+    }
+    return list;
+  }, [activeFilter]);
+
+  const filtered = useMemo(() => {
+    if (!search) return availableWilayas;
+    const s = search.toLowerCase().trim();
+    return availableWilayas.filter(w => {
+      const info = WILAYA_ARABIC_NAMES[w];
+      const code = info?.code || '';
+      const ar = info?.ar || '';
+      return (
+        w.toLowerCase().includes(s) ||
+        code.includes(s) ||
+        ar.includes(s) ||
+        `${code} - ${ar}`.includes(s) ||
+        `${code} - ${w}`.toLowerCase().includes(s)
+      );
+    });
+  }, [availableWilayas, search]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
+  const displayLabel = useMemo(() => {
+    if (!value) return '';
+    const info = WILAYA_ARABIC_NAMES[value];
+    if (!info) return value;
+    return dir === 'rtl' ? `${info.code} - ${info.ar} (${value})` : `${info.code} - ${value} (${info.ar})`;
+  }, [value, dir]);
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(!open);
+          setSearch('');
+        }}
+        className={cn(
+          "w-full flex items-center justify-between px-3 h-11 text-sm border-2 transition-all outline-none cursor-pointer",
+          error ? "border-red-500" : ""
+        )}
+        style={{
+          backgroundColor: T.inputBg,
+          borderColor: T.inputBorder,
+          color: value ? T.inputText : T.inputPlaceholder,
+          borderRadius: T.inputRadius,
+        }}
+      >
+        <span className="truncate">
+          {displayLabel || placeholder}
+        </span>
+        <span className="text-[10px] opacity-60">▼</span>
+      </button>
+
+      {open && (
+        <div 
+          className="absolute z-50 mt-1 w-full border-2 rounded-xl shadow-xl max-h-72 overflow-hidden flex flex-col"
+          style={{
+            backgroundColor: T.cardBg || '#ffffff',
+            borderColor: T.cardBorder || T.inputBorder || '#e2e8f0',
+          }}
+        >
+          {/* Search bar */}
+          <div className="p-2 border-b flex items-center gap-2" style={{ borderColor: T.cardBorder || '#e2e8f0' }}>
+            <Search className="size-3.5 opacity-60 shrink-0" style={{ color: T.inputText }} />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={dir === 'rtl' ? 'ابحث بالاسم أو الرقم...' : 'Recherche par nom ou code...'}
+              className="w-full bg-transparent text-sm border-none outline-none focus:ring-0 focus:outline-none"
+              style={{ color: T.inputText, fontSize: '16px' }}
+              autoFocus
+            />
+          </div>
+
+          {/* List */}
+          <div className="overflow-y-auto flex-1 max-h-56 py-1 scrollbar-thin">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-center opacity-60" style={{ color: T.inputText }}>
+                {dir === 'rtl' ? 'لا توجد نتائج' : 'Aucun résultat'}
+              </div>
+            ) : (
+              filtered.map(w => {
+                const info = WILAYA_ARABIC_NAMES[w];
+                const label = info 
+                  ? (dir === 'rtl' ? `${info.code} - ${info.ar} (${w})` : `${info.code} - ${w} (${info.ar})`)
+                  : w;
+                const isSelected = value === w;
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => {
+                      onChange(w);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2.5 text-xs transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between cursor-pointer",
+                      isSelected ? "font-bold" : ""
+                    )}
+                    style={{
+                      color: T.inputText,
+                      backgroundColor: isSelected ? `${T.primary}12` : 'transparent',
+                      textAlign: dir === 'rtl' ? 'right' : 'left'
+                    }}
+                  >
+                    <span>{label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface SearchableCommuneSelectProps {
   wilaya: string;
   value: string;
@@ -762,17 +984,15 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   <label htmlFor="wilaya" className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5" style={{ color: T.labelColor }}>
                     <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
                   </label>
-                  <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
-                      style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
-                      <SelectValue placeholder={t('selectWilaya')} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-64" style={{ backgroundColor: T.cardBg, borderColor: T.cardBorder }}>
-                      {WILAYAS.filter(isWilayaActive).map(w => (
-                        <SelectItem key={w} value={w} style={{ color: T.inputText }}>{w}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableWilayaSelect
+                    value={customerInfo.wilaya}
+                    onChange={v => setCustomerInfo({ ...customerInfo, wilaya: v, commune: '' })}
+                    dir={dir}
+                    T={T}
+                    placeholder={t('selectWilaya') || 'Sélectionnez une wilaya'}
+                    error={!!errors.wilaya}
+                    activeFilter={isWilayaActive}
+                  />
                   {errors.wilaya && <p className="text-[10px] text-red-400">{errors.wilaya}</p>}
                 </div>
 
@@ -1055,20 +1275,56 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
               </div>
             </div>
 
-            {/* CTA */}
-            <div className="pt-2">
-              <button onClick={handleNext} disabled={checkingDuplicate || submitting}
+            {/* CTA & Reassurance */}
+            <div className="pt-2 space-y-3">
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={checkingDuplicate || submitting}
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60",
-                  isInline ? "h-14 text-base" : (T.tpl === 'dz_cod' ? "h-16 text-xl bg-red-600 hover:bg-red-700" : "h-13 text-sm")
+                  "w-full rounded-2xl active:scale-[0.98] transition-all shadow-lg flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 cursor-pointer hover:brightness-105",
+                  isInline ? "py-4 px-6" : (T.tpl === 'dz_cod' ? "py-4 px-6 bg-red-600 hover:bg-red-700" : "py-3.5 px-4")
                 )}
-                style={isInline ? { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }
-                  : (T.tpl === 'dz_cod' ? { color: '#ffffff', borderRadius: '8px' } : { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius })}>
-                {checkingDuplicate || submitting
-                  ? <><Loader2 className="size-5 animate-spin" /> {submitting ? t('submitting') : t('checking')}</>
-                  : isInline ? (dir === 'rtl' ? 'اضغط هنا للطلب' : 'Acheter maintenant') 
-                  : (T.tpl === 'dz_cod' ? t('buyNowCod') : <>{t('continue')} <ArrowRight className="size-4" /></>)}
+                style={{
+                  backgroundColor: T.primary || '#B91C1C',
+                  color: T.btnText || '#FFFFFF',
+                  boxShadow: `0 10px 25px -5px ${T.primary || '#B91C1C'}44`,
+                }}
+              >
+                {checkingDuplicate || submitting ? (
+                  <span className="flex items-center gap-2 font-bold text-sm">
+                    <Loader2 className="size-5 animate-spin" />
+                    {submitting ? (dir === 'rtl' ? 'جاري تأكيد الطلب...' : t('submitting')) : (dir === 'rtl' ? 'جاري التحقق...' : t('checking'))}
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-base sm:text-lg font-black tracking-wide">
+                      {dir === 'rtl' ? 'اطلب الآن – الدفع عند الاستلام' : 'Acheter maintenant – Paiement à la livraison'}
+                    </span>
+                    <span className="text-[11px] sm:text-xs font-medium opacity-90">
+                      {dir === 'rtl' ? 'ما تخلص حتى توصلك السلعة وتشوفها بعينيك' : 'Ne payez qu\'à la réception après vérification'}
+                    </span>
+                  </>
+                )}
               </button>
+
+              {/* COD Reassurance Badges */}
+              <div className="pt-1 text-center space-y-2 text-xs font-bold" style={{ color: T.textSecondary || undefined }}>
+                <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap text-[11px] sm:text-xs">
+                  <span className="inline-flex items-center gap-1">
+                    <span>🔒</span> {dir === 'rtl' ? 'الدفع عند الاستلام' : 'Paiement à la livraison'}
+                  </span>
+                  <span className="opacity-40">•</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span>🚚</span> {dir === 'rtl' ? 'توصيل سريع لـ 58 ولاية' : 'Livraison rapide 58 wilayas'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-center text-[10px] sm:text-[11px] opacity-85">
+                  <span className="inline-flex items-center gap-1">
+                    <span>🔄</span> {dir === 'rtl' ? 'ضمان واستبدال مجاني في حال وجود أي عيب' : 'Garantie & remplacement gratuit sous 48h'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         )}

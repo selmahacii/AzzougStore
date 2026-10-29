@@ -727,11 +727,30 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 
                 {/* Checkout Form (contains fields at top, selectors in middle, CTA at bottom) */}
                 <div id="checkout-form-container">
-                  <div className="text-center mb-6 px-4">
+                  <div className="text-center mb-4 px-4">
                     <p className={cn("text-lg sm:text-xl font-black tracking-wide leading-relaxed", isDark ? "text-white" : "text-slate-900")}>
                       للطلب، يرجى ادخال معلوماتك هنا
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
+                  </div>
+
+                  {/* Trust Reassurance Header Bar */}
+                  <div className="grid grid-cols-3 gap-1.5 py-2.5 px-2 mb-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400">
+                      <Truck className="size-4 mb-0.5" />
+                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">توصيل 58 ولاية</span>
+                      <span className="text-[8px] sm:text-[9px] opacity-75">لباب منزلك</span>
+                    </div>
+                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400 border-x border-emerald-500/20">
+                      <ShieldCheck className="size-4 mb-0.5" />
+                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">الدفع عند الاستلام</span>
+                      <span className="text-[8px] sm:text-[9px] opacity-75">عاين سلعتك أولاً</span>
+                    </div>
+                    <div className="flex flex-col items-center justify-center text-emerald-700 dark:text-emerald-400">
+                      <RotateCcw className="size-4 mb-0.5" />
+                      <span className="text-[10px] sm:text-[11px] font-black leading-tight">استبدال مجاني</span>
+                      <span className="text-[8px] sm:text-[9px] opacity-75">ضمان الجودة 100%</span>
+                    </div>
                   </div>
                   <CheckoutForm isInline={true}>
                     
