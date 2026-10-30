@@ -93,6 +93,9 @@ META_AUDIT_INTERVAL_MINUTES = float(os.getenv("META_AUDIT_INTERVAL_MINUTES", "14
 _TERMINAL_MAP = {
     # Delivered
     "livré": "DELIVERED", "livre": "DELIVERED", "delivered": "DELIVERED",
+    "validation_reception_cash_by_partener": "DELIVERED",
+    "montant reçu par le partenaire": "DELIVERED",
+    "montant recu par le partenaire": "DELIVERED",
     # Returned — only the terminal "received/confirmed back" events, not the
     # in-progress "asked"/"en transit" ones (return_asked_by_*, *_redispatched_to_livraison).
     "retourné": "RETURNED", "retourne": "RETURNED", "returned": "RETURNED",
@@ -130,7 +133,7 @@ _KNOWN_INTERMEDIATE_KEYS = {
     "return_redispatched_to_livraison", "pickedup", "valid_return_pickup",
     "pickup_picked_recu", "verssement_admin_cust",
     "verssement_admin_cust_canceled", "verssement_hub_cust_canceled",
-    "validation_reception_cash_by_partener", "echange_valide",
+    "echange_valide",
     "echange_valid_by_hub", "ask_to_delete_by_admin", "ask_to_delete_by_hub",
     "edited_informations", "edit_price", "edit_wilaya", "extra_fee",
     "mise_a_jour",

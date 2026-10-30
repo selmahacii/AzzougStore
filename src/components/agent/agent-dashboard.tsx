@@ -3227,6 +3227,7 @@ export default function AgentDashboard() {
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
       queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
       queryClient.invalidateQueries({ queryKey: ['order-events', variables.orderId] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
       
       if (variables.status === 'CONFIRMED') {
         if (data?.dispatch?.tracking_number) {
