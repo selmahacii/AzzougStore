@@ -251,28 +251,6 @@ def invalidate(*keys: str) -> None:
     delete(*keys)
 
 
-def invalidate_prefix(*prefixes: str) -> None:
-    """Invalidate all L1 and L2 keys starting with any of the given prefixes."""
-    for prefix in prefixes:
-        matching_l1 = [k for k in list(_l1_store.keys()) if k.startswith(prefix)]
-        for k in matching_l1:
-            _l1_store.pop(k, None)
-            _metrics["invalidations"] += 1
-    
-    client = _get_client()
-    if client is not None:
-        for prefix in prefixes:
-            try:
-                resp = client.post("/", json=["KEYS", f"{prefix}*"])
-                if resp.status_code == 200:
-                    found_keys = resp.json().get("result") or []
-                    if found_keys:
-                        delete(*found_keys)
-            except Exception as exc:
-                logger.debug("[Cache] invalidate_prefix(%s) error: %s", prefix, exc)
-
-
-
 def get_metrics() -> dict:
     """
     Full observability snapshot — see GET /api/v1/internal/cache-metrics.
