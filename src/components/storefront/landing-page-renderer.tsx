@@ -481,7 +481,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         className="w-full py-2.5 px-4 text-center text-xs sm:text-sm font-black tracking-wide text-white flex items-center justify-center gap-2 shadow-sm relative z-50"
         style={{ backgroundColor: primary }}
       >
-        <span>🚚 {dir === 'rtl' ? 'التوصيل متوفر لـ 58 ولاية مع إمكانية فتح الطرد والمعاينة قبل الدفع' : 'Livraison disponible pour 58 wilayas avec possibilité d\'ouvrir et vérifier le colis avant paiement'} 🔒</span>
+        <span>🚚 {dir === 'rtl' ? 'التوصيل متوفر لـ 58 ولاية • الدفع عند الاستلام' : 'Livraison 58 wilayas • Paiement à la livraison'} 🔒</span>
       </div>
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
