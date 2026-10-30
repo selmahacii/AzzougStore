@@ -475,6 +475,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
       <FloatingLanguageSwitcher primaryColor={primary} />
+
+      {/* TOP REASSURANCE ANNOUNCEMENT BAR */}
+      <div 
+        className="w-full py-2.5 px-4 text-center text-xs sm:text-sm font-black tracking-wide text-white flex items-center justify-center gap-2 shadow-sm relative z-50"
+        style={{ backgroundColor: primary }}
+      >
+        <span>🚚 {dir === 'rtl' ? 'التوصيل متوفر لـ 58 ولاية مع إمكانية فتح الطرد والمعاينة قبل الدفع' : 'Livraison disponible pour 58 wilayas avec possibilité d\'ouvrir et vérifier le colis avant paiement'} 🔒</span>
+      </div>
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
@@ -733,6 +741,13 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
+
+                  {/* KEY REASSURANCE BADGE */}
+                  <div className="mb-6 p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 text-center shadow-sm">
+                    <ShieldCheck className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>{dir === 'rtl' ? 'التوصيل متوفر لـ 58 ولاية مع إمكانية فتح الطرد والمعاينة قبل الدفع' : 'Livraison disponible pour 58 wilayas avec possibilité d\'ouvrir et vérifier le colis avant paiement'}</span>
+                  </div>
+
                   <CheckoutForm isInline={true}>
                     
                     {/* Variant Selector (One per product in pack) */}
