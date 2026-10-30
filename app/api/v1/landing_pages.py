@@ -373,7 +373,6 @@ def list_landing_pages(
 def get_by_slug(
     slug: str,
     store_id: Optional[str] = Query(None),
-    fresh: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> Any:
     import urllib.parse
@@ -408,15 +407,7 @@ def get_by_slug(
         return _serialize(lp) if lp else None
 
     cache_key = f"landing_page:{clean_store_id or 'all'}:{decoded_slug}"
-    if fresh:
-        from app.core.cache import invalidate as _cache_invalidate
-        _cache_invalidate(cache_key)
-        data = _compute()
-        if data is not None:
-            from app.core.cache import set_json
-            set_json(cache_key, data, 1800)
-    else:
-        data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
+    data = get_or_set(cache_key, _compute, l1_ttl=45, l2_ttl=1800)
     if data is None:
         raise HTTPException(404, "Landing page introuvable")
 

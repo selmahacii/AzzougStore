@@ -475,14 +475,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   return (
     <div className={cn("min-h-screen font-sans", isDark ? "bg-[#050505] text-white" : "bg-[#FAFAFA] text-slate-900")} dir={dir}>
       <FloatingLanguageSwitcher primaryColor={primary} />
-
-      {/* TOP REASSURANCE ANNOUNCEMENT BAR */}
-      <div 
-        className="w-full py-2.5 px-4 text-center text-xs sm:text-sm font-black tracking-wide text-white flex items-center justify-center gap-2 shadow-sm relative z-50"
-        style={{ backgroundColor: primary }}
-      >
-        <span>🚚 {dir === 'rtl' ? 'التوصيل متوفر لـ 58 ولاية • الدفع عند الاستلام' : 'Livraison 58 wilayas • Paiement à la livraison'} 🔒</span>
-      </div>
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
@@ -741,7 +733,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     </p>
                     <div className="w-16 h-1 mx-auto mt-2 rounded-full animate-pulse" style={{ backgroundColor: primary }} />
                   </div>
-
                   <CheckoutForm isInline={true}>
                     
                     {/* Variant Selector (One per product in pack) */}
