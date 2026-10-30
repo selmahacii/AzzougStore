@@ -129,7 +129,7 @@ function toLocalYYYYMMDD(d: Date): string {
 }
 
 // ─── LP Analytics & Performance Center ─────────────────────────────────────────
-function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { lp: LandingPage; allStores?: any[]; onClose: () => void; onEdit?: () => void }) {
+function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; onClose: () => void; onEdit?: () => void }) {
   const [periodPreset, setPeriodPreset] = useState<string>('this_month');
   const [dStart, setDStart] = useState(() => {
     const now = new Date();
@@ -143,25 +143,6 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
   const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isVariantsOpen, setIsVariantsOpen] = useState(false);
-
-  const matchingStore = allStores.find(s => s.id === lp.store_id);
-  const lpStoreSlug = matchingStore?.slug || '';
-  const storeDomain = matchingStore?.domain || (lpStoreSlug ? `${lpStoreSlug}.azghub.com` : '');
-  const isLocal = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' || 
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname.includes('hf.space') ||
-    window.location.hostname.includes('vercel.app') ||
-    window.location.hostname.includes('huggingface.co')
-  );
-  const lpUrl = isLocal || !storeDomain
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/lp/${lp.slug}?store=${lpStoreSlug}&store_id=${lp.store_id}`
-    : `https://${storeDomain}/lp/${lp.slug}`;
-
-  const copyUrl = () => {
-    navigator.clipboard.writeText(lpUrl);
-    toast.success('URL copiée dans le presse-papier !');
-  };
 
   const applyPreset = (preset: string) => {
     setPeriodPreset(preset);
@@ -203,8 +184,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
     queryKey: ['lp-performance-center', lp.id, dStart, dEnd, comparePrevious],
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z&compare_previous=${comparePrevious}`),
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
   });
 
@@ -213,8 +193,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/reconciliation-events?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
     enabled: showReconciliationModal,
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 30 * 1000,
   });
 
   const data = analyticsQuery.data?.data;
@@ -232,7 +211,11 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
   const totalDeliveredVariants = variantsList.reduce((acc: number, v: any) => acc + (v.delivered || 0), 0);
   const totalOrderedVariants = variantsList.reduce((acc: number, v: any) => acc + (v.total_ordered || 0), 0);
 
-
+  const copyUrl = () => {
+    const url = `${window.location.origin}/lp/${lp.slug}`;
+    navigator.clipboard.writeText(url);
+    toast.success('URL copiée dans le presse-papier !');
+  };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -265,16 +248,6 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
 
             {/* Health Score Badge & Quick Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => analyticsQuery.refetch()}
-                disabled={analyticsQuery.isFetching}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all shadow-xs"
-                title="Rafraîchir immédiatement les données analytiques en temps réel"
-              >
-                <RefreshCw className={cn("size-3.5", analyticsQuery.isFetching && "animate-spin text-indigo-500")} />
-                <span>{analyticsQuery.isFetching ? 'Actualisation...' : 'En temps réel (10s)'}</span>
-              </button>
               {health.score != null && (
                 <div className="relative">
                   <button
@@ -343,7 +316,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-white dark:bg-slate-900 hover:bg-slate-100"
-                onClick={() => window.open(lpUrl, '_blank')}
+                onClick={() => window.open(`/lp/${lp.slug}`, '_blank')}
               >
                 <ExternalLink className="size-3.5" /> Aperçu
               </Button>
@@ -2978,8 +2951,11 @@ export default function LandingPagesDashboard() {
       return apiFetch<any>(`/api/v1/landing-pages?${buildQueryStr()}`);
     },
     enabled:  !!storeId,
-    staleTime: 15 * 1000,
-    refetchInterval: 30 * 1000,
+    // Vues/Ordres/Conv. only refreshed on manual reload or after an edit —
+    // a landing page taking live traffic could sit on stale numbers for as
+    // long as the admin kept the tab open. Poll so the cards stay current
+    // without her having to refresh the page herself.
+    refetchInterval: 2 * 60 * 60 * 1000,
     refetchIntervalInBackground: false,
   });
 
@@ -3016,11 +2992,10 @@ export default function LandingPagesDashboard() {
       window.location.hostname === 'localhost' || 
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname.includes('hf.space') ||
-      window.location.hostname.includes('vercel.app') ||
       window.location.hostname.includes('huggingface.co')
     );
-    const url = isLocal || !storeDomain
-      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}&store_id=${lp?.store_id || ''}`
+    const url = isLocal 
+      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}`
       : `https://${storeDomain}/lp/${slug}`;
     navigator.clipboard.writeText(url).then(() => toast.success('Lien copié !'));
   };
@@ -3198,7 +3173,7 @@ export default function LandingPagesDashboard() {
       )}
       
       {analyticsLP && (
-        <LandingPageAnalyticsDialog lp={analyticsLP} allStores={allStores} onClose={() => setAnalyticsLP(null)} />
+        <LandingPageAnalyticsDialog lp={analyticsLP} onClose={() => setAnalyticsLP(null)} />
       )}
 
       <AlertDialog open={!!deletingLP} onOpenChange={(open) => !open && setDeletingLP(null)}>
