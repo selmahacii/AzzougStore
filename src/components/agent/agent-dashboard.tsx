@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Phone, CheckCircle, XCircle, X, Clock, Package, Banknote,
-  TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown,
+  TrendingUp, LogOut, RefreshCw, Truck, Eye, ChevronDown, ChevronLeft,
   BarChart3, Activity, FileText, AlertCircle, MapPin, User,
   Calendar, Timer, Target, Award, ArrowRight, Loader2,
   LayoutGrid, Search, Filter, ChevronRight, Menu,
@@ -2814,17 +2814,17 @@ export default function AgentDashboard() {
     return sub?.filter || 'ALL';
   }, [activeSubModule]);
 
-  const PAGE_SIZE = 50;
+  const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
-  // Any change of store / filter / period restarts from the first page
+  // Any change of store / filter / period / pageSize restarts from the first page
   useEffect(() => {
     setPage(1);
-  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate]);
+  }, [activeStore?.id, showAllStores, currentFilter, startDate, endDate, pageSize]);
 
   const ordersQuery = useQuery({
-    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page],
+    queryKey: ['agent-orders', user?.id, activeStore?.id, showAllStores, currentFilter, startDate, endDate, page, pageSize, dateByMode],
     queryFn: () => {
-      let url = `/api/v1/orders?page=${page}&pageSize=${PAGE_SIZE}`;
+      let url = `/api/v1/orders?page=${page}&pageSize=${pageSize}`;
 
       // If we are not showing all stores, filter by activeStore
       if (!showAllStores && activeStore?.id) {
@@ -2863,7 +2863,7 @@ export default function AgentDashboard() {
     if (typeof tp === 'number' && tp >= 1 && page > tp) {
       setPage(tp);
     }
-  }, [ordersQuery.data, page]);
+  }, [ordersQuery.data]);
 
   const perfQuery = useQuery({
     queryKey: ['agent-perf', user?.id, activeStore?.id, showAllStores, startDate, endDate, dateByMode],
@@ -3122,6 +3122,145 @@ export default function AgentDashboard() {
   if (currentFilter === 'ALL') {
      filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
   }
+
+  const totalOrders = search.trim().length >= 2 && searchResults.length > 0
+    ? searchResults.length
+    : ((ordersQuery.data as any)?.total ?? filteredOrders.length);
+  const totalPages = search.trim().length >= 2 && searchResults.length > 0
+    ? Math.max(1, Math.ceil(searchResults.length / pageSize))
+    : Math.max(1, (ordersQuery.data as any)?.totalPages ?? Math.ceil(totalOrders / pageSize));
+
+  const handlePageChange = (newPage: number) => {
+    const target = Math.max(1, Math.min(totalPages, newPage));
+    setPage(target);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const renderPagination = (position: 'top' | 'bottom') => {
+    if (ordersQuery.isLoading || filteredOrders.length === 0) return null;
+
+    // Generate page numbers to display: current +/- 2, plus first and last
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (page > 3) pages.push('...');
+      const start = Math.max(2, page - 1);
+      const end = Math.min(totalPages - 1, page + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (page < totalPages - 2) pages.push('...');
+      pages.push(totalPages);
+    }
+
+    return (
+      <div className={cn(
+        "flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white border border-slate-200/80 rounded-2xl shadow-sm",
+        position === 'top' ? "mb-4" : "mt-6"
+      )}>
+        {/* Info & Page Size */}
+        <div className="flex items-center gap-3 text-xs font-bold text-slate-500 w-full sm:w-auto justify-between sm:justify-start">
+          <div className="flex items-center gap-2">
+            <span>
+              Affichage de <b className="text-slate-800 font-black">{filteredOrders.length}</b> sur <b className="text-slate-800 font-black">{totalOrders}</b> commande{totalOrders > 1 ? 's' : ''}
+            </span>
+            {ordersQuery.isFetching && (
+              <span className="flex items-center gap-1 text-[11px] font-bold text-blue-600 animate-pulse">
+                <Loader2 className="size-3 animate-spin" />
+                <span className="hidden md:inline">Chargement...</span>
+              </span>
+            )}
+            {totalPages === 1 && (
+              <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                Page 1 / 1
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] text-slate-400 font-medium">Par page :</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Page controls */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-center">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => handlePageChange(1)}
+            title="Première page"
+            className="hidden sm:inline-flex px-2.5 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            Début
+          </button>
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => handlePageChange(page - 1)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
+          >
+            <ChevronLeft className="size-3.5" />
+            <span className="hidden sm:inline">Précédent</span>
+          </button>
+
+          {/* Numeric Page Buttons */}
+          <div className="flex items-center gap-1">
+            {pages.map((p, idx) =>
+              p === '...' ? (
+                <span key={`ellipsis-${idx}`} className="px-1.5 text-xs text-slate-400">…</span>
+              ) : (
+                <button
+                  key={`page-${p}`}
+                  type="button"
+                  onClick={() => handlePageChange(Number(p))}
+                  className={cn(
+                    "min-w-8 h-8 px-2 rounded-lg text-xs font-black transition-all",
+                    page === p
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                  )}
+                >
+                  {p}
+                </button>
+              )
+            )}
+          </div>
+
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => handlePageChange(page + 1)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
+          >
+            <span className="hidden sm:inline">Suivant</span>
+            <ChevronRight className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => handlePageChange(totalPages)}
+            title="Dernière page"
+            className="hidden sm:inline-flex px-2.5 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            Fin
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // ─── Fusion visuelle des doublons : un client (même téléphone) = une seule ligne ───
   // La commande "principale" est celle que la confirmatrice doit traiter :
@@ -3964,6 +4103,8 @@ export default function AgentDashboard() {
                 )}
                </div>
 
+               {renderPagination('top')}
+
                {ordersQuery.isLoading ? (
                  <div className="flex flex-col items-center justify-center py-32 gap-4">
                     <Loader2 className="size-8 animate-spin text-slate-200" />
@@ -4163,30 +4304,8 @@ export default function AgentDashboard() {
                      );})}
                  </div>
                )}
-               {/* Pagination — server-side, keeps older orders reachable */}
-               {((ordersQuery.data as any)?.totalPages ?? 1) > 1 && (
-                 <div className="flex flex-wrap items-center justify-center gap-3 mt-5 pb-2">
-                    <button
-                      type="button"
-                      disabled={page <= 1 || ordersQuery.isFetching}
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ← Précédent
-                    </button>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-3 py-2 bg-slate-100 rounded-xl">
-                      Page {page} / {(ordersQuery.data as any)?.totalPages} · {(ordersQuery.data as any)?.total} commandes
-                    </span>
-                    <button
-                      type="button"
-                      disabled={page >= ((ordersQuery.data as any)?.totalPages ?? 1) || ordersQuery.isFetching}
-                      onClick={() => setPage(p => p + 1)}
-                      className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border bg-white text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Suivant →
-                    </button>
-                 </div>
-               )}
+               {/* Pagination complète & réactive */}
+               {renderPagination('bottom')}
             </div>
           )}
         </main>
