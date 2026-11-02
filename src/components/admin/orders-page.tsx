@@ -48,6 +48,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { getEffectiveStatus } from '@/components/agent/agent-dashboard';
+import { subscribeToOrderChanges, broadcastOrderChange } from '@/lib/realtime-orders';
 import { DuplicateHistoryModal } from '@/components/shared/duplicate-history-modal';
 import { DuplicatePopover } from '@/components/shared/duplicate-popover';
 import { Input } from '@/components/ui/input';
@@ -731,12 +733,22 @@ const [timeLeft, setTimeLeft] = useState('');
       fetchFee();
    }, [selectedPartnerId, orderWilaya, deliveryType, newOrderItems]);
 
+   useEffect(() => {
+     const unsubscribe = subscribeToOrderChanges((event) => {
+       ordersQuery.refetch();
+       countsQuery.refetch();
+       duplicateStatsQuery.refetch();
+     });
+     return () => unsubscribe();
+   }, []);
+
    const ordersQuery = useQuery<PaginatedResponse<Order>>({
      queryKey: ['orders', storeId, effectivePage, statusFilter, debouncedSearch, effectivePageSize, filterWilaya, filterSource, filterProductId, startDate, endDate],
      queryFn: () => apiFetch(`/api/v1/orders?${buildQueryParams()}`),
      placeholderData: (prev) => prev,
-     refetchInterval: 5 * 60 * 1000,
+     refetchInterval: 10 * 1000,
      refetchIntervalInBackground: false,
+     refetchOnWindowFocus: true,
    });
 
    // Counts per status tab (unfiltered by search, but DOIT suivre le même
@@ -753,9 +765,10 @@ const [timeLeft, setTimeLeft] = useState('');
        return apiFetch(`/api/v1/orders/counts?${params.toString()}`);
      },
      enabled: !!storeId,
-     staleTime: 30_000,
-     refetchInterval: 5 * 60 * 1000,
+     staleTime: 10_000,
+     refetchInterval: 10 * 1000,
      refetchIntervalInBackground: false,
+     refetchOnWindowFocus: true,
    });
    const tabCounts: Record<string, number> = (countsQuery.data as any) ?? {};
    // Reçues = commandes jamais touchées par un agent (ni assignées, ni
@@ -845,9 +858,13 @@ const [timeLeft, setTimeLeft] = useState('');
      },
      onSuccess: (_, { orderId, status }) => {
        queryClient.invalidateQueries({ queryKey: ['orders'] });
+       queryClient.invalidateQueries({ queryKey: ['orders-counts'] });
+       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+       queryClient.invalidateQueries({ queryKey: ['agent-orders-counts'] });
        queryClient.invalidateQueries({ queryKey: ['admin-products'] });
        queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
        queryClient.invalidateQueries({ queryKey: ['inventory'] });
+       broadcastOrderChange({ type: 'ORDER_STATUS_CHANGED', orderId, status });
        setSelectedOrder(prev => prev && prev.id === orderId ? { ...prev, status } : prev);
      },
      onError: (error: any) => {
@@ -1144,7 +1161,16 @@ const [timeLeft, setTimeLeft] = useState('');
       });
       if (res.success || res.tracking_number || res.tracking) {
         queryClient.invalidateQueries({ queryKey: ['orders'] });
+        queryClient.invalidateQueries({ queryKey: ['orders-counts'] });
         queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
+        queryClient.invalidateQueries({ queryKey: ['agent-orders-counts'] });
+        broadcastOrderChange({
+          type: 'ORDER_DISPATCHED',
+          orderId: order.id,
+          orderNumber: order.order_number,
+          status: 'SHIPPED',
+          trackingNumber: res.tracking_number || res.tracking,
+        });
         queryClient.invalidateQueries({ queryKey: ['admin-products'] });
         queryClient.invalidateQueries({ queryKey: ['admin-products-stock'] });
         queryClient.invalidateQueries({ queryKey: ['inventory'] });
@@ -1557,6 +1583,8 @@ const [timeLeft, setTimeLeft] = useState('');
                       ? Object.entries(tabCounts).reduce((a, [k, v]) => k === 'MERGED' ? a : a + v, 0)
                       : tab.statusKey === 'CANCELLED'
                       ? (tabCounts['CANCELLED'] ?? 0) + (tabCounts['RETURNED'] ?? 0)
+                      : tab.statusKey === 'CONFIRMED'
+                      ? (tabCounts['CONFIRMED'] ?? 0) + (tabCounts['SHIPPED'] ?? 0)
                       : tab.statusKey === 'ASSIGNED'
                       ? (tabCounts['ASSIGNED'] ?? 0) + (tabCounts['CALLED'] ?? 0) + (tabCounts['IN_PROGRESS'] ?? 0) + (tabCounts['RESCHEDULED'] ?? 0)
                       : (tabCounts[tab.statusKey] ?? (tab.id === viewMode ? total : undefined));
@@ -1956,28 +1984,33 @@ const [timeLeft, setTimeLeft] = useState('');
                       <div className="flex flex-col gap-1.5 items-start">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button className={cn(
-                                "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all focus:outline-none",
-                                order.status === 'NEW' ? "bg-rose-50 border-rose-200" :
-                                order.status === 'CONFIRMED' ? "bg-emerald-50 border-emerald-200" :
-                                order.status === 'SHIPPED' ? "bg-blue-50 border-blue-200" :
-                                order.status === 'DELIVERED' ? "bg-green-50 border-green-200" :
-                                order.status === 'CANCELLED' ? "bg-red-50 border-red-200" :
-                                order.status === 'RETURNED' ? "bg-orange-50 border-orange-200" :
-                                "bg-slate-50 border-slate-200"
-                              )}>
-                                <div className="size-2 rounded-full" style={{ backgroundColor: ORDER_STATUS_COLORS[order.status] || '#A0AEC0' }} />
-                                <span className={cn(
-                                  "text-[11px] font-black tracking-wide",
-                                  order.status === 'NEW' ? "text-rose-700" :
-                                  order.status === 'CONFIRMED' ? "text-emerald-700" :
-                                  order.status === 'SHIPPED' ? "text-blue-700" :
-                                  order.status === 'DELIVERED' ? "text-green-700" :
-                                  order.status === 'CANCELLED' ? "text-red-700" :
-                                  order.status === 'RETURNED' ? "text-orange-700" :
-                                  "text-slate-700"
-                                )}>{ORDER_STATUS_LABELS[order.status] || order.status}</span>
-                            </button>
+                            {(() => {
+                              const effStatus = getEffectiveStatus(order);
+                              return (
+                                <button className={cn(
+                                  "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all focus:outline-none",
+                                  effStatus === 'NEW' ? "bg-rose-50 border-rose-200" :
+                                  effStatus === 'CONFIRMED' ? "bg-emerald-50 border-emerald-200" :
+                                  effStatus === 'SHIPPED' ? "bg-blue-50 border-blue-200" :
+                                  effStatus === 'DELIVERED' ? "bg-green-50 border-green-200" :
+                                  effStatus === 'CANCELLED' ? "bg-red-50 border-red-200" :
+                                  effStatus === 'RETURNED' ? "bg-orange-50 border-orange-200" :
+                                  "bg-slate-50 border-slate-200"
+                                )}>
+                                  <div className="size-2 rounded-full" style={{ backgroundColor: ORDER_STATUS_COLORS[effStatus] || '#A0AEC0' }} />
+                                  <span className={cn(
+                                    "text-[11px] font-black tracking-wide",
+                                    effStatus === 'NEW' ? "text-rose-700" :
+                                    effStatus === 'CONFIRMED' ? "text-emerald-700" :
+                                    effStatus === 'SHIPPED' ? "text-blue-700" :
+                                    effStatus === 'DELIVERED' ? "text-green-700" :
+                                    effStatus === 'CANCELLED' ? "text-red-700" :
+                                    effStatus === 'RETURNED' ? "text-orange-700" :
+                                    "text-slate-700"
+                                  )}>{ORDER_STATUS_LABELS[effStatus] || effStatus}</span>
+                                </button>
+                              );
+                            })()}
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-48 rounded-2xl shadow-xl border-slate-100 p-2">
                             {Object.entries(ORDER_STATUS_LABELS).map(([statusKey, label]) => (
@@ -2253,10 +2286,15 @@ const [timeLeft, setTimeLeft] = useState('');
                       {/* Status Dropdown */}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 -ml-2 rounded-lg transition-colors focus:outline-none">
-                            <div className="size-2 rounded-full" style={{ backgroundColor: ORDER_STATUS_COLORS[order.status] || '#A0AEC0' }} />
-                            <span className="text-xs font-bold text-slate-700">{ORDER_STATUS_LABELS[order.status] || order.status}</span>
-                          </button>
+                          {(() => {
+                            const effStatus = getEffectiveStatus(order);
+                            return (
+                              <button className="flex items-center gap-1.5 hover:bg-slate-100 px-2 py-1 -ml-2 rounded-lg transition-colors focus:outline-none">
+                                <div className="size-2 rounded-full" style={{ backgroundColor: ORDER_STATUS_COLORS[effStatus] || '#A0AEC0' }} />
+                                <span className="text-xs font-bold text-slate-700">{ORDER_STATUS_LABELS[effStatus] || effStatus}</span>
+                              </button>
+                            );
+                          })()}
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-48 rounded-2xl shadow-xl border-slate-100 p-2">
                           {Object.entries(ORDER_STATUS_LABELS).map(([statusKey, label]) => (

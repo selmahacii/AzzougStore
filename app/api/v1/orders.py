@@ -862,6 +862,20 @@ def get_order_counts(
             pass
     rows = q.group_by(Order.status).all()
     counts = {r.status: r.cnt for r in rows}
+    # Ensure NEW count excludes orders that already have a tracking number
+    from sqlalchemy import or_ as _or_cnt
+    new_untracked = _dated(
+        db.query(sqlfunc.count(Order.id)).filter(
+            Order.store_id == store_id,
+            Order.is_deleted == False,
+            Order.status.in_(["NEW", "ASSIGNED"]),
+            _or_cnt(Order.tracking_number.is_(None), Order.tracking_number == ""),
+            sqlfunc.coalesce(Order.source, "") != "MANUAL",
+        )
+    ).scalar() or 0
+    counts["NEW"] = new_untracked
+    # CONFIRMED tab includes both confirmed and shipped (dispatched) orders
+    counts["CONFIRMED"] = (counts.get("CONFIRMED", 0) + counts.get("SHIPPED", 0))
 
     # "Reçues" — how many orders came into the ERP in this period, period.
     # Counts EVERY order regardless of whether an agent has since acted on
@@ -1091,13 +1105,13 @@ def get_agent_counts(
 
         base_row = base.with_entities(
             _sum(Order.status.notin_(["CANCELLED", "RETURNED"])).label("all"),
-            _sum(_not_internal, _not_manual, _not_upsell, Order.status.in_(["NEW", "ASSIGNED"])).label("new"),
+            _sum(_not_internal, _not_manual, _not_upsell, Order.status.in_(["NEW", "ASSIGNED"]), or_(Order.tracking_number.is_(None), Order.tracking_number == "")).label("new"),
             _sum(
                 _not_internal, _not_manual, _not_upsell,
                 Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED"]),
                 or_(Order.nrp_count == None, Order.nrp_count == 0),
             ).label("pending"),
-            _sum(_not_internal, Order.status == "CONFIRMED").label("confirmed"),
+            _sum(_not_internal, Order.status.in_(["CONFIRMED", "SHIPPED"])).label("confirmed"),
             _sum(_not_internal, Order.nrp_count > 0, Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp"),
             _sum(_not_internal, Order.nrp_count > 0, Order.is_abandoned_cart == True,
                  Order.status.in_(["ASSIGNED", "CALLED", "IN_PROGRESS", "RESCHEDULED", "ABANDONED"])).label("nrp_abandoned"),
@@ -1498,8 +1512,10 @@ def list_orders(
             # module "Commandes Manuelles" (voir status.upper() == "MANUAL"
             # plus bas / GET /orders/agent-counts) ; sans cette exclusion elle
             # apparaissait dans les deux listes à la fois.
+            from sqlalchemy import or_ as _or_new
             query = query.filter(
                 Order.status.in_(["NEW", "ASSIGNED"]),
+                _or_new(Order.tracking_number.is_(None), Order.tracking_number == ""),
                 sqlfunc.coalesce(Order.source, "") != "MANUAL",
             )
         elif status.upper() == "PENDING_CONFIRMATION":
@@ -1624,6 +1640,8 @@ def list_orders(
                     Order.source == "MARKETPLACE",
                 )
             )
+        elif status.upper() == "CONFIRMED":
+            query = query.filter(Order.status.in_(["CONFIRMED", "SHIPPED"]))
         else:
             query = query.filter(Order.status == status.upper())
     else:
