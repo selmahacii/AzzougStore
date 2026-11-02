@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { WILAYAS } from '@/lib/wilaya-data';
 import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
-import { subscribeToOrderChanges, broadcastOrderChange } from '@/lib/realtime-orders';
 import { toast } from 'sonner';
 import type { Order } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -194,47 +193,8 @@ function useWorkTimer() {
   return `${h}:${m}:${s}`;
 }
 
-export function getEffectiveStatus(order: { status?: string | null; tracking_number?: string | null; carrier_stage?: string | null } | null | undefined): string {
-  if (!order) return 'NEW';
-  const raw = (order.status || '').toUpperCase();
-  const stage = (order.carrier_stage || '').toLowerCase();
-
-  // If carrier confirms delivery or cash collected
-  if (
-    stage === 'validation_reception_cash_by_partener' ||
-    stage === 'delivered' ||
-    stage === 'livré' ||
-    stage === 'livre' ||
-    stage === 'encaissement_confirme' ||
-    stage === 'validation_reception'
-  ) {
-    return 'DELIVERED';
-  }
-
-  // If carrier confirms return
-  if (
-    stage === 'returned' ||
-    stage === 'retourne' ||
-    stage === 'retourné' ||
-    stage === 'return_asked_by_hub' ||
-    stage === 'colis_retour_receptionne' ||
-    stage === 'retour_reception_partenaire' ||
-    stage === 'retour_en_cours'
-  ) {
-    return 'RETURNED';
-  }
-
-  // If order already has tracking number but raw status was left as unconfirmed/pending
-  if (order.tracking_number && ['NEW', 'ASSIGNED', 'CALLED', 'IN_PROGRESS', 'RESCHEDULED'].includes(raw)) {
-    return 'SHIPPED';
-  }
-
-  return raw || 'NEW';
-}
-
-function StatusBadge({ status, order }: { status: string; order?: any }) {
-  const effective = order ? getEffectiveStatus(order) : (status || 'NEW');
-  const cfg = STATUS_CFG[effective] ?? { label: effective, color: '#64748b', bg: '#f8fafc' };
+function StatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_CFG[status] ?? { label: status, color: '#64748b', bg: '#f8fafc' };
   return (
     <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border" 
           style={{ color: cfg.color, backgroundColor: cfg.bg, borderColor: `${cfg.color}20` }}>
@@ -918,7 +878,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               {!isLivreurRole ? (
                 <>
                   <OrderTypeBadge order={order} />
-                  <StatusBadge status={order.status} order={order} />
+                  <StatusBadge status={order.status} />
                   <NrpBadge count={order.nrp_count || 0} />
                   <PendingBadge order={order} />
                   <OrderTimer startTime={order.confirmation_start_time} />
@@ -932,7 +892,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
               ) : (
                 <>
                   {['DELIVERED', 'RETURNED', 'CANCELLED', 'RESCHEDULED'].includes(order.status) && (
-                    <StatusBadge status={order.status} order={order} />
+                    <StatusBadge status={order.status} />
                   )}
                 </>
               )}
@@ -2887,20 +2847,10 @@ export default function AgentDashboard() {
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
     placeholderData: (prev) => prev,
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 60 * 1000,
+    refetchInterval: 180000,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
   });
-
-  useEffect(() => {
-    const unsubscribe = subscribeToOrderChanges(() => {
-      queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['agent-orders-counts'] });
-      queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
-    });
-    return () => unsubscribe();
-  }, [queryClient]);
 
   // Garde-fou pagination : après une action (confirmation, annulation,
   // assignation…) qui retire des commandes du filtre courant, le nombre de
@@ -2952,10 +2902,9 @@ export default function AgentDashboard() {
       return apiFetch<any>(url, { allStores: true });
     },
     enabled: !!user?.id && (showAllStores || !!activeStore?.id),
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 60 * 1000,
+    refetchInterval: 180000,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
   });
 
   // ─── Global cross-module live search across ALL orders, statuses, dates & stores ───
@@ -3173,9 +3122,6 @@ export default function AgentDashboard() {
   if (currentFilter === 'ALL') {
      filteredOrders = filteredOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'RETURNED');
   }
-  if (currentFilter === 'NEW') {
-     filteredOrders = filteredOrders.filter(o => !o.tracking_number && getEffectiveStatus(o) === 'NEW');
-  }
 
   // ─── Fusion visuelle des doublons : un client (même téléphone) = une seule ligne ───
   // La commande "principale" est celle que la confirmatrice doit traiter :
@@ -3201,7 +3147,7 @@ export default function AgentDashboard() {
       const members = byPhone.get(key)!;
       const primary = [...members].sort((a, b) =>
         (Number(!!a.is_abandoned_cart) - Number(!!b.is_abandoned_cart)) ||
-        ((STATUS_WEIGHT[getEffectiveStatus(b)] ?? 0) - (STATUS_WEIGHT[getEffectiveStatus(a)] ?? 0)) ||
+        ((STATUS_WEIGHT[b.status] ?? 0) - (STATUS_WEIGHT[a.status] ?? 0)) ||
         (new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
       )[0];
       groups.push({ primary, related: members.filter(m => m.id !== primary.id) });
@@ -3279,18 +3225,8 @@ export default function AgentDashboard() {
     },
     onSuccess: (data: any, variables) => {
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['agent-orders-counts'] });
-      queryClient.invalidateQueries({ queryKey: ['orders'] });
-      queryClient.invalidateQueries({ queryKey: ['orders-counts'] });
       queryClient.invalidateQueries({ queryKey: ['agent-perf'] });
       queryClient.invalidateQueries({ queryKey: ['order-events', variables.orderId] });
-      
-      broadcastOrderChange({
-        type: variables.status === 'CONFIRMED' ? 'ORDER_CONFIRMED' : 'ORDER_STATUS_CHANGED',
-        orderId: variables.orderId,
-        status: data?.dispatch?.tracking_number ? 'SHIPPED' : (variables.status || 'CONFIRMED'),
-        trackingNumber: data?.dispatch?.tracking_number,
-      });
       
       if (variables.status === 'CONFIRMED') {
         if (data?.dispatch?.tracking_number) {
@@ -3328,17 +3264,7 @@ export default function AgentDashboard() {
     },
     onSuccess: (data: any, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['agent-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['agent-orders-counts'] });
-      queryClient.invalidateQueries({ queryKey: ['orders'] });
-      queryClient.invalidateQueries({ queryKey: ['orders-counts'] });
       queryClient.invalidateQueries({ queryKey: ['order-events', orderId] });
-
-      broadcastOrderChange({
-        type: 'ORDER_DISPATCHED',
-        orderId,
-        status: 'SHIPPED',
-        trackingNumber: data?.tracking_number,
-      });
       if (data?.tracking_number) {
         toast.success(`Colis créé avec succès ! Suivi : ${data.tracking_number}`);
         setSelectedOrder((prev: any) => {
@@ -4051,8 +3977,7 @@ export default function AgentDashboard() {
                ) : (
                  <div className="grid grid-cols-1 gap-3">
                    {(showStoreSections ? storeSections.flatMap(s => s.groups) : groupedOrders).map(({ primary: order, related }, idx, arr) => {
-                      const effStatus = getEffectiveStatus(order);
-                      const statusBg = STATUS_CFG[effStatus]?.bg || '#ffffff';
+                      const statusBg = STATUS_CFG[order.status]?.bg || '#ffffff';
                       const isExpanded = expandedGroups.has(order.id);
                       const isFirstOfStore = showStoreSections && (idx === 0 || arr[idx - 1].primary.store_id !== order.store_id);
                       const storeSection = isFirstOfStore ? storeSections.find(s => s.storeId === (order.store_id || 'unknown')) : null;
@@ -4213,7 +4138,7 @@ export default function AgentDashboard() {
                                <div className="flex items-center gap-2 flex-wrap min-w-0">
                                  <span className="text-[9px] font-black uppercase tracking-wider text-purple-600 shrink-0">↳ 🟣 Liée</span>
                                  <OrderTypeBadge order={rel} size="xs" short />
-                                 <StatusBadge status={getEffectiveStatus(rel)} order={rel} />
+                                 <StatusBadge status={rel.status} />
                                  <span className="text-[10px] font-bold text-slate-500 truncate">{formatOrderRef(rel, 'admin')}</span>
                                </div>
                                <div className="flex items-center gap-3 shrink-0">

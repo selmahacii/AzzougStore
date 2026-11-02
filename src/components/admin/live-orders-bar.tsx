@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app-store';
 import { ORDER_STATUS_LABELS } from '@/lib/types';
 import type { OrderStatus } from '@/lib/types';
-import { subscribeToOrderChanges } from '@/lib/realtime-orders';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,8 +51,8 @@ export default function LiveOrdersBar() {
 
   // Socket removed — no live connection anymore; the bar only renders
   // notifications that other parts of the app may push into it.
-  const [hasEverConnected, setHasEverConnected] = useState(true);
-  const [isConnected, setIsConnected] = useState(true);
+  const [hasEverConnected] = useState(false);
+  const [isConnected] = useState(false);
   const [notifications, setNotifications] = useState<VisibleNotification[]>([]);
   const dismissTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -117,33 +116,14 @@ export default function LiveOrdersBar() {
   // order notifications already arrive via the admin-header polling query.
 
   useEffect(() => {
-    setIsConnected(true);
-    setHasEverConnected(true);
-
-    const unsubscribe = subscribeToOrderChanges((event) => {
-      const id = `${event.orderId || 'ord'}-${Date.now()}`;
-      const statusLabel = event.status ? (ORDER_STATUS_LABELS[event.status as OrderStatus] || event.status) : 'Mise à jour';
-      addNotification({
-        id,
-        type: event.type === 'ORDER_CONFIRMED' || event.type === 'ORDER_DISPATCHED' ? 'order-updated' : 'new-order',
-        orderId: event.orderId || '',
-        orderNumber: String(event.orderNumber || (event.orderId ? event.orderId.slice(0, 8) : '')),
-        storeId: event.storeId || '',
-        customerName: event.customerName || (event.trackingNumber ? `Suivi transporteur: ${event.trackingNumber}` : statusLabel),
-        total: event.total || 0,
-        toStatus: event.status || 'CONFIRMED',
-        timestamp: new Date().toISOString(),
-      });
-    });
-
     return () => {
-      unsubscribe();
+      // Clear all timers on unmount
       for (const timer of dismissTimersRef.current.values()) {
         clearTimeout(timer);
       }
       dismissTimersRef.current.clear();
     };
-  }, [addNotification]);
+  }, []);
 
   // ---- Don't render if not authenticated or if real-time service is unavailable ----
 
