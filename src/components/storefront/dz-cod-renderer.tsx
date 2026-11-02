@@ -93,7 +93,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
   const primary = data.primary_color || '#E53935';
-  const heroImage = data.image_url || data.product?.main_image;
+  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
+  const heroImage = variantWithImg?.image || data.image_url || data.product?.main_image;
   const price = data.price ?? data.product?.price ?? null;
   const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
   const productName = data.product_name || data.product?.name || data.headline;
@@ -337,11 +338,14 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         {heroImage && (() => {
           const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
           const rawMainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
-          const rawInsetImgSrc = galleryImages.find(img => img !== rawMainImgSrc) || galleryImages[0] || null;
+          const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
+          const variantImages = data.product?.variants?.map((v: any) => v.image).filter(Boolean) || [];
+          const availableGallery = hasVariantImages ? variantImages : galleryImages;
+          const rawInsetImgSrc = availableGallery.find((img: string) => img !== rawMainImgSrc) || (availableGallery.length > 1 ? availableGallery[0] : null);
           // 1600 preserves detail for the 2x zoom-on-hover interaction below —
           // capping too aggressively would make the zoomed view visibly soft.
           const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 1600);
-          const insetImgSrc = optimizeCloudinaryUrl(rawInsetImgSrc, 150);
+          const insetImgSrc = rawInsetImgSrc ? optimizeCloudinaryUrl(rawInsetImgSrc, 150) : null;
 
           return (
             <>
@@ -387,22 +391,23 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         {(() => {
           const allItems: { url: string; label?: string; variant?: any }[] = [];
           const seenUrls = new Set<string>();
+          const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
 
-          // 1. Add main image & product images
-          const rawProductImgs = [data.product?.main_image, ...(data.product?.images || []), ...(data.gallery || []), heroImage].filter(Boolean) as string[];
-          rawProductImgs.forEach((url, i) => {
-            if (!seenUrls.has(url)) {
-              seenUrls.add(url);
-              allItems.push({ url, label: `Photo ${i + 1}` });
-            }
-          });
-
-          // 2. Add variant images if present
-          if (data.product?.variants) {
-            data.product.variants.forEach((v: any) => {
+          if (hasVariantImages) {
+            // Quand le produit a des variantes avec photo, on n'affiche QUE les photos des variantes
+            data.product?.variants?.forEach((v: any) => {
               if (v.image && !seenUrls.has(v.image)) {
                 seenUrls.add(v.image);
                 allItems.push({ url: v.image, label: v.value, variant: v });
+              }
+            });
+          } else {
+            // Sinon, photos principales du produit
+            const rawProductImgs = [data.product?.main_image, ...(data.product?.images || []), ...(data.gallery || []), heroImage].filter(Boolean) as string[];
+            rawProductImgs.forEach((url, i) => {
+              if (!seenUrls.has(url)) {
+                seenUrls.add(url);
+                allItems.push({ url, label: `Photo ${i + 1}` });
               }
             });
           }

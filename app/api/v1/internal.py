@@ -26,6 +26,30 @@ def cache_metrics(
     return {"success": True, "data": get_metrics()}
 
 
+@router.post("/flush-cache", response_model=dict)
+@router.get("/flush-cache", response_model=dict)
+def flush_cache(
+    current_user: Any = Depends(deps.get_current_active_superuser),
+) -> Any:
+    """
+    Purge in-memory and known domain/store caches.
+    """
+    from app.core.cache import flush_all, invalidate
+    flush_all()
+    # Invalidate all known domains and slugs
+    invalidate(
+        "domain_lookup:azconfort",
+        "domain_lookup:azconfort.azghub.com",
+        "domain_lookup:chicoutfit",
+        "domain_lookup:chicoutfit.azghub.com",
+        "domain_lookup:trustshop",
+        "domain_lookup:trustshop.azghub.com",
+        "domain_lookup:rimby-nutrition",
+        "domain_lookup:rimby-nutrition.azghub.com",
+    )
+    return {"success": True, "message": "Cache flushed successfully"}
+
+
 @router.get("/env", response_model=dict)
 def get_environment_config(
     current_user: Any = Depends(deps.get_current_active_superuser),

@@ -182,6 +182,7 @@ def flush_funnel_counters() -> dict:
     from app.models.funnel_rollup import FunnelRollup
     from sqlalchemy.dialects.postgresql import insert as pg_insert
     from sqlalchemy import func as sqlfunc
+    from sqlalchemy.exc import IntegrityError
 
     t0 = time.monotonic()
     _metrics["flush_count"] += 1
@@ -240,14 +241,20 @@ def flush_funnel_counters() -> dict:
                 continue
             _, store_id, lp_id, product_id, campaign_id, adset_id, ad_id, event_name, day_str, hour_str = parts
 
+            clean_lp_id = None if lp_id == "-" else lp_id
+            clean_product_id = None if product_id == "-" else product_id
+            clean_campaign_id = None if campaign_id == "-" else campaign_id
+            clean_adset_id = None if adset_id == "-" else adset_id
+            clean_ad_id = None if ad_id == "-" else ad_id
+
             try:
                 stmt = pg_insert(FunnelRollup).values(
                     store_id=store_id,
-                    lp_id=None if lp_id == "-" else lp_id,
-                    product_id=None if product_id == "-" else product_id,
-                    campaign_id=None if campaign_id == "-" else campaign_id,
-                    adset_id=None if adset_id == "-" else adset_id,
-                    ad_id=None if ad_id == "-" else ad_id,
+                    lp_id=clean_lp_id,
+                    product_id=clean_product_id,
+                    campaign_id=clean_campaign_id,
+                    adset_id=clean_adset_id,
+                    ad_id=clean_ad_id,
                     event_name=event_name,
                     day=date.fromisoformat(day_str),
                     hour=int(hour_str),
@@ -280,6 +287,47 @@ def flush_funnel_counters() -> dict:
                 db.commit()
                 buckets_written += 1
                 events_drained += delta
+            except IntegrityError as ie:
+                db.rollback()
+                # If foreign key or integrity failure occurred (e.g. invalid/deleted lp_id),
+                # retry with lp_id=None so the store/product funnel stats are not lost.
+                if clean_lp_id is not None:
+                    try:
+                        retry_stmt = pg_insert(FunnelRollup).values(
+                            store_id=store_id,
+                            lp_id=None,
+                            product_id=clean_product_id,
+                            campaign_id=clean_campaign_id,
+                            adset_id=clean_adset_id,
+                            ad_id=clean_ad_id,
+                            event_name=event_name,
+                            day=date.fromisoformat(day_str),
+                            hour=int(hour_str),
+                            count=delta,
+                        ).on_conflict_do_update(
+                            index_elements=[
+                                FunnelRollup.store_id,
+                                sqlfunc.coalesce(FunnelRollup.lp_id, ''),
+                                sqlfunc.coalesce(FunnelRollup.product_id, ''),
+                                sqlfunc.coalesce(FunnelRollup.campaign_id, ''),
+                                sqlfunc.coalesce(FunnelRollup.adset_id, ''),
+                                sqlfunc.coalesce(FunnelRollup.ad_id, ''),
+                                FunnelRollup.event_name,
+                                FunnelRollup.day,
+                                FunnelRollup.hour,
+                            ],
+                            set_={"count": FunnelRollup.count + delta, "updated_at": datetime.now(timezone.utc)},
+                        )
+                        db.execute(retry_stmt)
+                        db.commit()
+                        buckets_written += 1
+                        events_drained += delta
+                        logger.info("[FunnelTracking] Flush: Retried bucket with sanitized lp_id=None for key %s", key)
+                        continue
+                    except Exception:
+                        db.rollback()
+                logger.exception("[FunnelTracking] Flush: Postgres write failed for %s, delta lost", key)
+                had_failure = True
             except Exception:
                 # This bucket's delta is lost (its Redis key is already
                 # gone) — never duplicated, never applied twice. Every

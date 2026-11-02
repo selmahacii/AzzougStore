@@ -14,8 +14,10 @@ else:
     engine = create_engine(  # pyrefly: ignore[no-matching-overload]
         _db_url,
         pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=20
+        pool_size=20,
+        max_overflow=40,
+        pool_recycle=300,
+        pool_timeout=20,
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
