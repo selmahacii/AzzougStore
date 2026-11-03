@@ -465,6 +465,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         top: offsetPosition,
         behavior: 'auto' // Instant navigation for excellent speed
       });
+      if (id === 'checkout-form-container') {
+        setTimeout(() => {
+          const phoneInput = document.getElementById('phone') as HTMLInputElement | null;
+          if (phoneInput) {
+            phoneInput.focus();
+          }
+        }, 50);
+      }
     }
   };
 
@@ -478,11 +486,24 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
-        "w-full py-3 border-b flex items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
+        "w-full border-b flex flex-col items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
+        {/* TOP ANNOUNCEMENT BADGE: Fond couleur du bouton, texte blanc */}
+        <div 
+          className="w-full py-2 px-3 text-center text-white text-xs sm:text-sm font-black tracking-wide flex items-center justify-center gap-2 select-none shadow-sm"
+          style={{ backgroundColor: primary }}
+        >
+          <Truck className="size-4 shrink-0 text-white" />
+          <span>
+            {dir === 'rtl' 
+              ? 'توصيل متوفر لـ 58 ولاية • الدفع عند الاستلام' 
+              : 'Livraison 58 Wilayas • Paiement à la livraison'}
+          </span>
+        </div>
+
+        <div className="max-w-[1200px] w-full px-4 py-3 flex items-center justify-between relative h-12">
           {/* Start Side: Nav links on Desktop */}
           <nav className="hidden md:flex items-center gap-6 z-10">
             <button 
@@ -702,6 +723,8 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               <img 
                                 src={optimizeCloudinaryUrl(item.url, 160)} 
                                 alt={item.label} 
+                                loading="lazy"
+                                decoding="async"
                                 className="size-full object-cover" 
                                 onError={(e) => {
                                   const btn = e.currentTarget.closest('button');
@@ -835,7 +858,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
+                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} loading="lazy" decoding="async" className="size-full object-cover rounded-full" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )

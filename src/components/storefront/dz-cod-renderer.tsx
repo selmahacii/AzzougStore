@@ -307,8 +307,22 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
 
       <div className="max-w-[700px] mx-auto bg-white shadow-lg min-h-screen flex flex-col">
         {/* Centered Logo Header */}
-        <header className="w-full py-4 border-b flex items-center justify-center bg-white border-slate-100 relative shrink-0">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+        <header className="w-full border-b flex flex-col items-center justify-center bg-white border-slate-100 relative shrink-0">
+          {/* Top Announcement Badge */}
+          <div 
+            className="w-full py-2 px-3 text-center text-white text-xs sm:text-sm font-black tracking-wide flex items-center justify-center gap-2 select-none shadow-sm"
+            style={{ backgroundColor: primary }}
+          >
+            <Truck className="size-4 shrink-0 text-white" />
+            <span>
+              {dir === 'rtl' 
+                ? 'توصيل متوفر لـ 58 ولاية • الدفع عند الاستلام' 
+                : 'Livraison 58 Wilayas • Paiement à la livraison'}
+            </span>
+          </div>
+
+          <div className="w-full py-4 relative flex items-center justify-center">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             {(data.store?.logo_url || data.product?.store?.logo_url) ? (
               <img 
                 src={data.store?.logo_url || data.product?.store?.logo_url || ''} 
@@ -332,7 +346,8 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
               {data.headline || 'Boutique'}
             </span>
           </div>
-        </header>
+        </div>
+      </header>
         
         {/* Main Image with Zoom and Inset Badge */}
         {heroImage && (() => {
