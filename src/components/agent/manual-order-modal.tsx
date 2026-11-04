@@ -44,6 +44,9 @@ interface NormalizedSubVariant {
   reserved?: number;
   priceModifier?: number;
   price?: number;
+  is_available?: boolean;
+  out_of_stock?: boolean;
+  is_active?: boolean;
 }
 
 interface NormalizedVariant {
@@ -56,6 +59,9 @@ interface NormalizedVariant {
   priceModifier?: number;
   price?: number;
   image?: string;
+  is_available?: boolean;
+  out_of_stock?: boolean;
+  is_active?: boolean;
   sub_variants: NormalizedSubVariant[];
 }
 
@@ -89,6 +95,9 @@ function normalizeProductVariants(product: any): NormalizedVariant[] {
       priceModifier: Number(v.priceModifier || 0),
       price: v.price,
       image: v.image,
+      is_available: v.is_available,
+      out_of_stock: v.out_of_stock,
+      is_active: v.is_active,
       sub_variants: Array.isArray(v.sub_variants)
         ? v.sub_variants.map((sv: any) => ({
             name: sv.name || 'Taille',
@@ -98,6 +107,9 @@ function normalizeProductVariants(product: any): NormalizedVariant[] {
             reserved: sv.reserved || 0,
             priceModifier: Number(sv.priceModifier || 0),
             price: sv.price,
+            is_available: sv.is_available,
+            out_of_stock: sv.out_of_stock,
+            is_active: sv.is_active,
           }))
         : [],
     }));
@@ -1009,13 +1021,15 @@ export function ManualOrderModal({
                             </SelectTrigger>
                             <SelectContent className="bg-white border-slate-200 text-slate-900 rounded-xl z-[100]">
                               {normalizedVariants.map((v, i) => {
-                                const stockDisp = Number(v.stock || 0) - Number(v.reserved || 0);
+                                const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
+                                const stockDisp = isForcedOut ? 0 : Number(v.stock || 0) - Number(v.reserved || 0);
+                                const isAvail = !isForcedOut && stockDisp > 0;
                                 return (
                                   <SelectItem key={i} value={v.value} className="text-xs font-bold py-2">
                                     <div className="flex items-center justify-between gap-3 w-full">
                                       <span>{v.value}</span>
-                                      <span className={cn("text-[9px] font-mono", stockDisp > 0 ? "text-emerald-600" : "text-rose-500")}>
-                                        ({stockDisp > 0 ? `${stockDisp} en stock` : 'Rupture'})
+                                      <span className={cn("text-[9px] font-mono", isAvail ? "text-emerald-600" : "text-rose-500")}>
+                                        ({isAvail ? `${stockDisp} en stock` : (isForcedOut ? 'Indisponible' : 'Rupture')})
                                         {v.priceModifier ? ` · ${v.priceModifier > 0 ? '+' : ''}${v.priceModifier} DA` : ''}
                                       </span>
                                     </div>
@@ -1038,13 +1052,15 @@ export function ManualOrderModal({
                               </SelectTrigger>
                               <SelectContent className="bg-white border-slate-200 text-slate-900 rounded-xl z-[100]">
                                 {availableSubVariants.map((sv, i) => {
-                                  const subStock = Number(sv.stock || 0) - Number(sv.reserved || 0);
+                                  const isForcedOut = sv.is_available === false || sv.out_of_stock === true || sv.is_active === false;
+                                  const subStock = isForcedOut ? 0 : Number(sv.stock || 0) - Number(sv.reserved || 0);
+                                  const isAvail = !isForcedOut && subStock > 0;
                                   return (
                                     <SelectItem key={i} value={sv.value} className="text-xs font-bold py-2">
                                       <div className="flex items-center justify-between gap-3 w-full">
                                         <span>{sv.value}</span>
-                                        <span className={cn("text-[9px] font-mono", subStock > 0 ? "text-emerald-600" : "text-rose-500")}>
-                                          ({subStock > 0 ? `${subStock} en stock` : 'Rupture'})
+                                        <span className={cn("text-[9px] font-mono", isAvail ? "text-emerald-600" : "text-rose-500")}>
+                                          ({isAvail ? `${subStock} en stock` : (isForcedOut ? 'Indisponible' : 'Rupture')})
                                           {sv.priceModifier ? ` · ${sv.priceModifier > 0 ? '+' : ''}${sv.priceModifier} DA` : ''}
                                         </span>
                                       </div>

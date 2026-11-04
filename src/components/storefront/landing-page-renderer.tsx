@@ -216,6 +216,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const isVarAvailable = (v: any) => {
+    if (!v) return false;
+    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
+    return ((v.stock || 0) - (v.reserved || 0)) > 0;
+  };
+
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -243,11 +249,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
-            const mainVar = grouped[name]?.[0];
+            const mainVar = grouped[name]?.find(isVarAvailable) || grouped[name]?.[0];
             if (mainVar) {
               itemSelection[name] = mainVar;
               if (mainVar.sub_variants && mainVar.sub_variants.length > 0) {
-                const firstSub = mainVar.sub_variants[0];
+                const firstSub = mainVar.sub_variants.find(isVarAvailable) || mainVar.sub_variants[0];
                 itemSelection[firstSub.name] = firstSub;
               }
             }
@@ -269,7 +275,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
           [variant.name]: variant
         };
         if (variant.sub_variants && variant.sub_variants.length > 0) {
-          const firstSub = variant.sub_variants[0];
+          const firstSub = variant.sub_variants.find(isVarAvailable) || variant.sub_variants[0];
           subSelection[firstSub.name] = firstSub;
         }
         return {
@@ -290,7 +296,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         [variant.name]: variant
       };
       if (variant.sub_variants && variant.sub_variants.length > 0) {
-        const firstSub = variant.sub_variants[0];
+        const firstSub = variant.sub_variants.find(isVarAvailable) || variant.sub_variants[0];
         subSelection[firstSub.name] = firstSub;
       }
       next[itemIndex] = {
@@ -323,7 +329,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
+  const variantWithImg = data.product?.variants?.find((v: any) => v.image && v.is_available !== false && v.out_of_stock !== true && v.is_active !== false) || data.product?.variants?.find((v: any) => v.image);
   const heroImage = variantWithImg?.image || data.product?.main_image || data.image_url;
   const price = data.product?.price ?? data.price ?? null;
   const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
@@ -361,7 +367,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       return available > 0 ? available : undefined;
     }
     const firstGroupName = variants[0]?.name;
-    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName);
+    const firstGroupOptions = variants.filter((v: any) => v.name === firstGroupName && v.is_available !== false && v.out_of_stock !== true && v.is_active !== false);
     const total = firstGroupOptions.reduce((sum: number, v: any) => sum + Math.max(0, (v.stock || 0) - (v.reserved || 0)), 0);
     return total > 0 ? total : undefined;
   })();
@@ -465,14 +471,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         top: offsetPosition,
         behavior: 'auto' // Instant navigation for excellent speed
       });
-      if (id === 'checkout-form-container') {
-        setTimeout(() => {
-          const phoneInput = document.getElementById('phone') as HTMLInputElement | null;
-          if (phoneInput) {
-            phoneInput.focus();
-          }
-        }, 50);
-      }
     }
   };
 
@@ -486,24 +484,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       
       {/* MINIMALIST HEADER WITH STORE LOGO & NAVIGATION */}
       <header className={cn(
-        "w-full border-b flex flex-col items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
+        "w-full py-3 border-b flex items-center justify-center sticky top-0 z-45 backdrop-blur-md shadow-sm transition-all duration-355 ease-in-out",
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        {/* TOP ANNOUNCEMENT BADGE: Fond couleur du bouton, texte blanc */}
-        <div 
-          className="w-full py-2 px-3 text-center text-white text-xs sm:text-sm font-black tracking-wide flex items-center justify-center gap-2 select-none shadow-sm"
-          style={{ backgroundColor: primary }}
-        >
-          <Truck className="size-4 shrink-0 text-white" />
-          <span>
-            {dir === 'rtl' 
-              ? 'توصيل متوفر لـ 58 ولاية • الدفع عند الاستلام' 
-              : 'Livraison 58 Wilayas • Paiement à la livraison'}
-          </span>
-        </div>
-
-        <div className="max-w-[1200px] w-full px-4 py-3 flex items-center justify-between relative h-12">
+        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
           {/* Start Side: Nav links on Desktop */}
           <nav className="hidden md:flex items-center gap-6 z-10">
             <button 
@@ -723,8 +708,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               <img 
                                 src={optimizeCloudinaryUrl(item.url, 160)} 
                                 alt={item.label} 
-                                loading="lazy"
-                                decoding="async"
                                 className="size-full object-cover" 
                                 onError={(e) => {
                                   const btn = e.currentTarget.closest('button');
@@ -821,15 +804,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           <div className="flex flex-wrap gap-2.5">
                                           {optionVariants.map((v: any, i: number) => {
                                             const isSelected = selectedVal === v.value;
-                                            // Synchronisé sur le stock RÉEL restant, pas juste "en rupture ou pas" :
-                                            // si 2 unités sont en stock et que 2 des N produits de la commande
-                                            // ont déjà choisi cette valeur, la 3e ne peut plus la choisir non
-                                            // plus, même si stock > 0 dans l'absolu.
-                                            const availableForValue = (v.stock || 0) - (v.reserved || 0);
+                                            // Synchronisé sur le stock RÉEL restant et le statut de disponibilité manuel :
+                                            // si marqué indisponible ou si le stock est épuisé, l'option est grisée.
+                                            const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
+                                            const availableForValue = isForcedOut ? 0 : (v.stock || 0) - (v.reserved || 0);
                                             const selectedElsewhere = selectedVariants.reduce(
                                               (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
                                             );
-                                            const isOutOfStock = !isSelected && selectedElsewhere >= availableForValue;
+                                            const isOutOfStock = isForcedOut || (!isSelected && selectedElsewhere >= availableForValue);
                                             const colorHex = getVariantColor(v.value, v.color);
                                             const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -858,7 +840,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                                   colorHex ? (
                                                     <div className="size-full rounded-full border border-black/10" style={{ backgroundColor: colorHex }} />
                                                   ) : v.image ? (
-                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} loading="lazy" decoding="async" className="size-full object-cover rounded-full" />
+                                                    <img src={optimizeCloudinaryUrl(v.image, 100)} alt={v.value} className="size-full object-cover rounded-full" />
                                                   ) : (
                                                     <span className="text-[10px] font-bold text-slate-900 dark:text-white">{v.value}</span>
                                                   )
@@ -911,11 +893,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                           >
                                             <option value="" disabled>{dir === 'rtl' ? 'اختر المقاس / الخيار' : 'Sélectionnez une option'}</option>
                                             {optionVariants.map((v, i) => {
-                                              const availableForValue = (v.stock || 0) - (v.reserved || 0);
+                                              const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
+                                              const availableForValue = isForcedOut ? 0 : (v.stock || 0) - (v.reserved || 0);
                                               const selectedElsewhere = selectedVariants.reduce(
                                                 (acc: number, sel: any, idx: number) => (idx !== itemIndex && sel?.[optionName]?.value === v.value ? acc + 1 : acc), 0,
                                               );
-                                              const isOutOfStock = selectedVal !== v.value && selectedElsewhere >= availableForValue;
+                                              const isOutOfStock = isForcedOut || (selectedVal !== v.value && selectedElsewhere >= availableForValue);
                                               return (
                                                 <option key={`opt-${v.id || i}`} value={v.value} disabled={isOutOfStock} className={isDark ? "bg-neutral-900 text-white" : "bg-white text-slate-800"}>
                                                   {v.value} {isOutOfStock ? (dir === 'rtl' ? '(غير متوفر)' : '(Rupture)') : ''}

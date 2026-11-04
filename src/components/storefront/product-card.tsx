@@ -52,7 +52,23 @@ function useCardData(product: Product) {
   }, [parsedImages, product.main_image]);
 
   const discount = product.compare_price ? getDiscountPercent(product.price, product.compare_price) : 0;
-  const isOutOfStock = product.stock === 0;
+  const isOutOfStock = useMemo(() => {
+    if (product.stock === 0) return true;
+    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+      const allOut = product.variants.every((v: any) => {
+        const isForcedOut = v.is_available === false || v.out_of_stock === true || v.is_active === false;
+        if (isForcedOut) return true;
+        if (v.sub_variants && Array.isArray(v.sub_variants) && v.sub_variants.length > 0) {
+          return v.sub_variants.every((sv: any) =>
+            sv.is_available === false || sv.out_of_stock === true || sv.is_active === false || (((sv.stock || 0) - (sv.reserved || 0)) <= 0)
+          );
+        }
+        return (((v.stock || 0) - (v.reserved || 0)) <= 0);
+      });
+      if (allOut) return true;
+    }
+    return false;
+  }, [product.stock, product.variants]);
   // Card thumbnails render at a few hundred px wide at most — capping at
   // 800 avoids shipping a full-resolution upload for a grid slot (same
   // Lighthouse-driven fix as landing-page-renderer.tsx, extended here).

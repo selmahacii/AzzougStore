@@ -1432,14 +1432,37 @@ export default function ProductsPage() {
                                              <Badge className="bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest px-3 py-1">Variante #{i + 1}</Badge>
                                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{v.name}: {v.value}</span>
                                           </div>
-                                          <button 
-                                            type="button"
-                                            onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
+                                          <div className="flex items-center gap-2">
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   const next = [...form.variants];
+                                                   const isCurrentlyOut = next[i].is_available === false || next[i].out_of_stock === true || next[i].is_active === false;
+                                                   next[i].is_available = isCurrentlyOut;
+                                                   next[i].out_of_stock = !isCurrentlyOut;
+                                                   next[i].is_active = isCurrentlyOut;
+                                                   setF({ variants: next });
+                                                }}
+                                                className={cn(
+                                                   "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 border",
+                                                   (v.is_available === false || v.out_of_stock === true || v.is_active === false)
+                                                      ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                                                      : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
+                                                )}
+                                                title="Définir la disponibilité de cette variante"
+                                             >
+                                                <span className={cn("size-2 rounded-full", (v.is_available === false || v.out_of_stock === true || v.is_active === false) ? "bg-rose-500" : "bg-emerald-500")} />
+                                                {(v.is_available === false || v.out_of_stock === true || v.is_active === false) ? "Indisponible (Rupture)" : "Disponible (En stock)"}
+                                             </button>
+                                             <button 
+                                                type="button"
+                                                onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
                                             className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
                                           >
                                              <Trash2 className="size-4" />
-                                          </button>
-                                       </div>
+                                             </button>
+                                          </div>
+                                        </div>
                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                           <div className="space-y-1.5">
                                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Type</label>
@@ -1550,9 +1573,11 @@ export default function ProductsPage() {
 
                                           {v.sub_variants && v.sub_variants.length > 0 && (
                                              <div className="space-y-3">
-                                                {v.sub_variants.map((sv: any, svIdx: number) => (
+                                                {v.sub_variants.map((sv: any, svIdx: number) => {
+                                                   const isSvOut = sv.is_available === false || sv.out_of_stock === true || sv.is_active === false;
+                                                   return (
                                                    <div key={svIdx} className="grid grid-cols-12 gap-2 items-center">
-                                                      <div className="col-span-4">
+                                                      <div className="col-span-3">
                                                          <Input
                                                             value={sv.value}
                                                             onChange={e => {
@@ -1564,7 +1589,7 @@ export default function ProductsPage() {
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-bold text-xs"
                                                          />
                                                       </div>
-                                                      <div className="col-span-4">
+                                                      <div className="col-span-3">
                                                          <Input
                                                             value={sv.sku}
                                                             onChange={e => {
@@ -1576,7 +1601,7 @@ export default function ProductsPage() {
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-mono text-[10px]"
                                                          />
                                                       </div>
-                                                      <div className="col-span-3">
+                                                      <div className="col-span-2">
                                                          <Input
                                                             type="number"
                                                             value={sv.stock}
@@ -1589,6 +1614,29 @@ export default function ProductsPage() {
                                                             placeholder="Stock"
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-black text-xs text-[#20bf6b]"
                                                          />
+                                                      </div>
+                                                      <div className="col-span-3">
+                                                         <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                               const next = [...form.variants];
+                                                               const curOut = next[i].sub_variants[svIdx].is_available === false || next[i].sub_variants[svIdx].out_of_stock === true || next[i].sub_variants[svIdx].is_active === false;
+                                                               next[i].sub_variants[svIdx].is_available = curOut;
+                                                               next[i].sub_variants[svIdx].out_of_stock = !curOut;
+                                                               next[i].sub_variants[svIdx].is_active = curOut;
+                                                               setF({ variants: next });
+                                                            }}
+                                                            className={cn(
+                                                               "w-full h-9 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border flex items-center justify-center gap-1",
+                                                               isSvOut
+                                                                  ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                                                                  : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
+                                                            )}
+                                                            title="Changer la disponibilité de cette pointure/taille"
+                                                         >
+                                                            <span className={cn("size-1.5 rounded-full", isSvOut ? "bg-rose-500" : "bg-emerald-500")} />
+                                                            {isSvOut ? "Rupture" : "Dispo"}
+                                                         </button>
                                                       </div>
                                                       <div className="col-span-1 flex justify-end">
                                                          <button
@@ -1605,7 +1653,8 @@ export default function ProductsPage() {
                                                          </button>
                                                       </div>
                                                    </div>
-                                                ))}
+                                                   );
+                                                })}
                                                 <div className="flex gap-2 w-full mt-2">
                                                   <button
                                                      type="button"
