@@ -5,6 +5,7 @@ import { StorefrontIntegrations } from '@/components/storefront/store-integratio
 import { HydrateStore } from '@/components/app/hydrate-store';
 import { ServerSeo } from '@/components/storefront/server-seo';
 import { getBackendUrl } from '@/lib/utils';
+import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import type { Metadata } from 'next';
 
 interface LpData {
@@ -57,14 +58,14 @@ async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData 
   try {
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}${query}`,
-      { next: { revalidate: 0 } }
+      { next: { revalidate: 30 } }
     );
     if (!res.ok) {
       if (storeId) {
         // Fallback: search by slug globally
         const fallbackRes = await fetch(
           `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}`,
-          { next: { revalidate: 0 } }
+          { next: { revalidate: 30 } }
         );
         if (fallbackRes.ok) {
           const json = await fallbackRes.json();
@@ -159,33 +160,28 @@ export default async function LpPage({
   console.log(`[LpPage] Rendering LP page for slug: "${slug}"`);
   console.log(`[LpPage] Incoming searchParams:`, sp);
 
-  // ── Store Resolution with strict tenant isolation ──────────────────────
+  // ── High-Speed Parallel Fetching (Stores + LP in 1 roundtrip) ─────────
   let storeId = sp.store_id || '';
   let stores: any[] = [];
   let matchedStore: any = null;
   
-  try {
-    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
-    if (res.ok) {
-      const json = await res.json();
-      stores = json.data ?? json ?? [];
-      console.log(`[LpPage] Fetched ${stores.length} stores from backend`);
+  const [storesRes, lp] = await Promise.all([
+    fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 30 } })
+      .then(async (r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+    fetchLandingPage(slug, storeId),
+  ]);
 
-      if (storeId) {
-        matchedStore = stores.find((s) => s.id === storeId) ?? null;
-      } else if (sp.store) {
-        const storeSlug = sp.store;
-        matchedStore = stores.find((s) => s.slug === storeSlug) ?? null;
-        if (matchedStore) storeId = matchedStore.id;
-      }
-    } else {
-      console.error(`[LpPage] Failed to fetch stores from backend, status: ${res.status}`);
+  if (storesRes) {
+    stores = storesRes.data ?? storesRes ?? [];
+    if (storeId) {
+      matchedStore = stores.find((s: any) => s.id === storeId) ?? null;
+    } else if (sp.store) {
+      const storeSlug = sp.store;
+      matchedStore = stores.find((s: any) => s.slug === storeSlug) ?? null;
+      if (matchedStore) storeId = matchedStore.id;
     }
-  } catch (err) {
-    console.error(`[LpPage] Exception fetching stores:`, err);
   }
-
-  const lp = await fetchLandingPage(slug, storeId);
   if (!lp) {
     console.warn(`[LpPage] No landing page found for slug "${slug}". Returning 404.`);
     return notFound();
@@ -211,8 +207,14 @@ export default async function LpPage({
     }
   } catch { /* ignore */ }
 
+  const heroImage = lp?.image_url || lp?.product?.main_image || matchedStore?.logo_url || null;
+  const optimizedHero = heroImage ? optimizeCloudinaryUrl(heroImage, 600) : null;
+
   return (
     <>
+      {optimizedHero && (
+        <link rel="preload" as="image" href={optimizedHero} fetchPriority="high" />
+      )}
       <ServerSeo
         title={matchedStore?.name || 'AzzougShop Landing Page'}
         description={lp?.headline || lp?.subtitle || 'Landing page AzzougShop'}

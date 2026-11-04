@@ -198,6 +198,7 @@ export function SearchableCommuneSelect({
   return (
     <div ref={containerRef} className="relative w-full">
       <button
+        id="commune"
         type="button"
         onClick={() => {
           if (!wilaya) return;
@@ -206,7 +207,7 @@ export function SearchableCommuneSelect({
         }}
         disabled={!wilaya}
         className={cn(
-          "w-full flex items-center justify-between px-3 h-11 text-sm border-2 transition-all outline-none",
+          "w-full flex items-center justify-between px-3 h-11 text-[16px] sm:text-sm border-2 transition-all outline-none",
           error ? "border-red-500" : "",
           !wilaya ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
         )}
@@ -242,7 +243,7 @@ export function SearchableCommuneSelect({
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder={dir === 'rtl' ? 'بحث...' : 'Rechercher...'}
-              className="w-full bg-transparent text-xs border-none outline-none focus:ring-0 focus:outline-none"
+              className="w-full bg-transparent text-[16px] sm:text-xs border-none outline-none focus:ring-0 focus:outline-none"
               style={{ color: T.inputText }}
               autoFocus
             />
@@ -431,8 +432,6 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
             };
           });
 
-        if (orderItems.length === 0) return;
-
         const payload = {
           abandoned_cart_id: abandonedCartId,
           store_id: activeStore.id,
@@ -502,7 +501,19 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     finally { setPromoLoading(false); }
   }, [promoCode, activeStore, cartSubtotal]);
 
-  const normalizePhone = (p: string) => p.replace(/[\s\-\.]/g, '');
+  const normalizePhone = (p: string) => {
+    if (!p) return '';
+    // 1. Convert Arabic-Indic numerals ٠-٩ to 0-9
+    let s = p.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+    // 2. Strip spaces, dashes, dots, parentheses, plus
+    s = s.replace(/[\s\-\.\(\)\+]/g, '');
+    // 3. Handle international Algerian prefix (+213, 00213, 213)
+    if (s.startsWith('00213')) s = '0' + s.slice(5);
+    else if (s.startsWith('213')) s = '0' + s.slice(3);
+    // 4. Handle 9-digit numbers missing leading zero (e.g. 555123456 -> 0555123456)
+    else if (/^[5-7]\d{8}$/.test(s)) s = '0' + s;
+    return s;
+  };
 
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
@@ -517,10 +528,25 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     else if (!/^0[5-7]\d{8}$/.test(phone)) e.phone = t('phoneInvalid');
     if (!isInline && customerInfo.phone2.trim() && !/^0[5-7]\d{8}$/.test(normalizePhone(customerInfo.phone2))) e.phone2 = t('phone2Invalid');
     if (!customerInfo.wilaya) e.wilaya = t('wilayaRequired');
-    if (!customerInfo.commune.trim()) e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
+    if (!isInline && !customerInfo.commune.trim()) e.commune = dir === 'rtl' ? 'البلدية مطلوبة' : 'La commune est requise';
     if (!isInline && !customerInfo.address.trim()) e.address = t('addressRequired');
     setErrors(e);
-    return Object.keys(e).length === 0;
+    if (Object.keys(e).length > 0) {
+      const fieldPriority = isInline 
+        ? ['phone', 'firstName', 'wilaya', 'commune']
+        : ['firstName', 'lastName', 'phone', 'phone2', 'wilaya', 'commune', 'address'];
+      const targetId = fieldPriority.find(k => e[k]) || Object.keys(e)[0];
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+        setTimeout(() => {
+          try { el.focus(); } catch {}
+        }, 80);
+      }
+      return false;
+    }
+    return true;
   };
 
   const handleNext = async () => {
@@ -563,7 +589,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       const payload = {
         store_id: activeStore.id,
         customer_name: isInline ? customerInfo.firstName.trim() : `${customerInfo.firstName.trim()} ${customerInfo.lastName.trim()}`,
-        customer_phone: customerInfo.phone.trim(),
+        customer_phone: normalizePhone(customerInfo.phone),
         customer_phone2: !isInline && customerInfo.phone2.trim() ? customerInfo.phone2.trim() : undefined,
         customer_wilaya: customerInfo.wilaya,
         customer_commune: customerInfo.commune.trim() || undefined,
@@ -709,6 +735,14 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
             border-color: ${T.inputBorder} !important;
             border-radius: ${T.inputRadius} !important;
           }
+          @media (max-width: 640px) {
+            .co-input, .co-select, select, input, [role="combobox"], [data-slot="select-trigger"], [data-slot="select-content"], [data-slot="select-item"] {
+              font-size: 16px !important;
+            }
+          }
+          .co-input, .co-select, button, select, input {
+            touch-action: manipulation;
+          }
         `}</style>
 
         {/* ── STEP 0: Informations de livraison ── */}
@@ -743,7 +777,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   </label>
                   <Input id="phone" type="tel" placeholder={dir === 'rtl' ? '0555 12 34 56' : '0555 123 456'} value={customerInfo.phone}
                     onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                    className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                    className={`co-input text-[16px] sm:text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                     dir="ltr" style={{ textAlign: 'left' }} />
                   {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                 </div>
@@ -755,7 +789,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                   </label>
                   <Input id="firstName" placeholder={dir === 'rtl' ? 'محمد بن علي' : 'Mohamed Benali'} value={customerInfo.firstName}
                     onChange={e => setCustomerInfo({ ...customerInfo, firstName: e.target.value })}
-                    className={`co-input text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
+                    className={`co-input text-[16px] sm:text-sm h-11 ${errors.firstName ? 'border-red-400!' : ''}`} />
                   {errors.firstName && <p className="text-[10px] text-red-400">{errors.firstName}</p>}
                 </div>
 
@@ -765,7 +799,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <MapPin className="size-3" /> {dir === 'rtl' ? 'الولاية' : t('wilaya')}
                   </label>
                   <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-[16px] sm:text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
                       style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
                       <SelectValue placeholder={t('selectWilaya')} />
                     </SelectTrigger>
@@ -861,7 +895,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     </label>
                     <Input id="phone" type="tel" placeholder="0555 123 456" value={customerInfo.phone}
                       onChange={e => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
-                      className={`co-input text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
+                      className={`co-input text-[16px] sm:text-sm h-11 font-mono ${errors.phone ? 'border-red-400!' : ''}`}
                       dir="ltr" style={{ textAlign: 'left' }} />
                     {errors.phone && <p className="text-[10px] text-red-400">{errors.phone}</p>}
                   </div>
@@ -883,7 +917,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
                     <MapPin className="size-3" /> {t('wilaya')}
                   </label>
                   <Select value={customerInfo.wilaya} onValueChange={v => setCustomerInfo({ ...customerInfo, wilaya: v })}>
-                    <SelectTrigger id="wilaya" className={`co-select h-11 text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
+                    <SelectTrigger id="wilaya" className={`co-select h-11 text-[16px] sm:text-sm w-full ${errors.wilaya ? 'border-red-400!' : ''}`}
                       style={{ backgroundColor: T.inputBg, borderColor: T.inputBorder, color: customerInfo.wilaya ? T.inputText : T.inputPlaceholder, borderRadius: T.inputRadius }}>
                       <SelectValue placeholder={t('selectWilaya')} />
                     </SelectTrigger>
@@ -1059,17 +1093,29 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
             {/* CTA */}
             <div className="pt-2">
-              <button onClick={handleNext} disabled={checkingDuplicate || submitting}
+              <button 
+                type="button"
+                onClick={handleNext} 
+                disabled={submitting}
                 className={cn(
-                  "w-full flex items-center justify-center gap-2 font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-60",
-                  isInline ? "h-14 text-base" : (T.tpl === 'dz_cod' ? "h-16 text-xl bg-red-600 hover:bg-red-700" : "h-13 text-sm")
+                  "w-full flex items-center justify-center gap-2 font-black uppercase tracking-widest transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-60 cursor-pointer touch-manipulation shadow-lg select-none",
+                  isInline ? "h-14 sm:h-15 text-base sm:text-lg" : (T.tpl === 'dz_cod' ? "h-16 text-xl bg-red-600 hover:bg-red-700" : "h-13 text-sm")
                 )}
                 style={isInline ? { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius }
                   : (T.tpl === 'dz_cod' ? { color: '#ffffff', borderRadius: '8px' } : { backgroundColor: T.primary, color: T.btnText, borderRadius: T.btnRadius })}>
-                {checkingDuplicate || submitting
-                  ? <><Loader2 className="size-5 animate-spin" /> {submitting ? t('submitting') : t('checking')}</>
-                  : isInline ? (dir === 'rtl' ? 'اضغط هنا للطلب' : 'Acheter maintenant') 
-                  : (T.tpl === 'dz_cod' ? t('buyNowCod') : <>{t('continue')} <ArrowRight className="size-4" /></>)}
+                {submitting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="size-5 animate-spin shrink-0" />
+                    <span>{dir === 'rtl' ? 'جاري تأكيد الطلب...' : 'Confirmation en cours...'}</span>
+                  </span>
+                ) : isInline ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="size-5 shrink-0" />
+                    <span>{dir === 'rtl' ? 'اضغط هنا للطلب' : 'Acheter maintenant'}</span>
+                  </span>
+                ) : (
+                  T.tpl === 'dz_cod' ? t('buyNowCod') : <>{t('continue')} <ArrowRight className="size-4" /></>
+                )}
               </button>
             </div>
           </div>
