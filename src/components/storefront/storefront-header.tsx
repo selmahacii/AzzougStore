@@ -227,8 +227,13 @@ export function StorefrontHeader() {
                 className="h-full w-full object-contain p-0 relative z-10 bg-white" 
                 onError={(e) => {
                   const target = e.currentTarget;
-                  target.onerror = null;
-                  target.style.display = 'none';
+                  if (target.src.includes('azzougshop_logo')) {
+                    target.src = '/brand-icon-primary.png';
+                  } else if (target.src.includes('brand-icon-primary')) {
+                    target.src = '/icon.png';
+                  } else {
+                    target.style.display = 'none';
+                  }
                 }} 
               />
             </div>
