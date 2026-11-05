@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
@@ -17,6 +17,17 @@ import { FloatingLanguageSwitcher } from '@/components/storefront/floating-langu
 import { trackMetaEvent, setCurrentLpId } from '@/lib/meta-tracking';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import { captureAttribution } from '@/lib/attribution';
+
+const parseBannerImages = (urlStr: string | null | undefined): string[] => {
+  if (!urlStr) return [];
+  if (urlStr.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(urlStr);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (e) {}
+  }
+  return urlStr.split(',').map(s => s.trim()).filter(Boolean);
+};
 
 interface LpData {
   id: string;
@@ -137,6 +148,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const { t, dir, setLocale } = useTranslation();
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
+  const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -305,11 +317,11 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const heroImage = data.image_url || data.product?.main_image;
-  const price = data.price ?? data.product?.price ?? null;
-  const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
-  const productName = data.product_name || data.product?.name || data.headline;
-  const productDesc = data.product_desc || data.product?.description;
+  const heroImage = data.product?.main_image || data.image_url;
+  const price = data.product?.price ?? data.price ?? null;
+  const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
+  const productName = data.product?.name || data.product_name || data.headline;
+  const productDesc = data.product?.description || data.product_desc;
   const discount = comparePrice && price ? Math.round((1 - price / comparePrice) * 100) : 0;
 
   // Une landing page n'a pas TOUJOURS d'offre par palier configurée — quand
@@ -352,28 +364,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
     }
   }, [offers, hasRealOffers, selectedOfferIndex]);
 
-  const currentOffer = hasRealOffers
-    ? (offers[selectedOfferIndex] || offers[0])
-    : {
-        quantity,
-        price: (price ?? 0) * quantity,
-        compare_price: (comparePrice ?? 0) * quantity,
-        name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
-      };
+  const currentOffer = useMemo(() => {
+    return hasRealOffers
+      ? (offers[selectedOfferIndex] || offers[0])
+      : {
+          quantity,
+          price: (price ?? 0) * quantity,
+          compare_price: (comparePrice ?? 0) * quantity,
+          name: `${quantity} ${quantity > 1 ? t('pieces') : t('piece')}`,
+        };
+  }, [hasRealOffers, offers, selectedOfferIndex, quantity, price, comparePrice, t]);
+
+  const selectedVariantsSerialized = JSON.stringify(selectedVariants);
 
   useEffect(() => {
-    // Le stepper +/- n'est pas le SEUL moyen de fixer la quantité — un
-    // palier d'offre configuré côté admin (ex: "pack de 30") la fixe
-    // directement via selectedOfferIndex, en contournant totalement le
-    // plafond du stepper. Un seul point de vérité : quelle que soit la
-    // source, la quantité ajoutée au panier ne dépasse jamais le stock
-    // disponible (bug confirmé en prod : un palier configuré au-delà du
-    // stock réel restait commandable).
+    if (!mounted) return;
     const qty = maxOrderableQuantity !== undefined
       ? Math.min(currentOffer.quantity, maxOrderableQuantity)
       : currentOffer.quantity;
 
-    // ── Case 1: Landing page WITH a linked product ────────────────────────────
     if (data.product) {
       let variantDetails: string | undefined = undefined;
       if (selectedVariants.length > 0) {
@@ -386,7 +395,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         }).filter(Boolean).join(' | ');
       }
       const offerPrice = currentOffer.price;
-      const unitPrice = Math.round(offerPrice / qty);
+      const unitPrice = Math.round(offerPrice / (qty || 1));
       const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
       const pImage = (selectedVarWithImg as any)?.image || heroImage || data.product.main_image;
       const cartItems = useCartStore.getState().items;
@@ -405,8 +414,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       return;
     }
 
-    // ── Case 2: Standalone landing page (no linked product) ──────────────────
-    const unitPrice = Math.round(currentOffer.price / qty);
+    const unitPrice = Math.round(currentOffer.price / (qty || 1));
     const syntheticProduct = {
       id: data.id,
       name: data.product_name || data.headline || 'Produit',
@@ -428,7 +436,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [data.product, data.id, data.price, data.product_name, data.headline, data.slug, data.subtitle, heroImage, selectedVariants, selectedOfferIndex, offers, quantity, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
+  }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
 
   if (!mounted) {
     return (
@@ -467,38 +475,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
         isDark ? "bg-black/90 border-white/5" : "bg-white/95 border-slate-100/80",
         showNavbar ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
       )}>
-        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-10">
-          {/* Left Side Placeholder */}
-          <div className="w-10 sm:w-20" />
-
-          {/* Logo Centered */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-            {(data.store?.logo_url || activeStore?.logo_url) ? (
-              <img
-                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 150)}
-                alt={data.store?.name || activeStore?.name || 'Logo'}
-                className="h-11 sm:h-12 w-auto object-contain max-h-[48px] transition-all" 
-                onError={(e) => { 
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const sibling = target.nextElementSibling as HTMLElement;
-                  if (sibling) sibling.style.display = 'block';
-                }}
-              />
-            ) : null}
-            <span 
-              className="text-lg font-black tracking-tight uppercase" 
-              style={{ 
-                color: primary, 
-                display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
-              }}
-            >
-              {data.store?.name || activeStore?.name || 'Boutique'}
-            </span>
-          </div>
-
-          {/* Navigation Links in Center (Desktop) */}
-          <nav className="hidden md:flex items-center gap-6">
+        <div className="max-w-[1200px] w-full px-4 flex items-center justify-between relative h-12">
+          {/* Start Side: Nav links on Desktop */}
+          <nav className="hidden md:flex items-center gap-6 z-10">
             <button 
               onClick={() => scrollToSection('presentation-section')}
               className={cn("text-xs font-black uppercase tracking-wider transition-all hover:opacity-100 opacity-60", isDark ? "text-white" : "text-slate-700")}
@@ -521,26 +500,49 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 {dir === 'rtl' ? 'الأسئلة الشائعة' : (t('faqTitle') || 'FAQ')}
               </button>
             )}
+          </nav>
+
+          {/* Start Side Placeholder for Mobile balance */}
+          <div className="md:hidden w-12 shrink-0" />
+
+          {/* CENTERED LOGO (Mobile & Desktop) */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center max-w-[45%] sm:max-w-[35%] pointer-events-auto z-10">
+            {(data.store?.logo_url || activeStore?.logo_url) ? (
+              <img
+                src={optimizeCloudinaryUrl(data.store?.logo_url || activeStore?.logo_url || '', 200)}
+                alt={data.store?.name || activeStore?.name || 'Logo'}
+                className="h-9 sm:h-11 w-auto object-contain max-h-[44px] transition-all" 
+                onError={(e) => { 
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.onerror = null;
+                  target.style.display = 'none';
+                  const sibling = target.nextElementSibling as HTMLElement;
+                  if (sibling) sibling.style.display = 'block';
+                }}
+              />
+            ) : null}
+            <span 
+              className="text-sm sm:text-base font-black tracking-tight uppercase truncate" 
+              style={{ 
+                color: primary, 
+                display: (data.store?.logo_url || activeStore?.logo_url) ? 'none' : 'block' 
+              }}
+            >
+              {data.store?.name || activeStore?.name || 'Boutique'}
+            </span>
+          </div>
+
+          {/* End Side: Action Button & Secure Badge */}
+          <div className="flex items-center gap-3 z-10 shrink-0">
             <button 
               onClick={() => scrollToSection('checkout-form-container')}
-              className="text-xs font-black uppercase tracking-wider px-4 py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95"
+              className="text-[11px] sm:text-xs font-black uppercase tracking-wider px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-white shadow-sm transition-all hover:scale-105 active:scale-95 shrink-0 whitespace-nowrap"
               style={{ backgroundColor: primary }}
             >
               {dir === 'rtl' ? 'اطلب الآن' : (t('buyNow') || 'Commander')}
             </button>
-          </nav>
-
-          {/* Mobile Right Action or Secure Badge */}
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => scrollToSection('checkout-form-container')}
-              className="md:hidden text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-full text-white shadow-sm transition-all active:scale-95"
-              style={{ backgroundColor: primary }}
-            >
-              {dir === 'rtl' ? 'طلب' : (t('buyNow') || 'Commander')}
-            </button>
             <div className="hidden md:block">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-60">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-60 whitespace-nowrap">
                 {dir === 'rtl' ? 'شراء آمن' : (t('confirmedTitleLuxe') || 'Achat Sécurisé')}
               </span>
             </div>
@@ -603,7 +605,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
             {/* Main Image with Zoom */}
             {heroImage && (() => {
               const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-              const mainImgSrc = (selectedVarWithImg as any)?.image || heroImage;
+              const mainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
 
               return (
                 <div className="space-y-4 w-full">
@@ -634,92 +636,76 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     />
                   </div>
 
-                  {/* Galerie de miniatures des variantes — toute variante avec
-                      une photo (Couleur, Motif, Modèle…) apparaît ici en
-                      grand format sous la photo de couverture. Cliquer une
-                      miniature sélectionne cette variante ET change la photo principale.
-                      Dédoublonnée par URL d'image pour éviter la répétition sur les sous-variantes. */}
+                  {/* Galerie multi-photos unifiée (Photos principales du produit + photos des variantes) */}
                   {(() => {
-                    const variantImages: any[] = [];
+                    const allPhotos: Array<{ url: string; label: string; variant?: any }> = [];
                     const seen = new Set<string>();
+
+                    // 1. Photos principales du produit
+                    const mainImgs = [
+                      data.product?.main_image,
+                      ...(data.product?.images || []),
+                      ...(data.gallery || []),
+                      heroImage
+                    ].filter(Boolean) as string[];
+
+                    mainImgs.forEach((url, i) => {
+                      if (!seen.has(url)) {
+                        seen.add(url);
+                        allPhotos.push({ url, label: `Photo ${i + 1}` });
+                      }
+                    });
+
+                    // 2. Photos des variantes
                     if (data.product?.variants) {
                       data.product.variants.forEach((v: any) => {
                         if (v.image && !seen.has(v.image)) {
                           seen.add(v.image);
-                          variantImages.push(v);
+                          allPhotos.push({ url: v.image, label: v.value || v.name, variant: v });
                         }
                       });
                     }
-                    if (variantImages.length === 0) return null;
+
+                    if (allPhotos.length <= 1) return null;
 
                     return (
-                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                        {variantImages.map((v: any, i: number) => {
-                          const isSelected = Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === v.value && val?.name === v.name);
+                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 justify-start">
+                        {allPhotos.map((item, i) => {
+                          const isActive = mainImgSrc === item.url;
+                          const isVariantSelected = item.variant && Object.values(selectedVariants[0] || {}).some((val: any) => val?.value === item.variant.value && val?.name === item.variant.name);
+                          
                           return (
                             <button
                               key={`thumb-${i}`}
                               type="button"
-                              onClick={() => handleSelectVariant(v)}
+                              onClick={() => {
+                                setSelectedActiveImage(item.url);
+                                if (item.variant) {
+                                  handleSelectVariant(item.variant);
+                                }
+                              }}
                               className={cn(
-                                "relative shrink-0 size-16 sm:size-20 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95",
-                                isSelected ? "shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                                "relative shrink-0 size-16 sm:size-20 rounded-2xl overflow-hidden border-2 transition-all hover:scale-105 active:scale-95 bg-white shadow-sm",
+                                (isActive || isVariantSelected) ? "ring-2 ring-offset-1 shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
                               )}
-                              style={{ borderColor: isSelected ? primary : undefined }}
-                              title={v.value}
+                              style={{ borderColor: (isActive || isVariantSelected) ? primary : undefined }}
+                              title={item.label}
                             >
-                              <img src={optimizeCloudinaryUrl(v.image, 160)} alt={v.value} className="size-full object-cover" />
+                              <img 
+                                src={optimizeCloudinaryUrl(item.url, 160)} 
+                                alt={item.label} 
+                                className="size-full object-cover" 
+                                onError={(e) => {
+                                  const btn = e.currentTarget.closest('button');
+                                  if (btn) btn.style.setProperty('display', 'none', 'important');
+                                }}
+                              />
                             </button>
                           );
                         })}
                       </div>
                     );
                   })()}
-
-                  {/* Le bloc "Variant Selector" (couleurs en cercles + options
-                      en boutons) a été entièrement retiré — doublon exact de :
-                      1. la galerie de miniatures juste au-dessus (photos des
-                         variantes, sous la photo principale) ;
-                      2. le sélecteur "اختر خيارك" du formulaire de commande.
-                      Sous la photo principale, on ne garde donc QUE la galerie
-                      de miniatures, puis directement le container d'infos/détails. */}
-                </div>
-              );
-            })()}
-
-            {/* Description or Gallery if needed */}
-
-            {/* Gallery Miniatures - Uniquement si une galerie explicite différente des variantes est configurée */}
-            {(() => {
-              const hasVariantThumbnails = data.product?.variants && data.product.variants.some((v: any) => v.image);
-              const explicitGallery = (data.gallery && data.gallery.length > 0) ? data.gallery : [];
-              
-              // Si pas de galerie explicite ET que des miniatures de variantes sont déjà affichées, éviter la ligne en doublon
-              if (hasVariantThumbnails && explicitGallery.length === 0) return null;
-
-              const displayedVariantImages = new Set(
-                (data.product?.variants || []).map((v: any) => v.image).filter(Boolean)
-              );
-              if (heroImage) displayedVariantImages.add(heroImage);
-
-              const extraGallery = (explicitGallery.length > 0 ? explicitGallery : (data.product?.images || []))
-                .filter((url: string) => url && !displayedVariantImages.has(url));
-
-              if (extraGallery.length === 0) return null;
-
-              return (
-                <div className="mt-8">
-                  <div className="flex gap-2 justify-center overflow-x-auto py-2">
-                    {extraGallery.slice(0, 4).map((url: string, i: number) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="size-16 rounded-xl overflow-hidden border-2 bg-white shrink-0 transition-all active:scale-95 border-slate-200"
-                      >
-                        <img src={optimizeCloudinaryUrl(url, 150)} className="size-full object-cover" alt={`Gallery ${i}`} />
-                      </button>
-                    ))}
-                  </div>
                 </div>
               );
             })()}
@@ -1028,57 +1014,25 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </CheckoutForm>
                 </div>
 
-                {/* Publicity Banner */}
-                {data.banner_image_url && (
-                  <div className="mt-6 min-h-[120px]">
-                    <img
-                      src={optimizeCloudinaryUrl(data.banner_image_url, 800)}
-                      alt="Bannière publicitaire"
-                      width={800}
-                      height={300}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-auto rounded-2xl shadow-md"
-                    />
-                  </div>
-                )}
-
-                {/* Inline Delivery Info / Trust Badges (Replaces the modal) */}
-                <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 text-emerald-600">
-                      <Truck className="size-4" />
+                {/* Publicity Banners (Multiple - Seamless Stack without gap under Checkout Button) */}
+                {(() => {
+                  const banners = parseBannerImages(data.banner_image_url);
+                  if (banners.length === 0) return null;
+                  return (
+                    <div className="mt-6 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
+                      {banners.map((url, i) => (
+                        <img
+                          key={i}
+                          src={optimizeCloudinaryUrl(url, 1200)}
+                          alt={`Bannière publicitaire ${i + 1}`}
+                          className="w-full h-auto block m-0 p-0"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ))}
                     </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('delivery58')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('delivery58Desc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-600">
-                      <ShieldCheck className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('securePayment')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('securePaymentDesc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="size-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
-                      <RotateCcw className="size-4" />
-                    </div>
-                    <div>
-                      <p className={cn("text-xs font-bold", isDark ? "text-white" : "text-slate-800")}>{t('satisfiedOrRefunded')}</p>
-                      <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/60" : "text-slate-500")}>
-                        {t('satisfiedOrRefundedDesc')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
 
               </div>
             </div>
@@ -1088,63 +1042,67 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       </div>
 
       {/* REVIEWS & FAQ SECTION (Optional, Minimalist style) */}
-      <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
-        <div className="max-w-[800px] mx-auto px-4 py-16">
-          
-          {/* Testimonials */}
-          {data.testimonials && data.testimonials.length > 0 && (
-            <div id="testimonials-section" className="mb-20">
-               <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
-               <div className="space-y-6">
-                 {data.testimonials.map((t, i) => (
-                   <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
-                     <div className="flex gap-1 mb-3">
-                       {Array.from({ length: t.stars }).map((_, j) => (
-                         <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
-                       ))}
-                     </div>
-                     <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
-                     <div className="flex items-center gap-3">
-                       <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
-                         {t.name.charAt(0)}
+      {/* REVIEWS & FAQ SECTION (Optional, Only if testimonials or faq present) */}
+      {((data.testimonials && data.testimonials.length > 0) || (data.faq && data.faq.length > 0)) && (
+        <div className={cn("border-t", isDark ? "border-white/5 bg-[#080808]" : "border-slate-100 bg-white")}>
+          <div className="max-w-[800px] mx-auto px-4 py-16">
+            
+            {/* Testimonials */}
+            {data.testimonials && data.testimonials.length > 0 && (
+              <div id="testimonials-section" className={cn(data.faq && data.faq.length > 0 ? "mb-20" : "")}>
+                 <h2 className="text-3xl font-black mb-8 text-center">{t('customerReviews')}</h2>
+                 <div className="space-y-6">
+                   {data.testimonials.map((t, i) => (
+                     <div key={i} className={cn("p-6 rounded-2xl border", isDark ? "border-white/5 bg-white/[0.02]" : "border-slate-100 bg-slate-50")}>
+                       <div className="flex gap-1 mb-3">
+                         {Array.from({ length: t.stars }).map((_, j) => (
+                           <Star key={j} className="size-4 fill-amber-400 text-amber-400" />
+                         ))}
                        </div>
-                       <div>
-                         <p className="text-xs font-bold">{t.name}</p>
-                         <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
+                       <p className={cn("text-sm font-medium mb-4 italic", isDark ? "text-white/80" : "text-slate-700")}>"{t.text}"</p>
+                       <div className="flex items-center gap-3">
+                         <div className="size-8 rounded-full font-bold text-xs flex items-center justify-center" style={{ backgroundColor: `${primary}15`, color: primary }}>
+                           {t.name.charAt(0)}
+                         </div>
+                         <div>
+                           <p className="text-xs font-bold">{t.name}</p>
+                           <p className={cn("text-[10px]", isDark ? "text-white/40" : "text-slate-400")}>{t.location}</p>
+                         </div>
                        </div>
                      </div>
-                   </div>
-                 ))}
-               </div>
-            </div>
-          )}
-
-          {/* FAQ */}
-          {data.faq && data.faq.length > 0 && (
-            <div id="faq-section">
-              <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
-              <div className="space-y-3">
-                {data.faq.map((item, i) => (
-                  <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
-                    <button
-                      onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                      className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
-                    >
-                      <span>{item.question}</span>
-                      {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                    </button>
-                    {openFaq === i && (
-                      <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
-                        {item.answer}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                   ))}
+                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* FAQ */}
+            {data.faq && data.faq.length > 0 && (
+              <div id="faq-section">
+                <h2 className="text-3xl font-black mb-8 text-center">{t('faqTitle')}</h2>
+                <div className="space-y-3">
+                  {data.faq.map((item, i) => (
+                    <div key={i} className={cn("rounded-xl border", isDark ? "border-white/5 bg-[#0A0A0A]" : "border-slate-200 bg-white")}>
+                      <button
+                        onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                        className="w-full flex items-center justify-between p-5 text-left font-bold text-sm"
+                      >
+                        <span>{item.question}</span>
+                        {openFaq === i ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                      </button>
+                      {openFaq === i && (
+                        <div className={cn("px-5 pb-5 text-sm leading-relaxed", isDark ? "text-white/60" : "text-slate-600")}>
+                          {item.answer}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
 
       <footer className={cn("py-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] border-t pb-24 md:pb-8", isDark ? "border-white/5 text-white/30" : "border-slate-200 text-slate-400")}>
         {t('codText')} • {t('delivery58')} • {new Date().getFullYear()}

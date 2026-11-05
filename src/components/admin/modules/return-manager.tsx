@@ -100,7 +100,7 @@ export default function ReturnManager() {
 
   const { data: productsData } = useQuery({
     queryKey: ['products', activeStore?.id],
-    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}`),
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&pageSize=50&minimal=true`),
     enabled: isCreating && !!activeStore?.id,
   });
 
