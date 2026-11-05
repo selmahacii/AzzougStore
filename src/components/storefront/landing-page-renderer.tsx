@@ -260,9 +260,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   }, [data.product, data, quantity, selectedOfferIndex]);
 
   const handleSelectVariant = (variant: any) => {
-    if (variant.image) {
-      setSelectedActiveImage(variant.image);
-    }
     setSelectedVariants(prev => {
       return prev.map(itemSelection => {
         const subSelection: Record<string, any> = {
@@ -281,9 +278,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   };
 
   const handleSelectVariantForIndex = (variant: any, itemIndex: number) => {
-    if (itemIndex === 0 && variant.image) {
-      setSelectedActiveImage(variant.image);
-    }
     setSelectedVariants(prev => {
       const next = [...prev];
       const subSelection: Record<string, any> = {
@@ -323,8 +317,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const isTestErp = data.slug === 'test-produit-erp';
   const isDark = isTestErp ? false : (data.template === 'premium' || data.template === 'dark');
 
-  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
-  const heroImage = variantWithImg?.image || data.product?.main_image || data.image_url;
+  const heroImage = data.product?.main_image || data.image_url;
   const price = data.product?.price ?? data.price ?? null;
   const comparePrice = data.product?.compare_price ?? data.compare_price ?? null;
   const productName = data.product?.name || data.product_name || data.headline;
@@ -643,33 +636,32 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                     />
                   </div>
 
-                  {/* Galerie multi-photos (Photos des variantes uniquement si présentes, sinon photos produit) */}
+                  {/* Galerie multi-photos unifiée (Photos principales du produit + photos des variantes) */}
                   {(() => {
                     const allPhotos: Array<{ url: string; label: string; variant?: any }> = [];
                     const seen = new Set<string>();
-                    const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
 
-                    if (hasVariantImages) {
-                      // Quand le produit a des variantes avec photo, on n'affiche QUE les photos des variantes
-                      data.product?.variants?.forEach((v: any) => {
+                    // 1. Photos principales du produit
+                    const mainImgs = [
+                      data.product?.main_image,
+                      ...(data.product?.images || []),
+                      ...(data.gallery || []),
+                      heroImage
+                    ].filter(Boolean) as string[];
+
+                    mainImgs.forEach((url, i) => {
+                      if (!seen.has(url)) {
+                        seen.add(url);
+                        allPhotos.push({ url, label: `Photo ${i + 1}` });
+                      }
+                    });
+
+                    // 2. Photos des variantes
+                    if (data.product?.variants) {
+                      data.product.variants.forEach((v: any) => {
                         if (v.image && !seen.has(v.image)) {
                           seen.add(v.image);
                           allPhotos.push({ url: v.image, label: v.value || v.name, variant: v });
-                        }
-                      });
-                    } else {
-                      // Sinon, photos principales du produit
-                      const mainImgs = [
-                        data.product?.main_image,
-                        ...(data.product?.images || []),
-                        ...(data.gallery || []),
-                        heroImage
-                      ].filter(Boolean) as string[];
-
-                      mainImgs.forEach((url, i) => {
-                        if (!seen.has(url)) {
-                          seen.add(url);
-                          allPhotos.push({ url, label: `Photo ${i + 1}` });
                         }
                       });
                     }
