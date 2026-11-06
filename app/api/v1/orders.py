@@ -4246,8 +4246,15 @@ async def dispatch_order(
     # frontend gate stopped this; a direct API call could bypass it).
     if order.status != "CONFIRMED":
         if current_user.role in ("SUPER_ADMIN", "ADMIN") and order.status in {"NEW", "ASSIGNED", "CALLED", "RESCHEDULED", "IN_PROGRESS"}:
-            from app.services.order_service import update_order_status
-            update_order_status(db, order_id=order.id, new_status="CONFIRMED", actor_id=current_user.id)
+            order = order_service.update_order(
+                db,
+                order=order,
+                update_data={"status": "CONFIRMED"},
+                actor_id=str(current_user.id),
+                actor_name=getattr(current_user, "name", None),
+                actor_role=getattr(current_user, "role", None),
+            )
+            db.commit()
             db.refresh(order)
         else:
             raise HTTPException(400, "La commande doit être Confirmée avant de créer le colis chez le transporteur.")
