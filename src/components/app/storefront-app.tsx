@@ -10,6 +10,7 @@ import { HeroSection } from '@/components/storefront/hero-section';
 import { ProductGrid } from '@/components/storefront/product-grid';
 import { ProductDetail } from '@/components/storefront/product-detail';
 import { CartDrawer } from '@/components/storefront/cart-drawer';
+import { ChatWidget } from '@/components/storefront/chat-widget';
 import { CheckoutForm } from '@/components/storefront/checkout-form';
 import { OrderTracking } from '@/components/storefront/order-tracking';
 import { WishlistView } from '@/components/storefront/wishlist-view';
@@ -90,6 +91,7 @@ export function StorefrontApp() {
       </main>
       <StorefrontFooter />
       <CartDrawer />
+      <ChatWidget />
       <VisitorCapture />
     </div>
   );

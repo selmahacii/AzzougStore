@@ -129,7 +129,7 @@ export default function PurchaseManager() {
 
   const { data: productsData } = useQuery({
     queryKey: ['products', activeStore?.id],
-    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}&pageSize=50&minimal=true`),
+    queryFn: () => apiFetch<{ success: boolean; data: any[] }>(`/api/v1/products?store_id=${activeStore?.id}`),
     enabled: isCreating && !!activeStore?.id,
   });
 

@@ -108,7 +108,7 @@ export function NoestRealtimeWidget() {
       return apiFetch<NoestStats>(url);
     },
     enabled: !!storeId,
-    refetchInterval: 180_000,
+    refetchInterval: 30_000,
   });
 
   const orderEventsQuery = useQuery<any[]>({

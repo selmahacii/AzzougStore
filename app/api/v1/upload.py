@@ -134,7 +134,7 @@ def _upload_to_cloudinary_with_retry(
     for attempt in range(attempts):
         try:
             return cloudinary.uploader.upload(
-                io.BytesIO(content), folder=folder, resource_type=resource_type, type="upload", access_mode="public"
+                io.BytesIO(content), folder=folder, resource_type=resource_type
             )
         except Exception as exc:
             last_exc = exc
@@ -389,7 +389,7 @@ def run_cloudinary_migration(db) -> dict:
         try:
             content = file_path.read_bytes()
             upload_result = cloudinary.uploader.upload(
-                io.BytesIO(content), folder="azzougshop/products", resource_type="image", type="upload", access_mode="public"
+                io.BytesIO(content), folder="azzougshop/products", resource_type="image"
             )
             return upload_result.get("secure_url") or upload_result.get("url")
         except Exception as exc:
