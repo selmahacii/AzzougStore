@@ -249,9 +249,9 @@ export function ManualOrderModal({
   const productsQuery = useQuery<any>({
     queryKey: ['admin-products-full-catalogue', effectiveStoreId],
     enabled: isOpen && !!effectiveStoreId,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${effectiveStoreId}&include_upsell_only=true&pageSize=1000`),
-    staleTime: 10_000,
-    refetchInterval: isOpen ? 20_000 : false,
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${effectiveStoreId}&include_upsell_only=true&minimal=true&pageSize=200`),
+    staleTime: 60_000,
+    refetchInterval: isOpen ? 60_000 : false,
     refetchIntervalInBackground: false,
   });
 

@@ -2723,7 +2723,7 @@ function SalaryCalculatorDialog({ open, onOpenChange, employee }: { open: boolea
    const [period, setPeriod] = useState<'this_month' | 'last_month' | 'today' | '7d' | '30d' | 'custom'>('this_month');
    const [startDate, setStartDate] = useState<string>('');
    const [endDate, setEndDate] = useState<string>('');
-   const [dateBy, setDateBy] = useState<'created_at' | 'delivered_at'>('created_at');
+   const [dateBy, setDateBy] = useState<'created_at' | 'delivered_at'>('delivered_at');
    const [orderSearch, setOrderSearch] = useState<string>('');
    const [orderStatusFilter, setOrderStatusFilter] = useState<'ALL' | 'NORMAL_DELIVERED' | 'RECOVERED_DELIVERED' | 'MARKETPLACE' | 'RETURNED' | 'IN_TRANSIT'>('ALL');
 

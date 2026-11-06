@@ -161,7 +161,7 @@ function TrackingLookup({ storeId }: { storeId: string }) {
       }
     },
     enabled: !!trackingNum && !!storeId,
-    refetchInterval: 60_000,
+    refetchInterval: 300_000,
     refetchIntervalInBackground: false,
     retry: false,
   });
@@ -1184,7 +1184,7 @@ export default function DeliveryPartners() {
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
     enabled: !!activeStore?.id && activeTab === 'tracking',
     retry: false,
-    refetchInterval: activeTab === 'tracking' ? 60_000 : false,
+    refetchInterval: activeTab === 'tracking' ? 300_000 : false,
     refetchIntervalInBackground: false,
   });
 
