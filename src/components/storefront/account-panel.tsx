@@ -110,9 +110,19 @@ function AccountPanelContent({ user, activeStore, onClose, clearUser, setStorefr
   const isStaff = ['ADMIN', 'SUPER_ADMIN', 'CONFIRMATEUR', 'MANAGER', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role);
 
   const ordersQuery = useQuery<{ data: Order[] }>({
-    queryKey: ['customer-orders', user.id],
-    queryFn: () => apiFetch(`/api/v1/orders/?search=${encodeURIComponent(user.phone ?? user.email ?? '')}&store_id=${activeStore.id}`),
+    queryKey: ['customer-orders', user.id, activeStore?.id],
+    queryFn: async () => {
+      try {
+        const query = encodeURIComponent(user.phone || user.email || '');
+        const storeParam = activeStore?.id ? `&store_id=${activeStore.id}` : '';
+        const res = await apiFetch<{ data: Order[] }>(`/api/v1/orders/?search=${query}${storeParam}`);
+        return res ?? { data: [] };
+      } catch (err) {
+        return { data: [] };
+      }
+    },
     enabled: !!user.id,
+    retry: false,
   });
 
   if (selectedOrder) return <OrderDetail order={selectedOrder} onBack={() => setSelectedOrder(null)} />;

@@ -283,13 +283,8 @@ export function AdminAuthPage() {
               className="h-24 w-auto max-w-[200px] object-contain drop-shadow-sm select-none relative z-10 bg-white" 
               onError={(e) => {
                 const target = e.currentTarget;
-                if (target.src.includes('azzougshop_logo')) {
-                  target.src = '/brand-icon-primary.png';
-                } else if (target.src.includes('brand-icon-primary')) {
-                  target.src = '/icon.png';
-                } else {
-                  target.style.display = 'none';
-                }
+                target.onerror = null;
+                target.style.display = 'none';
               }}
             />
           </div>
