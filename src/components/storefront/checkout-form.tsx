@@ -288,6 +288,10 @@ export function SearchableCommuneSelect({
   );
 }
 
+function normalizePhone(p: string): string {
+  return (p || '').replace(/[\s\-\.]/g, '');
+}
+
 export function CheckoutForm({ isInline = false, forceTemplate, children }: { isInline?: boolean; forceTemplate?: string; children?: React.ReactNode }) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
@@ -1055,6 +1059,58 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
               </div>
             </div>
 
+            {/* Garanties YouCan / Top COD Algérie */}
+            <div className="my-3 rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent p-3.5 space-y-2.5 backdrop-blur-sm">
+              <div className="flex items-start gap-2.5">
+                <div className="size-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400 font-bold text-sm shadow-sm mt-0.5">
+                  📦
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                    <span>{dir === 'rtl' ? 'عاين منتجك قبل الدفع' : 'Inspectez votre colis avant de payer'}</span>
+                    <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                      {dir === 'rtl' ? 'مضمون 100%' : '100% Sûr'}
+                    </span>
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                    {dir === 'rtl' ? 'افتح الطرد وتأكد من الجودة والمواصفات أمام الموزع قبل تسليم أي دينار' : 'Ouvrez et vérifiez la conformité de votre commande avant de régler le livreur.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-px bg-emerald-500/15" />
+
+              <div className="flex items-start gap-2.5">
+                <div className="size-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400 font-bold text-sm shadow-sm mt-0.5">
+                  🔄
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>{dir === 'rtl' ? 'ضمان استبدال واسترجاع لمدة 7 أيام' : 'Garantie échange & retour 7 jours'}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                    {dir === 'rtl' ? 'في حال وجود أي عيب مصنعي، الاستبدال فوري ومجاني حتى باب منزلك' : 'Remplacement rapide et sans frais en cas de défaut de fabrication.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-px bg-emerald-500/15" />
+
+              <div className="flex items-start gap-2.5">
+                <div className="size-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400 font-bold text-sm shadow-sm mt-0.5">
+                  🚚
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>{dir === 'rtl' ? 'توصيل سريع 58 ولاية إلى باب المنزل' : 'Livraison rapide 58 wilayas à domicile'}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                    {dir === 'rtl' ? 'توصيل موثوق ومباشر إلى باب منزلك أو المكتب مع متابعة هاتفية خطوة بخطوة' : 'Livraison rapide à domicile ou au bureau avec suivi téléphonique.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* CTA */}
             <div className="pt-2">
               <button onClick={handleNext} disabled={checkingDuplicate || submitting}
@@ -1160,10 +1216,20 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
               </div>
             </div>
 
-            {/* Trust */}
-            <div className="flex items-center gap-3 py-1 text-[11px]" style={{ color: T.textSecondary }}>
-              <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
-              {t('paymentOnDeliverySecure')}
+            {/* Trust Badges */}
+            <div className="p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 space-y-2 text-[11px]" style={{ color: T.textSecondary }}>
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold">
+                <span className="text-sm">📦</span>
+                <span>{dir === 'rtl' ? 'عاين منتجك وافتحه قبل الدفع للموزع' : 'Inspectez votre colis avant de payer'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold">
+                <span className="text-sm">🔄</span>
+                <span>{dir === 'rtl' ? 'ضمان استبدال واسترجاع لمدة 7 أيام' : 'Garantie échange & retour 7 jours'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold">
+                <span className="text-sm">🚚</span>
+                <span>{dir === 'rtl' ? 'توصيل سريع 58 ولاية حتى باب المنزل' : 'Livraison rapide 58 wilayas à domicile'}</span>
+              </div>
             </div>
 
             {errors.general && (

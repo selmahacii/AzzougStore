@@ -141,7 +141,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
-  const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
+  const [selectedOfferIndex, setSelectedOfferIndex] = useState(() => {
+    const rawOffers = (data as any)?.offers;
+    if (Array.isArray(rawOffers) && rawOffers.length > 0) {
+      const popIdx = rawOffers.findIndex((o: any) => o.popular);
+      return popIdx >= 0 ? popIdx : 0;
+    }
+    return 0;
+  });
   const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
@@ -963,16 +970,14 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                           </div>
                         </div>
                       ) : (
-                      <div className="grid grid-cols-1 gap-3">
+                      <div className="grid grid-cols-1 gap-3.5">
                         {offers.map((offer: any, idx: number) => {
                           const isSelected = selectedOfferIndex === idx;
-                          // Un palier d'offre (ex: "3 Pièces") configuré par
-                          // l'admin ne vérifiait jamais le stock réel — un
-                          // client pouvait cliquer "3 Pièces" alors qu'il ne
-                          // reste que 2 unités en stock. Désactivé dès que la
-                          // quantité du palier dépasse ce qui est réellement
-                          // disponible (maxOrderableQuantity, calculé plus haut).
                           const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
+                          const savings = offer.compare_price && offer.compare_price > offer.price ? (offer.compare_price - offer.price) : 0;
+                          const isPopular = offer.popular || idx === 1;
+                          const isBestValue = offer.best_value || idx === 2;
+
                           return (
                             <button
                               key={idx}
@@ -984,33 +989,73 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                   setQuantity(offer.quantity);
                               }}
                               className={cn(
-                                "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
+                                "p-4 sm:p-5 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden gap-3",
                                 offerExceedsStock
-                                  ? "opacity-40 cursor-not-allowed grayscale"
+                                  ? "opacity-40 cursor-not-allowed grayscale border-slate-200"
                                   : isSelected
-                                  ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
-                                  : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
+                                  ? (isDark
+                                      ? "border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-950/20"
+                                      : "border-emerald-600 bg-emerald-500/[0.06] ring-2 ring-emerald-600/30 shadow-md shadow-emerald-500/10")
+                                  : (isDark
+                                      ? "border-white/10 bg-white/[0.02] hover:border-white/25"
+                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm")
                               )}
                             >
-                              {offer.popular && !offerExceedsStock && (
-                                <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
-                                  {t('popular')}
+                              {/* Top Banner Tag for Popular / Best Value */}
+                              {isPopular && !offerExceedsStock && (
+                                <div className="absolute top-0 right-0 px-3 py-1 text-[9px] font-black uppercase text-white tracking-wider bg-gradient-to-r from-amber-500 to-rose-500 rounded-bl-xl shadow-sm flex items-center gap-1">
+                                  <span>{dir === 'rtl' ? 'الأكثر طلباً 🔥' : 'LE PLUS POPULAIRE 🔥'}</span>
                                 </div>
                               )}
-                              <div>
-                                <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
-                                  {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
-                                </p>
+                              {!isPopular && isBestValue && !offerExceedsStock && (
+                                <div className="absolute top-0 right-0 px-3 py-1 text-[9px] font-black uppercase text-white tracking-wider bg-gradient-to-r from-emerald-600 to-teal-600 rounded-bl-xl shadow-sm flex items-center gap-1">
+                                  <span>{dir === 'rtl' ? 'أفضل توفير 💎' : 'MEILLEURE ÉCONOMIE 💎'}</span>
+                                </div>
+                              )}
+
+                              {/* Left Radio Selection Circle */}
+                              <div className={cn(
+                                "size-5 sm:size-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                isSelected
+                                  ? "border-emerald-600 bg-emerald-600 dark:border-emerald-400 dark:bg-emerald-500 text-white"
+                                  : "border-slate-300 dark:border-white/20 bg-transparent"
+                              )}>
+                                {isSelected && <div className="size-2 rounded-full bg-white shadow-sm" />}
+                              </div>
+
+                              {/* Middle: Title, Description, Savings */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className={cn("text-sm sm:text-base font-black tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+                                    {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
+                                  </p>
+                                  {savings > 0 && !offerExceedsStock && (
+                                    <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                                      {dir === 'rtl' ? `وفّر ${formatPrice(savings)}` : `Économisez ${formatPrice(savings)}`}
+                                    </span>
+                                  )}
+                                </div>
+
                                 {offerExceedsStock ? (
-                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
+                                  <p className="text-[11px] mt-1 font-bold text-rose-500">
+                                    {dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}
+                                  </p>
                                 ) : offer.desc && (
-                                  <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
+                                  <p className={cn("text-xs mt-1 font-semibold leading-snug", isDark ? "text-white/70" : "text-slate-600")}>
+                                    {offer.desc}
+                                  </p>
                                 )}
                               </div>
-                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
-                                <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
+
+                              {/* Right: Price & Strikethrough Compare Price */}
+                              <div className={cn("text-right shrink-0", (isPopular || isBestValue) && !offerExceedsStock ? "pt-2 sm:pt-0" : "")}>
+                                <p className="text-base sm:text-lg font-black tabular-nums" style={{ color: primary }}>
+                                  {formatPrice(offer.price)}
+                                </p>
                                 {offer.compare_price > offer.price && (
-                                  <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>
+                                  <p className="text-xs line-through opacity-50 font-bold tabular-nums">
+                                    {formatPrice(offer.compare_price)}
+                                  </p>
                                 )}
                               </div>
                             </button>
