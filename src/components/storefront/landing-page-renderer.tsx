@@ -141,14 +141,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
-  const [selectedOfferIndex, setSelectedOfferIndex] = useState(() => {
-    const rawOffers = (data as any)?.offers;
-    if (Array.isArray(rawOffers) && rawOffers.length > 0) {
-      const popIdx = rawOffers.findIndex((o: any) => o.popular);
-      return popIdx >= 0 ? popIdx : 0;
-    }
-    return 0;
-  });
+  const [selectedOfferIndex, setSelectedOfferIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
@@ -156,27 +149,6 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [showNavbar, setShowNavbar] = useState(true);
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
-
-  // Helper pour formater les prix de façon naturelle en arabe (1 400 دج au lieu de DA 1400 inversé)
-  const renderPrice = (amount: number) => {
-    const formatted = new Intl.NumberFormat('fr-DZ', {
-      style: 'decimal',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(Math.round(amount));
-    return dir === 'rtl' ? `${formatted} دج` : `${formatted} DA`;
-  };
-
-  const cleanOfferTitle = (name?: string, qty?: number) => {
-    if (!name) return `${qty || 1} ${qty && qty > 1 ? t('pieces') : t('piece')}`;
-    let clean = name.replace(/\s*\((LE PLUS POPULAIRE|MEILLEURE [ÉE]CONOMIE)[^)]*\)/gi, '').trim();
-    if (dir === 'rtl') {
-      clean = clean.replace(/^Pack\s*1\s*Pi[eè]ce/i, 'عرض القطعة الواحدة (1)');
-      clean = clean.replace(/^Pack\s*2\s*Pi[eè]ces/i, 'عرض القطعتين (2)');
-      clean = clean.replace(/^Pack\s*3\s*Pi[eè]ces/i, 'عرض 3 قطع (باقة التوفير)');
-    }
-    return clean;
-  };
 
   useEffect(() => {
     setMounted(true);
@@ -618,12 +590,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 return (
                   <div className="flex items-end gap-3 mb-6">
                     <span className="text-4xl sm:text-5xl font-black leading-none" style={{ color: primary }}>
-                      {renderPrice(currentPrice)}
+                      {formatPrice(currentPrice)}
                     </span>
                     {currentComparePrice !== null && currentComparePrice > currentPrice && (
                       <div className="flex flex-col items-start leading-none mb-1">
                         <span className={cn("text-base line-through font-medium mb-1", isDark ? "text-white/40" : "text-slate-400")}>
-                          {renderPrice(currentComparePrice)}
+                          {formatPrice(currentComparePrice)}
                         </span>
                         <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-500 text-white uppercase">
                           -{currentDiscount}% Promo
@@ -984,101 +956,61 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                             {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
                               <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
                             )}
-                            <p className="text-sm font-black" style={{ color: primary }}>{renderPrice(currentOffer.price)}</p>
+                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
                             {currentOffer.compare_price > currentOffer.price && (
-                              <p className="text-[10px] line-through opacity-50">{renderPrice(currentOffer.compare_price)}</p>
+                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
                             )}
                           </div>
                         </div>
                       ) : (
-                      <div className="grid grid-cols-1 gap-3.5">
+                      <div className="grid grid-cols-1 gap-3">
                         {offers.map((offer: any, idx: number) => {
                           const isSelected = selectedOfferIndex === idx;
+                          // Un palier d'offre (ex: "3 Pièces") configuré par
+                          // l'admin ne vérifiait jamais le stock réel — un
+                          // client pouvait cliquer "3 Pièces" alors qu'il ne
+                          // reste que 2 unités en stock. Désactivé dès que la
+                          // quantité du palier dépasse ce qui est réellement
+                          // disponible (maxOrderableQuantity, calculé plus haut).
                           const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
-                          const savings = offer.compare_price && offer.compare_price > offer.price ? (offer.compare_price - offer.price) : 0;
-                          const isPopular = offer.popular || idx === 1;
-                          const isBestValue = offer.best_value || idx === 2;
-
                           return (
                             <button
                               key={idx}
                               type="button"
                               disabled={offerExceedsStock}
                               onClick={() => {
-                                if (offerExceedsStock) return;
-                                setSelectedOfferIndex(idx);
-                                setQuantity(offer.quantity);
+                                  if (offerExceedsStock) return;
+                                  setSelectedOfferIndex(idx);
+                                  setQuantity(offer.quantity);
                               }}
                               className={cn(
-                                "w-full p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all relative flex items-center justify-between gap-3 text-start select-none",
+                                "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
                                 offerExceedsStock
-                                  ? "opacity-40 cursor-not-allowed grayscale border-slate-200"
+                                  ? "opacity-40 cursor-not-allowed grayscale"
                                   : isSelected
-                                  ? (isDark
-                                      ? "border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500 shadow-sm"
-                                      : "border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600 shadow-sm")
-                                  : (isDark
-                                      ? "border-white/10 bg-white/[0.02] hover:border-white/20"
-                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs")
+                                  ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
+                                  : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
                               )}
                             >
-                              {/* Contenu principal : Radio + Titre + Badges + Sous-titre */}
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                {/* Bouton Radio Circulaire */}
-                                <div className={cn(
-                                  "size-5 sm:size-5.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                  isSelected
-                                    ? "border-emerald-600 bg-emerald-600 text-white dark:border-emerald-400 dark:bg-emerald-500"
-                                    : "border-slate-300 dark:border-white/20 bg-transparent"
-                                )}>
-                                  {isSelected && <div className="size-2 rounded-full bg-white shadow-xs" />}
+                              {offer.popular && !offerExceedsStock && (
+                                <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
+                                  {t('popular')}
                                 </div>
-
-                                <div className="min-w-0 flex-1">
-                                  {/* Titre et Badges alignés naturellement */}
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={cn("text-sm sm:text-base font-bold tracking-tight", isDark ? "text-white" : "text-slate-900")}>
-                                      {cleanOfferTitle(offer.name, offer.quantity)}
-                                    </span>
-                                    {isPopular && !offerExceedsStock && (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-amber-500 to-rose-500 rounded-md shadow-xs">
-                                        {dir === 'rtl' ? 'الأكثر طلباً 🔥' : 'Populaire 🔥'}
-                                      </span>
-                                    )}
-                                    {!isPopular && isBestValue && !offerExceedsStock && (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-md shadow-xs">
-                                        {dir === 'rtl' ? 'أفضل توفير 💎' : 'Meilleure Offre 💎'}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Description / Remise sous le titre */}
-                                  {offerExceedsStock ? (
-                                    <p className="text-[11px] mt-1 font-bold text-rose-500">
-                                      {dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} dispo)`}
-                                    </p>
-                                  ) : offer.desc && (
-                                    <p className={cn("text-xs mt-1 font-medium leading-relaxed", isDark ? "text-white/70" : "text-slate-600")}>
-                                      {offer.desc}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Bloc Prix à l'extrémité opposée (Gauche en RTL, Droite en LTR) */}
-                              <div className="text-end shrink-0 ps-2">
-                                <p className="text-base sm:text-lg font-black tabular-nums" style={{ color: primary }}>
-                                  {renderPrice(offer.price)}
+                              )}
+                              <div>
+                                <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
+                                  {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                                 </p>
-                                {offer.compare_price > offer.price && (
-                                  <p className="text-xs line-through opacity-45 font-semibold tabular-nums">
-                                    {renderPrice(offer.compare_price)}
-                                  </p>
+                                {offerExceedsStock ? (
+                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
+                                ) : offer.desc && (
+                                  <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
                                 )}
-                                {savings > 0 && !offerExceedsStock && (
-                                  <span className="inline-block mt-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                                    {dir === 'rtl' ? `وفّر ${renderPrice(savings)}` : `-${renderPrice(savings)}`}
-                                  </span>
+                              </div>
+                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
+                                <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
+                                {offer.compare_price > offer.price && (
+                                  <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>
                                 )}
                               </div>
                             </button>

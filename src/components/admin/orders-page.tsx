@@ -1829,11 +1829,6 @@ const [timeLeft, setTimeLeft] = useState('');
                               <Store className="size-2.5" /> Marketplace (50 DA)
                             </span>
                           )}
-                          {(order as any).store?.name && order.store_id !== storeId && (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-purple-100 text-purple-700 border border-purple-200 uppercase">
-                              Boutique : {(order as any).store.name}
-                            </span>
-                          )}
                           {order.is_pack && (
                             <span className="px-1.5 py-0.5 rounded text-[8px] font-black bg-cyan-100 text-cyan-700 border border-cyan-200 uppercase">Pack</span>
                           )}
