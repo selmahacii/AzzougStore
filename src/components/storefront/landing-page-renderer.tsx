@@ -984,78 +984,80 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               type="button"
                               disabled={offerExceedsStock}
                               onClick={() => {
-                                  if (offerExceedsStock) return;
-                                  setSelectedOfferIndex(idx);
-                                  setQuantity(offer.quantity);
+                                if (offerExceedsStock) return;
+                                setSelectedOfferIndex(idx);
+                                setQuantity(offer.quantity);
                               }}
                               className={cn(
-                                "p-4 sm:p-5 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden gap-3",
+                                "w-full p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all relative flex items-center justify-between gap-3 text-start select-none",
                                 offerExceedsStock
                                   ? "opacity-40 cursor-not-allowed grayscale border-slate-200"
                                   : isSelected
                                   ? (isDark
-                                      ? "border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-950/20"
-                                      : "border-emerald-600 bg-emerald-500/[0.06] ring-2 ring-emerald-600/30 shadow-md shadow-emerald-500/10")
+                                      ? "border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500 shadow-sm"
+                                      : "border-emerald-600 bg-emerald-50/60 ring-1 ring-emerald-600 shadow-sm")
                                   : (isDark
-                                      ? "border-white/10 bg-white/[0.02] hover:border-white/25"
-                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm")
+                                      ? "border-white/10 bg-white/[0.02] hover:border-white/20"
+                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs")
                               )}
                             >
-                              {/* Top Banner Tag for Popular / Best Value */}
-                              {isPopular && !offerExceedsStock && (
-                                <div className="absolute top-0 right-0 px-3 py-1 text-[9px] font-black uppercase text-white tracking-wider bg-gradient-to-r from-amber-500 to-rose-500 rounded-bl-xl shadow-sm flex items-center gap-1">
-                                  <span>{dir === 'rtl' ? 'الأكثر طلباً 🔥' : 'LE PLUS POPULAIRE 🔥'}</span>
+                              {/* Contenu principal : Radio + Titre + Badges + Sous-titre */}
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                {/* Bouton Radio Circulaire */}
+                                <div className={cn(
+                                  "size-5 sm:size-5.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                                  isSelected
+                                    ? "border-emerald-600 bg-emerald-600 text-white dark:border-emerald-400 dark:bg-emerald-500"
+                                    : "border-slate-300 dark:border-white/20 bg-transparent"
+                                )}>
+                                  {isSelected && <div className="size-2 rounded-full bg-white shadow-xs" />}
                                 </div>
-                              )}
-                              {!isPopular && isBestValue && !offerExceedsStock && (
-                                <div className="absolute top-0 right-0 px-3 py-1 text-[9px] font-black uppercase text-white tracking-wider bg-gradient-to-r from-emerald-600 to-teal-600 rounded-bl-xl shadow-sm flex items-center gap-1">
-                                  <span>{dir === 'rtl' ? 'أفضل توفير 💎' : 'MEILLEURE ÉCONOMIE 💎'}</span>
-                                </div>
-                              )}
 
-                              {/* Left Radio Selection Circle */}
-                              <div className={cn(
-                                "size-5 sm:size-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                isSelected
-                                  ? "border-emerald-600 bg-emerald-600 dark:border-emerald-400 dark:bg-emerald-500 text-white"
-                                  : "border-slate-300 dark:border-white/20 bg-transparent"
-                              )}>
-                                {isSelected && <div className="size-2 rounded-full bg-white shadow-sm" />}
-                              </div>
-
-                              {/* Middle: Title, Description, Savings */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className={cn("text-sm sm:text-base font-black tracking-tight", isDark ? "text-white" : "text-slate-900")}>
-                                    {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
-                                  </p>
-                                  {savings > 0 && !offerExceedsStock && (
-                                    <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
-                                      {dir === 'rtl' ? `وفّر ${formatPrice(savings)}` : `Économisez ${formatPrice(savings)}`}
+                                <div className="min-w-0 flex-1">
+                                  {/* Titre et Badges alignés naturellement */}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={cn("text-sm sm:text-base font-bold tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+                                      {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
                                     </span>
+                                    {isPopular && !offerExceedsStock && (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-amber-500 to-rose-500 rounded-md shadow-xs">
+                                        {dir === 'rtl' ? 'الأكثر طلباً 🔥' : 'Populaire 🔥'}
+                                      </span>
+                                    )}
+                                    {!isPopular && isBestValue && !offerExceedsStock && (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-md shadow-xs">
+                                        {dir === 'rtl' ? 'أفضل توفير 💎' : 'Meilleure Offre 💎'}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* Description / Remise sous le titre */}
+                                  {offerExceedsStock ? (
+                                    <p className="text-[11px] mt-1 font-bold text-rose-500">
+                                      {dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} dispo)`}
+                                    </p>
+                                  ) : offer.desc && (
+                                    <p className={cn("text-xs mt-1 font-medium leading-relaxed", isDark ? "text-white/70" : "text-slate-600")}>
+                                      {offer.desc}
+                                    </p>
                                   )}
                                 </div>
-
-                                {offerExceedsStock ? (
-                                  <p className="text-[11px] mt-1 font-bold text-rose-500">
-                                    {dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}
-                                  </p>
-                                ) : offer.desc && (
-                                  <p className={cn("text-xs mt-1 font-semibold leading-snug", isDark ? "text-white/70" : "text-slate-600")}>
-                                    {offer.desc}
-                                  </p>
-                                )}
                               </div>
 
-                              {/* Right: Price & Strikethrough Compare Price */}
-                              <div className={cn("text-right shrink-0", (isPopular || isBestValue) && !offerExceedsStock ? "pt-2 sm:pt-0" : "")}>
+                              {/* Bloc Prix à l'extrémité opposée (Gauche en RTL, Droite en LTR) */}
+                              <div className="text-end shrink-0 ps-2">
                                 <p className="text-base sm:text-lg font-black tabular-nums" style={{ color: primary }}>
                                   {formatPrice(offer.price)}
                                 </p>
                                 {offer.compare_price > offer.price && (
-                                  <p className="text-xs line-through opacity-50 font-bold tabular-nums">
+                                  <p className="text-xs line-through opacity-45 font-semibold tabular-nums">
                                     {formatPrice(offer.compare_price)}
                                   </p>
+                                )}
+                                {savings > 0 && !offerExceedsStock && (
+                                  <span className="inline-block mt-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                                    {dir === 'rtl' ? `وفّر ${formatPrice(savings)}` : `-${formatPrice(savings)}`}
+                                  </span>
                                 )}
                               </div>
                             </button>
