@@ -752,6 +752,114 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                   </div>
                   <CheckoutForm isInline={true}>
                     
+                    {/* Quantity Pack Selector — paliers d'offre SI configurés,
+                        sinon un choix libre de quantité (aucune offre remplie
+                        par l'admin ne doit jamais forcer un palier fictif). */}
+                    <div className="mb-6 space-y-3 pt-4 border-t border-slate-100 dark:border-white/10">
+                      <p className={cn("text-sm sm:text-base font-black uppercase tracking-wider", isDark ? "text-white/75" : "text-slate-800")}>
+                        {t('chooseQuantity')}
+                      </p>
+                      {!hasRealOffers ? (
+                        <div className={cn(
+                          "flex items-center justify-between gap-4 p-4 rounded-2xl border",
+                          isDark ? "border-white/10 bg-white/[0.02]" : "border-slate-200 bg-white"
+                        )}>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                              disabled={quantity <= 1}
+                              className={cn(
+                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
+                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                              )}
+                            >
+                              −
+                            </button>
+                            <span className={cn("min-w-[2ch] text-center text-lg font-black", isDark ? "text-white" : "text-slate-900")}>{quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity) return;
+                                setQuantity(quantity + 1);
+                              }}
+                              disabled={maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity}
+                              className={cn(
+                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
+                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                              )}
+                            >
+                              +
+                            </button>
+                          </div>
+                          <div className="text-right">
+                            {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
+                              <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
+                            )}
+                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
+                            {currentOffer.compare_price > currentOffer.price && (
+                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                      <div className="grid grid-cols-1 gap-3">
+                        {offers.map((offer: any, idx: number) => {
+                          const isSelected = selectedOfferIndex === idx;
+                          // Un palier d'offre (ex: "3 Pièces") configuré par
+                          // l'admin ne vérifiait jamais le stock réel — un
+                          // client pouvait cliquer "3 Pièces" alors qu'il ne
+                          // reste que 2 unités en stock. Désactivé dès que la
+                          // quantité du palier dépasse ce qui est réellement
+                          // disponible (maxOrderableQuantity, calculé plus haut).
+                          const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              disabled={offerExceedsStock}
+                              onClick={() => {
+                                  if (offerExceedsStock) return;
+                                  setSelectedOfferIndex(idx);
+                                  setQuantity(offer.quantity);
+                              }}
+                              className={cn(
+                                "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
+                                offerExceedsStock
+                                  ? "opacity-40 cursor-not-allowed grayscale"
+                                  : isSelected
+                                  ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
+                                  : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
+                              )}
+                            >
+                              {offer.popular && !offerExceedsStock && (
+                                <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
+                                  {t('popular')}
+                                </div>
+                              )}
+                              <div>
+                                <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
+                                  {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
+                                </p>
+                                {offerExceedsStock ? (
+                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
+                                ) : offer.desc && (
+                                  <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
+                                )}
+                              </div>
+                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
+                                <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
+                                {offer.compare_price > offer.price && (
+                                  <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      )}
+                    </div>
+
                     {/* Variant Selector (One per product in pack) */}
                     {data.product?.variants && data.product.variants.length > 0 && (() => {
                       const grouped: Record<string, any[]> = {};
@@ -928,115 +1036,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                         </div>
                       );
                     })()}
-
-                    {/* Quantity Pack Selector — paliers d'offre SI configurés,
-                        sinon un choix libre de quantité (aucune offre remplie
-                        par l'admin ne doit jamais forcer un palier fictif). */}
-                    <div className="mb-6 space-y-3 pt-4 border-t border-slate-100 dark:border-white/10">
-                      <p className={cn("text-sm sm:text-base font-black uppercase tracking-wider", isDark ? "text-white/75" : "text-slate-800")}>
-                        {t('chooseQuantity')}
-                      </p>
-                      {!hasRealOffers ? (
-                        <div className={cn(
-                          "flex items-center justify-between gap-4 p-4 rounded-2xl border",
-                          isDark ? "border-white/10 bg-white/[0.02]" : "border-slate-200 bg-white"
-                        )}>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                              disabled={quantity <= 1}
-                              className={cn(
-                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
-                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                              )}
-                            >
-                              −
-                            </button>
-                            <span className={cn("min-w-[2ch] text-center text-lg font-black", isDark ? "text-white" : "text-slate-900")}>{quantity}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity) return;
-                                setQuantity(quantity + 1);
-                              }}
-                              disabled={maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity}
-                              className={cn(
-                                "size-10 rounded-xl border font-black text-lg flex items-center justify-center transition-all disabled:opacity-30",
-                                isDark ? "border-white/20 text-white hover:bg-white/10" : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                              )}
-                            >
-                              +
-                            </button>
-                          </div>
-                          <div className="text-right">
-                            {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
-                              <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
-                            )}
-                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
-                            {currentOffer.compare_price > currentOffer.price && (
-                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                      <div className="grid grid-cols-1 gap-3">
-                        {offers.map((offer: any, idx: number) => {
-                          const isSelected = selectedOfferIndex === idx;
-                          // Un palier d'offre (ex: "3 Pièces") configuré par
-                          // l'admin ne vérifiait jamais le stock réel — un
-                          // client pouvait cliquer "3 Pièces" alors qu'il ne
-                          // reste que 2 unités en stock. Désactivé dès que la
-                          // quantité du palier dépasse ce qui est réellement
-                          // disponible (maxOrderableQuantity, calculé plus haut).
-                          const offerExceedsStock = maxOrderableQuantity !== undefined && offer.quantity > maxOrderableQuantity;
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              disabled={offerExceedsStock}
-                              onClick={() => {
-                                  if (offerExceedsStock) return;
-                                  setSelectedOfferIndex(idx);
-                                  setQuantity(offer.quantity);
-                              }}
-                              className={cn(
-                                "p-4 rounded-2xl border text-left transition-all relative flex items-center justify-between overflow-hidden",
-                                offerExceedsStock
-                                  ? "opacity-40 cursor-not-allowed grayscale"
-                                  : isSelected
-                                  ? (isDark ? "border-white bg-white/5 ring-1 ring-white" : "border-slate-900 bg-slate-900/5 ring-1 ring-slate-900")
-                                  : (isDark ? "border-white/10 bg-white/[0.02] hover:border-white/20" : "border-slate-200 bg-white hover:border-slate-300")
-                              )}
-                            >
-                              {offer.popular && !offerExceedsStock && (
-                                <div className="absolute top-0 right-0 px-2.5 py-0.5 text-[8px] font-black uppercase text-white tracking-widest bg-rose-500 rounded-bl-lg">
-                                  {t('popular')}
-                                </div>
-                              )}
-                              <div>
-                                <p className={cn("text-sm font-black", isDark ? "text-white" : "text-slate-900")}>
-                                  {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
-                                </p>
-                                {offerExceedsStock ? (
-                                  <p className="text-[11px] mt-0.5 font-bold text-rose-500">{dir === 'rtl' ? 'غير متوفر بهذه الكمية' : `Stock insuffisant (${maxOrderableQuantity} disponible${(maxOrderableQuantity ?? 0) > 1 ? 's' : ''})`}</p>
-                                ) : offer.desc && (
-                                  <p className={cn("text-[11px] mt-0.5", isDark ? "text-white/50" : "text-slate-500")}>{offer.desc}</p>
-                                )}
-                              </div>
-                              <div className={cn("text-right", offer.popular && !offerExceedsStock ? "mr-3" : "")}>
-                                <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(offer.price)}</p>
-                                {offer.compare_price > offer.price && (
-                                  <p className="text-[10px] line-through opacity-50">{formatPrice(offer.compare_price)}</p>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      )}
-                    </div>
-                  </CheckoutForm>
+                                    </CheckoutForm>
                 </div>
 
                 {/* Publicity Banners (Multiple - Seamless Stack without gap under Checkout Button) */}

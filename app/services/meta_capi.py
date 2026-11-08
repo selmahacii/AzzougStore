@@ -2818,12 +2818,12 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
         #   deliberately excludes from conversion, widening the Meta-vs-ERP gap.
         # - MERGED: duplicate submission absorbed into its parent (the parent
         #   already sent its own Purchase).
-        if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
+        if str(order.status) == "MERGED":
             row.status = "skipped"
-            row.error_message = f"source={order.source} status={order.status}"
+            row.error_message = f"status={order.status}"
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
-            logger.info("[MetaCAPI] queue: order=%s skipped (source=%s status=%s)", order_id, order.source, order.status)
+            logger.info("[MetaCAPI] queue: order=%s skipped (status=%s)", order_id, order.status)
             return
 
         config = _get_meta_config_cached(db, order.store_id)
