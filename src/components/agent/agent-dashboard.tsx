@@ -117,8 +117,6 @@ function getModules(isLivreur: boolean, user?: any): Module[] {
       icon: Truck,
       subModules: [
         { id: 'tracking-search', label: 'Suivi par N°', icon: Search },
-        { id: 'delivery-pos-in-transit', label: 'En cours Point de Vente', filter: 'POS_IN_TRANSIT', icon: Store },
-        { id: 'delivery-pos-delivered', label: 'Livrées Point de Vente', filter: 'POS_DELIVERED', icon: CheckCircle2 },
         { id: 'delivery-internal', label: 'Assignées Livreur', filter: 'INTERNAL_DELIVERY', icon: Truck },
         { id: 'delivery-internal-delivered', label: 'Interne Livrées', filter: 'INTERNAL_DELIVERED', icon: CheckCircle2 },
         { id: 'delivery-marketplace-delivered', label: 'Marketplace Livrées', filter: 'MARKETPLACE_DELIVERED', icon: Store },
@@ -666,7 +664,7 @@ function OrderDrawer({ order, onClose, onStatusChange, isPending, currentUser, o
   const storeProductsQuery = useQuery<any>({
     queryKey: ['agent-store-products-upsell', order.store_id],
     enabled: isEditing && !!order.store_id,
-    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&pageSize=100&include_upsell_only=true&minimal=true`, { headers: { 'X-Store-Id': order.store_id } }),
+    queryFn: () => apiFetch(`/api/v1/products?store_id=${order.store_id}&limit=200&include_upsell_only=true`, { headers: { 'X-Store-Id': order.store_id } }),
   });
   const upsellCandidates: any[] = (storeProductsQuery.data?.data ?? []).filter(
     (p: any) => p.is_active && !editData.items.some((it: any) => it.product_id === p.id)
@@ -2801,7 +2799,7 @@ export default function AgentDashboard() {
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [dateByMode, setDateByMode] = useState<'created_at' | 'delivered_at'>('delivered_at');
+  const [dateByMode, setDateByMode] = useState<'created_at' | 'delivered_at'>('created_at');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isAutoRotate, setIsAutoRotate] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
@@ -3814,57 +3812,9 @@ export default function AgentDashboard() {
                      </span>
                   </div>
 
-                {/* Indicateurs Logistique & Livraison (Confirmatrice / Admin uniquement) */}
+                {/* Indicateurs Logistique & Livraison Interne (Confirmatrice / Admin uniquement) */}
                 {!isLivreur && (activeModule === 'logistics' || activeSubModule.startsWith('delivery-')) && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    <div 
-                      onClick={() => {
-                        setActiveModule('logistics');
-                        setActiveSubModule('delivery-pos-in-transit');
-                      }}
-                      className={cn(
-                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
-                        activeSubModule === 'delivery-pos-in-transit'
-                          ? "bg-indigo-50 border-indigo-300 ring-2 ring-indigo-400/20"
-                          : "bg-white border-slate-100 hover:border-slate-200"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">En cours PDV</span>
-                        <div className="size-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                          <Store className="size-3.5" />
-                        </div>
-                      </div>
-                      <p className="text-xl font-black text-indigo-900 mt-2">
-                        {agentCountsQuery.data?.counts?.pos_in_transit ?? 0}
-                      </p>
-                      <p className="text-[10px] font-semibold text-indigo-600/80 mt-0.5">Point de vente</p>
-                    </div>
-
-                    <div 
-                      onClick={() => {
-                        setActiveModule('logistics');
-                        setActiveSubModule('delivery-pos-delivered');
-                      }}
-                      className={cn(
-                        "p-3.5 rounded-2xl border transition-all cursor-pointer hover:shadow-md",
-                        activeSubModule === 'delivery-pos-delivered'
-                          ? "bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/20"
-                          : "bg-white border-slate-100 hover:border-slate-200"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Livrées PDV</span>
-                        <div className="size-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                          <CheckCircle2 className="size-3.5" />
-                        </div>
-                      </div>
-                      <p className="text-xl font-black text-emerald-900 mt-2">
-                        {agentCountsQuery.data?.counts?.pos_delivered ?? 0}
-                      </p>
-                      <p className="text-[10px] font-semibold text-emerald-600/80 mt-0.5">Retrait Magasin</p>
-                    </div>
-
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div 
                       onClick={() => {
                         setActiveModule('logistics');

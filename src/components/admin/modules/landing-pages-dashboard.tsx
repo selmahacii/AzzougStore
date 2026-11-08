@@ -129,7 +129,7 @@ function toLocalYYYYMMDD(d: Date): string {
 }
 
 // ─── LP Analytics & Performance Center ─────────────────────────────────────────
-function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { lp: LandingPage; allStores?: any[]; onClose: () => void; onEdit?: () => void }) {
+function LandingPageAnalyticsDialog({ lp, onClose, onEdit }: { lp: LandingPage; onClose: () => void; onEdit?: () => void }) {
   const [periodPreset, setPeriodPreset] = useState<string>('this_month');
   const [dStart, setDStart] = useState(() => {
     const now = new Date();
@@ -143,25 +143,6 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
   const [showHealthBreakdown, setShowHealthBreakdown] = useState(false);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isVariantsOpen, setIsVariantsOpen] = useState(false);
-
-  const matchingStore = allStores.find(s => s.id === lp.store_id);
-  const lpStoreSlug = matchingStore?.slug || '';
-  const storeDomain = matchingStore?.domain || (lpStoreSlug ? `${lpStoreSlug}.azghub.com` : '');
-  const isLocal = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' || 
-    window.location.hostname === '127.0.0.1' ||
-    window.location.hostname.includes('hf.space') ||
-    window.location.hostname.includes('vercel.app') ||
-    window.location.hostname.includes('huggingface.co')
-  );
-  const lpUrl = isLocal || !storeDomain
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/lp/${lp.slug}?store=${lpStoreSlug}&store_id=${lp.store_id}`
-    : `https://${storeDomain}/lp/${lp.slug}`;
-
-  const copyUrl = () => {
-    navigator.clipboard.writeText(lpUrl);
-    toast.success('URL copiée dans le presse-papier !');
-  };
 
   const applyPreset = (preset: string) => {
     setPeriodPreset(preset);
@@ -203,8 +184,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
     queryKey: ['lp-performance-center', lp.id, dStart, dEnd, comparePrevious],
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/analytics?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z&compare_previous=${comparePrevious}`),
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: true,
   });
 
@@ -213,8 +193,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
     queryFn: () =>
       apiFetch(`/api/v1/landing-pages/${lp.id}/reconciliation-events?start_date=${dStart}T00:00:00.000Z&end_date=${dEnd}T23:59:59.999Z`),
     enabled: showReconciliationModal,
-    staleTime: 10 * 1000,
-    refetchInterval: 15000,
+    staleTime: 30 * 1000,
   });
 
   const data = analyticsQuery.data?.data;
@@ -232,7 +211,11 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
   const totalDeliveredVariants = variantsList.reduce((acc: number, v: any) => acc + (v.delivered || 0), 0);
   const totalOrderedVariants = variantsList.reduce((acc: number, v: any) => acc + (v.total_ordered || 0), 0);
 
-
+  const copyUrl = () => {
+    const url = `${window.location.origin}/lp/${lp.slug}`;
+    navigator.clipboard.writeText(url);
+    toast.success('URL copiée dans le presse-papier !');
+  };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -265,16 +248,6 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
 
             {/* Health Score Badge & Quick Action Buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => analyticsQuery.refetch()}
-                disabled={analyticsQuery.isFetching}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all shadow-xs"
-                title="Rafraîchir immédiatement les données analytiques en temps réel"
-              >
-                <RefreshCw className={cn("size-3.5", analyticsQuery.isFetching && "animate-spin text-indigo-500")} />
-                <span>{analyticsQuery.isFetching ? 'Actualisation...' : 'En temps réel (10s)'}</span>
-              </button>
               {health.score != null && (
                 <div className="relative">
                   <button
@@ -343,7 +316,7 @@ function LandingPageAnalyticsDialog({ lp, allStores = [], onClose, onEdit }: { l
                 variant="outline"
                 size="sm"
                 className="h-8 rounded-xl text-xs font-bold gap-1.5 bg-white dark:bg-slate-900 hover:bg-slate-100"
-                onClick={() => window.open(lpUrl, '_blank')}
+                onClick={() => window.open(`/lp/${lp.slug}`, '_blank')}
               >
                 <ExternalLink className="size-3.5" /> Aperçu
               </Button>
@@ -1409,41 +1382,40 @@ function LandingPageModal({
     }
   };
 
-  const getBannerUrls = (str: string) => str ? str.split(',').map(s => s.trim()).filter(Boolean) : [];
-
   const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
-    const valid = files.filter(f => allowedTypes.includes(f.type) && f.size <= 20 * 1024 * 1024);
-    if (valid.length === 0) {
-      toast.error('Aucune image valide (JPEG, PNG, WebP, max 20 MB)');
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Type non supporté. Utilisez JPEG, PNG, WebP, GIF ou AVIF.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('Image trop volumineuse. Limite: 20 MB.');
       return;
     }
 
     setIsUploadingBanner(true);
-    const newUrls: string[] = [];
     try {
-      await Promise.all(valid.map(async (file) => {
-        const form = new FormData();
-        form.append('file', file);
-        const res = await fetch('/api/v1/upload/image', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          body: form,
-        });
-        if (res.ok) {
-          const text = await res.text();
-          const data = text ? JSON.parse(text) : {};
-          if (data.url) newUrls.push(data.url);
-        }
-      }));
-      const existingUrls = getBannerUrls(bannerImageUrl);
-      const combined = [...existingUrls, ...newUrls];
-      setBannerImageUrl(combined.join(','));
-      toast.success(`${newUrls.length} photo(s) de bannière ajoutée(s)`);
+      const form = new FormData();
+      form.append('file', file);
+      if (bannerImageUrl) form.append('old_url', bannerImageUrl);
+      const res = await fetch('/api/v1/upload/image', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.detail || 'Échec du téléversement');
+      }
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!data.url) throw new Error("Le serveur n'a pas renvoyé d'URL d'image");
+      setBannerImageUrl(data.url);
+      toast.success('Bannière publicitaire téléversée avec succès');
     } catch (err: any) {
       toast.error(err.message || 'Erreur lors du téléversement');
     } finally {
@@ -1857,60 +1829,40 @@ function LandingPageModal({
                         </div>
                       </div>
 
-                      <div className="border-t border-slate-100 pt-4 space-y-3 col-span-1 sm:col-span-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photos Bannières Publicitaires (Multiples - Bas de page)</label>
-                          {getBannerUrls(bannerImageUrl).length > 0 && (
-                            <span className="text-[10px] font-bold text-slate-400">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
-                          )}
-                        </div>
-                        
-                        {/* Grid of banner thumbnails */}
-                        {getBannerUrls(bannerImageUrl).length > 0 && (
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            {getBannerUrls(bannerImageUrl).map((url, i) => (
-                              <div key={i} className="relative group aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                                <img src={url} alt={`Bannière ${i + 1}`} className="size-full object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const urls = getBannerUrls(bannerImageUrl).filter((_, idx) => idx !== i);
-                                    setBannerImageUrl(urls.join(','));
-                                  }}
-                                  className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow z-10"
-                                  title="Supprimer cette bannière"
-                                >
-                                  <X className="size-3" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
+                      <div className="border-t border-slate-100 pt-4 space-y-1.5 col-span-1 sm:col-span-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo Panneau Publicitaire (Bannière de publicité tout en bas de la page de la landing page)</label>
                         <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-slate-50 relative group hover:border-[#6C5CE7]/50 transition-all">
-                          <div className="size-12 shrink-0 rounded-xl bg-white flex items-center justify-center border border-slate-200">
-                            <ImageIcon className="size-5 text-slate-400" />
-                          </div>
+                          {bannerImageUrl ? (
+                            <div className="relative size-16 shrink-0 rounded-xl overflow-hidden border border-slate-200">
+                              <img src={bannerImageUrl} alt="" className="size-full object-cover" />
+                              <button type="button" onClick={() => setBannerImageUrl('')} className="absolute top-1 right-1 p-1 bg-white/80 rounded-lg hover:bg-white text-rose-500 transition-all z-10">
+                                <X className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="size-16 shrink-0 rounded-xl bg-white flex items-center justify-center border border-slate-200">
+                              <ImageIcon className="size-6 text-slate-300" />
+                            </div>
+                          )}
                           <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                               <p className="text-sm font-bold text-slate-700">
-                                {isUploadingBanner ? 'Téléversement en cours...' : 'Ajouter des bannières publicitaires'}
+                                {isUploadingBanner ? 'Téléversement en cours...' : 'Bannière publicitaire de bas de page'}
                               </p>
-                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Ces photos s'afficheront empilées en bas de la landing page (JPG, PNG, WebP, max 20 Mo)</p>
+                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Format JPG, PNG, WebP (max 20 Mo)</p>
                             </div>
                             <div className="relative shrink-0">
                               <Button type="button" variant="outline" className="h-10 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 relative">
                                 <Upload className="size-4 text-slate-500" />
-                                {isUploadingBanner ? 'Téléchargement...' : 'Ajouter des bannières'}
+                                {isUploadingBanner ? 'Téléchargement...' : 'Choisir un fichier'}
                               </Button>
                               <input
                                  type="file"
                                  accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
-                                 multiple
                                  onChange={handleBannerImageUpload}
                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
                                  disabled={isUploadingBanner}
-                                 title="Cliquez pour uploader des bannières"
+                                 title="Cliquez pour uploader la bannière"
                               />
                             </div>
                           </div>
@@ -2788,60 +2740,40 @@ function LandingPageModal({
                         <Textarea value={ctaSubtitle} onChange={e => setCtaSubtitle(e.target.value)} placeholder="Ex: Le confort d'un nuage, partout avec vous." rows={3} className="rounded-2xl border-slate-200 text-sm font-medium resize-none" />
                       </div>
 
-                      <div className="border-t border-slate-200 pt-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photos Bannières Publicitaires (Multiples - Bas de page)</label>
-                          {getBannerUrls(bannerImageUrl).length > 0 && (
-                            <span className="text-[10px] font-bold text-slate-400">{getBannerUrls(bannerImageUrl).length} bannière(s)</span>
-                          )}
-                        </div>
-                        
-                        {/* Grid of banner thumbnails */}
-                        {getBannerUrls(bannerImageUrl).length > 0 && (
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            {getBannerUrls(bannerImageUrl).map((url, i) => (
-                              <div key={i} className="relative group aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                                <img src={url} alt={`Bannière ${i + 1}`} className="size-full object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const urls = getBannerUrls(bannerImageUrl).filter((_, idx) => idx !== i);
-                                    setBannerImageUrl(urls.join(','));
-                                  }}
-                                  className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow z-10"
-                                  title="Supprimer cette bannière"
-                                >
-                                  <X className="size-3" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
+                      <div className="border-t border-slate-200 pt-4 space-y-1.5">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Photo Panneau Publicitaire (Bannière de publicité tout en bas de la page)</label>
                         <div className="flex items-center gap-4 p-4 border border-dashed border-slate-200 rounded-2xl bg-white relative group hover:border-[#6C5CE7]/50 transition-all">
-                          <div className="size-12 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
-                            <ImageIcon className="size-5 text-slate-400" />
-                          </div>
+                          {bannerImageUrl ? (
+                            <div className="relative size-16 shrink-0 rounded-xl overflow-hidden border border-slate-200">
+                              <img src={bannerImageUrl} alt="" className="size-full object-cover" />
+                              <button type="button" onClick={() => setBannerImageUrl('')} className="absolute top-1 right-1 p-1 bg-white/80 rounded-lg hover:bg-white text-rose-500 transition-all z-10">
+                                <X className="size-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="size-16 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-200">
+                              <ImageIcon className="size-6 text-slate-300" />
+                            </div>
+                          )}
                           <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
                               <p className="text-sm font-bold text-slate-700">
-                                {isUploadingBanner ? 'Téléversement en cours...' : 'Ajouter des bannières publicitaires'}
+                                {isUploadingBanner ? 'Téléversement en cours...' : 'Bannière publicitaire de bas de page'}
                               </p>
-                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Ces photos s'afficheront empilées en bas de la landing page (JPG, PNG, WebP, max 20 Mo)</p>
+                              <p className="text-[10px] font-medium text-slate-400 mt-0.5">Format JPG, PNG, WebP (max 20 Mo)</p>
                             </div>
                             <div className="relative shrink-0">
                               <Button type="button" variant="outline" className="h-10 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-2 relative">
                                 <Upload className="size-4 text-slate-500" />
-                                {isUploadingBanner ? 'Téléchargement...' : 'Ajouter des bannières'}
+                                {isUploadingBanner ? 'Téléchargement...' : 'Choisir un fichier'}
                               </Button>
                               <input
                                  type="file"
                                  accept="image/jpeg, image/png, image/webp, image/gif, image/avif"
-                                 multiple
                                  onChange={handleBannerImageUpload}
                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
                                  disabled={isUploadingBanner}
-                                 title="Cliquez pour uploader des bannières"
+                                 title="Cliquez pour uploader la bannière"
                               />
                             </div>
                           </div>
@@ -2978,8 +2910,11 @@ export default function LandingPagesDashboard() {
       return apiFetch<any>(`/api/v1/landing-pages?${buildQueryStr()}`);
     },
     enabled:  !!storeId,
-    staleTime: 15 * 1000,
-    refetchInterval: 30 * 1000,
+    // Vues/Ordres/Conv. only refreshed on manual reload or after an edit —
+    // a landing page taking live traffic could sit on stale numbers for as
+    // long as the admin kept the tab open. Poll so the cards stay current
+    // without her having to refresh the page herself.
+    refetchInterval: 2 * 60 * 60 * 1000,
     refetchIntervalInBackground: false,
   });
 
@@ -3016,11 +2951,10 @@ export default function LandingPagesDashboard() {
       window.location.hostname === 'localhost' || 
       window.location.hostname === '127.0.0.1' ||
       window.location.hostname.includes('hf.space') ||
-      window.location.hostname.includes('vercel.app') ||
       window.location.hostname.includes('huggingface.co')
     );
-    const url = isLocal || !storeDomain
-      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}&store_id=${lp?.store_id || ''}`
+    const url = isLocal 
+      ? `${window.location.origin}/lp/${slug}?store=${lpStoreSlug}`
       : `https://${storeDomain}/lp/${slug}`;
     navigator.clipboard.writeText(url).then(() => toast.success('Lien copié !'));
   };
@@ -3198,7 +3132,7 @@ export default function LandingPagesDashboard() {
       )}
       
       {analyticsLP && (
-        <LandingPageAnalyticsDialog lp={analyticsLP} allStores={allStores} onClose={() => setAnalyticsLP(null)} />
+        <LandingPageAnalyticsDialog lp={analyticsLP} onClose={() => setAnalyticsLP(null)} />
       )}
 
       <AlertDialog open={!!deletingLP} onOpenChange={(open) => !open && setDeletingLP(null)}>
