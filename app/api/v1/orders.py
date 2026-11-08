@@ -846,7 +846,7 @@ def get_order_counts(
     """
     q = (
         db.query(Order.status, sqlfunc.count(Order.id).label("cnt"))
-        .filter(Order.store_id == store_id, Order.is_deleted == False, Order.status != "MERGED")
+        .filter(Order.store_id == store_id, or_(Order.is_deleted == False, Order.is_deleted.is_(None)), Order.status != "MERGED")
     )
     if start_date:
         from app.core.dates import parse_local_date_filter
@@ -1351,7 +1351,8 @@ def list_orders(
     # flag never leaks across requests.
     db.info["skip_tenant_isolation"] = True
 
-    query = db.query(Order).filter(Order.is_deleted == False)
+    from sqlalchemy import or_ as _or_del
+    query = db.query(Order).filter(_or_del(Order.is_deleted == False, Order.is_deleted.is_(None)))
 
     # Authentication & RBAC scoping
     if not current_user:
@@ -1761,6 +1762,20 @@ def list_orders(
             pass
 
     total = query.count()
+    # Cross-store fallback search: if an admin searches for an order (order_number, phone, name)
+    # and it is not found in the currently selected store, search across all stores so the admin
+    # never sees "0 results" for an order that exists in another store.
+    if total == 0 and search and current_user and getattr(current_user, "role", None) in ("SUPER_ADMIN", "ADMIN"):
+        from sqlalchemy import or_ as _or_fb
+        fallback_query = db.query(Order).filter(
+            _or_fb(Order.is_deleted == False, Order.is_deleted.is_(None)),
+            _or_fb(*search_terms)
+        )
+        fallback_total = fallback_query.count()
+        if fallback_total > 0:
+            query = fallback_query
+            total = fallback_total
+
     skip = (page - 1) * pageSize
     
     final_query = query.options(
