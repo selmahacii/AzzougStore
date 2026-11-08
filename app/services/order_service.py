@@ -1997,19 +1997,3 @@ class OrderService:
             logger.warning("Could not record delivery payment for order %s: %s", getattr(order, 'id', 'unknown'), err)
 
 order_service = OrderService()
-
-
-def update_order_status(db: Session, order_id: str, new_status: str, actor_id: str | None = None) -> Order:
-    """Convenience helper to update an order's status."""
-    order = db.query(Order).filter(Order.id == order_id).first()
-    if not order:
-        raise ValueError(f"Order {order_id} not found")
-    res = order_service.update_order(
-        db,
-        order=order,
-        update_data={"status": new_status},
-        actor_id=str(actor_id or "system"),
-    )
-    db.commit()
-    db.refresh(res)
-    return res
