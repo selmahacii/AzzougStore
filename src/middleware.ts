@@ -89,6 +89,12 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hostname = request.headers.get('host') ?? '';
 
+  // ─── Redirection 301 pour /coussin-de-voyage vers /lp/coussin-de-voyage (préserve fbclid, utm_*) ───
+  if (pathname === '/coussin-de-voyage' || pathname === '/coussin-de-voyage/') {
+    const search = request.nextUrl.search;
+    return NextResponse.redirect(new URL(`/lp/coussin-de-voyage${search}`, request.url), 301);
+  }
+
   // ─── 0. Redirect path-based storefronts to subdomains (e.g. azghub.com/slug -> slug.azghub.com) ───
   const segments = pathname.split('/').filter(Boolean);
   if (

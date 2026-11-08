@@ -352,17 +352,11 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
   const finalTotal = cartSubtotal - discountAmount + currentDeliveryFee;
 
-  useEffect(() => {
-    if (!items.length) return;
-    // One event_id per real checkout ATTEMPT (see getOrCreateCheckoutAttemptId
-    // in meta-tracking.ts) — not per render, not per cart content, not per
-    // time window. This effect legitimately re-runs several times for the
-    // SAME attempt (delivery fee resolving async as the shopper picks a
-    // wilaya/commune/partner changes finalTotal each time), and reusing the
-    // attempt id means every one of those re-runs is a no-op past the first
-    // (trackMetaEvent's own sessionStorage dedup on event_id) — while a
-    // genuinely new attempt (new tab, or this tab reopened after being
-    // closed) gets a fresh id and fires again even with the identical cart.
+  const initiateCheckoutFiredRef = useRef(false);
+
+  const handleInitiateCheckoutOnInteraction = useCallback(() => {
+    if (initiateCheckoutFiredRef.current || !items.length) return;
+    initiateCheckoutFiredRef.current = true;
     const attemptId = getOrCreateCheckoutAttemptId();
     void trackMetaEvent('InitiateCheckout', {
       content_type: 'product',
@@ -375,7 +369,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       currency: 'DZD',
       contents: items.map(item => ({ id: item.product?.id, quantity: item.quantity })),
     });
-  }, [finalTotal, items]);
+  }, [items, finalTotal]);
 
   useEffect(() => {
     if (!activeStore) return;
@@ -502,7 +496,25 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
     finally { setPromoLoading(false); }
   }, [promoCode, activeStore, cartSubtotal]);
 
-  const normalizePhone = (p: string) => p.replace(/[\s\-\.]/g, '');
+  const normalizeAlgerianPhone = (p: string): string => {
+    if (!p) return '';
+    let cleaned = p.trim().replace(/[\s\-\.\(\)\/]/g, '');
+    if (cleaned.startsWith('+213')) {
+      cleaned = cleaned.slice(4);
+      if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+      cleaned = '0' + cleaned;
+    } else if (cleaned.startsWith('00213')) {
+      cleaned = cleaned.slice(5);
+      if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+      cleaned = '0' + cleaned;
+    } else if (cleaned.startsWith('213') && cleaned.length >= 11) {
+      cleaned = cleaned.slice(3);
+      if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+      cleaned = '0' + cleaned;
+    }
+    return cleaned;
+  };
+  const normalizePhone = normalizeAlgerianPhone;
 
   const validateCustomerInfo = (): boolean => {
     const e: Record<string, string> = {};
@@ -594,28 +606,51 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
       console.log('Order response status:', res.status, 'data:', json);
       // FastAPI returns the order object directly (not wrapped in { success, data })
       if (res.ok && (json.id || json.order_number || json.orderNumber)) {
-        // Purchase is DELIBERATELY never fired from here. It used to be
-        // sent immediately on this 201, before the backend had any chance
-        // to decide whether this submission is a duplicate of an existing
-        // order (auto_merge_duplicates only runs synchronously in the
-        // backend, right after order_service.create_order returns — see
-        // orders.py's POST / handler). A duplicate double-submit (double-
-        // click, page refresh) would still get merged correctly in the
-        // ERP, but Meta had already permanently counted a Purchase for a
-        // submission that no longer operationally exists as its own order
-        // — the exact root cause of "Meta shows more Purchases than the
-        // ERP has orders". The backend is now the SOLE sender of Purchase
-        // (see orders.py's send_purchase_for_order queue, triggered only
-        // after the merge decision is committed) — the frontend only ever
-        // sends navigation events (ViewContent/AddToCart/InitiateCheckout).
-        // This branch covers BOTH a freshly created order AND the backend's
-        // 15-minute duplicate-basket guard (orders.py) returning an existing
-        // order untouched — both return the identical { id, order_number, ... }
-        // shape, so the attempt has concluded either way. Clearing here (not
-        // in a separate "was this a duplicate?" branch, which the response
-        // shape has no way to signal) is what makes one call site enough.
+        const orderId = String(json.order_number ?? json.orderNumber ?? json.id ?? '');
+        const finalOrderId = json.id || orderId;
+        const purchaseEventId = `purchase-${orderId}`;
+        const cleanPhone = normalizeAlgerianPhone(customerInfo.phone);
+
+        // 1. Déclencher événement Lead pour les campagnes COD
+        void trackMetaEvent('Lead', {
+          content_name: items[0]?.product?.name || 'Commande',
+          value: finalTotal,
+          currency: 'DZD',
+        }, {
+          eventId: `lead-${orderId}`,
+          storeId: activeStore.id,
+          orderId: finalOrderId,
+          userData: {
+            phone: cleanPhone,
+            first_name: customerInfo.firstName.trim(),
+            wilaya: customerInfo.wilaya,
+          },
+          value: finalTotal,
+          currency: 'DZD',
+        });
+
+        // 2. Déclencher événement Purchase sur Pixel navigateur dédoublonné avec le CAPI backend (même eventId purchase-${orderId})
+        void trackMetaEvent('Purchase', {
+          content_type: 'product',
+          contents: orderItems.map((item: any) => ({ id: item.product_id, quantity: item.quantity })),
+          value: finalTotal,
+          currency: 'DZD',
+        }, {
+          eventId: purchaseEventId,
+          storeId: activeStore.id,
+          orderId: finalOrderId,
+          userData: {
+            phone: cleanPhone,
+            first_name: customerInfo.firstName.trim(),
+            wilaya: customerInfo.wilaya,
+          },
+          value: finalTotal,
+          currency: 'DZD',
+          contents: orderItems.map((item: any) => ({ id: item.product_id, quantity: item.quantity })),
+        });
+
         clearCheckoutAttemptId();
-        setOrderNumber(json.order_number ?? json.orderNumber ?? json.id ?? '');
+        setOrderNumber(orderId);
         setOrderDiscount(json.discount ?? 0);
         clearCart();
         setStep(2);
@@ -713,7 +748,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
         {/* ── STEP 0: Informations de livraison ── */}
         {step === 0 && (
-          <div className="space-y-5">
+          <div className="space-y-5" onFocusCapture={handleInitiateCheckoutOnInteraction}>
             {!isInline && (
               <div className="text-center mb-6">
                 <h2 className="text-lg sm:text-xl font-black uppercase tracking-tight"
@@ -733,7 +768,14 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
               </div>
             )}
 
-             {isInline ? (
+            {/* Render variant & pack selectors ABOVE the contact fields */}
+            {children && (
+              <div className="mb-4">
+                {children}
+              </div>
+            )}
+
+            {isInline ? (
               // Simplified 4-field COD form for landing page
               <div className="space-y-4">
                 {/* 1. Téléphone */}
@@ -1018,8 +1060,7 @@ export function CheckoutForm({ isInline = false, forceTemplate, children }: { is
 
 
 
-            {/* Render any child components (like variant & pack selectors) */}
-            {children}
+
 
             {/* Real-time Pricing Summary */}
             <div className="pt-2 space-y-2">

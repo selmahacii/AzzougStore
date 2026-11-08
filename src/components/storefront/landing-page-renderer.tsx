@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   ShieldCheck, Truck, RotateCcw, Star, Phone,
   CheckCircle, CheckCheck, ChevronDown, ChevronUp, ArrowRight,
@@ -390,8 +390,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
 
   const selectedVariantsSerialized = JSON.stringify(selectedVariants);
 
-  useEffect(() => {
-    if (!mounted) return;
+  const isFirstSyncRef = useRef(true);
+
+  const syncCart = useCallback(() => {
     const qty = maxOrderableQuantity !== undefined
       ? Math.min(currentOffer.quantity, maxOrderableQuantity)
       : currentOffer.quantity;
@@ -449,7 +450,17 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
       useCartStore.getState().clearCart();
       useCartStore.getState().addItem(syntheticProduct as any, qty, undefined, undefined, unitPrice);
     }
-  }, [mounted, data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariantsSerialized, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
+  }, [data.product, data.id, data.product_name, data.headline, data.slug, data.subtitle, data.compare_price, heroImage, selectedVariants, currentOffer.price, currentOffer.quantity, maxOrderableQuantity]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    // Supprime l'appel addItem au premier rendu pour éliminer l'événement AddToCart automatique fantôme
+    if (isFirstSyncRef.current) {
+      isFirstSyncRef.current = false;
+      return;
+    }
+    syncCart();
+  }, [mounted, syncCart]);
 
   if (!mounted) {
     return (
@@ -732,7 +743,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
               <div className={cn("rounded-3xl border shadow-xl p-6 sm:p-8 relative", isDark ? "border-white/10 bg-[#0A0A0A]" : "border-slate-200/60 bg-white")}>
                 
                 {/* Checkout Form (contains fields at top, selectors in middle, CTA at bottom) */}
-                <div id="checkout-form-container">
+                <div id="checkout-form-container" onFocusCapture={syncCart} onPointerDownCapture={syncCart}>
                   <div className="text-center mb-6 px-4">
                     <p className={cn("text-lg sm:text-xl font-black tracking-wide leading-relaxed", isDark ? "text-white" : "text-slate-900")}>
                       للطلب، يرجى ادخال معلوماتك هنا
