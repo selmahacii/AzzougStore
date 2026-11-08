@@ -157,6 +157,27 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
   const [showStickyCta, setShowStickyCta] = useState(true);
   const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
+  // Helper pour formater les prix de façon naturelle en arabe (1 400 دج au lieu de DA 1400 inversé)
+  const renderPrice = (amount: number) => {
+    const formatted = new Intl.NumberFormat('fr-DZ', {
+      style: 'decimal',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(Math.round(amount));
+    return dir === 'rtl' ? `${formatted} دج` : `${formatted} DA`;
+  };
+
+  const cleanOfferTitle = (name?: string, qty?: number) => {
+    if (!name) return `${qty || 1} ${qty && qty > 1 ? t('pieces') : t('piece')}`;
+    let clean = name.replace(/\s*\((LE PLUS POPULAIRE|MEILLEURE [ÉE]CONOMIE)[^)]*\)/gi, '').trim();
+    if (dir === 'rtl') {
+      clean = clean.replace(/^Pack\s*1\s*Pi[eè]ce/i, 'عرض القطعة الواحدة (1)');
+      clean = clean.replace(/^Pack\s*2\s*Pi[eè]ces/i, 'عرض القطعتين (2)');
+      clean = clean.replace(/^Pack\s*3\s*Pi[eè]ces/i, 'عرض 3 قطع (باقة التوفير)');
+    }
+    return clean;
+  };
+
   useEffect(() => {
     setMounted(true);
     if (setLocale) {
@@ -597,12 +618,12 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 return (
                   <div className="flex items-end gap-3 mb-6">
                     <span className="text-4xl sm:text-5xl font-black leading-none" style={{ color: primary }}>
-                      {formatPrice(currentPrice)}
+                      {renderPrice(currentPrice)}
                     </span>
                     {currentComparePrice !== null && currentComparePrice > currentPrice && (
                       <div className="flex flex-col items-start leading-none mb-1">
                         <span className={cn("text-base line-through font-medium mb-1", isDark ? "text-white/40" : "text-slate-400")}>
-                          {formatPrice(currentComparePrice)}
+                          {renderPrice(currentComparePrice)}
                         </span>
                         <span className="text-[10px] font-black px-2 py-0.5 rounded bg-rose-500 text-white uppercase">
                           -{currentDiscount}% Promo
@@ -963,9 +984,9 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                             {maxOrderableQuantity !== undefined && quantity >= maxOrderableQuantity && (
                               <p className="text-[10px] font-bold text-rose-500 mb-0.5">{dir === 'rtl' ? 'الحد الأقصى للمخزون المتاح' : 'Stock maximum disponible atteint'}</p>
                             )}
-                            <p className="text-sm font-black" style={{ color: primary }}>{formatPrice(currentOffer.price)}</p>
+                            <p className="text-sm font-black" style={{ color: primary }}>{renderPrice(currentOffer.price)}</p>
                             {currentOffer.compare_price > currentOffer.price && (
-                              <p className="text-[10px] line-through opacity-50">{formatPrice(currentOffer.compare_price)}</p>
+                              <p className="text-[10px] line-through opacity-50">{renderPrice(currentOffer.compare_price)}</p>
                             )}
                           </div>
                         </div>
@@ -1017,7 +1038,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                                   {/* Titre et Badges alignés naturellement */}
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className={cn("text-sm sm:text-base font-bold tracking-tight", isDark ? "text-white" : "text-slate-900")}>
-                                      {offer.name || `${offer.quantity} ${offer.quantity > 1 ? t('pieces') : t('piece')}`}
+                                      {cleanOfferTitle(offer.name, offer.quantity)}
                                     </span>
                                     {isPopular && !offerExceedsStock && (
                                       <span className="px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-r from-amber-500 to-rose-500 rounded-md shadow-xs">
@@ -1047,16 +1068,16 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                               {/* Bloc Prix à l'extrémité opposée (Gauche en RTL, Droite en LTR) */}
                               <div className="text-end shrink-0 ps-2">
                                 <p className="text-base sm:text-lg font-black tabular-nums" style={{ color: primary }}>
-                                  {formatPrice(offer.price)}
+                                  {renderPrice(offer.price)}
                                 </p>
                                 {offer.compare_price > offer.price && (
                                   <p className="text-xs line-through opacity-45 font-semibold tabular-nums">
-                                    {formatPrice(offer.compare_price)}
+                                    {renderPrice(offer.compare_price)}
                                   </p>
                                 )}
                                 {savings > 0 && !offerExceedsStock && (
                                   <span className="inline-block mt-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
-                                    {dir === 'rtl' ? `وفّر ${formatPrice(savings)}` : `-${formatPrice(savings)}`}
+                                    {dir === 'rtl' ? `وفّر ${renderPrice(savings)}` : `-${renderPrice(savings)}`}
                                   </span>
                                 )}
                               </div>
