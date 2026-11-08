@@ -644,8 +644,8 @@ export default function ProductsPage() {
          is_active: form.is_active,
          is_upsell_only: form.is_upsell_only,
          store_id: form.store_id || storeId,
-         main_image: form.main_image.trim(),
-         images: form.images,
+         main_image: form.main_image.trim() || (form.images[0] || ''),
+         images: form.main_image.trim() && !form.images.includes(form.main_image.trim()) ? [form.main_image.trim(), ...form.images] : form.images,
          tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
          variants: form.variants,
          shipping_model: form.production_source === 'local' ? 'local_production' : 'imported',
@@ -1408,23 +1408,6 @@ export default function ProductsPage() {
                                           disabled={isUploading}
                                        />
                                     </label>
-
-                                    {/* OR: URL input */}
-                                    <div className="flex items-center gap-2">
-                                       <div className="h-px flex-1 bg-slate-100" />
-                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ou</span>
-                                       <div className="h-px flex-1 bg-slate-100" />
-                                    </div>
-                                    <div className="relative">
-                                       <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                                       <Input
-                                          value={form.main_image}
-                                          placeholder="https://example.com/image.jpg"
-                                          className="h-12 rounded-2xl border-slate-100 bg-slate-50/50 pl-12 font-mono text-xs"
-                                          onChange={(e) => setF({ main_image: e.target.value })}
-                                       />
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 ml-1">JPEG, PNG, WebP, GIF, AVIF — max 20 MB</p>
                                  </div>
                               </div>
                            </div>
@@ -1449,14 +1432,37 @@ export default function ProductsPage() {
                                              <Badge className="bg-slate-900 text-white font-black text-[9px] uppercase tracking-widest px-3 py-1">Variante #{i + 1}</Badge>
                                              <span className="text-xs font-black text-slate-400 uppercase tracking-widest">{v.name}: {v.value}</span>
                                           </div>
-                                          <button 
-                                            type="button"
-                                            onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
+                                          <div className="flex items-center gap-2">
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   const next = [...form.variants];
+                                                   const isCurrentlyOut = next[i].is_available === false || next[i].out_of_stock === true || next[i].is_active === false;
+                                                   next[i].is_available = isCurrentlyOut;
+                                                   next[i].out_of_stock = !isCurrentlyOut;
+                                                   next[i].is_active = isCurrentlyOut;
+                                                   setF({ variants: next });
+                                                }}
+                                                className={cn(
+                                                   "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 border",
+                                                   (v.is_available === false || v.out_of_stock === true || v.is_active === false)
+                                                      ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                                                      : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
+                                                )}
+                                                title="Définir la disponibilité de cette variante"
+                                             >
+                                                <span className={cn("size-2 rounded-full", (v.is_available === false || v.out_of_stock === true || v.is_active === false) ? "bg-rose-500" : "bg-emerald-500")} />
+                                                {(v.is_available === false || v.out_of_stock === true || v.is_active === false) ? "Indisponible (Rupture)" : "Disponible (En stock)"}
+                                             </button>
+                                             <button 
+                                                type="button"
+                                                onClick={() => setF({ variants: form.variants.filter((_, idx) => idx !== i) })}
                                             className="size-8 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all"
                                           >
                                              <Trash2 className="size-4" />
-                                          </button>
-                                       </div>
+                                             </button>
+                                          </div>
+                                        </div>
                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                           <div className="space-y-1.5">
                                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Type</label>
@@ -1567,9 +1573,11 @@ export default function ProductsPage() {
 
                                           {v.sub_variants && v.sub_variants.length > 0 && (
                                              <div className="space-y-3">
-                                                {v.sub_variants.map((sv: any, svIdx: number) => (
+                                                {v.sub_variants.map((sv: any, svIdx: number) => {
+                                                   const isSvOut = sv.is_available === false || sv.out_of_stock === true || sv.is_active === false;
+                                                   return (
                                                    <div key={svIdx} className="grid grid-cols-12 gap-2 items-center">
-                                                      <div className="col-span-4">
+                                                      <div className="col-span-3">
                                                          <Input
                                                             value={sv.value}
                                                             onChange={e => {
@@ -1581,7 +1589,7 @@ export default function ProductsPage() {
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-bold text-xs"
                                                          />
                                                       </div>
-                                                      <div className="col-span-4">
+                                                      <div className="col-span-3">
                                                          <Input
                                                             value={sv.sku}
                                                             onChange={e => {
@@ -1593,7 +1601,7 @@ export default function ProductsPage() {
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-mono text-[10px]"
                                                          />
                                                       </div>
-                                                      <div className="col-span-3">
+                                                      <div className="col-span-2">
                                                          <Input
                                                             type="number"
                                                             value={sv.stock}
@@ -1606,6 +1614,29 @@ export default function ProductsPage() {
                                                             placeholder="Stock"
                                                             className="h-9 rounded-lg border-slate-100 bg-white font-black text-xs text-[#20bf6b]"
                                                          />
+                                                      </div>
+                                                      <div className="col-span-3">
+                                                         <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                               const next = [...form.variants];
+                                                               const curOut = next[i].sub_variants[svIdx].is_available === false || next[i].sub_variants[svIdx].out_of_stock === true || next[i].sub_variants[svIdx].is_active === false;
+                                                               next[i].sub_variants[svIdx].is_available = curOut;
+                                                               next[i].sub_variants[svIdx].out_of_stock = !curOut;
+                                                               next[i].sub_variants[svIdx].is_active = curOut;
+                                                               setF({ variants: next });
+                                                            }}
+                                                            className={cn(
+                                                               "w-full h-9 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border flex items-center justify-center gap-1",
+                                                               isSvOut
+                                                                  ? "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                                                                  : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"
+                                                            )}
+                                                            title="Changer la disponibilité de cette pointure/taille"
+                                                         >
+                                                            <span className={cn("size-1.5 rounded-full", isSvOut ? "bg-rose-500" : "bg-emerald-500")} />
+                                                            {isSvOut ? "Rupture" : "Dispo"}
+                                                         </button>
                                                       </div>
                                                       <div className="col-span-1 flex justify-end">
                                                          <button
@@ -1622,7 +1653,8 @@ export default function ProductsPage() {
                                                          </button>
                                                       </div>
                                                    </div>
-                                                ))}
+                                                   );
+                                                })}
                                                 <div className="flex gap-2 w-full mt-2">
                                                   <button
                                                      type="button"
@@ -1740,55 +1772,80 @@ export default function ProductsPage() {
                               </div>
                            </div>
 
-                           {/* ── Galerie (only if no variants) ── */}
-                           {form.variants.length === 0 && (
-                              <div className="space-y-4 pt-8 border-t border-slate-100">
-                                 <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Galerie de photos (Multiples)</label>
-                                    {form.images.length > 0 && (
-                                       <span className="text-[10px] font-bold text-slate-400">{form.images.length} photo(s)</span>
-                                    )}
-                                 </div>
+                            {/* ── Galerie de Photos Produit (Multiples) ── */}
+                            <div className="space-y-4 pt-8 border-t border-slate-100">
+                               <div className="flex items-center justify-between">
+                                  <div>
+                                     <label className="text-[11px] font-black uppercase text-[#636E72] tracking-[0.1em] ml-1">Galerie de photos (Multiples)</label>
+                                     <p className="text-[10px] text-slate-400 ml-1 mt-0.5">Ces photos s'afficheront sous forme de carrousel de miniatures sous la photo principale du produit.</p>
+                                  </div>
+                                  {form.images.length > 0 && (
+                                     <span className="text-[10px] font-bold text-slate-400">{form.images.length} photo(s)</span>
+                                  )}
+                               </div>
 
-                                 {/* Thumbnails grid */}
-                                 {form.images.length > 0 && (
-                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                                       {form.images.map((url, i) => (
-                                          <div key={i} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                                             <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = ''; }} />
-                                             <button
-                                                type="button"
-                                                onClick={() => setF({ images: form.images.filter((_, idx) => idx !== i) })}
-                                                className="absolute top-1 right-1 size-5 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
-                                             >
-                                                <X className="size-3" />
-                                             </button>
-                                          </div>
-                                       ))}
-                                    </div>
-                                 )}
+                               {/* Thumbnails grid */}
+                               {form.images.length > 0 && (
+                                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                                     {form.images.map((url, i) => {
+                                        const isMain = form.main_image === url;
+                                        return (
+                                           <div key={i} className={cn("relative group aspect-square rounded-2xl overflow-hidden border-2 bg-slate-50 transition-all", isMain ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200 hover:border-indigo-400")}>
+                                              <img src={url} alt={`photo ${i + 1}`} className="size-full object-cover" onError={e => { e.currentTarget.onerror = null; (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                                              
+                                              {/* Main image badge */}
+                                              {isMain ? (
+                                                 <span className="absolute bottom-1 left-1 right-1 text-center text-[8px] font-black uppercase tracking-widest bg-emerald-500 text-white rounded-md py-0.5 shadow">
+                                                    Principale
+                                                 </span>
+                                              ) : (
+                                                 <button
+                                                    type="button"
+                                                    onClick={() => setF({ main_image: url })}
+                                                    className="absolute inset-x-1 bottom-1 text-[8px] font-black uppercase tracking-wider bg-slate-900/80 hover:bg-emerald-600 text-white rounded-md py-0.5 opacity-0 group-hover:opacity-100 transition-all text-center shadow"
+                                                 >
+                                                    Principale
+                                                 </button>
+                                              )}
 
-                                 {/* Upload zone */}
-                                 <label className={cn(
-                                    'flex flex-col items-center justify-center w-full h-28 rounded-[20px] border-2 border-dashed cursor-pointer transition-all',
-                                    isUploadingGallery ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/40'
-                                 )}>
-                                    {isUploadingGallery ? (
-                                       <><Loader2 className="size-6 animate-spin text-indigo-400 mb-2" /><span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">Téléversement en cours...</span></>
-                                    ) : (
-                                       <><Upload className="size-6 text-slate-300 mb-2" /><span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ajouter des photos supplémentaires</span><span className="text-[10px] text-slate-300 mt-1">Plusieurs fichiers acceptés · JPEG, PNG, WebP, AVIF</span></>
-                                    )}
-                                    <input
-                                       type="file"
-                                       accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-                                       multiple
-                                       className="sr-only"
-                                       disabled={isUploadingGallery}
-                                       onChange={e => { handleGalleryUpload(e.target.files); e.target.value = ''; }}
-                                    />
-                                 </label>
-                              </div>
-                           )}
+                                              {/* Delete button */}
+                                              <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                    const next = form.images.filter((_, idx) => idx !== i);
+                                                    setF({ images: next, main_image: isMain ? (next[0] || '') : form.main_image });
+                                                 }}
+                                                 className="absolute top-1 right-1 size-6 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow"
+                                                 title="Supprimer cette photo"
+                                              >
+                                                 <X className="size-3" />
+                                              </button>
+                                           </div>
+                                        );
+                                     })}
+                                  </div>
+                               )}
+
+                               {/* Upload zone */}
+                               <label className={cn(
+                                  'flex flex-col items-center justify-center w-full h-28 rounded-[20px] border-2 border-dashed cursor-pointer transition-all',
+                                  isUploadingGallery ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-[#4b7bec] hover:bg-indigo-50/40'
+                               )}>
+                                  {isUploadingGallery ? (
+                                     <><Loader2 className="size-6 animate-spin text-indigo-400 mb-2" /><span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">Téléversement en cours...</span></>
+                                  ) : (
+                                     <><Upload className="size-6 text-slate-300 mb-2" /><span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ajouter plusieurs photos de produit</span><span className="text-[10px] text-slate-300 mt-1">Sélectionnez un ou plusieurs fichiers · JPEG, PNG, WebP, AVIF</span></>
+                                  )}
+                                  <input
+                                     type="file"
+                                     accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                                     multiple
+                                     className="sr-only"
+                                     disabled={isUploadingGallery}
+                                     onChange={e => { handleGalleryUpload(e.target.files); e.target.value = ''; }}
+                                  />
+                               </label>
+                            </div>
                         </TabsContent>
 
                         <TabsContent value="pricing" forceMount className="mt-0 space-y-6 sm:space-y-8 data-[state=inactive]:hidden">

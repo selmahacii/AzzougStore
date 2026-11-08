@@ -70,6 +70,17 @@ function getVariantColor(value: string, colorField?: string): string | null {
   return COLOR_MAP[val] || colorField || null;
 }
 
+const parseBannerImages = (urlStr: string | null | undefined): string[] => {
+  if (!urlStr) return [];
+  if (urlStr.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(urlStr);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (e) {}
+  }
+  return urlStr.split(',').map(s => s.trim()).filter(Boolean);
+};
+
 export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [selectedVariants, setSelectedVariants] = useState<any[]>([]);
   const [quantity, setQuantity] = useState(1);
@@ -79,9 +90,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
   const [isZoomed, setIsZoomed] = useState(false);
   const { t, dir } = useTranslation();
   const [showStickyCta, setShowStickyCta] = useState(true);
+  const [selectedActiveImage, setSelectedActiveImage] = useState<string | null>(null);
 
   const primary = data.primary_color || '#E53935';
-  const heroImage = data.image_url || data.product?.main_image;
+  const variantWithImg = data.product?.variants?.find((v: any) => v.image);
+  const heroImage = variantWithImg?.image || data.image_url || data.product?.main_image;
   const price = data.price ?? data.product?.price ?? null;
   const comparePrice = data.compare_price ?? data.product?.compare_price ?? null;
   const productName = data.product_name || data.product?.name || data.headline;
@@ -144,6 +157,12 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
     setQuantity(capped);
   }, [selectedOfferIndex, offers, maxOrderableQuantity]);
 
+  const isVarAvailable = (v: any) => {
+    if (!v) return false;
+    if (v.is_available === false || v.out_of_stock === true || v.is_active === false) return false;
+    return ((v.stock || 0) - (v.reserved || 0)) > 0;
+  };
+
   const galleryImages = (data.gallery && data.gallery.length > 0)
     ? data.gallery
     : (data.product?.images || []);
@@ -170,11 +189,11 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         while (newVars.length < targetQty) {
           const itemSelection: Record<string, any> = {};
           Object.keys(grouped).forEach(name => {
-            const mainVar = grouped[name]?.[0];
+            const mainVar = grouped[name]?.find(isVarAvailable) || grouped[name]?.[0];
             if (mainVar) {
               itemSelection[name] = mainVar;
               if (mainVar.sub_variants && mainVar.sub_variants.length > 0) {
-                const firstSub = mainVar.sub_variants[0];
+                const firstSub = mainVar.sub_variants.find(isVarAvailable) || mainVar.sub_variants[0];
                 itemSelection[firstSub.name] = firstSub;
               }
             }
@@ -324,12 +343,15 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
         {/* Main Image with Zoom and Inset Badge */}
         {heroImage && (() => {
           const selectedVarWithImg = Object.values(selectedVariants[0] || {}).find((v: any) => v?.image);
-          const rawMainImgSrc = (selectedVarWithImg as any)?.image || heroImage;
-          const rawInsetImgSrc = galleryImages.find(img => img !== rawMainImgSrc) || galleryImages[0] || null;
+          const rawMainImgSrc = selectedActiveImage || (selectedVarWithImg as any)?.image || heroImage;
+          const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
+          const variantImages = data.product?.variants?.map((v: any) => v.image).filter(Boolean) || [];
+          const availableGallery = hasVariantImages ? variantImages : galleryImages;
+          const rawInsetImgSrc = availableGallery.find((img: string) => img !== rawMainImgSrc) || (availableGallery.length > 1 ? availableGallery[0] : null);
           // 1600 preserves detail for the 2x zoom-on-hover interaction below —
           // capping too aggressively would make the zoomed view visibly soft.
           const mainImgSrc = optimizeCloudinaryUrl(rawMainImgSrc, 1600);
-          const insetImgSrc = optimizeCloudinaryUrl(rawInsetImgSrc, 150);
+          const insetImgSrc = rawInsetImgSrc ? optimizeCloudinaryUrl(rawInsetImgSrc, 150) : null;
 
           return (
             <>
@@ -371,69 +393,80 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
           );
         })()}
 
-        {/* Variant Image Thumbnails */}
+        {/* Unified Product Photos & Variant Image Thumbnails Carousel */}
         {(() => {
-          const variantImages: any[] = [];
-          const seen = new Set();
-          if (data.product?.variants) {
-            data.product.variants.forEach((v: any) => {
-              if (v.image && !seen.has(v.image)) {
-                seen.add(v.image);
-                variantImages.push(v);
+          const allItems: { url: string; label?: string; variant?: any }[] = [];
+          const seenUrls = new Set<string>();
+          const hasVariantImages = !!data.product?.variants?.some((v: any) => v.image);
+
+          if (hasVariantImages) {
+            // Quand le produit a des variantes avec photo, on n'affiche QUE les photos des variantes
+            data.product?.variants?.forEach((v: any) => {
+              if (v.image && !seenUrls.has(v.image)) {
+                seenUrls.add(v.image);
+                allItems.push({ url: v.image, label: v.value, variant: v });
+              }
+            });
+          } else {
+            // Sinon, photos principales du produit
+            const rawProductImgs = [data.product?.main_image, ...(data.product?.images || []), ...(data.gallery || []), heroImage].filter(Boolean) as string[];
+            rawProductImgs.forEach((url, i) => {
+              if (!seenUrls.has(url)) {
+                seenUrls.add(url);
+                allItems.push({ url, label: `Photo ${i + 1}` });
               }
             });
           }
 
-          if (variantImages.length === 0) return null;
+          if (allItems.length <= 1) return null;
+
+          const currentActiveUrl = selectedActiveImage || (Object.values(selectedVariants[0] || {}).find((v: any) => v?.image) as any)?.image || heroImage;
 
           return (
             <div className="flex gap-2.5 p-3 overflow-x-auto justify-center sm:justify-start bg-slate-50 border-b border-slate-100">
-              {variantImages.map((v: any, i: number) => {
-                const isSelected = selectedVariants.some(sv => Object.values(sv).some((val: any) => val?.value === v.value));
-                const colorHex = getVariantColor(v.value, v.color);
-                const imgStyle = v.image || data.product?.main_image || heroImage;
+              {allItems.map((item, i) => {
+                const isActive = currentActiveUrl === item.url;
+                const colorHex = item.variant ? getVariantColor(item.variant.value, item.variant.color) : null;
                 
                 return (
                   <button 
                     key={i}
                     type="button"
                     onClick={() => {
-                      setSelectedVariants(prev => prev.map(itemSelection => {
-                        const subSelection: Record<string, any> = {
-                          [v.name]: v
-                        };
-                        if (v.sub_variants && v.sub_variants.length > 0) {
-                          const firstSub = v.sub_variants[0];
-                          subSelection[firstSub.name] = firstSub;
-                        }
-                        return {
-                          ...itemSelection,
-                          ...subSelection
-                        };
-                      }));
+                      setSelectedActiveImage(item.url);
+                      if (item.variant) {
+                        const v = item.variant;
+                        setSelectedVariants(prev => prev.map(itemSelection => {
+                          const subSelection: Record<string, any> = { [v.name]: v };
+                          if (v.sub_variants && v.sub_variants.length > 0) {
+                            const firstSub = v.sub_variants[0];
+                            subSelection[firstSub.name] = firstSub;
+                          }
+                          return { ...itemSelection, ...subSelection };
+                        }));
+                      }
                     }}
                     className={cn(
-                      "relative size-12 sm:size-14 rounded-full border-2 transition-all active:scale-95 flex items-center justify-center p-0.5 bg-white shadow-sm",
-                      isSelected ? "ring-2 ring-offset-1 ring-slate-800/20" : "border-slate-200 hover:border-slate-300"
+                      "relative size-12 sm:size-14 rounded-full border-2 transition-all active:scale-95 flex items-center justify-center p-0.5 bg-white shadow-sm shrink-0",
+                      isActive ? "ring-2 ring-offset-1 ring-slate-800/20" : "border-slate-200 hover:border-slate-300"
                     )}
                     style={{
-                      borderColor: isSelected ? primary : '#e2e8f0'
+                      borderColor: isActive ? primary : '#e2e8f0'
                     }}
-                    title={v.value}
+                    title={item.label || ''}
                   >
-                    {imgStyle ? (
-                      <img src={optimizeCloudinaryUrl(imgStyle, 100)} className="size-full rounded-full object-cover" alt={v.value} />
+                    {item.url ? (
+                      <img 
+                        src={optimizeCloudinaryUrl(item.url, 100)} 
+                        className="size-full rounded-full object-cover" 
+                        alt={item.label || 'Thumbnail'} 
+                        onError={(e) => {
+                          const btn = e.currentTarget.closest('button');
+                          if (btn) btn.style.setProperty('display', 'none', 'important');
+                        }}
+                      />
                     ) : (
                       <div className="size-full rounded-full" style={{ backgroundColor: colorHex || '#ccc' }} />
-                    )}
-
-                    {isSelected && (
-                      <div 
-                        className="absolute -top-1 -right-1 size-5 rounded-full flex items-center justify-center text-white text-[10px] font-black shadow-sm border border-white"
-                        style={{ backgroundColor: primary }}
-                      >
-                        ✓
-                      </div>
                     )}
                   </button>
                 );
@@ -441,6 +474,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
             </div>
           );
         })()}
+
 
         <div className="p-4 sm:p-6 lg:p-8">
           {/* Title & Price */}
@@ -513,7 +547,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                      <div className="flex flex-wrap gap-2.5">
                                        {optionVariants.map((v: any, i: number) => {
                                          const isSelected = selectedVal === v.value;
-                                         const isOutOfStock = ((v.stock || 0) - (v.reserved || 0)) <= 0;
+                                         const isOutOfStock = (v.is_available === false || v.out_of_stock === true || v.is_active === false) || (((v.stock || 0) - (v.reserved || 0)) <= 0);
                                          const colorHex = getVariantColor(v.value, v.color);
                                          const isCircle = isColorOption || !!(v.image || v.color || colorHex);
 
@@ -596,7 +630,7 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                                          <div className="flex flex-wrap gap-2">
                                            {selectedMainVar.sub_variants.map((sv: any, i: number) => {
                                              const isSelected = selectedSubVal === sv.value;
-                                             const isOutOfStock = ((sv.stock || 0) - (sv.reserved || 0)) <= 0;
+                                             const isOutOfStock = (sv.is_available === false || sv.out_of_stock === true || sv.is_active === false) || (((sv.stock || 0) - (sv.reserved || 0)) <= 0);
                                              return (
                                                <button
                                                  key={`sub-${itemIndex}-${subName}-${sv.value || i}`}
@@ -732,12 +766,23 @@ export default function DzCodRenderer({ data }: DzCodRendererProps) {
                <CheckoutForm isInline={true} forceTemplate="dz_cod" />
              </div>
 
-             {/* Publicity Banner */}
-             {data.banner_image_url && (
-               <div className="mt-6">
-                 <img src={optimizeCloudinaryUrl(data.banner_image_url, 1600)} alt="Bannière publicitaire" className="w-full h-auto rounded-2xl shadow-md" />
-               </div>
-             )}
+              {/* Publicity Banners (Multiple - Seamless Stack without gap) */}
+              {(() => {
+                const banners = parseBannerImages(data.banner_image_url);
+                if (banners.length === 0) return null;
+                return (
+                  <div className="mt-6 flex flex-col space-y-0 leading-none overflow-hidden rounded-2xl shadow-md border border-slate-100">
+                    {banners.map((url, i) => (
+                      <img
+                        key={i}
+                        src={optimizeCloudinaryUrl(url, 1600)}
+                        alt={`Bannière publicitaire ${i + 1}`}
+                        className="w-full h-auto block m-0 p-0"
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
           </div>
 
           {/* Long Description Image / Content removed */}
