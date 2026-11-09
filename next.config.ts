@@ -32,14 +32,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   reactStrictMode: true,
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
-  },
+
   // Increase upload body size limit to 25MB for product images
   experimental: {
     serverActions: {

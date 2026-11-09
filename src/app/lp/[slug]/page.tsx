@@ -7,9 +7,6 @@ import { ServerSeo } from '@/components/storefront/server-seo';
 import { getBackendUrl } from '@/lib/utils';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-static';
-export const revalidate = 3600;
-
 interface LpData {
   id: string;
   store_id: string;
@@ -38,8 +35,6 @@ interface LpData {
   phone: string | null;
   views: number;
   orders: number;
-  offers?: any[];
-  banner_image_url?: string | null;
   product: {
     id: string; name: string; slug: string;
     price: number; compare_price: number | null;
@@ -54,29 +49,6 @@ function getAppBaseUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
 }
 
-export async function generateStaticParams() {
-  try {
-    const backendUrl = getBackendUrl();
-    const res = await fetch(`${backendUrl}/api/v1/landing-pages`, {
-      next: { revalidate: 3600 },
-    });
-    if (res.ok) {
-      const json = await res.json();
-      const lps = json.data ?? json ?? [];
-      const slugs = Array.isArray(lps)
-        ? lps.map((lp: any) => ({ slug: lp.slug })).filter((s: any) => s.slug)
-        : [];
-      if (!slugs.some((s: any) => s.slug === 'coussin-de-voyage')) {
-        slugs.push({ slug: 'coussin-de-voyage' });
-      }
-      return slugs;
-    }
-  } catch (e) {
-    console.warn('[generateStaticParams] Fallback to default static slug', e);
-  }
-  return [{ slug: 'coussin-de-voyage' }];
-}
-
 async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData | null> {
   const backendUrl = getBackendUrl();
   const encodedSlug = encodeURIComponent(slug);
@@ -85,13 +57,14 @@ async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData 
   try {
     const res = await fetch(
       `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}${query}`,
-      { next: { revalidate: 3600 } }
+      { next: { revalidate: 0 } }
     );
     if (!res.ok) {
       if (storeId) {
+        // Fallback: search by slug globally
         const fallbackRes = await fetch(
           `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}`,
-          { next: { revalidate: 3600 } }
+          { next: { revalidate: 0 } }
         );
         if (fallbackRes.ok) {
           const json = await fallbackRes.json();
@@ -109,6 +82,7 @@ async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData 
     return null;
   }
 }
+
 
 export async function generateMetadata({ params, searchParams }: {
   params: Promise<{ slug: string }>;
@@ -132,7 +106,7 @@ export async function generateMetadata({ params, searchParams }: {
       if (lp.store_id) storeId = lp.store_id;
     }
 
-    const storeRes = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 3600 } });
+    const storeRes = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
     if (storeRes.ok) {
       const storeJson = await storeRes.json();
       const stores = storeJson.data ?? storeJson ?? [];
@@ -191,7 +165,7 @@ export default async function LpPage({
   let matchedStore: any = null;
   
   try {
-    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 3600 } });
+    const res = await fetch(`${backendUrl}/api/v1/stores`, { next: { revalidate: 10 } });
     if (res.ok) {
       const json = await res.json();
       stores = json.data ?? json ?? [];
@@ -223,35 +197,19 @@ export default async function LpPage({
     matchedStore = stores.find((s) => s.id === storeId) ?? matchedStore;
   }
 
-  // Fetch Meta Ads Config for the store
+  // Fetch Meta Ads Config for the store — the unauthenticated /public-config
+  // variant, NOT the admin /config endpoint: this SSR has no user session to
+  // attach, and /config requires one (always 401s here otherwise, silently
+  // leaving window.__metaTrackingConfig empty for every store — confirmed by
+  // real end-to-end testing, not assumed).
   let metaAdsConfig = null;
   try {
-    const res = await fetch(`${backendUrl}/api/v1/meta-ads/public-config?store_id=${storeId}`, { next: { revalidate: 3600 } });
+    const res = await fetch(`${backendUrl}/api/v1/meta-ads/public-config?store_id=${storeId}`, { next: { revalidate: 10 } });
     if (res.ok) {
       const json = await res.json();
       metaAdsConfig = json.data;
     }
   } catch { /* ignore */ }
-
-  // Fetch Superadmin-configured delivery fees directly from backend
-  const configuredDeliveryFees: Record<number, { home: number; office: number }> = {};
-  try {
-    const feesRes = await fetch(`${backendUrl}/api/v1/delivery/`, { next: { revalidate: 3600 } });
-    if (feesRes.ok) {
-      const feesJson = await feesRes.json();
-      const list = feesJson.data ?? feesJson ?? [];
-      if (Array.isArray(list)) {
-        list.forEach((w: any) => {
-          if (w.wilaya_id) {
-            configuredDeliveryFees[w.wilaya_id] = {
-              home: Number(w.home_fee) || 700,
-              office: Number(w.office_fee) || 400,
-            };
-          }
-        });
-      }
-    }
-  } catch { /* fallback to defaults */ }
 
   return (
     <>
@@ -266,7 +224,7 @@ export default async function LpPage({
       {lp.template === 'dz_cod' ? (
         <DzCodRenderer data={lp} />
       ) : (
-        <LandingPageRenderer data={lp} configuredDeliveryFees={configuredDeliveryFees} />
+        <LandingPageRenderer data={lp} />
       )}
     </>
   );

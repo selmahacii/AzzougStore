@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import Script from 'next/script';
 import { setMetaPixelId, trackMetaEvent } from '@/lib/meta-tracking';
 import { captureAttribution } from '@/lib/attribution';
 
@@ -58,9 +57,8 @@ export function StorefrontIntegrations({ config, lpId }: { config: any, lpId?: s
         <meta name="facebook-domain-verification" content={domainContent} />
       )}
       {pixelId && (
-        <Script
+        <script
           id="fb-pixel-init"
-          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               !function(f,b,e,v,n,t,s)
