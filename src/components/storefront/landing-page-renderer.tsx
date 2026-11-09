@@ -63,7 +63,7 @@ export interface LpData {
   } | null;
 }
 
-export default function LandingPageRenderer({ data }: { data: LpData }) {
+export default function LandingPageRenderer({ data, configuredDeliveryFees }: { data: LpData; configuredDeliveryFees?: Record<number, { home: number; office: number }> }) {
   const primary = data.primary_color || '#4b7bec';
   const price = data.price ?? data.product?.price ?? 2900;
   const comparePrice = data.compare_price ?? data.product?.compare_price ?? 3500;
@@ -329,6 +329,7 @@ export default function LandingPageRenderer({ data }: { data: LpData }) {
                 data={data}
                 product={data.product}
                 offers={data.offers}
+                configuredDeliveryFees={configuredDeliveryFees}
               />
             </div>
           </div>

@@ -89,7 +89,6 @@ async function fetchLandingPage(slug: string, storeId?: string): Promise<LpData 
     );
     if (!res.ok) {
       if (storeId) {
-        // Fallback: search by slug globally
         const fallbackRes = await fetch(
           `${backendUrl}/api/v1/landing-pages/slug/${encodedSlug}`,
           { next: { revalidate: 3600 } }
@@ -234,6 +233,26 @@ export default async function LpPage({
     }
   } catch { /* ignore */ }
 
+  // Fetch Superadmin-configured delivery fees directly from backend
+  const configuredDeliveryFees: Record<number, { home: number; office: number }> = {};
+  try {
+    const feesRes = await fetch(`${backendUrl}/api/v1/delivery/`, { next: { revalidate: 3600 } });
+    if (feesRes.ok) {
+      const feesJson = await feesRes.json();
+      const list = feesJson.data ?? feesJson ?? [];
+      if (Array.isArray(list)) {
+        list.forEach((w: any) => {
+          if (w.wilaya_id) {
+            configuredDeliveryFees[w.wilaya_id] = {
+              home: Number(w.home_fee) || 700,
+              office: Number(w.office_fee) || 400,
+            };
+          }
+        });
+      }
+    }
+  } catch { /* fallback to defaults */ }
+
   return (
     <>
       <ServerSeo
@@ -247,7 +266,7 @@ export default async function LpPage({
       {lp.template === 'dz_cod' ? (
         <DzCodRenderer data={lp} />
       ) : (
-        <LandingPageRenderer data={lp} />
+        <LandingPageRenderer data={lp} configuredDeliveryFees={configuredDeliveryFees} />
       )}
     </>
   );

@@ -113,6 +113,7 @@ interface CheckoutFormProps {
   data?: any;
   product?: any;
   offers?: any[];
+  configuredDeliveryFees?: Record<number, { home: number; office: number }>;
 }
 
 export function CheckoutForm({
@@ -122,6 +123,7 @@ export function CheckoutForm({
   data,
   product: initialProduct,
   offers: initialOffers,
+  configuredDeliveryFees,
 }: CheckoutFormProps) {
   const activeStore = useAppStore((s) => s.activeStore);
   const setStorefrontView = useAppStore((s) => s.setStorefrontView);
@@ -227,11 +229,36 @@ export function CheckoutForm({
     } catch {}
   }, [currentOffer.price, product?.name, activeStore?.id, data?.store_id, data?.id]);
 
-  // Instant delivery fee calculation (0ms, zero network fetch)
+  const [adminFees, setAdminFees] = useState<Record<number, { home: number; office: number }> | null>(
+    configuredDeliveryFees && Object.keys(configuredDeliveryFees).length > 0 ? configuredDeliveryFees : null
+  );
+
+  // Client-side auto-refresh from superadmin API (/api/v1/delivery)
+  useEffect(() => {
+    if (adminFees && Object.keys(adminFees).length > 0) return;
+    fetch('/api/v1/delivery')
+      .then(r => r.json())
+      .then(res => {
+        const list = res?.data || (Array.isArray(res) ? res : []);
+        if (Array.isArray(list) && list.length > 0) {
+          const map: Record<number, { home: number; office: number }> = {};
+          list.forEach((item: any) => {
+            map[item.wilaya_id] = {
+              home: Number(item.home_fee) || 700,
+              office: Number(item.office_fee) || 400,
+            };
+          });
+          setAdminFees(map);
+        }
+      })
+      .catch(() => {});
+  }, [adminFees]);
+
+  // Delivery fee calculation respecting superadmin fees
   const currentDeliveryFee = useMemo(() => {
     if (currentOffer.free_shipping) return 0;
-    return getStandardDeliveryFee(customerInfo.wilaya, customerInfo.deliveryType);
-  }, [currentOffer.free_shipping, customerInfo.wilaya, customerInfo.deliveryType]);
+    return getStandardDeliveryFee(customerInfo.wilaya, customerInfo.deliveryType, adminFees);
+  }, [currentOffer.free_shipping, customerInfo.wilaya, customerInfo.deliveryType, adminFees]);
 
   const finalTotal = useMemo(() => {
     return currentOffer.price + currentDeliveryFee;
