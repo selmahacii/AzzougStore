@@ -14,4 +14,4 @@ alembic upgrade head
 
 echo "🚀 Starting FastAPI App on port 7860..."
 # Hugging Face Spaces expects the web service to run on port 7860
-exec uvicorn app.main:app --host 0.0.0.0 --port 7860 --timeout-keep-alive 75 --backlog 4096 --timeout-graceful-shutdown 30
+exec uvicorn app.main:app --host 0.0.0.0 --port 7860

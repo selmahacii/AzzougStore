@@ -2282,8 +2282,7 @@ def create_order(
                     from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
                     meta_cfg = _get_meta_config_cached(db, existing.store_id)
                     if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
-                        raw_ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-                        client_ip = raw_ip.split(",")[0].strip() if raw_ip else None
+                        client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                         user_agent = request.headers.get("user-agent")
                         existing.client_ip = client_ip
                         existing.client_user_agent = user_agent
@@ -2547,8 +2546,7 @@ def create_order(
             from app.services.meta_capi import _get_meta_config_cached, send_purchase_for_order, enqueue_purchase_for_order
             meta_cfg = _get_meta_config_cached(db, target_order.store_id)
             if meta_cfg and meta_cfg.get("pixel_id") and meta_cfg.get("access_token"):
-                raw_ip = request.headers.get("cf-connecting-ip") or request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-                client_ip = raw_ip.split(",")[0].strip() if raw_ip else None
+                client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
                 user_agent = request.headers.get("user-agent")
                 target_order.client_ip = client_ip
                 target_order.client_user_agent = user_agent

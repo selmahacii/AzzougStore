@@ -520,60 +520,22 @@ def normalize_email(email: Optional[str]) -> Optional[str]:
     return _sha256(email.strip().lower())
 
 
-DZ_WILAYA_TO_CODE: Dict[str, str] = {
-    "adrar": "01", "chlef": "02", "laghouat": "03", "oum el bouaghi": "04", "batna": "05",
-    "bejaia": "06", "béjaïa": "06", "biskra": "07", "bechar": "08", "béchar": "08", "blida": "09",
-    "bouira": "10", "tamanrasset": "11", "tebessa": "12", "tébessa": "12", "tlemcen": "13",
-    "tiaret": "14", "tizi ouzou": "15", "alger": "16", "algiers": "16", "الجزائر": "16",
-    "djelfa": "17", "jijel": "18", "setif": "19", "sétif": "19", "saida": "20", "saïda": "20",
-    "skikda": "21", "sidi bel abbes": "22", "sidi bel abbès": "22", "annaba": "23", "guelma": "24",
-    "constantine": "25", "medea": "26", "médéa": "26", "mostaganem": "27", "msila": "28", "m'sila": "28",
-    "mascara": "29", "ouargla": "30", "oran": "31", "وهران": "31", "el bayadh": "32", "illizi": "33",
-    "bordj bou arreridj": "34", "bordj bou arréridj": "34", "boumerdes": "35", "boumerdès": "35",
-    "el tarf": "36", "tindouf": "37", "tissemsilt": "38", "el oued": "39", "khenchela": "40",
-    "souk ahras": "41", "tipaza": "42", "mila": "43", "ain defla": "44", "aïn defla": "44",
-    "naama": "45", "naâma": "45", "ain temouchent": "46", "aïn témouchent": "46", "ghardaia": "47",
-    "ghardaïa": "47", "relizane": "48", "timimoun": "49", "bordj baji mokhtar": "50",
-    "ouled djellal": "51", "beni abbes": "52", "béni abbès": "52", "in salah": "53",
-    "in guezzam": "54", "touggourt": "55", "djanet": "56", "el mghair": "57", "el m'ghair": "57",
-    "el meniaa": "58"
-}
-
 def normalize_phone(phone: Optional[str]) -> Optional[str]:
-    """E.164 without '+' — Algerian numbers get the 213 country code (Meta spec)."""
+    """E.164 without '+' — Algerian numbers get the 213 country code."""
     if not phone:
         return None
     digits = re.sub(r"\D", "", phone)
     if not digits:
         return None
     if digits.startswith("00213"):
-        digits = digits[5:]
-    elif digits.startswith("213"):
-        digits = digits[3:]
-    elif digits.startswith("0"):
-        digits = digits[1:]
-    if len(digits) == 9 and digits[0] in ("5", "6", "7"):
-        return _sha256("213" + digits)
+        digits = digits[2:]
+    if digits.startswith("213") and len(digits) >= 11:
+        pass
+    elif digits.startswith("0") and len(digits) == 10:
+        digits = "213" + digits[1:]
+    elif len(digits) == 9 and digits[0] in ("5", "6", "7"):
+        digits = "213" + digits
     return _sha256(digits)
-
-def normalize_phone_hashes(phone: Optional[str]) -> List[str]:
-    """Provides both international 213[5-7]XXXXXXXX and national 0[5-7]XXXXXXXX SHA256 hashes."""
-    if not phone:
-        return []
-    digits = re.sub(r"\D", "", phone)
-    if not digits:
-        return []
-    if digits.startswith("00213"):
-        core = digits[5:]
-    elif digits.startswith("213"):
-        core = digits[3:]
-    elif digits.startswith("0"):
-        core = digits[1:]
-    else:
-        core = digits
-    if len(core) == 9 and core[0] in ("5", "6", "7"):
-        return [_sha256("213" + core), _sha256("0" + core)]
-    return [_sha256(digits)]
 
 
 def normalize_name(name: Optional[str]) -> Optional[str]:
@@ -611,20 +573,7 @@ def normalize_city(city: Optional[str]) -> Optional[str]:
 
 
 def normalize_state(state: Optional[str]) -> Optional[str]:
-    """Wilaya → Meta 'st': resolves Algerian 2-digit official code (e.g. '16' for Alger) and hashes with SHA-256."""
-    if not state:
-        return None
-    st_raw = state.strip().lower()
-    # If already a 1- or 2-digit code
-    if st_raw.isdigit():
-        num = int(st_raw)
-        if 1 <= num <= 58:
-            return _sha256(f"{num:02d}")
-    # Strip accents for lookup
-    clean_name = _strip_accents(st_raw)
-    for name_key, code in DZ_WILAYA_TO_CODE.items():
-        if name_key in clean_name or clean_name in name_key:
-            return _sha256(code)
+    """Wilaya → Meta 'st' (lowercase, no accents, no punctuation)."""
     return normalize_city(state)
 
 
@@ -753,10 +702,8 @@ def build_user_data(
     ud: Dict[str, Any] = {}
     if (v := normalize_email(email)):
         ud["em"] = [v]
-    if phone:
-        ph_hashes = normalize_phone_hashes(phone)
-        if ph_hashes:
-            ud["ph"] = ph_hashes
+    if (v := normalize_phone(phone)):
+        ud["ph"] = [v]
     if (v := normalize_name(first_name)):
         ud["fn"] = [v]
     if (v := normalize_name(last_name)):
@@ -2871,12 +2818,12 @@ def _handle_claimed_row(db: Session, row, order_id: str, *, client_ip: Optional[
         #   deliberately excludes from conversion, widening the Meta-vs-ERP gap.
         # - MERGED: duplicate submission absorbed into its parent (the parent
         #   already sent its own Purchase).
-        if str(order.status) == "MERGED":
+        if (order.source or "").upper() in ("MANUAL", "POS") or str(order.status) == "MERGED":
             row.status = "skipped"
-            row.error_message = f"status={order.status}"
+            row.error_message = f"source={order.source} status={order.status}"
             row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
-            logger.info("[MetaCAPI] queue: order=%s skipped (status=%s)", order_id, order.status)
+            logger.info("[MetaCAPI] queue: order=%s skipped (source=%s status=%s)", order_id, order.source, order.status)
             return
 
         config = _get_meta_config_cached(db, order.store_id)
