@@ -1096,7 +1096,7 @@ def sync_meta_ads(
             raw_token = (config.access_token or "").strip()
             # If token contains accidental write-in text after space, isolate the token string
             clean_token = raw_token.split()[0] if raw_token else ""
-            logger.info(f"[Meta Token Diag] Raw token: '{config.access_token}' -> Clean token: '{clean_token[:15]}...{clean_token[-10:] if len(clean_token) > 25 else ''}'")
+            logger.info(f"[Meta Token Diag] Clean token length: {len(clean_token)}, prefix: '{clean_token[:10]}...'")
             if relay_url:
                 # HuggingFace can't reach graph.facebook.com directly (TLS block),
                 # so pull Ads Insights through the same Vercel relay used for CAPI

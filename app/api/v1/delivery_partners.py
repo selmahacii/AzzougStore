@@ -9,7 +9,7 @@ import uuid
 import httpx
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request, BackgroundTasks, Header
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 
@@ -321,27 +321,37 @@ _AVAILABILITY_TTL = 60.0
 
 @router.get("/availability")
 def get_partners_availability(
-    store_id: str = Query(..., alias="storeId"),
+    store_id: Optional[str] = Query(None, alias="storeId"),
+    store_id_alt: Optional[str] = Query(None, alias="store_id"),
     product_ids: Optional[str] = Query(None, alias="productIds"),
+    product_ids_alt: Optional[str] = Query(None, alias="product_ids"),
+    x_store_id: Optional[str] = Header(None, alias="X-Store-Id"),
     db: Session = Depends(get_db),
 ):
     """
     Public endpoint for the storefront to check which carriers are active for a store.
-    No authentication required.
+    No authentication required. Robust against missing storeId parameter.
     """
-    _cache_key = (store_id, product_ids or "")
+    effective_store_id = store_id or store_id_alt or x_store_id
+    if not effective_store_id:
+        from app.models.store import Store
+        first_store = db.query(Store.id).filter(Store.is_active == True).first()
+        effective_store_id = str(first_store[0]) if first_store else "16b44707-3017-41ae-ad48-61a031287f56"
+
+    effective_product_ids = product_ids or product_ids_alt
+    _cache_key = (effective_store_id, effective_product_ids or "")
     _hit = _availability_cache.get(_cache_key)
     if _hit is not None and _avail_time.monotonic() - _hit[1] < _AVAILABILITY_TTL:
         return _hit[0]
 
     partners = db.query(DeliveryPartner).filter(
-        DeliveryPartner.store_id == store_id,
+        DeliveryPartner.store_id == effective_store_id,
         DeliveryPartner.is_active == True
     ).all()
     
     # Filter by product allowed_carriers
-    if product_ids:
-        ids_list = [i.strip() for i in product_ids.split(",") if i.strip()]
+    if effective_product_ids:
+        ids_list = [i.strip() for i in effective_product_ids.split(",") if i.strip()]
         if ids_list:
             products = db.query(Product).filter(Product.id.in_(ids_list)).all()
             

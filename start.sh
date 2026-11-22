@@ -2,7 +2,12 @@
 set -e
 
 echo "===== Application Startup at $(date -u '+%Y-%m-%d %H:%M:%S') ====="
-echo "--- AzzougShop Backend Booting (deploy-diag marker: forced rebuild to inspect stuck-building issue) ---"
+echo "--- AzzougShop Backend Booting ---"
+
+if command -v redis-server >/dev/null 2>&1; then
+  echo "🚀 Starting Redis Server on port 6379..."
+  redis-server --daemonize yes --port 6379 --protected-mode no 2>/dev/null || true
+fi
 
 # Wait for Postgres to be ready using Python + SQLAlchemy (works with any DATABASE_URL incl. Neon/Supabase)
 until python -c "
@@ -142,4 +147,4 @@ echo "Starting FastAPI server..."
 # tier where that headroom apparently isn't there. Reverting to 1 while
 # the actual constraint (confirmed memory vs. something else) gets
 # checked directly against the Space's live resource graph.
-exec uvicorn app.main:app --host 0.0.0.0 --port 7860
+exec uvicorn app.main:app --host 0.0.0.0 --port 7860 --timeout-keep-alive 75 --backlog 4096 --timeout-graceful-shutdown 30
