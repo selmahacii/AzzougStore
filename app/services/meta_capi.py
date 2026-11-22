@@ -792,6 +792,29 @@ def build_purchase_event(
          "item_price": float(i.unit_price or 0)}
         for i in items
     ]
+    raw_total = float(order.total or 0)
+    converted_value = round(raw_total / (exchange_rate or 1.0), 2)
+    # DIAGNOSTIC (2026-11-22): flags a currency configured as non-DZD with
+    # exchange_rate left at the 1.0 default — that combination sends Meta
+    # the raw DZD amount mislabeled as the ad account's currency (e.g. "4500
+    # EUR" for an order that is actually 4500 DZD / ~31 EUR), which distorts
+    # Meta's value-based optimization. Not raised as an error: existing data
+    # keeps flowing, this only makes the mismatch visible in logs.
+    if (ad_currency or "DZD").upper() != "DZD" and float(exchange_rate or 1.0) == 1.0:
+        logger.warning(
+            "[META_CURRENCY_SUSPECT] order=%s store_currency=%s exchange_rate=%s "
+            "raw_total_dzd=%.2f value_sent=%.2f — exchange_rate=1.0 with a "
+            "non-DZD currency means NO conversion was applied; verify "
+            "MetaAdsConfig.exchange_rate for this store.",
+            getattr(order, "order_number", order.id), ad_currency, exchange_rate,
+            raw_total, converted_value,
+        )
+    logger.info(
+        "[META_CURRENCY_CONVERSION] order=%s raw_total_dzd=%.2f exchange_rate=%s "
+        "ad_currency=%s value_sent=%.2f",
+        getattr(order, "order_number", order.id), raw_total, exchange_rate,
+        ad_currency, converted_value,
+    )
     # event_time DOIT être le moment réel de l'achat, jamais l'heure d'envoi
     # — c'était int(time.time()) avant ce correctif, ce qui rapportait à Meta
     # "cette conversion vient d'avoir lieu" même pour un backfill vieux de
@@ -835,7 +858,7 @@ def build_purchase_event(
             fbc_reference_time=(reference_dt.replace(tzinfo=timezone.utc).timestamp() if reference_dt else None),
         ),
         "custom_data": {
-            "value": round(float(order.total or 0) / (exchange_rate or 1.0), 2),
+            "value": converted_value,
             "currency": (ad_currency or "DZD").upper(),
             "content_type": "product",
             "content_ids": [str(i.product_id) for i in items],
