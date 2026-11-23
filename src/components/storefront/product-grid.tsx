@@ -73,7 +73,8 @@ function useProductData(storeId: string | undefined) {
       if (inStockOnly) params.set('in_stock', 'true');
       if (promoOnly) params.set('promo', 'true');
       const json = await apiFetch<any>(`/api/v1/products?${params}`, { signal });
-      setProducts(json.data ?? []);
+      const activeProducts = (json.data ?? []).filter((p: Product) => p.is_active !== false);
+      setProducts(activeProducts);
       setTotalPages(json.totalPages ?? 1);
       setTotal(json.total ?? 0);
       if (json.categories) setRawCategories(json.categories);

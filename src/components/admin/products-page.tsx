@@ -16,6 +16,7 @@ import {
    Edit3,
    Trash2,
    Eye,
+   EyeOff,
    MoreHorizontal,
    Copy,
    ImageOff,
@@ -228,6 +229,7 @@ export default function ProductsPage() {
    const [startDate, setStartDate] = useState('');
    const [endDate, setEndDate] = useState('');
    const [categoryFilter, setCategoryFilter] = useState('all');
+   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
    const [page, setPage] = useState(1);
    const [pageSizeOption, setPageSizeOption] = useState('15');
    const [isUploading, setIsUploading] = useState(false);
@@ -338,14 +340,16 @@ export default function ProductsPage() {
       const params = new URLSearchParams({ store_id: storeId, page: page.toString(), pageSize: pageSize.toString(), include_upsell_only: 'true' });
       if (searchQuery) params.set('search', searchQuery);
       if (categoryFilter !== 'all') params.set('category', categoryFilter);
+      if (statusFilter === 'active') params.set('is_active', 'true');
+      if (statusFilter === 'inactive') params.set('is_active', 'false');
       if (startDate) params.set('start_date', startDate + 'T00:00:00.000Z');
       if (endDate) params.set('end_date', endDate + 'T23:59:59.999Z');
       return params.toString();
-   }, [storeId, page, pageSize, searchQuery, categoryFilter, startDate, endDate]);
+   }, [storeId, page, pageSize, searchQuery, categoryFilter, statusFilter, startDate, endDate]);
     const [uploadingVariantIdx, setUploadingVariantIdx] = useState<number | null>(null);
 
    const productsQuery = useQuery<ProductsApiResponse>({
-      queryKey: ['admin-products', storeId, page, pageSize, searchQuery, categoryFilter, startDate, endDate],
+      queryKey: ['admin-products', storeId, page, pageSize, searchQuery, categoryFilter, statusFilter, startDate, endDate],
       queryFn: () => apiFetch(`/api/v1/products/?${buildQueryParams()}`),
       enabled: !!storeId,
    });
@@ -396,6 +400,23 @@ export default function ProductsPage() {
       },
       onError: () => toast.error('Erreur lors de la suppression'),
    });
+
+   const toggleVisibilityMutation = useMutation({
+      mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => apiFetch(`/api/v1/products/${id}`, {
+         method: 'PUT',
+         body: JSON.stringify({ is_active, store_id: storeId })
+      }),
+      onSuccess: (_, vars) => {
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
+         toast.success(vars.is_active ? 'Produit mis en ligne sur la boutique' : 'Produit masqué du site (visible uniquement en interne)');
+      },
+      onError: (err: any) => toast.error(err.message || 'Erreur lors du changement de visibilité'),
+   });
+
+   const toggleVisibility = (product: Product) => {
+      const nextStatus = product.is_active === false;
+      toggleVisibilityMutation.mutate({ id: product.id, is_active: nextStatus });
+   };
 
    const analyticsQuery = useQuery({
       queryKey: ['product-analytics', analyticsProduct?.id, analyticsPeriod, storeId],
@@ -846,6 +867,44 @@ export default function ProductsPage() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+               {/* Visibility filter tabs for Superadmin */}
+               <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/60 shrink-0">
+                  <button
+                     type="button"
+                     onClick={() => { setStatusFilter('all'); setPage(1); }}
+                     className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                        statusFilter === 'all' ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                     )}
+                  >
+                     Tous
+                  </button>
+                  <button
+                     type="button"
+                     onClick={() => { setStatusFilter('active'); setPage(1); }}
+                     className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                        statusFilter === 'active' ? "bg-white text-emerald-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                     )}
+                     title="Produits visibles sur le site de la boutique"
+                  >
+                     <span className="size-1.5 rounded-full bg-emerald-500" />
+                     En ligne (Site)
+                  </button>
+                  <button
+                     type="button"
+                     onClick={() => { setStatusFilter('inactive'); setPage(1); }}
+                     className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                        statusFilter === 'inactive' ? "bg-white text-amber-700 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                     )}
+                     title="Produits masqués du site (visibles uniquement en gestion interne)"
+                  >
+                     <span className="size-1.5 rounded-full bg-amber-500" />
+                     Masqués (Interne)
+                  </button>
+               </div>
+
                <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setPage(1); }}>
                   <SelectTrigger className="w-44 h-10 bg-slate-50/80 border-slate-200 rounded-xl text-xs font-bold focus:ring-[#4b7bec]">
                      <div className="flex items-center gap-2">
@@ -881,7 +940,7 @@ export default function ProductsPage() {
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider">Catégorie / SKU</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Prix Vente</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Niveau Stock</th>
-                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Statut</th>
+                        <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">Visibilité Boutique</th>
                         <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Actions</th>
                      </tr>
                   </thead>
@@ -936,7 +995,32 @@ export default function ProductsPage() {
                               </div>
                            </td>
                            <td className="px-4 sm:px-8 py-6 text-center">
-                              <div className={cn("inline-flex h-2 w-2 rounded-full", product.is_active ? "bg-emerald-500 shadow-[0_0_8px_#20bf6b]" : "bg-slate-300")} />
+                              <button
+                                  type="button"
+                                  onClick={(e) => {
+                                     e.stopPropagation();
+                                     toggleVisibility(product);
+                                  }}
+                                  disabled={toggleVisibilityMutation.isPending}
+                                  className={cn(
+                                     "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black border transition-all shadow-2xs group cursor-pointer",
+                                     product.is_active !== false
+                                        ? "bg-emerald-50 hover:bg-emerald-100/90 text-emerald-700 border-emerald-200/80"
+                                        : "bg-amber-50 hover:bg-amber-100/90 text-amber-700 border-amber-200/80"
+                                  )}
+                                  title={product.is_active !== false ? "Visible sur la boutique. Cliquez pour masquer du site." : "Masqué du site (visible en gestion interne). Cliquez pour publier sur le site."}
+                               >
+                                  <span className={cn(
+                                     "size-2 rounded-full",
+                                     product.is_active !== false ? "bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse" : "bg-amber-500"
+                                  )} />
+                                  <span>{product.is_active !== false ? "En Ligne (Site)" : "Masqué (Interne)"}</span>
+                                  {product.is_active !== false ? (
+                                     <Eye className="size-3.5 text-emerald-600 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                  ) : (
+                                     <EyeOff className="size-3.5 text-amber-600 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                  )}
+                               </button>
                            </td>
                            <td className="px-4 sm:px-8 py-6 text-right">
                               <div className="flex items-center justify-end gap-1.5 sm:gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
@@ -2260,21 +2344,40 @@ export default function ProductsPage() {
                               <Input value={form.tags} onChange={e => setF({ tags: e.target.value })} placeholder="Promo, Nouvelle Collection, Waterproof..." className="h-14 rounded-2xl border-slate-100 bg-slate-50/50 px-6 font-bold" />
                            </div>
 
-                           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-[24px] border border-slate-100">
+                           <div className={cn(
+                              "flex flex-col sm:flex-row sm:items-center justify-between p-6 rounded-[24px] border gap-4 transition-all",
+                              form.is_active ? "bg-emerald-50/50 border-emerald-200/80" : "bg-amber-50/50 border-amber-200/80"
+                           )}>
                               <div className="flex items-center gap-4">
-                                 <div className="size-10 rounded-xl bg-white border flex items-center justify-center text-[#4b7bec]">
-                                    <Zap className="size-5" />
+                                 <div className={cn(
+                                    "size-11 rounded-2xl border flex items-center justify-center font-bold shrink-0",
+                                    form.is_active ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"
+                                 )}>
+                                    {form.is_active ? <Eye className="size-5" /> : <EyeOff className="size-5" />}
                                  </div>
                                  <div>
-                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">Visibilité Publique</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Activer pour afficher sur la vitrine</p>
+                                    <p className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                                       {form.is_active ? 'Produit En Ligne sur la Boutique' : 'Produit Masqué du Site (Gestion Interne Uniquement)'}
+                                    </p>
+                                    <p className="text-[11px] font-medium text-slate-500 mt-0.5 max-w-lg leading-relaxed">
+                                       {form.is_active 
+                                          ? 'Ce produit est visible par tous les clients sur la vitrine du site. Cliquez pour masquer du site.' 
+                                          : 'Ce produit est totalement invisible pour les visiteurs du site, mais reste 100% visible et gérable dans la gestion interne superadmin (stocks, commandes, admin).'}
+                                    </p>
                                  </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                 <span className={cn("text-[10px] font-black uppercase tracking-widest transition-all", form.is_active ? "text-[#20bf6b]" : "text-slate-300")}>
-                                    {form.is_active ? 'En Ligne' : 'Hors Ligne'}
-                                 </span>
-                                 <input type="checkbox" checked={form.is_active} onChange={e => setF({ is_active: e.target.checked })} className="size-7 rounded-lg border-slate-300 text-[#4b7bec] focus:ring-[#4b7bec]" />
+                                 <button
+                                    type="button"
+                                    onClick={() => setF({ is_active: !form.is_active })}
+                                    className={cn(
+                                       "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer flex items-center gap-2",
+                                       form.is_active ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-800 hover:bg-slate-900 text-white"
+                                    )}
+                                 >
+                                    {form.is_active ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                                    <span>{form.is_active ? 'Visible sur le site' : 'Masqué (Interne)'}</span>
+                                 </button>
                               </div>
                            </div>
 

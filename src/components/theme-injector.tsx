@@ -19,7 +19,7 @@ export function ThemeInjector() {
     const accent = currentTheme.accentColor || '#3867d6';
     const bg = currentTheme.backgroundColor || '#FFFFFF';
     const text = currentTheme.textColor || '#0F172A';
-    const font = currentTheme.fontFamily || 'Inter';
+    const font = currentTheme.fontFamily || 'Plus Jakarta Sans';
 
     const vars: Record<string, string> = {
       '--store-primary': primary,
@@ -38,7 +38,7 @@ export function ThemeInjector() {
 
     // Apply custom font-family to document body
     if (font) {
-      document.body.style.fontFamily = `"${font}", var(--font-inter), system-ui, -apple-system, sans-serif`;
+      document.body.style.fontFamily = `"${font}", 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif`;
     }
 
     // Dynamic Google Fonts Loader

@@ -57,9 +57,9 @@ export function HomeSections() {
     if (featuredQuery.isLoading || activeQuery.isLoading) { setLoading(true); return; }
     const f = featuredQuery.data;
     const n = activeQuery.data;
-    const featuredData = f?.data && f.data.length > 0 ? f.data : (n?.data ?? []);
+    const featuredData = (f?.data && f.data.length > 0 ? f.data : (n?.data ?? [])).filter((p: Product) => p.is_active !== false);
     setFeatured(featuredData);
-    setNewArrivals(n?.data ?? []);
+    setNewArrivals((n?.data ?? []).filter((p: Product) => p.is_active !== false));
     setLoading(false);
   }, [activeStore, featuredQuery.data, featuredQuery.isLoading, activeQuery.data, activeQuery.isLoading]);
 

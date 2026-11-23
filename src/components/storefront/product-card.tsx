@@ -23,6 +23,38 @@ function getDiscountPercent(price: number, compare: number): number {
   return Math.round(((compare - price) / compare) * 100);
 }
 
+const COLOR_MAP: Record<string, string> = {
+  noir: '#111827',
+  black: '#111827',
+  gris: '#9CA3AF',
+  grey: '#9CA3AF',
+  gray: '#9CA3AF',
+  blanc: '#FFFFFF',
+  white: '#FFFFFF',
+  bleu: '#1E3A8A',
+  blue: '#1E3A8A',
+  marine: '#0F172A',
+  navy: '#0F172A',
+  rouge: '#DC2626',
+  red: '#DC2626',
+  bordeaux: '#831843',
+  burgundy: '#831843',
+  marron: '#78350F',
+  brown: '#78350F',
+  beige: '#E7D8C9',
+  creme: '#FDFBF7',
+  rose: '#F472B6',
+  pink: '#F472B6',
+  vert: '#10B981',
+  green: '#10B981',
+  kaki: '#556B2F',
+  jaune: '#FBBF24',
+  yellow: '#FBBF24',
+  orange: '#F97316',
+  violet: '#8B5CF6',
+  purple: '#8B5CF6',
+};
+
 function useCardData(product: Product) {
   const parsedImages = useMemo(() => {
     if (!product.images) return [];
@@ -60,12 +92,39 @@ function useCardData(product: Product) {
   const img2 = allImages[1] ? optimizeCloudinaryUrl(allImages[1], 800) : null;
 
   const colors = useMemo(() => {
-    if (!product.variants) return [];
-    return product.variants
-      .filter(v => v.name.toLowerCase().includes('couleur') && v.color)
-      .map(v => v.color!)
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .slice(0, 5);
+    if (!product.variants || !Array.isArray(product.variants)) return [];
+    const colorList: string[] = [];
+    
+    product.variants.forEach((v: any) => {
+      // 1. Direct color hex/name
+      if (v.color && typeof v.color === 'string') {
+        const c = v.color.startsWith('#') ? v.color : (COLOR_MAP[v.color.toLowerCase().trim()] || v.color);
+        if (!colorList.includes(c)) colorList.push(c);
+      }
+      // 2. Name or value containing known color
+      const name = (v.name || '').toLowerCase();
+      const val = (v.value || '').toLowerCase();
+      Object.keys(COLOR_MAP).forEach(k => {
+        if (name.includes(k) || val.includes(k)) {
+          const hex = COLOR_MAP[k];
+          if (!colorList.includes(hex)) colorList.push(hex);
+        }
+      });
+      // 3. Sub-variants
+      if (v.sub_variants && Array.isArray(v.sub_variants)) {
+        v.sub_variants.forEach((sv: any) => {
+          const svName = (sv.name || '').toLowerCase();
+          const svVal = (sv.value || '').toLowerCase();
+          Object.keys(COLOR_MAP).forEach(k => {
+            if (svName.includes(k) || svVal.includes(k)) {
+              const hex = COLOR_MAP[k];
+              if (!colorList.includes(hex)) colorList.push(hex);
+            }
+          });
+        });
+      }
+    });
+    return colorList.slice(0, 5);
   }, [product.variants]);
 
   return { parsedImages, discount, isOutOfStock, img1, img2, colors };
@@ -88,14 +147,17 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
-      style={{ borderRadius: 'var(--store-radius, 20px)' }}
+      className="group relative flex flex-col bg-white border border-slate-200/70 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/90 transition-all duration-300 cursor-pointer overflow-hidden p-3.5 sm:p-4"
+      style={{ 
+        borderRadius: 'var(--store-radius, 24px)',
+        fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif'
+      }}
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image container */}
       <div 
-        className="relative aspect-[4/5] overflow-hidden bg-slate-50 border border-slate-100/60"
-        style={{ borderRadius: 'calc(var(--store-radius, 20px) - 4px)' }}
+        className="relative aspect-square sm:aspect-[4/5] overflow-hidden bg-slate-50 border border-slate-100/70 rounded-[18px]"
+        style={{ borderRadius: 'calc(var(--store-radius, 24px) - 6px)' }}
       >
         <img
           src={img1} 
@@ -113,29 +175,28 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
           />
         )}
 
-        {/* Wishlist button */}
+        {/* Wishlist circular button */}
         <button
           onClick={e => { 
             e.stopPropagation(); 
             toggleWishlist(product.id); 
             toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); 
           }}
-          className="absolute top-2.5 right-2.5 z-20 size-8 rounded-xl bg-white/90 backdrop-blur-md flex items-center justify-center shadow-xs border border-slate-200/60 hover:scale-110 transition-all"
+          className="absolute top-3 right-3 z-20 size-8 sm:size-9 rounded-full bg-white/95 backdrop-blur-md flex items-center justify-center shadow-xs border border-slate-100/90 hover:scale-110 active:scale-95 transition-all"
         >
-          <Heart className={cn("size-3.5 transition-colors", isInWishlist ? "fill-rose-500 text-rose-500" : "text-slate-400")} />
+          <Heart className={cn("size-3.5 sm:size-4 transition-colors", isInWishlist ? "fill-rose-500 text-rose-500" : "text-slate-400")} />
         </button>
 
-        {/* Badges */}
-        <div className="absolute top-2.5 left-2.5 z-20 flex flex-col gap-1">
+        {/* Badges - Sleek dark pill badge */}
+        <div className="absolute top-3 left-3 z-20 flex flex-col gap-1">
           {discount > 0 ? (
             <span
-              className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white rounded-lg shadow-xs"
-              style={{ backgroundColor: primary }}
+              className="px-2.5 py-1 text-[11px] font-bold text-white rounded-full shadow-xs tracking-tight bg-[#111827]"
             >
               -{discount}%
             </span>
           ) : product.featured ? (
-            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-lg shadow-xs">
+            <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-full shadow-xs">
               Vedette
             </span>
           ) : null}
@@ -144,7 +205,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
         {/* Out of stock overlay */}
         {isOutOfStock && (
           <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-white bg-slate-900/90 border border-white/20 px-3.5 py-1.5 rounded-xl shadow-lg">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-900/95 border border-white/20 px-3.5 py-1.5 rounded-full shadow-lg">
               Épuisé
             </span>
           </div>
@@ -152,31 +213,36 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       </div>
 
       {/* Info Block */}
-      <div className="pt-3 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
+      <div className="pt-3.5 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
         <div className="space-y-1">
           {product.category && (
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">{product.category}</p>
+            <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">{product.category}</p>
           )}
-          <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors">
+          <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors tracking-tight">
             {product.name}
           </h3>
           {colors.length > 0 && (
-            <div className="flex gap-1 pt-0.5">
+            <div className="flex items-center gap-1.5 pt-1.5">
               {colors.map((c, i) => (
-                <div key={i} className="size-2.5 rounded-full border border-slate-200" style={{ backgroundColor: c }} />
+                <div 
+                  key={i} 
+                  className="size-3 sm:size-3.5 rounded-full border border-slate-200/90 shadow-2xs transition-transform hover:scale-125" 
+                  style={{ backgroundColor: c }} 
+                  title={c}
+                />
               ))}
             </div>
           )}
         </div>
 
         {/* Price & Action Row */}
-        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+        <div className="space-y-3 pt-3 border-t border-slate-100">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm font-black text-slate-900 font-mono">
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
               {formatPrice(product.price)}
             </span>
             {product.compare_price !== null && product.compare_price > product.price && (
-              <span className="text-[11px] font-bold text-slate-400 font-mono line-through">
+              <span className="text-xs sm:text-sm font-semibold text-slate-400 line-through tracking-tight">
                 {formatPrice(product.compare_price)}
               </span>
             )}
@@ -188,11 +254,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
                 e.stopPropagation(); 
                 onAddToCart(product); 
               }}
-              className="w-full h-9 text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 transition-all shadow-xs hover:opacity-95 active:scale-[0.98]"
-              style={{ backgroundColor: primary, borderRadius: 'calc(var(--store-radius, 12px) - 2px)' }}
+              className="w-full h-11 sm:h-12 text-xs sm:text-[13px] font-bold uppercase tracking-wider text-white flex items-center justify-center gap-2 rounded-full transition-all shadow-sm hover:opacity-95 active:scale-[0.98] bg-[#0F172A] hover:bg-[#1E293B]"
+              style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
             >
-              <ShoppingCart className="size-3.5" />
-              Ajouter au panier
+              <ShoppingCart className="size-4 shrink-0" />
+              <span>Ajouter au panier</span>
             </button>
           )}
         </div>
@@ -217,6 +283,7 @@ function AthleticCard({ product, primary, onQuickView, onAddToCart }: {
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className="group relative flex flex-col bg-[#0A0A0A] overflow-hidden cursor-pointer"
+      style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image */}
@@ -301,7 +368,7 @@ function LuxeCard({ product, primary, onQuickView, onAddToCart }: {
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
       className="group relative flex flex-col cursor-pointer"
-      style={{ backgroundColor: '#0C0F1A' }}
+      style={{ backgroundColor: '#0C0F1A', fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image — portrait tall */}

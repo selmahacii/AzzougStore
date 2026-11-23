@@ -44,6 +44,10 @@ function useProductDetailData() {
     try {
       const json = await apiFetch<any>(`/api/v1/products?store_id=${activeStore.id}&slug=${selectedProductSlug}&is_active=true`, { signal });
       const productData = json.data ? (Array.isArray(json.data) ? json.data[0] : json.data) : null;
+      if (productData && productData.is_active === false) {
+        setProduct(null);
+        return;
+      }
       setProduct(productData ?? null);
       if (productData) {
         const initialSelections: Record<string, { quantity: number; notes: string }> = {};
