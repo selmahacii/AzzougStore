@@ -23,7 +23,11 @@ import {
   CheckCircle2,
   Users,
   Eye,
-  Crown
+  Crown,
+  Bell,
+  Truck,
+  Sliders,
+  Layers
 } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -95,6 +99,10 @@ interface FormData {
   template_id: string;
   primaryColor: string;
   accentColor: string;
+  backgroundColor: string;
+  textColor: string;
+  fontFamily: string;
+  borderRadius: string;
   domain: string;
   facebook: string;
   instagram: string;
@@ -104,6 +112,12 @@ interface FormData {
   address: string;
   footer_tagline: string;
   footer_copyright: string;
+  announcement_enabled: boolean;
+  announcement_text: string;
+  announcement_bg: string;
+  announcement_text_color: string;
+  trust_bar_enabled: boolean;
+  trust_bar_items: Array<{ label: string; sub: string; icon?: string }>;
   hero_layout: 'full' | 'side';
   hero_headline: string;
   hero_subtitle: string;
@@ -112,7 +126,11 @@ interface FormData {
   hero_tag: string;
   hero_stats: Array<{ label: string; value: string }>;
   hero_font: 'bold' | 'normal' | 'light' | 'serif';
-  sections_config: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }>;
+  sections_config: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials' | 'trustBar'; enabled: boolean }>;
+  label_best_sellers: string;
+  label_best_sellers_tag: string;
+  label_new_arrivals: string;
+  label_new_arrivals_tag: string;
   assignment_active: boolean;
   assignment_logic: 'MANUAL' | 'ROUND_ROBIN' | 'LEAST_LOADED';
 }
@@ -127,6 +145,10 @@ const DEFAULT_FORM: FormData = {
   template_id: 'minimalist',
   primaryColor: '#4b7bec',
   accentColor: '#3867d6',
+  backgroundColor: '#FFFFFF',
+  textColor: '#0F172A',
+  fontFamily: 'Inter',
+  borderRadius: '12px',
   domain: '',
   facebook: '',
   instagram: '',
@@ -136,6 +158,17 @@ const DEFAULT_FORM: FormData = {
   address: '',
   footer_tagline: "L'excellence et la qualité au quotidien.",
   footer_copyright: '',
+  announcement_enabled: true,
+  announcement_text: '🚚 Livraison Express 58 Wilayas • Paiement à la réception après inspection',
+  announcement_bg: '#0F172A',
+  announcement_text_color: '#FFFFFF',
+  trust_bar_enabled: true,
+  trust_bar_items: [
+    { label: 'Livraison 58 Wilayas', sub: 'À domicile ou bureau partout en Algérie' },
+    { label: 'Paiement à la Livraison', sub: 'Inspectez votre commande avant de payer' },
+    { label: 'Garantie Satisfaction', sub: 'Échange ou retour sous 48h garanti' },
+    { label: 'Service Client 7j/7', sub: 'Assistance téléphonique et WhatsApp réactive' },
+  ],
   hero_layout: 'side',
   hero_headline: "L'Élégance Épurée",
   hero_subtitle: "Découvrez nos pièces intemporelles, alliant design contemporain et finitions artisanales d'exception.",
@@ -145,6 +178,10 @@ const DEFAULT_FORM: FormData = {
   hero_stats: [],
   hero_font: 'bold',
   sections_config: DEFAULT_HOME_SECTIONS,
+  label_best_sellers: 'Meilleures ventes',
+  label_best_sellers_tag: 'Sélection exclusive',
+  label_new_arrivals: 'Nouveautés',
+  label_new_arrivals_tag: 'Derniers arrivages',
   assignment_active: false,
   assignment_logic: 'MANUAL',
 };
@@ -160,6 +197,7 @@ interface StoreWizardProps {
 const STEPS = ['Template', 'Identité', 'Design', 'Sections', 'Assignation', 'Déploiement'];
 
 const SECTION_LABELS: Record<string, string> = {
+  trustBar: 'Barre de réassurance (4 piliers)',
   bestSellers: 'Meilleures ventes',
   newArrivals: 'Nouveautés',
   testimonials: 'Avis clients',
@@ -190,6 +228,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           template_id: initialData.template_id || 'minimalist',
           primaryColor: initialData.theme_config?.primaryColor || '#4b7bec',
           accentColor: initialData.theme_config?.accentColor || '#3867d6',
+          backgroundColor: initialData.theme_config?.backgroundColor || '#FFFFFF',
+          textColor: initialData.theme_config?.textColor || '#0F172A',
+          fontFamily: initialData.theme_config?.fontFamily || 'Inter',
+          borderRadius: initialData.theme_config?.borderRadius || '12px',
           domain: initialData.domain || '',
           facebook: initialData.social_links?.facebook || '',
           instagram: initialData.social_links?.instagram || '',
@@ -199,6 +241,17 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           address: initialData.contact?.address || '',
           footer_tagline: initialData.theme_config?.footerTagline || '',
           footer_copyright: initialData.theme_config?.footerCopyright || '',
+          announcement_enabled: initialData.theme_config?.announcement?.enabled ?? true,
+          announcement_text: initialData.theme_config?.announcement?.text || '🚚 Livraison Express 58 Wilayas • Paiement à la réception après inspection',
+          announcement_bg: initialData.theme_config?.announcement?.bgColor || '#0F172A',
+          announcement_text_color: initialData.theme_config?.announcement?.textColor || '#FFFFFF',
+          trust_bar_enabled: initialData.theme_config?.trustBarEnabled ?? true,
+          trust_bar_items: initialData.theme_config?.trustBar || [
+            { label: 'Livraison 58 Wilayas', sub: 'À domicile ou bureau partout en Algérie' },
+            { label: 'Paiement à la Livraison', sub: 'Inspectez votre commande avant de payer' },
+            { label: 'Garantie Satisfaction', sub: 'Échange ou retour sous 48h garanti' },
+            { label: 'Service Client 7j/7', sub: 'Assistance téléphonique et WhatsApp réactive' },
+          ],
           hero_layout: initialData.theme_config?.heroLayout || 'side',
           hero_headline: initialData.theme_config?.heroHeadline || '',
           hero_subtitle: initialData.theme_config?.heroSubtitle || '',
@@ -207,6 +260,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           hero_tag: initialData.theme_config?.heroTag || '',
           hero_stats: initialData.theme_config?.heroStats || [],
           sections_config: initialData.theme_config?.sectionsConfig || DEFAULT_HOME_SECTIONS,
+          label_best_sellers: initialData.theme_config?.labelBestSellers || 'Meilleures ventes',
+          label_best_sellers_tag: initialData.theme_config?.labelBestSellersTag || 'Sélection exclusive',
+          label_new_arrivals: initialData.theme_config?.labelNewArrivals || 'Nouveautés',
+          label_new_arrivals_tag: initialData.theme_config?.labelNewArrivalsTag || 'Derniers arrivages',
           hero_font: initialData.theme_config?.heroFont || 'bold',
           assignment_active: initialData.assignment_active || false,
           assignment_logic: initialData.assignment_logic || 'MANUAL',
@@ -277,9 +334,19 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
         templateId: form.template_id,
         primaryColor: form.primaryColor,
         accentColor: form.accentColor,
-        fontFamily: 'Inter',
-        borderRadius: '12px',
+        backgroundColor: form.backgroundColor,
+        textColor: form.textColor,
+        fontFamily: form.fontFamily,
+        borderRadius: form.borderRadius,
         bannerIsVideo: form.banner_is_video,
+        announcement: {
+          enabled: form.announcement_enabled,
+          text: form.announcement_text,
+          bgColor: form.announcement_bg,
+          textColor: form.announcement_text_color,
+        },
+        trustBarEnabled: form.trust_bar_enabled,
+        trustBar: form.trust_bar_items,
         heroLayout: form.hero_layout,
         heroHeadline: form.hero_headline || null,
         heroSubtitle: form.hero_subtitle || null,
@@ -291,6 +358,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
           : null,
         heroFont: form.hero_font,
         sectionsConfig: form.sections_config,
+        labelBestSellers: form.label_best_sellers || null,
+        labelBestSellersTag: form.label_best_sellers_tag || null,
+        labelNewArrivals: form.label_new_arrivals || null,
+        labelNewArrivalsTag: form.label_new_arrivals_tag || null,
         footerTagline: form.footer_tagline || null,
         footerCopyright: form.footer_copyright || `© ${new Date().getFullYear()} ${form.name}. Tous droits réservés.`,
         contact: {
@@ -645,10 +716,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
 
           {/* STEP 2 — Design & Apparence */}
           {step === 2 && (
-            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">03. Palette de Couleurs & Personnalisation Hero</h3>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">Ajustez la charte graphique et l'accroche promotionnelle.</p>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">03. Palette de Couleurs & Identité Visuelle</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Personnalisez à 100% l'apparence : couleurs, typographie, bordures, annonce et réassurance.</p>
               </div>
 
               {/* Color Presets */}
@@ -687,7 +758,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
               {/* Custom Color Pickers */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Principale (Hex)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Principale (Boutons, CTA, Badges)</label>
                   <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <input
                       type="color"
@@ -704,7 +775,7 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Secondaire (Hex)</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Couleur Secondaire / Accent</label>
                   <div className="flex items-center gap-3 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <input
                       type="color"
@@ -721,14 +792,250 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                 </div>
               </div>
 
+              {/* Background Theme & Font Family Selection */}
+              <div className="space-y-4 pt-3 border-t border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Background Color */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ambiance de Fond de la Boutique</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: 'Blanc Pur', bg: '#FFFFFF', text: '#0F172A', border: 'border-slate-200' },
+                        { label: 'Crème Épuré', bg: '#FAFAF9', text: '#1C1917', border: 'border-stone-200' },
+                        { label: 'Gris Perle', bg: '#F8FAFC', text: '#0F172A', border: 'border-slate-200' },
+                        { label: 'Sombre Luxe', bg: '#0F172A', text: '#F8FAFC', border: 'border-slate-800' },
+                      ].map(theme => (
+                        <button
+                          key={theme.label}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, backgroundColor: theme.bg, textColor: theme.text }))}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-left transition-all flex items-center gap-2",
+                            form.backgroundColor === theme.bg ? "border-[#4b7bec] ring-2 ring-[#4b7bec]/20" : "border-slate-200 hover:border-slate-300"
+                          )}
+                          style={{ backgroundColor: theme.bg }}
+                        >
+                          <span className="size-3.5 rounded-full border shrink-0" style={{ backgroundColor: theme.bg, borderColor: theme.text }} />
+                          <span className="text-[11px] font-bold truncate" style={{ color: theme.text }}>{theme.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Border Radius Selection */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Style des Bordures (Arrondi des cartes & boutons)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: 'Carré Brut (0px)', r: '0px' },
+                        { label: 'Moderne (8px)', r: '8px' },
+                        { label: 'Équilibré (12px)', r: '12px' },
+                        { label: 'Pill Galet (20px)', r: '20px' },
+                      ].map(radius => (
+                        <button
+                          key={radius.label}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, borderRadius: radius.r }))}
+                          className={cn(
+                            "p-2.5 rounded-xl border text-xs font-bold transition-all text-slate-800 bg-slate-50",
+                            form.borderRadius === radius.r ? "border-[#4b7bec] bg-blue-50/50 ring-2 ring-[#4b7bec]/20 text-[#4b7bec]" : "border-slate-200 hover:bg-white"
+                          )}
+                        >
+                          {radius.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Typography Selector */}
+                <div className="space-y-2 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Typographie Principale (Google Fonts)</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {[
+                      { font: 'Inter', desc: 'Universel & Moderne' },
+                      { font: 'Plus Jakarta Sans', desc: 'Géométrique Épuré' },
+                      { font: 'Outfit', desc: 'Contemporain & Élégant' },
+                      { font: 'Poppins', desc: 'Rond & Accueillant' },
+                      { font: 'Playfair Display', desc: 'Luxe & Raffiné' },
+                      { font: 'Cairo', desc: 'Bilingue Arabe / Français' },
+                    ].map(f => (
+                      <button
+                        key={f.font}
+                        type="button"
+                        onClick={() => setForm(fm => ({ ...fm, fontFamily: f.font }))}
+                        className={cn(
+                          "p-3 rounded-xl border text-left transition-all",
+                          form.fontFamily === f.font 
+                            ? "border-[#4b7bec] bg-blue-50/40 ring-2 ring-[#4b7bec]/20" 
+                            : "border-slate-200 bg-slate-50 hover:bg-white"
+                        )}
+                      >
+                        <p className="text-xs font-black text-slate-900" style={{ fontFamily: `"${f.font}", sans-serif` }}>{f.font}</p>
+                        <p className="text-[9px] text-slate-400 font-medium mt-0.5">{f.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Announcement Bar Configuration */}
+              <div className="space-y-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bell className="size-4 text-[#4b7bec]" />
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-700">Barre d'Annonce Supérieure (Top Banner)</label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, announcement_enabled: !f.announcement_enabled }))}
+                    className={cn(
+                      "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border",
+                      form.announcement_enabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"
+                    )}
+                  >
+                    {form.announcement_enabled ? 'Activée' : 'Désactivée'}
+                  </button>
+                </div>
+
+                {form.announcement_enabled && (
+                  <div className="space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 animate-in fade-in">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Message de l'annonce</label>
+                      <Input
+                        value={form.announcement_text}
+                        onChange={e => setForm(f => ({ ...f, announcement_text: e.target.value }))}
+                        placeholder="🚚 Livraison Express 58 Wilayas • Paiement à la réception après inspection"
+                        className="h-10 text-xs bg-white font-medium"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Couleur Fond Bannière</label>
+                        <div className="flex items-center gap-2 p-1.5 bg-white rounded-xl border border-slate-200">
+                          <input
+                            type="color"
+                            value={form.announcement_bg}
+                            onChange={e => setForm(f => ({ ...f, announcement_bg: e.target.value }))}
+                            className="size-7 rounded-lg cursor-pointer border-0 bg-transparent"
+                          />
+                          <Input
+                            value={form.announcement_bg}
+                            onChange={e => setForm(f => ({ ...f, announcement_bg: e.target.value }))}
+                            className="h-7 border-0 bg-transparent font-mono text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Couleur Texte Bannière</label>
+                        <div className="flex items-center gap-2 p-1.5 bg-white rounded-xl border border-slate-200">
+                          <input
+                            type="color"
+                            value={form.announcement_text_color}
+                            onChange={e => setForm(f => ({ ...f, announcement_text_color: e.target.value }))}
+                            className="size-7 rounded-lg cursor-pointer border-0 bg-transparent"
+                          />
+                          <Input
+                            value={form.announcement_text_color}
+                            onChange={e => setForm(f => ({ ...f, announcement_text_color: e.target.value }))}
+                            className="h-7 border-0 bg-transparent font-mono text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Trust Reassurance Bar Configuration */}
+              <div className="space-y-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-emerald-600" />
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-700">Barre de Réassurance (4 Piliers de Confiance COD)</label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, trust_bar_enabled: !f.trust_bar_enabled }))}
+                    className={cn(
+                      "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border",
+                      form.trust_bar_enabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"
+                    )}
+                  >
+                    {form.trust_bar_enabled ? 'Activée' : 'Désactivée'}
+                  </button>
+                </div>
+
+                {form.trust_bar_enabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 animate-in fade-in">
+                    {form.trust_bar_items.map((item, idx) => (
+                      <div key={idx} className="space-y-1 bg-white p-2.5 rounded-xl border border-slate-200/80">
+                        <Input
+                          value={item.label}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setForm(f => {
+                              const newItems = [...f.trust_bar_items];
+                              newItems[idx] = { ...newItems[idx], label: val };
+                              return { ...f, trust_bar_items: newItems };
+                            });
+                          }}
+                          className="h-8 text-xs font-black bg-slate-50"
+                          placeholder="Titre engagement"
+                        />
+                        <Input
+                          value={item.sub}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setForm(f => {
+                              const newItems = [...f.trust_bar_items];
+                              newItems[idx] = { ...newItems[idx], sub: val };
+                              return { ...f, trust_bar_items: newItems };
+                            });
+                          }}
+                          className="h-7 text-[11px] text-slate-500 bg-transparent border-0"
+                          placeholder="Sous-titre explicatif"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Hero Customization Section */}
-              <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div className="space-y-3 pt-3 border-t border-slate-100">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personnalisation du Hero (Bannière d'accueil)</label>
                   <span className="text-[9px] font-bold text-slate-400">Visible sur la page principale</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Disposition Hero</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, hero_layout: 'side' }))}
+                        className={cn(
+                          "p-2 rounded-xl border text-xs font-bold transition-all",
+                          form.hero_layout === 'side' ? "border-[#4b7bec] bg-blue-50 text-[#4b7bec]" : "border-slate-200 bg-slate-50"
+                        )}
+                      >
+                        Split (Texte + Visuel)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, hero_layout: 'full' }))}
+                        className={cn(
+                          "p-2 rounded-xl border text-xs font-bold transition-all",
+                          form.hero_layout === 'full' ? "border-[#4b7bec] bg-blue-50 text-[#4b7bec]" : "border-slate-200 bg-slate-50"
+                        )}
+                      >
+                        Plein Écran
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Badge / Tag Supérieur</label>
                     <Input
@@ -738,15 +1045,16 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                       className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre Principal Hero</label>
-                    <Input
-                      placeholder="L'Élégance Épurée"
-                      value={form.hero_headline}
-                      onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
-                      className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
-                    />
-                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Titre Principal Hero</label>
+                  <Input
+                    placeholder="L'Élégance Épurée"
+                    value={form.hero_headline}
+                    onChange={e => setForm(f => ({ ...f, hero_headline: e.target.value }))}
+                    className="h-10 rounded-xl text-xs bg-slate-50 font-bold"
+                  />
                 </div>
 
                 <div className="space-y-1.5">
@@ -786,24 +1094,25 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
 
           {/* STEP 3 — Sections */}
           {step === 3 && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">04. Sections de la Page d'Accueil</h3>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">Activez ou désactivez les blocs affichés sur votre page d'accueil.</p>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-tight">04. Sections & Titres de la Page d'Accueil</h3>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">Activez, désactivez et personnalisez les intitulés affichés sur votre page d'accueil.</p>
               </div>
 
-              <div className="space-y-3">
+              {/* Sections list toggle */}
+              <div className="space-y-2.5">
                 {form.sections_config.map((section, i) => (
                   <div
                     key={section.key}
                     className={cn(
-                      "flex items-center justify-between p-4 rounded-2xl border transition-all",
+                      "flex items-center justify-between p-3.5 rounded-2xl border transition-all",
                       section.enabled ? "bg-white border-slate-200 shadow-2xs" : "bg-slate-50/50 border-slate-100 opacity-60"
                     )}
                   >
                     <div className="flex items-center gap-3">
                       <div className={cn(
-                        "size-9 rounded-xl flex items-center justify-center font-black text-xs",
+                        "size-8 rounded-xl flex items-center justify-center font-black text-xs",
                         section.enabled ? "bg-indigo-50 text-[#4b7bec]" : "bg-slate-100 text-slate-400"
                       )}>
                         {i + 1}
@@ -831,6 +1140,47 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                     </button>
                   </div>
                 ))}
+              </div>
+
+              {/* Custom section titles */}
+              <div className="space-y-4 pt-3 border-t border-slate-100">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Personnalisation des Intitulés de Sections</label>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Titre Section Meilleures Ventes</label>
+                    <Input
+                      value={form.label_best_sellers}
+                      onChange={e => setForm(f => ({ ...f, label_best_sellers: e.target.value }))}
+                      placeholder="Meilleures ventes"
+                      className="h-9 bg-white text-xs font-bold"
+                    />
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500 pt-1 block">Badge Tag</label>
+                    <Input
+                      value={form.label_best_sellers_tag}
+                      onChange={e => setForm(f => ({ ...f, label_best_sellers_tag: e.target.value }))}
+                      placeholder="Sélection exclusive"
+                      className="h-8 bg-white text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Titre Section Nouveautés</label>
+                    <Input
+                      value={form.label_new_arrivals}
+                      onChange={e => setForm(f => ({ ...f, label_new_arrivals: e.target.value }))}
+                      placeholder="Nouveautés"
+                      className="h-9 bg-white text-xs font-bold"
+                    />
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500 pt-1 block">Badge Tag</label>
+                    <Input
+                      value={form.label_new_arrivals_tag}
+                      onChange={e => setForm(f => ({ ...f, label_new_arrivals_tag: e.target.value }))}
+                      placeholder="Derniers arrivages"
+                      className="h-8 bg-white text-xs"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -905,6 +1255,10 @@ export function StoreWizard({ open, onOpenChange, onSuccess, initialData }: Stor
                   { label: 'Domaine Personnalisé', value: form.domain || 'Non configuré' },
                   { label: 'Template Vitrine', value: selectedTemplate.name },
                   { label: 'Couleur de Marque', value: form.primaryColor.toUpperCase(), color: form.primaryColor },
+                  { label: 'Typographie', value: form.fontFamily },
+                  { label: 'Style Bordures', value: form.borderRadius },
+                  { label: 'Barre d\'Annonce', value: form.announcement_enabled ? 'Activée' : 'Désactivée' },
+                  { label: 'Piliers de Confiance', value: form.trust_bar_enabled ? '4 Actifs' : 'Désactivés' },
                   { label: 'Logo', value: form.logo_url ? 'Configuré' : 'Non défini' },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-b-0">

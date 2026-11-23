@@ -88,11 +88,15 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white rounded-[24px] border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
+      className="group relative flex flex-col bg-white border border-slate-100 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/80 transition-all duration-300 cursor-pointer overflow-hidden p-3"
+      style={{ borderRadius: 'var(--store-radius, 20px)' }}
       onClick={() => onQuickView(product.slug)}
     >
       {/* Image container */}
-      <div className="relative aspect-[4/5] overflow-hidden bg-slate-50 rounded-2xl border border-slate-100/60">
+      <div 
+        className="relative aspect-[4/5] overflow-hidden bg-slate-50 border border-slate-100/60"
+        style={{ borderRadius: 'calc(var(--store-radius, 20px) - 4px)' }}
+      >
         <img
           src={img1} 
           alt={product.name}
@@ -184,8 +188,8 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
                 e.stopPropagation(); 
                 onAddToCart(product); 
               }}
-              className="w-full h-9 rounded-xl text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 transition-all shadow-xs hover:opacity-95 active:scale-[0.98]"
-              style={{ backgroundColor: primary }}
+              className="w-full h-9 text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 transition-all shadow-xs hover:opacity-95 active:scale-[0.98]"
+              style={{ backgroundColor: primary, borderRadius: 'calc(var(--store-radius, 12px) - 2px)' }}
             >
               <ShoppingCart className="size-3.5" />
               Ajouter au panier

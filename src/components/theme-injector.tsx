@@ -14,23 +14,39 @@ export function ThemeInjector() {
     if (!currentTheme) return;
 
     const root = document.documentElement;
-    const vars = {
-      '--store-primary': currentTheme.primaryColor,
-      '--store-primary-foreground': currentTheme.primaryForeground,
-      '--store-accent': currentTheme.accentColor,
-      '--store-font': currentTheme.fontFamily,
-      '--store-radius': currentTheme.borderRadius,
+    const radius = currentTheme.borderRadius || '12px';
+    const primary = currentTheme.primaryColor || '#4b7bec';
+    const accent = currentTheme.accentColor || '#3867d6';
+    const bg = currentTheme.backgroundColor || '#FFFFFF';
+    const text = currentTheme.textColor || '#0F172A';
+    const font = currentTheme.fontFamily || 'Inter';
+
+    const vars: Record<string, string> = {
+      '--store-primary': primary,
+      '--store-primary-foreground': currentTheme.primaryForeground || '#FFFFFF',
+      '--store-accent': accent,
+      '--store-bg': bg,
+      '--store-text': text,
+      '--store-font': font,
+      '--store-radius': radius,
+      '--radius': radius,
     };
 
     Object.entries(vars).forEach(([key, value]) => {
-      root.style.setProperty(key, value ?? null);
+      root.style.setProperty(key, value);
     });
 
+    // Apply custom font-family to document body
+    if (font) {
+      document.body.style.fontFamily = `"${font}", var(--font-inter), system-ui, -apple-system, sans-serif`;
+    }
+
     // Dynamic Google Fonts Loader
-    if (currentTheme.fontFamily) {
-      const fontName = currentTheme.fontFamily.split(',')[0].replace(/['"]/g, '').trim();
+    if (font) {
+      const fontName = font.split(',')[0].replace(/['"]/g, '').trim();
       const linkId = `gfont-${fontName.toLowerCase().replace(/\s+/g, '-')}`;
-      if (!document.getElementById(linkId) && fontName !== 'Inter' && fontName !== 'system-ui') {
+      const defaultFonts = ['Inter', 'system-ui', 'ui-sans-serif', 'sans-serif'];
+      if (!document.getElementById(linkId) && !defaultFonts.includes(fontName)) {
         const link = document.createElement('link');
         link.id = linkId;
         link.rel = 'stylesheet';
@@ -43,6 +59,7 @@ export function ThemeInjector() {
       Object.keys(vars).forEach((key) => {
         root.style.removeProperty(key);
       });
+      document.body.style.removeProperty('font-family');
     };
   }, [currentTheme]);
 

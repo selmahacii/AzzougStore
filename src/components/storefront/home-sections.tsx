@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api-client';
 import type { Product } from '@/lib/types';
 import { DEFAULT_HOME_SECTIONS } from '@/lib/types';
 import { ProductCard } from './product-card';
-import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon } from 'lucide-react';
+import { ArrowRight, Star, ChevronRight, Quote, CheckCircle, Truck, Package as PackageIcon, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatPrice } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -265,19 +265,53 @@ export function HomeSections() {
   ) : null;
 
 
-  // Testimonials — only shown if real API reviews exist AND the config
-  // enables the section (tpl==='clean' has never shown this section by
-  // design, regardless of config — kept unchanged).
-  const testimonialsSection = tpl !== 'clean' && testimonials.length > 0 ? (
+  // Trust / Reassurance Bar Section
+  const rawTrustBar = activeStore?.theme_config?.trustBar as Array<{label: string; sub: string; icon?: string}> | undefined;
+  const trustBarEnabled = activeStore?.theme_config?.trustBarEnabled !== false;
+  const trustItems = (rawTrustBar && rawTrustBar.length > 0) ? rawTrustBar : [
+    { label: 'Livraison 58 Wilayas', sub: 'À domicile ou bureau express' },
+    { label: 'Paiement à la Livraison', sub: 'Inspectez avant de payer' },
+    { label: 'Garantie Satisfaction', sub: 'Échange ou retour sous 48h' },
+    { label: 'Service Client 7j/7', sub: 'Assistance WhatsApp & Appel' },
+  ];
+
+  const trustBarSection = trustBarEnabled ? (
+    <section key="trustBar" className="border-y border-slate-100/80 bg-slate-50/50 py-8 sm:py-12">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8">
+          {trustItems.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-3.5 group">
+              <div 
+                className="size-11 sm:size-12 rounded-2xl flex items-center justify-center shrink-0 border border-white shadow-2xs transition-transform group-hover:scale-105"
+                style={{ backgroundColor: `${primary}15`, color: primary }}
+              >
+                {idx === 0 ? <Truck className="size-5" /> :
+                 idx === 1 ? <PackageIcon className="size-5" /> :
+                 idx === 2 ? <CheckCircle className="size-5" /> :
+                 <ShieldCheck className="size-5" />}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate">{item.label}</span>
+                <span className="text-[11px] sm:text-xs text-slate-500 font-medium leading-tight truncate">{item.sub}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  ) : null;
+
+  // Testimonials — shown when real API reviews exist
+  const testimonialsSection = testimonials.length > 0 ? (
         <section key="testimonials" className={cn(
-          "py-24 sm:py-32 overflow-hidden border-t",
+          "py-16 sm:py-24 overflow-hidden border-t",
           tpl === 'clean' ? 'bg-white border-neutral-100' :
           tpl === 'luxe' ? 'bg-[#0C0F1A] border-white/5' :
           'bg-white border-gray-100'
         )}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mb-16 text-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mb-12 sm:mb-16 text-center">
             <p className={cn(
-              "text-[9px] uppercase tracking-[0.5em] mb-4",
+              "text-[9px] uppercase tracking-[0.5em] mb-3",
               tpl === 'clean' ? 'font-semibold text-neutral-400' :
               tpl === 'luxe' ? 'font-light text-amber-500/60' :
               'font-black'
@@ -285,10 +319,10 @@ export function HomeSections() {
               {t('testimonials')}
             </p>
             <h2 className={cn(
-              "text-4xl sm:text-5xl tracking-tight leading-tight uppercase",
-              tpl === 'clean' ? 'font-extralight text-neutral-900' :
-              tpl === 'luxe' ? 'font-thin text-white' :
-              'font-black text-gray-900 tracking-tighter'
+              "text-3xl sm:text-4xl tracking-tight leading-tight uppercase font-black",
+              tpl === 'clean' ? 'text-slate-900' :
+              tpl === 'luxe' ? 'text-white' :
+              'text-gray-900'
             )}>
               {t('whatClientsSay')}
             </h2>
@@ -320,7 +354,7 @@ export function HomeSections() {
                   key={i}
                   className={cn(
                     "inline-block w-[350px] sm:w-[450px] p-8 sm:p-10 border transition-all duration-500 group whitespace-normal shrink-0",
-                    tpl === 'clean' ? 'rounded-none bg-neutral-50/50 border-neutral-100 hover:shadow-[0_12px_30px_rgba(0,0,0,0.02)]' :
+                    tpl === 'clean' ? 'rounded-2xl bg-slate-50/60 border-slate-100 hover:shadow-[0_12px_30px_rgba(0,0,0,0.04)]' :
                     tpl === 'luxe' ? 'rounded-none bg-[#12172A] border-white/5' :
                     'rounded-[2.5rem] bg-[#fcfcfc] border-gray-100 hover:shadow-2xl hover:border-gray-200'
                   )}
@@ -344,7 +378,7 @@ export function HomeSections() {
                     <div 
                       className={cn(
                         "size-11 flex items-center justify-center text-xs shadow-none shrink-0",
-                        tpl === 'clean' ? 'rounded-none font-semibold text-white' :
+                        tpl === 'clean' ? 'rounded-xl font-bold text-white' :
                         tpl === 'luxe' ? 'rounded-none font-light text-neutral-900' :
                         'rounded-2xl font-black text-white shadow-lg'
                       )}
@@ -355,7 +389,7 @@ export function HomeSections() {
                     <div>
                       <h4 className={cn(
                         "text-[10px] uppercase tracking-widest",
-                        tpl === 'clean' ? 'font-semibold text-neutral-900' :
+                        tpl === 'clean' ? 'font-black text-neutral-900' :
                         tpl === 'luxe' ? 'font-medium text-white' :
                         'font-black text-gray-900'
                       )}>
@@ -379,6 +413,7 @@ export function HomeSections() {
   ) : null;
 
   const SECTION_MAP: Record<string, ReactNode> = {
+    trustBar: trustBarSection,
     bestSellers: bestSellersSection,
     newArrivals: newArrivalsSection,
     testimonials: testimonialsSection,

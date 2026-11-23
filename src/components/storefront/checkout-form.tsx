@@ -107,7 +107,9 @@ function useCheckoutTheme(activeStore: any) {
     connectorDone: primary, connectorInactive: '#e2e8f0',
     btnText: '#ffffff', dividerColor: '#f1f5f9',
     successBg: '#f0fdf4', summaryBg: '#f9fafb',
-    radius: '12px', inputRadius: '10px', btnRadius: '12px',
+    radius: (activeStore?.theme_config?.borderRadius as string) || '12px',
+    inputRadius: (activeStore?.theme_config?.borderRadius as string) || '10px',
+    btnRadius: (activeStore?.theme_config?.borderRadius as string) || '12px',
   };
 }
 

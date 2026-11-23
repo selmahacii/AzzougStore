@@ -18,13 +18,16 @@ import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 function getTheme(store: Store | null) {
   const tpl = (store?.template_id ?? 'clean') as 'clean' | 'athletic' | 'luxe' | 'landing';
   const primary = (store?.theme_config?.primaryColor as string | undefined) ?? '#4b7bec';
+  const customBg = store?.theme_config?.backgroundColor as string | undefined;
+  const customText = store?.theme_config?.textColor as string | undefined;
+
   if (tpl === 'athletic') {
-    return { tpl, primary, bg: '#0A0A0A', border: 'rgba(255,255,255,0.07)', logo: '#FFFFFF', nav: 'rgba(255,255,255,0.45)', navHover: '#FFFFFF', icon: 'rgba(255,255,255,0.75)', badge: primary, badgeText: '#000', announce: '#111', announceText: primary, mobileBg: '#0A0A0A', mobileText: '#FFFFFF', mobileAccent: primary, mobileBorder: 'rgba(255,255,255,0.07)', dropBg: '#111', dropText: '#fff', dropHover: 'rgba(255,255,255,0.05)' };
+    return { tpl, primary, bg: customBg || '#0A0A0A', border: 'rgba(255,255,255,0.07)', logo: customText || '#FFFFFF', nav: 'rgba(255,255,255,0.45)', navHover: '#FFFFFF', icon: 'rgba(255,255,255,0.75)', badge: primary, badgeText: '#000', announce: '#111', announceText: primary, mobileBg: '#0A0A0A', mobileText: '#FFFFFF', mobileAccent: primary, mobileBorder: 'rgba(255,255,255,0.07)', dropBg: '#111', dropText: '#fff', dropHover: 'rgba(255,255,255,0.05)' };
   }
   if (tpl === 'luxe') {
-    return { tpl, primary, bg: '#0C0F1A', border: `${primary}18`, logo: '#FFFFFF', nav: 'rgba(255,255,255,0.35)', navHover: primary, icon: 'rgba(255,255,255,0.6)', badge: primary, badgeText: '#0C0F1A', announce: '#0C0F1A', announceText: primary, mobileBg: '#0C0F1A', mobileText: '#FFFFFF', mobileAccent: primary, mobileBorder: `${primary}18`, dropBg: '#0C0F1A', dropText: '#fff', dropHover: `${primary}10` };
+    return { tpl, primary, bg: customBg || '#0C0F1A', border: `${primary}18`, logo: customText || '#FFFFFF', nav: 'rgba(255,255,255,0.35)', navHover: primary, icon: 'rgba(255,255,255,0.6)', badge: primary, badgeText: '#0C0F1A', announce: '#0C0F1A', announceText: primary, mobileBg: '#0C0F1A', mobileText: '#FFFFFF', mobileAccent: primary, mobileBorder: `${primary}18`, dropBg: '#0C0F1A', dropText: '#fff', dropHover: `${primary}10` };
   }
-  return { tpl, primary, bg: '#FFFFFF', border: '#E5E7EB', logo: '#111827', nav: '#4B5563', navHover: '#111827', icon: '#374151', badge: primary, badgeText: '#FFFFFF', announce: primary, announceText: '#FFFFFF', mobileBg: '#FFFFFF', mobileText: '#1e293b', mobileAccent: primary, mobileBorder: '#f1f5f9', dropBg: '#fff', dropText: '#1e293b', dropHover: '#f9fafb' };
+  return { tpl, primary, bg: customBg || '#FFFFFF', border: '#E5E7EB', logo: customText || '#111827', nav: '#4B5563', navHover: '#111827', icon: '#374151', badge: primary, badgeText: '#FFFFFF', announce: primary, announceText: '#FFFFFF', mobileBg: customBg || '#FFFFFF', mobileText: customText || '#1e293b', mobileAccent: primary, mobileBorder: '#f1f5f9', dropBg: customBg || '#fff', dropText: customText || '#1e293b', dropHover: '#f9fafb' };
 }
 
 
@@ -213,6 +216,23 @@ export function StorefrontHeader() {
         className="sticky top-0 z-40 w-full"
         style={{ backgroundColor: T.bg, borderBottom: `1px solid ${T.border}` }}
       >
+        {/* ─── Top Announcement Bar (Customizable per Store) ─── */}
+        {(() => {
+          const ann = activeStore?.theme_config?.announcement as { enabled?: boolean; text?: string; bgColor?: string; textColor?: string } | undefined;
+          if (!ann?.enabled || !ann?.text?.trim()) return null;
+          const bg = ann.bgColor || T.primary;
+          const textCol = ann.textColor || '#FFFFFF';
+          return (
+            <div 
+              className="w-full py-2 px-4 text-center text-xs font-semibold tracking-wide flex items-center justify-center gap-2 select-none transition-colors border-b border-black/5"
+              style={{ backgroundColor: bg, color: textCol }}
+            >
+              <Truck className="size-3.5 shrink-0 opacity-80" />
+              <span>{ann.text}</span>
+            </div>
+          );
+        })()}
+
         <div className="max-w-[1800px] mx-auto w-full flex h-16 sm:h-20 items-center justify-between px-5 sm:px-10 lg:px-16 relative">
 
           {/* ─── Logo ─── */}

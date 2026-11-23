@@ -3,6 +3,8 @@ export interface ThemeConfig {
   primaryColor: string;
   primaryForeground?: string;
   accentColor: string;
+  backgroundColor?: string;
+  textColor?: string;
   fontFamily?: string;
   borderRadius?: string;
   templateId?: string;
@@ -11,6 +13,19 @@ export interface ThemeConfig {
   footerTagline?: string | null;
   footerCopyright?: string | null;
   contact?: { phone?: string; email?: string; address?: string } | null;
+
+  // Top announcement banner
+  announcement?: {
+    enabled: boolean;
+    text: string;
+    bgColor?: string;
+    textColor?: string;
+  } | null;
+
+  // Header options
+  headerSticky?: boolean;
+  headerLayout?: 'center' | 'left';
+
   // Hero customization
   heroLayout?: 'full' | 'side';
   heroHeadline?: string | null;
@@ -25,7 +40,8 @@ export interface ThemeConfig {
   heroTag?: string | null;
   heroStats?: Array<{ label: string; value: string }> | null;
   heroAttributes?: Array<{ label: string; val: string }> | null;
-  // Trust bar below header nav (hidden if not configured)
+  // Trust bar / Reassurance pillars
+  trustBarEnabled?: boolean;
   trustBar?: Array<{ label: string; sub: string; icon?: string }> | null;
   // Store identity
   storeTagline?: string | null;
@@ -34,6 +50,8 @@ export interface ThemeConfig {
   labelBestSellersTag?: string | null;
   labelNewArrivals?: string | null;
   labelNewArrivalsTag?: string | null;
+  labelTestimonials?: string | null;
+  labelTestimonialsTag?: string | null;
   // Help messages (configurable)
   helpMessages?: Record<string, string> | null;
   // Section visibility + order for the storefront homepage (below the
@@ -42,11 +60,12 @@ export interface ThemeConfig {
   // is hidden entirely. Falls back to all sections enabled, default order,
   // when unset — so existing stores without this field render exactly as
   // before (purely additive, no migration required).
-  sectionsConfig?: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }> | null;
+  sectionsConfig?: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials' | 'trustBar'; enabled: boolean }> | null;
   [key: string]: unknown;
 }
 
-export const DEFAULT_HOME_SECTIONS: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials'; enabled: boolean }> = [
+export const DEFAULT_HOME_SECTIONS: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials' | 'trustBar'; enabled: boolean }> = [
+  { key: 'trustBar', enabled: true },
   { key: 'bestSellers', enabled: true },
   { key: 'newArrivals', enabled: true },
   { key: 'testimonials', enabled: true },
