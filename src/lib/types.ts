@@ -65,7 +65,7 @@ export interface ThemeConfig {
 }
 
 export const DEFAULT_HOME_SECTIONS: Array<{ key: 'bestSellers' | 'newArrivals' | 'testimonials' | 'trustBar'; enabled: boolean }> = [
-  { key: 'trustBar', enabled: true },
+  { key: 'trustBar', enabled: false },
   { key: 'bestSellers', enabled: true },
   { key: 'newArrivals', enabled: true },
   { key: 'testimonials', enabled: true },

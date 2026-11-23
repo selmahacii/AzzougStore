@@ -147,17 +147,15 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-      className="group relative flex flex-col bg-white border border-slate-200/70 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/90 transition-all duration-300 cursor-pointer overflow-hidden p-3.5 sm:p-4"
+      className="group relative flex flex-col bg-white border border-slate-200/80 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-100/90 transition-all duration-300 cursor-pointer overflow-hidden p-2.5 sm:p-4 rounded-[22px] sm:rounded-[26px]"
       style={{ 
-        borderRadius: 'var(--store-radius, 24px)',
         fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif'
       }}
       onClick={() => onQuickView(product.slug)}
     >
-      {/* Image container */}
+      {/* Image container - crisp 1:1 square */}
       <div 
-        className="relative aspect-square sm:aspect-[4/5] overflow-hidden bg-slate-50 border border-slate-100/70 rounded-[18px]"
-        style={{ borderRadius: 'calc(var(--store-radius, 24px) - 6px)' }}
+        className="relative aspect-square w-full overflow-hidden bg-slate-50 border border-slate-100 rounded-[16px] sm:rounded-[20px]"
       >
         <img
           src={img1} 
@@ -182,21 +180,21 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
             toggleWishlist(product.id); 
             toast.success(isInWishlist ? 'Retiré des favoris' : 'Ajouté aux favoris'); 
           }}
-          className="absolute top-3 right-3 z-20 size-8 sm:size-9 rounded-full bg-white/95 backdrop-blur-md flex items-center justify-center shadow-xs border border-slate-100/90 hover:scale-110 active:scale-95 transition-all"
+          className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-20 size-7.5 sm:size-9 rounded-full bg-white/95 backdrop-blur-md flex items-center justify-center shadow-2xs border border-slate-100 hover:scale-110 active:scale-95 transition-all cursor-pointer"
         >
           <Heart className={cn("size-3.5 sm:size-4 transition-colors", isInWishlist ? "fill-rose-500 text-rose-500" : "text-slate-400")} />
         </button>
 
         {/* Badges - Sleek dark pill badge */}
-        <div className="absolute top-3 left-3 z-20 flex flex-col gap-1">
+        <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-20 flex flex-col gap-1">
           {discount > 0 ? (
             <span
-              className="px-2.5 py-1 text-[11px] font-bold text-white rounded-full shadow-xs tracking-tight bg-[#111827]"
+              className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-black text-white rounded-full shadow-2xs tracking-tight bg-[#111827]"
             >
               -{discount}%
             </span>
           ) : product.featured ? (
-            <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-slate-900 text-white rounded-full shadow-xs">
+            <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-wider bg-slate-900 text-white rounded-full shadow-2xs">
               Vedette
             </span>
           ) : null}
@@ -205,7 +203,7 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
         {/* Out of stock overlay */}
         {isOutOfStock && (
           <div className="absolute inset-0 z-10 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-900/95 border border-white/20 px-3.5 py-1.5 rounded-full shadow-lg">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-slate-900/95 border border-white/20 px-3 py-1 rounded-full shadow-lg">
               Épuisé
             </span>
           </div>
@@ -213,20 +211,20 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
       </div>
 
       {/* Info Block */}
-      <div className="pt-3.5 pb-1 px-1 flex-1 flex flex-col justify-between space-y-3">
+      <div className="pt-3 pb-0.5 px-0.5 flex-1 flex flex-col justify-between space-y-2.5 sm:space-y-3">
         <div className="space-y-1">
           {product.category && (
-            <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-400">{product.category}</p>
+            <p className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-slate-400 truncate">{product.category}</p>
           )}
-          <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors tracking-tight">
+          <h3 className="text-xs sm:text-base font-extrabold text-slate-900 leading-snug line-clamp-2 group-hover:text-[#4b7bec] transition-colors tracking-tight">
             {product.name}
           </h3>
           {colors.length > 0 && (
-            <div className="flex items-center gap-1.5 pt-1.5">
+            <div className="flex items-center gap-1 sm:gap-1.5 pt-1">
               {colors.map((c, i) => (
                 <div 
                   key={i} 
-                  className="size-3 sm:size-3.5 rounded-full border border-slate-200/90 shadow-2xs transition-transform hover:scale-125" 
+                  className="size-2.5 sm:size-3 rounded-full border border-slate-200/90 shadow-2xs transition-transform hover:scale-125 shrink-0" 
                   style={{ backgroundColor: c }} 
                   title={c}
                 />
@@ -236,13 +234,13 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
         </div>
 
         {/* Price & Action Row */}
-        <div className="space-y-3 pt-3 border-t border-slate-100">
-          <div className="flex items-baseline justify-between">
-            <span className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+        <div className="space-y-2.5 pt-2.5 border-t border-slate-100">
+          <div className="flex items-baseline justify-between gap-1">
+            <span className="text-sm sm:text-lg font-black text-slate-950 tracking-tight whitespace-nowrap">
               {formatPrice(product.price)}
             </span>
             {product.compare_price !== null && product.compare_price > product.price && (
-              <span className="text-xs sm:text-sm font-semibold text-slate-400 line-through tracking-tight">
+              <span className="text-[11px] sm:text-sm font-semibold text-slate-400 line-through tracking-tight whitespace-nowrap">
                 {formatPrice(product.compare_price)}
               </span>
             )}
@@ -254,11 +252,11 @@ function CleanCard({ product, primary, onQuickView, onAddToCart }: {
                 e.stopPropagation(); 
                 onAddToCart(product); 
               }}
-              className="w-full h-11 sm:h-12 text-xs sm:text-[13px] font-bold uppercase tracking-wider text-white flex items-center justify-center gap-2 rounded-full transition-all shadow-sm hover:opacity-95 active:scale-[0.98] bg-[#0F172A] hover:bg-[#1E293B]"
+              className="w-full h-10 sm:h-11 px-2 text-[10px] sm:text-xs font-black uppercase tracking-wider text-white flex items-center justify-center gap-1.5 rounded-full transition-all shadow-2xs hover:opacity-95 active:scale-[0.98] bg-[#0F172A] hover:bg-[#1E293B] cursor-pointer whitespace-nowrap overflow-hidden"
               style={primary && primary !== '#4b7bec' ? { backgroundColor: primary } : undefined}
             >
-              <ShoppingCart className="size-4 shrink-0" />
-              <span>Ajouter au panier</span>
+              <ShoppingCart className="size-3.5 sm:size-4 shrink-0" />
+              <span className="truncate">Ajouter au panier</span>
             </button>
           )}
         </div>

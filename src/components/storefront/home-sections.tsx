@@ -101,10 +101,10 @@ export function HomeSections() {
 
   // Section visibility + order — configurable per store via
   // theme_config.sectionsConfig (see store-wizard.tsx's Sections step).
-  // Falls back to all 3 enabled in the original fixed order when unset,
-  // so a store that never touched this config renders exactly as before.
+  // Falls back to enabled sections in the original fixed order when unset.
+  // Reassurance trustBar is permanently excluded from home page as requested.
   const sectionsOrder = (activeStore.theme_config?.sectionsConfig ?? DEFAULT_HOME_SECTIONS)
-    .filter(s => s.enabled)
+    .filter(s => s.enabled && s.key !== 'trustBar')
     .map(s => s.key);
 
   const bestSellersSection = (
@@ -163,7 +163,7 @@ export function HomeSections() {
         ) : featured.length > 0 ? (
           <div className={cn(
             "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-4 sm:gap-6" : "gap-4 lg:gap-8"
+            tpl === 'clean' ? "gap-3 sm:gap-6" : "gap-4 lg:gap-8"
           )}>
             {featured.map(product => (
               <ProductCard 
@@ -247,7 +247,7 @@ export function HomeSections() {
           </div>
           <div className={cn(
             "grid grid-cols-2 lg:grid-cols-4",
-            tpl === 'clean' ? "gap-4 sm:gap-6" : "gap-4 lg:gap-8"
+            tpl === 'clean' ? "gap-3 sm:gap-6" : "gap-4 lg:gap-8"
           )}>
             {newArrivals.map(product => (
               <ProductCard 
@@ -265,41 +265,8 @@ export function HomeSections() {
   ) : null;
 
 
-  // Trust / Reassurance Bar Section
-  const rawTrustBar = activeStore?.theme_config?.trustBar as Array<{label: string; sub: string; icon?: string}> | undefined;
-  const trustBarEnabled = activeStore?.theme_config?.trustBarEnabled !== false;
-  const trustItems = (rawTrustBar && rawTrustBar.length > 0) ? rawTrustBar : [
-    { label: 'Livraison 58 Wilayas', sub: 'À domicile ou bureau express' },
-    { label: 'Paiement à la Livraison', sub: 'Inspectez avant de payer' },
-    { label: 'Garantie Satisfaction', sub: 'Échange ou retour sous 48h' },
-    { label: 'Service Client 7j/7', sub: 'Assistance WhatsApp & Appel' },
-  ];
-
-  const trustBarSection = trustBarEnabled ? (
-    <section key="trustBar" className="border-y border-slate-100/80 bg-slate-50/50 py-8 sm:py-12">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 lg:gap-8">
-          {trustItems.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-3.5 group">
-              <div 
-                className="size-11 sm:size-12 rounded-2xl flex items-center justify-center shrink-0 border border-white shadow-2xs transition-transform group-hover:scale-105"
-                style={{ backgroundColor: `${primary}15`, color: primary }}
-              >
-                {idx === 0 ? <Truck className="size-5" /> :
-                 idx === 1 ? <PackageIcon className="size-5" /> :
-                 idx === 2 ? <CheckCircle className="size-5" /> :
-                 <ShieldCheck className="size-5" />}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate">{item.label}</span>
-                <span className="text-[11px] sm:text-xs text-slate-500 font-medium leading-tight truncate">{item.sub}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  ) : null;
+  // Trust / Reassurance Bar Section — permanently removed from storefront home page as requested
+  const trustBarSection = null;
 
   // Testimonials — shown when real API reviews exist
   const testimonialsSection = testimonials.length > 0 ? (
