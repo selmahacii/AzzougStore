@@ -1,7 +1,19 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { CartItem, Product } from '@/lib/types';
 import { trackMetaEvent } from '@/lib/meta-tracking';
+
+// Safe SSR storage that never throws during Next.js prerendering
+const safeStorage = createJSONStorage(() => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  return {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  };
+});
 
 interface CartState {
   items: CartItem[];
@@ -165,6 +177,7 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'ecommerce-cart',
+      storage: safeStorage,
       partialize: (state) => ({ items: state.items, wishlistItems: state.wishlistItems }),
     }
   )

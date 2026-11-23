@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   AppView,
   StorefrontView,
@@ -97,6 +97,18 @@ interface AppState {
   setQuickAdjustProduct: (product: any | null) => void;
 }
 
+// Safe SSR storage that never throws during Next.js prerendering
+const safeStorage = createJSONStorage(() => {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage;
+  }
+  return {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  };
+});
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -166,6 +178,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'ecommerce-app-state',
+      storage: safeStorage,
       partialize: (state) => ({
         appView: state.appView,
         storefrontView: state.storefrontView,
