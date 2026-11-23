@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
+import { resolveTemplate } from '@/lib/template-resolver';
 
 function TikTokIcon({ className }: { className?: string }) {
   return (
@@ -46,6 +47,24 @@ function ContactBlock({ contact, color, dark, isClean }: { contact: Record<strin
     ? 'text-white/80 hover:text-white font-medium text-xs' 
     : 'text-slate-600 hover:text-slate-900 font-semibold text-xs';
   const iconColor = dark ? 'white' : color;
+  const hasInfo = contact.phone || contact.email || contact.address;
+
+  if (!hasInfo) {
+    return (
+      <div className="space-y-2.5">
+        <p className={dark ? "text-xs text-white/60 leading-relaxed font-normal" : "text-xs text-slate-500 leading-relaxed font-medium"}>
+          Service client et assistance disponibles 7j/7 pour vos commandes et expéditions.
+        </p>
+        <div className="flex items-center gap-2 pt-1">
+          <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className={dark ? "text-[11px] font-bold text-emerald-400 font-mono uppercase" : "text-[11px] font-bold text-emerald-700 font-mono uppercase"}>
+            Support Disponible
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {contact.phone && (
@@ -91,7 +110,7 @@ export function StorefrontFooter() {
   const [shopLinks, setShopLinks] = useState<string[]>([]);
 
   const storeName = activeStore?.name ?? 'Ma Boutique';
-  const tpl = ((activeStore?.template_id ?? activeStore?.theme_config?.templateId ?? 'clean') as string).toLowerCase();
+  const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   const primary = (activeStore?.theme_config?.primaryColor as string | undefined) ?? '#4b7bec';
   const tagline = activeStore?.theme_config?.footerTagline as string | undefined;
   const copyright = (activeStore?.theme_config?.footerCopyright as string | undefined) ?? `© ${new Date().getFullYear()} ${storeName}. Tous droits réservés.`;
@@ -131,7 +150,7 @@ export function StorefrontFooter() {
     toast.info(messages[label] || 'Information bientôt disponible');
   };
 
-  if (tpl === 'clean' || tpl === 'minimalist') {
+  if (tpl === 'clean') {
     return (
       <footer 
         className="w-full bg-[#F8F9FC] border-t border-slate-200/80"
@@ -311,40 +330,137 @@ export function StorefrontFooter() {
   }
 
   return (
-    <footer className="w-full text-white border-t-4 relative overflow-hidden" style={{ backgroundColor: primary, backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.3))`, borderColor: 'rgba(255,255,255,0.2)' }}>
-      <div className="mx-auto max-w-screen-2xl px-6 sm:px-12 py-12 sm:pt-20 sm:pb-10">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-10 mb-8 sm:mb-12">
-          <div className="sm:col-span-2 lg:col-span-1 space-y-4">
-            {logoUrl ? <img src={logoUrl} alt={storeName} className="h-10 w-auto object-contain" /> : <span className="text-lg font-black text-white uppercase tracking-widest">{storeName}</span>}
-            {tagline && <p className="text-xs font-bold text-white/90 leading-relaxed italic">{tagline}</p>}
-            <SocialLinks social={social} color="white" dark />
+    <footer 
+      className="w-full bg-[#0A0D14] text-white border-t border-slate-800/80" 
+      style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
+    >
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 py-12 sm:py-16">
+        
+        {/* Main Footer Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
+          
+          {/* Store Brand Card (4 cols) */}
+          <div className="lg:col-span-4 bg-white/[0.04] rounded-2xl border border-white/10 p-6 flex flex-col justify-between space-y-5">
+            <div className="space-y-3.5">
+              <div className="flex items-center gap-3">
+                <div className="size-11 rounded-2xl bg-white/10 border border-white/10 p-1 flex items-center justify-center shrink-0">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt={storeName} className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="text-sm font-black text-white size-full rounded-xl flex items-center justify-center uppercase" style={{ backgroundColor: primary }}>
+                      {storeName.charAt(0)}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-tight text-white">{storeName}</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 font-mono">Boutique Officielle</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-white/60 leading-relaxed font-medium">
+                {tagline || "Votre vitrine e-commerce de référence. Produits certifiés, finitions soignées et expédition rapide dans les 58 wilayas."}
+              </p>
+            </div>
+
+            {/* Social Links */}
+            <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-white/40">Réseaux</span>
+              <SocialLinks social={social} color={primary} dark />
+            </div>
           </div>
-          <div className="space-y-4">
-            <h4 className="text-[9px] font-black uppercase tracking-[0.3em]" style={{ color: 'white' }}>Shop</h4>
-            <ul className="space-y-2.5">
+
+          {/* Catalog Collections Card (3 cols) */}
+          <div className="lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Collections</h4>
+              <button 
+                onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }}
+                className="text-[10px] font-bold uppercase tracking-wider text-[#4b7bec] hover:underline cursor-pointer"
+              >
+                Tout voir
+              </button>
+            </div>
+            <ul className="space-y-2">
               {shopLinks.length > 0 ? shopLinks.map(l => (
-                <li key={l}><button onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} className="text-xs font-bold uppercase tracking-wider text-white/80 hover:text-white transition-colors">{l}</button></li>
+                <li key={l}>
+                  <button 
+                    onClick={() => { setSelectedCategory(l); setStorefrontView('shop'); }} 
+                    className="w-full flex items-center justify-between py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer"
+                  >
+                    <span>{l}</span>
+                    <span className="text-white/30 group-hover:text-white transition-colors">›</span>
+                  </button>
+                </li>
               )) : (
-                <li><button onClick={() => setStorefrontView('shop')} className="text-xs font-bold uppercase tracking-wider text-white/80 hover:text-white transition-colors">Voir le catalogue</button></li>
+                <li>
+                  <button 
+                    onClick={() => { setSelectedCategory(null); setStorefrontView('shop'); }} 
+                    className="w-full flex items-center justify-between py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors group text-left cursor-pointer"
+                  >
+                    <span>Voir le catalogue complet</span>
+                    <span className="text-white/30 group-hover:text-white transition-colors">›</span>
+                  </button>
+                </li>
               )}
             </ul>
           </div>
-          <div className="space-y-4">
-            <h4 className="text-[9px] font-black uppercase tracking-[0.3em]" style={{ color: 'white' }}>Aide</h4>
-            <ul className="space-y-2.5">
+
+          {/* Customer Service Card (2 cols) */}
+          <div className="lg:col-span-2 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
+            <div className="border-b border-white/10 pb-3">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Assistance</h4>
+            </div>
+            <ul className="space-y-2">
               {HELP_LINKS.map(l => (
-                <li key={l.label}><button onClick={() => handleHelpAction(l.label)} className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/80 hover:text-white transition-colors"><l.icon className="size-3" style={{ color: 'white' }} />{l.label}</button></li>
+                <li key={l.label}>
+                  <button 
+                    onClick={() => handleHelpAction(l.label)} 
+                    className="w-full flex items-center gap-2 py-1 text-xs font-semibold text-white/70 hover:text-white transition-colors text-left cursor-pointer"
+                  >
+                    <l.icon className="size-3.5 text-white/40 shrink-0" />
+                    <span className="truncate">{l.label}</span>
+                  </button>
+                </li>
               ))}
             </ul>
           </div>
-          <div className="space-y-4">
-            <h4 className="text-[9px] font-black uppercase tracking-[0.3em]" style={{ color: 'white' }}>Contact</h4>
-            <ContactBlock contact={contact} color="white" dark />
+
+          {/* Contact Card (3 cols) */}
+          <div className="lg:col-span-3 bg-white/[0.04] rounded-2xl border border-white/10 p-6 space-y-4">
+            <div className="border-b border-white/10 pb-3">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-white">Coordonnées</h4>
+            </div>
+            <ContactBlock contact={contact} color={primary} dark />
+          </div>
+
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs font-medium text-white/40 text-center sm:text-left">
+            {copyright}
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
+              <Truck className="size-3 text-[#4b7bec]" />
+              <span>Expédition 58 Wilayas</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
+              <ShieldCheck className="size-3 text-emerald-400" />
+              <span>Paiement à la Livraison</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-full border border-white/10 text-[11px] font-bold text-white/80">
+              <RotateCcw className="size-3 text-amber-400" />
+              <span>Garantie & Support</span>
+            </div>
           </div>
         </div>
-        <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-white/30">{copyright}</p>
-        </div>
+
       </div>
     </footer>
   );
