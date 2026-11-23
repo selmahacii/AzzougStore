@@ -59,12 +59,12 @@ function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll 
     >
       <button
         onClick={() => setOpen(o => !o)}
-        className="group relative py-4 sm:py-5 flex items-center gap-1.5"
+        className="group relative py-2 flex items-center gap-1.5 cursor-pointer"
       >
-        <span className="text-[11px] font-black uppercase tracking-[0.4em] transition-all duration-300" style={{ color: open ? T.navHover : T.nav }}>
+        <span className="text-xs sm:text-[13px] font-bold uppercase tracking-[0.06em] transition-all duration-300" style={{ color: open ? T.navHover : T.nav }}>
           {label}
         </span>
-        <ChevronDown className={`size-3 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} style={{ color: open ? T.navHover : T.nav }} />
+        <ChevronDown className={`size-3.5 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} style={{ color: open ? T.navHover : T.nav }} />
         <span className="absolute bottom-0 left-0 h-[2px] transition-all duration-300" style={{ backgroundColor: T.navHover, width: open ? '100%' : '0%' }} />
       </button>
 
@@ -78,12 +78,12 @@ function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll 
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.97 }}
               transition={{ duration: 0.18 }}
-              className="absolute top-full left-1/2 -translate-x-1/2 mt-0 min-w-[220px] rounded-2xl border shadow-2xl overflow-hidden z-50 py-2"
-              style={{ backgroundColor: T.dropBg, borderColor: T.border }}
+              className="absolute top-full left-1/2 -translate-x-1/2 mt-1 min-w-[220px] rounded-2xl border shadow-xl overflow-hidden z-50 py-2 backdrop-blur-md"
+              style={{ backgroundColor: T.dropBg, borderColor: T.border, fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif' }}
             >
             <button
               onClick={() => { onAll(); setOpen(false); }}
-              className="w-full text-left px-5 py-3 text-[11px] font-black uppercase tracking-widest transition-colors"
+              className="w-full text-left px-5 py-2.5 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"
               style={{ color: T.primary }}
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.dropHover)}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -95,7 +95,7 @@ function CategoryDropdown({ categories, T, label = 'Catalogue', onSelect, onAll 
               <button
                 key={cat}
                 onClick={() => { onSelect(cat); setOpen(false); }}
-                className="w-full text-left px-5 py-3 text-xs font-bold uppercase tracking-wider transition-colors"
+                className="w-full text-left px-5 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
                 style={{ color: T.dropText }}
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = T.dropHover)}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
@@ -214,7 +214,7 @@ export function StorefrontHeader() {
         animate={hidden ? 'hidden' : 'visible'}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         className="sticky top-0 z-40 w-full"
-        style={{ backgroundColor: T.bg, borderBottom: `1px solid ${T.border}` }}
+        style={{ backgroundColor: T.bg, borderBottom: `1px solid ${T.border}`, fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
       >
         {/* ─── Top Announcement Bar (Customizable per Store) ─── */}
         {(() => {
@@ -237,7 +237,7 @@ export function StorefrontHeader() {
 
           {/* ─── Logo ─── */}
           <button onClick={() => handleNav('home')} className="flex items-center gap-3 group shrink-0 focus:outline-none">
-            <div className="size-10 sm:size-12 overflow-hidden rounded-xl flex items-center justify-center relative border border-slate-200/60 shadow-sm shrink-0 bg-white">
+            <div className="size-10 sm:size-11 overflow-hidden rounded-2xl flex items-center justify-center relative border border-slate-200/80 shadow-2xs shrink-0 bg-white">
               <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-white select-none" style={{ backgroundColor: T.primary }}>
                 {storeName.charAt(0).toUpperCase()}
               </span>
@@ -254,17 +254,16 @@ export function StorefrontHeader() {
             </div>
             <div className="flex flex-col items-start gap-0">
               <span
-                className={`text-sm sm:text-base leading-none tracking-tight ${T.tpl === 'luxe' ? 'italic font-serif' : 'font-black uppercase tracking-[0.06em]'}`}
+                className={`text-sm sm:text-base leading-none tracking-tight ${T.tpl === 'luxe' ? 'italic font-serif' : 'font-extrabold uppercase tracking-tight'}`}
                 style={{ color: T.logo, fontFamily: T.tpl === 'luxe' ? '"Playfair Display", Didot, serif' : undefined }}
               >
                 {storeName}
               </span>
               {T.tpl === 'clean' && (
                 <span 
-                  className="text-[9px] italic tracking-[0.1em] mt-0.5 opacity-60" 
-                  style={{ color: T.logo, fontFamily: '"Playfair Display", Didot, serif' }}
+                  className="text-[10px] font-semibold tracking-wider mt-0.5 opacity-60 text-slate-500"
                 >
-                  {(activeStore?.theme_config?.storeTagline as string | undefined) ?? ''}
+                  {(activeStore?.theme_config?.storeTagline as string | undefined) ?? 'Boutique Officielle'}
                 </span>
               )}
             </div>
@@ -272,11 +271,11 @@ export function StorefrontHeader() {
 
           {/* ─── Desktop Nav ─── */}
           <nav className={cn(
-            "hidden lg:flex items-center gap-10 xl:gap-14",
+            "hidden lg:flex items-center gap-8 xl:gap-12",
             T.tpl === 'clean' ? "absolute left-1/2 -translate-x-1/2" : ""
           )}>
-            <button onClick={() => handleNav('home')} className="group relative py-2">
-              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>{t('home')}</span>
+            <button onClick={() => handleNav('home')} className="group relative py-2 cursor-pointer">
+              <span className="text-xs sm:text-[13px] font-bold uppercase tracking-[0.06em] transition-colors" style={{ color: T.nav }}>{t('home')}</span>
               <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-300" style={{ backgroundColor: T.navHover }} />
             </button>
 
@@ -289,45 +288,45 @@ export function StorefrontHeader() {
               onSelect={(cat) => handleNav('shop', undefined, cat)}
             />
 
-            <button onClick={() => handleNav('order-tracking')} className="group relative py-4 sm:py-5">
-              <span className="text-[11px] font-black uppercase tracking-[0.35em] transition-colors" style={{ color: T.nav }}>{t('trackOrder')}</span>
+            <button onClick={() => handleNav('order-tracking')} className="group relative py-2 cursor-pointer">
+              <span className="text-xs sm:text-[13px] font-bold uppercase tracking-[0.06em] transition-colors" style={{ color: T.nav }}>{t('trackOrder')}</span>
               <span className="absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-300" style={{ backgroundColor: T.navHover }} />
             </button>
           </nav>
 
           {/* ─── Right actions ─── */}
-          <div className="flex items-center gap-0.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5">
 
             {/* Search (Hidden on Mobile) */}
             <button
               onClick={() => setSearchOpen(o => !o)}
-              className="hidden sm:flex p-2.5 rounded-xl hover:bg-black/5 transition-colors"
+              className="hidden sm:flex size-10 rounded-full items-center justify-center hover:bg-slate-100/90 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
               title={t('searchProduct')}
             >
-              <Search className="size-5" style={{ color: T.icon }} />
+              <Search className="size-4.5" />
             </button>
 
             {/* Wishlist (Desktop only) */}
             <button
               onClick={() => handleNav('shop')}
-              className="hidden lg:flex p-2.5 rounded-xl hover:bg-black/5 transition-colors"
+              className="hidden lg:flex size-10 rounded-full items-center justify-center hover:bg-slate-100/90 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
               title={t('wishlist')}
             >
-              <Heart className="size-5" style={{ color: T.icon }} />
+              <Heart className="size-4.5" />
             </button>
 
             {/* Cart (Visible on Mobile) */}
             <button
               onClick={toggleCart}
-              className="group relative p-2.5 rounded-xl hover:bg-black/5 transition-colors"
+              className="group relative size-10 rounded-full flex items-center justify-center hover:bg-slate-100/90 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
               title={t('cart')}
             >
-              <ShoppingCart className="size-5" style={{ color: T.icon }} />
+              <ShoppingCart className="size-4.5" />
               {cartCount > 0 && (
                 <motion.span
                   key={cartCount}
                   initial={{ scale: 1.4 }} animate={{ scale: 1 }}
-                  className="absolute right-1 top-1 size-4 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-sm"
+                  className="absolute right-1 top-1 size-4.5 rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-2xs"
                   style={{ backgroundColor: T.badge, color: T.badgeText }}
                 >
                   {cartCount}
@@ -335,32 +334,33 @@ export function StorefrontHeader() {
               )}
             </button>
 
-            {/* Direct Staff / Livreur Space Button */}
+            {/* Direct Staff / Livreur Space Button - Elegant subtle executive pill */}
             {isAuthenticated && user && ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CONFIRMATEUR', 'LIVREUR', 'AGENT', 'MARKETER'].includes(user.role) && (
               <button
                 onClick={() => useAppStore.getState().setAppView('admin')}
-                className="px-2.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shrink-0"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/5 hover:bg-slate-900/10 text-slate-700 hover:text-slate-950 text-[11px] font-bold border border-slate-200/80 transition-all shrink-0 cursor-pointer"
                 title="Accéder à mon Espace Professionnel"
               >
-                <ShieldCheck className="size-3.5" />
-                <span className="hidden sm:inline">{user.role === 'LIVREUR' ? 'Espace Livreur' : 'Espace Pro'}</span>
+                <ShieldCheck className="size-3.5 text-slate-600" />
+                <span>{user.role === 'LIVREUR' ? 'Espace Livreur' : 'Espace Pro'}</span>
               </button>
             )}
 
             {/* Account (Far Right, Visible on Mobile) */}
             <button 
               onClick={isAuthenticated ? () => setShowAccountPanel(true) : () => setShowLoginDialog(true)}
-              className="relative p-2.5 rounded-xl hover:bg-black/5 transition-colors"
+              className="relative size-10 rounded-full flex items-center justify-center hover:bg-slate-100/90 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer"
               title={t('myAccount')}
             >
-              <User className="size-5" style={{ color: T.icon }} />
+              <User className="size-4.5" />
               {isAuthenticated && (
-                <span className="absolute right-2 top-2 size-2 rounded-full border border-white bg-green-500" />
+                <span className="absolute right-2 top-2 size-2 rounded-full border-2 border-white bg-emerald-500" />
               )}
             </button>
+
             {/* Mobile menu */}
-            <button onClick={() => setMenuOpen(true)} className="lg:hidden p-2.5 rounded-xl hover:bg-black/5 transition-colors ml-1">
-              <Menu className="size-5" style={{ color: T.icon }} />
+            <button onClick={() => setMenuOpen(true)} className="lg:hidden size-10 rounded-full flex items-center justify-center hover:bg-slate-100/90 text-slate-700 transition-colors ml-0.5 cursor-pointer">
+              <Menu className="size-5" />
             </button>
           </div>
 
@@ -417,6 +417,7 @@ export function StorefrontHeader() {
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 240 }}
               className="relative w-[88vw] max-w-sm bg-[#F8F9FC] h-full shadow-2xl flex flex-col z-10 overflow-hidden border-r border-slate-200/80"
+              style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
             >
               {/* Top Header Card */}
               <div className="p-4 bg-white border-b border-slate-100 flex items-center justify-between shadow-2xs">
