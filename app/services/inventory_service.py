@@ -136,28 +136,21 @@ def _update_product_stock_from_variants(product: Product) -> None:
                 total += int(v.get("stock") or 0)
                 total_reserved += int(v.get("reserved") or 0)
         product.stock = total
-        avail = max(0, total - total_reserved)
-        if avail > 0 and not getattr(product, "is_active", True):
-            product.is_active = True
 
 
 def _sync_product_availability_and_invalidate_cache(db: Session, product: Product) -> None:
     """
-    Synchronizes product.is_active with current sellable stock and invalidates
-    both Redis & L1 cache for linked LandingPages so public storefront views get
-    immediate, real-time stock updates.
+    Invalidates both Redis & L1 cache for linked LandingPages and product
+    so public storefront views get immediate, real-time stock updates.
     """
-    avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
-    if avail > 0 and not getattr(product, "is_active", True):
-        product.is_active = True
-
     try:
         from app.models.landing_page import LandingPage
-        from app.core.cache import invalidate
+        from app.core.cache import invalidate, invalidate_prefix
         lps = db.query(LandingPage).filter(LandingPage.product_id == product.id).all()
         for lp in lps:
             invalidate(f"landing_page:{lp.store_id}:{lp.slug}")
         invalidate(f"product:{product.id}")
+        invalidate_prefix(f"product_listing:{product.store_id}:", "product_listing:all:")
     except Exception as exc:
         logger.warning(f"Failed to invalidate landing page cache for product {product.id}: {exc}")
 

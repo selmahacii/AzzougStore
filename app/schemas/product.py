@@ -32,7 +32,7 @@ class ProductBase(BaseModel):
     variants: Optional[List[Any]] = []
 
     # Flags
-    is_active: Optional[bool] = True
+    is_active: Optional[bool] = None
     is_featured: Optional[bool] = False
     is_upsell_only: Optional[bool] = False
     is_pack: Optional[bool] = False
@@ -88,6 +88,7 @@ class ProductCreate(ProductBase):
     name: str  # pyrefly: ignore[bad-override-mutable-attribute]
     price: int  # pyrefly: ignore[bad-override-mutable-attribute]
     store_id: str  # pyrefly: ignore[bad-override-mutable-attribute]
+    is_active: Optional[bool] = True
 
 
 class ProductUpdate(ProductBase):

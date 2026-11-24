@@ -575,11 +575,6 @@ def update_product(
             if field in json_fields:
                 flag_modified(product, field)
 
-    # Synchronize active status based on stock
-    avail = max(0, (product.stock or 0) - (product.reserved_stock or 0))
-    if avail > 0 and not getattr(product, "is_active", True):
-        product.is_active = True
-
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -618,6 +613,7 @@ def toggle_product(
 
     product.is_active = not bool(product.is_active)  # type: ignore[assignment]
     db.commit()
+    db.refresh(product)
 
     from app.core.cache import invalidate as cache_delete, invalidate_prefix
     cache_delete(f"product_categories:{product.store_id}", "product_categories:all", f"product:{product.id}")
@@ -626,6 +622,7 @@ def toggle_product(
 
     return {
         "success": True,
+        "id": product.id,
         "is_active": product.is_active,
         "message": f"Produit {'activé' if product.is_active else 'désactivé'} avec succès."
     }

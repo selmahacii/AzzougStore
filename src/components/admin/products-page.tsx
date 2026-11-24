@@ -406,11 +406,26 @@ export default function ProductsPage() {
          method: 'PUT',
          body: JSON.stringify({ is_active, store_id: storeId })
       }),
+      onMutate: async ({ id, is_active }) => {
+         await qc.cancelQueries({ queryKey: ['admin-products'] });
+         qc.setQueriesData({ queryKey: ['admin-products'] }, (old: any) => {
+            if (!old?.data || !Array.isArray(old.data)) return old;
+            return {
+               ...old,
+               data: old.data.map((p: any) => p.id === id ? { ...p, is_active } : p)
+            };
+         });
+      },
       onSuccess: (_, vars) => {
          qc.invalidateQueries({ queryKey: ['admin-products'] });
+         qc.invalidateQueries({ queryKey: ['store-products'] });
+         qc.invalidateQueries({ queryKey: ['products'] });
          toast.success(vars.is_active ? 'Produit mis en ligne sur la boutique' : 'Produit masqué du site (visible uniquement en interne)');
       },
-      onError: (err: any) => toast.error(err.message || 'Erreur lors du changement de visibilité'),
+      onError: (err: any) => {
+         qc.invalidateQueries({ queryKey: ['admin-products'] });
+         toast.error(err.message || 'Erreur lors du changement de visibilité');
+      },
    });
 
    const toggleVisibility = (product: Product) => {
@@ -1001,7 +1016,7 @@ export default function ProductsPage() {
                                      e.stopPropagation();
                                      toggleVisibility(product);
                                   }}
-                                  disabled={toggleVisibilityMutation.isPending}
+                                  disabled={toggleVisibilityMutation.isPending && (toggleVisibilityMutation.variables as any)?.id === product.id}
                                   className={cn(
                                      "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black border transition-all shadow-2xs group cursor-pointer",
                                      product.is_active !== false
@@ -1015,7 +1030,9 @@ export default function ProductsPage() {
                                      product.is_active !== false ? "bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse" : "bg-amber-500"
                                   )} />
                                   <span>{product.is_active !== false ? "En Ligne (Site)" : "Masqué (Interne)"}</span>
-                                  {product.is_active !== false ? (
+                                  {toggleVisibilityMutation.isPending && (toggleVisibilityMutation.variables as any)?.id === product.id ? (
+                                     <Loader2 className="size-3.5 animate-spin text-slate-500" />
+                                  ) : product.is_active !== false ? (
                                      <Eye className="size-3.5 text-emerald-600 opacity-60 group-hover:opacity-100 transition-opacity" />
                                   ) : (
                                      <EyeOff className="size-3.5 text-amber-600 opacity-60 group-hover:opacity-100 transition-opacity" />
