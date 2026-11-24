@@ -462,13 +462,13 @@ function CleanDetail() {
         >
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
             
-            {/* Gallery Column (Larger photos & thumbnails) */}
+            {/* Gallery Column (Square well-framed photos & sub-variants) */}
             <div className="lg:col-span-7 flex flex-col gap-4">
               <motion.div 
                 key={d.activeImage} 
                 initial={{ opacity: 0.8 }} 
                 animate={{ opacity: 1 }}
-                className="relative aspect-square w-full bg-slate-50 rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs"
+                className="relative aspect-square w-full bg-slate-50 rounded-none sm:rounded-xs overflow-hidden border-2 border-slate-300 shadow-2xs"
               >
                 {d.allImages[d.activeImage] ? (
                   <img src={d.allImages[d.activeImage]} alt={p.name} className="h-full w-full object-cover" />
@@ -479,21 +479,21 @@ function CleanDetail() {
                 )}
                 
                 {d.discount > 0 && (
-                  <div className="absolute top-4 start-4 bg-red-600 text-white text-xs font-black uppercase px-3.5 py-1.5 rounded-full shadow-md border border-red-500/40">
+                  <div className="absolute top-4 start-4 bg-red-600 text-white text-xs font-black uppercase px-3.5 py-1.5 shadow-md border border-red-500/40">
                     -{d.discount}%
                   </div>
                 )}
                 
                 {isOOS && (
                   <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex items-center justify-center">
-                    <span className="text-xs font-black uppercase tracking-wider text-rose-600 bg-white px-6 py-3 rounded-2xl border border-rose-100 shadow-lg">
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-600 bg-white px-6 py-3 border border-rose-100 shadow-lg">
                       {t('outOfStock')}
                     </span>
                   </div>
                 )}
               </motion.div>
 
-              {/* Responsive gallery thumbnail strip (enlarged sub-variants) */}
+              {/* Responsive gallery thumbnail strip (square framed sub-variants) */}
               {d.allImages.length > 1 && (
                 <div className="flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar">
                   {d.allImages.map((img, i) => (
@@ -501,12 +501,12 @@ function CleanDetail() {
                       key={i} 
                       onClick={() => d.setActiveImage(i)}
                       className={cn(
-                        "size-20 sm:size-24 rounded-2xl overflow-hidden border-2 shrink-0 transition-all bg-slate-50 cursor-pointer shadow-2xs",
+                        "size-20 sm:size-24 rounded-none sm:rounded-xs overflow-hidden border-2 shrink-0 transition-all bg-slate-50 cursor-pointer shadow-2xs",
                         d.activeImage === i 
-                          ? "border-[#4b7bec] ring-2 ring-blue-100 shadow-sm scale-105" 
-                          : "border-slate-200/80 opacity-70 hover:opacity-100 hover:border-slate-400"
+                          ? "border-slate-950 ring-2 ring-slate-950/20 shadow-xs scale-102" 
+                          : "border-slate-300 opacity-75 hover:opacity-100 hover:border-slate-500"
                       )}
-                      style={d.activeImage === i ? { borderColor: primary } : {}}
+                      style={d.activeImage === i ? { borderColor: primary && primary !== '#4b7bec' ? primary : '#0F172A' } : {}}
                     >
                       <img src={img} alt={`Vue ${i+1}`} className="h-full w-full object-cover" />
                     </button>
@@ -574,8 +574,8 @@ function CleanDetail() {
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "relative size-14 sm:size-16 rounded-2xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs cursor-pointer",
-                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-md scale-105" : "border-slate-200 hover:border-slate-400"
+                                  "relative size-14 sm:size-16 rounded-none sm:rounded-xs border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs cursor-pointer",
+                                  isSelected ? "border-slate-950 ring-2 ring-offset-2 ring-slate-950 shadow-xs scale-105" : "border-slate-300 hover:border-slate-500"
                                 )}
                                 style={!vImg && v.color ? { backgroundColor: v.color } : {}}
                                 title={v.value}
@@ -609,14 +609,14 @@ function CleanDetail() {
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2 cursor-pointer",
+                                  "px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-none sm:rounded-xs border-2 transition-all active:scale-95 flex items-center gap-2 cursor-pointer",
                                   isSelected 
-                                    ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
-                                    : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
+                                    ? "bg-slate-950 border-slate-950 text-white shadow-xs" 
+                                    : "bg-white border-slate-300 text-slate-800 hover:border-slate-500"
                                 )}
                               >
                                 {vImg && (
-                                  <img src={optimizeCloudinaryUrl(vImg, 100)} alt={v.value} className="size-5 rounded-md object-cover" />
+                                  <img src={optimizeCloudinaryUrl(vImg, 100)} alt={v.value} className="size-5 rounded-xs object-cover" />
                                 )}
                                 <span>{v.value}</span>
                                 {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
@@ -677,18 +677,6 @@ function CleanDetail() {
                         <><ShoppingCart className="size-4" /> {t('addToCart')}</>
                       )}
                     </button>
-                  </div>
-
-                  {/* Reassurance Chips */}
-                  <div className="grid grid-cols-2 gap-2.5 pt-2">
-                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-700">
-                      <Truck className="size-4 text-[#4b7bec] shrink-0" />
-                      <span>Expédition 58 Wilayas</span>
-                    </div>
-                    <div className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-[11px] font-bold text-slate-700">
-                      <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
-                      <span>Paiement à la Livraison</span>
-                    </div>
                   </div>
                 </div>
 

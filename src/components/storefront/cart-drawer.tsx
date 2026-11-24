@@ -147,9 +147,20 @@ function CleanCart() {
         <div className="flex-1 overflow-y-auto">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-6 py-20 text-center gap-4">
-              <div className="size-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center"><Package className="size-7 text-slate-300"/></div>
-              <div><p className="text-sm font-bold text-slate-700">{t('emptyCart')}</p><p className="text-xs text-slate-400 mt-1">{t('emptyCartDesc')}</p></div>
-              <button onClick={() => { closeCart(); setStorefrontView('shop'); }} className="mt-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:brightness-110" style={{ backgroundColor: primary }}>{t('allProducts')}</button>
+              <div className="size-18 rounded-3xl bg-slate-100/90 border border-slate-200/80 flex items-center justify-center shadow-2xs">
+                <Package className="size-8 text-slate-400" />
+              </div>
+              <div className="space-y-1.5 max-w-xs">
+                <p className="text-base font-extrabold text-slate-900 tracking-tight">{t('emptyCart')}</p>
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">{t('emptyCartDesc')}</p>
+              </div>
+              <button 
+                onClick={() => { closeCart(); setStorefrontView('shop'); }} 
+                className="mt-2 h-11 px-6 rounded-full text-xs font-black uppercase tracking-wider text-white transition-all shadow-md hover:opacity-95 active:scale-[0.98] cursor-pointer" 
+                style={{ backgroundColor: primary && primary !== '#4b7bec' ? primary : '#0F172A' }}
+              >
+                {t('allProducts')}
+              </button>
             </div>
           ) : (
             <div className="divide-y divide-slate-50 px-4 py-2">
