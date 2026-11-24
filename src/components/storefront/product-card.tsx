@@ -459,7 +459,7 @@ export function ProductCard({ product, onQuickView, onAddToCart }: ProductCardPr
   const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   const primary = (activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
 
-  if (tpl === 'athletic' || tpl === 'landing') {
+  if (tpl === 'athletic') {
     return <AthleticCard product={product} primary={primary} onQuickView={onQuickView} onAddToCart={onAddToCart} />;
   }
   if (tpl === 'luxe') {

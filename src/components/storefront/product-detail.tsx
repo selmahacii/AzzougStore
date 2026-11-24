@@ -15,6 +15,7 @@ import { ProductCard } from './product-card';
 import { ProductReviews } from './product-reviews';
 import { motion } from 'framer-motion';
 import { apiFetch } from '@/lib/api-client';
+import { resolveTemplate } from '@/lib/template-resolver';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { trackMetaEvent } from '@/lib/meta-tracking';
@@ -1297,8 +1298,7 @@ function LuxeDetail() {
 /* ─────────────────────────────── EXPORT ─────────────────────────────── */
 export function ProductDetail() {
   const activeStore = useAppStore((s) => s.activeStore);
-  const _rawTpl = (activeStore?.template_id ?? activeStore?.theme_config?.templateId ?? 'clean') as string;
-  const tpl = _rawTpl === 'minimalist' ? 'clean' : _rawTpl === 'landing' ? 'athletic' : _rawTpl.toLowerCase();
+  const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   if (tpl === 'athletic') return <AthleticDetail/>;
   if (tpl === 'luxe') return <LuxeDetail/>;
   return <CleanDetail/>;

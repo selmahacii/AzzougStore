@@ -9,11 +9,12 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { apiFetch } from '@/lib/api-client';
+import { resolveTemplate } from '@/lib/template-resolver';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 
 // ─── Template helpers ─────────────────────────────────────────
 function getHeroTheme(store: Store) {
-  const tpl = store.template_id || 'clean';
+  const tpl = resolveTemplate(store.template_id);
   const primary = store.theme_config?.primaryColor || '#4b7bec';
   const accent = store.theme_config?.accentColor || primary;
   return { tpl, primary, accent };
@@ -670,8 +671,7 @@ export function HeroSection() {
     el?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const _raw = activeStore.template_id || 'clean';
-  const tpl = _raw === 'minimalist' ? 'clean' : _raw === 'landing' ? 'athletic' : _raw;
+  const tpl = resolveTemplate(activeStore.template_id);
   const props = { store: activeStore, products: featuredProducts, loading, onShop, onScroll };
   // heroTag for CleanHero
   const cleanHeroTag = (activeStore.theme_config?.heroTag as string | undefined) ?? '';

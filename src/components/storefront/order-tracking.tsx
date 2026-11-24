@@ -9,6 +9,7 @@ import {
 import { useAppStore } from '@/store/app-store';
 import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
+import { resolveTemplate } from '@/lib/template-resolver';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -617,8 +618,7 @@ function LuxeTracking() {
 
 export function OrderTracking() {
   const activeStore = useAppStore((s) => s.activeStore);
-  const raw = (activeStore?.template_id ?? (activeStore?.theme_config as any)?.templateId ?? 'clean') as string;
-  const tpl = raw === 'minimalist' ? 'clean' : raw === 'landing' ? 'athletic' : raw.toLowerCase();
+  const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config as any)?.templateId);
   if (tpl === 'athletic') return <AthleticTracking/>;
   if (tpl === 'luxe')     return <LuxeTracking/>;
   return <CleanTracking/>;

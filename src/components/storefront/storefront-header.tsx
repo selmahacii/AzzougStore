@@ -14,9 +14,10 @@ import type { Store } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/use-translation';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
+import { resolveTemplate } from '@/lib/template-resolver';
 
 function getTheme(store: Store | null) {
-  const tpl = (store?.template_id ?? 'clean') as 'clean' | 'athletic' | 'luxe' | 'landing';
+  const tpl = resolveTemplate(store?.template_id ?? (store?.theme_config?.templateId as string));
   const primary = (store?.theme_config?.primaryColor as string | undefined) ?? '#4b7bec';
   const customBg = store?.theme_config?.backgroundColor as string | undefined;
   const customText = store?.theme_config?.textColor as string | undefined;

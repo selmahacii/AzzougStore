@@ -7,6 +7,7 @@ import { useCartStore } from '@/store/cart-store';
 import { formatPrice } from '@/lib/format';
 import { useTranslation } from '@/hooks/use-translation';
 import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
+import { resolveTemplate } from '@/lib/template-resolver';
 
 /* ─── shared cart item renderer ─── */
 function CartItem({
@@ -309,8 +310,7 @@ function LuxeCart() {
 /* ─────────────────────────────── EXPORT ─────────────────────────────── */
 export function CartDrawer() {
   const activeStore = useAppStore((s) => s.activeStore);
-  const _rawTpl = (activeStore?.template_id ?? activeStore?.theme_config?.templateId ?? 'clean') as string;
-  const tpl = _rawTpl === 'minimalist' ? 'clean' : _rawTpl === 'landing' ? 'athletic' : _rawTpl.toLowerCase();
+  const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   if (tpl === 'athletic') return <AthleticCart/>;
   if (tpl === 'luxe') return <LuxeCart/>;
   return <CleanCart/>;

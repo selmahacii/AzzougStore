@@ -24,6 +24,7 @@ import { optimizeCloudinaryUrl } from '@/lib/image-optimize';
 import type { CartItem, ApiResponse } from '@/lib/types';
 import { ALGERIAN_COMMUNES, getCommunesForWilaya } from '@/lib/algerian-communes';
 import { NOEST_BUREAUX } from '@/lib/noest-bureaux-data';
+import { resolveTemplate } from '@/lib/template-resolver';
 
 const primary = 'var(--store-primary, #4b7bec)';
 
@@ -42,8 +43,7 @@ interface CustomerInfo {
 
 // ─── Template theming helper ──────────────────────────────────
 function useCheckoutTheme(activeStore: any) {
-  const _rawTpl = (activeStore?.template_id ?? activeStore?.theme_config?.templateId ?? 'clean') as string;
-  const tpl = _rawTpl === 'minimalist' ? 'clean' : _rawTpl === 'landing' ? 'athletic' : _rawTpl.toLowerCase();
+  const tpl = resolveTemplate(activeStore?.template_id ?? (activeStore?.theme_config?.templateId as string));
   const primary = (activeStore?.theme_config?.primaryColor as string) || '#4b7bec';
 
   if (tpl === 'athletic') return {
