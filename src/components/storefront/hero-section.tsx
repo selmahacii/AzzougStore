@@ -264,19 +264,19 @@ function CleanHero({
             {isVideo ? (
               <video 
                 src={bannerImg} 
-                className="h-full w-full object-cover opacity-85" 
+                className="h-full w-full object-cover" 
                 muted loop autoPlay playsInline
               />
             ) : (
               <motion.img
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 1.2 }}
+                transition={{ duration: 0.8 }}
                 src={bannerImg} alt={store.name}
-                className="h-full w-full object-cover opacity-85"
+                className="h-full w-full object-cover"
               />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-slate-950/40" />
+            <div className="absolute inset-0 bg-black/40" />
           </div>
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 z-0 opacity-95" />
@@ -289,7 +289,7 @@ function CleanHero({
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
             className="max-w-3xl mx-auto space-y-6"
           >
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-white shadow-sm mx-auto">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/80 border border-white/20 text-white shadow-sm mx-auto">
               <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-widest">
                 {resolvedTag}
@@ -317,7 +317,7 @@ function CleanHero({
               </button>
               <button
                 onClick={onScroll}
-                className="w-full sm:w-auto h-12 px-7 rounded-2xl text-xs font-bold uppercase tracking-wider text-white/90 bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md transition-all duration-200 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto h-12 px-7 rounded-2xl text-xs font-bold uppercase tracking-wider text-white bg-white/15 hover:bg-white/25 border border-white/25 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {cta2} <ChevronDown className="size-4" />
               </button>
@@ -404,7 +404,7 @@ function CleanHero({
                   
                   {/* Floating product card highlight */}
                   {products[0] && (
-                    <div className="absolute bottom-4 left-4 right-4 bg-white/95 backdrop-blur-md rounded-2xl p-3.5 border border-slate-200/80 shadow-lg flex items-center justify-between gap-3">
+                    <div className="absolute bottom-4 left-4 right-4 bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-xl flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {products[0].main_image && (
                           <div className="size-11 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200/60">

@@ -426,11 +426,11 @@ function CleanDetail() {
   const savingsAmount = p.compare_price && p.compare_price > p.price ? p.compare_price - p.price : 0;
 
   return (
-    <div className="bg-[#F8F9FC] min-h-screen py-6 sm:py-10" dir={dir}>
-      <div className="mx-auto max-w-[1400px] px-3 sm:px-6 lg:px-8 space-y-6 sm:space-y-8">
+    <div className="bg-white min-h-screen py-6 sm:py-10" dir={dir}>
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-8 lg:px-12 space-y-8 sm:space-y-12">
 
         {/* Top Breadcrumbs & Back Navigation — Minimalist & Breathable */}
-        <div className="flex items-center justify-between gap-3 py-1">
+        <div className="flex items-center justify-between gap-3 py-1 border-b border-slate-100 pb-3">
           <nav className="flex items-center gap-2 text-xs font-semibold text-slate-400 min-w-0 flex-wrap">
             <button onClick={d.handleBack} className="hover:text-slate-900 transition-colors uppercase tracking-wider font-bold shrink-0">
               {d.activeStore?.name ?? 'Boutique'}
@@ -449,26 +449,26 @@ function CleanDetail() {
 
           <button 
             onClick={d.handleBack} 
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200/80 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-all uppercase tracking-wider shrink-0 cursor-pointer shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200/80 text-[11px] font-bold text-slate-700 hover:text-slate-950 transition-all uppercase tracking-wider shrink-0 cursor-pointer shadow-2xs"
           >
             <ArrowLeft className="size-3" /> <span>Catalogue</span>
           </button>
         </div>
 
-        {/* Main Product Box */}
+        {/* Main Product Box - Full width normal container */}
         <div 
-          className="bg-white rounded-[24px] sm:rounded-[32px] border border-slate-200/80 p-4 sm:p-8 lg:p-10 shadow-2xs"
+          className="pb-12 border-b border-slate-100"
           style={{ fontFamily: '"Plus Jakarta Sans", system-ui, -apple-system, sans-serif' }}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
             
-            {/* Gallery Column */}
-            <div className="lg:col-span-6 flex flex-col gap-4">
+            {/* Gallery Column (Larger photos & thumbnails) */}
+            <div className="lg:col-span-7 flex flex-col gap-4">
               <motion.div 
                 key={d.activeImage} 
                 initial={{ opacity: 0.8 }} 
                 animate={{ opacity: 1 }}
-                className="relative aspect-square bg-slate-50 rounded-[20px] sm:rounded-[26px] overflow-hidden border border-slate-100 shadow-2xs"
+                className="relative aspect-square w-full bg-slate-50 rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-xs"
               >
                 {d.allImages[d.activeImage] ? (
                   <img src={d.allImages[d.activeImage]} alt={p.name} className="h-full w-full object-cover" />
@@ -479,7 +479,7 @@ function CleanDetail() {
                 )}
                 
                 {d.discount > 0 && (
-                  <div className="absolute top-3.5 start-3.5 bg-red-600 text-white text-[11px] sm:text-xs font-black uppercase px-3 py-1 rounded-full shadow-md border border-red-500/40">
+                  <div className="absolute top-4 start-4 bg-red-600 text-white text-xs font-black uppercase px-3.5 py-1.5 rounded-full shadow-md border border-red-500/40">
                     -{d.discount}%
                   </div>
                 )}
@@ -493,18 +493,18 @@ function CleanDetail() {
                 )}
               </motion.div>
 
-              {/* Responsive gallery thumbnail strip (all images accessible) */}
+              {/* Responsive gallery thumbnail strip (enlarged sub-variants) */}
               {d.allImages.length > 1 && (
-                <div className="flex items-center gap-2.5 overflow-x-auto pb-1 no-scrollbar">
+                <div className="flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar">
                   {d.allImages.map((img, i) => (
                     <button 
                       key={i} 
                       onClick={() => d.setActiveImage(i)}
                       className={cn(
-                        "size-16 sm:size-18 rounded-xl overflow-hidden border-2 shrink-0 transition-all bg-white cursor-pointer",
+                        "size-20 sm:size-24 rounded-2xl overflow-hidden border-2 shrink-0 transition-all bg-slate-50 cursor-pointer shadow-2xs",
                         d.activeImage === i 
-                          ? "border-[#4b7bec] ring-2 ring-blue-100 shadow-2xs scale-105" 
-                          : "border-slate-100 opacity-60 hover:opacity-100 hover:border-slate-300"
+                          ? "border-[#4b7bec] ring-2 ring-blue-100 shadow-sm scale-105" 
+                          : "border-slate-200/80 opacity-70 hover:opacity-100 hover:border-slate-400"
                       )}
                       style={d.activeImage === i ? { borderColor: primary } : {}}
                     >
@@ -516,26 +516,16 @@ function CleanDetail() {
             </div>
 
             {/* Product Purchase Column */}
-            <div className="lg:col-span-6 flex flex-col justify-between space-y-5">
+            <div className="lg:col-span-5 flex flex-col justify-between space-y-6">
               <div className="space-y-4 sm:space-y-5">
-                {/* Header Pills */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {p.category && (
+                {/* Category Pill only (disponible en stock removed as requested) */}
+                {p.category && (
+                  <div className="flex items-center gap-2">
                     <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200/60">
                       {p.category}
                     </span>
-                  )}
-                  {!isOOS ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      En stock · Expédition 24/48h
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-600 border border-rose-200/60">
-                      Rupture de stock
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-slate-950 tracking-tight leading-snug">
                   {p.name}
@@ -574,7 +564,7 @@ function CleanDetail() {
                         <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                           {t('color')} : <span className="text-slate-900 font-black">{p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color ? activeVariantVal : ''}</span>
                         </label>
-                        <div className="flex flex-wrap gap-2.5">
+                        <div className="flex flex-wrap gap-3">
                           {colorVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
@@ -584,18 +574,18 @@ function CleanDetail() {
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "relative size-10 rounded-xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs cursor-pointer",
-                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-sm scale-105" : "border-slate-200 hover:border-slate-400"
+                                  "relative size-14 sm:size-16 rounded-2xl border-2 transition-all hover:scale-105 active:scale-95 flex items-center justify-center overflow-hidden shadow-2xs cursor-pointer",
+                                  isSelected ? "border-slate-900 ring-2 ring-offset-2 ring-slate-900 shadow-md scale-105" : "border-slate-200 hover:border-slate-400"
                                 )}
                                 style={!vImg && v.color ? { backgroundColor: v.color } : {}}
                                 title={v.value}
                               >
                                 {vImg ? (
-                                  <img src={optimizeCloudinaryUrl(vImg, 120)} alt={v.value} className="size-full object-cover" />
+                                  <img src={optimizeCloudinaryUrl(vImg, 180)} alt={v.value} className="size-full object-cover" />
                                 ) : v.color ? (
                                   <span className="size-full" style={{ backgroundColor: v.color }} />
                                 ) : (
-                                  <span className="text-[10px] font-black text-slate-800 uppercase">{v.value.slice(0, 3)}</span>
+                                  <span className="text-xs font-black text-slate-800 uppercase">{v.value.slice(0, 3)}</span>
                                 )}
                               </button>
                             );
@@ -609,7 +599,7 @@ function CleanDetail() {
                         <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                           {t('optionSize')} : <span className="text-slate-900 font-black">{!(p.variants.find(x => x.value === activeVariantVal)?.name?.toLowerCase().includes('couleur') || p.variants.find(x => x.value === activeVariantVal)?.color) ? activeVariantVal : ''}</span>
                         </label>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2.5">
                           {textVariants.map(v => {
                             const isSelected = activeVariantVal === v.value;
                             const vImg = v.image || (v as any).image_url || (v as any).imageUrl || (v as any).photo;
@@ -619,14 +609,14 @@ function CleanDetail() {
                                 type="button"
                                 onClick={() => handleSelectVariant(v.value)}
                                 className={cn(
-                                  "px-3.5 py-2 text-xs font-bold uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2 cursor-pointer",
+                                  "px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-bold uppercase tracking-wider rounded-xl border transition-all active:scale-95 flex items-center gap-2 cursor-pointer",
                                   isSelected 
                                     ? "bg-slate-900 border-slate-900 text-white shadow-xs" 
                                     : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
                                 )}
                               >
                                 {vImg && (
-                                  <img src={optimizeCloudinaryUrl(vImg, 80)} alt={v.value} className="size-4.5 rounded-md object-cover" />
+                                  <img src={optimizeCloudinaryUrl(vImg, 100)} alt={v.value} className="size-5 rounded-md object-cover" />
                                 )}
                                 <span>{v.value}</span>
                                 {(v.priceModifier ?? 0) > 0 && <span className="text-[10px] opacity-60 ml-1">+{formatPrice(v.priceModifier ?? 0)}</span>}
@@ -741,13 +731,13 @@ function CleanDetail() {
         )}
 
         {/* Reviews Section */}
-        <div className="bg-white rounded-[24px] sm:rounded-[32px] border border-slate-200/80 p-5 sm:p-8 lg:p-10 shadow-2xs">
+        <div className="py-6 sm:py-8 border-b border-slate-100">
           <ProductReviews productId={p.id} />
         </div>
 
         {/* Related Products Section */}
         {d.relatedProducts.length > 0 && (
-          <div className="bg-white rounded-[24px] sm:rounded-[32px] border border-slate-200/80 p-5 sm:p-8 lg:p-10 shadow-2xs space-y-6">
+          <div className="py-6 sm:py-8 space-y-6">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-[#4b7bec]">
