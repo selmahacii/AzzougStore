@@ -66,7 +66,6 @@ export function AppBootstrap() {
 
       console.log('[AppBootstrap] Fetching /api/v1/stores...');
       const storesRes = await fetch('/api/v1/stores', { signal });
-      console.log(`[AppBootstrap] /api/v1/stores response status: ${storesRes.status}`);
       
       if (!storesRes.ok) {
         let errorText = '';
@@ -78,7 +77,6 @@ export function AppBootstrap() {
       }
       
       const storesData = await storesRes.json();
-      console.log('[AppBootstrap] /api/v1/stores success data:', storesData);
 
       // API returns either { success, data } or a plain array
       const stores: Store[] = Array.isArray(storesData)
@@ -93,13 +91,11 @@ export function AppBootstrap() {
         let currentUser = cachedUser2;
         if (cachedView2 === 'admin' && (cachedAuth2 || cachedUser2)) {
           try {
-            console.log('[AppBootstrap] Fetching current user /api/v1/auth/me...');
             const meRes = await fetch('/api/v1/auth/me', {
               signal,
               credentials: 'include',
               headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
-            console.log(`[AppBootstrap] /api/v1/auth/me response status: ${meRes.status}`);
             if (meRes.ok) {
               const meData = await meRes.json();
               const validUser = (meData.data?.user || meData.data || (meData.id ? meData : null)) as User | null;

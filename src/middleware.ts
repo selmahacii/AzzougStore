@@ -35,6 +35,17 @@ const domainCache = new Map<string, { storeId: string; storeSlug: string; cached
 const DOMAIN_CACHE_TTL = 300_000;
 
 async function resolveDomainToStore(hostname: string): Promise<{ storeId: string; storeSlug: string } | null> {
+  // Never attempt lookup on Vercel default domains or localhost — saves edge CPU & avoids 404s
+  if (
+    !hostname ||
+    hostname.endsWith('.vercel.app') ||
+    hostname === 'vercel.app' ||
+    hostname.startsWith('localhost') ||
+    hostname.startsWith('127.0.0.1')
+  ) {
+    return null;
+  }
+
   // Support subdomain routing (e.g. store-slug.azghub.com)
   let lookupDomain = hostname;
   const mainDomain = 'azghub.com';
@@ -45,6 +56,7 @@ async function resolveDomainToStore(hostname: string): Promise<{ storeId: string
 
   const cached = domainCache.get(lookupDomain);
   if (cached && Date.now() - cached.cachedAt < DOMAIN_CACHE_TTL) {
+    if (!cached.storeId) return null; // Cached negative lookup
     return { storeId: cached.storeId, storeSlug: cached.storeSlug };
   }
   try {
@@ -67,20 +79,19 @@ async function resolveDomainToStore(hostname: string): Promise<{ storeId: string
       return url;
     };
     const backendUrl = getBackendUrl();
-    console.log(`[Middleware] Looking up domain in backend: ${lookupDomain} using URL: ${backendUrl}`);
     const res = await fetch(`${backendUrl}/api/v1/stores/lookup/domain?domain=${lookupDomain}`, {
       headers: { 'x-internal-key': process.env.INTERNAL_API_KEY || 'development_key' },
     });
     if (res.ok) {
       const data = await res.json();
-      console.log(`[Middleware] Successfully resolved domain ${lookupDomain} to storeId=${data.storeId}, storeSlug=${data.storeSlug}`);
       domainCache.set(lookupDomain, { storeId: data.storeId, storeSlug: data.storeSlug, cachedAt: Date.now() });
       return { storeId: data.storeId, storeSlug: data.storeSlug };
     } else {
-      console.warn(`[Middleware] Domain lookup failed for ${lookupDomain} with status: ${res.status}`);
+      // Negative cache for 60s to prevent spamming backend & burning Vercel CPU
+      domainCache.set(lookupDomain, { storeId: '', storeSlug: '', cachedAt: Date.now() });
     }
   } catch (err) {
-    console.error(`[Middleware] Exception during domain lookup for ${lookupDomain}:`, err);
+    domainCache.set(lookupDomain, { storeId: '', storeSlug: '', cachedAt: Date.now() });
   }
   return null;
 }
@@ -118,6 +129,8 @@ export async function middleware(request: NextRequest) {
     hostname && 
     !hostname.startsWith('localhost') && 
     !hostname.startsWith('127.0.0.1') &&
+    !hostname.endsWith('.vercel.app') &&
+    hostname !== 'vercel.app' &&
     hostname !== 'azghub.com' &&
     hostname !== 'www.azghub.com'
   ) {

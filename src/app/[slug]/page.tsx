@@ -1,4 +1,4 @@
-export const revalidate = 10;
+export const revalidate = 60;
 import { ThemeInjector } from '@/components/theme-injector';
 import { AppBootstrap } from '@/components/app/app-bootstrap';
 import { UrlSync } from '@/components/app/url-sync';

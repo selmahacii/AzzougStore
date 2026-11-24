@@ -96,7 +96,9 @@ export async function apiFetch<T = unknown>(
 ): Promise<T> {
   const { skipCsrf = false, silent = false, allStores = false, headers: customHeaders, ...rest } = options;
 
-  console.log(`[API] ${rest.method ?? 'GET'} ${path}`);
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[API] ${rest.method ?? 'GET'} ${path}`);
+  }
 
   await _acquireSlot();
   try {
