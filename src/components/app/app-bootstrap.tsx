@@ -39,8 +39,11 @@ export function AppBootstrap() {
       // (backend was unreachable at render time, or a client-side nav).
       const hydratedStores = useAppStore.getState().allStores;
       if (hydratedStores.length > 0) {
-        const hydratedUser = useAppStore.getState().user;
-        if (!hydratedUser) {
+        const { isAuthenticated: cachedAuth, user: cachedUser, appView: cachedView } = useAppStore.getState();
+        // Only verify with /api/v1/auth/me if the user was previously authenticated
+        // or is attempting to view the admin area — prevents noisy 401 console errors
+        // for regular guest storefront shoppers.
+        if (cachedAuth || cachedUser || cachedView === 'admin') {
           try {
             const meRes = await fetch('/api/v1/auth/me', {
               signal,
@@ -49,7 +52,10 @@ export function AppBootstrap() {
             });
             if (meRes.ok) {
               const meData = await meRes.json();
-              if (meData.success && meData.data) setUser(meData.data as User);
+              const validUser = (meData.data?.user || meData.data || (meData.id ? meData : null)) as User | null;
+              if (validUser) setUser(validUser);
+            } else if (meRes.status === 401 || meRes.status === 403) {
+              useAppStore.getState().clearUser();
             }
           } catch (meError) {
             console.warn('[AppBootstrap] Auth restore failed (optional):', meError);
@@ -84,8 +90,9 @@ export function AppBootstrap() {
         setAllStores(stores);
         
         // Final check for user if not hydrated
-        let currentUser = useAppStore.getState().user;
-        if (!currentUser) {
+        const { isAuthenticated: cachedAuth2, user: cachedUser2, appView: cachedView2 } = useAppStore.getState();
+        let currentUser = cachedUser2;
+        if (cachedAuth2 || cachedUser2 || cachedView2 === 'admin') {
           try {
             console.log('[AppBootstrap] Fetching current user /api/v1/auth/me...');
             const meRes = await fetch('/api/v1/auth/me', {
@@ -96,10 +103,14 @@ export function AppBootstrap() {
             console.log(`[AppBootstrap] /api/v1/auth/me response status: ${meRes.status}`);
             if (meRes.ok) {
               const meData = await meRes.json();
-              if (meData.success && meData.data) {
-                setUser(meData.data as User);
-                currentUser = meData.data as User;
+              const validUser = (meData.data?.user || meData.data || (meData.id ? meData : null)) as User | null;
+              if (validUser) {
+                setUser(validUser);
+                currentUser = validUser;
               }
+            } else if (meRes.status === 401 || meRes.status === 403) {
+              useAppStore.getState().clearUser();
+              currentUser = null;
             }
           } catch (meError) {
             console.warn('[AppBootstrap] Auth restore failed (optional):', meError);

@@ -1160,7 +1160,7 @@ function CustomCarrierModal({ open, onClose, storeId, onSaved }: { open: boolean
 }
 
 export default function DeliveryPartners() {
-  const { activeStore, adminSubView } = useAppStore();
+  const { activeStore, adminSubView, isAuthenticated, user } = useAppStore();
   const [search, setSearch] = useState('');
   const [selectedCarrier, setSelectedCarrier] = useState<typeof KNOWN_CARRIERS[0] | null>(null);
   const [showCustomModal, setShowCustomModal] = useState(false);
@@ -1175,14 +1175,14 @@ export default function DeliveryPartners() {
   const { data: partnersRaw, isLoading } = useQuery({
     queryKey: ['delivery-partners', activeStore?.id],
     queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${activeStore?.id}`),
-    enabled: !!activeStore?.id,
+    enabled: Boolean(activeStore?.id && isAuthenticated && user),
     retry: false,
   });
 
   const statsQuery = useQuery({
     queryKey: ['delivery-stats', activeStore?.id, statsPeriod],
     queryFn: () => apiFetch(`/api/v1/analytics?store_id=${activeStore?.id}&type=delivery&period=${statsPeriod}`),
-    enabled: !!activeStore?.id && activeTab === 'tracking',
+    enabled: Boolean(activeStore?.id && isAuthenticated && user && activeTab === 'tracking'),
     retry: false,
     refetchInterval: activeTab === 'tracking' ? 300_000 : false,
     refetchIntervalInBackground: false,

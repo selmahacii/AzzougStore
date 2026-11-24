@@ -215,7 +215,7 @@ function CallbackCountdown({ nextCallbackTime }: { nextCallbackTime: string }) {
 }
 
 export default function OrdersPage({ initialTypeFilter, defaultMode }: { initialTypeFilter?: string; defaultMode?: string } = {}) {
-  const { activeStore, allStores, switchToStore, adminSubView, setAdminSubView, selectedOrderId, setSelectedOrderId, user } = useAppStore();
+  const { activeStore, allStores, switchToStore, adminSubView, setAdminSubView, selectedOrderId, setSelectedOrderId, user, isAuthenticated } = useAppStore();
   const storeId = activeStore?.id ?? '';
   const queryClient = useQueryClient();
 
@@ -774,7 +774,7 @@ const [timeLeft, setTimeLeft] = useState('');
 
    const deliveryPartnersQuery = useQuery<any>({
     queryKey: ['delivery-partners-lite', storeId],
-    enabled: isCreatingOrder && !!storeId,
+    enabled: Boolean(isCreatingOrder && storeId && isAuthenticated && user),
     queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
    });
 

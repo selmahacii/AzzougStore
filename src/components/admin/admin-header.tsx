@@ -121,17 +121,21 @@ export default function AdminHeader() {
    const newOrdersQuery = useQuery<PaginatedResponse<Order>>({
       queryKey: ['orders', 'new-notifications', storeId],
       queryFn: () =>
-         fetch(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`).then((r) => r.json()),
+         apiFetch<PaginatedResponse<Order>>(`/api/v1/orders?store_id=${storeId}&status=NEW&pageSize=5`, { silent: true }),
+      enabled: Boolean(storeId && isAuthenticated && currentUser),
       refetchInterval: 120000,
       refetchIntervalInBackground: false,
+      retry: false,
    });
 
-   const stockAlertsQuery = useQuery<{ data: Product[] }>({
+   const stockAlertsQuery = useQuery<{ success?: boolean; data: Product[]; total?: number }>({
       queryKey: ['stock', 'alerts', storeId],
       queryFn: () =>
-         fetch(`/api/v1/stock/alerts?store_id=${storeId}`).then((r) => r.json()),
+         apiFetch<{ success?: boolean; data: Product[]; total?: number }>(`/api/v1/stock/alerts?store_id=${storeId}`, { silent: true }),
+      enabled: Boolean(storeId && isAuthenticated && currentUser),
       refetchInterval: 300000,
       refetchIntervalInBackground: false,
+      retry: false,
    });
 
    const title = PAGE_TITLES[adminView] || 'AzzougStore';

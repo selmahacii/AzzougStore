@@ -217,7 +217,7 @@ function SupplierInlineSelect({
 }
 
 export default function ProductsPage() {
-   const { activeStore, user, allStores } = useAppStore();
+   const { activeStore, user, allStores, isAuthenticated } = useAppStore();
    const storeId = activeStore?.id ?? '';
    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
@@ -351,7 +351,7 @@ export default function ProductsPage() {
    const productsQuery = useQuery<ProductsApiResponse>({
       queryKey: ['admin-products', storeId, page, pageSize, searchQuery, categoryFilter, statusFilter, startDate, endDate],
       queryFn: () => apiFetch(`/api/v1/products/?${buildQueryParams()}`),
-      enabled: !!storeId,
+      enabled: Boolean(storeId && isAuthenticated && user),
    });
 
    useEffect(() => {
@@ -430,14 +430,14 @@ export default function ProductsPage() {
    const suppliersQuery = useQuery({
       queryKey: ['suppliers-select', storeId],
       queryFn: () => apiFetch<any>(`/api/v1/suppliers/?store_id=${storeId}&page_size=200`),
-      enabled: !!storeId,
+      enabled: Boolean(storeId && isAuthenticated && user),
       staleTime: 5 * 60 * 1000,
    });
 
    const carriersQuery = useQuery({
       queryKey: ['delivery-partners-select', storeId],
       queryFn: () => apiFetch<any>(`/api/v1/delivery-partners?store_id=${storeId}`),
-      enabled: !!storeId,
+      enabled: Boolean(storeId && isAuthenticated && user),
       staleTime: 5 * 60 * 1000,
    });
 

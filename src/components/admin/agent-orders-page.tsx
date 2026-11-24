@@ -612,7 +612,7 @@ function OrderCard({ order, onAction, actionLoading, onEdit }: {
 
 // ─── Main Agent Orders Page ───────────────────────────────────
 export default function AgentOrdersPage() {
-  const { activeStore, user } = useAppStore();
+  const { activeStore, user, isAuthenticated } = useAppStore();
   const storeId = activeStore?.id ?? '';
   const qc = useQueryClient();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -655,7 +655,7 @@ export default function AgentOrdersPage() {
 
   const deliveryPartnersQuery = useQuery<any>({
     queryKey: ['delivery-partners-lite', storeId],
-    enabled: !!storeId,
+    enabled: isCreatingOrder && Boolean(storeId && isAuthenticated && user),
     queryFn: () => apiFetch(`/api/v1/delivery-partners?store_id=${storeId}`),
   });
 

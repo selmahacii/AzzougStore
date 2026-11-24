@@ -1193,6 +1193,7 @@ function LandingPageModal({
   const carriersQuery = useQuery<any>({
     queryKey: ['delivery-partners-select', storeId],
     queryFn: () => apiFetch<any>(`/api/v1/delivery-partners?store_id=${storeId}`),
+    enabled: open && !!storeId,
   });
   const carriers = carriersQuery.data?.data || [];
 
